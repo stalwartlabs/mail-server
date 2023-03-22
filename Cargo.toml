@@ -1,0 +1,19 @@
+[package]
+name = "store"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+utils = { path = "../utils" }
+rand = "0.8.5"
+roaring = "0.10.1"
+rocksdb = "0.20.1"
+serde = { version = "1.0", features = ["derive"]}
+ahash = { version = "0.8.0", features = ["serde"] }
+bitpacking = "0.8.4"
+lazy_static = "1.4"
+whatlang = "0.16" # Language detection
+rust-stemmers = "1.2" # Stemmers
+tinysegmenter = "0.1" # Japanese tokenizer
+jieba-rs = "0.6" # Chinese stemmer
