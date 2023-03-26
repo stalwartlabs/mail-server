@@ -4,21 +4,22 @@ use roaring::RoaringBitmap;
 use rocksdb::{Direction, IteratorMode};
 
 use crate::{
-    query::Operator, write::key::DeserializeBigEndian, BitmapKey, Deserialize, Error, IndexKey,
-    Serialize, Store, ValueKey, BM_DOCUMENT_IDS,
+    query::Operator, write::key::DeserializeBigEndian, BitmapKey, Deserialize, Error, Serialize,
+    Store, BM_DOCUMENT_IDS,
 };
 
 use super::{CF_BITMAPS, CF_INDEXES, CF_VALUES, FIELD_PREFIX_LEN};
 
 impl Store {
     #[inline(always)]
-    pub fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
+    pub fn get_value<U>(&self, key: impl Serialize) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {
+        let key = key.serialize();
         if let Some(bytes) = self
             .db
-            .get_pinned_cf(&self.db.cf_handle(CF_VALUES).unwrap(), &key.serialize())
+            .get_pinned_cf(&self.db.cf_handle(CF_VALUES).unwrap(), &key)
             .map_err(|err| Error::InternalError(format!("get_cf failed: {}", err)))?
         {
             Ok(Some(U::deserialize(&bytes).ok_or_else(|| {
@@ -30,14 +31,14 @@ impl Store {
     }
 
     #[inline(always)]
-    pub fn get_values<U>(&self, keys: Vec<ValueKey>) -> crate::Result<Vec<Option<U>>>
+    pub fn get_values<U>(&self, keys: Vec<impl Serialize>) -> crate::Result<Vec<Option<U>>>
     where
         U: Deserialize,
     {
         let cf_handle = self.db.cf_handle(CF_VALUES).unwrap();
         let mut results = Vec::with_capacity(keys.len());
         for value in self.db.multi_get_cf(
-            keys.iter()
+            keys.into_iter()
                 .map(|key| (&cf_handle, key.serialize()))
                 .collect::<Vec<_>>(),
         ) {
@@ -74,14 +75,18 @@ impl Store {
     }
 
     #[inline(always)]
-    pub fn get_bitmap(&self, key: BitmapKey) -> crate::Result<Option<RoaringBitmap>> {
+    pub fn get_bitmap<T: AsRef<[u8]>>(
+        &self,
+        key: BitmapKey<T>,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let key = key.serialize();
         if let Some(bytes) = self
             .db
-            .get_pinned_cf(&self.db.cf_handle(CF_BITMAPS).unwrap(), key.serialize())
+            .get_pinned_cf(&self.db.cf_handle(CF_BITMAPS).unwrap(), &key)
             .map_err(|err| Error::InternalError(format!("get_cf failed: {}", err)))?
         {
             let bm = RoaringBitmap::deserialize(&bytes).ok_or_else(|| {
-                Error::InternalError(format!("Failed to deserialize key: {:?}", key))
+                Error::InternalError(format!("Failed to deserialize key: {:?}", &key))
             })?;
             Ok(if !bm.is_empty() { Some(bm) } else { None })
         } else {
@@ -90,11 +95,11 @@ impl Store {
     }
 
     #[inline(always)]
-    fn get_bitmaps(&self, keys: Vec<BitmapKey>) -> crate::Result<Vec<Option<RoaringBitmap>>> {
+    fn get_bitmaps<T: Serialize>(&self, keys: Vec<T>) -> crate::Result<Vec<Option<RoaringBitmap>>> {
         let cf_handle = self.db.cf_handle(CF_BITMAPS).unwrap();
         let mut results = Vec::with_capacity(keys.len());
         for value in self.db.multi_get_cf(
-            keys.iter()
+            keys.into_iter()
                 .map(|key| (&cf_handle, key.serialize()))
                 .collect::<Vec<_>>(),
         ) {
@@ -116,9 +121,9 @@ impl Store {
         Ok(results)
     }
 
-    pub(crate) fn get_bitmaps_intersection(
+    pub(crate) fn get_bitmaps_intersection<T: Serialize>(
         &self,
-        keys: Vec<BitmapKey<'_>>,
+        keys: Vec<T>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for bitmap in self.get_bitmaps(keys)? {
@@ -138,9 +143,9 @@ impl Store {
         Ok(result)
     }
 
-    pub(crate) fn get_bitmaps_union(
+    pub(crate) fn get_bitmaps_union<T: Serialize>(
         &self,
-        keys: Vec<BitmapKey<'_>>,
+        keys: Vec<T>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for bitmap in (self.get_bitmaps(keys)?).into_iter().flatten() {
@@ -155,21 +160,20 @@ impl Store {
 
     pub(crate) fn range_to_bitmap(
         &self,
-        key: IndexKey<'_>,
+        match_key: &[u8],
+        match_value: &[u8],
         op: Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
-        let match_key = key.serialize();
         let match_prefix = &match_key[0..FIELD_PREFIX_LEN];
-        let match_value = &match_key[FIELD_PREFIX_LEN..];
         for result in self.db.iterator_cf(
             &self.db.cf_handle(CF_INDEXES).unwrap(),
             IteratorMode::From(
-                &match_key,
+                match_key,
                 match op {
-                    Operator::GreaterThan => Direction::Forward,
-                    Operator::GreaterEqualThan => Direction::Forward,
-                    Operator::Equal => Direction::Forward,
+                    Operator::GreaterThan | Operator::GreaterEqualThan | Operator::Equal => {
+                        Direction::Forward
+                    }
                     _ => Direction::Reverse,
                 },
             ),

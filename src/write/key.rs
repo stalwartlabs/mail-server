@@ -66,6 +66,12 @@ impl KeySerialize for u32 {
     }
 }
 
+impl KeySerialize for u16 {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.to_be_bytes());
+    }
+}
+
 impl KeySerialize for u64 {
     fn serialize(&self, buf: &mut Vec<u8>) {
         buf.extend_from_slice(&self.to_be_bytes());

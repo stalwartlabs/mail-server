@@ -1,17 +1,10 @@
-use std::{
-    borrow::Cow,
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign},
-};
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
-use ahash::AHashSet;
 use roaring::RoaringBitmap;
 
 use crate::{
-    fts::{
-        index::MAX_TOKEN_LENGTH, stemmer::Stemmer, term_index::TermIndex, tokenizers::Tokenizer,
-    },
-    write::Tokenize,
-    BitmapKey, Error, IndexKey, Store, ValueKey, BM_TERM, TERM_EXACT, TERM_STEMMED,
+    write::{key::KeySerializer, Tokenize},
+    BitmapKey, IndexKey, Store, BM_TERM, TERM_EXACT,
 };
 
 use super::{Filter, ResultSet};
@@ -31,6 +24,13 @@ impl Store {
         let document_ids = self
             .get_document_ids(account_id, collection)?
             .unwrap_or_else(RoaringBitmap::new);
+        if filters.is_empty() {
+            return Ok(ResultSet {
+                results: document_ids.clone(),
+                document_ids,
+            });
+        }
+
         let mut state: State = Filter::And.into();
         let mut stack = Vec::new();
         let mut filters = filters.into_iter().peekable();
@@ -62,7 +62,7 @@ impl Store {
                                     collection,
                                     family: BM_TERM | TERM_EXACT,
                                     field,
-                                    key,
+                                    key: key.as_bytes(),
                                 })
                                 .collect(),
                         )?,
@@ -70,17 +70,16 @@ impl Store {
                     );
                 }
                 Filter::MatchValue { field, op, value } => {
+                    let key =
+                        KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len())
+                            .write(account_id)
+                            .write(collection)
+                            .write(field)
+                            .write(&value[..])
+                            .finalize();
                     state.op.apply(
                         &mut state.bm,
-                        self.range_to_bitmap(
-                            IndexKey {
-                                account_id,
-                                collection,
-                                field,
-                                key: &value,
-                            },
-                            op,
-                        )?,
+                        self.range_to_bitmap(&key, &value, op)?,
                         &document_ids,
                     );
                 }
@@ -90,110 +89,18 @@ impl Store {
                     language,
                     match_phrase,
                 } => {
-                    if match_phrase {
-                        let phrase = Tokenizer::new(&text, language, MAX_TOKEN_LENGTH)
-                            .map(|token| token.word)
-                            .collect::<Vec<_>>();
-                        let mut keys = Vec::with_capacity(phrase.len());
-
-                        for word in &phrase {
-                            let key = BitmapKey {
-                                account_id,
-                                collection,
-                                family: BM_TERM | TERM_EXACT,
-                                field,
-                                key: word.as_bytes(),
-                            };
-                            if !keys.contains(&key) {
-                                keys.push(key);
-                            }
-                        }
-
-                        // Retrieve the Term Index for each candidate and match the exact phrase
-                        if let Some(candidates) = self.get_bitmaps_intersection(keys)? {
-                            let mut results = RoaringBitmap::new();
-                            for document_id in candidates.iter() {
-                                if let Some(term_index) = self.get_value::<TermIndex>(ValueKey {
-                                    account_id,
-                                    collection,
-                                    document_id,
-                                    field: u8::MAX,
-                                })? {
-                                    if term_index
-                                        .match_terms(
-                                            &phrase
-                                                .iter()
-                                                .map(|w| term_index.get_match_term(w, None))
-                                                .collect::<Vec<_>>(),
-                                            None,
-                                            true,
-                                            false,
-                                            false,
-                                        )
-                                        .map_err(|e| {
-                                            Error::InternalError(format!(
-                                                "Corrupted TermIndex for {}: {:?}",
-                                                document_id, e
-                                            ))
-                                        })?
-                                        .is_some()
-                                    {
-                                        results.insert(document_id);
-                                    }
-                                }
-                            }
-                            state.op.apply(&mut state.bm, results.into(), &document_ids);
-                        } else {
-                            state.op.apply(&mut state.bm, None, &document_ids);
-                        }
-                    } else {
-                        let words = Stemmer::new(&text, language, MAX_TOKEN_LENGTH)
-                            .map(|token| (token.word, token.stemmed_word.unwrap_or(Cow::from(""))))
-                            .collect::<AHashSet<_>>();
-                        let mut requested_keys = AHashSet::default();
-                        let mut text_bitmap = None;
-
-                        for (word, stemmed_word) in &words {
-                            let mut keys = Vec::new();
-
-                            for (word, family) in [
-                                (word, BM_TERM | TERM_EXACT),
-                                (word, BM_TERM | TERM_STEMMED),
-                                (stemmed_word, BM_TERM | TERM_EXACT),
-                                (stemmed_word, BM_TERM | TERM_STEMMED),
-                            ] {
-                                if !word.is_empty() {
-                                    let key = BitmapKey {
-                                        account_id,
-                                        collection,
-                                        family,
-                                        field,
-                                        key: word.as_bytes(),
-                                    };
-                                    if !requested_keys.contains(&key) {
-                                        requested_keys.insert(key);
-                                        keys.push(key);
-                                    }
-                                }
-                            }
-
-                            // Term already matched on a previous iteration
-                            if keys.is_empty() {
-                                continue;
-                            }
-
-                            Filter::And.apply(
-                                &mut text_bitmap,
-                                self.get_bitmaps_union(keys)?,
-                                &document_ids,
-                            );
-
-                            if text_bitmap.as_ref().unwrap().is_empty() {
-                                break;
-                            }
-                        }
-                        state.op.apply(&mut state.bm, text_bitmap, &document_ids);
-                    }
+                    state.op.apply(
+                        &mut state.bm,
+                        self.fts_query(
+                            account_id,
+                            collection,
+                            field,
+                            &text,
+                            language,
+                            match_phrase,
+                        )?,
+                        &document_ids,
+                    );
                 }
                 Filter::InBitmap { family, field, key } => {
                     state.op.apply(
@@ -227,6 +134,8 @@ impl Store {
                     }
                 }
             }
+
+            //println!("{:?}: {:?}", state.op, state.bm);
 
             if matches!(state.op, Filter::And) && state.bm.as_ref().unwrap().is_empty() {
                 while let Some(filter) = filters.peek() {

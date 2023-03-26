@@ -226,7 +226,7 @@ pub fn bitmap_merge<'x>(
                 deserialize_bitlist(&mut bm, op);
             }
             _ => {
-                debug_assert!(false, "This should not have happend");
+                debug_assert!(false, "This should not have happened");
                 return None;
             }
         }

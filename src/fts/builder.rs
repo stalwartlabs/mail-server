@@ -1,37 +1,37 @@
-use std::collections::HashSet;
+use std::borrow::Cow;
 
 use ahash::AHashSet;
 
 use crate::{
-    write::{BatchBuilder, IntoOperations, Operation, Tokenize},
-    Error, Serialize, BM_TERM, TERM_EXACT, TERM_STEMMED,
+    write::{BatchBuilder, IntoOperations, Operation},
+    Serialize, BLOOM_BIGRAM, BLOOM_STEMMED, BLOOM_TRIGRAM, BM_BLOOM,
 };
 
 use super::{
+    bloom::{BloomFilter, BloomHash},
     lang::{LanguageDetector, MIN_LANGUAGE_SCORE},
+    ngram::ToNgrams,
     stemmer::Stemmer,
-    term_index::{TermIndexBuilder, TokenIndex},
     Language,
 };
 
-pub const MAX_TOKEN_LENGTH: usize = 25;
+pub const MAX_TOKEN_LENGTH: usize = 50;
 
 struct Text<'x> {
     field: u8,
-    text: &'x str,
+    text: Cow<'x, str>,
     language: Language,
-    part_id: u32,
 }
 
-pub struct IndexBuilder<'x> {
+pub struct FtsIndexBuilder<'x> {
     parts: Vec<Text<'x>>,
     detect: LanguageDetector,
     default_language: Language,
 }
 
-impl<'x> IndexBuilder<'x> {
-    pub fn with_default_language(default_language: Language) -> IndexBuilder<'x> {
-        IndexBuilder {
+impl<'x> FtsIndexBuilder<'x> {
+    pub fn with_default_language(default_language: Language) -> FtsIndexBuilder<'x> {
+        FtsIndexBuilder {
             parts: vec![],
             detect: LanguageDetector::new(),
             default_language,
@@ -41,30 +41,27 @@ impl<'x> IndexBuilder<'x> {
     pub fn index(
         &mut self,
         field: impl Into<u8>,
-        text: &'x str,
+        text: impl Into<Cow<'x, str>>,
         mut language: Language,
-        part_id: u32,
     ) {
+        let text = text.into();
         if language == Language::Unknown {
-            language = self.detect.detect(text, MIN_LANGUAGE_SCORE);
+            language = self.detect.detect(&text, MIN_LANGUAGE_SCORE);
         }
         self.parts.push(Text {
             field: field.into(),
             text,
             language,
-            part_id,
         });
     }
 }
 
-impl<'x> IntoOperations for IndexBuilder<'x> {
+impl<'x> IntoOperations for FtsIndexBuilder<'x> {
     fn build(self, batch: &mut BatchBuilder) -> crate::Result<()> {
         let default_language = self
             .detect
             .most_frequent_language()
             .unwrap_or(self.default_language);
-        let mut term_index = TermIndexBuilder::new();
-        let mut words = HashSet::new();
 
         for part in &self.parts {
             let language = if part.language != Language::Unknown {
@@ -72,44 +69,58 @@ impl<'x> IntoOperations for IndexBuilder<'x> {
             } else {
                 default_language
             };
+            let mut unique_words = AHashSet::new();
+            let mut phrase_words = Vec::new();
 
-            let mut terms = Vec::new();
-
-            for token in Stemmer::new(part.text, language, MAX_TOKEN_LENGTH) {
-                words.insert((token.word.as_bytes().to_vec(), part.field, true));
-
+            for token in Stemmer::new(&part.text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
+                unique_words.insert(token.word.to_string());
                 if let Some(stemmed_word) = token.stemmed_word.as_ref() {
-                    words.insert((stemmed_word.as_bytes().to_vec(), part.field, false));
+                    unique_words.insert(format!("{}_", stemmed_word));
                 }
-
-                terms.push(term_index.add_stemmed_token(token));
+                phrase_words.push(token.word);
             }
 
-            if !terms.is_empty() {
-                term_index.add_terms(part.field, part.part_id, terms);
+            let mut bloom_stemmed = BloomFilter::new(unique_words.len());
+            for word in unique_words {
+                let hash = BloomHash::from(word);
+                bloom_stemmed.insert(&hash);
+                //for h in [0, 1] {
+                batch.ops.push(Operation::Bitmap {
+                    family: BM_BLOOM,
+                    field: part.field,
+                    key: hash.as_high_rank_hash(0).serialize(),
+                    set: true,
+                });
+                //}
             }
-        }
 
-        for (key, field, is_exact) in words {
-            batch.ops.push(Operation::Bitmap {
-                family: BM_TERM | if is_exact { TERM_EXACT } else { TERM_STEMMED },
-                field,
-                key,
-                set: true,
+            batch.ops.push(Operation::Bloom {
+                field: part.field,
+                family: BLOOM_STEMMED,
+                set: bloom_stemmed.serialize().into(),
             });
-        }
 
-        if !term_index.is_empty() {
-            batch.ops.push(Operation::Value {
-                field: u8::MAX,
-                set: term_index.serialize().into(),
-            });
+            if phrase_words.len() > 1 {
+                batch.ops.push(Operation::Bloom {
+                    field: part.field,
+                    family: BLOOM_BIGRAM,
+                    set: BloomFilter::to_ngrams(&phrase_words, 2).serialize().into(),
+                });
+                if phrase_words.len() > 2 {
+                    batch.ops.push(Operation::Bloom {
+                        field: part.field,
+                        family: BLOOM_TRIGRAM,
+                        set: BloomFilter::to_ngrams(&phrase_words, 3).serialize().into(),
+                    });
+                }
+            }
         }
 
         Ok(())
     }
 }
 
+/*
 impl IntoOperations for TokenIndex {
     fn build(self, batch: &mut BatchBuilder) -> crate::Result<()> {
         let mut tokens = AHashSet::new();
@@ -149,9 +160,4 @@ impl IntoOperations for TokenIndex {
         Ok(())
     }
 }
-
-impl Tokenize for TermIndexBuilder {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
-        unreachable!()
-    }
-}
+*/

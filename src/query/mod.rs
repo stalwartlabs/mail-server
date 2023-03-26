@@ -56,6 +56,7 @@ pub enum Comparator {
     DocumentSet { set: RoaringBitmap, ascending: bool },
 }
 
+#[derive(Debug)]
 pub struct ResultSet {
     results: RoaringBitmap,
     document_ids: RoaringBitmap,
@@ -68,7 +69,7 @@ pub struct SortedResultRet {
 }
 
 impl Filter {
-    pub fn new_condition(field: impl Into<u8>, op: Operator, value: impl Serialize) -> Self {
+    pub fn cond(field: impl Into<u8>, op: Operator, value: impl Serialize) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op,
@@ -116,7 +117,26 @@ impl Filter {
         }
     }
 
-    pub fn match_text(field: impl Into<u8>, mut text: String, mut language: Language) -> Self {
+    pub fn has_keyword(field: impl Into<u8>, value: impl Into<String>) -> Self {
+        Filter::HasKeyword {
+            field: field.into(),
+            value: value.into(),
+        }
+    }
+
+    pub fn has_keywords(field: impl Into<u8>, value: impl Into<String>) -> Self {
+        Filter::HasKeywords {
+            field: field.into(),
+            value: value.into(),
+        }
+    }
+
+    pub fn match_text(
+        field: impl Into<u8>,
+        text: impl Into<String>,
+        mut language: Language,
+    ) -> Self {
+        let mut text = text.into();
         let match_phrase = (text.starts_with('"') && text.ends_with('"'))
             || (text.starts_with('\'') && text.ends_with('\''));
 
@@ -140,6 +160,11 @@ impl Filter {
             language,
             match_phrase,
         }
+    }
+
+    #[cfg(test)]
+    pub fn match_english(field: impl Into<u8>, text: impl Into<String>) -> Self {
+        Self::match_text(field, text, Language::English)
     }
 }
 

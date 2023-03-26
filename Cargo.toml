@@ -17,3 +17,11 @@ whatlang = "0.16" # Language detection
 rust-stemmers = "1.2" # Stemmers
 tinysegmenter = "0.1" # Japanese tokenizer
 jieba-rs = "0.6" # Chinese stemmer
+xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
+farmhash = "1.1.5"
+siphasher = "0.3"
+
+[dev-dependencies]
+csv = "1.1"
+flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
+rayon = "1.5.1"

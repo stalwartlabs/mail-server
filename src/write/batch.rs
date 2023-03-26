@@ -9,32 +9,45 @@ impl BatchBuilder {
     pub fn new() -> Self {
         Self {
             ops: Vec::new(),
-            last_account_id: 0,
-            last_document_id: 0,
             last_collection: 0,
         }
     }
 
-    pub fn with_context(
-        &mut self,
-        account_id: u32,
-        document_id: u32,
-        collection: impl Into<u8>,
-    ) -> &mut Self {
-        self.last_account_id = account_id;
-        self.last_document_id = document_id;
-        self.last_collection = collection.into();
-        self.push_context();
+    pub fn with_account_id(&mut self, account_id: u32) -> &mut Self {
+        self.ops.push(Operation::AccountId { account_id });
         self
     }
 
-    #[inline(always)]
-    pub(super) fn push_context(&mut self) {
-        self.ops.push(Operation::WithContext {
-            account_id: self.last_account_id,
-            document_id: self.last_document_id,
+    pub fn with_collection(&mut self, collection: impl Into<u8>) -> &mut Self {
+        self.last_collection = collection.into();
+        self.ops.push(Operation::Collection {
             collection: self.last_collection,
         });
+        self
+    }
+
+    pub fn create_document(&mut self) -> &mut Self {
+        self.ops.push(Operation::DocumentId {
+            document_id: u32::MAX,
+            set: true,
+        });
+        self
+    }
+
+    pub fn update_document(&mut self, document_id: u32) -> &mut Self {
+        self.ops.push(Operation::DocumentId {
+            document_id,
+            set: true,
+        });
+        self
+    }
+
+    pub fn delete_document(&mut self, document_id: u32) -> &mut Self {
+        self.ops.push(Operation::DocumentId {
+            document_id,
+            set: false,
+        });
+        self
     }
 
     pub fn value(
@@ -51,7 +64,7 @@ impl BatchBuilder {
                 self.ops.push(Operation::Bitmap {
                     family: BM_TERM | TERM_EXACT,
                     field,
-                    key: token,
+                    key: token.into_bytes(),
                     set: is_set,
                 });
             }
@@ -87,9 +100,9 @@ impl BatchBuilder {
         });
     }
 
-    pub fn acl(&mut self, to_account_id: u32, acl: Option<impl Serialize>) {
+    pub fn acl(&mut self, grant_account_id: u32, acl: Option<impl Serialize>) {
         self.ops.push(Operation::Acl {
-            to_account_id,
+            grant_account_id,
             set: acl.map(|acl| acl.serialize()),
         })
     }

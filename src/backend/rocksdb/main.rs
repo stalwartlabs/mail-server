@@ -11,7 +11,7 @@ impl Store {
     pub fn open() -> crate::Result<Self> {
         // Create the database directory if it doesn't exist
         let path = PathBuf::from(
-            "/tmp/rocksdb.test", /*&settings
+            "/tmp/rocksdb_test", /*&settings
                                  .get("db-path")
                                  .unwrap_or_else(|| "/usr/local/stalwart-jmap/data".to_string())*/
         );

@@ -71,7 +71,7 @@ impl IntoOperations for ChangeLogBuilder {
         for (collection, changes) in self.changes {
             if collection != batch.last_collection {
                 batch.last_collection = collection;
-                batch.push_context();
+                batch.ops.push(Operation::Collection { collection });
             }
 
             batch.ops.push(Operation::Log {

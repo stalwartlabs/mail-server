@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::Serialize;
+use crate::{Deserialize, Serialize};
 
 pub mod batch;
 pub mod key;
@@ -16,17 +16,20 @@ pub struct Batch {
 }
 
 pub struct BatchBuilder {
-    pub last_account_id: u32,
-    pub last_document_id: u32,
     pub last_collection: u8,
     pub ops: Vec<Operation>,
 }
 
 pub enum Operation {
-    WithContext {
+    AccountId {
         account_id: u32,
-        document_id: u32,
+    },
+    Collection {
         collection: u8,
+    },
+    DocumentId {
+        document_id: u32,
+        set: bool,
     },
     Value {
         field: u8,
@@ -43,12 +46,17 @@ pub enum Operation {
         key: Vec<u8>,
         set: bool,
     },
+    Bloom {
+        field: u8,
+        family: u8,
+        set: Option<Vec<u8>>,
+    },
     Blob {
         key: Vec<u8>,
         set: bool,
     },
     Acl {
-        to_account_id: u32,
+        grant_account_id: u32,
         set: Option<Vec<u8>>,
     },
     Log {
@@ -64,6 +72,12 @@ impl Serialize for u32 {
 }
 
 impl Serialize for u64 {
+    fn serialize(self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+}
+
+impl Serialize for u16 {
     fn serialize(self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
@@ -87,6 +101,18 @@ impl Serialize for String {
     }
 }
 
+impl Serialize for Vec<u8> {
+    fn serialize(self) -> Vec<u8> {
+        self
+    }
+}
+
+impl Deserialize for String {
+    fn deserialize(bytes: &[u8]) -> Option<Self> {
+        String::from_utf8_lossy(bytes).into_owned().into()
+    }
+}
+
 trait HasFlag {
     fn has_flag(&self, flag: u32) -> bool;
 }
@@ -99,11 +125,11 @@ impl HasFlag for u32 {
 }
 
 pub trait Tokenize {
-    fn tokenize(&self) -> HashSet<Vec<u8>>;
+    fn tokenize(&self) -> HashSet<String>;
 }
 
 impl Tokenize for &str {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
+    fn tokenize(&self) -> HashSet<String> {
         let mut tokens = HashSet::new();
         let mut token = String::new();
 
@@ -115,9 +141,13 @@ impl Tokenize for &str {
                     token.push(ch);
                 }
             } else if !token.is_empty() {
-                tokens.insert(token.into_bytes());
+                tokens.insert(token);
                 token = String::new();
             }
+        }
+
+        if !token.is_empty() {
+            tokens.insert(token);
         }
 
         tokens
@@ -125,25 +155,25 @@ impl Tokenize for &str {
 }
 
 impl Tokenize for String {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
+    fn tokenize(&self) -> HashSet<String> {
         self.as_str().tokenize()
     }
 }
 
 impl Tokenize for u32 {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
+    fn tokenize(&self) -> HashSet<String> {
         unreachable!()
     }
 }
 
 impl Tokenize for u64 {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
+    fn tokenize(&self) -> HashSet<String> {
         unreachable!()
     }
 }
 
 impl Tokenize for f64 {
-    fn tokenize(&self) -> HashSet<Vec<u8>> {
+    fn tokenize(&self) -> HashSet<String> {
         unreachable!()
     }
 }

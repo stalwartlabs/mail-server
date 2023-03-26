@@ -23,11 +23,16 @@
 
 pub mod lang;
 //pub mod pdf;
-pub mod index;
+pub mod bloom;
+pub mod builder;
+pub mod ngram;
+pub mod query;
 pub mod search_snippet;
 pub mod stemmer;
 pub mod term_index;
 pub mod tokenizers;
+
+pub const HIGH_RANK_MOD: u64 = 10_240;
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Language {

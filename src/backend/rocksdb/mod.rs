@@ -1,8 +1,11 @@
-use crate::{write::key::KeySerializer, BitmapKey, IndexKey, Serialize, ValueKey};
+use crate::{
+    write::key::KeySerializer, AclKey, BitmapKey, BlobKey, IndexKey, LogKey, Serialize, ValueKey,
+};
 
 pub mod bitmap;
 pub mod main;
 pub mod read;
+pub mod write;
 
 pub const CF_BITMAPS: &str = "b";
 pub const CF_VALUES: &str = "v";
@@ -15,13 +18,15 @@ pub const FIELD_PREFIX_LEN: usize = COLLECTION_PREFIX_LEN + std::mem::size_of::<
 pub const ACCOUNT_KEY_LEN: usize =
     std::mem::size_of::<u32>() + std::mem::size_of::<u8>() + std::mem::size_of::<u32>();
 
-impl Serialize for IndexKey<'_> {
+impl<T: AsRef<[u8]>> Serialize for IndexKey<T> {
     fn serialize(self) -> Vec<u8> {
-        KeySerializer::new(std::mem::size_of::<IndexKey>() + self.key.len())
+        let key = self.key.as_ref();
+        KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len())
             .write(self.account_id)
             .write(self.collection)
             .write(self.field)
-            .write(self.key)
+            .write(key)
+            .write(self.document_id)
             .finalize()
     }
 }
@@ -37,14 +42,55 @@ impl Serialize for ValueKey {
     }
 }
 
-impl Serialize for BitmapKey<'_> {
+impl<T: AsRef<[u8]>> Serialize for BitmapKey<T> {
     fn serialize(self) -> Vec<u8> {
-        KeySerializer::new(std::mem::size_of::<BitmapKey>() + self.key.len())
-            .write(self.key)
-            .write(self.field)
+        let key = self.key.as_ref();
+        KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len())
+            .write_leb128(self.account_id)
             .write(self.collection)
             .write(self.family)
-            .write_leb128(self.account_id)
+            .write(self.field)
+            .write(key)
             .finalize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for BlobKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        let hash = self.hash.as_ref();
+        KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + hash.len())
+            .write(hash)
+            .write_leb128(self.account_id)
+            .write(self.collection)
+            .write_leb128(self.document_id)
+            .finalize()
+    }
+}
+
+impl Serialize for AclKey {
+    fn serialize(self) -> Vec<u8> {
+        KeySerializer::new(std::mem::size_of::<AclKey>())
+            .write_leb128(self.grant_account_id)
+            .write(u8::MAX)
+            .write_leb128(self.to_account_id)
+            .write(self.to_collection)
+            .write_leb128(self.to_document_id)
+            .finalize()
+    }
+}
+
+impl Serialize for LogKey {
+    fn serialize(self) -> Vec<u8> {
+        KeySerializer::new(std::mem::size_of::<LogKey>())
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.change_id)
+            .finalize()
+    }
+}
+
+impl From<rocksdb::Error> for crate::Error {
+    fn from(value: rocksdb::Error) -> Self {
+        Self::InternalError(format!("RocksDB error: {}", value))
     }
 }
