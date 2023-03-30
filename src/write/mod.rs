@@ -16,7 +16,6 @@ pub struct Batch {
 }
 
 pub struct BatchBuilder {
-    pub last_collection: u8,
     pub ops: Vec<Operation>,
 }
 
@@ -29,10 +28,10 @@ pub enum Operation {
     },
     DocumentId {
         document_id: u32,
-        set: bool,
     },
     Value {
         field: u8,
+        family: u8,
         set: Option<Vec<u8>>,
     },
     Index {
@@ -46,11 +45,6 @@ pub enum Operation {
         key: Vec<u8>,
         set: bool,
     },
-    Bloom {
-        field: u8,
-        family: u8,
-        set: Option<Vec<u8>>,
-    },
     Blob {
         key: Vec<u8>,
         set: bool,
@@ -61,7 +55,8 @@ pub enum Operation {
     },
     Log {
         change_id: u64,
-        changes: Vec<u8>,
+        collection: u8,
+        set: Vec<u8>,
     },
 }
 
@@ -108,8 +103,8 @@ impl Serialize for Vec<u8> {
 }
 
 impl Deserialize for String {
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
-        String::from_utf8_lossy(bytes).into_owned().into()
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(String::from_utf8_lossy(bytes).into_owned())
     }
 }
 

@@ -1,10 +1,13 @@
-use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
+use std::{
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign},
+    time::Instant,
+};
 
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::KeySerializer, Tokenize},
-    BitmapKey, IndexKey, Store, BM_TERM, TERM_EXACT,
+    backend::foundationdb::read::ReadTransaction, write::Tokenize, BitmapKey, Store, BM_TERM,
+    TERM_EXACT,
 };
 
 use super::{Filter, ResultSet};
@@ -15,17 +18,21 @@ struct State {
 }
 
 impl Store {
-    pub fn filter(
+    pub async fn filter(
         &self,
         account_id: u32,
         collection: u8,
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
-        let document_ids = self
-            .get_document_ids(account_id, collection)?
+        let mut trx = self.read_transaction().await?;
+        let document_ids = trx
+            .get_document_ids(account_id, collection)
+            .await?
             .unwrap_or_else(RoaringBitmap::new);
         if filters.is_empty() {
             return Ok(ResultSet {
+                account_id,
+                collection,
                 results: document_ids.clone(),
                 document_ids,
             });
@@ -36,52 +43,42 @@ impl Store {
         let mut filters = filters.into_iter().peekable();
 
         while let Some(filter) = filters.next() {
-            match filter {
+            trx.refresh_if_old().await?;
+
+            let result = match filter {
                 Filter::HasKeyword { field, value } => {
-                    state.op.apply(
-                        &mut state.bm,
-                        self.get_bitmap(BitmapKey {
-                            account_id,
-                            collection,
-                            family: BM_TERM | TERM_EXACT,
-                            field,
-                            key: value.as_bytes(),
-                        })?,
-                        &document_ids,
-                    );
+                    trx.get_bitmap(BitmapKey {
+                        account_id,
+                        collection,
+                        family: BM_TERM | TERM_EXACT,
+                        field,
+                        key: value.as_bytes(),
+                        #[cfg(feature = "foundation")]
+                        block_num: 0,
+                    })
+                    .await?
                 }
                 Filter::HasKeywords { field, value } => {
-                    let tokens = value.tokenize();
-                    state.op.apply(
-                        &mut state.bm,
-                        self.get_bitmaps_intersection(
-                            tokens
-                                .iter()
-                                .map(|key| BitmapKey {
-                                    account_id,
-                                    collection,
-                                    family: BM_TERM | TERM_EXACT,
-                                    field,
-                                    key: key.as_bytes(),
-                                })
-                                .collect(),
-                        )?,
-                        &document_ids,
-                    );
+                    trx.get_bitmaps_intersection(
+                        value
+                            .tokenize()
+                            .into_iter()
+                            .map(|key| BitmapKey {
+                                account_id,
+                                collection,
+                                family: BM_TERM | TERM_EXACT,
+                                field,
+                                key: key.into_bytes(),
+                                #[cfg(feature = "foundation")]
+                                block_num: 0,
+                            })
+                            .collect(),
+                    )
+                    .await?
                 }
                 Filter::MatchValue { field, op, value } => {
-                    let key =
-                        KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len())
-                            .write(account_id)
-                            .write(collection)
-                            .write(field)
-                            .write(&value[..])
-                            .finalize();
-                    state.op.apply(
-                        &mut state.bm,
-                        self.range_to_bitmap(&key, &value, op)?,
-                        &document_ids,
-                    );
+                    trx.range_to_bitmap(account_id, collection, field, value, op)
+                        .await?
                 }
                 Filter::HasText {
                     field,
@@ -89,51 +86,39 @@ impl Store {
                     language,
                     match_phrase,
                 } => {
-                    state.op.apply(
-                        &mut state.bm,
-                        self.fts_query(
-                            account_id,
-                            collection,
-                            field,
-                            &text,
-                            language,
-                            match_phrase,
-                        )?,
-                        &document_ids,
-                    );
+                    self.fts_query(account_id, collection, field, &text, language, match_phrase)
+                        .await?
                 }
                 Filter::InBitmap { family, field, key } => {
-                    state.op.apply(
-                        &mut state.bm,
-                        self.get_bitmap(BitmapKey {
-                            account_id,
-                            collection,
-                            family,
-                            field,
-                            key: &key,
-                        })?,
-                        &document_ids,
-                    );
+                    trx.get_bitmap(BitmapKey {
+                        account_id,
+                        collection,
+                        family,
+                        field,
+                        key: &key,
+                        #[cfg(feature = "foundation")]
+                        block_num: 0,
+                    })
+                    .await?
                 }
-                Filter::DocumentSet(set) => {
-                    state.op.apply(&mut state.bm, Some(set), &document_ids);
-                }
+                Filter::DocumentSet(set) => Some(set),
                 op @ (Filter::And | Filter::Or | Filter::Not) => {
                     stack.push(state);
                     state = op.into();
                     continue;
                 }
                 Filter::End => {
-                    if let Some(mut prev_state) = stack.pop() {
-                        prev_state
-                            .op
-                            .apply(&mut prev_state.bm, state.bm, &document_ids);
+                    if let Some(prev_state) = stack.pop() {
+                        let bm = state.bm;
                         state = prev_state;
+                        bm
                     } else {
                         break;
                     }
                 }
-            }
+            };
+
+            state.op.apply(&mut state.bm, result, &document_ids);
 
             //println!("{:?}: {:?}", state.op, state.bm);
 
@@ -149,6 +134,8 @@ impl Store {
         }
 
         Ok(ResultSet {
+            account_id,
+            collection,
             results: state.bm.unwrap_or_else(RoaringBitmap::new),
             document_ids,
         })

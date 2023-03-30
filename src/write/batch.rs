@@ -1,4 +1,4 @@
-use crate::{BM_TERM, TERM_EXACT};
+use crate::{BM_DOCUMENT_IDS, BM_TERM, TERM_EXACT};
 
 use super::{
     Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, Tokenize,
@@ -7,10 +7,7 @@ use super::{
 
 impl BatchBuilder {
     pub fn new() -> Self {
-        Self {
-            ops: Vec::new(),
-            last_collection: 0,
-        }
+        Self { ops: Vec::new() }
     }
 
     pub fn with_account_id(&mut self, account_id: u32) -> &mut Self {
@@ -19,32 +16,34 @@ impl BatchBuilder {
     }
 
     pub fn with_collection(&mut self, collection: impl Into<u8>) -> &mut Self {
-        self.last_collection = collection.into();
         self.ops.push(Operation::Collection {
-            collection: self.last_collection,
+            collection: collection.into(),
         });
         self
     }
 
-    pub fn create_document(&mut self) -> &mut Self {
-        self.ops.push(Operation::DocumentId {
-            document_id: u32::MAX,
+    pub fn create_document(&mut self, document_id: u32) -> &mut Self {
+        self.ops.push(Operation::DocumentId { document_id });
+        self.ops.push(Operation::Bitmap {
+            family: BM_DOCUMENT_IDS,
+            field: u8::MAX,
+            key: vec![],
             set: true,
         });
         self
     }
 
     pub fn update_document(&mut self, document_id: u32) -> &mut Self {
-        self.ops.push(Operation::DocumentId {
-            document_id,
-            set: true,
-        });
+        self.ops.push(Operation::DocumentId { document_id });
         self
     }
 
     pub fn delete_document(&mut self, document_id: u32) -> &mut Self {
-        self.ops.push(Operation::DocumentId {
-            document_id,
+        self.ops.push(Operation::DocumentId { document_id });
+        self.ops.push(Operation::Bitmap {
+            family: BM_DOCUMENT_IDS,
+            field: u8::MAX,
+            key: vec![],
             set: false,
         });
         self
@@ -83,6 +82,7 @@ impl BatchBuilder {
         if options.has_flag(F_VALUE) {
             self.ops.push(Operation::Value {
                 field,
+                family: 0,
                 set: if is_set { Some(value) } else { None },
             });
         }

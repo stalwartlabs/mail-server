@@ -10,8 +10,8 @@ pub trait KeySerialize {
 }
 
 pub trait DeserializeBigEndian {
-    fn deserialize_be_u32(&self, index: usize) -> Option<u32>;
-    fn deserialize_be_u64(&self, index: usize) -> Option<u64>;
+    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32>;
+    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64>;
 }
 
 impl KeySerializer {
@@ -79,21 +79,37 @@ impl KeySerialize for u64 {
 }
 
 impl DeserializeBigEndian for &[u8] {
-    fn deserialize_be_u32(&self, index: usize) -> Option<u32> {
-        u32::from_be_bytes(
-            self.get(index..index + std::mem::size_of::<u32>())?
-                .try_into()
-                .ok()?,
-        )
-        .into()
+    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32> {
+        self.get(index..index + std::mem::size_of::<u32>())
+            .ok_or_else(|| {
+                crate::Error::InternalError(
+                    "Index out of range while deserializing u32.".to_string(),
+                )
+            })
+            .and_then(|bytes| {
+                bytes.try_into().map_err(|_| {
+                    crate::Error::InternalError(
+                        "Index out of range while deserializing u32.".to_string(),
+                    )
+                })
+            })
+            .map(u32::from_be_bytes)
     }
 
-    fn deserialize_be_u64(&self, index: usize) -> Option<u64> {
-        u64::from_be_bytes(
-            self.get(index..index + std::mem::size_of::<u64>())?
-                .try_into()
-                .ok()?,
-        )
-        .into()
+    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64> {
+        self.get(index..index + std::mem::size_of::<u64>())
+            .ok_or_else(|| {
+                crate::Error::InternalError(
+                    "Index out of range while deserializing u64.".to_string(),
+                )
+            })
+            .and_then(|bytes| {
+                bytes.try_into().map_err(|_| {
+                    crate::Error::InternalError(
+                        "Index out of range while deserializing u64.".to_string(),
+                    )
+                })
+            })
+            .map(u64::from_be_bytes)
     }
 }

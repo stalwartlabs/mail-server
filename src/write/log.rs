@@ -5,13 +5,14 @@ use crate::Serialize;
 
 use super::{IntoOperations, Operation};
 
+#[derive(Default)]
 pub struct ChangeLogBuilder {
     pub change_id: u64,
-    pub changes: VecMap<u8, Change>,
+    pub changes: VecMap<u8, Changes>,
 }
 
 #[derive(Default)]
-pub struct Change {
+pub struct Changes {
     pub inserts: AHashSet<u64>,
     pub updates: AHashSet<u64>,
     pub deletes: AHashSet<u64>,
@@ -69,14 +70,10 @@ impl ChangeLogBuilder {
 impl IntoOperations for ChangeLogBuilder {
     fn build(self, batch: &mut super::BatchBuilder) -> crate::Result<()> {
         for (collection, changes) in self.changes {
-            if collection != batch.last_collection {
-                batch.last_collection = collection;
-                batch.ops.push(Operation::Collection { collection });
-            }
-
             batch.ops.push(Operation::Log {
                 change_id: self.change_id,
-                changes: changes.serialize(),
+                collection,
+                set: changes.serialize(),
             });
         }
 
@@ -84,7 +81,7 @@ impl IntoOperations for ChangeLogBuilder {
     }
 }
 
-impl Serialize for Change {
+impl Serialize for Changes {
     fn serialize(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
             1 + (self.inserts.len()
@@ -99,6 +96,7 @@ impl Serialize for Change {
         buf.push_leb128(self.updates.len());
         buf.push_leb128(self.child_updates.len());
         buf.push_leb128(self.deletes.len());
+
         for list in [self.inserts, self.updates, self.child_updates, self.deletes] {
             for id in list {
                 buf.push_leb128(id);

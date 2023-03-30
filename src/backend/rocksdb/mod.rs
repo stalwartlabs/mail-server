@@ -3,6 +3,7 @@ use crate::{
 };
 
 pub mod bitmap;
+pub mod log;
 pub mod main;
 pub mod read;
 pub mod write;
@@ -33,12 +34,23 @@ impl<T: AsRef<[u8]>> Serialize for IndexKey<T> {
 
 impl Serialize for ValueKey {
     fn serialize(self) -> Vec<u8> {
-        KeySerializer::new(std::mem::size_of::<ValueKey>())
-            .write_leb128(self.account_id)
-            .write(self.collection)
-            .write_leb128(self.document_id)
-            .write(self.field)
-            .finalize()
+        if self.family == 0 {
+            KeySerializer::new(std::mem::size_of::<ValueKey>())
+                .write_leb128(self.account_id)
+                .write(self.collection)
+                .write_leb128(self.document_id)
+                .write(self.field)
+                .finalize()
+        } else {
+            KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
+                .write_leb128(self.account_id)
+                .write(self.collection)
+                .write_leb128(self.document_id)
+                .write(u8::MAX)
+                .write(self.family)
+                .write(self.field)
+                .finalize()
+        }
     }
 }
 
@@ -85,6 +97,18 @@ impl Serialize for LogKey {
             .write(self.account_id)
             .write(self.collection)
             .write(self.change_id)
+            .finalize()
+    }
+}
+
+impl BloomHash {
+    pub fn to_high_rank_key(&self, account_id: u32, collection: u8, field: u8) -> Vec<u8> {
+        KeySerializer::new(std::mem::size_of::<BitmapKey<&[u8]>>() + 2)
+            .write_leb128(account_id)
+            .write(collection)
+            .write(BM_BLOOM)
+            .write(field)
+            .write(self.as_high_rank_hash())
             .finalize()
     }
 }

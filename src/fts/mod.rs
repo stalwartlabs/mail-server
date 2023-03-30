@@ -27,9 +27,9 @@ pub mod bloom;
 pub mod builder;
 pub mod ngram;
 pub mod query;
-pub mod search_snippet;
+//pub mod search_snippet;
 pub mod stemmer;
-pub mod term_index;
+//pub mod term_index;
 pub mod tokenizers;
 
 pub const HIGH_RANK_MOD: u64 = 10_240;

@@ -2,11 +2,12 @@ use std::time::Instant;
 
 use roaring::RoaringBitmap;
 use rocksdb::ErrorKind;
+use utils::map::vec_map::VecMap;
 
 use crate::{
-    write::{key::KeySerializer, Batch, Operation},
+    write::{AccountCollection, Batch, Operation, WriteResult},
     AclKey, BitmapKey, BlobKey, Deserialize, Error, IndexKey, LogKey, Serialize, Store, ValueKey,
-    BM_BLOOM, BM_DOCUMENT_IDS,
+    BM_DOCUMENT_IDS, UNASSIGNED_ID,
 };
 
 use super::{
@@ -15,7 +16,7 @@ use super::{
 };
 
 impl Store {
-    pub fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub fn write(&self, batch: Batch) -> crate::Result<WriteResult> {
         let cf_values = self.db.cf_handle(CF_VALUES).unwrap();
         let cf_bitmaps = self.db.cf_handle(CF_BITMAPS).unwrap();
         let cf_indexes = self.db.cf_handle(CF_INDEXES).unwrap();
@@ -27,6 +28,10 @@ impl Store {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+            let mut result = WriteResult {
+                change_ids: VecMap::new(),
+                assigned_ids: VecMap::new(),
+            };
             let txn = self.db.transaction();
             let mut wb = txn.get_writebatch();
 
@@ -46,7 +51,7 @@ impl Store {
                         document_id: document_id_,
                         set,
                     } => {
-                        if *document_id_ == u32::MAX {
+                        if *document_id_ == UNASSIGNED_ID {
                             let key = BitmapKey {
                                 account_id,
                                 collection,
@@ -80,6 +85,9 @@ impl Store {
                             } else {
                                 0
                             };
+                            result
+                                .assigned_ids
+                                .append((account_id, collection).into(), document_id);
                             wb.merge_cf(&cf_bitmaps, key, set_bit(document_id));
                         } else {
                             document_id = *document_id_;
@@ -99,11 +107,12 @@ impl Store {
                             }
                         }
                     }
-                    Operation::Value { field, set } => {
+                    Operation::Value { family, field, set } => {
                         let key = ValueKey {
                             account_id,
                             collection,
                             document_id,
+                            family: *family,
                             field: *field,
                         }
                         .serialize();
@@ -149,21 +158,6 @@ impl Store {
                         };
                         wb.merge_cf(&cf_bitmaps, key, value);
                     }
-                    Operation::Bloom { family, field, set } => {
-                        let key = KeySerializer::new(std::mem::size_of::<ValueKey>())
-                            .write_leb128(account_id)
-                            .write(collection)
-                            .write_leb128(document_id)
-                            .write(u8::MAX)
-                            .write(BM_BLOOM | *family)
-                            .write(*field)
-                            .finalize();
-                        if let Some(value) = set {
-                            wb.put_cf(&cf_values, key, value);
-                        } else {
-                            wb.delete_cf(&cf_values, key);
-                        }
-                    }
                     Operation::Blob { key, set } => {
                         let key = BlobKey {
                             account_id,
@@ -195,15 +189,30 @@ impl Store {
                             wb.delete_cf(&cf_values, key);
                         }
                     }
-                    Operation::Log { change_id, changes } => {
-                        let coco = "_";
+                    Operation::Log {
+                        collection,
+                        changes,
+                    } => {
+                        let ac: AccountCollection = (account_id, *collection).into();
+                        let coco = "read for write";
+                        let change_id = self
+                            .get_last_change_id(account_id, *collection)?
+                            .map(|id| id + 1)
+                            .unwrap_or(0);
                         let key = LogKey {
                             account_id,
-                            collection,
-                            change_id: *change_id,
+                            collection: *collection,
+                            change_id,
                         }
                         .serialize();
-                        wb.put_cf(&cf_logs, key, changes);
+                        wb.put_cf(
+                            &cf_logs,
+                            key,
+                            changes.serialize(
+                                result.assigned_ids.get(&ac).copied().unwrap_or_default(),
+                            ),
+                        );
+                        result.change_ids.append(ac, change_id);
                     }
                 }
             }
@@ -211,7 +220,7 @@ impl Store {
             match self.db.write(wb) {
                 Ok(_) => {
                     //println!("Success with id {}", document_id);
-                    return Ok(());
+                    return Ok(result);
                 }
                 Err(err) => match err.kind() {
                     ErrorKind::Busy | ErrorKind::MergeInProgress | ErrorKind::TryAgain

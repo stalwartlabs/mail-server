@@ -10,14 +10,13 @@ use crate::{
         stemmer::Stemmer,
         tokenizers::Tokenizer,
     },
-    write::key::KeySerializer,
-    BitmapKey, Store, ValueKey, BLOOM_BIGRAM, BLOOM_STEMMED, BLOOM_TRIGRAM, BM_BLOOM,
+    BitmapKey, Serialize, Store, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BM_BLOOM,
 };
 
 use super::{Language, HIGH_RANK_MOD};
 
 impl Store {
-    pub(crate) fn fts_query(
+    pub(crate) async fn fts_query(
         &self,
         account_id: u32,
         collection: u8,
@@ -27,40 +26,41 @@ impl Store {
         match_phrase: bool,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let real_now = Instant::now();
+        let mut trx = self.read_transaction().await?;
 
         let (bitmaps, hashes, family) = if match_phrase {
             let mut tokens = Vec::new();
             let mut bit_keys = Vec::new();
             for token in Tokenizer::new(text, language, MAX_TOKEN_LENGTH) {
                 let hash = BloomHash::from(token.word.as_ref());
-                let key = hash.to_high_rank_key(account_id, collection, field, 0);
+                let key = hash.to_high_rank_key(account_id, collection, field);
                 if !bit_keys.contains(&key) {
                     bit_keys.push(key);
                 }
 
                 tokens.push(token.word);
             }
-            let bitmaps = match self.get_bitmaps_intersection(bit_keys)? {
+            let bitmaps = match trx.get_bitmaps_intersection(bit_keys).await? {
                 Some(b) if !b.is_empty() => b,
                 _ => return Ok(None),
             };
 
             match tokens.len() {
-                0 => (bitmaps, vec![], BLOOM_STEMMED),
+                0 => return Ok(None),
                 1 => (
                     bitmaps,
                     vec![tokens.into_iter().next().unwrap().into()],
-                    BLOOM_STEMMED,
+                    BM_BLOOM | BLOOM_UNIGRAM,
                 ),
                 2 => (
                     bitmaps,
                     <Vec<BloomHashGroup>>::to_ngrams(&tokens, 2),
-                    BLOOM_BIGRAM,
+                    BM_BLOOM | BLOOM_BIGRAM,
                 ),
                 _ => (
                     bitmaps,
                     <Vec<BloomHashGroup>>::to_ngrams(&tokens, 3),
-                    BLOOM_TRIGRAM,
+                    BM_BLOOM | BLOOM_TRIGRAM,
                 ),
             }
         } else {
@@ -76,14 +76,18 @@ impl Store {
                     },
                     h1: token.word.into(),
                 };
+                trx.refresh_if_old().await?;
 
-                match self.get_bitmaps_union(vec![
-                    hash.h1.to_high_rank_key(account_id, collection, field, 0),
-                    hash.h2
-                        .as_ref()
-                        .unwrap()
-                        .to_high_rank_key(account_id, collection, field, 0),
-                ])? {
+                match trx
+                    .get_bitmaps_union(vec![
+                        hash.h1.to_high_rank_key(account_id, collection, field),
+                        hash.h2
+                            .as_ref()
+                            .unwrap()
+                            .to_high_rank_key(account_id, collection, field),
+                    ])
+                    .await?
+                {
                     Some(b) if !b.is_empty() => {
                         if !bitmaps.is_empty() {
                             bitmaps &= b;
@@ -100,59 +104,63 @@ impl Store {
                 hashes.push(hash);
             }
 
-            (bitmaps, hashes, BLOOM_STEMMED)
+            (bitmaps, hashes, BM_BLOOM | BLOOM_UNIGRAM)
         };
 
         let b_count = bitmaps.len();
-        let mut bm = RoaringBitmap::new();
 
-        /*let keys = bitmaps
-            .iter()
-            .map(|document_id| {
-                KeySerializer::new(std::mem::size_of::<ValueKey>())
-                    .write_leb128(account_id)
-                    .write(collection)
-                    .write_leb128(document_id)
-                    .write(u8::MAX)
-                    .write(BM_BLOOM | family)
-                    .write(field)
-                    .finalize()
-            })
-            .collect::<Vec<_>>();
-
-        self.get_values::<BloomFilter>(keys)?
-            .into_iter()
-            .zip(bitmaps)
-            .for_each(|(bloom, document_id)| {
-                if let Some(bloom) = bloom {
-                    if !bloom.is_empty() {
-                        let mut matched = true;
-                        for hash in &hashes {
-                            if !(bloom.contains(&hash.h1)
-                                || hash.h2.as_ref().map_or(false, |h2| bloom.contains(h2)))
-                            {
-                                matched = false;
-                                break;
-                            }
-                        }
-
-                        if matched {
-                            bm.insert(document_id);
-                        }
+        /*let bm = self
+        .get_values::<BloomFilter>(
+            bitmaps
+                .iter()
+                .map(|document_id| ValueKey {
+                    account_id,
+                    collection,
+                    document_id,
+                    family,
+                    field,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        .into_iter()
+        .zip(bitmaps)
+        .filter_map(|(bloom, document_id)| {
+            let bloom = bloom?;
+            if !bloom.is_empty() {
+                let mut matched = true;
+                for hash in &hashes {
+                    if !(bloom.contains(&hash.h1)
+                        || hash.h2.as_ref().map_or(false, |h2| bloom.contains(h2)))
+                    {
+                        matched = false;
+                        break;
                     }
                 }
-            });*/
-        for document_id in bitmaps {
-            let key = KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
-                .write_leb128(account_id)
-                .write(collection)
-                .write_leb128(document_id)
-                .write(u8::MAX)
-                .write(BM_BLOOM | family)
-                .write(field)
-                .finalize();
 
-            if let Some(bloom) = self.get_value::<BloomFilter>(key)? {
+                if matched {
+                    return Some(document_id);
+                }
+            }
+
+            None
+        })
+        .collect::<RoaringBitmap>();*/
+
+        let mut bm = RoaringBitmap::new();
+        for document_id in bitmaps {
+            trx.refresh_if_old().await?;
+
+            if let Some(bloom) = trx
+                .get_value::<BloomFilter>(ValueKey {
+                    account_id,
+                    collection,
+                    document_id,
+                    family,
+                    field,
+                })
+                .await?
+            {
                 if !bloom.is_empty() {
                     let mut matched = true;
                     for hash in &hashes {
@@ -172,7 +180,7 @@ impl Store {
         }
 
         println!(
-            "bloom_match {b_count} items in {:?}ms",
+            "bloom_match {text:?} {b_count} items in {:?}ms",
             real_now.elapsed().as_millis()
         );
 
@@ -182,8 +190,8 @@ impl Store {
 
 impl BloomHash {
     #[inline(always)]
-    pub fn as_high_rank_hash(&self, n: usize) -> u16 {
-        (self.h[n] % HIGH_RANK_MOD) as u16
+    pub fn as_high_rank_hash(&self) -> u16 {
+        (self.h[0] % HIGH_RANK_MOD) as u16
     }
 
     pub fn to_high_rank_key(
@@ -191,14 +199,14 @@ impl BloomHash {
         account_id: u32,
         collection: u8,
         field: u8,
-        n: usize,
-    ) -> Vec<u8> {
-        KeySerializer::new(std::mem::size_of::<BitmapKey<&[u8]>>() + 2)
-            .write_leb128(account_id)
-            .write(collection)
-            .write(BM_BLOOM)
-            .write(field)
-            .write(self.as_high_rank_hash(n))
-            .finalize()
+    ) -> BitmapKey<Vec<u8>> {
+        BitmapKey {
+            account_id,
+            collection,
+            family: BM_BLOOM,
+            field,
+            block_num: 0,
+            key: self.as_high_rank_hash().serialize(),
+        }
     }
 }

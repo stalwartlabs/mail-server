@@ -6,9 +6,12 @@ edition = "2021"
 
 [dependencies]
 utils = { path = "../utils" }
+rocksdb = { version = "0.20.1", optional = true }
+foundationdb = { version = "0.7.0", optional = true }
+futures = { version = "0.3", optional = true }
 rand = "0.8.5"
 roaring = "0.10.1"
-rocksdb = "0.20.1"
+rayon = { version = "1.5.1", optional = true }
 serde = { version = "1.0", features = ["derive"]}
 ahash = { version = "0.8.0", features = ["serde"] }
 bitpacking = "0.8.4"
@@ -21,7 +24,13 @@ xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 farmhash = "1.1.5"
 siphasher = "0.3"
 
+[features]
+default = ["foundation"]
+rocks = ["rocksdb", "rayon"]
+foundation = ["foundationdb", "futures"]
+
 [dev-dependencies]
+tokio = { version = "1.23", features = ["full"] }
 csv = "1.1"
+rayon = { version = "1.5.1" }
 flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
-rayon = "1.5.1"

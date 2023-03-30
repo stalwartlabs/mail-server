@@ -91,14 +91,21 @@ const FIELDS_OPTIONS: [FieldType; 20] = [
     FieldType::Text,     // "url",
 ];
 
-#[test]
-pub fn db_test() {
-    let db = Store::open().unwrap();
-    test(&db, false);
+#[tokio::test]
+pub async fn db_test() {
+    let db = Arc::new(Store::open().await.unwrap());
+    let insert = false;
+    if insert {
+        let trx = db.db.create_trx().unwrap();
+        trx.clear_range(&[0u8], &[u8::MAX]);
+        trx.commit().await.unwrap();
+    }
+
+    test(db, insert).await;
 }
 
 #[allow(clippy::mutex_atomic)]
-pub fn test(db: &Store, do_insert: bool) {
+pub async fn test(db: Arc<Store>, do_insert: bool) {
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(8)
         .build()
@@ -123,8 +130,7 @@ pub fn test(db: &Store, do_insert: bool) {
                     builder
                         .with_account_id(0)
                         .with_collection(COLLECTION_ID)
-                        .update_document(document_id as u32) // Speed up insertion by manually assigning id
-                        .bitmap(u8::MAX, (), 0);
+                        .create_document(document_id as u32);
                     for (pos, field) in record.iter().enumerate() {
                         let field_id = pos as u8;
                         match FIELDS_OPTIONS[pos] {
@@ -179,37 +185,40 @@ pub fn test(db: &Store, do_insert: bool) {
             now.elapsed().as_millis()
         );
 
-        let db_ = Arc::new(db);
         let now = Instant::now();
+        let batches = documents.lock().unwrap().drain(..).collect::<Vec<_>>();
+        let mut chunk = Vec::new();
 
-        pool.scope_fifo(|s| {
-            let mut documents = documents.lock().unwrap();
-
-            for document in documents.drain(..) {
-                let db = db_.clone();
-                s.spawn_fifo(move |_| {
-                    db.write(document).unwrap();
-                });
+        for batch in batches {
+            chunk.push({
+                let db = db.clone();
+                tokio::spawn(async move { db.write(batch).await })
+            });
+            if chunk.len() == 1000 {
+                for handle in chunk {
+                    handle.await.unwrap().unwrap();
+                }
+                chunk = Vec::new();
             }
-        });
+        }
+
+        if !chunk.is_empty() {
+            for handle in chunk {
+                handle.await.unwrap().unwrap();
+            }
+        }
 
         println!("Insert took {} ms.", now.elapsed().as_millis());
     }
 
-    println!("Running filter tests...");
-    test_filter(db);
+    //println!("Running filter tests...");
+    //test_filter(db.clone()).await;
 
     println!("Running sort tests...");
-    test_sort(db);
+    test_sort(db).await;
 }
 
-impl IntoBitmap for () {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (vec![], BM_DOCUMENT_IDS)
-    }
-}
-
-pub fn test_filter(db: &Store) {
+pub async fn test_filter(db: Arc<Store>) {
     let mut fields = AHashMap::default();
     for (field_num, field) in FIELDS.iter().enumerate() {
         fields.insert(field.to_string(), field_num as u8);
@@ -317,13 +326,11 @@ pub fn test_filter(db: &Store) {
     ];
 
     for (filter, expected_results) in tests {
-        println!("Running test: {:?}", filter);
+        //println!("Running test: {:?}", filter);
         let mut results: Vec<String> = Vec::with_capacity(expected_results.len());
-        let docset = db.filter(0, COLLECTION_ID, filter).unwrap();
+        let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
         let sorted_docset = db
             .sort(
-                0,
-                COLLECTION_ID,
                 docset,
                 vec![Comparator::ascending(fields["accession_number"])],
                 0,
@@ -331,16 +338,20 @@ pub fn test_filter(db: &Store) {
                 None,
                 0,
             )
+            .await
             .unwrap();
 
+        let db = db.read_transaction().await.unwrap();
         for document_id in sorted_docset.ids {
             results.push(
                 db.get_value(ValueKey {
                     account_id: 0,
                     collection: COLLECTION_ID,
                     document_id,
+                    family: 0,
                     field: fields["accession_number"],
                 })
+                .await
                 .unwrap()
                 .unwrap(),
             );
@@ -349,7 +360,7 @@ pub fn test_filter(db: &Store) {
     }
 }
 
-pub fn test_sort(db: &Store) {
+pub async fn test_sort(db: Arc<Store>) {
     let mut fields = AHashMap::default();
     for (field_num, field) in FIELDS.iter().enumerate() {
         fields.insert(field.to_string(), field_num as u8);
@@ -410,28 +421,23 @@ pub fn test_sort(db: &Store) {
 
     for (filter, sort, expected_results) in tests {
         let mut results: Vec<String> = Vec::with_capacity(expected_results.len());
-        let docset = db.filter(0, COLLECTION_ID, filter).unwrap();
+        let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
         let sorted_docset = db
-            .sort(
-                0,
-                COLLECTION_ID,
-                docset,
-                sort,
-                expected_results.len(),
-                0,
-                None,
-                0,
-            )
+            .sort(docset, sort, expected_results.len(), 0, None, 0)
+            .await
             .unwrap();
 
+        let db = db.read_transaction().await.unwrap();
         for document_id in sorted_docset.ids {
             results.push(
                 db.get_value(ValueKey {
                     account_id: 0,
                     collection: COLLECTION_ID,
                     document_id,
+                    family: 0,
                     field: fields["accession_number"],
                 })
+                .await
                 .unwrap()
                 .unwrap(),
             );

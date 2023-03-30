@@ -7,7 +7,7 @@ use std::{
 use roaring::RoaringBitmap;
 use utils::codec::leb128::{Leb128Reader, Leb128Vec};
 
-use crate::{Deserialize, Serialize};
+use crate::{Deserialize, Error, Serialize};
 
 use super::{stemmer::StemmedToken, tokenizers::Token};
 
@@ -94,6 +94,10 @@ impl BloomFilter {
     }
 }
 
+pub trait BloomHasher {
+    fn hash<T: Hash + AsRef<[u8]> + ?Sized>(item: &T) -> Self;
+}
+
 impl BloomHash {
     pub fn hash<T: Hash + AsRef<[u8]> + ?Sized>(item: &T) -> Self {
         let h1 = xxhash_rust::xxh3::xxh3_64(item.as_ref());
@@ -175,10 +179,18 @@ impl Serialize for BloomFilter {
 }
 
 impl Deserialize for BloomFilter {
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
-        let (m, pos) = bytes.read_leb128()?;
-        let b = RoaringBitmap::deserialize_unchecked_from(bytes.get(pos..)?).ok()?;
-
-        Some(Self::from_params(m, b))
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        let (m, pos) = bytes.read_leb128().ok_or_else(|| {
+            Error::InternalError(
+                "Failed to read 'm' value while deserializing bloom filter.".to_string(),
+            )
+        })?;
+        RoaringBitmap::deserialize_unchecked_from(bytes.get(pos..).ok_or_else(|| {
+            Error::InternalError(
+                "Failed to read bitmap while deserializing bloom filter.".to_string(),
+            )
+        })?)
+        .map_err(|err| Error::InternalError(format!("Failed to deserialize bloom filter: {err}.")))
+        .map(|b| Self::from_params(m, b))
     }
 }

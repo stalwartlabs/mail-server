@@ -1,18 +1,24 @@
 use std::ops::{BitAndAssign, BitXorAssign};
 
+use foundationdb::{future::FdbValue, options, FdbResult, KeySelector, RangeOption};
+use futures::{Stream, StreamExt};
 use roaring::RoaringBitmap;
+#[cfg(feature = "rocks")]
 use rocksdb::{
     DBIteratorWithThreadMode, Direction, IteratorMode, MultiThreaded, OptimisticTransactionDB,
 };
 
+#[cfg(feature = "rocks")]
+use crate::backend::rocksdb::{ACCOUNT_KEY_LEN, CF_INDEXES};
+
 use crate::{
-    backend::rocksdb::{ACCOUNT_KEY_LEN, CF_INDEXES},
-    write::key::KeySerializer,
-    Error, Store,
+    backend::foundationdb::read::ReadTransaction, write::key::DeserializeBigEndian, Error,
+    IndexKeyPrefix, Serialize, Store,
 };
 
 use super::{Comparator, ResultSet, SortedResultRet};
 
+#[cfg(feature = "rocks")]
 enum IndexType<'x> {
     DocumentSet {
         set: RoaringBitmap,
@@ -21,25 +27,47 @@ enum IndexType<'x> {
     DB {
         it: Option<DBIteratorWithThreadMode<'x, OptimisticTransactionDB<MultiThreaded>>>,
         prefix: Vec<u8>,
-        start_key: Vec<u8>,
+        from_key: Vec<u8>,
         ascending: bool,
         prev_item: Option<u32>,
         prev_key: Option<Box<[u8]>>,
     },
 }
 
+#[cfg(feature = "rocks")]
 struct IndexIterator<'x> {
     index: IndexType<'x>,
     remaining: RoaringBitmap,
     eof: bool,
 }
 
+#[cfg(feature = "foundation")]
+enum IndexType<'x, T: Stream<Item = FdbResult<FdbValue>> + Unpin + 'x> {
+    DocumentSet {
+        set: RoaringBitmap,
+        it: Option<roaring::bitmap::IntoIter>,
+    },
+    DB {
+        it: Option<T>,
+        from_key: Vec<u8>,
+        to_key: Vec<u8>,
+        ascending: bool,
+        prev_item: Option<u32>,
+        prev_key: Option<Box<[u8]>>,
+        phantom: std::marker::PhantomData<&'x ()>,
+    },
+}
+
+#[cfg(feature = "foundation")]
+struct IndexIterator<'x, T: Stream<Item = FdbResult<FdbValue>> + Unpin + 'x> {
+    index: IndexType<'x, T>,
+    remaining: RoaringBitmap,
+    eof: bool,
+}
+
 impl Store {
-    #[allow(clippy::too_many_arguments)]
-    pub fn sort(
+    pub async fn sort(
         &self,
-        account_id: u32,
-        collection: u8,
         mut result_set: ResultSet,
         comparators: Vec<Comparator>,
         limit: usize,
@@ -50,6 +78,7 @@ impl Store {
         let has_anchor = anchor.is_some();
         let mut anchor_found = false;
         let requested_position = position;
+        let trx = self.read_transaction().await?;
 
         let mut result = SortedResultRet {
             position,
@@ -60,37 +89,23 @@ impl Store {
             .into_iter()
             .map(|comp| IndexIterator {
                 index: match comp {
-                    Comparator::Field { field, ascending } => {
-                        let prefix = KeySerializer::new(ACCOUNT_KEY_LEN)
-                            .write(account_id)
-                            .write(collection)
-                            .write(field)
-                            .finalize();
-                        IndexType::DB {
-                            it: None,
-                            start_key: if !ascending {
-                                let (key_account_id, key_collection, key_field) = if field < u8::MAX
-                                {
-                                    (account_id, collection, field + 1)
-                                } else if (collection) < u8::MAX {
-                                    (account_id, (collection) + 1, field)
-                                } else {
-                                    (account_id + 1, collection, field)
-                                };
-                                KeySerializer::new(ACCOUNT_KEY_LEN)
-                                    .write(key_account_id)
-                                    .write(key_collection)
-                                    .write(key_field)
-                                    .finalize()
-                            } else {
-                                prefix.clone()
-                            },
-                            prefix,
-                            ascending,
-                            prev_item: None,
-                            prev_key: None,
-                        }
-                    }
+                    Comparator::Field { field, ascending } => IndexType::DB {
+                        it: None,
+                        from_key: if !ascending {
+                            result_set.from_key(field).serialize()
+                        } else {
+                            result_set.to_key(field).serialize()
+                        },
+                        to_key: if !ascending {
+                            result_set.to_key(field).serialize()
+                        } else {
+                            result_set.from_key(field).serialize()
+                        },
+                        ascending,
+                        prev_item: None,
+                        prev_key: None,
+                        phantom: std::marker::PhantomData,
+                    },
                     Comparator::DocumentSet { mut set, ascending } => IndexType::DocumentSet {
                         set: if !ascending {
                             if !set.is_empty() {
@@ -111,12 +126,13 @@ impl Store {
             .collect::<Vec<_>>();
 
         let mut current = 0;
+        let iter_len = iterators.len() - 1;
 
         'outer: loop {
             let mut doc_id;
 
             'inner: loop {
-                let (it_opts, mut next_it_opts) = if current < iterators.len() - 1 {
+                let (it_opts, mut next_it_opts) = if current < iter_len {
                     let (iterators_first, iterators_last) = iterators.split_at_mut(current + 1);
                     (
                         iterators_first.last_mut().unwrap(),
@@ -145,26 +161,46 @@ impl Store {
                 match &mut it_opts.index {
                     IndexType::DB {
                         it,
-                        prefix,
-                        start_key,
+                        from_key,
+                        to_key,
                         ascending,
                         prev_item,
                         prev_key,
+                        ..
                     } => {
                         let it = if let Some(it) = it {
                             it
                         } else {
-                            *it = Some(self.db.iterator_cf(
-                                &self.db.cf_handle(CF_INDEXES).unwrap(),
-                                IteratorMode::From(
-                                    start_key,
-                                    if *ascending {
-                                        Direction::Forward
-                                    } else {
-                                        Direction::Reverse
+                            #[cfg(feature = "foundation")]
+                            {
+                                *it = Some(trx.trx.get_ranges_keyvalues(
+                                    RangeOption {
+                                        begin: KeySelector::first_greater_or_equal(
+                                            from_key.clone(),
+                                        ),
+                                        end: KeySelector::last_less_than(to_key.clone()),
+                                        mode: options::StreamingMode::Iterator,
+                                        reverse: !*ascending,
+                                        ..Default::default()
                                     },
-                                ),
-                            ));
+                                    true,
+                                ));
+                            }
+
+                            #[cfg(feature = "rocks")]
+                            {
+                                *it = Some(self.db.iterator_cf(
+                                    &self.db.cf_handle(CF_INDEXES).unwrap(),
+                                    IteratorMode::From(
+                                        from_key,
+                                        if *ascending {
+                                            Direction::Forward
+                                        } else {
+                                            Direction::Reverse
+                                        },
+                                    ),
+                                ));
+                            }
                             it.as_mut().unwrap()
                         };
 
@@ -184,24 +220,20 @@ impl Store {
 
                         let mut is_eof = false;
                         loop {
-                            if let Some(result) = it.next() {
-                                let (key, _) = result.map_err(|e| {
+                            if let Some(result) = it.next().await {
+                                let key = result?.key().to_vec().into_boxed_slice();
+                                /*let (key, _) = result.map_err(|e| {
                                     Error::InternalError(format!("Iterator error: {}", e))
                                 })?;
                                 if !key.starts_with(prefix) {
                                     *prev_key = None;
                                     is_eof = true;
                                     break;
-                                }
+                                }*/
 
-                                doc_id = u32::from_be_bytes(
-                                    key.get(key.len() - std::mem::size_of::<u32>()..)
-                                        .ok_or_else(|| {
-                                            Error::InternalError("Invalid index entry".to_string())
-                                        })?
-                                        .try_into()
-                                        .unwrap(),
-                                );
+                                doc_id = key
+                                    .as_ref()
+                                    .deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
                                 if it_opts.remaining.contains(doc_id) {
                                     it_opts.remaining.remove(doc_id);
 
@@ -305,24 +337,45 @@ impl Store {
                             match &mut next_it_opts.index {
                                 IndexType::DB {
                                     it,
-                                    start_key,
+                                    from_key,
+                                    to_key,
                                     ascending,
                                     prev_item,
                                     prev_key,
                                     ..
                                 } => {
                                     if let Some(it) = it {
-                                        *it = self.db.iterator_cf(
-                                            &self.db.cf_handle(CF_INDEXES).unwrap(),
-                                            IteratorMode::From(
-                                                start_key,
-                                                if *ascending {
-                                                    Direction::Forward
-                                                } else {
-                                                    Direction::Reverse
+                                        #[cfg(feature = "rocks")]
+                                        {
+                                            *it = self.db.iterator_cf(
+                                                &self.db.cf_handle(CF_INDEXES).unwrap(),
+                                                IteratorMode::From(
+                                                    from_key,
+                                                    if *ascending {
+                                                        Direction::Forward
+                                                    } else {
+                                                        Direction::Reverse
+                                                    },
+                                                ),
+                                            );
+                                        }
+                                        #[cfg(feature = "foundation")]
+                                        {
+                                            *it = trx.trx.get_ranges_keyvalues(
+                                                RangeOption {
+                                                    begin: KeySelector::first_greater_or_equal(
+                                                        from_key.clone(),
+                                                    ),
+                                                    end: KeySelector::last_less_than(
+                                                        to_key.clone(),
+                                                    ),
+                                                    mode: options::StreamingMode::Iterator,
+                                                    reverse: !*ascending,
+                                                    ..Default::default()
                                                 },
-                                            ),
-                                        );
+                                                true,
+                                            );
+                                        }
                                     }
                                     *prev_item = None;
                                     *prev_key = None;
@@ -420,5 +473,29 @@ impl Store {
         }
 
         Ok(result)
+    }
+}
+
+impl ResultSet {
+    pub fn from_key(&self, field: u8) -> IndexKeyPrefix {
+        IndexKeyPrefix {
+            account_id: self.account_id,
+            collection: self.collection,
+            field,
+        }
+    }
+    pub fn to_key(&self, field: u8) -> IndexKeyPrefix {
+        let (account_id, collection, field) = if field < u8::MAX {
+            (self.account_id, self.collection, field + 1)
+        } else if (self.collection) < u8::MAX {
+            (self.account_id, (self.collection) + 1, field)
+        } else {
+            (self.account_id + 1, self.collection, field)
+        };
+        IndexKeyPrefix {
+            account_id,
+            collection,
+            field,
+        }
     }
 }

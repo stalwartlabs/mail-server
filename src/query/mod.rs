@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod log;
 pub mod sort;
 
 use roaring::RoaringBitmap;
@@ -58,14 +59,27 @@ pub enum Comparator {
 
 #[derive(Debug)]
 pub struct ResultSet {
-    results: RoaringBitmap,
-    document_ids: RoaringBitmap,
+    account_id: u32,
+    collection: u8,
+    pub results: RoaringBitmap,
+    pub document_ids: RoaringBitmap,
 }
 
 pub struct SortedResultRet {
     pub position: i32,
     pub ids: Vec<u32>,
     pub found_anchor: bool,
+}
+
+pub enum SortedId {
+    Id(u32),
+    GroupedId(Vec<u32>),
+}
+
+#[allow(clippy::len_without_is_empty)]
+pub trait UnsortedIds {
+    fn contains_id(&self, id: u32) -> bool;
+    fn len(&self) -> usize;
 }
 
 impl Filter {
@@ -181,5 +195,25 @@ impl Comparator {
             field: field.into(),
             ascending: false,
         }
+    }
+}
+
+impl UnsortedIds for RoaringBitmap {
+    fn contains_id(&self, id: u32) -> bool {
+        self.contains(id)
+    }
+
+    fn len(&self) -> usize {
+        self.len() as usize
+    }
+}
+
+impl UnsortedIds for Vec<u32> {
+    fn contains_id(&self, id: u32) -> bool {
+        self.iter().any(|&i| i == id)
+    }
+
+    fn len(&self) -> usize {
+        self.len()
     }
 }

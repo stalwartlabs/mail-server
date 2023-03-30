@@ -4,7 +4,7 @@ use ahash::AHashSet;
 
 use crate::{
     write::{BatchBuilder, IntoOperations, Operation},
-    Serialize, BLOOM_BIGRAM, BLOOM_STEMMED, BLOOM_TRIGRAM, BM_BLOOM,
+    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BM_BLOOM,
 };
 
 use super::{
@@ -80,36 +80,34 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
                 phrase_words.push(token.word);
             }
 
-            let mut bloom_stemmed = BloomFilter::new(unique_words.len());
+            let mut bloom_unigram = BloomFilter::new(unique_words.len());
             for word in unique_words {
                 let hash = BloomHash::from(word);
-                bloom_stemmed.insert(&hash);
-                //for h in [0, 1] {
+                bloom_unigram.insert(&hash);
                 batch.ops.push(Operation::Bitmap {
                     family: BM_BLOOM,
                     field: part.field,
-                    key: hash.as_high_rank_hash(0).serialize(),
+                    key: hash.as_high_rank_hash().serialize(),
                     set: true,
                 });
-                //}
             }
 
-            batch.ops.push(Operation::Bloom {
+            batch.ops.push(Operation::Value {
                 field: part.field,
-                family: BLOOM_STEMMED,
-                set: bloom_stemmed.serialize().into(),
+                family: BM_BLOOM | BLOOM_UNIGRAM,
+                set: bloom_unigram.serialize().into(),
             });
 
             if phrase_words.len() > 1 {
-                batch.ops.push(Operation::Bloom {
+                batch.ops.push(Operation::Value {
                     field: part.field,
-                    family: BLOOM_BIGRAM,
+                    family: BM_BLOOM | BLOOM_BIGRAM,
                     set: BloomFilter::to_ngrams(&phrase_words, 2).serialize().into(),
                 });
                 if phrase_words.len() > 2 {
-                    batch.ops.push(Operation::Bloom {
+                    batch.ops.push(Operation::Value {
                         field: part.field,
-                        family: BLOOM_TRIGRAM,
+                        family: BM_BLOOM | BLOOM_TRIGRAM,
                         set: BloomFilter::to_ngrams(&phrase_words, 3).serialize().into(),
                     });
                 }
