@@ -7,7 +7,7 @@ use std::{
 use roaring::RoaringBitmap;
 use utils::codec::leb128::{Leb128Reader, Leb128Vec};
 
-use crate::{Deserialize, Error, Serialize};
+use crate::{BitmapKey, Deserialize, Error, Serialize, BLOOM_UNIGRAM, BM_BLOOM};
 
 use super::{stemmer::StemmedToken, tokenizers::Token};
 
@@ -116,6 +116,39 @@ impl BloomHash {
             h: [h1, h2, h3, h4, h1 ^ h2, h2 ^ h3, h3 ^ h4],
         }
     }
+
+    pub fn to_bitmap_key(&self, account_id: u32, collection: u8, field: u8) -> BitmapKey<Vec<u8>> {
+        let mut key = Vec::with_capacity(12);
+        key.extend_from_slice(&self.h[0].to_le_bytes()[..3]);
+        key.extend_from_slice(&self.h[1].to_le_bytes()[..3]);
+        key.extend_from_slice(&self.h[2].to_le_bytes()[..3]);
+        key.extend_from_slice(&self.h[3].to_le_bytes()[..3]);
+
+        BitmapKey {
+            account_id,
+            collection,
+            family: BM_BLOOM | BLOOM_UNIGRAM,
+            field,
+            block_num: 0,
+            key,
+        }
+    }
+}
+
+pub fn hash_token(item: &str) -> Vec<u8> {
+    let h1 = xxhash_rust::xxh3::xxh3_64(item.as_ref());
+    let h2 = farmhash::hash64(item.as_ref());
+    let h3 = AHASHER.hash_one(item);
+    let mut sh = *SIPHASHER;
+    sh.write(item.as_ref());
+    let h4 = sh.finish();
+
+    let mut hash = Vec::with_capacity(12);
+    hash.extend_from_slice(&h1.to_le_bytes()[..3]);
+    hash.extend_from_slice(&h2.to_le_bytes()[..3]);
+    hash.extend_from_slice(&h3.to_le_bytes()[..3]);
+    hash.extend_from_slice(&h4.to_le_bytes()[..3]);
+    hash
 }
 
 impl From<&str> for BloomHash {

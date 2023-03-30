@@ -15,10 +15,12 @@ pub struct Batch {
     pub ops: Vec<Operation>,
 }
 
+#[derive(Debug)]
 pub struct BatchBuilder {
     pub ops: Vec<Operation>,
 }
 
+#[derive(Debug)]
 pub enum Operation {
     AccountId {
         account_id: u32,

@@ -1,14 +1,8 @@
-use std::{
-    ops::{BitAndAssign, BitOrAssign, BitXorAssign},
-    time::Instant,
-};
+use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
 use roaring::RoaringBitmap;
 
-use crate::{
-    backend::foundationdb::read::ReadTransaction, write::Tokenize, BitmapKey, Store, BM_TERM,
-    TERM_EXACT,
-};
+use crate::{write::Tokenize, BitmapKey, Store, BM_TERM, TERM_EXACT};
 
 use super::{Filter, ResultSet};
 
@@ -25,16 +19,16 @@ impl Store {
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
         let mut trx = self.read_transaction().await?;
-        let document_ids = trx
-            .get_document_ids(account_id, collection)
-            .await?
-            .unwrap_or_else(RoaringBitmap::new);
+        let mut not_mask = RoaringBitmap::new();
+        let mut not_fetch = false;
         if filters.is_empty() {
             return Ok(ResultSet {
                 account_id,
                 collection,
-                results: document_ids.clone(),
-                document_ids,
+                results: trx
+                    .get_document_ids(account_id, collection)
+                    .await?
+                    .unwrap_or_else(RoaringBitmap::new),
             });
         }
 
@@ -118,7 +112,15 @@ impl Store {
                 }
             };
 
-            state.op.apply(&mut state.bm, result, &document_ids);
+            if matches!(state.op, Filter::Not) && !not_fetch {
+                not_mask = trx
+                    .get_document_ids(account_id, collection)
+                    .await?
+                    .unwrap_or_else(RoaringBitmap::new);
+                not_fetch = true;
+            }
+
+            state.op.apply(&mut state.bm, result, &not_mask);
 
             //println!("{:?}: {:?}", state.op, state.bm);
 
@@ -137,7 +139,6 @@ impl Store {
             account_id,
             collection,
             results: state.bm.unwrap_or_else(RoaringBitmap::new),
-            document_ids,
         })
     }
 }

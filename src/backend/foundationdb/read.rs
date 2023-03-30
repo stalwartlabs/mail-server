@@ -11,15 +11,12 @@ use futures::StreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
-    query::{Operator, SortedId, UnsortedIds},
+    query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Serialize, Store, ValueKey, BM_DOCUMENT_IDS,
 };
 
-use super::{
-    bitmap::{DeserializeBlock, BITS_PER_BLOCK},
-    SUBSPACE_INDEXES,
-};
+use super::{bitmap::DeserializeBlock, SUBSPACE_INDEXES};
 
 pub struct ReadTransaction<'x> {
     db: &'x Database,
@@ -72,11 +69,11 @@ impl ReadTransaction<'_> {
         .await
     }
 
-    #[inline(always)]
-    pub async fn get_bitmap<T: AsRef<[u8]>>(
+    async fn get_bitmap_<T: AsRef<[u8]>>(
         &self,
         mut key: BitmapKey<T>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+        bm: &mut RoaringBitmap,
+    ) -> crate::Result<()> {
         let from_key = key.serialize();
         key.block_num = u32::MAX;
         let to_key = key.serialize();
@@ -85,9 +82,8 @@ impl ReadTransaction<'_> {
             reverse: false,
             ..RangeOption::from((from_key.as_ref(), to_key.as_ref()))
         };
-        //println!("deserializing bitmap: {:?} {:?}", from_key, to_key);
-        let mut bm = RoaringBitmap::new();
         let mut values = self.trx.get_ranges(opt, true);
+
         while let Some(values) = values.next().await {
             for value in values? {
                 let key = value.key();
@@ -98,23 +94,18 @@ impl ReadTransaction<'_> {
                         .deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
                 );
             }
-            //println!("deserializing bitmap: {:?} {:?}", value.key(), bm.len());
         }
 
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
+        Ok(())
     }
 
-    #[inline(always)]
-    async fn get_bitmaps<T: AsRef<[u8]>>(
+    pub async fn get_bitmap<T: AsRef<[u8]>>(
         &self,
-        keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Vec<Option<RoaringBitmap>>> {
-        let mut results = Vec::with_capacity(keys.len());
-        for key in keys {
-            results.push(self.get_bitmap(key).await?);
-        }
-
-        Ok(results)
+        key: BitmapKey<T>,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let mut bm = RoaringBitmap::new();
+        self.get_bitmap_(key, &mut bm).await?;
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn get_bitmaps_intersection<T: AsRef<[u8]>>(
@@ -122,8 +113,8 @@ impl ReadTransaction<'_> {
         keys: Vec<BitmapKey<T>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
-        for bitmap in self.get_bitmaps(keys).await? {
-            if let Some(bitmap) = bitmap {
+        for key in keys {
+            if let Some(bitmap) = self.get_bitmap(key).await? {
                 if let Some(result) = &mut result {
                     result.bitand_assign(&bitmap);
                     if result.is_empty() {
@@ -143,15 +134,13 @@ impl ReadTransaction<'_> {
         &self,
         keys: Vec<BitmapKey<T>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut result: Option<RoaringBitmap> = None;
-        for bitmap in (self.get_bitmaps(keys).await?).into_iter().flatten() {
-            if let Some(result) = &mut result {
-                result.bitor_assign(&bitmap);
-            } else {
-                result = Some(bitmap);
-            }
+        let mut bm = RoaringBitmap::new();
+
+        for key in keys {
+            self.get_bitmap_(key, &mut bm).await?;
         }
-        Ok(result)
+
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn range_to_bitmap(
@@ -180,23 +169,27 @@ impl ReadTransaction<'_> {
         let (begin, end) = match op {
             Operator::LowerThan => (
                 KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::last_less_than(k2.write(&value[..]).write(0u32).finalize()),
+                KeySelector::first_greater_or_equal(k2.write(&value[..]).write(0u32).finalize()),
             ),
             Operator::LowerEqualThan => (
                 KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::last_less_or_equal(k2.write(&value[..]).write(u32::MAX).finalize()),
+                KeySelector::first_greater_or_equal(
+                    k2.write(&value[..]).write(u32::MAX).finalize(),
+                ),
             ),
             Operator::GreaterThan => (
                 KeySelector::first_greater_than(k1.write(&value[..]).write(u32::MAX).finalize()),
-                KeySelector::last_less_than(k2.finalize()),
+                KeySelector::first_greater_or_equal(k2.finalize()),
             ),
             Operator::GreaterEqualThan => (
                 KeySelector::first_greater_or_equal(k1.write(&value[..]).write(0u32).finalize()),
-                KeySelector::last_less_than(k2.finalize()),
+                KeySelector::first_greater_or_equal(k2.finalize()),
             ),
             Operator::Equal => (
                 KeySelector::first_greater_or_equal(k1.write(&value[..]).write(0u32).finalize()),
-                KeySelector::last_less_or_equal(k2.write(&value[..]).write(u32::MAX).finalize()),
+                KeySelector::first_greater_or_equal(
+                    k2.write(&value[..]).write(u32::MAX).finalize(),
+                ),
             ),
         };
 
@@ -221,15 +214,14 @@ impl ReadTransaction<'_> {
         Ok(Some(bm))
     }
 
-    pub(crate) async fn sort_bitmap(
+    pub(crate) async fn sort_index(
         &self,
         account_id: u32,
         collection: u8,
         field: u8,
-        documents: &impl UnsortedIds,
-        limit: usize,
         ascending: bool,
-    ) -> crate::Result<Vec<SortedId>> {
+        mut cb: impl FnMut(&[u8], u32) -> bool,
+    ) -> crate::Result<()> {
         let from_key = IndexKeyPrefix {
             account_id,
             collection,
@@ -242,11 +234,11 @@ impl ReadTransaction<'_> {
             field: field + 1,
         }
         .serialize();
-        let mut results = Vec::with_capacity(documents.len());
+        let prefix_len = from_key.len();
         let mut sorted_iter = self.trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&from_key),
-                end: KeySelector::last_less_than(&to_key),
+                end: KeySelector::first_greater_or_equal(&to_key),
                 mode: options::StreamingMode::Iterator,
                 reverse: !ascending,
                 ..Default::default()
@@ -254,42 +246,23 @@ impl ReadTransaction<'_> {
             true,
         );
 
-        let mut prev_prefix = vec![];
         while let Some(values) = sorted_iter.next().await {
             for value in values? {
                 let key = value.key();
-                let document_id = key.deserialize_be_u32(value.key().len() - 4)?;
-
-                if documents.contains_id(document_id) {
-                    let prefix = key
-                        .get(..key.len() - std::mem::size_of::<u32>())
-                        .ok_or_else(|| {
-                            crate::Error::InternalError("Invalid key found in index".to_string())
-                        })?;
-
-                    if prefix == prev_prefix {
-                        let last = results.last_mut().unwrap();
-                        match last {
-                            SortedId::Id(id) => {
-                                *last = SortedId::GroupedId(vec![*id, document_id]);
-                            }
-                            SortedId::GroupedId(ids) => {
-                                ids.push(document_id);
-                            }
-                        }
-                    } else {
-                        results.push(SortedId::Id(document_id));
-                        prev_prefix = prefix.to_vec();
-                    }
-
-                    if results.len() == limit {
-                        return Ok(results);
-                    }
+                let id_pos = key.len() - std::mem::size_of::<u32>();
+                debug_assert!(key.starts_with(&from_key));
+                if !cb(
+                    key.get(prefix_len..id_pos).ok_or_else(|| {
+                        crate::Error::InternalError("Invalid key found in index".to_string())
+                    })?,
+                    key.deserialize_be_u32(id_pos)?,
+                ) {
+                    return Ok(());
                 }
             }
         }
 
-        Ok(results)
+        Ok(())
     }
 
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {

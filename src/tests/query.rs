@@ -173,6 +173,7 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
                             }
                         }
                     }
+
                     builder.custom(fts_builder).unwrap();
                     documents.lock().unwrap().push(builder.build());
                 });
@@ -211,8 +212,8 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
         println!("Insert took {} ms.", now.elapsed().as_millis());
     }
 
-    //println!("Running filter tests...");
-    //test_filter(db.clone()).await;
+    println!("Running filter tests...");
+    test_filter(db.clone()).await;
 
     println!("Running sort tests...");
     test_sort(db).await;
@@ -420,6 +421,7 @@ pub async fn test_sort(db: Arc<Store>) {
     ];
 
     for (filter, sort, expected_results) in tests {
+        //println!("Running test: {:?}", sort);
         let mut results: Vec<String> = Vec::with_capacity(expected_results.len());
         let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
         let sorted_docset = db
@@ -427,8 +429,9 @@ pub async fn test_sort(db: Arc<Store>) {
             .await
             .unwrap();
 
-        let db = db.read_transaction().await.unwrap();
+        let mut db = db.read_transaction().await.unwrap();
         for document_id in sorted_docset.ids {
+            db.refresh_if_old().await.unwrap();
             results.push(
                 db.get_value(ValueKey {
                     account_id: 0,

@@ -99,8 +99,9 @@ pub const BM_TAG: u8 = 0x20;
 pub const BM_BLOOM: u8 = 0x40;
 
 pub const BLOOM_UNIGRAM: u8 = 0x00;
-pub const BLOOM_BIGRAM: u8 = 0x01;
-pub const BLOOM_TRIGRAM: u8 = 0x02;
+pub const BLOOM_UNIGRAM_STEM: u8 = 0x01;
+pub const BLOOM_BIGRAM: u8 = 0x02;
+pub const BLOOM_TRIGRAM: u8 = 0x04;
 
 pub const TERM_EXACT: u8 = 0x00;
 pub const TERM_STEMMED: u8 = 0x01;

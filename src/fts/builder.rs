@@ -4,11 +4,11 @@ use ahash::AHashSet;
 
 use crate::{
     write::{BatchBuilder, IntoOperations, Operation},
-    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BM_BLOOM,
+    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BLOOM_UNIGRAM_STEM, BM_BLOOM,
 };
 
 use super::{
-    bloom::{BloomFilter, BloomHash},
+    bloom::{hash_token, BloomFilter},
     lang::{LanguageDetector, MIN_LANGUAGE_SCORE},
     ngram::ToNgrams,
     stemmer::Stemmer,
@@ -73,30 +73,30 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             let mut phrase_words = Vec::new();
 
             for token in Stemmer::new(&part.text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
-                unique_words.insert(token.word.to_string());
-                if let Some(stemmed_word) = token.stemmed_word.as_ref() {
-                    unique_words.insert(format!("{}_", stemmed_word));
+                unique_words.insert((token.word.to_string(), BM_BLOOM | BLOOM_UNIGRAM));
+                if let Some(stemmed_word) = token.stemmed_word {
+                    unique_words.insert((stemmed_word.into_owned(), BM_BLOOM | BLOOM_UNIGRAM_STEM));
                 }
                 phrase_words.push(token.word);
             }
 
-            let mut bloom_unigram = BloomFilter::new(unique_words.len());
-            for word in unique_words {
-                let hash = BloomHash::from(word);
-                bloom_unigram.insert(&hash);
+            //let mut bloom_unigram = BloomFilter::new(unique_words.len());
+            for (word, family) in unique_words {
+                //let hash = BloomHash::from(word);
+                //bloom_unigram.insert(&hash);
                 batch.ops.push(Operation::Bitmap {
-                    family: BM_BLOOM,
+                    family,
                     field: part.field,
-                    key: hash.as_high_rank_hash().serialize(),
+                    key: hash_token(&word),
                     set: true,
                 });
             }
 
-            batch.ops.push(Operation::Value {
+            /*batch.ops.push(Operation::Value {
                 field: part.field,
                 family: BM_BLOOM | BLOOM_UNIGRAM,
                 set: bloom_unigram.serialize().into(),
-            });
+            });*/
 
             if phrase_words.len() > 1 {
                 batch.ops.push(Operation::Value {

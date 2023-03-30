@@ -4,16 +4,17 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{
-        bloom::{BloomFilter, BloomHash, BloomHashGroup},
+        bloom::{hash_token, BloomFilter, BloomHash, BloomHashGroup},
         builder::MAX_TOKEN_LENGTH,
         ngram::ToNgrams,
         stemmer::Stemmer,
         tokenizers::Tokenizer,
     },
-    BitmapKey, Serialize, Store, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BM_BLOOM,
+    BitmapKey, Store, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BLOOM_UNIGRAM_STEM,
+    BM_BLOOM,
 };
 
-use super::{Language, HIGH_RANK_MOD};
+use super::Language;
 
 impl Store {
     pub(crate) async fn fts_query(
@@ -33,7 +34,7 @@ impl Store {
             let mut bit_keys = Vec::new();
             for token in Tokenizer::new(text, language, MAX_TOKEN_LENGTH) {
                 let hash = BloomHash::from(token.word.as_ref());
-                let key = hash.to_high_rank_key(account_id, collection, field);
+                let key = hash.to_bitmap_key(account_id, collection, field);
                 if !bit_keys.contains(&key) {
                     bit_keys.push(key);
                 }
@@ -47,11 +48,7 @@ impl Store {
 
             match tokens.len() {
                 0 => return Ok(None),
-                1 => (
-                    bitmaps,
-                    vec![tokens.into_iter().next().unwrap().into()],
-                    BM_BLOOM | BLOOM_UNIGRAM,
-                ),
+                1 => return Ok(Some(bitmaps)),
                 2 => (
                     bitmaps,
                     <Vec<BloomHashGroup>>::to_ngrams(&tokens, 2),
@@ -64,27 +61,36 @@ impl Store {
                 ),
             }
         } else {
-            let mut hashes = Vec::new();
             let mut bitmaps = RoaringBitmap::new();
 
             for token in Stemmer::new(text, language, MAX_TOKEN_LENGTH) {
-                let hash = BloomHashGroup {
-                    h2: if let Some(stemmed_word) = token.stemmed_word {
-                        Some(format!("{stemmed_word}_").into())
-                    } else {
-                        Some(format!("{}_", token.word).into())
-                    },
-                    h1: token.word.into(),
+                let token1 = hash_token(&token.word);
+                let token2 = if let Some(stemmed_word) = token.stemmed_word {
+                    hash_token(&stemmed_word)
+                } else {
+                    token1.clone()
                 };
+
                 trx.refresh_if_old().await?;
 
                 match trx
                     .get_bitmaps_union(vec![
-                        hash.h1.to_high_rank_key(account_id, collection, field),
-                        hash.h2
-                            .as_ref()
-                            .unwrap()
-                            .to_high_rank_key(account_id, collection, field),
+                        BitmapKey {
+                            account_id,
+                            collection,
+                            family: BM_BLOOM | BLOOM_UNIGRAM,
+                            field,
+                            block_num: 0,
+                            key: token1,
+                        },
+                        BitmapKey {
+                            account_id,
+                            collection,
+                            family: BM_BLOOM | BLOOM_UNIGRAM_STEM,
+                            field,
+                            block_num: 0,
+                            key: token2,
+                        },
                     ])
                     .await?
                 {
@@ -100,52 +106,12 @@ impl Store {
                     }
                     _ => return Ok(None),
                 };
-
-                hashes.push(hash);
             }
 
-            (bitmaps, hashes, BM_BLOOM | BLOOM_UNIGRAM)
+            return Ok(Some(bitmaps));
         };
 
         let b_count = bitmaps.len();
-
-        /*let bm = self
-        .get_values::<BloomFilter>(
-            bitmaps
-                .iter()
-                .map(|document_id| ValueKey {
-                    account_id,
-                    collection,
-                    document_id,
-                    family,
-                    field,
-                })
-                .collect::<Vec<_>>(),
-        )
-        .await?
-        .into_iter()
-        .zip(bitmaps)
-        .filter_map(|(bloom, document_id)| {
-            let bloom = bloom?;
-            if !bloom.is_empty() {
-                let mut matched = true;
-                for hash in &hashes {
-                    if !(bloom.contains(&hash.h1)
-                        || hash.h2.as_ref().map_or(false, |h2| bloom.contains(h2)))
-                    {
-                        matched = false;
-                        break;
-                    }
-                }
-
-                if matched {
-                    return Some(document_id);
-                }
-            }
-
-            None
-        })
-        .collect::<RoaringBitmap>();*/
 
         let mut bm = RoaringBitmap::new();
         for document_id in bitmaps {
@@ -185,28 +151,5 @@ impl Store {
         );
 
         Ok(Some(bm))
-    }
-}
-
-impl BloomHash {
-    #[inline(always)]
-    pub fn as_high_rank_hash(&self) -> u16 {
-        (self.h[0] % HIGH_RANK_MOD) as u16
-    }
-
-    pub fn to_high_rank_key(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-    ) -> BitmapKey<Vec<u8>> {
-        BitmapKey {
-            account_id,
-            collection,
-            family: BM_BLOOM,
-            field,
-            block_num: 0,
-            key: self.as_high_rank_hash().serialize(),
-        }
     }
 }
