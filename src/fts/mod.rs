@@ -21,6 +21,10 @@
  * for more details.
 */
 
+use crate::{BitmapKey, BM_HASH};
+
+use self::{bloom::hash_token, builder::MAX_TOKEN_MASK};
+
 pub mod lang;
 //pub mod pdf;
 pub mod bloom;
@@ -31,8 +35,6 @@ pub mod query;
 pub mod stemmer;
 //pub mod term_index;
 pub mod tokenizers;
-
-pub const HIGH_RANK_MOD: u64 = 10_240;
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Language {
@@ -162,5 +164,18 @@ impl Language {
             _ => return None,
         }
         .into()
+    }
+}
+
+impl BitmapKey<Vec<u8>> {
+    pub fn hash(word: &str, account_id: u32, collection: u8, family: u8, field: u8) -> Self {
+        BitmapKey {
+            account_id,
+            collection,
+            family: BM_HASH | family | (word.len() & MAX_TOKEN_MASK) as u8,
+            field,
+            block_num: 0,
+            key: hash_token(word),
+        }
     }
 }

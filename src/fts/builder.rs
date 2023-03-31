@@ -4,7 +4,7 @@ use ahash::AHashSet;
 
 use crate::{
     write::{BatchBuilder, IntoOperations, Operation},
-    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BLOOM_UNIGRAM_STEM, BM_BLOOM,
+    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BM_HASH, HASH_EXACT, HASH_STEMMED,
 };
 
 use super::{
@@ -15,7 +15,8 @@ use super::{
     Language,
 };
 
-pub const MAX_TOKEN_LENGTH: usize = 50;
+pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
+pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 
 struct Text<'x> {
     field: u8,
@@ -73,41 +74,32 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             let mut phrase_words = Vec::new();
 
             for token in Stemmer::new(&part.text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
-                unique_words.insert((token.word.to_string(), BM_BLOOM | BLOOM_UNIGRAM));
+                unique_words.insert((token.word.to_string(), HASH_EXACT));
                 if let Some(stemmed_word) = token.stemmed_word {
-                    unique_words.insert((stemmed_word.into_owned(), BM_BLOOM | BLOOM_UNIGRAM_STEM));
+                    unique_words.insert((stemmed_word.into_owned(), HASH_STEMMED));
                 }
                 phrase_words.push(token.word);
             }
 
-            //let mut bloom_unigram = BloomFilter::new(unique_words.len());
             for (word, family) in unique_words {
-                //let hash = BloomHash::from(word);
-                //bloom_unigram.insert(&hash);
                 batch.ops.push(Operation::Bitmap {
-                    family,
+                    family: BM_HASH | family | (word.len() & MAX_TOKEN_MASK) as u8,
                     field: part.field,
                     key: hash_token(&word),
                     set: true,
                 });
             }
 
-            /*batch.ops.push(Operation::Value {
-                field: part.field,
-                family: BM_BLOOM | BLOOM_UNIGRAM,
-                set: bloom_unigram.serialize().into(),
-            });*/
-
             if phrase_words.len() > 1 {
                 batch.ops.push(Operation::Value {
                     field: part.field,
-                    family: BM_BLOOM | BLOOM_BIGRAM,
+                    family: BLOOM_BIGRAM,
                     set: BloomFilter::to_ngrams(&phrase_words, 2).serialize().into(),
                 });
                 if phrase_words.len() > 2 {
                     batch.ops.push(Operation::Value {
                         field: part.field,
-                        family: BM_BLOOM | BLOOM_TRIGRAM,
+                        family: BLOOM_TRIGRAM,
                         set: BloomFilter::to_ngrams(&phrase_words, 3).serialize().into(),
                     });
                 }
@@ -117,45 +109,3 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
         Ok(())
     }
 }
-
-/*
-impl IntoOperations for TokenIndex {
-    fn build(self, batch: &mut BatchBuilder) -> crate::Result<()> {
-        let mut tokens = AHashSet::new();
-
-        for term in self.terms {
-            for (term_ids, is_exact) in [(term.exact_terms, true), (term.stemmed_terms, false)] {
-                for term_id in term_ids {
-                    tokens.insert((
-                        term.field_id,
-                        is_exact,
-                        self.tokens
-                            .get(term_id as usize)
-                            .ok_or_else(|| {
-                                Error::InternalError("Corrupted term index.".to_string())
-                            })?
-                            .as_bytes()
-                            .to_vec(),
-                    ));
-                }
-            }
-        }
-
-        for (field, is_exact, key) in tokens {
-            batch.ops.push(Operation::Bitmap {
-                family: BM_TERM | if is_exact { TERM_EXACT } else { TERM_STEMMED },
-                field,
-                key,
-                set: false,
-            });
-        }
-
-        batch.ops.push(Operation::Value {
-            field: u8::MAX,
-            set: None,
-        });
-
-        Ok(())
-    }
-}
-*/

@@ -1,5 +1,5 @@
 use std::{
-    ops::{BitAndAssign, BitOrAssign},
+    ops::BitAndAssign,
     time::{Duration, Instant},
 };
 
@@ -74,24 +74,26 @@ impl ReadTransaction<'_> {
         mut key: BitmapKey<T>,
         bm: &mut RoaringBitmap,
     ) -> crate::Result<()> {
-        let from_key = key.serialize();
+        let begin = key.serialize();
         key.block_num = u32::MAX;
-        let to_key = key.serialize();
-        let opt = RangeOption {
-            mode: StreamingMode::WantAll,
-            reverse: false,
-            ..RangeOption::from((from_key.as_ref(), to_key.as_ref()))
-        };
-        let mut values = self.trx.get_ranges(opt, true);
+        let end = key.serialize();
+        let mut values = self.trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                mode: StreamingMode::WantAll,
+                reverse: false,
+                ..RangeOption::default()
+            },
+            true,
+        );
 
         while let Some(values) = values.next().await {
             for value in values? {
                 let key = value.key();
                 bm.deserialize_block(
                     value.value(),
-                    value
-                        .key()
-                        .deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
+                    key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
                 );
             }
         }

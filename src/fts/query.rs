@@ -3,22 +3,22 @@ use std::time::Instant;
 use roaring::RoaringBitmap;
 
 use crate::{
+    backend::foundationdb::read::ReadTransaction,
     fts::{
-        bloom::{hash_token, BloomFilter, BloomHash, BloomHashGroup},
+        bloom::{BloomFilter, BloomHashGroup},
         builder::MAX_TOKEN_LENGTH,
         ngram::ToNgrams,
         stemmer::Stemmer,
         tokenizers::Tokenizer,
     },
-    BitmapKey, Store, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, BLOOM_UNIGRAM, BLOOM_UNIGRAM_STEM,
-    BM_BLOOM,
+    BitmapKey, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, HASH_EXACT, HASH_STEMMED,
 };
 
 use super::Language;
 
-impl Store {
+impl ReadTransaction<'_> {
     pub(crate) async fn fts_query(
-        &self,
+        &mut self,
         account_id: u32,
         collection: u8,
         field: u8,
@@ -27,21 +27,25 @@ impl Store {
         match_phrase: bool,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let real_now = Instant::now();
-        let mut trx = self.read_transaction().await?;
 
         let (bitmaps, hashes, family) = if match_phrase {
             let mut tokens = Vec::new();
             let mut bit_keys = Vec::new();
             for token in Tokenizer::new(text, language, MAX_TOKEN_LENGTH) {
-                let hash = BloomHash::from(token.word.as_ref());
-                let key = hash.to_bitmap_key(account_id, collection, field);
+                let key = BitmapKey::hash(
+                    token.word.as_ref(),
+                    account_id,
+                    collection,
+                    HASH_EXACT,
+                    field,
+                );
                 if !bit_keys.contains(&key) {
                     bit_keys.push(key);
                 }
 
                 tokens.push(token.word);
             }
-            let bitmaps = match trx.get_bitmaps_intersection(bit_keys).await? {
+            let bitmaps = match self.get_bitmaps_intersection(bit_keys).await? {
                 Some(b) if !b.is_empty() => b,
                 _ => return Ok(None),
             };
@@ -52,48 +56,32 @@ impl Store {
                 2 => (
                     bitmaps,
                     <Vec<BloomHashGroup>>::to_ngrams(&tokens, 2),
-                    BM_BLOOM | BLOOM_BIGRAM,
+                    BLOOM_BIGRAM,
                 ),
                 _ => (
                     bitmaps,
                     <Vec<BloomHashGroup>>::to_ngrams(&tokens, 3),
-                    BM_BLOOM | BLOOM_TRIGRAM,
+                    BLOOM_TRIGRAM,
                 ),
             }
         } else {
             let mut bitmaps = RoaringBitmap::new();
 
             for token in Stemmer::new(text, language, MAX_TOKEN_LENGTH) {
-                let token1 = hash_token(&token.word);
+                let token1 =
+                    BitmapKey::hash(&token.word, account_id, collection, HASH_EXACT, field);
                 let token2 = if let Some(stemmed_word) = token.stemmed_word {
-                    hash_token(&stemmed_word)
+                    BitmapKey::hash(&stemmed_word, account_id, collection, HASH_STEMMED, field)
                 } else {
-                    token1.clone()
+                    let mut token2 = token1.clone();
+                    token2.family &= !HASH_EXACT;
+                    token2.family |= HASH_STEMMED;
+                    token2
                 };
 
-                trx.refresh_if_old().await?;
+                self.refresh_if_old().await?;
 
-                match trx
-                    .get_bitmaps_union(vec![
-                        BitmapKey {
-                            account_id,
-                            collection,
-                            family: BM_BLOOM | BLOOM_UNIGRAM,
-                            field,
-                            block_num: 0,
-                            key: token1,
-                        },
-                        BitmapKey {
-                            account_id,
-                            collection,
-                            family: BM_BLOOM | BLOOM_UNIGRAM_STEM,
-                            field,
-                            block_num: 0,
-                            key: token2,
-                        },
-                    ])
-                    .await?
-                {
+                match self.get_bitmaps_union(vec![token1, token2]).await? {
                     Some(b) if !b.is_empty() => {
                         if !bitmaps.is_empty() {
                             bitmaps &= b;
@@ -115,9 +103,9 @@ impl Store {
 
         let mut bm = RoaringBitmap::new();
         for document_id in bitmaps {
-            trx.refresh_if_old().await?;
+            self.refresh_if_old().await?;
 
-            if let Some(bloom) = trx
+            if let Some(bloom) = self
                 .get_value::<BloomFilter>(ValueKey {
                     account_id,
                     collection,

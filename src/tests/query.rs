@@ -32,8 +32,8 @@ use crate::{
     fts::{builder::FtsIndexBuilder, Language},
     query::{Comparator, Filter},
     tests::deflate_artwork_data,
-    write::{BatchBuilder, IntoBitmap, F_INDEX, F_TOKENIZE, F_VALUE},
-    Store, ValueKey, BM_DOCUMENT_IDS,
+    write::{BatchBuilder, F_INDEX, F_TOKENIZE, F_VALUE},
+    Store, ValueKey,
 };
 
 pub const FIELDS: [&str; 20] = [
@@ -90,19 +90,6 @@ const FIELDS_OPTIONS: [FieldType; 20] = [
     FieldType::Text,     // "thumbnailUrl",
     FieldType::Text,     // "url",
 ];
-
-#[tokio::test]
-pub async fn db_test() {
-    let db = Arc::new(Store::open().await.unwrap());
-    let insert = false;
-    if insert {
-        let trx = db.db.create_trx().unwrap();
-        trx.clear_range(&[0u8], &[u8::MAX]);
-        trx.commit().await.unwrap();
-    }
-
-    test(db, insert).await;
-}
 
 #[allow(clippy::mutex_atomic)]
 pub async fn test(db: Arc<Store>, do_insert: bool) {

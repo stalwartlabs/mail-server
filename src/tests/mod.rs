@@ -1,18 +1,21 @@
+pub mod assign_id;
 pub mod query;
 
-use std::{collections::BTreeSet, f64::consts::LN_2, io::Read, time::Instant};
-
-use bitpacking::{BitPacker, BitPacker4x, BitPacker8x};
-use rand::Rng;
-use roaring::RoaringBitmap;
-
-use crate::fts::{
-    bloom::BloomFilter,
-    stemmer::{StemmedToken, Stemmer},
-    Language,
-};
+use std::{io::Read, sync::Arc};
 
 use super::*;
+
+#[tokio::test]
+pub async fn store_test() {
+    let db = Arc::new(Store::open().await.unwrap());
+    let insert = true;
+    if insert {
+        db.destroy().await;
+    }
+    assign_id::test(db).await;
+
+    //query::test(db, insert).await;
+}
 
 pub fn deflate_artwork_data() -> Vec<u8> {
     let mut csv_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -29,6 +32,7 @@ pub fn deflate_artwork_data() -> Vec<u8> {
     result
 }
 
+/*
 #[test]
 fn it_works() {
     for n in [10, 100, 1000, 5000, 10000, 100000] {
@@ -83,3 +87,4 @@ fn it_works() {
         rb1.serialized_size() as f64 / rb2.serialized_size() as f64
     );*/
 }
+*/

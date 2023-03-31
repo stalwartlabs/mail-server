@@ -1,4 +1,4 @@
-use crate::{BM_DOCUMENT_IDS, BM_TERM, TERM_EXACT};
+use crate::{BM_DOCUMENT_IDS, BM_KEYWORD};
 
 use super::{
     Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, Tokenize,
@@ -24,6 +24,15 @@ impl BatchBuilder {
 
     pub fn create_document(&mut self, document_id: u32) -> &mut Self {
         self.ops.push(Operation::DocumentId { document_id });
+
+        // Remove reserved id
+        self.ops.push(Operation::Index {
+            field: u8::MAX,
+            key: vec![],
+            set: false,
+        });
+
+        // Add document id
         self.ops.push(Operation::Bitmap {
             family: BM_DOCUMENT_IDS,
             field: u8::MAX,
@@ -61,7 +70,7 @@ impl BatchBuilder {
         if options.has_flag(F_TOKENIZE) {
             for token in value.tokenize() {
                 self.ops.push(Operation::Bitmap {
-                    family: BM_TERM | TERM_EXACT,
+                    family: BM_KEYWORD,
                     field,
                     key: token.into_bytes(),
                     set: is_set,

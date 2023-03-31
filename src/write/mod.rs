@@ -110,6 +110,14 @@ impl Deserialize for String {
     }
 }
 
+impl Deserialize for u64 {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| {
+            crate::Error::InternalError("Failed to deserialize u64".to_string())
+        })?))
+    }
+}
+
 trait HasFlag {
     fn has_flag(&self, flag: u32) -> bool;
 }

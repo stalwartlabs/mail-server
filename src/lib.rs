@@ -94,20 +94,16 @@ pub enum Error {
 }
 
 pub const BM_DOCUMENT_IDS: u8 = 0;
-pub const BM_TERM: u8 = 0x10;
-pub const BM_TAG: u8 = 0x20;
-pub const BM_BLOOM: u8 = 0x40;
+pub const BM_KEYWORD: u8 = 1 << 5;
+pub const BM_TAG: u8 = 1 << 6;
+pub const BM_HASH: u8 = 1 << 7;
 
-pub const BLOOM_UNIGRAM: u8 = 0x00;
-pub const BLOOM_UNIGRAM_STEM: u8 = 0x01;
-pub const BLOOM_BIGRAM: u8 = 0x02;
-pub const BLOOM_TRIGRAM: u8 = 0x04;
+pub const HASH_EXACT: u8 = 0;
+pub const HASH_STEMMED: u8 = 1 << 6;
 
-pub const TERM_EXACT: u8 = 0x00;
-pub const TERM_STEMMED: u8 = 0x01;
-pub const TERM_STRING: u8 = 0x02;
-pub const TERM_HASH: u8 = 0x04;
+pub const BLOOM_BIGRAM: u8 = 1 << 0;
+pub const BLOOM_TRIGRAM: u8 = 1 << 1;
 
-pub const TAG_ID: u8 = 0x00;
-pub const TAG_TEXT: u8 = 0x01;
-pub const TAG_STATIC: u8 = 0x02;
+pub const TAG_ID: u8 = 0;
+pub const TAG_TEXT: u8 = 1 << 0;
+pub const TAG_STATIC: u8 = 1 << 1;

@@ -2,7 +2,7 @@ use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
 use roaring::RoaringBitmap;
 
-use crate::{write::Tokenize, BitmapKey, Store, BM_TERM, TERM_EXACT};
+use crate::{write::Tokenize, BitmapKey, Store, BM_KEYWORD};
 
 use super::{Filter, ResultSet};
 
@@ -44,7 +44,7 @@ impl Store {
                     trx.get_bitmap(BitmapKey {
                         account_id,
                         collection,
-                        family: BM_TERM | TERM_EXACT,
+                        family: BM_KEYWORD,
                         field,
                         key: value.as_bytes(),
                         #[cfg(feature = "foundation")]
@@ -60,7 +60,7 @@ impl Store {
                             .map(|key| BitmapKey {
                                 account_id,
                                 collection,
-                                family: BM_TERM | TERM_EXACT,
+                                family: BM_KEYWORD,
                                 field,
                                 key: key.into_bytes(),
                                 #[cfg(feature = "foundation")]
@@ -80,7 +80,7 @@ impl Store {
                     language,
                     match_phrase,
                 } => {
-                    self.fts_query(account_id, collection, field, &text, language, match_phrase)
+                    trx.fts_query(account_id, collection, field, &text, language, match_phrase)
                         .await?
                 }
                 Filter::InBitmap { family, field, key } => {
