@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub mod backend;
 pub mod fts;
 pub mod query;
@@ -18,6 +20,25 @@ pub struct Store {
     guard: foundationdb::api::NetworkAutoStop,
 }
 
+#[cfg(feature = "foundation")]
+pub struct ReadTransaction<'x> {
+    db: &'x foundationdb::Database,
+    pub trx: foundationdb::Transaction,
+    trx_age: std::time::Instant,
+}
+
+#[cfg(feature = "sqlite")]
+pub struct Store {
+    conn_pool: r2d2::Pool<backend::sqlite::pool::SqliteConnectionManager>,
+    worker_pool: rayon::ThreadPool,
+}
+
+#[cfg(feature = "sqlite")]
+pub struct ReadTransaction<'x> {
+    conn: r2d2::PooledConnection<backend::sqlite::pool::SqliteConnectionManager>,
+    _p: std::marker::PhantomData<&'x ()>,
+}
+
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
 }
@@ -32,7 +53,6 @@ pub struct BitmapKey<T: AsRef<[u8]>> {
     pub collection: u8,
     pub family: u8,
     pub field: u8,
-    #[cfg(feature = "foundation")]
     pub block_num: u32,
     pub key: T,
 }
@@ -91,6 +111,17 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     NotFound,
     InternalError(String),
+}
+
+impl std::error::Error for Error {}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::NotFound => write!(f, "not found"),
+            Error::InternalError(msg) => write!(f, "internal error: {}", msg),
+        }
+    }
 }
 
 pub const BM_DOCUMENT_IDS: u8 = 0;

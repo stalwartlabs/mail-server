@@ -1,12 +1,24 @@
 use ahash::AHashMap;
 
-use crate::Store;
+use crate::{ReadTransaction, Store};
 
 use super::{Comparator, ResultSet, SortedResultRet};
 
-impl Store {
+pub struct Pagination {
+    requested_position: i32,
+    position: i32,
+    limit: usize,
+    anchor: u32,
+    anchor_offset: i32,
+    has_anchor: bool,
+    anchor_found: bool,
+    ids: Vec<u32>,
+}
+
+impl ReadTransaction<'_> {
+    #[maybe_async::maybe_async]
     pub async fn sort(
-        &self,
+        &mut self,
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,
         limit: usize,
@@ -14,27 +26,14 @@ impl Store {
         anchor: Option<u32>,
         anchor_offset: i32,
     ) -> crate::Result<SortedResultRet> {
-        let limit = match (result_set.results.len(), limit) {
-            (0, _) => {
-                return Ok(SortedResultRet {
-                    position,
-                    ids: vec![],
-                    found_anchor: true,
-                });
-            }
-            (_, 0) => result_set.results.len() as usize,
-            (a, b) => std::cmp::min(a as usize, b),
-        };
-
         let mut paginate = Pagination::new(limit, position, anchor, anchor_offset);
 
         if comparators.len() == 1 {
             match comparators.pop().unwrap() {
                 Comparator::Field { field, ascending } => {
-                    let trx = self.read_transaction().await?;
                     let mut results = result_set.results;
 
-                    trx.sort_index(
+                    self.sort_index(
                         result_set.account_id,
                         result_set.collection,
                         field,
@@ -70,7 +69,6 @@ impl Store {
                 }
             }
         } else {
-            let mut trx = self.read_transaction().await?;
             let mut sorted_ids = AHashMap::with_capacity(paginate.limit);
 
             for (pos, comparator) in comparators.into_iter().take(4).enumerate() {
@@ -81,8 +79,8 @@ impl Store {
                         let mut has_grouped_ids = false;
                         let mut idx = 0;
 
-                        trx.refresh_if_old().await?;
-                        trx.sort_index(
+                        self.refresh_if_old().await?;
+                        self.sort_index(
                             result_set.account_id,
                             result_set.collection,
                             field,
@@ -153,15 +151,59 @@ impl Store {
     }
 }
 
-pub struct Pagination {
-    requested_position: i32,
-    position: i32,
-    limit: usize,
-    anchor: u32,
-    anchor_offset: i32,
-    has_anchor: bool,
-    anchor_found: bool,
-    ids: Vec<u32>,
+impl Store {
+    pub async fn sort(
+        &self,
+        result_set: ResultSet,
+        comparators: Vec<Comparator>,
+        limit: usize,
+        position: i32,
+        anchor: Option<u32>,
+        anchor_offset: i32,
+    ) -> crate::Result<SortedResultRet> {
+        let limit = match (result_set.results.len(), limit) {
+            (0, _) => {
+                return Ok(SortedResultRet {
+                    position,
+                    ids: vec![],
+                    found_anchor: true,
+                });
+            }
+            (_, 0) => result_set.results.len() as usize,
+            (a, b) => std::cmp::min(a as usize, b),
+        };
+
+        #[cfg(feature = "is_async")]
+        {
+            self.read_transaction()
+                .await?
+                .sort(
+                    result_set,
+                    comparators,
+                    limit,
+                    position,
+                    anchor,
+                    anchor_offset,
+                )
+                .await
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let mut trx = self.read_transaction()?;
+            self.spawn_worker(move || {
+                trx.sort(
+                    result_set,
+                    comparators,
+                    limit,
+                    position,
+                    anchor,
+                    anchor_offset,
+                )
+            })
+            .await
+        }
+    }
 }
 
 impl Pagination {

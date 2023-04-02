@@ -5,7 +5,7 @@ use std::{
 
 use foundationdb::{
     options::{self, StreamingMode},
-    Database, KeySelector, RangeOption, Transaction,
+    KeySelector, RangeOption,
 };
 use futures::StreamExt;
 use roaring::RoaringBitmap;
@@ -13,16 +13,10 @@ use roaring::RoaringBitmap;
 use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Serialize, Store, ValueKey, BM_DOCUMENT_IDS,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, ReadTransaction, Serialize, Store, ValueKey,
 };
 
 use super::{bitmap::DeserializeBlock, SUBSPACE_INDEXES};
-
-pub struct ReadTransaction<'x> {
-    db: &'x Database,
-    pub trx: Transaction,
-    trx_age: Instant,
-}
 
 impl ReadTransaction<'_> {
     #[inline(always)]
@@ -37,36 +31,6 @@ impl ReadTransaction<'_> {
         } else {
             Ok(None)
         }
-    }
-
-    #[inline(always)]
-    pub async fn get_values<U>(&self, keys: Vec<ValueKey>) -> crate::Result<Vec<Option<U>>>
-    where
-        U: Deserialize,
-    {
-        let mut results = Vec::with_capacity(keys.len());
-
-        for key in keys {
-            results.push(self.get_value(key).await?);
-        }
-
-        Ok(results)
-    }
-
-    pub async fn get_document_ids(
-        &self,
-        account_id: u32,
-        collection: u8,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        self.get_bitmap(BitmapKey {
-            account_id,
-            collection,
-            family: BM_DOCUMENT_IDS,
-            field: u8::MAX,
-            key: b"",
-            block_num: 0,
-        })
-        .await
     }
 
     async fn get_bitmap_<T: AsRef<[u8]>>(

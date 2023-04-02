@@ -310,7 +310,7 @@ impl Store {
                 key: &[],
             }
             .serialize();
-            trx.get(&key, false).await?;
+            trx.get(&key, false).await?; // Read to create conflict range
             trx.set(&key, &now().serialize());
 
             match trx.commit().await {

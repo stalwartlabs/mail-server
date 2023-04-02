@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod get;
 pub mod log;
 pub mod sort;
 
@@ -6,7 +7,7 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{lang::LanguageDetector, Language},
-    Serialize,
+    BitmapKey, Serialize, BM_DOCUMENT_IDS,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -182,6 +183,19 @@ impl Comparator {
         Self::Field {
             field: field.into(),
             ascending: false,
+        }
+    }
+}
+
+impl BitmapKey<&'static [u8]> {
+    pub fn new_document_ids(account_id: u32, collection: u8) -> Self {
+        BitmapKey {
+            account_id,
+            collection,
+            family: BM_DOCUMENT_IDS,
+            field: u8::MAX,
+            key: b"",
+            block_num: 0,
         }
     }
 }

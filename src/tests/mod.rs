@@ -8,13 +8,13 @@ use super::*;
 #[tokio::test]
 pub async fn store_test() {
     let db = Arc::new(Store::open().await.unwrap());
-    let insert = true;
+    let insert = false;
     if insert {
         db.destroy().await;
     }
-    assign_id::test(db).await;
+    //assign_id::test(db).await;
 
-    //query::test(db, insert).await;
+    query::test(db, insert).await;
 }
 
 pub fn deflate_artwork_data() -> Vec<u8> {

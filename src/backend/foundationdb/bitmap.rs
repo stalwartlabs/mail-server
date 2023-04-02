@@ -1,7 +1,7 @@
 use ahash::AHashSet;
 use roaring::RoaringBitmap;
 
-const WORD_SIZE_BITS: u32 = 128;
+const WORD_SIZE_BITS: u32 = (WORD_SIZE * 8) as u32;
 const WORD_SIZE: usize = std::mem::size_of::<u128>();
 const WORDS_PER_BLOCK: u32 = 8;
 pub const BITS_PER_BLOCK: u32 = WORD_SIZE_BITS * WORDS_PER_BLOCK;

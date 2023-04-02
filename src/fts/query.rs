@@ -3,7 +3,6 @@ use std::time::Instant;
 use roaring::RoaringBitmap;
 
 use crate::{
-    backend::foundationdb::read::ReadTransaction,
     fts::{
         bloom::{BloomFilter, BloomHashGroup},
         builder::MAX_TOKEN_LENGTH,
@@ -11,12 +10,13 @@ use crate::{
         stemmer::Stemmer,
         tokenizers::Tokenizer,
     },
-    BitmapKey, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, HASH_EXACT, HASH_STEMMED,
+    BitmapKey, ReadTransaction, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, HASH_EXACT, HASH_STEMMED,
 };
 
 use super::Language;
 
 impl ReadTransaction<'_> {
+    #[maybe_async::maybe_async]
     pub(crate) async fn fts_query(
         &mut self,
         account_id: u32,
