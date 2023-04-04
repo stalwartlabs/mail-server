@@ -4,9 +4,8 @@ pub mod query;
 
 use std::{io::Read, sync::Arc};
 
+use ::store::Store;
 use utils::config::Config;
-
-use super::*;
 
 struct TempDir {
     path: std::path::PathBuf,

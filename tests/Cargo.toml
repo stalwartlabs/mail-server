@@ -1,0 +1,15 @@
+[package]
+name = "tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+store = { path = "../crates/store" }
+utils = { path = "/home/vagrant/code/utils" }
+
+[dev-dependencies]
+tokio = { version = "1.23", features = ["full"] }
+csv = "1.1"
+rayon = { version = "1.5.1" }
+flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
+

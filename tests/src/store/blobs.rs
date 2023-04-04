@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use ahash::AHashMap;
+use store::ahash::AHashMap;
 
-use crate::{
+use store::{
     write::{BatchBuilder, F_CLEAR},
     BlobId, BlobKey, Store, BLOB_HASH_LEN,
 };
@@ -45,11 +45,11 @@ pub async fn test(db: Arc<Store>) {
 
     // Count number of blobs
     let mut expected_count = AHashMap::from_iter([(blob_id_1, (0, 1)), (blob_id_2, (0, 2))]);
-    assert_eq!(expected_count, db.get_all_blobs().await);
+    assert_eq!(expected_count, get_all_blobs(&db).await);
 
     // Purgimg should not delete any blobs at this point
     db.purge_blobs(ttl).await.unwrap();
-    assert_eq!(expected_count, db.get_all_blobs().await);
+    assert_eq!(expected_count, get_all_blobs(&db).await);
 
     // Link blob to an account
     db.write(
@@ -65,14 +65,14 @@ pub async fn test(db: Arc<Store>) {
 
     // Check expected count
     expected_count.insert(blob_id_1, (1, 1));
-    assert_eq!(expected_count, db.get_all_blobs().await);
+    assert_eq!(expected_count, get_all_blobs(&db).await);
 
     // Wait 1 second until the blob reaches its TTL
     tokio::time::sleep(Duration::from_millis(1100)).await;
     db.purge_blobs(ttl).await.unwrap();
     expected_count.insert(blob_id_1, (1, 0));
     expected_count.remove(&blob_id_2);
-    assert_eq!(expected_count, db.get_all_blobs().await);
+    assert_eq!(expected_count, get_all_blobs(&db).await);
 
     // Unlink blob, purge and make sure it is removed.
     db.write(
@@ -87,7 +87,7 @@ pub async fn test(db: Arc<Store>) {
     .unwrap();
     db.purge_blobs(ttl).await.unwrap();
     expected_count.remove(&blob_id_1);
-    assert_eq!(expected_count, db.get_all_blobs().await);
+    assert_eq!(expected_count, get_all_blobs(&db).await);
 }
 
 struct BlobPurge {
@@ -97,56 +97,54 @@ struct BlobPurge {
     id: [u8; BLOB_HASH_LEN],
 }
 
-impl Store {
-    async fn get_all_blobs(&self) -> AHashMap<BlobId, (u32, u32)> {
-        let results = BlobPurge {
-            result: AHashMap::new(),
-            id: [0u8; BLOB_HASH_LEN],
-            link_count: u32::MAX,
-            ephemeral_count: u32::MAX,
-        };
+async fn get_all_blobs(store: &Store) -> AHashMap<BlobId, (u32, u32)> {
+    let results = BlobPurge {
+        result: AHashMap::new(),
+        id: [0u8; BLOB_HASH_LEN],
+        link_count: u32::MAX,
+        ephemeral_count: u32::MAX,
+    };
 
-        let from_key = BlobKey {
-            account_id: 0,
-            collection: 0,
-            document_id: 0,
-            hash: [0; BLOB_HASH_LEN],
-        };
-        let to_key = BlobKey {
-            account_id: u32::MAX,
-            collection: u8::MAX,
-            document_id: u32::MAX,
-            hash: [u8::MAX; BLOB_HASH_LEN],
-        };
+    let from_key = BlobKey {
+        account_id: 0,
+        collection: 0,
+        document_id: 0,
+        hash: [0; BLOB_HASH_LEN],
+    };
+    let to_key = BlobKey {
+        account_id: u32::MAX,
+        collection: u8::MAX,
+        document_id: u32::MAX,
+        hash: [u8::MAX; BLOB_HASH_LEN],
+    };
 
-        let mut b = self
-            .iterate(results, from_key, to_key, false, true, move |b, k, v| {
-                if !k.starts_with(&b.id) {
-                    if b.link_count != u32::MAX {
-                        let id = BlobId { hash: b.id };
-                        b.result.insert(id, (b.link_count, b.ephemeral_count));
-                    }
-                    b.link_count = 0;
-                    b.ephemeral_count = 0;
-                    b.id.copy_from_slice(&k[..BLOB_HASH_LEN]);
+    let mut b = store
+        .iterate(results, from_key, to_key, false, true, move |b, k, v| {
+            if !k.starts_with(&b.id) {
+                if b.link_count != u32::MAX {
+                    let id = BlobId { hash: b.id };
+                    b.result.insert(id, (b.link_count, b.ephemeral_count));
                 }
+                b.link_count = 0;
+                b.ephemeral_count = 0;
+                b.id.copy_from_slice(&k[..BLOB_HASH_LEN]);
+            }
 
-                if v.is_empty() {
-                    b.link_count += 1;
-                } else {
-                    b.ephemeral_count += 1;
-                }
+            if v.is_empty() {
+                b.link_count += 1;
+            } else {
+                b.ephemeral_count += 1;
+            }
 
-                Ok(true)
-            })
-            .await
-            .unwrap();
+            Ok(true)
+        })
+        .await
+        .unwrap();
 
-        if b.link_count != u32::MAX {
-            let id = BlobId { hash: b.id };
-            b.result.insert(id, (b.link_count, b.ephemeral_count));
-        }
-
-        b.result
+    if b.link_count != u32::MAX {
+        let id = BlobId { hash: b.id };
+        b.result.insert(id, (b.link_count, b.ephemeral_count));
     }
+
+    b.result
 }

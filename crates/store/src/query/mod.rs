@@ -165,7 +165,6 @@ impl Filter {
         }
     }
 
-    #[cfg(test)]
     pub fn match_english(field: impl Into<u8>, text: impl Into<String>) -> Self {
         Self::match_text(field, text, Language::English)
     }

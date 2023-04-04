@@ -230,7 +230,6 @@ impl Store {
         .await
     }
 
-    #[cfg(test)]
     pub async fn destroy(&self) {
         use crate::{
             SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES, SUBSPACE_LOGS,

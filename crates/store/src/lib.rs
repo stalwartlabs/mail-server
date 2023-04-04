@@ -8,8 +8,7 @@ pub mod fts;
 pub mod query;
 pub mod write;
 
-#[cfg(test)]
-pub mod tests;
+pub use ahash;
 
 #[cfg(feature = "rocks")]
 pub struct Store {

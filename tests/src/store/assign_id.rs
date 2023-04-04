@@ -1,8 +1,8 @@
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use ahash::AHashSet;
+use store::ahash::AHashSet;
 
-use crate::{write::BatchBuilder, Store};
+use store::{write::BatchBuilder, Store};
 
 pub async fn test(db: Arc<Store>) {
     test_1(db.clone()).await;

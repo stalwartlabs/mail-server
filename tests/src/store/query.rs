@@ -26,15 +26,16 @@ use std::{
     time::Instant,
 };
 
-use ahash::AHashMap;
+use store::ahash::AHashMap;
 
-use crate::{
+use store::{
     fts::{builder::FtsIndexBuilder, Language},
     query::{Comparator, Filter},
-    tests::deflate_artwork_data,
     write::{BatchBuilder, F_INDEX, F_TOKENIZE, F_VALUE},
     Store, ValueKey,
 };
+
+use crate::store::deflate_artwork_data;
 
 pub const FIELDS: [&str; 20] = [
     "id",

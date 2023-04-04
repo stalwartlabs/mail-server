@@ -1,0 +1,276 @@
+/*
+ * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ *
+ * This file is part of the Stalwart JMAP Server.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
+use std::fmt::Display;
+
+use crate::parser::{json::Parser, JsonObjectParser};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum JSONPointer {
+    Root,
+    Wildcard,
+    String(String),
+    Number(u64),
+    Path(Vec<JSONPointer>),
+}
+
+pub trait JSONPointerEval {
+    fn eval_json_pointer(&self, ptr: &JSONPointer) -> Option<Vec<u64>>;
+}
+
+enum TokenType {
+    Unknown,
+    Number,
+    String,
+    Wildcard,
+    Escaped,
+}
+
+impl JsonObjectParser for JSONPointer {
+    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut path = Vec::new();
+        let mut num = 0u64;
+        let mut buf = Vec::new();
+        let mut token = TokenType::Unknown;
+        let mut start_pos = parser.pos;
+
+        while let Some(ch) = parser.next_char() {
+            match (ch, &token) {
+                (b'0'..=b'9', TokenType::Unknown | TokenType::Number) => {
+                    num = num.saturating_mul(10).saturating_add((ch - b'0') as u64);
+                    token = TokenType::Number;
+                }
+                (b'*', TokenType::Unknown) => {
+                    token = TokenType::Wildcard;
+                }
+                (b'0', TokenType::Escaped) => {
+                    buf.push(b'~');
+                    token = TokenType::String;
+                }
+                (b'1', TokenType::Escaped) => {
+                    buf.push(b'/');
+                    token = TokenType::String;
+                }
+                (b'/' | b'"', _) => {
+                    match token {
+                        TokenType::String => {
+                            path.push(JSONPointer::String(
+                                String::from_utf8(buf).map_err(|_| parser.error_utf8())?,
+                            ));
+                            buf = Vec::new();
+                        }
+                        TokenType::Number => {
+                            path.push(JSONPointer::Number(num));
+                            num = 0;
+                        }
+                        TokenType::Wildcard => {
+                            path.push(JSONPointer::Wildcard);
+                        }
+                        TokenType::Unknown if parser.pos_marker != start_pos => {
+                            path.push(JSONPointer::String(String::new()));
+                        }
+                        _ => (),
+                    }
+
+                    if ch == b'/' {
+                        token = TokenType::Unknown;
+                        start_pos = parser.pos;
+                    } else {
+                        parser.is_eof = true;
+                        return Ok(match path.len() {
+                            1 => path.pop().unwrap(),
+                            0 => JSONPointer::Root,
+                            _ => JSONPointer::Path(path),
+                        });
+                    }
+                }
+                (_, _) => {
+                    if matches!(&token, TokenType::Number | TokenType::Wildcard)
+                        && parser.pos - 1 > start_pos
+                    {
+                        buf.extend_from_slice(
+                            parser
+                                .bytes
+                                .get(start_pos..parser.pos - 1)
+                                .unwrap_or_default(),
+                        );
+                    }
+
+                    token = match ch {
+                        b'~' if !matches!(&token, TokenType::Escaped) => TokenType::Escaped,
+                        b'\\' => {
+                            buf.push(parser.next_char().unwrap_or(b'\\'));
+                            TokenType::String
+                        }
+                        _ => {
+                            buf.push(ch);
+                            TokenType::String
+                        }
+                    };
+                }
+            }
+        }
+
+        Err(parser.error_unterminated())
+    }
+}
+
+impl JSONPointer {
+    pub fn to_string(&self) -> Option<&str> {
+        match self {
+            JSONPointer::String(s) => s.as_str().into(),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_string(self) -> Option<String> {
+        match self {
+            JSONPointer::String(s) => s.into(),
+            _ => None,
+        }
+    }
+
+    pub fn is_item_query(&self, name: &str) -> bool {
+        match self {
+            JSONPointer::String(property) => property == name,
+            JSONPointer::Path(path) if path.len() == 2 => {
+                if let (Some(JSONPointer::String(property)), Some(JSONPointer::Wildcard)) =
+                    (path.get(0), path.get(1))
+                {
+                    property == name
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Display for JSONPointer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JSONPointer::Root => write!(f, "/"),
+            JSONPointer::Wildcard => write!(f, "*"),
+            JSONPointer::String(s) => write!(f, "{}", s),
+            JSONPointer::Number(n) => write!(f, "{}", n),
+            JSONPointer::Path(path) => {
+                for (i, ptr) in path.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "/")?;
+                    }
+                    write!(f, "{}", ptr)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::json::Parser;
+
+    use super::JSONPointer;
+
+    #[test]
+    fn json_pointer_parse() {
+        for (input, output) in vec![
+            ("hello", JSONPointer::String("hello".to_string())),
+            ("9a", JSONPointer::String("9a".to_string())),
+            ("a9", JSONPointer::String("a9".to_string())),
+            ("*a", JSONPointer::String("*a".to_string())),
+            (
+                "/hello/world",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::String("world".to_string()),
+                ]),
+            ),
+            ("*", JSONPointer::Wildcard),
+            (
+                "/hello/*",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::Wildcard,
+                ]),
+            ),
+            ("1234", JSONPointer::Number(1234)),
+            (
+                "/hello/1234",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::Number(1234),
+                ]),
+            ),
+            ("~0~1", JSONPointer::String("~/".to_string())),
+            (
+                "/hello/~0~1",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::String("~/".to_string()),
+                ]),
+            ),
+            (
+                "/hello/1~0~1/*~1~0",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::String("1~/".to_string()),
+                    JSONPointer::String("*/~".to_string()),
+                ]),
+            ),
+            (
+                "/hello/world/*/99",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("hello".to_string()),
+                    JSONPointer::String("world".to_string()),
+                    JSONPointer::Wildcard,
+                    JSONPointer::Number(99),
+                ]),
+            ),
+            ("/", JSONPointer::String("".to_string())),
+            (
+                "///",
+                JSONPointer::Path(vec![
+                    JSONPointer::String("".to_string()),
+                    JSONPointer::String("".to_string()),
+                    JSONPointer::String("".to_string()),
+                ]),
+            ),
+            ("", JSONPointer::Root),
+        ] {
+            assert_eq!(
+                Parser::new(format!("\"{input}\"").as_bytes())
+                    .next_token::<JSONPointer>()
+                    .unwrap()
+                    .unwrap_string("")
+                    .unwrap(),
+                output,
+                "{input}"
+            );
+        }
+    }
+}
