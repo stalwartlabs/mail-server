@@ -1,22 +1,38 @@
+use std::sync::Arc;
+
+use lru_cache::LruCache;
+use parking_lot::Mutex;
 use r2d2::Pool;
 use tokio::sync::oneshot;
+use utils::config::Config;
 
-use crate::Store;
+use crate::{
+    blob::BlobStore, Store, SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES,
+    SUBSPACE_LOGS, SUBSPACE_VALUES,
+};
 
 use super::pool::SqliteConnectionManager;
 
 impl Store {
     // TODO configure rayon thread pool
     // TODO configure r2d2 pool
-    pub async fn open() -> crate::Result<Self> {
+    // TODO configure id assigner size
+    pub async fn open(config: &Config) -> crate::Result<Self> {
         let db = Self {
             conn_pool: Pool::new(
-                SqliteConnectionManager::file("/tmp/sqlite.db")
-                    .with_init(|c| c.execute_batch("PRAGMA journal_mode=WAL;")),
+                SqliteConnectionManager::file("/tmp/sqlite.db").with_init(|c| {
+                    c.execute_batch(concat!(
+                        "PRAGMA journal_mode = WAL; ",
+                        "PRAGMA synchronous = normal; ",
+                        "PRAGMA temp_store = memory;"
+                    ))
+                }),
             )?,
             worker_pool: rayon::ThreadPoolBuilder::new().build().map_err(|err| {
                 crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
             })?,
+            id_assigner: Arc::new(Mutex::new(LruCache::new(1000))),
+            blob: BlobStore::new(config).await?,
         };
         db.create_tables()?;
         Ok(db)
@@ -25,7 +41,13 @@ impl Store {
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 
-        for table in ["v", "l", "o", "c"] {
+        for table in [
+            SUBSPACE_VALUES,
+            SUBSPACE_LOGS,
+            SUBSPACE_BLOBS,
+            SUBSPACE_ACLS,
+        ] {
+            let table = char::from(table);
             conn.execute(
                 &format!(
                     "CREATE TABLE IF NOT EXISTS {table} (
@@ -38,14 +60,18 @@ impl Store {
         }
 
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS i (
+            &format!(
+                "CREATE TABLE IF NOT EXISTS {} (
                     k BLOB PRIMARY KEY
                 )",
+                char::from(SUBSPACE_INDEXES)
+            ),
             [],
         )?;
 
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS b (
+            &format!(
+                "CREATE TABLE IF NOT EXISTS {} (
                     z BLOB PRIMARY KEY,
                     a INTEGER NOT NULL DEFAULT 0,
                     b INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +90,8 @@ impl Store {
                     o INTEGER NOT NULL DEFAULT 0,
                     p INTEGER NOT NULL DEFAULT 0
                 )",
+                char::from(SUBSPACE_BITMAPS)
+            ),
             [],
         )?;
 

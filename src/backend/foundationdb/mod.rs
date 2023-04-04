@@ -10,13 +10,6 @@ pub mod main;
 pub mod read;
 pub mod write;
 
-pub const SUBSPACE_BITMAPS: u8 = b'b';
-pub const SUBSPACE_VALUES: u8 = b'v';
-pub const SUBSPACE_LOGS: u8 = b'l';
-pub const SUBSPACE_BLOBS: u8 = b'o';
-pub const SUBSPACE_INDEXES: u8 = b'i';
-pub const SUBSPACE_ACLS: u8 = b'c';
-
 impl<T: AsRef<[u8]>> Serialize for &IndexKey<T> {
     fn serialize(self) -> Vec<u8> {
         let key = self.key.as_ref();
@@ -84,7 +77,7 @@ impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
 impl<T: AsRef<[u8]>> Serialize for &BlobKey<T> {
     fn serialize(self) -> Vec<u8> {
         let hash = self.hash.as_ref();
-        KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + hash.len() + 1)
+        KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN + 1)
             .write(SUBSPACE_BLOBS)
             .write(hash)
             .write_leb128(self.account_id)

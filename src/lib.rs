@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
+use blob::BlobStore;
+
 pub mod backend;
+pub mod blob;
 pub mod fts;
 pub mod query;
 pub mod write;
@@ -18,6 +21,7 @@ pub struct Store {
 pub struct Store {
     db: foundationdb::Database,
     guard: foundationdb::api::NetworkAutoStop,
+    blob: BlobStore,
 }
 
 #[cfg(feature = "foundation")]
@@ -30,7 +34,16 @@ pub struct ReadTransaction<'x> {
 #[cfg(feature = "sqlite")]
 pub struct Store {
     conn_pool: r2d2::Pool<backend::sqlite::pool::SqliteConnectionManager>,
+    id_assigner: std::sync::Arc<
+        parking_lot::Mutex<
+            lru_cache::LruCache<
+                backend::sqlite::id_assign::IdCacheKey,
+                backend::sqlite::id_assign::IdAssigner,
+            >,
+        >,
+    >,
     worker_pool: rayon::ThreadPool,
+    blob: BlobStore,
 }
 
 #[cfg(feature = "sqlite")]
@@ -45,6 +58,10 @@ pub trait Deserialize: Sized + Sync + Send {
 
 pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
+}
+
+pub trait Key: Serialize + Sync + Send + 'static {
+    fn subspace(&self) -> u8;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -105,6 +122,11 @@ pub struct LogKey {
     pub change_id: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlobId {
+    pub hash: [u8; BLOB_HASH_LEN],
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -124,6 +146,12 @@ impl Display for Error {
     }
 }
 
+impl From<String> for Error {
+    fn from(msg: String) -> Self {
+        Error::InternalError(msg)
+    }
+}
+
 pub const BM_DOCUMENT_IDS: u8 = 0;
 pub const BM_KEYWORD: u8 = 1 << 5;
 pub const BM_TAG: u8 = 1 << 6;
@@ -138,3 +166,12 @@ pub const BLOOM_TRIGRAM: u8 = 1 << 1;
 pub const TAG_ID: u8 = 0;
 pub const TAG_TEXT: u8 = 1 << 0;
 pub const TAG_STATIC: u8 = 1 << 1;
+
+pub const BLOB_HASH_LEN: usize = 32;
+
+pub const SUBSPACE_BITMAPS: u8 = b'b';
+pub const SUBSPACE_VALUES: u8 = b'v';
+pub const SUBSPACE_LOGS: u8 = b'l';
+pub const SUBSPACE_BLOBS: u8 = b'o';
+pub const SUBSPACE_INDEXES: u8 = b'i';
+pub const SUBSPACE_ACLS: u8 = b'c';

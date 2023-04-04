@@ -1,20 +1,37 @@
 pub mod assign_id;
+pub mod blobs;
 pub mod query;
 
 use std::{io::Read, sync::Arc};
 
+use utils::config::Config;
+
 use super::*;
+
+struct TempDir {
+    path: std::path::PathBuf,
+}
 
 #[tokio::test]
 pub async fn store_test() {
-    let db = Arc::new(Store::open().await.unwrap());
-    let insert = false;
+    let temp_dir = TempDir::new("store_tests", true);
+    let config_file = format!(
+        concat!("[blob.store]\n", "path = \"{}\"\n", "hash = 1\n"),
+        temp_dir.path.display()
+    );
+    let db = Arc::new(
+        Store::open(&Config::parse(&config_file).unwrap())
+            .await
+            .unwrap(),
+    );
+    let insert = true;
     if insert {
         db.destroy().await;
     }
     //assign_id::test(db).await;
-
-    query::test(db, insert).await;
+    blobs::test(db).await;
+    //query::test(db, insert).await;
+    temp_dir.delete();
 }
 
 pub fn deflate_artwork_data() -> Vec<u8> {
@@ -32,59 +49,18 @@ pub fn deflate_artwork_data() -> Vec<u8> {
     result
 }
 
-/*
-#[test]
-fn it_works() {
-    for n in [10, 100, 1000, 5000, 10000, 100000] {
-        let mut rb1 = RoaringBitmap::new();
-        let mut h = BTreeSet::new();
-        let m = (((n as f64) * f64::ln(0.01) / (-8.0 * LN_2.powi(2))).ceil() as u64) * 8;
-
-        for pos in 0..(n * 7_usize) {
-            let num = rand::thread_rng().gen_range(0..m as u32);
-            rb1.insert(num);
-            h.insert(num);
+impl TempDir {
+    pub fn new(name: &str, delete_if_exists: bool) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(name);
+        if delete_if_exists && path.exists() {
+            std::fs::remove_dir_all(&path).unwrap();
         }
-
-        let mut compressed = vec![0u8; 4 * BitPacker8x::BLOCK_LEN];
-        let mut bitpacker = BitPacker8x::new();
-        let mut initial_value = 0;
-        let mut bytes = vec![];
-        for chunk in h
-            .into_iter()
-            .collect::<Vec<_>>()
-            .chunks_exact(BitPacker8x::BLOCK_LEN)
-        {
-            let num_bits: u8 = bitpacker.num_bits_sorted(initial_value, chunk);
-            let compressed_len =
-                bitpacker.compress_sorted(initial_value, chunk, &mut compressed[..], num_bits);
-            initial_value = chunk[chunk.len() - 1];
-            //println!("{:?} {}", compressed_len, num_bits);
-            bytes.push(num_bits);
-            bytes.extend_from_slice(&compressed[..compressed_len]);
-        }
-
-        let rb_size = rb1.serialized_size();
-        let bp_size = bytes.len();
-        if rb_size < bp_size {
-            println!("For {} Roaring is better {} vs {}", n, rb_size, bp_size);
-        } else {
-            println!("For {} BitPack is better {} vs {}", n, bp_size, rb_size);
-        }
-        let now = Instant::now();
-        let mut ser = Vec::with_capacity(rb_size);
-        rb1.serialize_into(&mut ser).unwrap();
-        println!("Roaring serialization took {:?}", now.elapsed().as_millis());
-        let now = Instant::now();
-        let deser = RoaringBitmap::deserialize_unchecked_from(&ser[..]).unwrap();
-        println!(
-            "Roaring deserialization took {:?}",
-            now.elapsed().as_millis()
-        );
+        std::fs::create_dir_all(&path).unwrap();
+        Self { path }
     }
-    /*println!(
-        "ratio: {}",
-        rb1.serialized_size() as f64 / rb2.serialized_size() as f64
-    );*/
+
+    pub fn delete(&self) {
+        std::fs::remove_dir_all(&self.path).unwrap();
+    }
 }
-*/

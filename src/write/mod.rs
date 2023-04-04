@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::SystemTime};
 
 use crate::{Deserialize, Serialize};
 
@@ -189,4 +189,11 @@ pub trait IntoBitmap {
 
 pub trait IntoOperations {
     fn build(self, batch: &mut BatchBuilder) -> crate::Result<()>;
+}
+
+#[inline(always)]
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }

@@ -128,7 +128,15 @@ impl Store {
                         }
                         .serialize();
                         if *set {
-                            trx.set(&key, &[]);
+                            let now_;
+                            let value = if document_id != u32::MAX {
+                                &[]
+                            } else {
+                                now_ = now().to_be_bytes();
+                                &now_[..]
+                            };
+
+                            trx.set(&key, value);
                         } else {
                             trx.clear(&key);
                         }
@@ -369,11 +377,4 @@ impl Store {
         trx.clear_range(&[0u8], &[u8::MAX]);
         trx.commit().await.unwrap();
     }
-}
-
-#[inline(always)]
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }

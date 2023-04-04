@@ -1,8 +1,9 @@
 use crate::{
     write::key::KeySerializer, AclKey, BitmapKey, BlobKey, IndexKey, IndexKeyPrefix, LogKey,
-    Serialize, ValueKey,
+    Serialize, ValueKey, BLOB_HASH_LEN,
 };
 
+pub mod id_assign;
 pub mod main;
 pub mod pool;
 pub mod read;
@@ -76,12 +77,18 @@ impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
 impl<T: AsRef<[u8]>> Serialize for &BlobKey<T> {
     fn serialize(self) -> Vec<u8> {
         let hash = self.hash.as_ref();
-        KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + hash.len() + 1)
+        KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN + 1)
             .write(hash)
             .write_leb128(self.account_id)
             .write(self.collection)
             .write_leb128(self.document_id)
             .finalize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for BlobKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
     }
 }
 

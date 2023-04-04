@@ -1,4 +1,4 @@
-use crate::{Deserialize, Store, ValueKey};
+use crate::{Deserialize, Key, Store, ValueKey};
 
 impl Store {
     pub async fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
@@ -46,6 +46,31 @@ impl Store {
                 Ok(results)
             })
             .await
+        }
+    }
+
+    pub async fn iterate<T: Sync + Send + 'static>(
+        &self,
+        acc: T,
+        begin: impl Key,
+        end: impl Key,
+        first: bool,
+        ascending: bool,
+        cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
+    ) -> crate::Result<T> {
+        #[cfg(feature = "is_async")]
+        {
+            self.read_transaction()
+                .await?
+                .iterate(acc, begin, end, first, ascending, cb)
+                .await
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let trx = self.read_transaction()?;
+            self.spawn_worker(move || trx.iterate(acc, begin, end, first, ascending, cb))
+                .await
         }
     }
 }

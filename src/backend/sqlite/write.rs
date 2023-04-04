@@ -1,7 +1,7 @@
 use rusqlite::params;
 
 use crate::{
-    write::{Batch, Operation},
+    write::{now, Batch, Operation},
     AclKey, BitmapKey, BlobKey, IndexKey, LogKey, Serialize, Store, ValueKey,
 };
 
@@ -173,10 +173,17 @@ impl Store {
                         .serialize();
 
                         if *set {
-                            trx.prepare_cached("INSERT OR REPLACE INTO b (k, v) VALUES (?, ?)")?
-                                .execute([&key[..], &[]])?;
+                            let now_;
+                            let value = if document_id != u32::MAX {
+                                &[]
+                            } else {
+                                now_ = now().to_be_bytes();
+                                &now_[..]
+                            };
+                            trx.prepare_cached("INSERT OR REPLACE INTO o (k, v) VALUES (?, ?)")?
+                                .execute([&key[..], value])?;
                         } else {
-                            trx.prepare_cached("DELETE FROM b WHERE k = ?")?
+                            trx.prepare_cached("DELETE FROM o WHERE k = ?")?
                                 .execute([&key])?;
                         }
                     }
@@ -223,19 +230,24 @@ impl Store {
         .await
     }
 
-    pub async fn assign_document_id(&self, account_id: u32, collection: u8) -> crate::Result<u32> {
-        todo!()
-    }
-
-    pub async fn assign_change_id(&self, account_id: u32, collection: u8) -> crate::Result<u64> {
-        todo!()
-    }
-
     #[cfg(test)]
     pub async fn destroy(&self) {
+        use crate::{
+            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+            SUBSPACE_VALUES,
+        };
+
         let conn = self.conn_pool.get().unwrap();
-        for table in ["v", "l", "o", "c", "i", "b"] {
-            conn.execute(&format!("DROP TABLE {table}"), []).unwrap();
+        for table in [
+            SUBSPACE_VALUES,
+            SUBSPACE_LOGS,
+            SUBSPACE_BLOBS,
+            SUBSPACE_ACLS,
+            SUBSPACE_BITMAPS,
+            SUBSPACE_INDEXES,
+        ] {
+            conn.execute(&format!("DROP TABLE {}", char::from(table)), [])
+                .unwrap();
         }
         self.create_tables().unwrap();
     }

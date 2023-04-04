@@ -1,6 +1,8 @@
 use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
+use crate::{BlobKey, Key, SUBSPACE_BLOBS};
+
 pub struct KeySerializer {
     buf: Vec<u8>,
 }
@@ -111,5 +113,11 @@ impl DeserializeBigEndian for &[u8] {
                 })
             })
             .map(u64::from_be_bytes)
+    }
+}
+
+impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BlobKey<T> {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_BLOBS
     }
 }

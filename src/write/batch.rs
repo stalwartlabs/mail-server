@@ -99,7 +99,12 @@ impl BatchBuilder {
         self
     }
 
-    pub fn bitmap(&mut self, field: impl Into<u8>, value: impl IntoBitmap, options: u32) {
+    pub fn bitmap(
+        &mut self,
+        field: impl Into<u8>,
+        value: impl IntoBitmap,
+        options: u32,
+    ) -> &mut Self {
         let (key, family) = value.into_bitmap();
         self.ops.push(Operation::Bitmap {
             family,
@@ -107,20 +112,23 @@ impl BatchBuilder {
             key,
             set: !options.has_flag(F_CLEAR),
         });
+        self
     }
 
-    pub fn acl(&mut self, grant_account_id: u32, acl: Option<impl Serialize>) {
+    pub fn acl(&mut self, grant_account_id: u32, acl: Option<impl Serialize>) -> &mut Self {
         self.ops.push(Operation::Acl {
             grant_account_id,
             set: acl.map(|acl| acl.serialize()),
-        })
+        });
+        self
     }
 
-    pub fn blob(&mut self, blob_id: impl Serialize, options: u32) {
+    pub fn blob(&mut self, blob_id: impl Serialize, options: u32) -> &mut Self {
         self.ops.push(Operation::Blob {
             key: blob_id.serialize(),
             set: !options.has_flag(F_CLEAR),
         });
+        self
     }
 
     pub fn custom(&mut self, value: impl IntoOperations) -> crate::Result<()> {
@@ -129,6 +137,16 @@ impl BatchBuilder {
 
     pub fn build(self) -> Batch {
         Batch { ops: self.ops }
+    }
+
+    pub fn build_batch(&mut self) -> Batch {
+        Batch {
+            ops: std::mem::take(&mut self.ops),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
     }
 }
 

@@ -6,7 +6,8 @@ use rusqlite::OptionalExtension;
 use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, ReadTransaction, Serialize, Store, ValueKey,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
+    Store, ValueKey,
 };
 
 use super::{BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
@@ -228,6 +229,73 @@ impl ReadTransaction<'_> {
         }
 
         Ok(())
+    }
+
+    #[maybe_async::maybe_async]
+    pub(crate) async fn iterate<T>(
+        &self,
+        mut acc: T,
+        begin: impl Key,
+        end: impl Key,
+        first: bool,
+        ascending: bool,
+        cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
+    ) -> crate::Result<T> {
+        let table = char::from(begin.subspace());
+        let begin = begin.serialize();
+        let end = end.serialize();
+
+        let mut query = self.conn.prepare_cached(&match (first, ascending) {
+            (true, true) => {
+                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1")
+            }
+            (true, false) => {
+                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1")
+            }
+            (false, true) => {
+                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")
+            }
+            (false, false) => {
+                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
+            }
+        })?;
+        let mut rows = query.query([&begin, &end])?;
+
+        while let Some(row) = rows.next()? {
+            let key = row.get_ref(0)?.as_bytes()?;
+            let value = row.get_ref(1)?.as_bytes()?;
+
+            if !cb(&mut acc, key, value)? {
+                return Ok(acc);
+            }
+        }
+
+        Ok(acc)
+    }
+
+    #[maybe_async::maybe_async]
+    pub(crate) async fn get_last_change_id(
+        &self,
+        account_id: u32,
+        collection: u8,
+    ) -> crate::Result<Option<u64>> {
+        let key = LogKey {
+            account_id,
+            collection,
+            change_id: u64::MAX,
+        }
+        .serialize();
+
+        self.conn
+            .prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
+            .query_row([&key], |row| {
+                let key = row.get_ref(0)?.as_bytes()?;
+
+                key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
+                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
+            })
+            .optional()
+            .map_err(Into::into)
     }
 
     #[maybe_async::maybe_async]
