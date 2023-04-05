@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use crate::{BitmapKey, BM_HASH};
+use crate::{write::Operation, BitmapKey, BM_HASH};
 
 use self::{bloom::hash_token, builder::MAX_TOKEN_MASK};
 
@@ -176,6 +176,17 @@ impl BitmapKey<Vec<u8>> {
             field,
             block_num: 0,
             key: hash_token(word),
+        }
+    }
+}
+
+impl Operation {
+    pub fn hash(word: &str, family: u8, field: u8, set: bool) -> Self {
+        Operation::Bitmap {
+            family: BM_HASH | family | (word.len() & MAX_TOKEN_MASK) as u8,
+            field,
+            key: hash_token(word),
+            set,
         }
     }
 }

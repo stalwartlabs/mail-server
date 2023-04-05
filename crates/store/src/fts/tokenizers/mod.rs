@@ -24,6 +24,7 @@
 pub mod chinese;
 pub mod indo_european;
 pub mod japanese;
+pub mod space;
 pub mod word;
 
 use std::borrow::Cow;

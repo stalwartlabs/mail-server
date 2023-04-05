@@ -22,9 +22,9 @@ use super::{
     SUBSPACE_VALUES,
 };
 
-#[cfg(test)]
+#[cfg(feature = "test_mode")]
 const ID_ASSIGNMENT_EXPIRY: u64 = 2; // seconds
-#[cfg(not(test))]
+#[cfg(not(feature = "test_mode"))]
 pub const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
 
 const MAX_COMMIT_ATTEMPTS: u8 = 10;

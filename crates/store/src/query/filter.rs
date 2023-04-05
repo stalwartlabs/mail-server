@@ -1,8 +1,12 @@
 use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
+use ahash::HashSet;
 use roaring::RoaringBitmap;
 
-use crate::{write::Tokenize, BitmapKey, ReadTransaction, Store, BM_KEYWORD};
+use crate::{
+    fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
+    BitmapKey, ReadTransaction, Store, BM_KEYWORD,
+};
 
 use super::{Filter, ResultSet};
 
@@ -53,17 +57,10 @@ impl ReadTransaction<'_> {
                 }
                 Filter::HasKeywords { field, value } => {
                     self.get_bitmaps_intersection(
-                        value
-                            .tokenize()
+                        SpaceTokenizer::new(&value, MAX_TOKEN_LENGTH)
+                            .collect::<HashSet<String>>()
                             .into_iter()
-                            .map(|key| BitmapKey {
-                                account_id,
-                                collection,
-                                family: BM_KEYWORD,
-                                field,
-                                key: key.into_bytes(),
-                                block_num: 0,
-                            })
+                            .map(|word| BitmapKey::hash(&word, account_id, collection, 0, field))
                             .collect(),
                     )
                     .await?

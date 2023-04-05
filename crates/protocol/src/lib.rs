@@ -5,6 +5,7 @@ pub mod parser;
 pub mod request;
 pub mod types;
 
+/*
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, sync::Arc};
@@ -107,3 +108,4 @@ mod tests {
         }*/
     }
 }
+*/

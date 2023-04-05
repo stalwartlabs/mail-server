@@ -1,6 +1,9 @@
 use std::{collections::HashSet, time::SystemTime};
 
-use crate::{Deserialize, Serialize};
+use crate::{
+    fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
+    Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC, TAG_TEXT,
+};
 
 pub mod batch;
 pub mod key;
@@ -130,61 +133,73 @@ impl HasFlag for u32 {
 }
 
 pub trait Tokenize {
-    fn tokenize(&self) -> HashSet<String>;
+    fn tokenize(&self, ops: &mut Vec<Operation>, field: u8, set: bool);
 }
 
 impl Tokenize for &str {
-    fn tokenize(&self) -> HashSet<String> {
+    fn tokenize(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
         let mut tokens = HashSet::new();
-        let mut token = String::new();
 
-        for ch in self.chars() {
-            if ch.is_alphanumeric() {
-                if ch.is_uppercase() {
-                    token.push(ch.to_lowercase().next().unwrap());
-                } else {
-                    token.push(ch);
-                }
-            } else if !token.is_empty() {
-                tokens.insert(token);
-                token = String::new();
-            }
-        }
-
-        if !token.is_empty() {
+        for token in SpaceTokenizer::new(self, MAX_TOKEN_LENGTH) {
             tokens.insert(token);
         }
 
-        tokens
+        for token in tokens {
+            ops.push(Operation::hash(&token, HASH_EXACT, field, set));
+        }
     }
 }
 
 impl Tokenize for String {
-    fn tokenize(&self) -> HashSet<String> {
-        self.as_str().tokenize()
+    fn tokenize(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
+        self.as_str().tokenize(ops, field, set)
     }
 }
 
 impl Tokenize for u32 {
-    fn tokenize(&self) -> HashSet<String> {
+    fn tokenize(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
         unreachable!()
     }
 }
 
 impl Tokenize for u64 {
-    fn tokenize(&self) -> HashSet<String> {
+    fn tokenize(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
         unreachable!()
     }
 }
 
 impl Tokenize for f64 {
-    fn tokenize(&self) -> HashSet<String> {
+    fn tokenize(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
         unreachable!()
     }
 }
 
 pub trait IntoBitmap {
     fn into_bitmap(self) -> (Vec<u8>, u8);
+}
+
+impl IntoBitmap for () {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        (vec![], BM_TAG | TAG_STATIC)
+    }
+}
+
+impl IntoBitmap for u32 {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        (self.serialize(), BM_TAG | TAG_ID)
+    }
+}
+
+impl IntoBitmap for String {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        (self.serialize(), BM_TAG | TAG_TEXT)
+    }
+}
+
+impl IntoBitmap for &str {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        (self.serialize(), BM_TAG | TAG_TEXT)
+    }
 }
 
 pub trait IntoOperations {

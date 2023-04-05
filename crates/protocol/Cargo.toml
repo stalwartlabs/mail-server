@@ -1,10 +1,12 @@
 [package]
-name = "procotol"
+name = "protocol"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+store = { path = "../store" }
 utils = { path = "/home/vagrant/code/utils" }
+mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 fast-float = "0.2.0"
 serde = { version = "1.0", features = ["derive"]}
 ahash = { version = "0.8.0", features = ["serde"] }

@@ -1,4 +1,4 @@
-use crate::{BM_DOCUMENT_IDS, BM_KEYWORD};
+use crate::BM_DOCUMENT_IDS;
 
 use super::{
     Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, Tokenize,
@@ -68,14 +68,7 @@ impl BatchBuilder {
         let is_set = !options.has_flag(F_CLEAR);
 
         if options.has_flag(F_TOKENIZE) {
-            for token in value.tokenize() {
-                self.ops.push(Operation::Bitmap {
-                    family: BM_KEYWORD,
-                    field,
-                    key: token.into_bytes(),
-                    set: is_set,
-                });
-            }
+            value.tokenize(&mut self.ops, field, is_set);
         }
 
         let value = value.serialize();

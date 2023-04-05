@@ -4,14 +4,15 @@ use ahash::AHashSet;
 
 use crate::{
     write::{BatchBuilder, IntoOperations, Operation},
-    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, BM_HASH, HASH_EXACT, HASH_STEMMED,
+    Serialize, BLOOM_BIGRAM, BLOOM_TRIGRAM, HASH_EXACT, HASH_STEMMED,
 };
 
 use super::{
-    bloom::{hash_token, BloomFilter},
+    bloom::BloomFilter,
     lang::{LanguageDetector, MIN_LANGUAGE_SCORE},
     ngram::ToNgrams,
     stemmer::Stemmer,
+    tokenizers::space::SpaceTokenizer,
     Language,
 };
 
@@ -26,6 +27,7 @@ struct Text<'x> {
 
 pub struct FtsIndexBuilder<'x> {
     parts: Vec<Text<'x>>,
+    tokens: AHashSet<(u8, String)>,
     detect: LanguageDetector,
     default_language: Language,
 }
@@ -35,6 +37,7 @@ impl<'x> FtsIndexBuilder<'x> {
         FtsIndexBuilder {
             parts: vec![],
             detect: LanguageDetector::new(),
+            tokens: AHashSet::new(),
             default_language,
         }
     }
@@ -54,6 +57,13 @@ impl<'x> FtsIndexBuilder<'x> {
             text,
             language,
         });
+    }
+
+    pub fn index_raw(&mut self, field: impl Into<u8>, text: &str) {
+        let field = field.into();
+        for token in SpaceTokenizer::new(text, MAX_TOKEN_LENGTH) {
+            self.tokens.insert((field, token));
+        }
     }
 }
 
@@ -82,12 +92,9 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             }
 
             for (word, family) in unique_words {
-                batch.ops.push(Operation::Bitmap {
-                    family: BM_HASH | family | (word.len() & MAX_TOKEN_MASK) as u8,
-                    field: part.field,
-                    key: hash_token(&word),
-                    set: true,
-                });
+                batch
+                    .ops
+                    .push(Operation::hash(&word, family, part.field, true));
             }
 
             if phrase_words.len() > 1 {
@@ -104,6 +111,12 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
                     });
                 }
             }
+        }
+
+        for (field, token) in self.tokens {
+            batch
+                .ops
+                .push(Operation::hash(&token, HASH_EXACT, field, true));
         }
 
         Ok(())

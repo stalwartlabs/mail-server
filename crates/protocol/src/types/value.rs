@@ -1,9 +1,10 @@
-use std::fmt::Display;
+use std::{borrow::Cow, fmt::Display};
 
+use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
-use utils::map::vec_map::VecMap;
 
 use crate::{
+    object::Object,
     parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::reference::ResultReference,
 };
@@ -30,7 +31,7 @@ pub enum Value {
     TypeState(TypeState),
     Acl(Acl),
     List(Vec<Value>),
-    Object(VecMap<Property, Value>),
+    Object(Object<Value>),
     Null,
 }
 
@@ -57,7 +58,7 @@ impl Value {
         Ok(match parser.next_token::<V>()? {
             Token::String(v) => v.into_value(),
             Token::DictStart => {
-                let mut properties = VecMap::with_capacity(4);
+                let mut properties = Object::with_capacity(4);
                 while {
                     let property = parser.next_dict_key::<K>()?.into_property();
                     let value = Value::from_property(parser, &property)?;
@@ -202,5 +203,104 @@ impl IntoValue for Acl {
 impl IntoValue for TypeState {
     fn into_value(self) -> Value {
         Value::TypeState(self)
+    }
+}
+
+impl From<usize> for Value {
+    fn from(value: usize) -> Self {
+        Value::UnsignedInt(value as u64)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(value: u64) -> Self {
+        Value::UnsignedInt(value)
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::UnsignedInt(value as u64)
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::Text(value)
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Value::Bool(value)
+    }
+}
+
+impl From<Keyword> for Value {
+    fn from(value: Keyword) -> Self {
+        Value::Keyword(value)
+    }
+}
+
+impl From<Object<Value>> for Value {
+    fn from(value: Object<Value>) -> Self {
+        Value::Object(value)
+    }
+}
+
+impl From<DateTime> for Value {
+    fn from(date: DateTime) -> Self {
+        Value::Date(UTCDate {
+            year: date.year,
+            month: date.month,
+            day: date.day,
+            hour: date.hour,
+            minute: date.minute,
+            second: date.second,
+            tz_before_gmt: date.tz_before_gmt,
+            tz_hour: date.tz_hour,
+            tz_minute: date.tz_minute,
+        })
+    }
+}
+
+impl From<Cow<'_, str>> for Value {
+    fn from(value: Cow<'_, str>) -> Self {
+        Value::Text(value.into_owned())
+    }
+}
+
+impl<T: Into<Value>> From<Vec<T>> for Value {
+    fn from(value: Vec<T>) -> Self {
+        Value::List(value.into_iter().map(|v| v.into()).collect())
+    }
+}
+
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Value::Null,
+        }
+    }
+}
+
+impl From<Addr<'_>> for Value {
+    fn from(value: Addr<'_>) -> Self {
+        Value::Object(
+            Object::with_capacity(2)
+                .with_property(Property::Name, value.name)
+                .with_property(Property::Email, value.address.unwrap_or_default()),
+        )
+    }
+}
+
+impl From<Group<'_>> for Value {
+    fn from(group: Group<'_>) -> Self {
+        Value::Object(
+            Object::with_capacity(2)
+                .with_property(Property::Name, group.name)
+                .with_property(Property::Addresses, group.addresses),
+        )
     }
 }

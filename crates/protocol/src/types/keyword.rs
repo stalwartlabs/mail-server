@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use store::{write::IntoBitmap, Serialize, BM_TAG, TAG_STATIC, TAG_TEXT};
+
 use crate::parser::{json::Parser, JsonObjectParser};
 
 pub const SEEN: u8 = 0;
@@ -111,6 +113,46 @@ impl Display for Keyword {
             Keyword::Forwarded => write!(f, "$forwarded"),
             Keyword::MdnSent => write!(f, "$mdnsent"),
             Keyword::Other(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl IntoBitmap for Keyword {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        match self {
+            Keyword::Seen => (vec![0u8], BM_TAG | TAG_STATIC),
+            Keyword::Draft => (vec![1u8], BM_TAG | TAG_STATIC),
+            Keyword::Flagged => (vec![2u8], BM_TAG | TAG_STATIC),
+            Keyword::Answered => (vec![3u8], BM_TAG | TAG_STATIC),
+            Keyword::Recent => (vec![4u8], BM_TAG | TAG_STATIC),
+            Keyword::Important => (vec![5u8], BM_TAG | TAG_STATIC),
+            Keyword::Phishing => (vec![6u8], BM_TAG | TAG_STATIC),
+            Keyword::Junk => (vec![7u8], BM_TAG | TAG_STATIC),
+            Keyword::NotJunk => (vec![8u8], BM_TAG | TAG_STATIC),
+            Keyword::Deleted => (vec![9u8], BM_TAG | TAG_STATIC),
+            Keyword::Forwarded => (vec![10u8], BM_TAG | TAG_STATIC),
+            Keyword::MdnSent => (vec![11u8], BM_TAG | TAG_STATIC),
+            Keyword::Other(string) => (string.serialize(), BM_TAG | TAG_TEXT),
+        }
+    }
+}
+
+impl IntoBitmap for &Keyword {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        match self {
+            Keyword::Seen => (vec![0u8], BM_TAG | TAG_STATIC),
+            Keyword::Draft => (vec![1u8], BM_TAG | TAG_STATIC),
+            Keyword::Flagged => (vec![2u8], BM_TAG | TAG_STATIC),
+            Keyword::Answered => (vec![3u8], BM_TAG | TAG_STATIC),
+            Keyword::Recent => (vec![4u8], BM_TAG | TAG_STATIC),
+            Keyword::Important => (vec![5u8], BM_TAG | TAG_STATIC),
+            Keyword::Phishing => (vec![6u8], BM_TAG | TAG_STATIC),
+            Keyword::Junk => (vec![7u8], BM_TAG | TAG_STATIC),
+            Keyword::NotJunk => (vec![8u8], BM_TAG | TAG_STATIC),
+            Keyword::Deleted => (vec![9u8], BM_TAG | TAG_STATIC),
+            Keyword::Forwarded => (vec![10u8], BM_TAG | TAG_STATIC),
+            Keyword::MdnSent => (vec![11u8], BM_TAG | TAG_STATIC),
+            Keyword::Other(string) => (string.as_str().serialize(), BM_TAG | TAG_TEXT),
         }
     }
 }
