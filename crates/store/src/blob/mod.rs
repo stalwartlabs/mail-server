@@ -9,7 +9,7 @@ use std::{
 
 use utils::{codec::base32_custom::Base32Writer, config::Config};
 
-use crate::{BlobId, Serialize};
+use crate::{BlobHash, Serialize};
 
 pub enum BlobStore {
     Local {
@@ -28,7 +28,7 @@ impl BlobStore {
     }
 }
 
-impl Serialize for &BlobId {
+impl Serialize for &BlobHash {
     fn serialize(self) -> Vec<u8> {
         self.hash.to_vec()
     }
@@ -40,7 +40,7 @@ impl From<std::io::Error> for crate::Error {
     }
 }
 
-fn get_path(base_path: &Path, hash_levels: usize, blob_id: &BlobId) -> crate::Result<PathBuf> {
+fn get_path(base_path: &Path, hash_levels: usize, blob_id: &BlobHash) -> crate::Result<PathBuf> {
     let mut path = base_path.to_path_buf();
     let hash = &blob_id.hash;
     for byte in hash.iter().take(hash_levels) {

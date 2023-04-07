@@ -1,8 +1,12 @@
 use std::fmt::Display;
 
-use store::{write::IntoBitmap, Serialize, BM_TAG, TAG_STATIC, TAG_TEXT};
+use store::{write::IntoBitmap, BM_TAG, TAG_STATIC, TAG_TEXT};
+use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::{
+    object::{DeserializeValue, SerializeValue},
+    parser::{json::Parser, JsonObjectParser},
+};
 
 pub const SEEN: u8 = 0;
 pub const DRAFT: u8 = 1;
@@ -16,6 +20,7 @@ pub const NOTJUNK: u8 = 8;
 pub const DELETED: u8 = 9;
 pub const FORWARDED: u8 = 10;
 pub const MDN_SENT: u8 = 11;
+pub const OTHER: u8 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(untagged)]
@@ -117,42 +122,74 @@ impl Display for Keyword {
     }
 }
 
-impl IntoBitmap for Keyword {
+impl IntoBitmap for &Keyword {
     fn into_bitmap(self) -> (Vec<u8>, u8) {
         match self {
-            Keyword::Seen => (vec![0u8], BM_TAG | TAG_STATIC),
-            Keyword::Draft => (vec![1u8], BM_TAG | TAG_STATIC),
-            Keyword::Flagged => (vec![2u8], BM_TAG | TAG_STATIC),
-            Keyword::Answered => (vec![3u8], BM_TAG | TAG_STATIC),
-            Keyword::Recent => (vec![4u8], BM_TAG | TAG_STATIC),
-            Keyword::Important => (vec![5u8], BM_TAG | TAG_STATIC),
-            Keyword::Phishing => (vec![6u8], BM_TAG | TAG_STATIC),
-            Keyword::Junk => (vec![7u8], BM_TAG | TAG_STATIC),
-            Keyword::NotJunk => (vec![8u8], BM_TAG | TAG_STATIC),
-            Keyword::Deleted => (vec![9u8], BM_TAG | TAG_STATIC),
-            Keyword::Forwarded => (vec![10u8], BM_TAG | TAG_STATIC),
-            Keyword::MdnSent => (vec![11u8], BM_TAG | TAG_STATIC),
-            Keyword::Other(string) => (string.serialize(), BM_TAG | TAG_TEXT),
+            Keyword::Seen => (vec![SEEN], BM_TAG | TAG_STATIC),
+            Keyword::Draft => (vec![DRAFT], BM_TAG | TAG_STATIC),
+            Keyword::Flagged => (vec![FLAGGED], BM_TAG | TAG_STATIC),
+            Keyword::Answered => (vec![ANSWERED], BM_TAG | TAG_STATIC),
+            Keyword::Recent => (vec![RECENT], BM_TAG | TAG_STATIC),
+            Keyword::Important => (vec![IMPORTANT], BM_TAG | TAG_STATIC),
+            Keyword::Phishing => (vec![PHISHING], BM_TAG | TAG_STATIC),
+            Keyword::Junk => (vec![JUNK], BM_TAG | TAG_STATIC),
+            Keyword::NotJunk => (vec![NOTJUNK], BM_TAG | TAG_STATIC),
+            Keyword::Deleted => (vec![DELETED], BM_TAG | TAG_STATIC),
+            Keyword::Forwarded => (vec![FORWARDED], BM_TAG | TAG_STATIC),
+            Keyword::MdnSent => (vec![MDN_SENT], BM_TAG | TAG_STATIC),
+            Keyword::Other(string) => (string.as_bytes().to_vec(), BM_TAG | TAG_TEXT),
         }
     }
 }
 
-impl IntoBitmap for &Keyword {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
+impl SerializeValue for Keyword {
+    fn serialize_value(self, buf: &mut Vec<u8>) {
         match self {
-            Keyword::Seen => (vec![0u8], BM_TAG | TAG_STATIC),
-            Keyword::Draft => (vec![1u8], BM_TAG | TAG_STATIC),
-            Keyword::Flagged => (vec![2u8], BM_TAG | TAG_STATIC),
-            Keyword::Answered => (vec![3u8], BM_TAG | TAG_STATIC),
-            Keyword::Recent => (vec![4u8], BM_TAG | TAG_STATIC),
-            Keyword::Important => (vec![5u8], BM_TAG | TAG_STATIC),
-            Keyword::Phishing => (vec![6u8], BM_TAG | TAG_STATIC),
-            Keyword::Junk => (vec![7u8], BM_TAG | TAG_STATIC),
-            Keyword::NotJunk => (vec![8u8], BM_TAG | TAG_STATIC),
-            Keyword::Deleted => (vec![9u8], BM_TAG | TAG_STATIC),
-            Keyword::Forwarded => (vec![10u8], BM_TAG | TAG_STATIC),
-            Keyword::MdnSent => (vec![11u8], BM_TAG | TAG_STATIC),
-            Keyword::Other(string) => (string.as_str().serialize(), BM_TAG | TAG_TEXT),
+            Keyword::Seen => buf.push(SEEN),
+            Keyword::Draft => buf.push(DRAFT),
+            Keyword::Flagged => buf.push(FLAGGED),
+            Keyword::Answered => buf.push(ANSWERED),
+            Keyword::Recent => buf.push(RECENT),
+            Keyword::Important => buf.push(IMPORTANT),
+            Keyword::Phishing => buf.push(PHISHING),
+            Keyword::Junk => buf.push(JUNK),
+            Keyword::NotJunk => buf.push(NOTJUNK),
+            Keyword::Deleted => buf.push(DELETED),
+            Keyword::Forwarded => buf.push(FORWARDED),
+            Keyword::MdnSent => buf.push(MDN_SENT),
+            Keyword::Other(string) => {
+                buf.push_leb128(OTHER as usize + string.len());
+                if !string.is_empty() {
+                    buf.extend_from_slice(string.as_bytes())
+                }
+            }
+        }
+    }
+}
+
+impl DeserializeValue for Keyword {
+    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+        match *bytes.next()? {
+            SEEN => Some(Keyword::Seen),
+            DRAFT => Some(Keyword::Draft),
+            FLAGGED => Some(Keyword::Flagged),
+            ANSWERED => Some(Keyword::Answered),
+            RECENT => Some(Keyword::Recent),
+            IMPORTANT => Some(Keyword::Important),
+            PHISHING => Some(Keyword::Phishing),
+            JUNK => Some(Keyword::Junk),
+            NOTJUNK => Some(Keyword::NotJunk),
+            DELETED => Some(Keyword::Deleted),
+            FORWARDED => Some(Keyword::Forwarded),
+            MDN_SENT => Some(Keyword::MdnSent),
+            _ => {
+                let len = bytes.next_leb128::<usize>()? - OTHER as usize;
+                let mut keyword = Vec::with_capacity(len);
+                for _ in 0..len {
+                    keyword.push(*bytes.next()?);
+                }
+                Some(Keyword::Other(String::from_utf8(keyword).ok()?))
+            }
         }
     }
 }

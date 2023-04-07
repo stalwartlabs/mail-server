@@ -3,13 +3,13 @@ use tokio::{
     io::AsyncWriteExt,
 };
 
-use crate::{write::BatchBuilder, BlobId, BlobKey, Store, BLOB_HASH_LEN};
+use crate::{write::BatchBuilder, BlobHash, BlobKey, Store, BLOB_HASH_LEN};
 
 use super::{get_path, BlobStore};
 
 impl Store {
-    pub async fn write_blob(&self, account_id: u32, data: &[u8]) -> crate::Result<BlobId> {
-        let id = BlobId::from(data);
+    pub async fn write_blob(&self, account_id: u32, data: &[u8]) -> crate::Result<BlobHash> {
+        let id = BlobHash::from(data);
 
         // Check if the blob already exists
         let from_key = BlobKey {
@@ -53,7 +53,7 @@ impl Store {
 }
 
 impl BlobStore {
-    pub async fn put(&self, id: &BlobId, data: &[u8]) -> crate::Result<bool> {
+    pub async fn put(&self, id: &BlobHash, data: &[u8]) -> crate::Result<bool> {
         match self {
             BlobStore::Local {
                 base_path,
@@ -79,7 +79,7 @@ impl BlobStore {
         }
     }
 
-    pub async fn delete(&self, id: &BlobId) -> crate::Result<bool> {
+    pub async fn delete(&self, id: &BlobHash) -> crate::Result<bool> {
         match self {
             BlobStore::Local {
                 base_path,
@@ -99,7 +99,7 @@ impl BlobStore {
     }
 }
 
-impl From<&[u8]> for BlobId {
+impl From<&[u8]> for BlobHash {
     fn from(data: &[u8]) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(data);

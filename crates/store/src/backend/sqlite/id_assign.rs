@@ -74,8 +74,12 @@ impl IdAssigner {
 }
 
 impl Store {
-    pub async fn assign_document_id(&self, account_id: u32, collection: u8) -> crate::Result<u32> {
-        let key = IdCacheKey::new(account_id, collection);
+    pub async fn assign_document_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+    ) -> crate::Result<u32> {
+        let key = IdCacheKey::new(account_id, collection.into());
         for _ in 0..2 {
             if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
                 return Ok(assigner.assign_document_id());
@@ -86,8 +90,12 @@ impl Store {
         unreachable!()
     }
 
-    pub async fn assign_change_id(&self, account_id: u32, collection: u8) -> crate::Result<u64> {
-        let key = IdCacheKey::new(account_id, collection);
+    pub async fn assign_change_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+    ) -> crate::Result<u64> {
+        let key = IdCacheKey::new(account_id, collection.into());
         for _ in 0..2 {
             if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
                 return Ok(assigner.assign_change_id());

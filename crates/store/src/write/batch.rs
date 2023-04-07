@@ -1,8 +1,8 @@
 use crate::BM_DOCUMENT_IDS;
 
 use super::{
-    Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, Tokenize,
-    F_CLEAR, F_INDEX, F_TOKENIZE, F_VALUE,
+    Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, ToAssertValue,
+    ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -58,17 +58,26 @@ impl BatchBuilder {
         self
     }
 
+    pub fn assert_value(&mut self, field: impl Into<u8>, value: impl ToAssertValue) -> &mut Self {
+        self.ops.push(Operation::AssertValue {
+            field: field.into(),
+            family: 0,
+            assert_value: value.to_assert_value(),
+        });
+        self
+    }
+
     pub fn value(
         &mut self,
         field: impl Into<u8>,
-        value: impl Serialize + Tokenize,
+        value: impl Serialize + ToBitmaps,
         options: u32,
     ) -> &mut Self {
         let field = field.into();
         let is_set = !options.has_flag(F_CLEAR);
 
-        if options.has_flag(F_TOKENIZE) {
-            value.tokenize(&mut self.ops, field, is_set);
+        if options.has_flag(F_BITMAP) {
+            value.to_bitmaps(&mut self.ops, field, is_set);
         }
 
         let value = value.serialize();

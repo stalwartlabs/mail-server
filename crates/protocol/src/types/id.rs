@@ -163,11 +163,15 @@ impl Id {
         }
     }
 
-    pub fn get_document_id(&self) -> DocumentId {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn document_id(&self) -> DocumentId {
         (self.id & 0xFFFFFFFF) as DocumentId
     }
 
-    pub fn get_prefix_id(&self) -> DocumentId {
+    pub fn prefix_id(&self) -> DocumentId {
         (self.id >> 32) as DocumentId
     }
 
@@ -222,7 +226,7 @@ impl AsRef<u64> for Id {
 
 impl From<Id> for u32 {
     fn from(id: Id) -> Self {
-        id.get_document_id()
+        id.document_id()
     }
 }
 

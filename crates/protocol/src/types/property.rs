@@ -3,7 +3,10 @@ use std::fmt::{Display, Formatter};
 use mail_parser::RfcHeader;
 use serde::Serialize;
 
-use crate::parser::{json::Parser, Error, JsonObjectParser};
+use crate::{
+    object::{DeserializeValue, SerializeValue},
+    parser::{json::Parser, Error, JsonObjectParser},
+};
 
 use super::{acl::Acl, id::Id, keyword::Keyword, value::Value};
 
@@ -925,7 +928,124 @@ impl From<RfcHeader> for Property {
             RfcHeader::Sender => Property::Sender,
             RfcHeader::InReplyTo => Property::InReplyTo,
             RfcHeader::MessageId => Property::MessageId,
+            RfcHeader::References => Property::References,
             _ => unreachable!(),
+        }
+    }
+}
+
+impl SerializeValue for Property {
+    fn serialize_value(self, buf: &mut Vec<u8>) {
+        buf.push(self.into());
+    }
+}
+
+impl DeserializeValue for Property {
+    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+        match *bytes.next()? {
+            0 => Some(Property::IsActive),
+            1 => Some(Property::IsEnabled),
+            2 => Some(Property::IsSubscribed),
+            3 => Some(Property::Keys),
+            4 => Some(Property::Keywords),
+            5 => Some(Property::Language),
+            6 => Some(Property::Location),
+            7 => Some(Property::MailboxIds),
+            8 => Some(Property::MayDelete),
+            9 => Some(Property::MdnBlobIds),
+            10 => Some(Property::Members),
+            11 => Some(Property::MessageId),
+            12 => Some(Property::MyRights),
+            13 => Some(Property::Name),
+            14 => Some(Property::ParentId),
+            15 => Some(Property::PartId),
+            16 => Some(Property::Picture),
+            17 => Some(Property::Preview),
+            18 => Some(Property::Quota),
+            19 => Some(Property::ReceivedAt),
+            20 => Some(Property::References),
+            21 => Some(Property::ReplyTo),
+            22 => Some(Property::Role),
+            23 => Some(Property::Secret),
+            24 => Some(Property::SendAt),
+            25 => Some(Property::Sender),
+            26 => Some(Property::SentAt),
+            27 => Some(Property::Size),
+            28 => Some(Property::SortOrder),
+            29 => Some(Property::Subject),
+            30 => Some(Property::SubParts),
+            31 => Some(Property::TextBody),
+            32 => Some(Property::TextSignature),
+            33 => Some(Property::ThreadId),
+            34 => Some(Property::Timezone),
+            35 => Some(Property::To),
+            36 => Some(Property::ToDate),
+            37 => Some(Property::TotalEmails),
+            38 => Some(Property::TotalThreads),
+            39 => Some(Property::Type),
+            40 => Some(Property::Types),
+            41 => Some(Property::UndoStatus),
+            42 => Some(Property::UnreadEmails),
+            43 => Some(Property::UnreadThreads),
+            44 => Some(Property::Url),
+            45 => Some(Property::VerificationCode),
+            46 => Some(Property::Parameters),
+            47 => Some(Property::Addresses),
+            48 => Some(Property::P256dh),
+            49 => Some(Property::Auth),
+            50 => Some(Property::Value),
+            51 => Some(Property::SmtpReply),
+            52 => Some(Property::Delivered),
+            53 => Some(Property::Displayed),
+            54 => Some(Property::MailFrom),
+            55 => Some(Property::RcptTo),
+            56 => Some(Property::IsEncodingProblem),
+            57 => Some(Property::IsTruncated),
+            58 => Some(Property::MayReadItems),
+            59 => Some(Property::MayAddItems),
+            60 => Some(Property::MayRemoveItems),
+            61 => Some(Property::MaySetSeen),
+            62 => Some(Property::MaySetKeywords),
+            63 => Some(Property::MayCreateChild),
+            64 => Some(Property::MayRename),
+            65 => Some(Property::MaySubmit),
+            66 => Some(Property::Acl),
+            67 => Some(Property::Aliases),
+            68 => Some(Property::Attachments),
+            69 => Some(Property::Bcc),
+            70 => Some(Property::BlobId),
+            71 => Some(Property::BodyStructure),
+            72 => Some(Property::BodyValues),
+            73 => Some(Property::Capabilities),
+            74 => Some(Property::Cc),
+            75 => Some(Property::Charset),
+            76 => Some(Property::Cid),
+            77 => Some(Property::DeliveryStatus),
+            78 => Some(Property::Description),
+            79 => Some(Property::DeviceClientId),
+            80 => Some(Property::Disposition),
+            81 => Some(Property::DsnBlobIds),
+            82 => Some(Property::Email),
+            83 => Some(Property::EmailId),
+            84 => Some(Property::EmailIds),
+            85 => Some(Property::Envelope),
+            86 => Some(Property::Expires),
+            87 => Some(Property::From),
+            88 => Some(Property::FromDate),
+            89 => Some(Property::HasAttachment),
+            90 => Some(Property::Header(HeaderProperty {
+                form: HeaderForm::Raw,
+                header: String::new(),
+                all: false,
+            })), // Never serialized
+            91 => Some(Property::Headers),
+            92 => Some(Property::HtmlBody),
+            93 => Some(Property::HtmlSignature),
+            94 => Some(Property::Id),
+            95 => Some(Property::IdentityId),
+            96 => Some(Property::InReplyTo),
+            97 => Some(Property::_T(String::new())), // Never serialized
+            _ => None,
         }
     }
 }

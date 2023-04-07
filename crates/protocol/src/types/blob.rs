@@ -23,6 +23,7 @@
 
 use std::io::Write;
 
+use store::{BlobHash, BLOB_HASH_LEN};
 use utils::codec::{
     base32_custom::Base32Writer,
     leb128::{Leb128Iterator, Leb128Writer},
@@ -30,19 +31,9 @@ use utils::codec::{
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
-pub const BLOB_HASH_LEN: usize = 32;
-pub const BLOB_LOCAL: u8 = 0;
-pub const BLOB_EXTERNAL: u8 = 1;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum BlobHash {
-    Local { hash: [u8; BLOB_HASH_LEN] },
-    External { hash: [u8; BLOB_HASH_LEN] },
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlobId {
-    pub id: BlobHash,
+    pub hash: BlobHash,
     pub section: Option<BlobSection>,
 }
 
@@ -58,14 +49,12 @@ impl JsonObjectParser for BlobId {
     where
         Self: Sized,
     {
-        let (is_local, encoding) = match parser
+        let encoding = match parser
             .next_unescaped()?
             .ok_or_else(|| parser.error_value())?
         {
-            b'b' => (false, None),
-            b'a' => (true, None),
-            b @ b'c'..=b'g' => (true, Some(b - b'c')),
-            b @ b'h'..=b'l' => (false, Some(b - b'h')),
+            b'a' => None,
+            b @ b'b'..=b'g' => Some(b - b'b'),
             _ => {
                 return Err(parser.error_value());
             }
@@ -79,11 +68,7 @@ impl JsonObjectParser for BlobId {
         }
 
         Ok(BlobId {
-            id: if is_local {
-                BlobHash::Local { hash }
-            } else {
-                BlobHash::External { hash }
-            },
+            hash: BlobHash { hash },
             section: if let Some(encoding) = encoding {
                 BlobSection {
                     offset_start: it.next_leb128().ok_or_else(|| it.error())?,
@@ -99,17 +84,25 @@ impl JsonObjectParser for BlobId {
 }
 
 impl BlobId {
-    pub fn new(id: BlobHash) -> Self {
-        BlobId { id, section: None }
+    pub fn new(hash: BlobHash) -> Self {
+        BlobId {
+            hash,
+            section: None,
+        }
     }
 
-    pub fn new_section(id: BlobHash, offset_start: usize, offset_end: usize, encoding: u8) -> Self {
+    pub fn new_section(
+        hash: BlobHash,
+        offset_start: usize,
+        offset_end: usize,
+        encoding: impl Into<u8>,
+    ) -> Self {
         BlobId {
-            id,
+            hash,
             section: BlobSection {
                 offset_start,
                 size: offset_end - offset_start,
-                encoding,
+                encoding: encoding.into(),
             }
             .into(),
         }
@@ -126,7 +119,7 @@ impl BlobId {
 
 impl From<&BlobHash> for BlobId {
     fn from(id: &BlobHash) -> Self {
-        BlobId::new(id.clone())
+        BlobId::new(*id)
     }
 }
 
@@ -139,7 +132,7 @@ impl From<BlobHash> for BlobId {
 impl Default for BlobId {
     fn default() -> Self {
         Self {
-            id: BlobHash::Local {
+            hash: BlobHash {
                 hash: [0; BLOB_HASH_LEN],
             },
             section: None,
@@ -163,57 +156,16 @@ impl std::fmt::Display for BlobId {
         if let Some(section) = &self.section {
             writer =
                 Base32Writer::with_capacity(BLOB_HASH_LEN + (std::mem::size_of::<u32>() * 2) + 1);
-            writer.push_char(char::from(if self.id.is_local() {
-                b'c' + section.encoding
-            } else {
-                b'h' + section.encoding
-            }));
-            writer.write(self.id.hash()).unwrap();
+            writer.push_char(char::from(b'b' + section.encoding));
+            writer.write(&self.hash.hash).unwrap();
             writer.write_leb128(section.offset_start).unwrap();
             writer.write_leb128(section.size).unwrap();
         } else {
             writer = Base32Writer::with_capacity(BLOB_HASH_LEN + 1);
-            writer.push_char(if self.id.is_local() { 'a' } else { 'b' });
-            writer.write(self.id.hash()).unwrap();
+            writer.push_char('a');
+            writer.write(&self.hash.hash).unwrap();
         }
 
         f.write_str(&writer.finalize())
-    }
-}
-
-impl BlobHash {
-    /*pub fn new_local(bytes: &[u8]) -> Self {
-        // Create blob key
-        let mut hasher = Sha256::new();
-        hasher.update(bytes);
-
-        BlobId::Local {
-            hash: hasher.finalize().into(),
-        }
-    }
-
-    pub fn new_external(bytes: &[u8]) -> Self {
-        // Create blob key
-        let mut hasher = Sha256::new();
-        hasher.update(bytes);
-
-        BlobId::External {
-            hash: hasher.finalize().into(),
-        }
-    }*/
-
-    pub fn is_local(&self) -> bool {
-        matches!(self, BlobHash::Local { .. })
-    }
-
-    pub fn is_external(&self) -> bool {
-        matches!(self, BlobHash::External { .. })
-    }
-
-    pub fn hash(&self) -> &[u8] {
-        match self {
-            BlobHash::Local { hash } => hash,
-            BlobHash::External { hash } => hash,
-        }
     }
 }

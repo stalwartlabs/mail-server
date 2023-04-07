@@ -164,3 +164,10 @@ impl Serialize for MethodError {
         map.end()
     }
 }
+
+impl From<store::Error> for MethodError {
+    fn from(_value: store::Error) -> Self {
+        let log = "true";
+        MethodError::ServerPartialFail
+    }
+}

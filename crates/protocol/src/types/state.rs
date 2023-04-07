@@ -51,6 +51,15 @@ impl From<ChangeId> for State {
     }
 }
 
+impl From<Option<ChangeId>> for State {
+    fn from(change_id: Option<ChangeId>) -> Self {
+        match change_id {
+            Some(change_id) => State::Exact(change_id),
+            None => State::Initial,
+        }
+    }
+}
+
 impl JsonObjectParser for State {
     fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
     where

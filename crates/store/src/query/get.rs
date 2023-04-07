@@ -49,6 +49,29 @@ impl Store {
         }
     }
 
+    pub async fn get_last_change_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+    ) -> crate::Result<Option<u64>> {
+        let collection = collection.into();
+
+        #[cfg(feature = "is_async")]
+        {
+            self.read_transaction()
+                .await?
+                .get_last_change_id(account_id, collection)
+                .await
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let trx = self.read_transaction()?;
+            self.spawn_worker(move || trx.get_last_change_id(account_id, collection))
+                .await
+        }
+    }
+
     pub async fn iterate<T: Sync + Send + 'static>(
         &self,
         acc: T,

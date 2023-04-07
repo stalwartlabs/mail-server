@@ -5,13 +5,17 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 
-use crate::BlobId;
+use crate::{BlobHash, Store};
 
 use super::{get_path, BlobStore};
 
-impl BlobStore {
-    pub async fn get(&self, id: &BlobId, range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
-        match self {
+impl Store {
+    pub async fn get_blob(
+        &self,
+        id: &BlobHash,
+        range: Range<u32>,
+    ) -> crate::Result<Option<Vec<u8>>> {
+        match &self.blob {
             BlobStore::Local {
                 base_path,
                 hash_levels,

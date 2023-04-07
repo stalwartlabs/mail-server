@@ -2,8 +2,10 @@ use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
+use store::BlobHash;
 
 use crate::{
+    error::method::MethodError,
     object::Object,
     parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::reference::ResultReference,
@@ -19,7 +21,7 @@ use super::{
     type_state::TypeState,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub enum Value {
     Text(String),
     UnsignedInt(u64),
@@ -32,6 +34,7 @@ pub enum Value {
     Acl(Acl),
     List(Vec<Value>),
     Object(Object<Value>),
+    #[default]
     Null,
 }
 
@@ -150,6 +153,16 @@ impl Value {
             _ => Value::parse::<String, String>(parser),
         }
     }
+
+    pub fn as_blob(&self) -> Result<&BlobId, MethodError> {
+        match self {
+            Value::BlobId(blob) => Ok(blob),
+            _ => {
+                let log = "log";
+                Err(MethodError::ServerPartialFail)
+            }
+        }
+    }
 }
 
 impl<T: JsonObjectParser + Display + Eq> JsonObjectParser for SetValueMap<T> {
@@ -245,6 +258,30 @@ impl From<Keyword> for Value {
 impl From<Object<Value>> for Value {
     fn from(value: Object<Value>) -> Self {
         Value::Object(value)
+    }
+}
+
+impl From<BlobId> for Value {
+    fn from(value: BlobId) -> Self {
+        Value::BlobId(value)
+    }
+}
+
+impl From<BlobHash> for Value {
+    fn from(value: BlobHash) -> Self {
+        Value::BlobId(BlobId::new(value))
+    }
+}
+
+impl From<Id> for Value {
+    fn from(value: Id) -> Self {
+        Value::Id(value)
+    }
+}
+
+impl From<Acl> for Value {
+    fn from(value: Acl) -> Self {
+        Value::Acl(value)
     }
 }
 

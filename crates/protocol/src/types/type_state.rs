@@ -2,9 +2,13 @@ use std::fmt::Display;
 
 use serde::Serialize;
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::{
+    object::{DeserializeValue, SerializeValue},
+    parser::{json::Parser, JsonObjectParser},
+};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
+#[repr(u8)]
 pub enum TypeState {
     #[serde(rename = "Email")]
     Email = 0,
@@ -65,5 +69,25 @@ impl TypeState {
 impl Display for TypeState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl SerializeValue for TypeState {
+    fn serialize_value(self, buf: &mut Vec<u8>) {
+        buf.push(self as u8);
+    }
+}
+
+impl DeserializeValue for TypeState {
+    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+        match *bytes.next()? {
+            0 => Some(TypeState::Email),
+            1 => Some(TypeState::EmailDelivery),
+            2 => Some(TypeState::EmailSubmission),
+            3 => Some(TypeState::Mailbox),
+            4 => Some(TypeState::Thread),
+            5 => Some(TypeState::Identity),
+            _ => None,
+        }
     }
 }

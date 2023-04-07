@@ -1,19 +1,23 @@
 use std::fmt::{self, Display};
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::{
+    object::{DeserializeValue, SerializeValue},
+    parser::{json::Parser, JsonObjectParser},
+};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[repr(u8)]
 pub enum Acl {
-    Read,
-    Modify,
-    Delete,
-    ReadItems,
-    AddItems,
-    ModifyItems,
-    RemoveItems,
-    CreateChild,
-    Administer,
-    Submit,
+    Read = 0,
+    Modify = 1,
+    Delete = 2,
+    ReadItems = 3,
+    AddItems = 4,
+    ModifyItems = 5,
+    RemoveItems = 6,
+    CreateChild = 7,
+    Administer = 8,
+    Submit = 9,
 }
 
 impl JsonObjectParser for Acl {
@@ -78,5 +82,29 @@ impl serde::Serialize for Acl {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+impl SerializeValue for Acl {
+    fn serialize_value(self, buf: &mut Vec<u8>) {
+        buf.push(self as u8);
+    }
+}
+
+impl DeserializeValue for Acl {
+    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+        match *bytes.next()? {
+            0 => Some(Acl::Read),
+            1 => Some(Acl::Modify),
+            2 => Some(Acl::Delete),
+            3 => Some(Acl::ReadItems),
+            4 => Some(Acl::AddItems),
+            5 => Some(Acl::ModifyItems),
+            6 => Some(Acl::RemoveItems),
+            7 => Some(Acl::CreateChild),
+            8 => Some(Acl::Administer),
+            9 => Some(Acl::Submit),
+            _ => None,
+        }
     }
 }

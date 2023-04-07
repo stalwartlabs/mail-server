@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::{
     write::{now, Batch, Operation},
@@ -221,6 +221,30 @@ impl Store {
 
                         trx.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")?
                             .execute([&key, set])?;
+                    }
+                    Operation::AssertValue {
+                        field,
+                        family,
+                        assert_value,
+                    } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            family: *family,
+                            field: *field,
+                        }
+                        .serialize();
+                        let matches = trx
+                            .prepare_cached("SELECT v FROM v WHERE k = ?")?
+                            .query_row([&key], |row| {
+                                Ok(assert_value.matches(row.get_ref(0)?.as_bytes()?))
+                            })
+                            .optional()?
+                            .unwrap_or(false);
+                        if !matches {
+                            return Err(crate::Error::AssertValueFailed);
+                        }
                     }
                 }
             }

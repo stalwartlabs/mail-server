@@ -139,9 +139,10 @@ impl Store {
     pub async fn filter(
         &self,
         account_id: u32,
-        collection: u8,
+        collection: impl Into<u8>,
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
+        let collection = collection.into();
         #[cfg(feature = "is_async")]
         {
             self.read_transaction()

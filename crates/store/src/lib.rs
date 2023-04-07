@@ -122,16 +122,24 @@ pub struct LogKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlobId {
+pub struct BlobHash {
     pub hash: [u8; BLOB_HASH_LEN],
+}
+
+impl Default for BlobHash {
+    fn default() -> Self {
+        Self {
+            hash: [0; BLOB_HASH_LEN],
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    NotFound,
     InternalError(String),
+    AssertValueFailed,
 }
 
 impl std::error::Error for Error {}
@@ -139,8 +147,8 @@ impl std::error::Error for Error {}
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NotFound => write!(f, "not found"),
-            Error::InternalError(msg) => write!(f, "internal error: {}", msg),
+            Error::InternalError(msg) => write!(f, "Internal Error: {}", msg),
+            Error::AssertValueFailed => write!(f, "Transaction failed: Hash mismatch"),
         }
     }
 }

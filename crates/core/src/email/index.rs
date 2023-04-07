@@ -8,6 +8,7 @@ use mail_parser::{
 use protocol::{
     object::Object,
     types::{
+        blob::{BlobId, BlobSection},
         date::UTCDate,
         keyword::Keyword,
         property::{HeaderForm, Property},
@@ -16,7 +17,8 @@ use protocol::{
 };
 use store::{
     fts::{builder::FtsIndexBuilder, Language},
-    write::{BatchBuilder, F_INDEX, F_TOKENIZE, F_VALUE},
+    write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
+    BlobHash,
 };
 
 use crate::email::headers::IntoForm;
@@ -27,10 +29,11 @@ pub const MAX_SORT_FIELD_LENGTH: usize = 255;
 pub const MAX_STORED_FIELD_LENGTH: usize = 512;
 pub const PREVIEW_LENGTH: usize = 256;
 
-trait IndexMessage {
+pub(super) trait IndexMessage {
     fn index_message(
         &mut self,
         message: Message,
+        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
@@ -53,25 +56,40 @@ impl IndexMessage for BatchBuilder {
     fn index_message(
         &mut self,
         message: Message,
+        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
         default_language: Language,
     ) -> store::Result<()> {
-        let mut object = Object::with_capacity(10);
+        let mut object = Object::with_capacity(15);
+
+        // Add blobHash and body offset
+        object.append(
+            Property::BlobId,
+            Value::BlobId(BlobId {
+                hash: blob_hash,
+                section: BlobSection {
+                    offset_start: message.root_part().offset_body,
+                    size: 0,
+                    encoding: 0,
+                }
+                .into(),
+            }),
+        );
 
         // Index keywords
         self.value(
             Property::Keywords,
             Value::from(keywords),
-            F_VALUE | F_TOKENIZE,
+            F_VALUE | F_BITMAP,
         );
 
         // Index mailboxIds
         self.value(
             Property::MailboxIds,
             Value::from(mailbox_ids),
-            F_VALUE | F_TOKENIZE,
+            F_VALUE | F_BITMAP,
         );
 
         // Index size
@@ -130,8 +148,12 @@ impl IndexMessage for BatchBuilder {
                                     _ => (),
                                 }
 
-                                if matches!(rfc_header, RfcHeader::MessageId | RfcHeader::InReplyTo)
-                                    && !seen_headers[rfc_header as usize]
+                                if matches!(
+                                    rfc_header,
+                                    RfcHeader::MessageId
+                                        | RfcHeader::InReplyTo
+                                        | RfcHeader::References
+                                ) && !seen_headers[rfc_header as usize]
                                 {
                                     object.append(
                                         rfc_header.into(),
@@ -442,7 +464,7 @@ impl VisitAddresses for HeaderValue<'_> {
     }
 }
 
-trait TrimTextValue {
+pub trait TrimTextValue {
     fn trim_text(self, length: usize) -> Self;
 }
 
