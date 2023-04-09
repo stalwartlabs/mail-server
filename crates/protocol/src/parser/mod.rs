@@ -100,6 +100,15 @@ impl<T: Eq> Token<T> {
         }
     }
 
+    pub fn unwrap_ints_or_null(self, property: &str) -> Result<Option<i32>> {
+        match self {
+            Token::Integer(v) => Ok(Some(v as i32)),
+            Token::Float(v) => Ok(Some(v as i32)),
+            Token::Null => Ok(None),
+            token => Err(token.error(property, "unsigned integer")),
+        }
+    }
+
     pub fn assert(self, token: Token<T>) -> Result<()> {
         if self == token {
             Ok(())

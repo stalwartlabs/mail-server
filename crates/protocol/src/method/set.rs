@@ -243,10 +243,7 @@ impl JsonObjectParser for Object<SetValue> {
                         .unwrap_uint_or_null("")?
                         .map(|uint| SetValue::Value(Value::UnsignedInt(uint)))
                         .unwrap_or(SetValue::Value(Value::Null)),
-                    Property::ParentId
-                    | Property::EmailId
-                    | Property::IdentityId
-                    | Property::UndoStatus => parser
+                    Property::ParentId | Property::EmailId | Property::IdentityId => parser
                         .next_token::<MaybeReference<Id, String>>()?
                         .unwrap_string_or_null("")?
                         .map(|id| match id {
@@ -304,7 +301,8 @@ impl JsonObjectParser for Object<SetValue> {
                     | Property::ReplyTo
                     | Property::Sender
                     | Property::SubParts
-                    | Property::To => {
+                    | Property::To
+                    | Property::UndoStatus => {
                         SetValue::Value(Value::parse::<ObjectProperty, String>(parser)?)
                     }
                     Property::Members => {

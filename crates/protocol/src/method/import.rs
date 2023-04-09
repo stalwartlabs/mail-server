@@ -22,11 +22,11 @@ use crate::{
 pub struct ImportEmailRequest {
     pub account_id: Id,
     pub if_in_state: Option<State>,
-    pub emails: VecMap<String, EmailImport>,
+    pub emails: VecMap<String, ImportEmail>,
 }
 
 #[derive(Debug, Clone)]
-pub struct EmailImport {
+pub struct ImportEmail {
     pub blob_id: BlobId,
     pub mailbox_ids: Option<MaybeReference<Vec<MaybeReference<Id, String>>, ResultReference>>,
     pub keywords: Vec<Keyword>,
@@ -34,7 +34,7 @@ pub struct EmailImport {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct EmailImportResponse {
+pub struct ImportEmailResponse {
     #[serde(rename = "accountId")]
     pub account_id: Id,
 
@@ -81,7 +81,7 @@ impl JsonObjectParser for ImportEmailRequest {
                         .unwrap_string_or_null("ifInState")?;
                 }
                 0x736c_6961_6d65 if !property.is_ref => {
-                    request.emails = <VecMap<String, EmailImport>>::parse(parser)?;
+                    request.emails = <VecMap<String, ImportEmail>>::parse(parser)?;
                 }
                 _ => {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
@@ -95,12 +95,12 @@ impl JsonObjectParser for ImportEmailRequest {
     }
 }
 
-impl JsonObjectParser for EmailImport {
+impl JsonObjectParser for ImportEmail {
     fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
     where
         Self: Sized,
     {
-        let mut request = EmailImport {
+        let mut request = ImportEmail {
             blob_id: BlobId::default(),
             mailbox_ids: None,
             keywords: vec![],

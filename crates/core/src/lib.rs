@@ -9,6 +9,7 @@ pub struct JMAP {
 
 pub struct Config {
     pub default_language: Language,
+    pub query_max_results: usize,
 }
 
 pub enum MaybeError {

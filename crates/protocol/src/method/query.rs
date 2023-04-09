@@ -13,9 +13,9 @@ pub struct QueryRequest {
     pub account_id: Id,
     pub filter: Vec<Filter>,
     pub sort: Option<Vec<Comparator>>,
-    pub position: Option<i64>,
+    pub position: Option<i32>,
     pub anchor: Option<Id>,
-    pub anchor_offset: Option<i64>,
+    pub anchor_offset: Option<i32>,
     pub limit: Option<usize>,
     pub calculate_total: Option<bool>,
     pub arguments: RequestArguments,
@@ -56,8 +56,8 @@ pub enum Filter {
     Type(String),
     Timezone(String),
     Members(Id),
-    QuotaLt(u64),
-    QuotaGt(u64),
+    QuotaLt(u32),
+    QuotaGt(u32),
     IdentityIds(Vec<Id>),
     EmailIds(Vec<Id>),
     ThreadIds(Vec<Id>),
@@ -66,8 +66,8 @@ pub enum Filter {
     After(UTCDate),
     InMailbox(Id),
     InMailboxOtherThan(Vec<Id>),
-    MinSize(u64),
-    MaxSize(u64),
+    MinSize(u32),
+    MaxSize(u32),
     AllInThreadHaveKeyword(Keyword),
     SomeInThreadHaveKeyword(Keyword),
     NoneInThreadHaveKeyword(Keyword),
@@ -192,7 +192,7 @@ impl JsonObjectParser for QueryRequest {
                 0x6e6f_6974_6973_6f70 => {
                     request.position = parser
                         .next_token::<Ignore>()?
-                        .unwrap_int_or_null("position")?;
+                        .unwrap_ints_or_null("position")?;
                 }
                 0x726f_6863_6e61 => {
                     request.anchor = parser.next_token::<Id>()?.unwrap_string_or_null("anchor")?;
@@ -200,7 +200,7 @@ impl JsonObjectParser for QueryRequest {
                 0x7465_7366_664f_726f_6863_6e61 => {
                     request.anchor_offset = parser
                         .next_token::<Ignore>()?
-                        .unwrap_int_or_null("anchorOffset")?
+                        .unwrap_ints_or_null("anchorOffset")?;
                 }
                 0x7469_6d69_6c => {
                     request.limit = parser
@@ -274,13 +274,13 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("quotaLowerThan")?
-                                .unwrap_or_default(),
+                                .unwrap_or_default() as u32,
                         ),
                         (0x6e61_6854_7265_7461_6572_4761_746f_7571, _) => Filter::QuotaGt(
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("quotaGreaterThan")?
-                                .unwrap_or_default(),
+                                .unwrap_or_default() as u32,
                         ),
                         (0x7364_4979_7469_746e_6564_69, _) => {
                             Filter::IdentityIds(<Vec<Id>>::parse(parser)?)
@@ -308,13 +308,13 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("minSize")?
-                                .unwrap_or_default(),
+                                .unwrap_or_default() as u32,
                         ),
                         (0x657a_6953_7861_6d, _) => Filter::MaxSize(
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("maxSize")?
-                                .unwrap_or_default(),
+                                .unwrap_or_default() as u32,
                         ),
                         (0x4b65_7661_4864_6165_7268_546e_496c_6c61, 0x6472_6f77_7965) => {
                             Filter::AllInThreadHaveKeyword(
@@ -555,6 +555,59 @@ impl JsonObjectParser for SortProperty {
     }
 }
 
+impl Display for Filter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Filter::Email(_) => "email",
+            Filter::Name(_) => "name",
+            Filter::DomainName(_) => "domainName",
+            Filter::Text(_) => "text",
+            Filter::Type(_) => "type",
+            Filter::Timezone(_) => "timezone",
+            Filter::Members(_) => "members",
+            Filter::QuotaLt(_) => "quotaLt",
+            Filter::QuotaGt(_) => "quotaGt",
+            Filter::IdentityIds(_) => "identityIds",
+            Filter::EmailIds(_) => "emailIds",
+            Filter::ThreadIds(_) => "threadIds",
+            Filter::UndoStatus(_) => "undoStatus",
+            Filter::Before(_) => "before",
+            Filter::After(_) => "after",
+            Filter::InMailbox(_) => "inMailbox",
+            Filter::InMailboxOtherThan(_) => "inMailboxOtherThan",
+            Filter::MinSize(_) => "minSize",
+            Filter::MaxSize(_) => "maxSize",
+            Filter::AllInThreadHaveKeyword(_) => "allInThreadHaveKeyword",
+            Filter::SomeInThreadHaveKeyword(_) => "someInThreadHaveKeyword",
+            Filter::NoneInThreadHaveKeyword(_) => "noneInThreadHaveKeyword",
+            Filter::HasKeyword(_) => "hasKeyword",
+            Filter::NotKeyword(_) => "notKeyword",
+            Filter::HasAttachment(_) => "hasAttachment",
+            Filter::From(_) => "from",
+            Filter::To(_) => "to",
+            Filter::Cc(_) => "cc",
+            Filter::Bcc(_) => "bcc",
+            Filter::Subject(_) => "subject",
+            Filter::Body(_) => "body",
+            Filter::Header(_) => "header",
+            Filter::Id(_) => "id",
+            Filter::SentBefore(_) => "sentBefore",
+            Filter::SentAfter(_) => "sentAfter",
+            Filter::InThread(_) => "inThread",
+            Filter::ParentId(_) => "parentId",
+            Filter::Role(_) => "role",
+            Filter::HasAnyRole(_) => "hasAnyRole",
+            Filter::IsSubscribed(_) => "isSubscribed",
+            Filter::IsActive(_) => "isActive",
+            Filter::_T(v) => v.as_str(),
+            Filter::And => "and",
+            Filter::Or => "or",
+            Filter::Not => "not",
+            Filter::Close => "close",
+        })
+    }
+}
+
 impl Display for SortProperty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
@@ -591,6 +644,25 @@ impl RequestPropertyParser for RequestArguments {
             RequestArguments::Email(args) => args.parse(parser, property),
             RequestArguments::Mailbox(args) => args.parse(parser, property),
             _ => Ok(false),
+        }
+    }
+}
+
+impl Comparator {
+    pub fn descending(property: SortProperty) -> Self {
+        Self {
+            property,
+            is_ascending: false,
+            collation: None,
+            keyword: None,
+        }
+    }
+    pub fn ascending(property: SortProperty) -> Self {
+        Self {
+            property,
+            is_ascending: true,
+            collation: None,
+            keyword: None,
         }
     }
 }

@@ -3,11 +3,13 @@ use protocol::{
     error::method::MethodError,
     method::get::GetResponse,
     object::{email::GetArguments, Object},
-    types::{collection::Collection, id::Id, property::Property, value::Value},
+    types::{blob::BlobId, collection::Collection, id::Id, property::Property, value::Value},
 };
 use store::ValueKey;
 
 use crate::{email::headers::HeaderToValue, JMAP};
+
+use super::body::{ToBodyPart, TruncateBody};
 
 impl JMAP {
     pub async fn email_get(
@@ -59,6 +61,11 @@ impl JMAP {
                 Property::Location,
             ]
         });
+        let fetch_text_body_values = arguments.fetch_text_body_values.unwrap_or(false);
+        let fetch_html_body_values = arguments.fetch_html_body_values.unwrap_or(false);
+        let fetch_all_body_values = arguments.fetch_all_body_values.unwrap_or(false);
+        let max_body_value_bytes = arguments.max_body_value_bytes.unwrap_or(0);
+
         let mut response = GetResponse {
             account_id: Some(account_id.into()),
             state: self
@@ -143,7 +150,7 @@ impl JMAP {
             } else {
                 None
             };
-            let blob_hash = blob_id.hash;
+            let blob_id = BlobId::new(blob_id.hash);
 
             // Prepare response
             let mut email = Object::with_capacity(properties.len());
@@ -156,7 +163,7 @@ impl JMAP {
                         email.append(Property::ThreadId, id.prefix_id());
                     }
                     Property::BlobId => {
-                        email.append(Property::BlobId, blob_hash);
+                        email.append(Property::BlobId, blob_id.clone());
                     }
                     Property::MailboxIds | Property::Keywords => {
                         email.append(
@@ -205,6 +212,69 @@ impl JMAP {
                             );
                         }
                     }
+                    Property::TextBody | Property::HtmlBody | Property::Attachments => {
+                        if let Some(message) = &message {
+                            let list = match property {
+                                Property::TextBody => &message.text_body,
+                                Property::HtmlBody => &message.html_body,
+                                Property::Attachments => &message.attachments,
+                                _ => unreachable!(),
+                            }
+                            .iter();
+                            email.append(
+                                property.clone(),
+                                list.map(|part_id| {
+                                    message.parts.to_body_part(
+                                        *part_id,
+                                        &body_properties,
+                                        &raw_message,
+                                        &blob_id,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                            );
+                        }
+                    }
+                    Property::BodyStructure => {
+                        if let Some(message) = &message {
+                            email.append(
+                                Property::BodyStructure,
+                                message.parts.to_body_part(
+                                    0,
+                                    &body_properties,
+                                    &raw_message,
+                                    &blob_id,
+                                ),
+                            );
+                        }
+                    }
+                    Property::BodyValues => {
+                        if let Some(message) = &message {
+                            let mut body_values = Object::with_capacity(message.parts.len());
+                            for (part_id, part) in message.parts.iter().enumerate() {
+                                if (message.html_body.contains(&part_id)
+                                    && (fetch_all_body_values || fetch_html_body_values))
+                                    || (message.text_body.contains(&part_id)
+                                        && (fetch_all_body_values || fetch_text_body_values))
+                                {
+                                    let (is_truncated, value) =
+                                        part.body.truncate(max_body_value_bytes);
+                                    body_values.append(
+                                        Property::_T(part_id.to_string()),
+                                        Object::with_capacity(3)
+                                            .with_property(
+                                                Property::IsEncodingProblem,
+                                                part.is_encoding_problem,
+                                            )
+                                            .with_property(Property::IsTruncated, is_truncated)
+                                            .with_property(Property::Value, value),
+                                    );
+                                }
+                            }
+                            email.append(Property::BodyValues, body_values);
+                        }
+                    }
+
                     _ => {
                         return Err(MethodError::InvalidArguments(format!(
                             "Invalid property {property:?}"

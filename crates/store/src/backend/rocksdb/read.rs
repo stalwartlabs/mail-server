@@ -60,20 +60,6 @@ impl Store {
         Ok(results)
     }
 
-    pub fn get_document_ids(
-        &self,
-        account_id: u32,
-        collection: u8,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        self.get_bitmap(BitmapKey {
-            account_id,
-            collection,
-            family: BM_DOCUMENT_IDS,
-            field: u8::MAX,
-            key: b"",
-        })
-    }
-
     #[inline(always)]
     pub fn get_bitmap<T: AsRef<[u8]>>(
         &self,

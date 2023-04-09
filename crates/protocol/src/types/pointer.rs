@@ -153,19 +153,35 @@ impl JSONPointer {
         }
     }
 
-    pub fn is_item_query(&self, name: &str) -> bool {
+    pub fn item_query(&self) -> Option<&str> {
         match self {
-            JSONPointer::String(property) => property == name,
+            JSONPointer::String(property) => property.as_str().into(),
             JSONPointer::Path(path) if path.len() == 2 => {
                 if let (Some(JSONPointer::String(property)), Some(JSONPointer::Wildcard)) =
                     (path.get(0), path.get(1))
                 {
-                    property == name
+                    property.as_str().into()
                 } else {
-                    false
+                    None
                 }
             }
-            _ => false,
+            _ => None,
+        }
+    }
+
+    pub fn item_subquery(&self) -> Option<(&str, &str)> {
+        match self {
+            JSONPointer::Path(path) if path.len() == 3 => {
+                match (path.get(0), path.get(1), path.get(2)) {
+                    (
+                        Some(JSONPointer::String(root)),
+                        Some(JSONPointer::Wildcard),
+                        Some(JSONPointer::String(property)),
+                    ) => Some((root.as_str(), property.as_str())),
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 }

@@ -1,8 +1,8 @@
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 
-use crate::{ReadTransaction, Store};
+use crate::{ReadTransaction, Store, ValueKey};
 
-use super::{Comparator, ResultSet, SortedResultRet};
+use super::{Comparator, ResultSet, SortedResultSet};
 
 pub struct Pagination {
     requested_position: i32,
@@ -12,7 +12,9 @@ pub struct Pagination {
     anchor_offset: i32,
     has_anchor: bool,
     anchor_found: bool,
-    ids: Vec<u32>,
+    ids: Vec<u64>,
+    prefix_key: Option<ValueKey>,
+    prefix_unique: bool,
 }
 
 impl ReadTransaction<'_> {
@@ -21,14 +23,9 @@ impl ReadTransaction<'_> {
         &mut self,
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,
-        limit: usize,
-        position: i32,
-        anchor: Option<u32>,
-        anchor_offset: i32,
-    ) -> crate::Result<SortedResultRet> {
-        let mut paginate = Pagination::new(limit, position, anchor, anchor_offset);
-
-        if comparators.len() == 1 {
+        mut paginate: Pagination,
+    ) -> crate::Result<SortedResultSet> {
+        if comparators.len() == 1 && !paginate.prefix_unique {
             match comparators.pop().unwrap() {
                 Comparator::Field { field, ascending } => {
                     let mut results = result_set.results;
@@ -38,14 +35,16 @@ impl ReadTransaction<'_> {
                         result_set.collection,
                         field,
                         ascending,
-                        |_, document_id| !results.remove(document_id) || paginate.add(document_id),
+                        |_, document_id| {
+                            !results.remove(document_id) || paginate.add(0, document_id)
+                        },
                     )
                     .await?;
 
                     // Add remaining items not present in the index
                     if !results.is_empty() && !paginate.is_full() {
                         for document_id in results {
-                            if !paginate.add(document_id) {
+                            if !paginate.add(0, document_id) {
                                 break;
                             }
                         }
@@ -61,13 +60,28 @@ impl ReadTransaction<'_> {
                     };
                     'outer: for set in sets {
                         for document_id in set {
-                            if !paginate.add(document_id) {
+                            if !paginate.add(0, document_id) {
                                 break 'outer;
                             }
                         }
                     }
                 }
             }
+
+            // Obtain prefixes
+            let prefix_key = paginate.prefix_key.take();
+            let mut sorted_results = paginate.build();
+            if let Some(prefix_key) = prefix_key {
+                for id in sorted_results.ids.iter_mut() {
+                    if let Some(prefix_id) =
+                        self.get_value::<u32>(prefix_key.with_document_id(*id as u32))?
+                    {
+                        *id |= (prefix_id as u64) << 32;
+                    }
+                }
+            }
+
+            Ok(sorted_results)
         } else {
             let mut sorted_ids = AHashMap::with_capacity(paginate.limit);
 
@@ -138,16 +152,35 @@ impl ReadTransaction<'_> {
                 }
             }
 
+            let mut seen_prefixes = AHashSet::new();
             let mut sorted_ids = sorted_ids.into_iter().collect::<Vec<_>>();
             sorted_ids.sort_by(|a, b| a.1.cmp(&b.1));
             for (document_id, _) in sorted_ids {
-                if !paginate.add(document_id) {
+                // Obtain document prefixId
+                let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
+                    if let Some(prefix_id) =
+                        self.get_value(prefix_key.with_document_id(document_id))?
+                    {
+                        if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
+                            continue;
+                        }
+                        prefix_id
+                    } else {
+                        // Document no longer exists?
+                        continue;
+                    }
+                } else {
+                    0
+                };
+
+                // Add document to results
+                if !paginate.add(prefix_id, document_id) {
                     break;
                 }
             }
-        }
 
-        Ok(paginate.build())
+            Ok(paginate.build())
+        }
     }
 }
 
@@ -156,15 +189,12 @@ impl Store {
         &self,
         result_set: ResultSet,
         comparators: Vec<Comparator>,
-        limit: usize,
-        position: i32,
-        anchor: Option<u32>,
-        anchor_offset: i32,
-    ) -> crate::Result<SortedResultRet> {
-        let limit = match (result_set.results.len(), limit) {
+        mut paginate: Pagination,
+    ) -> crate::Result<SortedResultSet> {
+        paginate.limit = match (result_set.results.len(), paginate.limit) {
             (0, _) => {
-                return Ok(SortedResultRet {
-                    position,
+                return Ok(SortedResultSet {
+                    position: paginate.position,
                     ids: vec![],
                     found_anchor: true,
                 });
@@ -177,37 +207,28 @@ impl Store {
         {
             self.read_transaction()
                 .await?
-                .sort(
-                    result_set,
-                    comparators,
-                    limit,
-                    position,
-                    anchor,
-                    anchor_offset,
-                )
+                .sort(result_set, comparators, paginate)
                 .await
         }
 
         #[cfg(feature = "is_sync")]
         {
             let mut trx = self.read_transaction()?;
-            self.spawn_worker(move || {
-                trx.sort(
-                    result_set,
-                    comparators,
-                    limit,
-                    position,
-                    anchor,
-                    anchor_offset,
-                )
-            })
-            .await
+            self.spawn_worker(move || trx.sort(result_set, comparators, paginate))
+                .await
         }
     }
 }
 
 impl Pagination {
-    pub fn new(limit: usize, position: i32, anchor: Option<u32>, anchor_offset: i32) -> Self {
+    pub fn new(
+        limit: usize,
+        position: i32,
+        anchor: Option<u32>,
+        anchor_offset: i32,
+        prefix_key: Option<ValueKey>,
+        prefix_unique: bool,
+    ) -> Self {
         let (has_anchor, anchor) = anchor.map(|anchor| (true, anchor)).unwrap_or((false, 0));
 
         Self {
@@ -219,16 +240,20 @@ impl Pagination {
             has_anchor,
             anchor_found: false,
             ids: Vec::with_capacity(limit),
+            prefix_key,
+            prefix_unique,
         }
     }
 
-    pub fn add(&mut self, document_id: u32) -> bool {
+    pub fn add(&mut self, prefix_id: u32, document_id: u32) -> bool {
+        let id = ((prefix_id as u64) << 32) | document_id as u64;
+
         // Pagination
         if !self.has_anchor {
             if self.position > 0 {
                 self.position -= 1;
             } else {
-                self.ids.push(document_id);
+                self.ids.push(id);
                 if self.ids.len() == self.limit {
                     return false;
                 }
@@ -244,14 +269,14 @@ impl Pagination {
             if self.anchor_offset > 0 {
                 self.anchor_offset -= 1;
             } else {
-                self.ids.push(document_id);
+                self.ids.push(id);
                 if self.ids.len() == self.limit {
                     return false;
                 }
             }
         } else {
             self.anchor_found = document_id == self.anchor;
-            self.ids.push(document_id);
+            self.ids.push(id);
 
             if self.anchor_found {
                 self.position = self.anchor_offset;
@@ -266,8 +291,8 @@ impl Pagination {
         self.ids.len() == self.limit
     }
 
-    pub fn build(self) -> SortedResultRet {
-        let mut result = SortedResultRet {
+    pub fn build(self) -> SortedResultSet {
+        let mut result = SortedResultSet {
             ids: self.ids,
             position: 0,
             found_anchor: !self.has_anchor || self.anchor_found,

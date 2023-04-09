@@ -36,7 +36,7 @@ pub struct Request {
     pub created_ids: Option<HashMap<String, Id>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct Call<T> {
     pub id: String,
     pub method: T,

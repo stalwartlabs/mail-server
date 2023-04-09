@@ -9,6 +9,7 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
+pub use roaring;
 
 #[cfg(feature = "rocks")]
 pub struct Store {

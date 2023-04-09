@@ -7,7 +7,8 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{lang::LanguageDetector, Language},
-    BitmapKey, Serialize, BM_DOCUMENT_IDS,
+    write::IntoBitmap,
+    BitmapKey, Serialize, BM_DOCUMENT_IDS, BM_KEYWORD,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -21,14 +22,6 @@ pub enum Operator {
 
 #[derive(Debug)]
 pub enum Filter {
-    HasKeyword {
-        field: u8,
-        value: String,
-    },
-    HasKeywords {
-        field: u8,
-        value: String,
-    },
     MatchValue {
         field: u8,
         op: Operator,
@@ -37,8 +30,7 @@ pub enum Filter {
     HasText {
         field: u8,
         text: String,
-        language: Language,
-        match_phrase: bool,
+        op: TextMatch,
     },
     InBitmap {
         family: u8,
@@ -50,6 +42,13 @@ pub enum Filter {
     Or,
     Not,
     End,
+}
+
+#[derive(Debug)]
+pub enum TextMatch {
+    Exact(Language),
+    Stemmed(Language),
+    Tokenized,
 }
 
 #[derive(Debug)]
@@ -65,9 +64,9 @@ pub struct ResultSet {
     pub results: RoaringBitmap,
 }
 
-pub struct SortedResultRet {
+pub struct SortedResultSet {
     pub position: i32,
-    pub ids: Vec<u32>,
+    pub ids: Vec<u64>,
     pub found_anchor: bool,
 }
 
@@ -120,57 +119,80 @@ impl Filter {
         }
     }
 
-    pub fn has_keyword(field: impl Into<u8>, value: impl Into<String>) -> Self {
-        Filter::HasKeyword {
+    pub fn has_keyword(field: impl Into<u8>, value: impl Serialize) -> Self {
+        Filter::InBitmap {
+            family: BM_KEYWORD,
             field: field.into(),
-            value: value.into(),
+            key: value.serialize(),
         }
     }
 
-    pub fn has_keywords(field: impl Into<u8>, value: impl Into<String>) -> Self {
-        Filter::HasKeywords {
-            field: field.into(),
-            value: value.into(),
-        }
-    }
-
-    pub fn match_text(
-        field: impl Into<u8>,
-        text: impl Into<String>,
-        mut language: Language,
-    ) -> Self {
+    pub fn has_text(field: impl Into<u8>, text: impl Into<String>, mut language: Language) -> Self {
         let mut text = text.into();
-        let match_phrase = (text.starts_with('"') && text.ends_with('"'))
-            || (text.starts_with('\'') && text.ends_with('\''));
+        let op = if !matches!(language, Language::None) {
+            let match_phrase = (text.starts_with('"') && text.ends_with('"'))
+                || (text.starts_with('\'') && text.ends_with('\''));
 
-        if !match_phrase && language == Language::Unknown {
-            language = if let Some((l, t)) = text
-                .split_once(':')
-                .and_then(|(l, t)| (Language::from_iso_639(l)?, t.to_string()).into())
-            {
-                text = t;
-                l
+            if !match_phrase && language == Language::Unknown {
+                language = if let Some((l, t)) = text
+                    .split_once(':')
+                    .and_then(|(l, t)| (Language::from_iso_639(l)?, t.to_string()).into())
+                {
+                    text = t;
+                    l
+                } else {
+                    LanguageDetector::detect_single(&text)
+                        .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
+                        .unwrap_or(Language::Unknown)
+                };
+            }
+
+            if match_phrase {
+                TextMatch::Exact(language)
             } else {
-                LanguageDetector::detect_single(&text)
-                    .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
-                    .unwrap_or(Language::Unknown)
-            };
-        }
+                TextMatch::Stemmed(language)
+            }
+        } else {
+            TextMatch::Tokenized
+        };
 
         Filter::HasText {
             field: field.into(),
             text,
-            language,
-            match_phrase,
+            op,
         }
     }
 
-    pub fn match_english(field: impl Into<u8>, text: impl Into<String>) -> Self {
-        Self::match_text(field, text, Language::English)
+    pub fn has_english_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
+        Self::has_text(field, text, Language::English)
+    }
+
+    pub fn is_in_bitmap(field: impl Into<u8>, value: impl IntoBitmap) -> Self {
+        let (key, family) = value.into_bitmap();
+        Self::InBitmap {
+            family,
+            field: field.into(),
+            key,
+        }
+    }
+
+    pub fn is_in_set(set: RoaringBitmap) -> Self {
+        Filter::DocumentSet(set)
     }
 }
 
 impl Comparator {
+    pub fn field(field: impl Into<u8>, ascending: bool) -> Self {
+        Self::Field {
+            field: field.into(),
+            ascending,
+        }
+    }
+
+    pub fn set(set: RoaringBitmap, ascending: bool) -> Self {
+        Self::DocumentSet { set, ascending }
+    }
+
     pub fn ascending(field: impl Into<u8>) -> Self {
         Self::Field {
             field: field.into(),
@@ -187,10 +209,10 @@ impl Comparator {
 }
 
 impl BitmapKey<&'static [u8]> {
-    pub fn new_document_ids(account_id: u32, collection: u8) -> Self {
+    pub fn document_ids(account_id: u32, collection: impl Into<u8>) -> Self {
         BitmapKey {
             account_id,
-            collection,
+            collection: collection.into(),
             family: BM_DOCUMENT_IDS,
             field: u8::MAX,
             key: b"",

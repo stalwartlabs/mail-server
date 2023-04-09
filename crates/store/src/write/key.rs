@@ -137,4 +137,11 @@ impl ValueKey {
             field: field.into(),
         }
     }
+
+    pub fn with_document_id(self, document_id: u32) -> Self {
+        Self {
+            document_id,
+            ..self
+        }
+    }
 }

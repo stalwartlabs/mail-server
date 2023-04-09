@@ -151,7 +151,11 @@ impl JsonObjectParser for Property {
             }
         }
 
-        parse_property(parser, first_char, hash)
+        if let Some(property) = parse_property(first_char, hash) {
+            Ok(property)
+        } else {
+            parser.invalid_property()
+        }
     }
 }
 
@@ -204,7 +208,11 @@ impl JsonObjectParser for SetProperty {
             }
         }
 
-        let mut property = parse_property(parser, first_char, hash)?;
+        let mut property = if let Some(property) = parse_property(first_char, hash) {
+            property
+        } else {
+            parser.invalid_property()?
+        };
         let mut patch = Vec::new();
 
         if is_patch {
@@ -291,31 +299,27 @@ impl JsonObjectParser for SetProperty {
     }
 }
 
-fn parse_property(
-    parser: &mut Parser,
-    first_char: u8,
-    hash: u128,
-) -> crate::parser::Result<Property> {
-    Ok(match first_char {
+fn parse_property(first_char: u8, hash: u128) -> Option<Property> {
+    Some(match first_char {
         b'a' => match hash {
             0x6c63 => Property::Acl,
             0x7365_7361_696c => Property::Aliases,
             0x7374_6e65_6d68_6361_7474 => Property::Attachments,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'b' => match hash {
             0x6363 => Property::Bcc,
             0x6449_626f_6c => Property::BlobId,
             0x6572_7574_6375_7274_5379_646f => Property::BodyStructure,
             0x7365_756c_6156_7964_6f => Property::BodyValues,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'c' => match hash {
             0x7365_6974_696c_6962_6170_61 => Property::Capabilities,
             0x63 => Property::Cc,
             0x7465_7372_6168 => Property::Charset,
             0x6469 => Property::Cid,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'd' => match hash {
             0x7375_7461_7453_7972_6576_696c_65 => Property::DeliveryStatus,
@@ -323,7 +327,7 @@ fn parse_property(
             0x6449_746e_6569_6c43_6563_6976_65 => Property::DeviceClientId,
             0x6e6f_6974_6973_6f70_7369 => Property::Disposition,
             0x7364_4962_6f6c_426e_73 => Property::DsnBlobIds,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'e' => match hash {
             0x6c69_616d => Property::Email,
@@ -331,19 +335,19 @@ fn parse_property(
             0x7364_496c_6961_6d => Property::EmailIds,
             0x6570_6f6c_6576_6e => Property::Envelope,
             0x7365_7269_7078 => Property::Expires,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'f' => match hash {
             0x6d6f_72 => Property::From,
             0x6574_6144_6d6f_72 => Property::FromDate,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'h' => match hash {
             0x746e_656d_6863_6174_7441_7361 => Property::HasAttachment,
             0x7372_6564_6165 => Property::Headers,
             0x7964_6f42_6c6d_74 => Property::HtmlBody,
             0x6572_7574_616e_6769_536c_6d74 => Property::HtmlSignature,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'i' => match hash {
             0x64 => Property::Id,
@@ -352,17 +356,17 @@ fn parse_property(
             0x6576_6974_6341_73 => Property::IsActive,
             0x6465_6c62_616e_4573 => Property::IsEnabled,
             0x6465_6269_7263_7362_7553_73 => Property::IsSubscribed,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'k' => match hash {
             0x7379_65 => Property::Keys,
             0x7364_726f_7779_65 => Property::Keywords,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'l' => match hash {
             0x6567_6175_676e_61 => Property::Language,
             0x6e6f_6974_6163_6f => Property::Location,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'm' => match hash {
             0x7364_4978_6f62_6c69_61 => Property::MailboxIds,
@@ -371,29 +375,29 @@ fn parse_property(
             0x7372_6562_6d65 => Property::Members,
             0x6449_6567_6173_7365 => Property::MessageId,
             0x7374_6867_6952_79 => Property::MyRights,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'n' => match hash {
             0x656d_61 => Property::Name,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'p' => match hash {
             0x6449_746e_6572_61 => Property::ParentId,
             0x6449_7472_61 => Property::PartId,
             0x6572_7574_6369 => Property::Picture,
             0x7765_6976_6572 => Property::Preview,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'q' => match hash {
             0x6174_6f75 => Property::Quota,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'r' => match hash {
             0x7441_6465_7669_6563_65 => Property::ReceivedAt,
             0x7365_636e_6572_6566_65 => Property::References,
             0x6f54_796c_7065 => Property::ReplyTo,
             0x656c_6f => Property::Role,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b's' => match hash {
             0x7465_7263_65 => Property::Secret,
@@ -404,7 +408,7 @@ fn parse_property(
             0x7265_6472_4f74_726f => Property::SortOrder,
             0x7463_656a_6275 => Property::Subject,
             0x7374_7261_5062_7573 => Property::SubParts,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b't' => match hash {
             0x7964_6f42_7478_65 => Property::TextBody,
@@ -417,20 +421,20 @@ fn parse_property(
             0x7364_6165_7268_546c_6174_6f => Property::TotalThreads,
             0x6570_79 => Property::Type,
             0x7365_7079 => Property::Types,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'u' => match hash {
             0x7375_7461_7453_6f64_6e => Property::UndoStatus,
             0x736c_6961_6d45_6461_6572_6e => Property::UnreadEmails,
             0x7364_6165_7268_5464_6165_726e => Property::UnreadThreads,
             0x6c72 => Property::Url,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
         b'v' => match hash {
             0x6564_6f43_6e6f_6974_6163_6966_6972_65 => Property::VerificationCode,
-            _ => parser.invalid_property()?,
+            _ => return None,
         },
-        _ => parser.invalid_property()?,
+        _ => return None,
     })
 }
 
@@ -633,6 +637,37 @@ impl<'x> Parser<'x> {
             ))
         } else {
             Err(self.error_unterminated())
+        }
+    }
+}
+
+impl Property {
+    pub fn parse(value: &str) -> Property {
+        let mut first_char = 0;
+        let mut hash = 0;
+        let mut shift = 0;
+
+        for &ch in value.as_bytes() {
+            if ch.is_ascii_alphabetic() {
+                if first_char != 0 {
+                    if shift < 128 {
+                        hash |= (ch as u128) << shift;
+                        shift += 8;
+                    } else {
+                        return Property::_T(value.to_string());
+                    }
+                } else {
+                    first_char = ch;
+                }
+            } else {
+                return Property::_T(value.to_string());
+            }
+        }
+
+        if let Some(property) = parse_property(first_char, hash) {
+            property
+        } else {
+            Property::_T(value.to_string())
         }
     }
 }

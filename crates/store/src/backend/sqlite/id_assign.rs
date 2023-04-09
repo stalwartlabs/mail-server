@@ -118,7 +118,7 @@ impl Store {
 
             // Obtain used ids
             let used_ids =
-                conn.get_bitmap(BitmapKey::new_document_ids(key.account_id, key.collection))?;
+                conn.get_bitmap(BitmapKey::document_ids(key.account_id, key.collection))?;
             let next_change_id = conn
                 .get_last_change_id(key.account_id, key.collection)?
                 .map(|id| id + 1)

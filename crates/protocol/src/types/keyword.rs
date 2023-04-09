@@ -142,6 +142,26 @@ impl IntoBitmap for &Keyword {
     }
 }
 
+impl IntoBitmap for Keyword {
+    fn into_bitmap(self) -> (Vec<u8>, u8) {
+        match self {
+            Keyword::Seen => (vec![SEEN], BM_TAG | TAG_STATIC),
+            Keyword::Draft => (vec![DRAFT], BM_TAG | TAG_STATIC),
+            Keyword::Flagged => (vec![FLAGGED], BM_TAG | TAG_STATIC),
+            Keyword::Answered => (vec![ANSWERED], BM_TAG | TAG_STATIC),
+            Keyword::Recent => (vec![RECENT], BM_TAG | TAG_STATIC),
+            Keyword::Important => (vec![IMPORTANT], BM_TAG | TAG_STATIC),
+            Keyword::Phishing => (vec![PHISHING], BM_TAG | TAG_STATIC),
+            Keyword::Junk => (vec![JUNK], BM_TAG | TAG_STATIC),
+            Keyword::NotJunk => (vec![NOTJUNK], BM_TAG | TAG_STATIC),
+            Keyword::Deleted => (vec![DELETED], BM_TAG | TAG_STATIC),
+            Keyword::Forwarded => (vec![FORWARDED], BM_TAG | TAG_STATIC),
+            Keyword::MdnSent => (vec![MDN_SENT], BM_TAG | TAG_STATIC),
+            Keyword::Other(string) => (string.into_bytes(), BM_TAG | TAG_TEXT),
+        }
+    }
+}
+
 impl SerializeValue for Keyword {
     fn serialize_value(self, buf: &mut Vec<u8>) {
         match self {

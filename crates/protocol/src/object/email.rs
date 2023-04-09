@@ -15,7 +15,7 @@ pub struct GetArguments {
 
 #[derive(Debug, Clone, Default)]
 pub struct QueryArguments {
-    collapse_threads: Option<bool>,
+    pub collapse_threads: Option<bool>,
 }
 
 impl RequestPropertyParser for GetArguments {

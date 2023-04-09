@@ -5,10 +5,10 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
-    BitmapKey, ReadTransaction, Store, BM_KEYWORD,
+    BitmapKey, ReadTransaction, Store,
 };
 
-use super::{Filter, ResultSet};
+use super::{Filter, ResultSet, TextMatch};
 
 struct State {
     op: Filter,
@@ -30,7 +30,7 @@ impl ReadTransaction<'_> {
                 account_id,
                 collection,
                 results: self
-                    .get_bitmap(BitmapKey::new_document_ids(account_id, collection))
+                    .get_bitmap(BitmapKey::document_ids(account_id, collection))
                     .await?
                     .unwrap_or_else(RoaringBitmap::new),
             });
@@ -44,40 +44,32 @@ impl ReadTransaction<'_> {
             self.refresh_if_old().await?;
 
             let result = match filter {
-                Filter::HasKeyword { field, value } => {
-                    self.get_bitmap(BitmapKey {
-                        account_id,
-                        collection,
-                        family: BM_KEYWORD,
-                        field,
-                        key: value.as_bytes(),
-                        block_num: 0,
-                    })
-                    .await?
-                }
-                Filter::HasKeywords { field, value } => {
-                    self.get_bitmaps_intersection(
-                        SpaceTokenizer::new(&value, MAX_TOKEN_LENGTH)
-                            .collect::<HashSet<String>>()
-                            .into_iter()
-                            .map(|word| BitmapKey::hash(&word, account_id, collection, 0, field))
-                            .collect(),
-                    )
-                    .await?
-                }
                 Filter::MatchValue { field, op, value } => {
                     self.range_to_bitmap(account_id, collection, field, value, op)
                         .await?
                 }
-                Filter::HasText {
-                    field,
-                    text,
-                    language,
-                    match_phrase,
-                } => {
-                    self.fts_query(account_id, collection, field, &text, language, match_phrase)
+                Filter::HasText { field, text, op } => match op {
+                    TextMatch::Exact(language) => {
+                        self.fts_query(account_id, collection, field, &text, language, true)
+                            .await?
+                    }
+                    TextMatch::Stemmed(language) => {
+                        self.fts_query(account_id, collection, field, &text, language, false)
+                            .await?
+                    }
+                    TextMatch::Tokenized => {
+                        self.get_bitmaps_intersection(
+                            SpaceTokenizer::new(&text, MAX_TOKEN_LENGTH)
+                                .collect::<HashSet<String>>()
+                                .into_iter()
+                                .map(|word| {
+                                    BitmapKey::hash(&word, account_id, collection, 0, field)
+                                })
+                                .collect(),
+                        )
                         .await?
-                }
+                    }
+                },
                 Filter::InBitmap { family, field, key } => {
                     self.get_bitmap(BitmapKey {
                         account_id,
@@ -108,7 +100,7 @@ impl ReadTransaction<'_> {
 
             if matches!(state.op, Filter::Not) && !not_fetch {
                 not_mask = self
-                    .get_bitmap(BitmapKey::new_document_ids(account_id, collection))
+                    .get_bitmap(BitmapKey::document_ids(account_id, collection))
                     .await?
                     .unwrap_or_else(RoaringBitmap::new);
                 not_fetch = true;

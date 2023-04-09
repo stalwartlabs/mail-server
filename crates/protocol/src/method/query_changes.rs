@@ -43,8 +43,8 @@ pub struct QueryChangesResponse {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AddedItem {
-    id: Id,
-    index: usize,
+    pub id: Id,
+    pub index: usize,
 }
 
 impl AddedItem {

@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::parser::{json::Parser, JsonObjectParser, Token};
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct Echo {
     pub payload: Box<RawValue>,
 }

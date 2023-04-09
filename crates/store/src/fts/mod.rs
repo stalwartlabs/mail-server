@@ -21,7 +21,10 @@
  * for more details.
 */
 
-use crate::{write::Operation, BitmapKey, BM_HASH};
+use crate::{
+    write::{IntoBitmap, Operation},
+    BitmapKey, BM_HASH,
+};
 
 use self::{bloom::hash_token, builder::MAX_TOKEN_MASK};
 
@@ -176,6 +179,23 @@ impl BitmapKey<Vec<u8>> {
             field,
             block_num: 0,
             key: hash_token(word),
+        }
+    }
+
+    pub fn value(
+        account_id: u32,
+        collection: impl Into<u8>,
+        field: impl Into<u8>,
+        value: impl IntoBitmap,
+    ) -> Self {
+        let (key, family) = value.into_bitmap();
+        BitmapKey {
+            account_id,
+            collection: collection.into(),
+            family,
+            field: field.into(),
+            block_num: 0,
+            key,
         }
     }
 }

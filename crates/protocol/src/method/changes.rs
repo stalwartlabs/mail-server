@@ -35,7 +35,7 @@ pub struct ChangesResponse {
 
     #[serde(rename = "updatedProperties")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    updated_properties: Option<Vec<Property>>,
+    pub updated_properties: Option<Vec<Property>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

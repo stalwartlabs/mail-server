@@ -1,4 +1,6 @@
-use crate::{Deserialize, Key, Store, ValueKey};
+use roaring::RoaringBitmap;
+
+use crate::{BitmapKey, Deserialize, Key, Store, ValueKey};
 
 impl Store {
     pub async fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
@@ -69,6 +71,22 @@ impl Store {
             let trx = self.read_transaction()?;
             self.spawn_worker(move || trx.get_last_change_id(account_id, collection))
                 .await
+        }
+    }
+
+    pub async fn get_bitmap<T: AsRef<[u8]> + Send + Sync + 'static>(
+        &self,
+        key: BitmapKey<T>,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        #[cfg(feature = "is_async")]
+        {
+            self.read_transaction().await?.get_bitmap(key).await
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let trx = self.read_transaction()?;
+            self.spawn_worker(move || trx.get_bitmap(key)).await
         }
     }
 

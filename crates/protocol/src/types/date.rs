@@ -23,6 +23,8 @@
 
 use std::fmt::Display;
 
+use store::Serialize;
+
 use crate::parser::{json::Parser, JsonObjectParser};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
@@ -232,6 +234,12 @@ impl serde::Serialize for UTCDate {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl Serialize for UTCDate {
+    fn serialize(self) -> Vec<u8> {
+        (self.timestamp() as u64).serialize()
     }
 }
 

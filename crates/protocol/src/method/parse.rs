@@ -20,7 +20,7 @@ pub struct ParseEmailRequest {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct EmailParseResponse {
+pub struct ParseEmailResponse {
     #[serde(rename = "accountId")]
     account_id: Id,
 
