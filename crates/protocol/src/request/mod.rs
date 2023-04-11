@@ -14,10 +14,10 @@ use crate::{
     method::{
         changes::ChangesRequest,
         copy::{CopyBlobRequest, CopyRequest},
-        get::GetRequest,
+        get::{self, GetRequest},
         import::ImportEmailRequest,
         parse::ParseEmailRequest,
-        query::QueryRequest,
+        query::{self, QueryRequest},
         query_changes::QueryChangesRequest,
         search_snippet::GetSearchSnippetRequest,
         set::SetRequest,
@@ -50,7 +50,7 @@ pub struct RequestProperty {
 
 #[derive(Debug)]
 pub enum RequestMethod {
-    Get(GetRequest),
+    Get(GetRequest<get::RequestArguments>),
     Set(SetRequest),
     Changes(ChangesRequest),
     Copy(CopyRequest),
@@ -58,7 +58,7 @@ pub enum RequestMethod {
     ImportEmail(ImportEmailRequest),
     ParseEmail(ParseEmailRequest),
     QueryChanges(QueryChangesRequest),
-    Query(QueryRequest),
+    Query(QueryRequest<query::RequestArguments>),
     SearchSnippet(GetSearchSnippetRequest),
     ValidateScript(ValidateSieveScriptRequest),
     Echo(Echo),
@@ -88,6 +88,7 @@ impl JsonObjectParser for RequestProperty {
                     continue 'outer;
                 }
             }
+            break;
         }
 
         Ok(RequestProperty { hash, is_ref })

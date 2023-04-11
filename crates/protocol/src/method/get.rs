@@ -11,11 +11,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct GetRequest {
+pub struct GetRequest<T> {
     pub account_id: Id,
     pub ids: Option<MaybeReference<Vec<Id>, ResultReference>>,
     pub properties: Option<MaybeReference<Vec<Property>, ResultReference>>,
-    pub arguments: RequestArguments,
+    pub arguments: T,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ pub struct GetResponse {
     pub not_found: Vec<Id>,
 }
 
-impl JsonObjectParser for GetRequest {
+impl JsonObjectParser for GetRequest<RequestArguments> {
     fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
     where
         Self: Sized,
@@ -121,6 +121,21 @@ impl RequestPropertyParser for RequestArguments {
             arguments.parse(parser, property)
         } else {
             Ok(false)
+        }
+    }
+}
+
+impl GetRequest<RequestArguments> {
+    pub fn take_arguments(&mut self) -> RequestArguments {
+        std::mem::replace(&mut self.arguments, RequestArguments::Principal)
+    }
+
+    pub fn with_arguments<T>(self, arguments: T) -> GetRequest<T> {
+        GetRequest {
+            arguments,
+            account_id: self.account_id,
+            ids: self.ids,
+            properties: self.properties,
         }
     }
 }

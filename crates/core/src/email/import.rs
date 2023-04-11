@@ -10,6 +10,8 @@ impl JMAP {
         &self,
         request: ImportEmailRequest,
     ) -> Result<ImportEmailResponse, MethodError> {
+        for (id, email) in request.emails {}
+
         todo!()
     }
 }

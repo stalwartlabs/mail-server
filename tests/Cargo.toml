@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-store = { path = "../crates/store" }
+store = { path = "../crates/store", features = ["test_mode"] }
 utils = { path = "/home/vagrant/code/utils" }
 
 [dev-dependencies]

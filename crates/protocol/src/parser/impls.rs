@@ -235,7 +235,6 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
             Token::DictStart => {
                 let mut map = VecMap::new();
 
-                parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
                 while {
                     map.append(parser.next_dict_key()?, V::parse(parser)?);
                     !parser.is_dict_end()?

@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct QueryRequest {
+pub struct QueryRequest<T> {
     pub account_id: Id,
     pub filter: Vec<Filter>,
     pub sort: Option<Vec<Comparator>>,
@@ -18,7 +18,7 @@ pub struct QueryRequest {
     pub anchor_offset: Option<i32>,
     pub limit: Option<usize>,
     pub calculate_total: Option<bool>,
-    pub arguments: RequestArguments,
+    pub arguments: T,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -138,7 +138,7 @@ pub enum RequestArguments {
     Principal,
 }
 
-impl JsonObjectParser for QueryRequest {
+impl JsonObjectParser for QueryRequest<RequestArguments> {
     fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
     where
         Self: Sized,
@@ -663,6 +663,26 @@ impl Comparator {
             is_ascending: true,
             collation: None,
             keyword: None,
+        }
+    }
+}
+
+impl QueryRequest<RequestArguments> {
+    pub fn take_arguments(&mut self) -> RequestArguments {
+        std::mem::replace(&mut self.arguments, RequestArguments::Principal)
+    }
+
+    pub fn with_arguments<T>(self, arguments: T) -> QueryRequest<T> {
+        QueryRequest {
+            arguments,
+            account_id: self.account_id,
+            filter: self.filter,
+            sort: self.sort,
+            position: self.position,
+            anchor: self.anchor,
+            anchor_offset: self.anchor_offset,
+            limit: self.limit,
+            calculate_total: self.calculate_total,
         }
     }
 }

@@ -22,6 +22,15 @@ pub enum MaybeReference<V, R> {
     Reference(R),
 }
 
+impl<V, R> MaybeReference<V, R> {
+    pub fn unwrap(self) -> V {
+        match self {
+            MaybeReference::Value(v) => v,
+            MaybeReference::Reference(_) => panic!("unwrap() called on MaybeReference::Reference"),
+        }
+    }
+}
+
 impl JsonObjectParser for ResultReference {
     fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
     where

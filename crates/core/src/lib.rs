@@ -1,5 +1,6 @@
 use store::{fts::Language, Store};
 
+pub mod api;
 pub mod email;
 
 pub struct JMAP {
@@ -10,6 +11,8 @@ pub struct JMAP {
 pub struct Config {
     pub default_language: Language,
     pub query_max_results: usize,
+    pub request_max_size: usize,
+    pub request_max_calls: usize,
 }
 
 pub enum MaybeError {

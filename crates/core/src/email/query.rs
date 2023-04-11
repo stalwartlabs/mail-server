@@ -16,8 +16,7 @@ use crate::JMAP;
 impl JMAP {
     pub async fn email_query(
         &self,
-        request: QueryRequest,
-        arguments: QueryArguments,
+        request: QueryRequest<QueryArguments>,
     ) -> Result<QueryResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
@@ -264,7 +263,7 @@ impl JMAP {
                         request.anchor.map(|a| a.document_id()),
                         request.anchor_offset.unwrap_or(0),
                         ValueKey::new(account_id, Collection::Email, 0, Property::ThreadId).into(),
-                        arguments.collapse_threads.unwrap_or(false),
+                        request.arguments.collapse_threads.unwrap_or(false),
                     ),
                 )
                 .await?;

@@ -8,7 +8,7 @@ use crate::{
     error::method::MethodError,
     object::Object,
     parser::{json::Parser, Ignore, JsonObjectParser, Token},
-    request::reference::ResultReference,
+    request::reference::{MaybeReference, ResultReference},
 };
 
 use super::{
@@ -38,10 +38,12 @@ pub enum Value {
     Null,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetValue {
     Value(Value),
     Patch(Vec<Value>),
+    IdReference(MaybeReference<Id, String>),
+    IdReferences(Vec<MaybeReference<Id, String>>),
     ResultReference(ResultReference),
 }
 

@@ -246,23 +246,13 @@ impl JsonObjectParser for Object<SetValue> {
                     Property::ParentId | Property::EmailId | Property::IdentityId => parser
                         .next_token::<MaybeReference<Id, String>>()?
                         .unwrap_string_or_null("")?
-                        .map(|id| match id {
-                            MaybeReference::Value(id) => SetValue::Value(Value::Id(id)),
-                            MaybeReference::Reference(r) => SetValue::Value(Value::Text(r)),
-                        })
+                        .map(SetValue::IdReference)
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::MailboxIds => {
                         if property.patch.is_empty() {
-                            SetValue::Value(Value::List(
-                                <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?
-                                    .values
-                                    .into_iter()
-                                    .map(|id| match id {
-                                        MaybeReference::Value(id) => Value::Id(id),
-                                        MaybeReference::Reference(r) => Value::Text(r),
-                                    })
-                                    .collect(),
-                            ))
+                            SetValue::IdReferences(
+                                <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
+                            )
                         } else {
                             property.patch.push(Value::Bool(bool::parse(parser)?));
                             SetValue::Patch(property.patch)

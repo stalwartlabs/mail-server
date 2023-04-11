@@ -1,12 +1,12 @@
 pub mod references;
 
-use ahash::AHashMap;
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::{
     error::method::MethodError,
     method::{
-        ahash_is_empty,
         changes::ChangesResponse,
         copy::{CopyBlobResponse, CopyResponse},
         get::GetResponse,
@@ -49,12 +49,11 @@ pub struct Response {
     pub session_state: u32,
 
     #[serde(rename(deserialize = "createdIds"))]
-    #[serde(skip_serializing_if = "ahash_is_empty")]
-    pub created_ids: AHashMap<String, Id>,
+    pub created_ids: HashMap<String, Id>,
 }
 
 impl Response {
-    pub fn new(session_state: u32, created_ids: AHashMap<String, Id>, capacity: usize) -> Self {
+    pub fn new(session_state: u32, created_ids: HashMap<String, Id>, capacity: usize) -> Self {
         Response {
             session_state,
             created_ids,
@@ -156,5 +155,14 @@ impl From<GetSearchSnippetResponse> for ResponseMethod {
 impl From<ValidateSieveScriptResponse> for ResponseMethod {
     fn from(validate_script: ValidateSieveScriptResponse) -> Self {
         ResponseMethod::ValidateScript(validate_script)
+    }
+}
+
+impl<T: Into<ResponseMethod>> From<Result<T, MethodError>> for ResponseMethod {
+    fn from(result: Result<T, MethodError>) -> Self {
+        match result {
+            Ok(value) => value.into(),
+            Err(error) => error.into(),
+        }
     }
 }

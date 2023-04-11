@@ -26,12 +26,12 @@ use std::{
     time::Instant,
 };
 
-use store::ahash::AHashMap;
+use store::{ahash::AHashMap, query::sort::Pagination};
 
 use store::{
     fts::{builder::FtsIndexBuilder, Language},
     query::{Comparator, Filter},
-    write::{BatchBuilder, F_INDEX, F_TOKENIZE, F_VALUE},
+    write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
     Store, ValueKey,
 };
 
@@ -127,7 +127,7 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
                                     builder.value(
                                         field_id,
                                         field.to_lowercase(),
-                                        F_VALUE | F_TOKENIZE,
+                                        F_VALUE | F_BITMAP,
                                     );
                                 }
                             }
@@ -155,7 +155,7 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
                                     builder.value(
                                         field_id,
                                         field.to_lowercase(),
-                                        F_VALUE | F_INDEX | F_TOKENIZE,
+                                        F_VALUE | F_INDEX | F_BITMAP,
                                     );
                                 }
                             }
@@ -221,14 +221,14 @@ pub async fn test_filter(db: Arc<Store>) {
     let tests = [
         (
             vec![
-                Filter::match_english(fields["title"], "water"),
+                Filter::has_english_text(fields["title"], "water"),
                 Filter::eq(fields["year"], 1979u32),
             ],
             vec!["p11293"],
         ),
         (
             vec![
-                Filter::match_english(fields["medium"], "gelatin"),
+                Filter::has_english_text(fields["medium"], "gelatin"),
                 Filter::gt(fields["year"], 2000u32),
                 Filter::lt(fields["width"], 180u32),
                 Filter::gt(fields["width"], 0u32),
@@ -236,19 +236,19 @@ pub async fn test_filter(db: Arc<Store>) {
             vec!["p79426", "p79427", "p79428", "p79429", "p79430"],
         ),
         (
-            vec![Filter::match_english(fields["title"], "'rustic bridge'")],
+            vec![Filter::has_english_text(fields["title"], "'rustic bridge'")],
             vec!["d05503"],
         ),
         (
             vec![
-                Filter::match_english(fields["title"], "'rustic'"),
-                Filter::match_english(fields["title"], "study"),
+                Filter::has_english_text(fields["title"], "'rustic'"),
+                Filter::has_english_text(fields["title"], "study"),
             ],
             vec!["d00399", "d05352"],
         ),
         (
             vec![
-                Filter::has_keywords(fields["artist"], "mauro kunst"),
+                Filter::has_text(fields["artist"], "mauro kunst", Language::None),
                 Filter::has_keyword(fields["artistRole"], "artist"),
                 Filter::Or,
                 Filter::eq(fields["year"], 1969u32),
@@ -260,9 +260,9 @@ pub async fn test_filter(db: Arc<Store>) {
         (
             vec![
                 Filter::Not,
-                Filter::match_english(fields["medium"], "oil"),
+                Filter::has_english_text(fields["medium"], "oil"),
                 Filter::End,
-                Filter::match_english(fields["creditLine"], "bequeath"),
+                Filter::has_english_text(fields["creditLine"], "bequeath"),
                 Filter::Or,
                 Filter::And,
                 Filter::ge(fields["year"], 1900u32),
@@ -285,7 +285,7 @@ pub async fn test_filter(db: Arc<Store>) {
                 Filter::And,
                 Filter::has_keyword(fields["artist"], "warhol"),
                 Filter::Not,
-                Filter::match_english(fields["title"], "'campbell'"),
+                Filter::has_english_text(fields["title"], "'campbell'"),
                 Filter::End,
                 Filter::Not,
                 Filter::Or,
@@ -303,12 +303,12 @@ pub async fn test_filter(db: Arc<Store>) {
         ),
         (
             vec![
-                Filter::match_english(fields["title"], "study"),
-                Filter::match_english(fields["medium"], "paper"),
-                Filter::match_english(fields["creditLine"], "'purchased'"),
+                Filter::has_english_text(fields["title"], "study"),
+                Filter::has_english_text(fields["medium"], "paper"),
+                Filter::has_english_text(fields["creditLine"], "'purchased'"),
                 Filter::Not,
-                Filter::match_english(fields["title"], "'anatomical'"),
-                Filter::match_english(fields["title"], "'for'"),
+                Filter::has_english_text(fields["title"], "'anatomical'"),
+                Filter::has_english_text(fields["title"], "'for'"),
                 Filter::End,
                 Filter::gt(fields["year"], 1900u32),
                 Filter::gt(fields["acquisitionYear"], 2000u32),
@@ -326,10 +326,7 @@ pub async fn test_filter(db: Arc<Store>) {
             .sort(
                 docset,
                 vec![Comparator::ascending(fields["accession_number"])],
-                0,
-                0,
-                None,
-                0,
+                Pagination::new(0, 0, None, 0, None, false),
             )
             .await
             .unwrap();
@@ -342,7 +339,7 @@ pub async fn test_filter(db: Arc<Store>) {
                     .map(|document_id| ValueKey {
                         account_id: 0,
                         collection: COLLECTION_ID,
-                        document_id,
+                        document_id: document_id as u32,
                         family: 0,
                         field: fields["accession_number"],
                     })
@@ -420,8 +417,13 @@ pub async fn test_sort(db: Arc<Store>) {
     for (filter, sort, expected_results) in tests {
         //println!("Running test: {:?}", sort);
         let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
+
         let sorted_docset = db
-            .sort(docset, sort, expected_results.len(), 0, None, 0)
+            .sort(
+                docset,
+                sort,
+                Pagination::new(expected_results.len(), 0, None, 0, None, false),
+            )
             .await
             .unwrap();
 
@@ -433,7 +435,7 @@ pub async fn test_sort(db: Arc<Store>) {
                     .map(|document_id| ValueKey {
                         account_id: 0,
                         collection: COLLECTION_ID,
-                        document_id,
+                        document_id: document_id as u32,
                         family: 0,
                         field: fields["accession_number"],
                     })

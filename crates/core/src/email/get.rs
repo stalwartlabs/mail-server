@@ -1,9 +1,9 @@
 use mail_parser::Message;
 use protocol::{
     error::method::MethodError,
-    method::get::GetResponse,
+    method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
-    types::{blob::BlobId, collection::Collection, id::Id, property::Property, value::Value},
+    types::{blob::BlobId, collection::Collection, property::Property, value::Value},
 };
 use store::ValueKey;
 
@@ -14,12 +14,9 @@ use super::body::{ToBodyPart, TruncateBody};
 impl JMAP {
     pub async fn email_get(
         &self,
-        account_id: u32,
-        ids: Vec<Id>,
-        properties: Option<Vec<Property>>,
-        arguments: GetArguments,
+        request: GetRequest<GetArguments>,
     ) -> Result<GetResponse, MethodError> {
-        let properties = properties.unwrap_or_else(|| {
+        let properties = request.properties.map(|v| v.unwrap()).unwrap_or_else(|| {
             vec![
                 Property::Id,
                 Property::BlobId,
@@ -47,7 +44,7 @@ impl JMAP {
                 Property::Attachments,
             ]
         });
-        let body_properties = arguments.body_properties.unwrap_or_else(|| {
+        let body_properties = request.arguments.body_properties.unwrap_or_else(|| {
             vec![
                 Property::PartId,
                 Property::BlobId,
@@ -61,13 +58,20 @@ impl JMAP {
                 Property::Location,
             ]
         });
-        let fetch_text_body_values = arguments.fetch_text_body_values.unwrap_or(false);
-        let fetch_html_body_values = arguments.fetch_html_body_values.unwrap_or(false);
-        let fetch_all_body_values = arguments.fetch_all_body_values.unwrap_or(false);
-        let max_body_value_bytes = arguments.max_body_value_bytes.unwrap_or(0);
+        let fetch_text_body_values = request.arguments.fetch_text_body_values.unwrap_or(false);
+        let fetch_html_body_values = request.arguments.fetch_html_body_values.unwrap_or(false);
+        let fetch_all_body_values = request.arguments.fetch_all_body_values.unwrap_or(false);
+        let max_body_value_bytes = request.arguments.max_body_value_bytes.unwrap_or(0);
 
+        let ids = if let Some(ids) = request.ids.map(|v| v.unwrap()) {
+            ids
+        } else {
+            let implement = "";
+            todo!()
+        };
+        let account_id = request.account_id.document_id();
         let mut response = GetResponse {
-            account_id: Some(account_id.into()),
+            account_id: Some(request.account_id),
             state: self
                 .store
                 .get_last_change_id(account_id, Collection::Email)

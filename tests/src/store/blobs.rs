@@ -4,7 +4,7 @@ use store::ahash::AHashMap;
 
 use store::{
     write::{BatchBuilder, F_CLEAR},
-    BlobId, BlobKey, Store, BLOB_HASH_LEN,
+    BlobHash, BlobKey, Store, BLOB_HASH_LEN,
 };
 
 pub async fn test(db: Arc<Store>) {
@@ -13,8 +13,8 @@ pub async fn test(db: Arc<Store>) {
     let blob_1 = vec![b'a'; 1024];
     let blob_2 = vec![b'b'; 1024];
 
-    let blob_id_1 = BlobId::from(&blob_1[..]);
-    let blob_id_2 = BlobId::from(&blob_2[..]);
+    let blob_id_1 = BlobHash::from(&blob_1[..]);
+    let blob_id_2 = BlobHash::from(&blob_2[..]);
 
     // Insert the same blobs concurrently
     let handles = (1..=100)
@@ -91,13 +91,13 @@ pub async fn test(db: Arc<Store>) {
 }
 
 struct BlobPurge {
-    result: AHashMap<BlobId, (u32, u32)>,
+    result: AHashMap<BlobHash, (u32, u32)>,
     link_count: u32,
     ephemeral_count: u32,
     id: [u8; BLOB_HASH_LEN],
 }
 
-async fn get_all_blobs(store: &Store) -> AHashMap<BlobId, (u32, u32)> {
+async fn get_all_blobs(store: &Store) -> AHashMap<BlobHash, (u32, u32)> {
     let results = BlobPurge {
         result: AHashMap::new(),
         id: [0u8; BLOB_HASH_LEN],
@@ -122,7 +122,7 @@ async fn get_all_blobs(store: &Store) -> AHashMap<BlobId, (u32, u32)> {
         .iterate(results, from_key, to_key, false, true, move |b, k, v| {
             if !k.starts_with(&b.id) {
                 if b.link_count != u32::MAX {
-                    let id = BlobId { hash: b.id };
+                    let id = BlobHash { hash: b.id };
                     b.result.insert(id, (b.link_count, b.ephemeral_count));
                 }
                 b.link_count = 0;
@@ -142,7 +142,7 @@ async fn get_all_blobs(store: &Store) -> AHashMap<BlobId, (u32, u32)> {
         .unwrap();
 
     if b.link_count != u32::MAX {
-        let id = BlobId { hash: b.id };
+        let id = BlobHash { hash: b.id };
         b.result.insert(id, (b.link_count, b.ephemeral_count));
     }
 
