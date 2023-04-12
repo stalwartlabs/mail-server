@@ -80,9 +80,9 @@ impl<T: AsRef<[u8]>> Serialize for &BlobKey<T> {
         KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN + 1)
             .write(SUBSPACE_BLOBS)
             .write(hash)
-            .write_leb128(self.account_id)
+            .write(self.account_id)
             .write(self.collection)
-            .write_leb128(self.document_id)
+            .write(self.document_id)
             .finalize()
     }
 }

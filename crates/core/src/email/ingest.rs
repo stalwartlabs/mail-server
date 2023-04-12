@@ -1,7 +1,13 @@
 use mail_parser::{
     parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, RfcHeader,
 };
-use protocol::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
+use protocol::{
+    object::Object,
+    types::{
+        blob::BlobId, collection::Collection, id::Id, keyword::Keyword, property::Property,
+        value::Value,
+    },
+};
 use store::{
     query::Filter,
     write::{log::ChangeLogBuilder, now, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
@@ -245,5 +251,14 @@ impl JMAP {
                 Err(err) => return Err(err.into()),
             }
         }
+    }
+}
+
+impl From<IngestedEmail> for Object<Value> {
+    fn from(email: IngestedEmail) -> Self {
+        Object::with_capacity(3)
+            .with_property(Property::Id, email.id)
+            .with_property(Property::ThreadId, email.id.prefix_id())
+            .with_property(Property::BlobId, BlobId::new(email.blob_hash))
     }
 }

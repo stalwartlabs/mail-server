@@ -28,7 +28,7 @@ pub struct ImportEmailRequest {
 #[derive(Debug, Clone)]
 pub struct ImportEmail {
     pub blob_id: BlobId,
-    pub mailbox_ids: Option<MaybeReference<Vec<MaybeReference<Id, String>>, ResultReference>>,
+    pub mailbox_ids: MaybeReference<Vec<MaybeReference<Id, String>>, ResultReference>,
     pub keywords: Vec<Keyword>,
     pub received_at: Option<UTCDate>,
 }
@@ -102,7 +102,7 @@ impl JsonObjectParser for ImportEmail {
     {
         let mut request = ImportEmail {
             blob_id: BlobId::default(),
-            mailbox_ids: None,
+            mailbox_ids: MaybeReference::Value(vec![]),
             keywords: vec![],
             received_at: None,
         };
@@ -119,11 +119,11 @@ impl JsonObjectParser for ImportEmail {
                 }
                 0x7364_4978_6f62_6c69_616d => {
                     request.mailbox_ids = if !property.is_ref {
-                        Some(MaybeReference::Value(
+                        MaybeReference::Value(
                             <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
-                        ))
+                        )
                     } else {
-                        Some(MaybeReference::Reference(ResultReference::parse(parser)?))
+                        MaybeReference::Reference(ResultReference::parse(parser)?)
                     };
                 }
                 0x7364_726f_7779_656b if !property.is_ref => {

@@ -243,6 +243,12 @@ impl Serialize for UTCDate {
     }
 }
 
+impl From<UTCDate> for u64 {
+    fn from(value: UTCDate) -> Self {
+        value.timestamp() as u64
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{parser::json::Parser, types::date::UTCDate};

@@ -130,23 +130,22 @@ impl Response {
                 // Resolve email mailbox references
                 for email in request.emails.values_mut() {
                     match &mut email.mailbox_ids {
-                        Some(MaybeReference::Reference(rr)) => {
-                            email.mailbox_ids = Some(MaybeReference::Value(
+                        MaybeReference::Reference(rr) => {
+                            email.mailbox_ids = MaybeReference::Value(
                                 self.eval_result_references(rr)
                                     .unwrap_ids(rr)?
                                     .into_iter()
                                     .map(MaybeReference::Value)
                                     .collect(),
-                            ));
+                            );
                         }
-                        Some(MaybeReference::Value(values)) => {
+                        MaybeReference::Value(values) => {
                             for value in values {
                                 if let MaybeReference::Reference(ir) = value {
                                     *value = MaybeReference::Value(self.eval_id_reference(ir)?);
                                 }
                             }
                         }
-                        _ => (),
                     }
                 }
             }
