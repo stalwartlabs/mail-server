@@ -1,7 +1,10 @@
 use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
-use crate::{BlobKey, Key, ValueKey, SUBSPACE_BLOBS};
+use crate::{
+    AclKey, BitmapKey, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey,
+    BLOB_HASH_LEN,
+};
 
 pub struct KeySerializer {
     buf: Vec<u8>,
@@ -118,7 +121,7 @@ impl DeserializeBigEndian for &[u8] {
 
 impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BlobKey<T> {
     fn subspace(&self) -> u8 {
-        SUBSPACE_BLOBS
+        crate::SUBSPACE_BLOBS
     }
 }
 
@@ -143,5 +146,144 @@ impl ValueKey {
             document_id,
             ..self
         }
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for &IndexKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        let key = self.key.as_ref();
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len() + 1)
+                .write(crate::SUBSPACE_INDEXES)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len()) }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.field)
+            .write(key)
+            .write(self.document_id)
+            .finalize()
+    }
+}
+
+impl Serialize for &IndexKeyPrefix {
+    fn serialize(self) -> Vec<u8> {
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>() + 1)
+                .write(crate::SUBSPACE_INDEXES)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>()) }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.field)
+            .finalize()
+    }
+}
+
+impl Serialize for &ValueKey {
+    fn serialize(self) -> Vec<u8> {
+        let ks = {
+            #[cfg(feature = "key_subspace")]
+            {
+                KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
+                    .write(crate::SUBSPACE_VALUES)
+            }
+            #[cfg(not(feature = "key_subspace"))]
+            {
+                KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
+            }
+        }
+        .write_leb128(self.account_id)
+        .write(self.collection)
+        .write_leb128(self.document_id);
+
+        if self.family == 0 {
+            ks.write(self.field).finalize()
+        } else {
+            ks.write(u8::MAX)
+                .write(self.family)
+                .write(self.field)
+                .finalize()
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        let key = self.key.as_ref();
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len() + 1)
+                .write(crate::SUBSPACE_BITMAPS)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len()) }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.family)
+            .write(self.field)
+            .write(key)
+            .write(self.block_num)
+            .finalize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for &BlobKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        let hash = self.hash.as_ref();
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN + 1)
+                .write(crate::SUBSPACE_BLOBS)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN) }
+            .write(hash)
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.document_id)
+            .finalize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for BlobKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl Serialize for &AclKey {
+    fn serialize(self) -> Vec<u8> {
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<AclKey>() + 1).write(crate::SUBSPACE_ACLS)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<AclKey>()) }
+            .write_leb128(self.grant_account_id)
+            .write(u8::MAX)
+            .write_leb128(self.to_account_id)
+            .write(self.to_collection)
+            .write_leb128(self.to_document_id)
+            .finalize()
+    }
+}
+
+impl Serialize for &LogKey {
+    fn serialize(self) -> Vec<u8> {
+        #[cfg(feature = "key_subspace")]
+        {
+            KeySerializer::new(std::mem::size_of::<LogKey>() + 1).write(crate::SUBSPACE_LOGS)
+        }
+        #[cfg(not(feature = "key_subspace"))]
+        { KeySerializer::new(std::mem::size_of::<LogKey>()) }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.change_id)
+            .finalize()
     }
 }
