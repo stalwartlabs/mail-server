@@ -1,4 +1,4 @@
-use protocol::{
+use jmap_proto::{
     error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,

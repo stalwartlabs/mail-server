@@ -1,12 +1,12 @@
 [package]
-name = "core"
+name = "jmap"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 store = { path = "../store" }
-protocol = { path = "../protocol" }
-utils = { path = "/home/vagrant/code/utils" }
+jmap_proto = { path = "../jmap-proto" }
+utils = { path =  "../utils" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send" } 

@@ -1,4 +1,4 @@
-use protocol::{
+use jmap_proto::{
     error::{
         method::MethodError,
         set::{SetError, SetErrorType},

@@ -1,10 +1,10 @@
-use mail_parser::Message;
-use protocol::{
+use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
     types::{blob::BlobId, collection::Collection, property::Property, value::Value},
 };
+use mail_parser::Message;
 use store::ValueKey;
 
 use crate::{email::headers::HeaderToValue, JMAP};

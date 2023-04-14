@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
-utils = { path = "/home/vagrant/code/utils" }
+utils = { path = "../crates/utils" }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

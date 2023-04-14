@@ -1,11 +1,11 @@
-use mail_parser::{parsers::MessageStream, Addr, HeaderName, HeaderValue, MessagePart, RfcHeader};
-use protocol::{
+use jmap_proto::{
     object::Object,
     types::{
         property::{HeaderForm, Property},
         value::Value,
     },
 };
+use mail_parser::{parsers::MessageStream, Addr, HeaderName, HeaderValue, MessagePart, RfcHeader};
 
 pub trait IntoForm {
     fn into_form(self, form: &HeaderForm) -> Value;

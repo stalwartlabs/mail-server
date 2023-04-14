@@ -1,11 +1,11 @@
 [package]
-name = "protocol"
+name = "jmap_proto"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 store = { path = "../store" }
-utils = { path = "/home/vagrant/code/utils" }
+utils = { path = "../utils" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 fast-float = "0.2.0"
 serde = { version = "1.0", features = ["derive"]}

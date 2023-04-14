@@ -1,8 +1,8 @@
+use jmap_proto::types::blob::BlobId;
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
-use protocol::types::blob::BlobId;
 
 use crate::JMAP;
 

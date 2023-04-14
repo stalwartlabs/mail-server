@@ -1,11 +1,6 @@
 use std::borrow::Cow;
 
-use mail_parser::{
-    decoders::html::html_to_text,
-    parsers::{fields::thread::thread_name, preview::preview_text},
-    Addr, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType, RfcHeader,
-};
-use protocol::{
+use jmap_proto::{
     object::Object,
     types::{
         blob::{BlobId, BlobSection},
@@ -14,6 +9,11 @@ use protocol::{
         property::{HeaderForm, Property},
         value::Value,
     },
+};
+use mail_parser::{
+    decoders::html::html_to_text,
+    parsers::{fields::thread::thread_name, preview::preview_text},
+    Addr, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType, RfcHeader,
 };
 use store::{
     fts::{builder::FtsIndexBuilder, Language},

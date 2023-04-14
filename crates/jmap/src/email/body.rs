@@ -1,8 +1,8 @@
-use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
-use protocol::{
+use jmap_proto::{
     object::Object,
     types::{blob::BlobId, property::Property, value::Value},
 };
+use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
 
 use super::headers::HeaderToValue;
 

@@ -1,12 +1,12 @@
-use mail_parser::{
-    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, RfcHeader,
-};
-use protocol::{
+use jmap_proto::{
     object::Object,
     types::{
         blob::BlobId, collection::Collection, id::Id, keyword::Keyword, property::Property,
         value::Value,
     },
+};
+use mail_parser::{
+    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, RfcHeader,
 };
 use store::{
     query::Filter,

@@ -1,4 +1,4 @@
-use protocol::error::method::MethodError;
+use jmap_proto::error::method::MethodError;
 use store::{fts::Language, Store};
 
 pub mod api;

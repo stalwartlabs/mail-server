@@ -16,8 +16,9 @@
 
 [workspace]
 members = [
-    "crates/protocol",
+    "crates/jmap",
+    "crates/jmap-proto",
     "crates/store",
-    "crates/core",
+    "crates/utils",
     "tests",
 ]

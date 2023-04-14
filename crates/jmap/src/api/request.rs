@@ -1,4 +1,4 @@
-use protocol::{
+use jmap_proto::{
     error::request::RequestError,
     method::{get, query},
     request::{Request, RequestMethod},
