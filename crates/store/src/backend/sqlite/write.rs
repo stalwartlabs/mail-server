@@ -1,8 +1,8 @@
 use rusqlite::{params, OptionalExtension};
 
 use crate::{
-    write::{now, Batch, Operation},
-    AclKey, BitmapKey, BlobKey, IndexKey, LogKey, Serialize, Store, ValueKey,
+    write::{Batch, Operation},
+    AclKey, BitmapKey, IndexKey, LogKey, Serialize, Store, ValueKey,
 };
 
 use super::{BITS_MASK, BITS_PER_BLOCK};
@@ -162,30 +162,6 @@ impl Store {
                             trx.prepare_cached(CLEAR_QUERIES[bitmap_col_num])?
                                 .execute(params![bitmap_value_clear, &key])?;
                         };
-                    }
-                    Operation::Blob { key, set } => {
-                        let key = BlobKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            hash: key,
-                        }
-                        .serialize();
-
-                        if *set {
-                            let now_;
-                            let value = if document_id != u32::MAX {
-                                &[]
-                            } else {
-                                now_ = now().to_be_bytes();
-                                &now_[..]
-                            };
-                            trx.prepare_cached("INSERT OR REPLACE INTO o (k, v) VALUES (?, ?)")?
-                                .execute([&key[..], value])?;
-                        } else {
-                            trx.prepare_cached("DELETE FROM o WHERE k = ?")?
-                                .execute([&key])?;
-                        }
                     }
                     Operation::Acl {
                         grant_account_id,

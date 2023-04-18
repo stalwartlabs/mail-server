@@ -1,10 +1,7 @@
 use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
-use crate::{
-    AclKey, BitmapKey, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey,
-    BLOB_HASH_LEN,
-};
+use crate::{AclKey, BitmapKey, IndexKey, IndexKeyPrefix, LogKey, Serialize, ValueKey};
 
 pub struct KeySerializer {
     buf: Vec<u8>,
@@ -119,12 +116,6 @@ impl DeserializeBigEndian for &[u8] {
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BlobKey<T> {
-    fn subspace(&self) -> u8 {
-        crate::SUBSPACE_BLOBS
-    }
-}
-
 impl ValueKey {
     pub fn new(
         account_id: u32,
@@ -229,30 +220,6 @@ impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
             .write(key)
             .write(self.block_num)
             .finalize()
-    }
-}
-
-impl<T: AsRef<[u8]>> Serialize for &BlobKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        let hash = self.hash.as_ref();
-        #[cfg(feature = "key_subspace")]
-        {
-            KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN + 1)
-                .write(crate::SUBSPACE_BLOBS)
-        }
-        #[cfg(not(feature = "key_subspace"))]
-        { KeySerializer::new(std::mem::size_of::<BlobKey<T>>() + BLOB_HASH_LEN) }
-            .write(hash)
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id)
-            .finalize()
-    }
-}
-
-impl<T: AsRef<[u8]>> Serialize for BlobKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
     }
 }
 

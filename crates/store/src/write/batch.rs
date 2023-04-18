@@ -125,14 +125,6 @@ impl BatchBuilder {
         self
     }
 
-    pub fn blob(&mut self, blob_id: impl Serialize, options: u32) -> &mut Self {
-        self.ops.push(Operation::Blob {
-            key: blob_id.serialize(),
-            set: !options.has_flag(F_CLEAR),
-        });
-        self
-    }
-
     pub fn custom(&mut self, value: impl IntoOperations) -> crate::Result<()> {
         value.build(self)
     }

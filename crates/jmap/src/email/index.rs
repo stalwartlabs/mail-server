@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use jmap_proto::{
     object::Object,
     types::{
-        blob::{BlobId, BlobSection},
         date::UTCDate,
         keyword::Keyword,
         property::{HeaderForm, Property},
@@ -18,7 +17,6 @@ use mail_parser::{
 use store::{
     fts::{builder::FtsIndexBuilder, Language},
     write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
-    BlobHash,
 };
 
 use crate::email::headers::IntoForm;
@@ -33,7 +31,6 @@ pub(super) trait IndexMessage {
     fn index_message(
         &mut self,
         message: Message,
-        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
@@ -41,42 +38,16 @@ pub(super) trait IndexMessage {
     ) -> store::Result<()>;
 }
 
-/*
-
-  o  id
-  o  blobId
-  o  threadId
-  o  mailboxIds
-  o  keywords
-  o  receivedAt
-
-*/
-
 impl IndexMessage for BatchBuilder {
     fn index_message(
         &mut self,
         message: Message,
-        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
         default_language: Language,
     ) -> store::Result<()> {
         let mut object = Object::with_capacity(15);
-
-        // Add blobHash and body offset
-        object.append(
-            Property::BlobId,
-            Value::BlobId(BlobId {
-                hash: blob_hash,
-                section: BlobSection {
-                    offset_start: message.root_part().offset_body,
-                    size: 0,
-                    encoding: 0,
-                }
-                .into(),
-            }),
-        );
 
         // Index keywords
         self.value(

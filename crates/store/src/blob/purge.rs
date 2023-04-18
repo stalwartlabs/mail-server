@@ -82,7 +82,7 @@ impl Store {
         }
 
         for hash in results.delete {
-            self.blob.delete(&crate::BlobHash { hash }).await?;
+            self.blob.delete(&crate::BlobKind { hash }).await?;
         }
 
         Ok(())

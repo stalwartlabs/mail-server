@@ -11,7 +11,7 @@ use mail_parser::{
 use store::{
     query::Filter,
     write::{log::ChangeLogBuilder, now, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
-    BlobHash, ValueKey,
+    ValueKey,
 };
 use utils::map::vec_map::VecMap;
 
@@ -25,7 +25,7 @@ use super::index::{TrimTextValue, MAX_SORT_FIELD_LENGTH};
 pub struct IngestedEmail {
     pub id: Id,
     pub change_id: u64,
-    pub blob_hash: BlobHash,
+    pub blob_id: BlobId,
     pub size: usize,
 }
 
@@ -88,9 +88,6 @@ impl JMAP {
             None
         };
 
-        // Store blob
-        let blob_hash = self.store.write_blob(account_id, raw_message).await?;
-
         // Obtain a documentId and changeId
         let document_id = self
             .store
@@ -100,6 +97,10 @@ impl JMAP {
             .store
             .assign_change_id(account_id, Collection::Email)
             .await?;
+
+        // Store blob
+        let blob_id = BlobId::maildir(account_id, document_id);
+        self.store.put_blob(&blob_id.kind, raw_message).await?;
 
         // Build change log
         let mut changes = ChangeLogBuilder::with_change_id(change_id);
@@ -124,7 +125,6 @@ impl JMAP {
         let mut batch = BatchBuilder::new();
         batch.index_message(
             message,
-            blob_hash,
             keywords,
             mailbox_ids,
             received_at.unwrap_or_else(now),
@@ -137,7 +137,7 @@ impl JMAP {
         Ok(IngestedEmail {
             id,
             change_id,
-            blob_hash,
+            blob_id,
             size: raw_message.len(),
         })
     }
@@ -259,6 +259,6 @@ impl From<IngestedEmail> for Object<Value> {
         Object::with_capacity(3)
             .with_property(Property::Id, email.id)
             .with_property(Property::ThreadId, email.id.prefix_id())
-            .with_property(Property::BlobId, BlobId::new(email.blob_hash))
+            .with_property(Property::BlobId, email.blob_id)
     }
 }

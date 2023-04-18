@@ -101,6 +101,21 @@ impl Id {
         Self { id }
     }
 
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let mut id = 0;
+
+        for &ch in bytes {
+            let i = BASE32_INVERSE[ch as usize];
+            if i != u8::MAX {
+                id = (id << 5) | i as u64;
+            } else {
+                return None;
+            }
+        }
+
+        Id { id }.into()
+    }
+
     pub fn singleton() -> Self {
         Self::new(20080258862541)
     }

@@ -70,7 +70,7 @@ impl JMAP {
 
             // Fetch raw message to import
             let raw_message =
-                if let Some(raw_message) = self.blob_retrieve(&email.blob_id, account_id).await? {
+                if let Some(raw_message) = self.blob_download(&email.blob_id, account_id).await? {
                     raw_message
                 } else {
                     not_created.append(

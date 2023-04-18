@@ -7,16 +7,12 @@ use mail_parser::{
 use crate::JMAP;
 
 impl JMAP {
-    pub async fn blob_retrieve(
+    pub async fn blob_download(
         &self,
         blob_id: &BlobId,
         account_id: u32,
     ) -> store::Result<Option<Vec<u8>>> {
-        if !self
-            .store
-            .has_blob_access(&blob_id.hash, vec![account_id])
-            .await?
-        {
+        if !blob_id.has_access(account_id) {
             // TODO: validate ACL
             let acl = "true";
             return Ok(None);
@@ -26,7 +22,7 @@ impl JMAP {
             Ok(self
                 .store
                 .get_blob(
-                    &blob_id.hash,
+                    &blob_id.kind,
                     (section.offset_start as u32)
                         ..(section.offset_start.saturating_add(section.size) as u32),
                 )
@@ -37,7 +33,7 @@ impl JMAP {
                     Encoding::QuotedPrintable => quoted_printable_decode(&bytes),
                 }))
         } else {
-            self.store.get_blob(&blob_id.hash, 0..u32::MAX).await
+            self.store.get_blob(&blob_id.kind, 0..u32::MAX).await
         }
     }
 }

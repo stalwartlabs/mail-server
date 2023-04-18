@@ -21,14 +21,65 @@
  * for more details.
 */
 
+pub mod certificate;
+pub mod listener;
 pub mod parser;
 pub mod utils;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display, net::SocketAddr};
+
+use rustls::ServerConfig;
+use tokio::net::TcpSocket;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     keys: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Default)]
+pub struct Server {
+    pub id: String,
+    pub internal_id: u16,
+    pub hostname: String,
+    pub data: String,
+    pub protocol: ServerProtocol,
+    pub listeners: Vec<Listener>,
+    pub tls: Option<ServerConfig>,
+    pub tls_implicit: bool,
+}
+
+pub struct Servers {
+    pub inner: Vec<Server>,
+}
+
+#[derive(Debug)]
+pub struct Listener {
+    pub socket: TcpSocket,
+    pub addr: SocketAddr,
+    pub ttl: Option<u32>,
+    pub backlog: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+pub enum ServerProtocol {
+    #[default]
+    Smtp,
+    Lmtp,
+    Jmap,
+    Imap,
+    Http,
+}
+
+impl Display for ServerProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServerProtocol::Smtp => write!(f, "smtp"),
+            ServerProtocol::Lmtp => write!(f, "lmtp"),
+            ServerProtocol::Jmap => write!(f, "jmap"),
+            ServerProtocol::Imap => write!(f, "imap"),
+            ServerProtocol::Http => write!(f, "http"),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, String>;

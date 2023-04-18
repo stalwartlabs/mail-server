@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
-use store::BlobHash;
+use store::BlobKind;
 
 use crate::{
     error::method::MethodError,
@@ -275,8 +275,8 @@ impl From<BlobId> for Value {
     }
 }
 
-impl From<BlobHash> for Value {
-    fn from(value: BlobHash) -> Self {
+impl From<BlobKind> for Value {
+    fn from(value: BlobKind) -> Self {
         Value::BlobId(BlobId::new(value))
     }
 }

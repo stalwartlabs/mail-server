@@ -1,36 +1,23 @@
-pub mod purge;
+//pub mod purge;
 pub mod read;
 pub mod write;
 
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use utils::{codec::base32_custom::Base32Writer, config::Config};
+use utils::config::Config;
 
-use crate::{BlobHash, Serialize};
+use crate::BlobKind;
 
 pub enum BlobStore {
-    Local {
-        base_path: PathBuf,
-        hash_levels: usize,
-    },
+    Local(PathBuf),
     Remote(String),
 }
 
 impl BlobStore {
     pub async fn new(config: &Config) -> crate::Result<Self> {
-        Ok(BlobStore::Local {
-            base_path: config.value_require("blob.store.path")?.into(),
-            hash_levels: config.property("blob.store.hash")?.unwrap_or(1),
-        })
-    }
-}
-
-impl Serialize for &BlobHash {
-    fn serialize(self) -> Vec<u8> {
-        self.hash.to_vec()
+        Ok(BlobStore::Local(
+            config.value_require("blob.store.path")?.into(),
+        ))
     }
 }
 
@@ -40,17 +27,41 @@ impl From<std::io::Error> for crate::Error {
     }
 }
 
-fn get_path(base_path: &Path, hash_levels: usize, blob_id: &BlobHash) -> crate::Result<PathBuf> {
+fn get_path(base_path: &Path, kind: &BlobKind) -> crate::Result<PathBuf> {
     let mut path = base_path.to_path_buf();
-    let hash = &blob_id.hash;
-    for byte in hash.iter().take(hash_levels) {
-        path.push(format!("{:x}", byte));
+    match kind {
+        BlobKind::Linked {
+            account_id,
+            collection,
+            document_id,
+        } => {
+            path.push(format!("{:x}", account_id));
+            path.push(format!("{:x}", collection));
+            path.push(format!("{:x}", document_id));
+        }
+        BlobKind::LinkedMaildir {
+            account_id,
+            document_id,
+        } => {
+            path.push(format!("{:x}", account_id));
+            path.push("Maildir");
+            path.push("cur");
+            path.push(format!("{:x}", document_id));
+        }
+        BlobKind::Temporary {
+            account_id,
+            creation_year,
+            creation_month,
+            creation_day,
+            seq,
+        } => {
+            path.push("tmp");
+            path.push(creation_year.to_string());
+            path.push(creation_month.to_string());
+            path.push(creation_day.to_string());
+            path.push(format!("{:x}_{:x}", account_id, seq));
+        }
     }
-
-    // Base32 encode the hash
-    let mut writer = Base32Writer::with_capacity(hash.len());
-    writer.write_all(hash).unwrap();
-    path.push(&writer.finalize());
 
     Ok(path)
 }

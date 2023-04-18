@@ -55,10 +55,6 @@ pub enum Operation {
         key: Vec<u8>,
         set: bool,
     },
-    Blob {
-        key: Vec<u8>,
-        set: bool,
-    },
     Acl {
         grant_account_id: u32,
         set: Option<Vec<u8>>,

@@ -123,7 +123,7 @@ impl JMAP {
             };
 
             // Retrieve raw message if needed
-            let blob_id = values.get(&Property::BlobId).as_blob()?;
+            let blob_id = BlobId::maildir(account_id, id.document_id());
             let raw_message = if needs_body || needs_headers {
                 let offset = if !needs_body {
                     blob_id
@@ -135,7 +135,7 @@ impl JMAP {
                     u32::MAX
                 };
 
-                if let Some(raw_message) = self.store.get_blob(&blob_id.hash, 0..offset).await? {
+                if let Some(raw_message) = self.store.get_blob(&blob_id.kind, 0..offset).await? {
                     raw_message
                 } else {
                     let log = "true";
@@ -154,7 +154,6 @@ impl JMAP {
             } else {
                 None
             };
-            let blob_id = BlobId::new(blob_id.hash);
 
             // Prepare response
             let mut email = Object::with_capacity(properties.len());

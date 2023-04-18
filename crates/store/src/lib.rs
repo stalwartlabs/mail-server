@@ -9,6 +9,7 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
+pub use rand;
 pub use roaring;
 
 #[cfg(feature = "rocks")]
@@ -100,14 +101,6 @@ pub struct ValueKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlobKey<T: AsRef<[u8]>> {
-    pub account_id: u32,
-    pub collection: u8,
-    pub document_id: u32,
-    pub hash: T,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AclKey {
     pub grant_account_id: u32,
     pub to_account_id: u32,
@@ -123,16 +116,23 @@ pub struct LogKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlobHash {
-    pub hash: [u8; BLOB_HASH_LEN],
-}
-
-impl Default for BlobHash {
-    fn default() -> Self {
-        Self {
-            hash: [0; BLOB_HASH_LEN],
-        }
-    }
+pub enum BlobKind {
+    Linked {
+        account_id: u32,
+        collection: u8,
+        document_id: u32,
+    },
+    LinkedMaildir {
+        account_id: u32,
+        document_id: u32,
+    },
+    Temporary {
+        account_id: u32,
+        creation_year: u16,
+        creation_month: u8,
+        creation_day: u8,
+        seq: u32,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -174,8 +174,6 @@ pub const BLOOM_TRIGRAM: u8 = 1 << 1;
 pub const TAG_ID: u8 = 0;
 pub const TAG_TEXT: u8 = 1 << 0;
 pub const TAG_STATIC: u8 = 1 << 1;
-
-pub const BLOB_HASH_LEN: usize = 32;
 
 pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';

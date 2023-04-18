@@ -44,7 +44,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                         Property::BlobId if multipart.is_none() => {
                             let base_offset = blob_id.start_offset();
                             BlobId::new_section(
-                                blob_id.hash,
+                                blob_id.kind,
                                 part.offset_body + base_offset,
                                 part.offset_end + base_offset,
                                 part.encoding as u8,

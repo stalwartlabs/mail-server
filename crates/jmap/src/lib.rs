@@ -15,6 +15,7 @@ pub struct Config {
     pub query_max_results: usize,
     pub request_max_size: usize,
     pub request_max_calls: usize,
+    pub upload_max_size: usize,
 }
 
 pub enum MaybeError {

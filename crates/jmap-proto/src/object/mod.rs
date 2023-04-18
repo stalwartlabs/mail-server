@@ -7,7 +7,7 @@ use std::slice::Iter;
 
 use store::{
     write::{IntoBitmap, Operation, ToBitmaps},
-    BlobHash, Deserialize, Serialize,
+    Deserialize, Serialize,
 };
 use utils::{
     codec::leb128::{Leb128Iterator, Leb128Vec},
@@ -15,14 +15,8 @@ use utils::{
 };
 
 use crate::types::{
-    acl::Acl,
-    blob::{BlobId, BlobSection},
-    date::UTCDate,
-    id::Id,
-    keyword::Keyword,
-    property::Property,
-    type_state::TypeState,
-    value::Value,
+    acl::Acl, blob::BlobId, date::UTCDate, id::Id, keyword::Keyword, property::Property,
+    type_state::TypeState, value::Value,
 };
 
 #[derive(Debug, Clone, Default, serde::Serialize, PartialEq, Eq)]
@@ -209,8 +203,7 @@ impl SerializeValue for Value {
             }
             Value::BlobId(v) => {
                 buf.push(BLOB_ID);
-                buf.extend_from_slice(&v.hash.hash);
-                buf.push_leb128(v.section.as_ref().map_or(0, |s| s.offset_start));
+                v.serialize_value(buf);
             }
             Value::Keyword(v) => {
                 buf.push(KEYWORD);
@@ -253,21 +246,7 @@ impl DeserializeValue for Value {
             DATE => Some(Value::Date(UTCDate::from_timestamp(
                 bytes.next_leb128::<u64>()? as i64,
             ))),
-            BLOB_ID => {
-                let mut hash = BlobHash::default();
-                for byte in hash.hash.iter_mut() {
-                    *byte = *bytes.next()?;
-                }
-                let offset_start = bytes.next_leb128::<usize>()?;
-                Some(Value::BlobId(BlobId {
-                    hash,
-                    section: Some(BlobSection {
-                        offset_start,
-                        size: 0,
-                        encoding: 0,
-                    }),
-                }))
-            }
+            BLOB_ID => Some(Value::BlobId(BlobId::deserialize_value(bytes)?)),
             KEYWORD => Some(Value::Keyword(Keyword::deserialize_value(bytes)?)),
             TYPE_STATE => Some(Value::TypeState(TypeState::deserialize_value(bytes)?)),
             ACL => Some(Value::Acl(Acl::deserialize_value(bytes)?)),

@@ -21,19 +21,32 @@
  * for more details.
 */
 
-use std::io::Write;
+use std::{borrow::Borrow, io::Write};
 
-use store::{BlobHash, BLOB_HASH_LEN};
+use store::{
+    rand::{self, Rng},
+    write::now,
+    BlobKind,
+};
 use utils::codec::{
     base32_custom::Base32Writer,
     leb128::{Leb128Iterator, Leb128Writer},
 };
 
-use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
+use crate::{
+    object::{DeserializeValue, SerializeValue},
+    parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser},
+};
+
+use super::date::UTCDate;
+
+const B_LINKED: u8 = 0x10;
+const B_LINKED_MAILDIR: u8 = 0x20;
+const B_TEMPORARY: u8 = 0x40;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BlobId {
-    pub hash: BlobHash,
+    pub kind: BlobKind,
     pub section: Option<BlobSection>,
 }
 
@@ -44,61 +57,158 @@ pub struct BlobSection {
     pub encoding: u8,
 }
 
+impl BlobId {
+    pub fn maildir(account_id: u32, document_id: u32) -> Self {
+        Self {
+            kind: BlobKind::LinkedMaildir {
+                account_id,
+                document_id,
+            },
+            section: None,
+        }
+    }
+
+    pub fn temporary(account_id: u32) -> Self {
+        let now_secs = now();
+        let now = UTCDate::from_timestamp(now_secs as i64);
+
+        Self {
+            kind: BlobKind::Temporary {
+                account_id,
+                creation_year: now.year,
+                creation_month: now.month,
+                creation_day: now.day,
+                seq: ((now_secs % 86400) as u32) << 15
+                    | rand::thread_rng().gen_range(0u32..=32767u32),
+            },
+            section: None,
+        }
+    }
+
+    pub fn has_access(&self, account_id: u32) -> bool {
+        match &self.kind {
+            BlobKind::Linked { account_id: a, .. } => *a == account_id,
+            BlobKind::LinkedMaildir { account_id: a, .. } => *a == account_id,
+            BlobKind::Temporary { account_id: a, .. } => *a == account_id,
+        }
+    }
+}
+
 impl JsonObjectParser for BlobId {
     fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
     where
         Self: Sized,
     {
-        let encoding = match parser
-            .next_unescaped()?
-            .ok_or_else(|| parser.error_value())?
-        {
-            b'a' => None,
-            b @ b'b'..=b'g' => Some(b - b'b'),
-            _ => {
-                return Err(parser.error_value());
-            }
-        };
-
         let mut it = JsonBase32Reader::new(parser);
-        let mut hash = [0; BLOB_HASH_LEN];
+        BlobId::from_iter(&mut it).ok_or_else(|| it.error())
+    }
+}
 
-        for byte in hash.iter_mut().take(BLOB_HASH_LEN) {
-            *byte = it.next().ok_or_else(|| it.error())?;
+impl BlobId {
+    pub fn new(kind: BlobKind) -> Self {
+        BlobId {
+            kind,
+            section: None,
         }
+    }
 
-        Ok(BlobId {
-            hash: BlobHash { hash },
-            section: if let Some(encoding) = encoding {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_iter<T, U>(it: &mut T) -> Option<Self>
+    where
+        T: Iterator<Item = U> + Leb128Iterator<U>,
+        U: Borrow<u8>,
+    {
+        let kind = *it.next()?.borrow();
+        let encoding = kind & 0x0F;
+
+        BlobId {
+            kind: match kind & 0xF0 {
+                B_LINKED => BlobKind::Linked {
+                    account_id: it.next_leb128()?,
+                    collection: *it.next()?.borrow(),
+                    document_id: it.next_leb128()?,
+                },
+                B_LINKED_MAILDIR => BlobKind::LinkedMaildir {
+                    account_id: it.next_leb128()?,
+                    document_id: it.next_leb128()?,
+                },
+                B_TEMPORARY => BlobKind::Temporary {
+                    account_id: it.next_leb128()?,
+                    creation_year: u16::from_be_bytes([*it.next()?.borrow(), *it.next()?.borrow()]),
+                    creation_month: *it.next()?.borrow(),
+                    creation_day: *it.next()?.borrow(),
+                    seq: it.next_leb128()?,
+                },
+                _ => return None,
+            },
+            section: if encoding != 0 {
                 BlobSection {
-                    offset_start: it.next_leb128().ok_or_else(|| it.error())?,
-                    size: it.next_leb128().ok_or_else(|| it.error())?,
-                    encoding,
+                    offset_start: it.next_leb128()?,
+                    size: it.next_leb128()?,
+                    encoding: encoding - 1,
                 }
                 .into()
             } else {
                 None
             },
-        })
+        }
+        .into()
     }
-}
 
-impl BlobId {
-    pub fn new(hash: BlobHash) -> Self {
-        BlobId {
-            hash,
-            section: None,
+    fn serialize_into(&self, writer: &mut (impl Write + Leb128Writer)) {
+        let kind = self
+            .section
+            .as_ref()
+            .map_or(0, |section| section.encoding + 1);
+        match &self.kind {
+            BlobKind::Linked {
+                account_id,
+                collection,
+                document_id,
+            } => {
+                let _ = writer.write(&[kind | B_LINKED]);
+                let _ = writer.write_leb128(*account_id);
+                let _ = writer.write(&[*collection]);
+                let _ = writer.write_leb128(*document_id);
+            }
+            BlobKind::LinkedMaildir {
+                account_id,
+                document_id,
+            } => {
+                let _ = writer.write(&[kind | B_LINKED_MAILDIR]);
+                let _ = writer.write_leb128(*account_id);
+                let _ = writer.write_leb128(*document_id);
+            }
+            BlobKind::Temporary {
+                account_id,
+                creation_year,
+                creation_month,
+                creation_day,
+                seq,
+            } => {
+                let _ = writer.write(&[kind | B_TEMPORARY]);
+                let _ = writer.write_leb128(*account_id);
+                let _ = writer.write(&creation_year.to_be_bytes()[..]);
+                let _ = writer.write(&[*creation_month]);
+                let _ = writer.write(&[*creation_day]);
+                let _ = writer.write_leb128(*seq);
+            }
+        }
+
+        if let Some(section) = &self.section {
+            let _ = writer.write_leb128(section.offset_start);
+            let _ = writer.write_leb128(section.size);
         }
     }
 
     pub fn new_section(
-        hash: BlobHash,
+        kind: BlobKind,
         offset_start: usize,
         offset_end: usize,
         encoding: impl Into<u8>,
     ) -> Self {
         BlobId {
-            hash,
+            kind,
             section: BlobSection {
                 offset_start,
                 size: offset_end - offset_start,
@@ -117,26 +227,27 @@ impl BlobId {
     }
 }
 
-impl From<&BlobHash> for BlobId {
-    fn from(id: &BlobHash) -> Self {
-        BlobId::new(*id)
-    }
-}
-
-impl From<BlobHash> for BlobId {
-    fn from(id: BlobHash) -> Self {
-        BlobId::new(id)
-    }
-}
-
 impl Default for BlobId {
     fn default() -> Self {
-        Self {
-            hash: BlobHash {
-                hash: [0; BLOB_HASH_LEN],
+        BlobId {
+            kind: store::BlobKind::LinkedMaildir {
+                account_id: u32::MAX,
+                document_id: u32::MAX,
             },
             section: None,
         }
+    }
+}
+
+impl From<&BlobKind> for BlobId {
+    fn from(kind: &BlobKind) -> Self {
+        BlobId::new(*kind)
+    }
+}
+
+impl From<BlobKind> for BlobId {
+    fn from(id: BlobKind) -> Self {
+        BlobId::new(id)
     }
 }
 
@@ -152,20 +263,20 @@ impl serde::Serialize for BlobId {
 impl std::fmt::Display for BlobId {
     #[allow(clippy::unused_io_amount)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut writer;
-        if let Some(section) = &self.section {
-            writer =
-                Base32Writer::with_capacity(BLOB_HASH_LEN + (std::mem::size_of::<u32>() * 2) + 1);
-            writer.push_char(char::from(b'b' + section.encoding));
-            writer.write(&self.hash.hash).unwrap();
-            writer.write_leb128(section.offset_start).unwrap();
-            writer.write_leb128(section.size).unwrap();
-        } else {
-            writer = Base32Writer::with_capacity(BLOB_HASH_LEN + 1);
-            writer.push_char('a');
-            writer.write(&self.hash.hash).unwrap();
-        }
-
+        let mut writer = Base32Writer::with_capacity(std::mem::size_of::<BlobId>() * 2);
+        self.serialize_into(&mut writer);
         f.write_str(&writer.finalize())
+    }
+}
+
+impl SerializeValue for BlobId {
+    fn serialize_value(self, buf: &mut Vec<u8>) {
+        self.serialize_into(buf)
+    }
+}
+
+impl DeserializeValue for BlobId {
+    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+        BlobId::from_iter(bytes)
     }
 }
