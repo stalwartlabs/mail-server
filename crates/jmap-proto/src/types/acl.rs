@@ -1,9 +1,8 @@
 use std::fmt::{self, Display};
 
-use crate::{
-    object::{DeserializeValue, SerializeValue},
-    parser::{json::Parser, JsonObjectParser},
-};
+use store::write::{DeserializeFrom, SerializeInto};
+
+use crate::parser::{json::Parser, JsonObjectParser};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Hash, Clone, Copy)]
 #[repr(u8)]
@@ -85,14 +84,14 @@ impl serde::Serialize for Acl {
     }
 }
 
-impl SerializeValue for Acl {
-    fn serialize_value(self, buf: &mut Vec<u8>) {
-        buf.push(self as u8);
+impl SerializeInto for Acl {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push(*self as u8);
     }
 }
 
-impl DeserializeValue for Acl {
-    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+impl DeserializeFrom for Acl {
+    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
         match *bytes.next()? {
             0 => Some(Acl::Read),
             1 => Some(Acl::Modify),

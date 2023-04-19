@@ -60,7 +60,7 @@ impl Request {
                                 parser
                                     .next_token::<Ignore>()?
                                     .assert_jmap(Token::ArrayStart)?;
-                                let method = match parser.next_token::<MethodName>() {
+                                let method_name = match parser.next_token::<MethodName>() {
                                     Ok(Token::String(method)) => method,
                                     Ok(_) => {
                                         return Err(RequestError::not_request(
@@ -68,18 +68,18 @@ impl Request {
                                         ));
                                     }
                                     Err(Error::Method(MethodError::InvalidArguments(_))) => {
-                                        MethodName::unknown_method()
+                                        MethodName::error()
                                     }
                                     Err(err) => {
                                         return Err(err.into());
                                     }
                                 };
                                 parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
-                                parser.ctx = method.obj;
+                                parser.ctx = method_name.obj;
                                 let start_depth_array = parser.depth_array;
                                 let start_depth_dict = parser.depth_dict;
 
-                                let method = match (&method.fnc, &method.obj) {
+                                let method = match (&method_name.fnc, &method_name.obj) {
                                     (MethodFunction::Get, _) => {
                                         GetRequest::parse(&mut parser).map(RequestMethod::Get)
                                     }
@@ -120,7 +120,7 @@ impl Request {
                                         Echo::parse(&mut parser).map(RequestMethod::Echo)
                                     }
                                     _ => Err(Error::Method(MethodError::UnknownMethod(
-                                        method.to_string(),
+                                        method_name.to_string(),
                                     ))),
                                 };
 
@@ -140,7 +140,11 @@ impl Request {
                                 parser
                                     .next_token::<Ignore>()?
                                     .assert_jmap(Token::ArrayEnd)?;
-                                request.method_calls.push(Call { id, method });
+                                request.method_calls.push(Call {
+                                    id,
+                                    method,
+                                    name: method_name,
+                                });
                             } else {
                                 return Err(RequestError::limit(RequestLimitError::CallsIn));
                             }

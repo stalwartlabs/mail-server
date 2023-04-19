@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use ahash::AHashSet;
 use foundationdb::{
@@ -11,16 +11,13 @@ use rand::Rng;
 use crate::{
     write::{
         key::{DeserializeBigEndian, KeySerializer},
-        Batch, Operation,
+        now, Batch, Operation,
     },
-    AclKey, BitmapKey, BlobKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey,
-    BM_DOCUMENT_IDS,
-};
-
-use super::{
-    bitmap::{next_available_index, DenseBitmap, BITS_PER_BLOCK},
+    AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, BM_DOCUMENT_IDS,
     SUBSPACE_VALUES,
 };
+
+use super::bitmap::{next_available_index, DenseBitmap, BITS_PER_BLOCK};
 
 #[cfg(feature = "test_mode")]
 const ID_ASSIGNMENT_EXPIRY: u64 = 2; // seconds
@@ -119,28 +116,6 @@ impl Store {
                             trx.atomic_op(&key, &and_bitmap.bitmap, MutationType::BitAnd);
                         };
                     }
-                    Operation::Blob { key, set } => {
-                        let key = BlobKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            hash: key,
-                        }
-                        .serialize();
-                        if *set {
-                            let now_;
-                            let value = if document_id != u32::MAX {
-                                &[]
-                            } else {
-                                now_ = now().to_be_bytes();
-                                &now_[..]
-                            };
-
-                            trx.set(&key, value);
-                        } else {
-                            trx.clear(&key);
-                        }
-                    }
                     Operation::Acl {
                         grant_account_id,
                         set,
@@ -171,6 +146,11 @@ impl Store {
                         .serialize();
                         trx.set(&key, set);
                     }
+                    Operation::AssertValue {
+                        field,
+                        family,
+                        assert_value,
+                    } => todo!(),
                 }
             }
 
@@ -190,8 +170,13 @@ impl Store {
         }
     }
 
-    pub async fn assign_document_id(&self, account_id: u32, collection: u8) -> crate::Result<u32> {
+    pub async fn assign_document_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+    ) -> crate::Result<u32> {
         let start = Instant::now();
+        let collection = collection.into();
 
         loop {
             //let mut assign_source = 0;
@@ -338,8 +323,13 @@ impl Store {
         }
     }
 
-    pub async fn assign_change_id(&self, account_id: u32, collection: u8) -> crate::Result<u64> {
+    pub async fn assign_change_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+    ) -> crate::Result<u64> {
         let start = Instant::now();
+        let collection = collection.into();
         let counter = KeySerializer::new(std::mem::size_of::<u32>() + 2)
             .write(SUBSPACE_VALUES)
             .write_leb128(account_id)
@@ -371,7 +361,6 @@ impl Store {
         }
     }
 
-    #[cfg(test)]
     pub async fn destroy(&self) {
         let trx = self.db.create_trx().unwrap();
         trx.clear_range(&[0u8], &[u8::MAX]);

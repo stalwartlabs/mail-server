@@ -1,6 +1,7 @@
 use foundationdb::Database;
+use utils::config::Config;
 
-use crate::Store;
+use crate::{blob::BlobStore, Store};
 
 impl Store {
     pub async fn open(config: &Config) -> crate::Result<Self> {

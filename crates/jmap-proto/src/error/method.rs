@@ -133,7 +133,7 @@ impl Serialize for MethodError {
                 "serverPartialFail",
                 concat!(
                     "Some, but not all, expected changes described by the method ",
-                    "occurred.  Please resynchronize to determine server state."
+                    "occurred. Please resynchronize to determine server state."
                 ),
             ),
             MethodError::InvalidResultReference(description) => {
@@ -162,12 +162,5 @@ impl Serialize for MethodError {
             map.serialize_entry("description", description)?;
         }
         map.end()
-    }
-}
-
-impl From<store::Error> for MethodError {
-    fn from(_value: store::Error) -> Self {
-        let log = "true";
-        MethodError::ServerPartialFail
     }
 }

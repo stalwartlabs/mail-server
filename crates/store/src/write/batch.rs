@@ -1,8 +1,8 @@
 use crate::BM_DOCUMENT_IDS;
 
 use super::{
-    Batch, BatchBuilder, HasFlag, IntoBitmap, IntoOperations, Operation, Serialize, ToAssertValue,
-    ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    Batch, BatchBuilder, BitmapFamily, HasFlag, IntoOperations, Operation, Serialize,
+    ToAssertValue, ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -104,14 +104,13 @@ impl BatchBuilder {
     pub fn bitmap(
         &mut self,
         field: impl Into<u8>,
-        value: impl IntoBitmap,
+        value: impl BitmapFamily + Serialize,
         options: u32,
     ) -> &mut Self {
-        let (key, family) = value.into_bitmap();
         self.ops.push(Operation::Bitmap {
-            family,
+            family: value.family(),
             field: field.into(),
-            key,
+            key: value.serialize(),
             set: !options.has_flag(F_CLEAR),
         });
         self

@@ -22,6 +22,7 @@ use super::{
 };
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
 pub enum Value {
     Text(String),
     UnsignedInt(u64),
@@ -175,7 +176,6 @@ impl<T: JsonObjectParser + Display + Eq> JsonObjectParser for SetValueMap<T> {
         let mut values = Vec::new();
         match parser.next_token::<Ignore>()? {
             Token::DictStart => {
-                parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
                 while {
                     let value = parser.next_dict_key::<T>()?;
                     if bool::parse(parser)? {

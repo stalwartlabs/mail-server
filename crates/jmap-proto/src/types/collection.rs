@@ -1,3 +1,5 @@
+use std::fmt::{self, Display, Formatter};
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Collection {
@@ -30,5 +32,20 @@ impl From<u8> for Collection {
 impl From<Collection> for u8 {
     fn from(v: Collection) -> Self {
         v as u8
+    }
+}
+
+impl Display for Collection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Collection::Principal => write!(f, "principal"),
+            Collection::PushSubscription => write!(f, "pushSubscription"),
+            Collection::Email => write!(f, "email"),
+            Collection::Mailbox => write!(f, "mailbox"),
+            Collection::Thread => write!(f, "thread"),
+            Collection::Identity => write!(f, "identity"),
+            Collection::EmailSubmission => write!(f, "emailSubmission"),
+            Collection::SieveScript => write!(f, "sieveScript"),
+        }
     }
 }

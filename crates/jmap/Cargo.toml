@@ -2,6 +2,7 @@
 name = "jmap"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 
 [dependencies]
 store = { path = "../store" }
@@ -10,6 +11,7 @@ utils = { path =  "../utils" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send" } 
+sieve-rs = { git = "https://github.com/stalwartlabs/sieve" }
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 hyper = { version = "1.0.0-rc.3", features = ["server", "http1", "http2"] }

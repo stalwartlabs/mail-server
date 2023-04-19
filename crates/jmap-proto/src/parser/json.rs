@@ -35,7 +35,6 @@ impl<'x> Parser<'x> {
     }
 
     pub fn error(&self, message: &str) -> Error {
-        println!("{}", std::str::from_utf8(&self.bytes[self.pos..]).unwrap());
         format!("{message} at position {}.", self.pos).into()
     }
 

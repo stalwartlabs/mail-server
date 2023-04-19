@@ -2,10 +2,12 @@ use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
-    types::{blob::BlobId, collection::Collection, property::Property, value::Value},
+    types::{
+        blob::BlobId, collection::Collection, id::Id, keyword::Keyword, property::Property,
+        value::Value,
+    },
 };
 use mail_parser::Message;
-use store::ValueKey;
 
 use crate::{email::headers::HeaderToValue, JMAP};
 
@@ -72,11 +74,7 @@ impl JMAP {
         let account_id = request.account_id.document_id();
         let mut response = GetResponse {
             account_id: Some(request.account_id),
-            state: self
-                .store
-                .get_last_change_id(account_id, Collection::Email)
-                .await?
-                .into(),
+            state: self.get_state(account_id, Collection::Email).await?,
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };
@@ -106,20 +104,20 @@ impl JMAP {
 
         for id in ids {
             // Obtain the email object
-            let mut values = if let Some(value) = self
-                .store
-                .get_value::<Object<Value>>(ValueKey::new(
+            let mut values = match self
+                .get_property::<Object<Value>>(
                     account_id,
                     Collection::Email,
                     id.document_id(),
-                    Property::BodyStructure,
-                ))
+                    &Property::BodyStructure,
+                )
                 .await?
             {
-                value
-            } else {
-                response.not_found.push(id);
-                continue;
+                Some(values) => values,
+                None => {
+                    response.not_found.push(id);
+                    continue;
+                }
             };
 
             // Retrieve raw message if needed
@@ -135,10 +133,15 @@ impl JMAP {
                     u32::MAX
                 };
 
-                if let Some(raw_message) = self.store.get_blob(&blob_id.kind, 0..offset).await? {
+                if let Some(raw_message) = self.get_blob(&blob_id.kind, 0..offset).await? {
                     raw_message
                 } else {
-                    let log = "true";
+                    tracing::warn!(event = "not-found",
+                        account_id = account_id,
+                        collection = ?Collection::Email,
+                        document_id = id.document_id(),
+                        blob_id = ?blob_id,
+                        "Blob not found");
                     response.not_found.push(id);
                     continue;
                 }
@@ -148,7 +151,13 @@ impl JMAP {
             let message = if !raw_message.is_empty() {
                 let message = Message::parse(&raw_message);
                 if message.is_none() {
-                    let log = "true";
+                    tracing::warn!(
+                        event = "parse-error",
+                        account_id = account_id,
+                        collection = ?Collection::Email,
+                        document_id = id.document_id(),
+                        blob_id = ?blob_id,
+                        "Failed to parse stored message");
                 }
                 message
             } else {
@@ -160,26 +169,52 @@ impl JMAP {
             for property in &properties {
                 match property {
                     Property::Id => {
-                        email.append(Property::Id, *id);
+                        email.append(Property::Id, Id::from(*id));
                     }
                     Property::ThreadId => {
-                        email.append(Property::ThreadId, id.prefix_id());
+                        email.append(Property::ThreadId, Id::from(id.prefix_id()));
                     }
                     Property::BlobId => {
                         email.append(Property::BlobId, blob_id.clone());
                     }
-                    Property::MailboxIds | Property::Keywords => {
+                    Property::MailboxIds => {
                         email.append(
                             property.clone(),
-                            self.store
-                                .get_value::<Value>(ValueKey::new(
-                                    account_id,
-                                    Collection::Email,
-                                    id.document_id(),
-                                    property.clone(),
-                                ))
-                                .await?
-                                .unwrap_or(Value::Null),
+                            self.get_property::<Vec<u32>>(
+                                account_id,
+                                Collection::Email,
+                                id.document_id(),
+                                &Property::MailboxIds,
+                            )
+                            .await?
+                            .map(|ids| {
+                                let mut obj = Object::with_capacity(ids.len());
+                                for id in ids {
+                                    obj.append(Property::_T(Id::from(id).to_string()), true);
+                                }
+                                Value::Object(obj)
+                            })
+                            .unwrap_or(Value::Null),
+                        );
+                    }
+                    Property::Keywords => {
+                        email.append(
+                            property.clone(),
+                            self.get_property::<Vec<Keyword>>(
+                                account_id,
+                                Collection::Email,
+                                id.document_id(),
+                                &Property::Keywords,
+                            )
+                            .await?
+                            .map(|keywords| {
+                                let mut obj = Object::with_capacity(keywords.len());
+                                for keyword in keywords {
+                                    obj.append(Property::_T(keyword.to_string()), true);
+                                }
+                                Value::Object(obj)
+                            })
+                            .unwrap_or(Value::Null),
                         );
                     }
                     Property::Size

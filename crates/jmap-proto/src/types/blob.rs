@@ -25,7 +25,7 @@ use std::{borrow::Borrow, io::Write};
 
 use store::{
     rand::{self, Rng},
-    write::now,
+    write::{now, DeserializeFrom, SerializeInto},
     BlobKind,
 };
 use utils::codec::{
@@ -33,10 +33,7 @@ use utils::codec::{
     leb128::{Leb128Iterator, Leb128Writer},
 };
 
-use crate::{
-    object::{DeserializeValue, SerializeValue},
-    parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser},
-};
+use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
 use super::date::UTCDate;
 
@@ -155,7 +152,7 @@ impl BlobId {
         .into()
     }
 
-    fn serialize_into(&self, writer: &mut (impl Write + Leb128Writer)) {
+    fn serialize_as(&self, writer: &mut (impl Write + Leb128Writer)) {
         let kind = self
             .section
             .as_ref()
@@ -264,19 +261,19 @@ impl std::fmt::Display for BlobId {
     #[allow(clippy::unused_io_amount)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut writer = Base32Writer::with_capacity(std::mem::size_of::<BlobId>() * 2);
-        self.serialize_into(&mut writer);
+        self.serialize_as(&mut writer);
         f.write_str(&writer.finalize())
     }
 }
 
-impl SerializeValue for BlobId {
-    fn serialize_value(self, buf: &mut Vec<u8>) {
-        self.serialize_into(buf)
+impl SerializeInto for BlobId {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        self.serialize_as(buf)
     }
 }
 
-impl DeserializeValue for BlobId {
-    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+impl DeserializeFrom for BlobId {
+    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
         BlobId::from_iter(bytes)
     }
 }

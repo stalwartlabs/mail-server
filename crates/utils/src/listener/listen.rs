@@ -4,7 +4,7 @@ use tokio::{net::TcpListener, sync::watch};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    config::{Listener, Server, ServerProtocol, Servers},
+    config::{Config, Listener, Server, ServerProtocol, Servers},
     failed,
     listener::SessionData,
     UnwrapFailure,
@@ -13,12 +13,7 @@ use crate::{
 use super::{limiter::ConcurrencyLimiter, ServerInstance, SessionManager};
 
 impl Server {
-    pub fn spawn(
-        self,
-        manager: impl SessionManager,
-        max_concurrent: u64,
-        shutdown_rx: watch::Receiver<bool>,
-    ) -> Result<(), String> {
+    pub fn spawn(self, manager: impl SessionManager, shutdown_rx: watch::Receiver<bool>) {
         // Prepare instance
         let instance = Arc::new(ServerInstance {
             data: if matches!(self.protocol, ServerProtocol::Smtp | ServerProtocol::Lmtp) {
@@ -32,10 +27,9 @@ impl Server {
             hostname: self.hostname,
             tls_acceptor: self.tls.map(|config| TlsAcceptor::from(Arc::new(config))),
             is_tls_implicit: self.tls_implicit,
+            limiter: ConcurrencyLimiter::new(manager.max_concurrent()),
+            shutdown_rx,
         });
-
-        // Start concurrency limiter
-        let limiter = Arc::new(ConcurrencyLimiter::new(max_concurrent));
 
         // Spawn listeners
         for listener in self.listeners {
@@ -53,10 +47,9 @@ impl Server {
             let listener = listener.listen();
 
             // Spawn listener
-            let mut shutdown_rx = shutdown_rx.clone();
+            let mut shutdown_rx = instance.shutdown_rx.clone();
             let manager = manager.clone();
             let instance = instance.clone();
-            let limiter = limiter.clone();
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
@@ -64,7 +57,7 @@ impl Server {
                             match stream {
                                 Ok((stream, remote_addr)) => {
                                     // Enforce concurrency
-                                    if let Some(in_flight) = limiter.is_allowed() {
+                                    if let Some(in_flight) = instance.limiter.is_allowed() {
                                         let span = tracing::info_span!(
                                             "session",
                                             instance = instance.id,
@@ -81,7 +74,6 @@ impl Server {
                                             span,
                                             in_flight,
                                             instance: instance.clone(),
-                                            shutdown_rx: shutdown_rx.clone(),
                                         });
                                     } else {
                                         tracing::info!(
@@ -91,7 +83,7 @@ impl Server {
                                             protocol = ?instance.protocol,
                                             remote.ip = remote_addr.ip().to_string(),
                                             remote.port = remote_addr.port(),
-                                            max_concurrent = max_concurrent,
+                                            max_concurrent = instance.limiter.max_concurrent,
                                             "Too many concurrent connections."
                                         );
                                     };
@@ -117,13 +109,16 @@ impl Server {
                 }
             });
         }
-
-        Ok(())
     }
 }
 
 impl Servers {
-    pub fn bind(&self) {
+    pub fn spawn(
+        self,
+        config: &Config,
+        spawn: impl Fn(Server, watch::Receiver<bool>),
+    ) -> watch::Sender<bool> {
+        // Bind as root
         for server in &self.inner {
             for listener in &server.listeners {
                 listener
@@ -132,6 +127,26 @@ impl Servers {
                     .failed(&format!("Failed to bind to {}", listener.addr));
             }
         }
+
+        // Drop privileges
+        #[cfg(not(target_env = "msvc"))]
+        {
+            if let Some(run_as_user) = config.value("server.run-as.user") {
+                let mut pd = privdrop::PrivDrop::default().user(run_as_user);
+                if let Some(run_as_group) = config.value("server.run-as.group") {
+                    pd = pd.group(run_as_group);
+                }
+                pd.apply().failed("Failed to drop privileges");
+            }
+        }
+
+        // Spawn listeners
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        for server in self.inner {
+            spawn(server, shutdown_rx.clone());
+        }
+
+        shutdown_tx
     }
 }
 

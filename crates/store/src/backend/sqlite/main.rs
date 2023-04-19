@@ -4,7 +4,7 @@ use lru_cache::LruCache;
 use parking_lot::Mutex;
 use r2d2::Pool;
 use tokio::sync::oneshot;
-use utils::config::Config;
+use utils::{config::Config, UnwrapFailure};
 
 use crate::{
     blob::BlobStore, Store, SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES,
@@ -20,7 +20,12 @@ impl Store {
     pub async fn open(config: &Config) -> crate::Result<Self> {
         let db = Self {
             conn_pool: Pool::new(
-                SqliteConnectionManager::file("/tmp/sqlite.db").with_init(|c| {
+                SqliteConnectionManager::file(
+                    config
+                        .value_require("store.db.path")
+                        .failed("Invalid configuration file"),
+                )
+                .with_init(|c| {
                     c.execute_batch(concat!(
                         "PRAGMA journal_mode = WAL; ",
                         "PRAGMA synchronous = normal; ",

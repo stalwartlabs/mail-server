@@ -17,17 +17,20 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use utils::listener::{SessionData, SessionManager};
+use utils::listener::{ServerInstance, SessionData, SessionManager};
 
 use crate::{
     blob::{DownloadResponse, UploadResponse},
     JMAP,
 };
 
+use super::session::Session;
+
 impl JMAP {
     pub async fn parse_request(
         &self,
         req: &mut hyper::Request<hyper::body::Incoming>,
+        instance: &ServerInstance,
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
         let mut path = req.uri().path().split('/');
         path.next();
@@ -65,7 +68,15 @@ impl JMAP {
                             }
                             .into_http_response(),
                             Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => RequestError::internal_server_error().into_http_response(),
+                            Err(err) => {
+                                tracing::error!(event = "error",
+                                context = "blob_store",
+                                account_id = account_id.document_id(),
+                                blob_id = ?blob_id,
+                                error = ?err,
+                                "Failed to download blob");
+                                RequestError::internal_server_error().into_http_response()
+                            }
                         };
                     }
                 }
@@ -103,7 +114,10 @@ impl JMAP {
             },
             ".well-known" => match (path.next().unwrap_or(""), req.method()) {
                 ("jmap", &Method::GET) => {
-                    todo!()
+                    return match self.handle_session_resource(instance).await {
+                        Ok(session) => session.into_http_response(),
+                        Err(err) => err.into_http_response(),
+                    };
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     todo!()
@@ -155,7 +169,6 @@ impl SessionManager for super::SessionManager {
                                 span,
                                 in_flight: session.in_flight,
                                 instance: session.instance,
-                                shutdown_rx: session.shutdown_rx,
                             },
                         )
                         .await;
@@ -175,6 +188,10 @@ impl SessionManager for super::SessionManager {
             }
         });
     }
+
+    fn max_concurrent(&self) -> u64 {
+        self.inner.config.request_max_concurrent_total
+    }
 }
 
 async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
@@ -182,6 +199,8 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
     session: SessionData<T>,
 ) {
     let span = session.span;
+    let _in_flight = session.in_flight;
+
     if let Err(http_err) = http1::Builder::new()
         .keep_alive(true)
         .serve_connection(
@@ -189,9 +208,10 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
             service_fn(|mut req: hyper::Request<body::Incoming>| {
                 let jmap = jmap.clone();
                 let span = span.clone();
+                let instance = session.instance.clone();
 
                 async move {
-                    let response = jmap.parse_request(&mut req).await;
+                    let response = jmap.parse_request(&mut req, &instance).await;
 
                     tracing::debug!(
                         parent: &span,
@@ -208,7 +228,8 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
     {
         tracing::debug!(
             parent: &span,
-            event = "http-error",
+            event = "error",
+            context = "http",
             reason = %http_err,
         );
     }
@@ -237,6 +258,24 @@ trait ToHttpResponse {
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let delete = "";
+        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        hyper::Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .body(
+                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
+            .unwrap()
+    }
+}
+
+impl ToHttpResponse for Session {
+    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let delete = "";
+        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -276,6 +315,9 @@ impl ToHttpResponse for DownloadResponse {
 
 impl ToHttpResponse for UploadResponse {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let delete = "";
+        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -290,6 +332,9 @@ impl ToHttpResponse for UploadResponse {
 
 impl ToHttpResponse for RequestError {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let delete = "";
+        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+
         hyper::Response::builder()
             .status(self.status)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")

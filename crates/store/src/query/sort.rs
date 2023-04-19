@@ -73,8 +73,9 @@ impl ReadTransaction<'_> {
             let mut sorted_results = paginate.build();
             if let Some(prefix_key) = prefix_key {
                 for id in sorted_results.ids.iter_mut() {
-                    if let Some(prefix_id) =
-                        self.get_value::<u32>(prefix_key.with_document_id(*id as u32))?
+                    if let Some(prefix_id) = self
+                        .get_value::<u32>(prefix_key.with_document_id(*id as u32))
+                        .await?
                     {
                         *id |= (prefix_id as u64) << 32;
                     }
@@ -158,8 +159,9 @@ impl ReadTransaction<'_> {
             for (document_id, _) in sorted_ids {
                 // Obtain document prefixId
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
-                    if let Some(prefix_id) =
-                        self.get_value(prefix_key.with_document_id(document_id))?
+                    if let Some(prefix_id) = self
+                        .get_value(prefix_key.with_document_id(document_id))
+                        .await?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
                             continue;

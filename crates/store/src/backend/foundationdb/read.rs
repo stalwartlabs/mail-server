@@ -13,10 +13,11 @@ use roaring::RoaringBitmap;
 use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, ReadTransaction, Serialize, Store, ValueKey,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, ReadTransaction, Serialize, Store,
+    ValueKey, SUBSPACE_INDEXES,
 };
 
-use super::{bitmap::DeserializeBlock, SUBSPACE_INDEXES};
+use super::bitmap::DeserializeBlock;
 
 impl ReadTransaction<'_> {
     #[inline(always)]
@@ -229,6 +230,43 @@ impl ReadTransaction<'_> {
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn iterate<T>(
+        &self,
+        mut acc: T,
+        begin: impl Key,
+        end: impl Key,
+        first: bool,
+        ascending: bool,
+        cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
+    ) -> crate::Result<T> {
+        todo!()
+    }
+
+    pub(crate) async fn get_last_change_id(
+        &self,
+        account_id: u32,
+        collection: u8,
+    ) -> crate::Result<Option<u64>> {
+        todo!()
+        /*let key = LogKey {
+            account_id,
+            collection,
+            change_id: u64::MAX,
+        }
+        .serialize();
+
+        self.conn
+            .prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
+            .query_row([&key], |row| {
+                let key = row.get_ref(0)?.as_bytes()?;
+
+                key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
+                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
+            })
+            .optional()
+            .map_err(Into::into)*/
     }
 
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {

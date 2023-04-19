@@ -6,7 +6,6 @@ use crate::{
     error::method::MethodError,
     object::Object,
     request::{
-        method::MethodFunction,
         reference::{MaybeReference, ResultReference},
         RequestMethod,
     },
@@ -166,9 +165,9 @@ impl Response {
 
     fn eval_result_references(&self, rr: &ResultReference) -> EvalResult {
         for response in &self.method_responses {
-            if response.id == rr.result_of {
-                match (&rr.name.fnc, &response.method) {
-                    (MethodFunction::Get, ResponseMethod::Get(response)) => {
+            if response.id == rr.result_of && response.name == rr.name {
+                match &response.method {
+                    ResponseMethod::Get(response) => {
                         return match rr.path.item_subquery() {
                             Some((root, property)) if root == "list" => {
                                 let property = Property::parse(property);
@@ -184,7 +183,7 @@ impl Response {
                             _ => EvalResult::Failed,
                         };
                     }
-                    (MethodFunction::Changes, ResponseMethod::Changes(response)) => {
+                    ResponseMethod::Changes(response) => {
                         return match rr.path.item_query() {
                             Some("created") => EvalResult::Values(
                                 response
@@ -208,7 +207,7 @@ impl Response {
                             _ => EvalResult::Failed,
                         };
                     }
-                    (MethodFunction::Query, ResponseMethod::Query(response)) => {
+                    ResponseMethod::Query(response) => {
                         return if rr.path.item_query() == Some("ids") {
                             EvalResult::Values(
                                 response.ids.iter().copied().map(Into::into).collect(),
@@ -217,7 +216,7 @@ impl Response {
                             EvalResult::Failed
                         };
                     }
-                    (MethodFunction::QueryChanges, ResponseMethod::QueryChanges(response)) => {
+                    ResponseMethod::QueryChanges(response) => {
                         return if rr.path.item_subquery() == Some(("added", "id")) {
                             EvalResult::Values(
                                 response.added.iter().map(|item| item.id.into()).collect(),

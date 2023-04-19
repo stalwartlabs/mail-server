@@ -23,7 +23,6 @@
 
 use std::ops::Deref;
 
-use store::{write::IntoBitmap, Serialize, BM_TAG, TAG_ID};
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
 use crate::{
@@ -249,12 +248,6 @@ impl From<Id> for u32 {
 impl From<Id> for String {
     fn from(id: Id) -> Self {
         id.as_string()
-    }
-}
-
-impl IntoBitmap for Id {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (self.serialize(), BM_TAG | TAG_ID)
     }
 }
 

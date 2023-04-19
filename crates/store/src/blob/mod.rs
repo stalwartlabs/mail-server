@@ -16,7 +16,7 @@ pub enum BlobStore {
 impl BlobStore {
     pub async fn new(config: &Config) -> crate::Result<Self> {
         Ok(BlobStore::Local(
-            config.value_require("blob.store.path")?.into(),
+            config.value_require("store.blob.path")?.into(),
         ))
     }
 }

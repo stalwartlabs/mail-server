@@ -1,8 +1,7 @@
 pub mod references;
+pub mod serialize;
 
 use std::collections::HashMap;
-
-use serde::Serialize;
 
 use crate::{
     error::method::MethodError,
@@ -18,11 +17,14 @@ use crate::{
         set::SetResponse,
         validate::ValidateSieveScriptResponse,
     },
-    request::{echo::Echo, Call},
+    request::{echo::Echo, method::MethodName, Call},
     types::id::Id,
 };
 
+use self::serialize::serialize_hex;
+
 #[derive(Debug, serde::Serialize)]
+#[serde(untagged)]
 pub enum ResponseMethod {
     Get(GetResponse),
     Set(SetResponse),
@@ -61,23 +63,22 @@ impl Response {
         }
     }
 
-    pub fn push_response(&mut self, id: String, method: impl Into<ResponseMethod>) {
+    pub fn push_response(
+        &mut self,
+        id: String,
+        name: MethodName,
+        method: impl Into<ResponseMethod>,
+    ) {
         self.method_responses.push(Call {
             id,
             method: method.into(),
+            name,
         });
     }
 
     pub fn push_created_id(&mut self, create_id: String, id: Id) {
         self.created_ids.insert(create_id, id);
     }
-}
-
-pub fn serialize_hex<S>(value: &u32, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    format!("{:x}", value).serialize(serializer)
 }
 
 impl From<MethodError> for ResponseMethod {

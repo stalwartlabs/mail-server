@@ -161,9 +161,8 @@ impl From<String> for Error {
 }
 
 pub const BM_DOCUMENT_IDS: u8 = 0;
-pub const BM_KEYWORD: u8 = 1 << 5;
-pub const BM_TAG: u8 = 1 << 6;
-pub const BM_HASH: u8 = 1 << 7;
+pub const BM_TAG: u8 = 1 << 5;
+pub const BM_HASH: u8 = 1 << 6;
 
 pub const HASH_EXACT: u8 = 0;
 pub const HASH_STEMMED: u8 = 1 << 6;

@@ -6,7 +6,6 @@ use jmap_proto::{
     method::import::{ImportEmailRequest, ImportEmailResponse},
     types::{collection::Collection, property::Property, state::State},
 };
-use store::BitmapKey;
 use utils::map::vec_map::VecMap;
 
 use crate::{MaybeError, JMAP};
@@ -18,11 +17,7 @@ impl JMAP {
     ) -> Result<ImportEmailResponse, MethodError> {
         // Validate state
         let account_id = request.account_id.document_id();
-        let old_state: State = self
-            .store
-            .get_last_change_id(account_id, Collection::Email)
-            .await?
-            .into();
+        let old_state: State = self.get_state(account_id, Collection::Email).await?;
         if let Some(if_in_state) = request.if_in_state {
             if old_state != if_in_state {
                 return Err(MethodError::StateMismatch);
@@ -31,8 +26,7 @@ impl JMAP {
 
         let cococ = "implement ACLS";
         let valid_mailbox_ids = self
-            .store
-            .get_bitmap(BitmapKey::document_ids(account_id, Collection::Mailbox))
+            .get_document_ids(account_id, Collection::Mailbox)
             .await?
             .unwrap_or_default();
 
@@ -56,7 +50,8 @@ impl JMAP {
                 );
                 continue;
             }
-            for mailbox_id in &mailbox_ids {
+            let enable = "true";
+            /*for mailbox_id in &mailbox_ids {
                 if !valid_mailbox_ids.contains(*mailbox_id) {
                     not_created.append(
                         id,
@@ -66,20 +61,29 @@ impl JMAP {
                     );
                     continue 'outer;
                 }
-            }
+            }*/
 
             // Fetch raw message to import
-            let raw_message =
-                if let Some(raw_message) = self.blob_download(&email.blob_id, account_id).await? {
-                    raw_message
-                } else {
+            let raw_message = match self.blob_download(&email.blob_id, account_id).await {
+                Ok(Some(raw_message)) => raw_message,
+                Ok(None) => {
                     not_created.append(
                         id,
                         SetError::new(SetErrorType::BlobNotFound)
                             .with_description(format!("BlobId {} not found.", email.blob_id)),
                     );
                     continue;
-                };
+                }
+                Err(err) => {
+                    tracing::error!(event = "error",
+                    context = "store",
+                    account_id = account_id,
+                    blob_id = ?email.blob_id,
+                    error = ?err,
+                    "Failed to retrieve blob");
+                    return Err(MethodError::ServerPartialFail);
+                }
+            };
 
             // Import message
             match self
@@ -101,7 +105,7 @@ impl JMAP {
                         SetError::new(SetErrorType::InvalidEmail).with_description(reason),
                     );
                 }
-                Err(MaybeError::Temporary(_)) => {
+                Err(MaybeError::Temporary) => {
                     return Err(MethodError::ServerPartialFail);
                 }
             }
@@ -110,10 +114,7 @@ impl JMAP {
         Ok(ImportEmailResponse {
             account_id: request.account_id,
             new_state: if !created.is_empty() {
-                self.store
-                    .get_last_change_id(account_id, Collection::Email)
-                    .await?
-                    .into()
+                self.get_state(account_id, Collection::Email).await?
             } else {
                 old_state.clone()
             },

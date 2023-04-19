@@ -27,7 +27,7 @@ use crate::{
     types::id::Id,
 };
 
-use self::echo::Echo;
+use self::{echo::Echo, method::MethodName};
 
 #[derive(Debug)]
 pub struct Request {
@@ -36,9 +36,10 @@ pub struct Request {
     pub created_ids: Option<HashMap<String, Id>>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug)]
 pub struct Call<T> {
     pub id: String,
+    pub name: MethodName,
     pub method: T,
 }
 

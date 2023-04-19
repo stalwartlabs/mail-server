@@ -1,18 +1,26 @@
-#[package]
-#name = "stalwart-jmap"
-#description = "Stalwart JMAP Server"
-#authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
-#repository = "https://github.com/stalwartlabs/jmap-server"
-#homepage = "https://stalw.art/jmap"
-#keywords = ["jmap", "email", "mail", "server"]
-#categories = ["email"]
-#license = "AGPL-3.0-only"
-#version = "0.3.0"
-#edition = "2021"
-#resolver = "2"
+[package]
+name = "mail-server"
+description = "Stalwart Mail Server"
+authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
+repository = "https://github.com/stalwartlabs/jmap-server"
+homepage = "https://stalw.art"
+keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
+categories = ["email"]
+license = "AGPL-3.0-only"
+version = "0.3.0"
+edition = "2021"
+resolver = "2"
 
-#[lib]
-#path = "crates/core/src/lib.rs"
+[[bin]]
+name = "stalwart-mail"
+path = "crates/main/src/main.rs"
+
+[dependencies]
+store = { path = "crates/store" }
+jmap = { path = "crates/jmap" }
+jmap_proto = { path = "crates/jmap-proto" }
+utils = { path = "crates/utils" }
+tests = { path = "tests" }
 
 [workspace]
 members = [
@@ -20,5 +28,6 @@ members = [
     "crates/jmap-proto",
     "crates/store",
     "crates/utils",
+    "crates/maybe-async",
     "tests",
 ]

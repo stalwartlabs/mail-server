@@ -1,0 +1,109 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 2651,
+  "receivedAt": "2054-01-02T20:53:20Z",
+  "from": [
+    {
+      "name": "Al Gore",
+      "email": "vice-president@whitehouse.gov"
+    }
+  ],
+  "to": [
+    {
+      "name": "White House Transportation Coordinator",
+      "email": "transport@whitehouse.gov"
+    }
+  ],
+  "subject": "[Fwd: Map of Argentina with Description]",
+  "bodyStructure": {
+    "partId": "0",
+    "headers": [
+      {
+        "name": "From",
+        "value": "  Al Gore <vice-president@whitehouse.gov>"
+      },
+      {
+        "name": "To",
+        "value": "  White House Transportation Coordinator\n     <transport@whitehouse.gov>"
+      },
+      {
+        "name": "Subject",
+        "value": " [Fwd: Map of Argentina with Description]"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed;\n              boundary=\"D7F------------D7FD5A0B8AB9C65CCDBFA872\""
+      }
+    ],
+    "type": "multipart/mixed"
+  },
+  "bodyValues": {},
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 61,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=us-ascii"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 61,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=us-ascii"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "2",
+      "blobId": "blob_2",
+      "size": 1979,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " message/rfc822"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        }
+      ],
+      "type": "message/rfc822",
+      "disposition": "inline"
+    }
+  ],
+  "hasAttachment": true,
+  "preview": "Fred,\n\nFire up Air Force One!  We're going South!\n\nThanks,\nAl"
+}

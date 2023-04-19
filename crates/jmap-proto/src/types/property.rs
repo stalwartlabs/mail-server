@@ -2,15 +2,13 @@ use std::fmt::{Display, Formatter};
 
 use mail_parser::RfcHeader;
 use serde::Serialize;
+use store::write::{DeserializeFrom, SerializeInto};
 
-use crate::{
-    object::{DeserializeValue, SerializeValue},
-    parser::{json::Parser, Error, JsonObjectParser},
-};
+use crate::parser::{json::Parser, Error, JsonObjectParser};
 
 use super::{acl::Acl, id::Id, keyword::Keyword, value::Value};
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Property {
     Acl,
     Aliases,
@@ -801,14 +799,14 @@ impl IntoProperty for String {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct HeaderProperty {
     pub form: HeaderForm,
     pub header: String,
     pub all: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum HeaderForm {
     Raw,
     Text,
@@ -845,8 +843,8 @@ impl Display for HeaderForm {
     }
 }
 
-impl From<Property> for u8 {
-    fn from(value: Property) -> Self {
+impl From<&Property> for u8 {
+    fn from(value: &Property) -> Self {
         match value {
             Property::IsActive => 0,
             Property::IsEnabled => 1,
@@ -950,6 +948,12 @@ impl From<Property> for u8 {
     }
 }
 
+impl From<Property> for u8 {
+    fn from(value: Property) -> Self {
+        (&value).into()
+    }
+}
+
 impl From<RfcHeader> for Property {
     fn from(value: RfcHeader) -> Self {
         match value {
@@ -969,14 +973,14 @@ impl From<RfcHeader> for Property {
     }
 }
 
-impl SerializeValue for Property {
-    fn serialize_value(self, buf: &mut Vec<u8>) {
+impl SerializeInto for Property {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
         buf.push(self.into());
     }
 }
 
-impl DeserializeValue for Property {
-    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+impl DeserializeFrom for Property {
+    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
         match *bytes.next()? {
             0 => Some(Property::IsActive),
             1 => Some(Property::IsEnabled),
@@ -1082,5 +1086,20 @@ impl DeserializeValue for Property {
             97 => Some(Property::_T(String::new())), // Never serialized
             _ => None,
         }
+    }
+}
+
+impl Serialize for Property {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl AsRef<Property> for Property {
+    fn as_ref(&self) -> &Property {
+        self
     }
 }

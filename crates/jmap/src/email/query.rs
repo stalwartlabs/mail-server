@@ -8,7 +8,7 @@ use store::{
     fts::Language,
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
-    BitmapKey, ValueKey,
+    ValueKey,
 };
 
 use crate::JMAP;
@@ -23,14 +23,18 @@ impl JMAP {
 
         for cond in request.filter {
             match cond {
-                Filter::InMailbox(mailbox) => {
-                    filters.push(query::Filter::is_in_bitmap(Property::MailboxIds, mailbox))
-                }
+                Filter::InMailbox(mailbox) => filters.push(query::Filter::is_in_bitmap(
+                    Property::MailboxIds,
+                    mailbox.document_id(),
+                )),
                 Filter::InMailboxOtherThan(mailboxes) => {
                     filters.push(query::Filter::Not);
                     filters.push(query::Filter::Or);
                     for mailbox in mailboxes {
-                        filters.push(query::Filter::is_in_bitmap(Property::MailboxIds, mailbox));
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::MailboxIds,
+                            mailbox.document_id(),
+                        ));
                     }
                     filters.push(query::Filter::End);
                     filters.push(query::Filter::End);
@@ -141,18 +145,31 @@ impl JMAP {
                 }
                 Filter::SentBefore(date) => filters.push(query::Filter::lt(Property::SentAt, date)),
                 Filter::SentAfter(date) => filters.push(query::Filter::gt(Property::SentAt, date)),
-                Filter::InThread(id) => {
-                    filters.push(query::Filter::is_in_bitmap(Property::ThreadId, id))
-                }
+                Filter::InThread(id) => filters.push(query::Filter::is_in_bitmap(
+                    Property::ThreadId,
+                    id.document_id(),
+                )),
 
                 other => return Err(MethodError::UnsupportedFilter(other.to_string())),
             }
         }
 
-        let result_set = self
+        let result_set = match self
             .store
             .filter(account_id, Collection::Email, filters)
-            .await?;
+            .await
+        {
+            Ok(result_set) => result_set,
+            Err(err) => {
+                tracing::error!(event = "error",
+                    context = "store",
+                    account_id = account_id,
+                    collection = "email",
+                    error = ?err,
+                    "Filter failed");
+                return Err(MethodError::ServerPartialFail);
+            }
+        };
         let total = result_set.results.len() as usize;
         let (limit_total, limit) = if let Some(limit) = request.limit {
             if limit > 0 {
@@ -169,11 +186,7 @@ impl JMAP {
         };
         let mut response = QueryResponse {
             account_id: request.account_id,
-            query_state: self
-                .store
-                .get_last_change_id(account_id, Collection::Email)
-                .await?
-                .into(),
+            query_state: self.get_state(account_id, Collection::Email).await?,
             can_calculate_changes: true,
             position: 0,
             ids: vec![],
@@ -213,15 +226,14 @@ impl JMAP {
                         query::Comparator::field(Property::SentAt, comparator.is_ascending)
                     }
                     SortProperty::HasKeyword => query::Comparator::set(
-                        self.store
-                            .get_bitmap(BitmapKey::value(
-                                account_id,
-                                Collection::Email,
-                                Property::Keywords,
-                                comparator.keyword.unwrap_or(Keyword::Seen),
-                            ))
-                            .await?
-                            .unwrap_or_default(),
+                        self.get_tag(
+                            account_id,
+                            Collection::Email,
+                            Property::Keywords,
+                            comparator.keyword.unwrap_or(Keyword::Seen),
+                        )
+                        .await?
+                        .unwrap_or_default(),
                         comparator.is_ascending,
                     ),
                     SortProperty::AllInThreadHaveKeyword => query::Comparator::set(
@@ -252,7 +264,7 @@ impl JMAP {
             }
 
             // Sort results
-            let result = self
+            let result = match self
                 .store
                 .sort(
                     result_set,
@@ -266,7 +278,19 @@ impl JMAP {
                         request.arguments.collapse_threads.unwrap_or(false),
                     ),
                 )
-                .await?;
+                .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    tracing::error!(event = "error",
+                    context = "store",
+                    account_id = account_id,
+                    collection = "email",
+                    error = ?err,
+                    "Sort failed");
+                    return Err(MethodError::ServerPartialFail);
+                }
+            };
 
             // Prepare response
             if result.found_anchor {
@@ -291,13 +315,7 @@ impl JMAP {
         match_all: bool,
     ) -> Result<RoaringBitmap, MethodError> {
         let keyword_doc_ids = self
-            .store
-            .get_bitmap(BitmapKey::value(
-                account_id,
-                Collection::Email,
-                Property::Keywords,
-                keyword,
-            ))
+            .get_tag(account_id, Collection::Email, Property::Keywords, keyword)
             .await?
             .unwrap_or_default();
 
@@ -309,23 +327,16 @@ impl JMAP {
                 continue;
             }
             if let Some(thread_id) = self
-                .store
-                .get_value::<u32>(ValueKey::new(
+                .get_property::<u32>(
                     account_id,
                     Collection::Email,
                     keyword_doc_id,
-                    Property::ThreadId,
-                ))
+                    &Property::ThreadId,
+                )
                 .await?
             {
                 if let Some(thread_doc_ids) = self
-                    .store
-                    .get_bitmap(BitmapKey::value(
-                        account_id,
-                        Collection::Email,
-                        Property::ThreadId,
-                        thread_id,
-                    ))
+                    .get_tag(account_id, Collection::Email, Property::ThreadId, thread_id)
                     .await?
                 {
                     let mut thread_tag_intersection = thread_doc_ids.clone();

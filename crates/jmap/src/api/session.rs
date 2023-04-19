@@ -1,8 +1,11 @@
-use jmap_proto::{request::capability::Capability, response::serialize_hex, types::id::Id};
+use jmap_proto::{
+    error::request::RequestError, request::capability::Capability,
+    response::serialize::serialize_hex, types::id::Id,
+};
 use store::ahash::AHashSet;
-use utils::map::vec_map::VecMap;
+use utils::{listener::ServerInstance, map::vec_map::VecMap, UnwrapFailure};
 
-use crate::Config;
+use crate::JMAP;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
@@ -126,28 +129,42 @@ struct SubmissionCapabilities {
 #[derive(Debug, Clone, serde::Serialize)]
 struct VacationResponseCapabilities {}
 
-struct BaseCapabilities {
+#[derive(Default)]
+pub struct BaseCapabilities {
     capabilities: VecMap<Capability, Capabilities>,
 }
 
-impl BaseCapabilities {
-    pub fn new(config: &crate::Config, raw_config: &Config) -> Self {
-        Self {
-            capabilities: VecMap::from_iter([
-                (
-                    Capability::Core,
-                    Capabilities::Core(CoreCapabilities::new(config)),
-                ),
-                (
-                    Capability::Mail,
-                    Capabilities::Mail(MailCapabilities::new(config)),
-                ),
-                (
-                    Capability::Sieve,
-                    Capabilities::Sieve(SieveCapabilities::new(config, raw_config)),
-                ),
-            ]),
-        }
+impl JMAP {
+    pub async fn handle_session_resource(
+        &self,
+        instance: &ServerInstance,
+    ) -> Result<Session, RequestError> {
+        let mut session = Session::new(&instance.data, &self.config.capabilities);
+        session.set_state(0);
+        session.set_primary_account(
+            1u64.into(),
+            "jdoe@example.org".to_string(),
+            "John Doe".to_string(),
+            None,
+        );
+        Ok(session)
+    }
+}
+
+impl crate::Config {
+    pub fn add_capabilites(&mut self, settings: &utils::config::Config) {
+        self.capabilities.capabilities.append(
+            Capability::Core,
+            Capabilities::Core(CoreCapabilities::new(self)),
+        );
+        self.capabilities.capabilities.append(
+            Capability::Mail,
+            Capabilities::Mail(MailCapabilities::new(self)),
+        );
+        self.capabilities.capabilities.append(
+            Capability::Sieve,
+            Capabilities::Sieve(SieveCapabilities::new(self, settings)),
+        );
     }
 }
 
@@ -156,7 +173,7 @@ impl Session {
         let mut capabilities = base_capabilities.capabilities.clone();
         capabilities.append(
             Capability::WebSocket,
-            Capabilities::WebSocket(WebSocketCapabilities::new(&base_url)),
+            Capabilities::WebSocket(WebSocketCapabilities::new(base_url)),
         );
 
         Session {
@@ -190,11 +207,11 @@ impl Session {
 
         if let Some(capabilities) = capabilities {
             for capability in capabilities {
-                self.primary_accounts.append(capability.clone(), account_id);
+                self.primary_accounts.append(*capability, account_id);
             }
         } else {
             for capability in self.capabilities.keys() {
-                self.primary_accounts.append(capability.clone(), account_id);
+                self.primary_accounts.append(*capability, account_id);
             }
         }
 
@@ -250,7 +267,7 @@ impl Account {
         if let Some(capabilities) = capabilities {
             for capability in capabilities {
                 self.account_capabilities.append(
-                    capability.clone(),
+                    *capability,
                     core_capabilities.get(capability).unwrap().clone(),
                 );
             }
@@ -264,13 +281,13 @@ impl Account {
 impl CoreCapabilities {
     pub fn new(config: &crate::Config) -> Self {
         CoreCapabilities {
-            max_size_upload: config.max_size_upload,
-            max_concurrent_upload: config.max_concurrent_uploads,
-            max_size_request: config.max_size_request,
-            max_concurrent_requests: config.max_concurrent_requests,
-            max_calls_in_request: config.max_calls_in_request,
-            max_objects_in_get: config.max_objects_in_get,
-            max_objects_in_set: config.max_objects_in_set,
+            max_size_upload: config.upload_max_size,
+            max_concurrent_upload: config.upload_max_concurrent,
+            max_size_request: config.request_max_size,
+            max_concurrent_requests: config.request_max_concurrent as usize,
+            max_calls_in_request: config.request_max_calls,
+            max_objects_in_get: config.get_max_objects,
+            max_objects_in_set: config.set_max_objects,
             collation_algorithms: vec![
                 "i;ascii-numeric".to_string(),
                 "i;ascii-casemap".to_string(),
@@ -290,25 +307,23 @@ impl WebSocketCapabilities {
 }
 
 impl SieveCapabilities {
-    pub fn new(config: &crate::Config, raw_config: &Config) -> Self {
+    pub fn new(config: &crate::Config, settings: &utils::config::Config) -> Self {
         let mut notification_methods = Vec::new();
-        for part in settings
-            .get("sieve-notification-uris")
-            .unwrap_or_else(|| "mailto".to_string())
-            .split_ascii_whitespace()
-        {
-            if !part.is_empty() {
-                notification_methods.push(part.to_string());
-            }
+
+        for (_, uri) in settings.values("jmap.sieve.notification-uris") {
+            notification_methods.push(uri.to_string());
+        }
+        if notification_methods.is_empty() {
+            notification_methods.push("mailto".to_string());
         }
 
-        let mut capabilities: AHashSet<Capability> =
-            AHashSet::from_iter(Capability::all().iter().cloned());
-        if let Some(disable) = settings.get("sieve-disable-capabilities") {
-            for item in disable.split_ascii_whitespace() {
-                capabilities.remove(&Capability::parse(item));
-            }
+        let mut capabilities: AHashSet<sieve::compiler::grammar::Capability> =
+            AHashSet::from_iter(sieve::compiler::grammar::Capability::all().iter().cloned());
+
+        for (_, capability) in settings.values("jmap.sieve.disabled-capabilities") {
+            capabilities.remove(&sieve::compiler::grammar::Capability::parse(capability));
         }
+
         let mut extensions = capabilities
             .into_iter()
             .map(|c| c.to_string())
@@ -318,10 +333,14 @@ impl SieveCapabilities {
         SieveCapabilities {
             max_script_name: config.sieve_max_script_name,
             max_script_size: settings
-                .parse("sieve-max-script-size")
+                .property("jmap.sieve.max-script-size")
+                .failed("Invalid configuration file")
                 .unwrap_or(1024 * 1024),
             max_scripts: config.sieve_max_scripts,
-            max_redirects: settings.parse("sieve-max-redirects").unwrap_or(1),
+            max_redirects: settings
+                .property("jmap.sieve.max-redirects")
+                .failed("Invalid configuration file")
+                .unwrap_or(1),
             extensions,
             notification_methods: if !notification_methods.is_empty() {
                 notification_methods.into()

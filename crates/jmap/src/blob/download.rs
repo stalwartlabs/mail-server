@@ -1,8 +1,11 @@
-use jmap_proto::types::blob::BlobId;
+use std::ops::Range;
+
+use jmap_proto::{error::method::MethodError, types::blob::BlobId};
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
+use store::BlobKind;
 
 use crate::JMAP;
 
@@ -34,6 +37,24 @@ impl JMAP {
                 }))
         } else {
             self.store.get_blob(&blob_id.kind, 0..u32::MAX).await
+        }
+    }
+
+    pub async fn get_blob(
+        &self,
+        kind: &BlobKind,
+        range: Range<u32>,
+    ) -> Result<Option<Vec<u8>>, MethodError> {
+        match self.store.get_blob(kind, range).await {
+            Ok(blob) => Ok(blob),
+            Err(err) => {
+                tracing::error!(event = "error",
+                                context = "blob_store",
+                                blob_id = ?kind,
+                                error = ?err,
+                                "Failed to retrieve blob");
+                Err(MethodError::ServerPartialFail)
+            }
         }
     }
 }

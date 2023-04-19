@@ -1,8 +1,10 @@
-use std::{collections::HashSet, time::SystemTime};
+use std::{collections::HashSet, slice::Iter, time::SystemTime};
+
+use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::{
     fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
-    Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC, TAG_TEXT,
+    Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC,
 };
 
 pub mod batch;
@@ -137,6 +139,85 @@ impl Deserialize for u32 {
     }
 }
 
+pub trait SerializeInto {
+    fn serialize_into(&self, buf: &mut Vec<u8>);
+}
+
+pub trait DeserializeFrom: Sized {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self>;
+}
+
+impl<T: SerializeInto> Serialize for Vec<T> {
+    fn serialize(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.len() * 4);
+        bytes.push_leb128(self.len());
+        for item in self {
+            item.serialize_into(&mut bytes);
+        }
+        bytes
+    }
+}
+
+impl SerializeInto for String {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push_leb128(self.len());
+        if !self.is_empty() {
+            buf.extend_from_slice(self.as_bytes());
+        }
+    }
+}
+
+impl SerializeInto for u32 {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push_leb128(*self);
+    }
+}
+
+impl SerializeInto for u64 {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push_leb128(*self);
+    }
+}
+
+impl DeserializeFrom for u32 {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
+        bytes.next_leb128()
+    }
+}
+
+impl DeserializeFrom for u64 {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
+        bytes.next_leb128()
+    }
+}
+
+impl DeserializeFrom for String {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
+        let len: usize = bytes.next_leb128()?;
+        let mut s = Vec::with_capacity(len);
+        for _ in 0..len {
+            s.push(*bytes.next()?);
+        }
+        String::from_utf8(s).ok()
+    }
+}
+
+impl<T: DeserializeFrom + Sync + Send> Deserialize for Vec<T> {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        let mut bytes = bytes.iter();
+        let len: usize = bytes
+            .next_leb128()
+            .ok_or_else(|| crate::Error::InternalError("Failed to deserialize Vec".to_string()))?;
+        let mut list = Vec::with_capacity(len);
+        for _ in 0..len {
+            list.push(T::deserialize_from(&mut bytes).ok_or_else(|| {
+                crate::Error::InternalError("Failed to deserialize Vec".to_string())
+            })?);
+        }
+        Ok(list)
+    }
+}
+
 trait HasFlag {
     fn has_flag(&self, flag: u32) -> bool;
 }
@@ -184,8 +265,13 @@ impl ToBitmaps for u32 {
 }
 
 impl ToBitmaps for u64 {
-    fn to_bitmaps(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
-        unreachable!()
+    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
+        ops.push(Operation::Bitmap {
+            family: BM_TAG | TAG_ID,
+            field,
+            key: (*self as u32).serialize(),
+            set,
+        });
     }
 }
 
@@ -195,31 +281,33 @@ impl ToBitmaps for f64 {
     }
 }
 
-pub trait IntoBitmap {
-    fn into_bitmap(self) -> (Vec<u8>, u8);
-}
-
-impl IntoBitmap for () {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (vec![], BM_TAG | TAG_STATIC)
+impl<T: ToBitmaps> ToBitmaps for Vec<T> {
+    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
+        for item in self {
+            item.to_bitmaps(ops, field, set);
+        }
     }
 }
 
-impl IntoBitmap for u32 {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (self.serialize(), BM_TAG | TAG_ID)
+pub trait BitmapFamily {
+    fn family(&self) -> u8;
+}
+
+impl BitmapFamily for () {
+    fn family(&self) -> u8 {
+        BM_TAG | TAG_STATIC
     }
 }
 
-impl IntoBitmap for String {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (self.serialize(), BM_TAG | TAG_TEXT)
+impl BitmapFamily for u32 {
+    fn family(&self) -> u8 {
+        BM_TAG | TAG_ID
     }
 }
 
-impl IntoBitmap for &str {
-    fn into_bitmap(self) -> (Vec<u8>, u8) {
-        (self.serialize(), BM_TAG | TAG_TEXT)
+impl Serialize for () {
+    fn serialize(self) -> Vec<u8> {
+        Vec::with_capacity(0)
     }
 }
 

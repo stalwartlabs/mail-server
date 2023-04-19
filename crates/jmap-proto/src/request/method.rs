@@ -113,7 +113,7 @@ impl Display for MethodName {
 }
 
 impl MethodName {
-    pub fn unknown_method() -> Self {
+    pub fn error() -> Self {
         Self {
             obj: MethodObject::Thread,
             fnc: MethodFunction::Echo,

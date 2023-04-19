@@ -4,6 +4,7 @@ use jmap_proto::{
     object::Object,
     types::{
         date::UTCDate,
+        id::Id,
         keyword::Keyword,
         property::{HeaderForm, Property},
         value::Value,
@@ -50,18 +51,10 @@ impl IndexMessage for BatchBuilder {
         let mut object = Object::with_capacity(15);
 
         // Index keywords
-        self.value(
-            Property::Keywords,
-            Value::from(keywords),
-            F_VALUE | F_BITMAP,
-        );
+        self.value(Property::Keywords, keywords, F_VALUE | F_BITMAP);
 
         // Index mailboxIds
-        self.value(
-            Property::MailboxIds,
-            Value::from(mailbox_ids),
-            F_VALUE | F_BITMAP,
-        );
+        self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
 
         // Index size
         object.append(Property::Size, message.raw_message.len());
@@ -348,7 +341,7 @@ impl IndexMessage for BatchBuilder {
         }
 
         // Store properties
-        self.value(Property::BodyStructure, Value::from(object), F_VALUE);
+        self.value(Property::BodyStructure, object, F_VALUE);
 
         // Store full text index
         self.custom(fts)?;

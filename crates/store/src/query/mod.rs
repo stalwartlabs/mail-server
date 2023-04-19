@@ -7,8 +7,8 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{lang::LanguageDetector, Language},
-    write::IntoBitmap,
-    BitmapKey, Serialize, BM_DOCUMENT_IDS, BM_KEYWORD,
+    write::BitmapFamily,
+    BitmapKey, Serialize, BM_DOCUMENT_IDS,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -119,14 +119,6 @@ impl Filter {
         }
     }
 
-    pub fn has_keyword(field: impl Into<u8>, value: impl Serialize) -> Self {
-        Filter::InBitmap {
-            family: BM_KEYWORD,
-            field: field.into(),
-            key: value.serialize(),
-        }
-    }
-
     pub fn has_text(field: impl Into<u8>, text: impl Into<String>, mut language: Language) -> Self {
         let mut text = text.into();
         let op = if !matches!(language, Language::None) {
@@ -167,12 +159,11 @@ impl Filter {
         Self::has_text(field, text, Language::English)
     }
 
-    pub fn is_in_bitmap(field: impl Into<u8>, value: impl IntoBitmap) -> Self {
-        let (key, family) = value.into_bitmap();
+    pub fn is_in_bitmap(field: impl Into<u8>, value: impl BitmapFamily + Serialize) -> Self {
         Self::InBitmap {
-            family,
+            family: value.family(),
             field: field.into(),
-            key,
+            key: value.serialize(),
         }
     }
 

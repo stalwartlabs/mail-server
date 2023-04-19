@@ -2,11 +2,15 @@
 name = "utils"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 
 [dependencies]
 rustls = "0.21.0"
 rustls-pemfile = "1.0"
-tokio = { version = "1.23", features = ["net"] }
+tokio = { version = "1.23", features = ["net", "macros"] }
 tokio-rustls = { version = "0.24.0"}
 serde = { version = "1.0", features = ["derive"]}
 tracing = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+privdrop = "0.5.3"

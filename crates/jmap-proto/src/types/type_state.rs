@@ -1,11 +1,9 @@
 use std::fmt::Display;
 
 use serde::Serialize;
+use store::write::{DeserializeFrom, SerializeInto};
 
-use crate::{
-    object::{DeserializeValue, SerializeValue},
-    parser::{json::Parser, JsonObjectParser},
-};
+use crate::parser::{json::Parser, JsonObjectParser};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
 #[repr(u8)]
@@ -72,14 +70,14 @@ impl Display for TypeState {
     }
 }
 
-impl SerializeValue for TypeState {
-    fn serialize_value(self, buf: &mut Vec<u8>) {
-        buf.push(self as u8);
+impl SerializeInto for TypeState {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push(*self as u8);
     }
 }
 
-impl DeserializeValue for TypeState {
-    fn deserialize_value(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
+impl DeserializeFrom for TypeState {
+    fn deserialize_from(bytes: &mut std::slice::Iter<'_, u8>) -> Option<Self> {
         match *bytes.next()? {
             0 => Some(TypeState::Email),
             1 => Some(TypeState::EmailDelivery),

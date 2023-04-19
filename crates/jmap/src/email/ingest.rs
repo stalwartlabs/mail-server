@@ -92,15 +92,41 @@ impl JMAP {
         let document_id = self
             .store
             .assign_document_id(account_id, Collection::Email)
-            .await?;
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "email_ingest",
+                    error = ?err,
+                    "Failed to assign documentId.");
+                MaybeError::Temporary
+            })?;
         let change_id = self
             .store
             .assign_change_id(account_id, Collection::Email)
-            .await?;
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "email_ingest",
+                    error = ?err,
+                    "Failed to assign changeId.");
+                MaybeError::Temporary
+            })?;
 
         // Store blob
         let blob_id = BlobId::maildir(account_id, document_id);
-        self.store.put_blob(&blob_id.kind, raw_message).await?;
+        self.store
+            .put_blob(&blob_id.kind, raw_message)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                event = "error",
+                context = "email_ingest",
+                error = ?err,
+                "Failed to write blob.");
+                MaybeError::Temporary
+            })?;
 
         // Build change log
         let mut changes = ChangeLogBuilder::with_change_id(change_id);
@@ -111,7 +137,15 @@ impl JMAP {
             let thread_id = self
                 .store
                 .assign_document_id(account_id, Collection::Thread)
-                .await?;
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "email_ingest",
+                        error = ?err,
+                        "Failed to assign documentId for new thread.");
+                    MaybeError::Temporary
+                })?;
             changes.log_insert(Collection::Thread, thread_id);
             thread_id
         };
@@ -123,16 +157,42 @@ impl JMAP {
 
         // Build write batch
         let mut batch = BatchBuilder::new();
-        batch.index_message(
-            message,
-            keywords,
-            mailbox_ids,
-            received_at.unwrap_or_else(now),
-            self.config.default_language,
-        )?;
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Email)
+            .create_document(document_id)
+            .index_message(
+                message,
+                keywords,
+                mailbox_ids,
+                received_at.unwrap_or_else(now),
+                self.config.default_language,
+            )
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "email_ingest",
+                    error = ?err,
+                    "Failed to index message.");
+                MaybeError::Temporary
+            })?;
         batch.value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
-        batch.custom(changes)?;
-        self.store.write(batch.build()).await?;
+        batch.custom(changes).map_err(|err| {
+            tracing::error!(
+                event = "error",
+                context = "email_ingest",
+                error = ?err,
+                "Failed to add changelog to write batch.");
+            MaybeError::Temporary
+        })?;
+        self.store.write(batch.build()).await.map_err(|err| {
+            tracing::error!(
+                event = "error",
+                context = "email_ingest",
+                error = ?err,
+                "Failed to write message to database.");
+            MaybeError::Temporary
+        })?;
 
         Ok(IngestedEmail {
             id,
@@ -162,7 +222,15 @@ impl JMAP {
             let results = self
                 .store
                 .filter(account_id, Collection::Email, filters)
-                .await?
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "find_or_merge_thread",
+                        error = ?err,
+                        "Thread search failed.");
+                    MaybeError::Temporary
+                })?
                 .results;
             if results.is_empty() {
                 return Ok(None);
@@ -184,7 +252,15 @@ impl JMAP {
                         })
                         .collect(),
                 )
-                .await?;
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "find_or_merge_thread",
+                        error = ?err,
+                        "Failed to obtain threadIds.");
+                    MaybeError::Temporary
+                })?;
             if thread_ids.len() == 1 {
                 return Ok(thread_ids.into_iter().next().unwrap());
             }
@@ -212,7 +288,15 @@ impl JMAP {
             let change_id = self
                 .store
                 .assign_change_id(account_id, Collection::Thread)
-                .await?;
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "find_or_merge_thread",
+                        error = ?err,
+                        "Failed to assign changeId for thread merge.");
+                    MaybeError::Temporary
+                })?;
             let mut changes = ChangeLogBuilder::with_change_id(change_id);
             batch
                 .with_account_id(account_id)
@@ -241,14 +325,28 @@ impl JMAP {
                     )
                 }
             }
-            batch.custom(changes)?;
+            batch.custom(changes).map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "find_or_merge_thread",
+                    error = ?err,
+                    "Failed to add changelog to write batch.");
+                MaybeError::Temporary
+            })?;
 
             match self.store.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
                 Err(store::Error::AssertValueFailed) if try_count < 3 => {
                     try_count += 1;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => {
+                    tracing::error!(
+                        event = "error",
+                        context = "find_or_merge_thread",
+                        error = ?err,
+                        "Failed to write thread merge batch.");
+                    return Err(MaybeError::Temporary);
+                }
             }
         }
     }
@@ -258,7 +356,8 @@ impl From<IngestedEmail> for Object<Value> {
     fn from(email: IngestedEmail) -> Self {
         Object::with_capacity(3)
             .with_property(Property::Id, email.id)
-            .with_property(Property::ThreadId, email.id.prefix_id())
+            .with_property(Property::ThreadId, Id::from(email.id.prefix_id()))
             .with_property(Property::BlobId, email.blob_id)
+            .with_property(Property::Size, email.size)
     }
 }

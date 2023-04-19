@@ -9,7 +9,7 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::config::ServerProtocol;
 
-use self::limiter::InFlight;
+use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod limiter;
 pub mod listen;
@@ -22,6 +22,8 @@ pub struct ServerInstance {
     pub data: String,
     pub tls_acceptor: Option<TlsAcceptor>,
     pub is_tls_implicit: bool,
+    pub limiter: ConcurrencyLimiter,
+    pub shutdown_rx: watch::Receiver<bool>,
 }
 
 pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
@@ -31,9 +33,9 @@ pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
     pub span: tracing::Span,
     pub in_flight: InFlight,
     pub instance: Arc<ServerInstance>,
-    pub shutdown_rx: watch::Receiver<bool>,
 }
 
 pub trait SessionManager: Sync + Send + 'static + Clone {
     fn spawn(&self, session: SessionData<TcpStream>);
+    fn max_concurrent(&self) -> u64;
 }

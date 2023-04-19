@@ -1,7 +1,7 @@
 use jmap_proto::{
     error::request::RequestError,
     method::{get, query},
-    request::{Request, RequestMethod},
+    request::{method::MethodName, Request, RequestMethod},
     response::{Response, ResponseMethod},
 };
 
@@ -22,7 +22,7 @@ impl JMAP {
         for mut call in request.method_calls {
             // Resolve result and id references
             if let Err(method_error) = response.resolve_references(&mut call.method) {
-                response.push_response(call.id, method_error);
+                response.push_response(call.id, MethodName::error(), method_error);
                 continue;
             }
 
@@ -62,7 +62,16 @@ impl JMAP {
                 RequestMethod::Echo(call) => call.into(),
                 RequestMethod::Error(error) => error.into(),
             };
-            response.push_response(call.id, method_response);
+
+            response.push_response(
+                call.id,
+                if !matches!(method_response, ResponseMethod::Error(_)) {
+                    call.name
+                } else {
+                    MethodName::error()
+                },
+                method_response,
+            );
         }
 
         Ok(response)
