@@ -1,0 +1,51 @@
+Bcc: "=?utf-8?B?wqFFbCDDsWFuZMO6IGNvbWnDsyDDsW9xdWlzIQ==?="
+	<addr1@example.com>
+Cc: "=?utf-8?B?0J/RgNC40LLQtdGCLCDQvNC40YA=?=" <addr0@example.com>
+Date: Tue, 10 Jul 2018 01:03:11 +0000
+From: "Joe Bloggs" <joe@example.com>
+In-Reply-To: <other-message-id> <yet-another-message-id>
+List-Owner: <http://www.host.com/list.cgi?cmd=sub&lst=list>,
+	<mailto:list-manager@host.com?body=subscribe%20list>
+List-Subscribe: <ftp://ftp.host.com/list.txt>,
+	<mailto:list@host.com?subject=subscribe>
+List-Subscribe: <mailto:list-manager@host.com?body=subscribe%20list>
+Message-ID: <my-message-id>
+References: <first-message-id> <second-message-id>
+Reply-To: "=?utf-8?B?7JWI64WV7ZWY7IS47JqUIOyEuOqzhA==?=" <addr2@example.com>, 
+	"=?utf-8?Q?Antoine_de_Saint-Exup=C3=A9ry?=" <addr3@example.com>
+Resent-Date: Sat, 2 Jul 2005 09:52:37 +0000
+Resent-Date: Sun, 3 Jul 2005 09:52:37 +0000
+Resent-Date: Mon, 4 Jul 2005 09:52:37 +0000
+Sender: "=?utf-8?B?44OP44Ot44O844O744Ov44O844Or44OJ?=" <joe@example.com>
+Subject: Headers test
+To: "Greg Vaudreuil" <gvaudre@NRI.Reston.VA.US>, 
+	"Ned Freed" <ned@innosoft.com>, "Keith Moore" <moore@cs.utk.edu>
+X-AddressesGroup: "A Group": "Ed Jones" <c@a.test>, 
+	<joe@where.test>, "John" <jdoe@one.test>
+X-AddressesGroup: "List 1": <addr1@test.com>, 
+	<addr2@test.com>; "List 2": <addr3@test.com>, 
+	<addr4@test.com>; <addr5@test.com>, 
+	<addr6@test.com>
+X-References: <1234@local.machine.example> <3456@example.net>
+X-References: <789@local.machine.example> <abcd@example.net>
+X-Text: a b
+X-Text: this is some text
+Content-Type: multipart/alternative; 
+	boundary="boundary_0"
+
+
+--boundary_0
+Content-Language: en
+Content-Type: text/plain; charset="us-ascii"
+X-Header: just a value
+X-Text: more text
+Content-Transfer-Encoding: 7bit
+
+I have the most brilliant plan.  Let me tell you all about it.  What we do is, we
+--boundary_0
+Content-Location: https://example.com/html-body.html
+Content-Type: text/html; charset="utf-8"; name="html-body.html"
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html><html><head><title></title><style type="text/css">div{font-size:16px}</style></head><body><div>I have the most <b>brilliant</b> plan.  Let me tell you all about it.  What we do is, we</div></body></html>
+--boundary_0--

@@ -1,0 +1,329 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "$draft": true,
+    "$seen": true,
+    "my-tag": true
+  },
+  "receivedAt": "2021-11-20T22:22:01Z",
+  "messageId": [
+    "my-message-id"
+  ],
+  "from": [
+    {
+      "name": "Art Vandelay (Vandelay Industries)",
+      "email": "art@vandelay.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "James Smythe",
+      "email": "james@vandelay.com"
+    },
+    {
+      "name": null,
+      "email": "jane@example.com"
+    },
+    {
+      "name": "John Smîth",
+      "email": "john@example.com"
+    }
+  ],
+  "subject": "Why not both importing AND exporting? ☺",
+  "sentAt": "2021-11-20T22:22:01Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Date",
+        "value": " Sat, 20 Nov 2021 22:22:01 +0000"
+      },
+      {
+        "name": "From",
+        "value": " \"Art Vandelay (Vandelay Industries)\" <art@vandelay.com>"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <my-message-id>"
+      },
+      {
+        "name": "Subject",
+        "value": " =?utf-8?Q?Why_not_both_importing_AND_exporting=3F_=E2=98=BA?="
+      },
+      {
+        "name": "To",
+        "value": " \"Colleagues\": \"James Smythe\" <james@vandelay.com>; \r\n\t\"Friends\": <jane@example.com>, \r\n\t\"=?utf-8?Q?John_Sm=C3=AEth?=\" <john@example.com>"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed; \r\n\tboundary=\"boundary_0\""
+      }
+    ],
+    "type": "multipart/mixed",
+    "subParts": [
+      {
+        "size": 0,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " multipart/alternative; \r\n\tboundary=\"boundary_1\""
+          }
+        ],
+        "type": "multipart/alternative",
+        "subParts": [
+          {
+            "partId": "2",
+            "blobId": "blob_0",
+            "size": 129,
+            "headers": [
+              {
+                "name": "Content-Language",
+                "value": " en"
+              },
+              {
+                "name": "Content-Type",
+                "value": " text/plain"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " quoted-printable"
+              }
+            ],
+            "type": "text/plain",
+            "charset": "us-ascii",
+            "language": [
+              "en"
+            ]
+          },
+          {
+            "partId": "3",
+            "blobId": "blob_1",
+            "size": 175,
+            "headers": [
+              {
+                "name": "Content-Language",
+                "value": " en_US"
+              },
+              {
+                "name": "Content-Type",
+                "value": " text/html"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " 7bit"
+              }
+            ],
+            "type": "text/html",
+            "charset": "us-ascii",
+            "language": [
+              "en_US"
+            ]
+          }
+        ]
+      },
+      {
+        "partId": "4",
+        "blobId": "blob_2",
+        "size": 37,
+        "headers": [
+          {
+            "name": "Content-ID",
+            "value": " <cid:1234-5678-9012-3456>"
+          },
+          {
+            "name": "Content-Type",
+            "value": " image/png"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " base64"
+          }
+        ],
+        "type": "image/png",
+        "cid": "cid:1234-5678-9012-3456"
+      },
+      {
+        "partId": "5",
+        "blobId": "blob_3",
+        "size": 127,
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": " attachment; filename=\"=?utf-8?Q?Book_about_=E2=98=95_tables.pdf?=\""
+          },
+          {
+            "name": "Content-Type",
+            "value": " x-document/pdf"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " base64"
+          }
+        ],
+        "name": "Book about ☕ tables.pdf",
+        "type": "x-document/pdf",
+        "disposition": "attachment"
+      }
+    ]
+  },
+  "bodyValues": {
+    "2": {
+      "value": "I was thinking about quitting the “exporting” to focus just on the “importing”,\nbut then ...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    },
+    "3": {
+      "value": "<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to focus just on the &ldquo;im...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    },
+    "4": {
+      "value": "here are the embedded image contents!",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    }
+  },
+  "textBody": [
+    {
+      "partId": "2",
+      "blobId": "blob_0",
+      "size": 129,
+      "headers": [
+        {
+          "name": "Content-Language",
+          "value": " en"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "language": [
+        "en"
+      ]
+    },
+    {
+      "partId": "4",
+      "blobId": "blob_2",
+      "size": 37,
+      "headers": [
+        {
+          "name": "Content-ID",
+          "value": " <cid:1234-5678-9012-3456>"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/png"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/png",
+      "cid": "cid:1234-5678-9012-3456"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "3",
+      "blobId": "blob_1",
+      "size": 175,
+      "headers": [
+        {
+          "name": "Content-Language",
+          "value": " en_US"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/html"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/html",
+      "charset": "us-ascii",
+      "language": [
+        "en_US"
+      ]
+    },
+    {
+      "partId": "4",
+      "blobId": "blob_2",
+      "size": 37,
+      "headers": [
+        {
+          "name": "Content-ID",
+          "value": " <cid:1234-5678-9012-3456>"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/png"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/png",
+      "cid": "cid:1234-5678-9012-3456"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "4",
+      "blobId": "blob_2",
+      "size": 37,
+      "headers": [
+        {
+          "name": "Content-ID",
+          "value": " <cid:1234-5678-9012-3456>"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/png"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/png",
+      "cid": "cid:1234-5678-9012-3456"
+    },
+    {
+      "partId": "5",
+      "blobId": "blob_3",
+      "size": 127,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " attachment; filename=\"=?utf-8?Q?Book_about_=E2=98=95_tables.pdf?=\""
+        },
+        {
+          "name": "Content-Type",
+          "value": " x-document/pdf"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "name": "Book about ☕ tables.pdf",
+      "type": "x-document/pdf",
+      "disposition": "attachment"
+    }
+  ],
+  "hasAttachment": true,
+  "preview": "I was thinking about quitting the “exporting” to focus just on the “importing”,\nbut then I thought, why not do both? ☺\n"
+}

@@ -1,0 +1,165 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 2527,
+  "receivedAt": "2050-01-28T16:26:40Z",
+  "messageId": [
+    "NDBBIAKOPKHFGPLCODIGKEKECHAA.doug@example.com"
+  ],
+  "from": [
+    {
+      "name": "Doug Sauder",
+      "email": "doug@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "Joe Blow",
+      "email": "jblow@example.com"
+    }
+  ],
+  "subject": "Test message from Microsoft Outlook 00",
+  "sentAt": "2000-05-17T23:35:05Z",
+  "bodyStructure": {
+    "partId": "0",
+    "blobId": "blob_0",
+    "size": 1453,
+    "headers": [
+      {
+        "name": "From",
+        "value": " \"Doug Sauder\" <doug@example.com>"
+      },
+      {
+        "name": "To",
+        "value": " \"Joe Blow\" <jblow@example.com>"
+      },
+      {
+        "name": "Subject",
+        "value": " Test message from Microsoft Outlook 00"
+      },
+      {
+        "name": "Date",
+        "value": " Wed, 17 May 2000 19:35:05 -0400"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <NDBBIAKOPKHFGPLCODIGKEKECHAA.doug@example.com>"
+      },
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
+        "name": "Content-Type",
+        "value": " image/png;\n\tname=\"redball.png\""
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": " base64"
+      },
+      {
+        "name": "Content-Disposition",
+        "value": " attachment;\n\tfilename=\"redball.png\""
+      },
+      {
+        "name": "X-Priority",
+        "value": " 3 (Normal)"
+      },
+      {
+        "name": "X-MSMail-Priority",
+        "value": " Normal"
+      },
+      {
+        "name": "X-Mailer",
+        "value": " Microsoft Outlook IMO, Build 9.0.2416 (9.0.2910.0)"
+      },
+      {
+        "name": "Importance",
+        "value": " Normal"
+      },
+      {
+        "name": "X-MimeOLE",
+        "value": " Produced By Microsoft MimeOLE V5.00.2314.1300"
+      }
+    ],
+    "name": "redball.png",
+    "type": "image/png",
+    "disposition": "attachment"
+  },
+  "bodyValues": {},
+  "textBody": [],
+  "htmlBody": [],
+  "attachments": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 1453,
+      "headers": [
+        {
+          "name": "From",
+          "value": " \"Doug Sauder\" <doug@example.com>"
+        },
+        {
+          "name": "To",
+          "value": " \"Joe Blow\" <jblow@example.com>"
+        },
+        {
+          "name": "Subject",
+          "value": " Test message from Microsoft Outlook 00"
+        },
+        {
+          "name": "Date",
+          "value": " Wed, 17 May 2000 19:35:05 -0400"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <NDBBIAKOPKHFGPLCODIGKEKECHAA.doug@example.com>"
+        },
+        {
+          "name": "MIME-Version",
+          "value": " 1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/png;\n\tname=\"redball.png\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " attachment;\n\tfilename=\"redball.png\""
+        },
+        {
+          "name": "X-Priority",
+          "value": " 3 (Normal)"
+        },
+        {
+          "name": "X-MSMail-Priority",
+          "value": " Normal"
+        },
+        {
+          "name": "X-Mailer",
+          "value": " Microsoft Outlook IMO, Build 9.0.2416 (9.0.2910.0)"
+        },
+        {
+          "name": "Importance",
+          "value": " Normal"
+        },
+        {
+          "name": "X-MimeOLE",
+          "value": " Produced By Microsoft MimeOLE V5.00.2314.1300"
+        }
+      ],
+      "name": "redball.png",
+      "type": "image/png",
+      "disposition": "attachment"
+    }
+  ],
+  "hasAttachment": true
+}

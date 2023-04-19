@@ -1,0 +1,70 @@
+{
+    "keywords": {
+        "$seen": true,
+        "$draft": true,
+        "my-tag": true,
+        "ignore-me": false
+    },
+    "from": [
+        {
+            "name": "Art Vandelay (Vandelay Industries)",
+            "email": "art@vandelay.com"
+        }
+    ],
+    "header:To:asGroupedAddresses": [
+        {
+            "name": "Colleagues",
+            "addresses": [
+                {
+                    "name": "James Smythe",
+                    "email": "james@vandelay.com"
+                }
+            ]
+        },
+        {
+            "name": "Friends",
+            "addresses": [
+                {
+                    "email": "jane@example.com"
+                },
+                {
+                    "name": "John Smîth",
+                    "email": "john@example.com"
+                }
+            ]
+        }
+    ],
+    "subject": "Why not both importing AND exporting? ☺",
+    "receivedAt": "2021-11-20T14:22:01-08:00",
+    "sentAt": "2021-11-20T14:22:01-08:00",
+    "messageId": [
+        "my-message-id"
+    ],
+    "textBody": [
+        {
+            "type": "text/plain",
+            "blobId": "I was thinking about quitting the “exporting” to focus just on the “importing”,\nbut then I thought, why not do both? ☺\n",
+            "header:Content-Language": "en"
+        }
+    ],
+    "htmlBody": [
+        {
+            "type": "text/html",
+            "blobId": "<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to focus just on the &ldquo;importing&rdquo;,</p><p>but then I thought, why not do both? &#x263A;</p></html>",
+            "header:Content-Language": "en_US"
+        }
+    ],
+    "attachments": [
+        {
+            "type": "image/png",
+            "blobId": "here are the embedded image contents!",
+            "cid": "cid:1234-5678-9012-3456"
+        },
+        {
+            "type": "x-document/pdf",
+            "blobId": "<html><body>ℌ𝔢𝔩𝔭 𝔪𝔢 𝔢𝔵𝔭𝔬𝔯𝔱 𝔪𝔶 𝔟𝔬𝔬𝔨 𝔭𝔩𝔢𝔞𝔰𝔢!</body></html>",
+            "disposition": "attachment",
+            "name": "Book about ☕ tables.pdf"
+        }
+    ]
+}

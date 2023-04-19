@@ -1,0 +1,187 @@
+{
+  "mailboxIds": null,
+  "size": 1979,
+  "messageId": [
+    "199804130742.RAA20366@mai1host.whitehouse.gov"
+  ],
+  "from": [
+    {
+      "name": "Bill Clinton",
+      "email": "president@whitehouse.gov"
+    }
+  ],
+  "to": [
+    {
+      "name": "A1 Gore (The Enforcer)",
+      "email": "vice-president@whitehouse.gov"
+    }
+  ],
+  "subject": "Map of Argentina with Description",
+  "sentAt": "1998-08-13T07:42:41Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed;\n              boundary=\"DC8------------DC8638F443D87A7F0726DEF7\""
+      }
+    ],
+    "type": "multipart/mixed",
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 355,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/plain; charset=us-ascii"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "us-ascii"
+      },
+      {
+        "partId": "2",
+        "blobId": "blob_1",
+        "size": 288,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " image/gif; name=\"map_of_Argentina.gif\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " base64"
+          },
+          {
+            "name": "Content-Disposition",
+            "value": " inline; fi1ename=\"map_of_Argentina.gif\""
+          }
+        ],
+        "name": "map_of_Argentina.gif",
+        "type": "image/gif",
+        "disposition": "inline"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "Hi A1,\n\nI finally figured out this MIME thing.  Pretty cool.  I'll send you\nsome sax music in .au...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 355,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=us-ascii"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 288,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/gif; name=\"map_of_Argentina.gif\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline; fi1ename=\"map_of_Argentina.gif\""
+        }
+      ],
+      "name": "map_of_Argentina.gif",
+      "type": "image/gif",
+      "disposition": "inline"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 355,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=us-ascii"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 288,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/gif; name=\"map_of_Argentina.gif\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline; fi1ename=\"map_of_Argentina.gif\""
+        }
+      ],
+      "name": "map_of_Argentina.gif",
+      "type": "image/gif",
+      "disposition": "inline"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 288,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/gif; name=\"map_of_Argentina.gif\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline; fi1ename=\"map_of_Argentina.gif\""
+        }
+      ],
+      "name": "map_of_Argentina.gif",
+      "type": "image/gif",
+      "disposition": "inline"
+    }
+  ],
+  "hasAttachment": false,
+  "preview": "Hi A1,\n\nI finally figured out this MIME thing.  Pretty cool.  I'll send you\nsome sax music in .au files next week!\n\nAnyway, the attached image is really too small to get a good look at\nArgentina.  Try this for a much better map:\n\n     http://www.1one1yp..."
+}

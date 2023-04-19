@@ -26,6 +26,7 @@ use std::{
     time::Instant,
 };
 
+use jmap_proto::types::keyword::Keyword;
 use store::{ahash::AHashMap, query::sort::Pagination};
 
 use store::{
@@ -154,7 +155,7 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
                                 if !field.is_empty() {
                                     builder.value(
                                         field_id,
-                                        field.to_lowercase(),
+                                        Keyword::Other(field.to_lowercase()),
                                         F_VALUE | F_INDEX | F_BITMAP,
                                     );
                                 }
@@ -249,7 +250,7 @@ pub async fn test_filter(db: Arc<Store>) {
         (
             vec![
                 Filter::has_text(fields["artist"], "mauro kunst", Language::None),
-                Filter::has_keyword(fields["artistRole"], "artist"),
+                Filter::is_in_bitmap(fields["artistRole"], Keyword::Other("artist".to_string())),
                 Filter::Or,
                 Filter::eq(fields["year"], 1969u32),
                 Filter::eq(fields["year"], 1971u32),
@@ -283,7 +284,7 @@ pub async fn test_filter(db: Arc<Store>) {
         (
             vec![
                 Filter::And,
-                Filter::has_keyword(fields["artist"], "warhol"),
+                Filter::has_text(fields["artist"], "warhol", Language::None),
                 Filter::Not,
                 Filter::has_english_text(fields["title"], "'campbell'"),
                 Filter::End,

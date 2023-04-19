@@ -1,0 +1,224 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 1378,
+  "receivedAt": "2013-09-01T01:46:40Z",
+  "messageId": [
+    "NDBBIAKOPKHFGPLCODIGIEKCCHAA.doug@example.com"
+  ],
+  "from": [
+    {
+      "name": "Doug Sauder",
+      "email": "doug@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "Jürgen Schmürgen",
+      "email": "schmuergen@example.com"
+    }
+  ],
+  "subject": "Die Hasen und die Frösche (Microsoft Outlook 00)",
+  "sentAt": "2000-05-17T23:15:35Z",
+  "bodyStructure": {
+    "partId": "0",
+    "blobId": "blob_0",
+    "size": 754,
+    "headers": [
+      {
+        "name": "From",
+        "value": " \"Doug Sauder\" <doug@example.com>"
+      },
+      {
+        "name": "To",
+        "value": " =?iso-8859-1?B?SvxyZ2VuIFNjaG38cmdlbg==?= <schmuergen@example.com>"
+      },
+      {
+        "name": "Subject",
+        "value": " =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche_=28Microsoft_Outlook_00=29?="
+      },
+      {
+        "name": "Date",
+        "value": " Wed, 17 May 2000 19:15:35 -0400"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <NDBBIAKOPKHFGPLCODIGIEKCCHAA.doug@example.com>"
+      },
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
+        "name": "Content-Type",
+        "value": " text/plain;\n\tcharset=\"iso-8859-1\""
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": " quoted-printable"
+      },
+      {
+        "name": "X-Priority",
+        "value": " 3 (Normal)"
+      },
+      {
+        "name": "X-MSMail-Priority",
+        "value": " Normal"
+      },
+      {
+        "name": "X-Mailer",
+        "value": " Microsoft Outlook IMO, Build 9.0.2416 (9.0.2910.0)"
+      },
+      {
+        "name": "Importance",
+        "value": " Normal"
+      },
+      {
+        "name": "X-MimeOLE",
+        "value": " Produced By Microsoft MimeOLE V5.00.2314.1300"
+      }
+    ],
+    "type": "text/plain",
+    "charset": "iso-8859-1"
+  },
+  "bodyValues": {
+    "0": {
+      "value": "Die Hasen und die Frösche\n\nDie Hasen klagten einst über ihre mißliche Lage; \"wir leben\", sprac...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 754,
+      "headers": [
+        {
+          "name": "From",
+          "value": " \"Doug Sauder\" <doug@example.com>"
+        },
+        {
+          "name": "To",
+          "value": " =?iso-8859-1?B?SvxyZ2VuIFNjaG38cmdlbg==?= <schmuergen@example.com>"
+        },
+        {
+          "name": "Subject",
+          "value": " =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche_=28Microsoft_Outlook_00=29?="
+        },
+        {
+          "name": "Date",
+          "value": " Wed, 17 May 2000 19:15:35 -0400"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <NDBBIAKOPKHFGPLCODIGIEKCCHAA.doug@example.com>"
+        },
+        {
+          "name": "MIME-Version",
+          "value": " 1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain;\n\tcharset=\"iso-8859-1\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        },
+        {
+          "name": "X-Priority",
+          "value": " 3 (Normal)"
+        },
+        {
+          "name": "X-MSMail-Priority",
+          "value": " Normal"
+        },
+        {
+          "name": "X-Mailer",
+          "value": " Microsoft Outlook IMO, Build 9.0.2416 (9.0.2910.0)"
+        },
+        {
+          "name": "Importance",
+          "value": " Normal"
+        },
+        {
+          "name": "X-MimeOLE",
+          "value": " Produced By Microsoft MimeOLE V5.00.2314.1300"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "iso-8859-1"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 754,
+      "headers": [
+        {
+          "name": "From",
+          "value": " \"Doug Sauder\" <doug@example.com>"
+        },
+        {
+          "name": "To",
+          "value": " =?iso-8859-1?B?SvxyZ2VuIFNjaG38cmdlbg==?= <schmuergen@example.com>"
+        },
+        {
+          "name": "Subject",
+          "value": " =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche_=28Microsoft_Outlook_00=29?="
+        },
+        {
+          "name": "Date",
+          "value": " Wed, 17 May 2000 19:15:35 -0400"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <NDBBIAKOPKHFGPLCODIGIEKCCHAA.doug@example.com>"
+        },
+        {
+          "name": "MIME-Version",
+          "value": " 1.0"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain;\n\tcharset=\"iso-8859-1\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        },
+        {
+          "name": "X-Priority",
+          "value": " 3 (Normal)"
+        },
+        {
+          "name": "X-MSMail-Priority",
+          "value": " Normal"
+        },
+        {
+          "name": "X-Mailer",
+          "value": " Microsoft Outlook IMO, Build 9.0.2416 (9.0.2910.0)"
+        },
+        {
+          "name": "Importance",
+          "value": " Normal"
+        },
+        {
+          "name": "X-MimeOLE",
+          "value": " Produced By Microsoft MimeOLE V5.00.2314.1300"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "iso-8859-1"
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "Die Hasen und die Frösche\n\nDie Hasen klagten einst über ihre mißliche Lage; \"wir leben\", sprach ein Redner, \"in steter Furcht vor Menschen und Tieren, eine Beute der Hunde, der Adler, ja fast aller Raubtiere! Unsere stete Angst ist ärger als der Tod..."
+}

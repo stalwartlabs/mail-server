@@ -1,0 +1,98 @@
+From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
+To: "  James Smythe" <james@example.com>, Friends:
+      jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?=
+      <john@example.com>;
+Cc: List 1: addr1@test.com, addr2@test.com; List 2: addr3@test.com, 
+       addr4@test.com; addr5@test.com, addr6@test.com
+Cc: =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: addr1@test.com, 
+       addr2@test.com; =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: 
+       addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com
+Bcc: Greg Vaudreuil <gvaudre@NRI.Reston.VA.US>, Ned Freed
+        <ned@innosoft.com>, Keith Moore <moore@cs.utk.edu>
+Bcc: ietf-822@dimacs.rutgers.edu, ojarnef@admin.kth.se
+Date: Tue, 1 Jul 2003 10:52:37 +0200
+Resent-Date: Tue, 2 Jul 2005 11:52:37 +0200
+Resent-Date: Tue, 3 Jul 2005 12:52:37 +0300
+Resent-Date: Tue, 4 Jul 2005 13:52:37 +0400
+Message-ID: <5678.21-Nov-1997@example.com>
+References: <1234@local.machine.example>
+            <3456@example.net>
+References: <789@local.machine.example>
+            <abcd@example.net>
+Keywords: multipart, alternative, example
+List-Post: <mailto:moderator@host.com> (Postings are Moderated)
+List-Subscribe: (Use this command to join the list)
+       <mailto:list-manager@host.com?body=subscribe%20list>
+List-Subscribe: <ftp://ftp.host.com/list.txt> (FTP),  
+               <mailto:list@host.com?subject=subscribe>
+List-Owner: <http://www.host.com/list.cgi?cmd=sub&lst=list>,
+       <mailto:list-manager@host.com?body=subscribe%20list>
+List-Unsubscribe: (Use this command to get off the list)
+         <mailto:list-manager@host.com?body=unsubscribe%20list>
+Subject: Why not both importing AND exporting? =?utf-8?b?4pi6?=
+X-Address-Single: =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>
+X-Address: Mary Smith <mary@example.net>
+X-Address: John Doe <jdoe@machine.example>
+X-AddressList-Single: Mary Smith <mary@x.test>, jdoe@example.org, Who? <one@y.test>
+X-AddressList: =?US-ASCII*EN?Q?Keith_Moore?= <moore@cs.utk.edu>, 
+                John =?US-ASCII*EN?Q?Doe?= <moore@cs.utk.edu>
+X-AddressList: =?ISO-8859-1?Q?Keld_J=F8rn_Simonsen?= <keld@dkuug.dk>,
+                =?ISO-8859-1?Q?Olle_J=E4rnefors?= <ojarnef@admin.kth.se>
+X-AddressesGroup-Single: A Group(Some people)
+            :Chris Jones <c@(Chris's host.)public.example>,
+            joe@example.org,     John <jdoe@one.test> (my dear
+            friend); (the end of the group)
+X-AddressesGroup: A Group:Ed Jones <c@a.test>,joe@where.test,John <jdoe@one.test>;
+X-AddressesGroup: "List 1": addr1@test.com, addr2@test.com; "List 2": 
+            addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com
+X-List-Single: <mailto:x-moderator@host.com> (X-Postings are Moderated)
+X-List: <http://www.mylist.com/list>,
+       <mailto:list@mylist.com>
+X-List: <http://www.mylist2.com/list2>,
+       <mailto:list2@mylist2.com>
+X-Text-Single: =?ISO-8859-1?B?SWYgeW91IGNhbiByZWFkIHRoaXMgeW8=?=
+              =?ISO-8859-2?B?dSB1bmRlcnN0YW5kIHRoZSBleGFtcGxlLg==?=
+X-Text: =?iso-8859-1?q?this=20is=20some=20text?=
+X-Text: =?ISO-8859-1?Q?a?= =?ISO-8859-2?Q?_b?=
+X-Date-Single: Tue, 5 Jul 2006 13:52:37 -0500
+X-Date: Sat, 20 Nov 2021 14:22:01 -0800
+X-Date: Sun, 21 Nov 2021 15:23:02 -0900
+X-Id-Single: <myid@example.com> <myid2@example.com>
+X-Id: <myid3@example.com>
+X-Id: <myid4@example.com> <myid5@example.com>
+Content-Type: multipart/mixed; boundary="festivus";
+
+--festivus
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: base64
+X-Custom-Header: 123
+
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+--festivus
+Content-Type: message/rfc822
+X-Custom-Header-2: 345
+
+From: "Cosmo Kramer" <kramer@kramerica.com>
+Subject: Exporting my book about coffee tables
+Content-Type: multipart/mixed; boundary="giddyup";
+
+--giddyup
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+--giddyup
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--giddyup--
+--festivus--

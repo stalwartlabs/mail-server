@@ -1,0 +1,127 @@
+{
+  "mailboxIds": null,
+  "size": 872,
+  "messageId": [
+    "random-message-id@example.com"
+  ],
+  "from": [
+    {
+      "name": "Name",
+      "email": "email@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "email@example.com",
+      "email": "email@example.com"
+    }
+  ],
+  "subject": "HTML test",
+  "sentAt": "2021-12-14T10:48:25Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Content-Type",
+        "value": " multipart/alternative;\r\n boundary=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""
+      },
+      {
+        "name": "Content-Language",
+        "value": " en-US"
+      }
+    ],
+    "type": "multipart/alternative",
+    "language": [
+      "en-US"
+    ],
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 30,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/plain; charset=utf-8; format=flowed"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "utf-8"
+      },
+      {
+        "partId": "2",
+        "blobId": "blob_1",
+        "size": 173,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/html; charset=utf-8"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/html",
+        "charset": "utf-8"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "This is an *HTML* test message",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "2": {
+      "value": "<html>\n  <head>\n    <meta http-equiv=\"content-type\" content=\"text/html; charset=UTF-8\">\n  </head>...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 30,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=utf-8; format=flowed"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 173,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/html; charset=utf-8"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/html",
+      "charset": "utf-8"
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "This is an *HTML* test message"
+}

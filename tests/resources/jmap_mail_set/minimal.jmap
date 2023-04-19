@@ -1,0 +1,100 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {},
+  "receivedAt": "2018-07-10T01:03:11Z",
+  "messageId": [
+    "my-message-id"
+  ],
+  "sentAt": "2018-07-10T01:03:11Z",
+  "bodyStructure": {
+    "partId": "0",
+    "blobId": "blob_0",
+    "size": 2,
+    "headers": [
+      {
+        "name": "Date",
+        "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <my-message-id>"
+      },
+      {
+        "name": "Content-Type",
+        "value": " text/plain; charset=\"utf-8\""
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": " 7bit"
+      }
+    ],
+    "type": "text/plain",
+    "charset": "utf-8"
+  },
+  "bodyValues": {
+    "0": {
+      "value": "\n",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    }
+  },
+  "textBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 2,
+      "headers": [
+        {
+          "name": "Date",
+          "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <my-message-id>"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 2,
+      "headers": [
+        {
+          "name": "Date",
+          "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <my-message-id>"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8"
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "\n"
+}

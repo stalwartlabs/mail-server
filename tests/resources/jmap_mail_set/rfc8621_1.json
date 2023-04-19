@@ -1,0 +1,29 @@
+{
+    "keywords": {
+        "$seen": true,
+        "$draft": true
+    },
+    "from": [
+        {
+            "name": "Joe Bloggs",
+            "email": "joe@example.com"
+        }
+    ],
+    "subject": "World domination",
+    "receivedAt": "2018-07-10T01:03:11Z",
+    "sentAt": "2018-07-10T11:03:11+10:00",
+    "messageId": [
+        "my-message-id"
+    ],
+    "bodyStructure": {
+        "type": "text/plain",
+        "partId": "bd48",
+        "header:Content-Language": "en"
+    },
+    "bodyValues": {
+        "bd48": {
+            "value": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we",
+            "isTruncated": false
+        }
+    }
+}

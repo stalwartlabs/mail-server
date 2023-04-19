@@ -1,0 +1,72 @@
+Subject: RFC 8621 Section 4.1.4 test
+Content-Type: multipart/mixed; boundary="1"
+
+--1
+Content-Type: text/plain
+Content-Disposition: inline
+
+A
+--1  
+Content-Type: multipart/mixed; boundary="2"
+
+--2
+Content-Type: multipart/alternative; boundary="3"
+
+--3
+Content-Type: multipart/mixed; boundary="4"
+
+--4
+Content-Type: text/plain
+Content-Disposition: inline
+
+B
+--4  
+Content-Type: image/jpeg
+Content-Disposition: inline
+
+C
+--4  
+Content-Type: text/plain
+Content-Disposition: inline
+
+D
+--4--
+
+--3 
+Content-Type: multipart/related; boundary="5"
+
+--5
+Content-Type: text/html
+
+<html>E</html>
+--5  
+Content-Type: image/jpeg
+
+F
+--5--  
+
+--3-- 
+
+--2   
+Content-Type: image/jpeg
+Content-Disposition: attachment
+
+G
+--2  
+Content-Type: application/x-excel
+
+H
+--2  
+Content-Type: message/rfc822
+
+Subject: J
+
+J
+--2--
+
+--1  
+Content-Type: text/plain
+Content-Disposition: inline
+
+K
+--1--

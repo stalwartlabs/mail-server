@@ -1,0 +1,49 @@
+{
+    "keywords": {
+        "$seen": true,
+        "$draft": true
+    },
+    "from": [
+        {
+            "name": "Joe Bloggs",
+            "email": "joe@example.com"
+        }
+    ],
+    "to": [
+        {
+            "name": "John",
+            "email": "john@example.com"
+        }
+    ],
+    "messageId": [
+        "my-message-id"
+    ],
+    "subject": "World domination",
+    "receivedAt": "2018-07-10T01:05:08Z",
+    "sentAt": "2018-07-10T11:05:08+10:00",
+    "bodyStructure": {
+        "type": "multipart/alternative",
+        "subParts": [
+            {
+                "partId": "a49d",
+                "type": "text/html",
+                "header:Content-Language": "en"
+            },
+            {
+                "partId": "bd48",
+                "type": "text/plain",
+                "header:Content-Language": "en"
+            }
+        ]
+    },
+    "bodyValues": {
+        "bd48": {
+            "value": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we",
+            "isTruncated": false
+        },
+        "a49d": {
+            "value": "<!DOCTYPE html><html><head><title></title><style type=\"text/css\">div{font-size:16px}</style></head><body><div>I have the most <b>brilliant</b> plan.  Let me tell you all about it.  What we do is, we</div></body></html>",
+            "isTruncated": false
+        }
+    }
+}

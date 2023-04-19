@@ -1,0 +1,304 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "$draft": true,
+    "$seen": true
+  },
+  "receivedAt": "2018-07-10T01:03:11Z",
+  "messageId": [
+    "my-message-id"
+  ],
+  "inReplyTo": [
+    "other-message-id",
+    "yet-another-message-id"
+  ],
+  "references": [
+    "first-message-id",
+    "second-message-id"
+  ],
+  "sender": [
+    {
+      "name": "ハロー・ワールド",
+      "email": "joe@example.com"
+    }
+  ],
+  "from": [
+    {
+      "name": "Joe Bloggs",
+      "email": "joe@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "Greg Vaudreuil",
+      "email": "gvaudre@NRI.Reston.VA.US"
+    },
+    {
+      "name": "Ned Freed",
+      "email": "ned@innosoft.com"
+    },
+    {
+      "name": "Keith Moore",
+      "email": "moore@cs.utk.edu"
+    }
+  ],
+  "cc": [
+    {
+      "name": "Привет, мир",
+      "email": "addr0@example.com"
+    }
+  ],
+  "bcc": [
+    {
+      "name": "¡El ñandú comió ñoquis!",
+      "email": "addr1@example.com"
+    }
+  ],
+  "replyTo": [
+    {
+      "name": "안녕하세요 세계",
+      "email": "addr2@example.com"
+    },
+    {
+      "name": "Antoine de Saint-Exupéry",
+      "email": "addr3@example.com"
+    }
+  ],
+  "subject": "Headers test",
+  "sentAt": "2018-07-10T01:03:11Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Bcc",
+        "value": " \"=?utf-8?B?wqFFbCDDsWFuZMO6IGNvbWnDsyDDsW9xdWlzIQ==?=\"\r\n\t<addr1@example.com>"
+      },
+      {
+        "name": "Cc",
+        "value": " \"=?utf-8?B?0J/RgNC40LLQtdGCLCDQvNC40YA=?=\" <addr0@example.com>"
+      },
+      {
+        "name": "Date",
+        "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+      },
+      {
+        "name": "From",
+        "value": " \"Joe Bloggs\" <joe@example.com>"
+      },
+      {
+        "name": "In-Reply-To",
+        "value": " <other-message-id> <yet-another-message-id>"
+      },
+      {
+        "name": "List-Owner",
+        "value": " <http://www.host.com/list.cgi?cmd=sub&lst=list>,\r\n\t<mailto:list-manager@host.com?body=subscribe%20list>"
+      },
+      {
+        "name": "List-Subscribe",
+        "value": " <ftp://ftp.host.com/list.txt>,\r\n\t<mailto:list@host.com?subject=subscribe>"
+      },
+      {
+        "name": "List-Subscribe",
+        "value": " <mailto:list-manager@host.com?body=subscribe%20list>"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <my-message-id>"
+      },
+      {
+        "name": "References",
+        "value": " <first-message-id> <second-message-id>"
+      },
+      {
+        "name": "Reply-To",
+        "value": " \"=?utf-8?B?7JWI64WV7ZWY7IS47JqUIOyEuOqzhA==?=\" <addr2@example.com>, \r\n\t\"=?utf-8?Q?Antoine_de_Saint-Exup=C3=A9ry?=\" <addr3@example.com>"
+      },
+      {
+        "name": "Resent-Date",
+        "value": " Sat, 2 Jul 2005 09:52:37 +0000"
+      },
+      {
+        "name": "Resent-Date",
+        "value": " Sun, 3 Jul 2005 09:52:37 +0000"
+      },
+      {
+        "name": "Resent-Date",
+        "value": " Mon, 4 Jul 2005 09:52:37 +0000"
+      },
+      {
+        "name": "Sender",
+        "value": " \"=?utf-8?B?44OP44Ot44O844O744Ov44O844Or44OJ?=\" <joe@example.com>"
+      },
+      {
+        "name": "Subject",
+        "value": " Headers test"
+      },
+      {
+        "name": "To",
+        "value": " \"Greg Vaudreuil\" <gvaudre@NRI.Reston.VA.US>, \r\n\t\"Ned Freed\" <ned@innosoft.com>, \"Keith Moore\" <moore@cs.utk.edu>"
+      },
+      {
+        "name": "X-AddressesGroup",
+        "value": " \"A Group\": \"Ed Jones\" <c@a.test>, \r\n\t<joe@where.test>, \"John\" <jdoe@one.test>"
+      },
+      {
+        "name": "X-AddressesGroup",
+        "value": " \"List 1\": <addr1@test.com>, \r\n\t<addr2@test.com>; \"List 2\": <addr3@test.com>, \r\n\t<addr4@test.com>; <addr5@test.com>, \r\n\t<addr6@test.com>"
+      },
+      {
+        "name": "X-References",
+        "value": " <1234@local.machine.example> <3456@example.net>"
+      },
+      {
+        "name": "X-References",
+        "value": " <789@local.machine.example> <abcd@example.net>"
+      },
+      {
+        "name": "X-Text",
+        "value": " a b"
+      },
+      {
+        "name": "X-Text",
+        "value": " this is some text"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/alternative; \r\n\tboundary=\"boundary_0\""
+      }
+    ],
+    "type": "multipart/alternative",
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 81,
+        "headers": [
+          {
+            "name": "Content-Language",
+            "value": " en"
+          },
+          {
+            "name": "Content-Type",
+            "value": " text/plain; charset=\"us-ascii\""
+          },
+          {
+            "name": "X-Header",
+            "value": " just a value"
+          },
+          {
+            "name": "X-Text",
+            "value": " more text"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "us-ascii",
+        "language": [
+          "en"
+        ]
+      },
+      {
+        "partId": "2",
+        "blobId": "blob_1",
+        "size": 218,
+        "headers": [
+          {
+            "name": "Content-Location",
+            "value": " https://example.com/html-body.html"
+          },
+          {
+            "name": "Content-Type",
+            "value": " text/html; charset=\"utf-8\"; name=\"html-body.html\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "name": "html-body.html",
+        "type": "text/html",
+        "charset": "utf-8",
+        "location": "https://example.com/html-body.html"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "2": {
+      "value": "<!DOCTYPE html><html><head><title></title><style type=\"text/css\">div{font-size:16px}</style>...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 81,
+      "headers": [
+        {
+          "name": "Content-Language",
+          "value": " en"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"us-ascii\""
+        },
+        {
+          "name": "X-Header",
+          "value": " just a value"
+        },
+        {
+          "name": "X-Text",
+          "value": " more text"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "language": [
+        "en"
+      ]
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 218,
+      "headers": [
+        {
+          "name": "Content-Location",
+          "value": " https://example.com/html-body.html"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/html; charset=\"utf-8\"; name=\"html-body.html\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "name": "html-body.html",
+      "type": "text/html",
+      "charset": "utf-8",
+      "location": "https://example.com/html-body.html"
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we"
+}

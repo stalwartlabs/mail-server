@@ -7,15 +7,20 @@ use std::{io::Read, sync::Arc};
 use ::store::Store;
 use utils::config::Config;
 
-struct TempDir {
-    path: std::path::PathBuf,
+pub struct TempDir {
+    pub path: std::path::PathBuf,
 }
 
 #[tokio::test]
-pub async fn store_test() {
-    let temp_dir = TempDir::new("store_tests", true);
+pub async fn store_tests() {
+    let insert = false;
+    let temp_dir = TempDir::new("store_tests", insert);
     let config_file = format!(
-        concat!("[blob.store]\n", "path = \"{}\"\n", "hash = 1\n"),
+        concat!(
+            "store.blob.path = \"{}\"\n",
+            "store.db.path = \"{}/sqlite.db\"\n"
+        ),
+        temp_dir.path.display(),
         temp_dir.path.display()
     );
     let db = Arc::new(
@@ -23,20 +28,17 @@ pub async fn store_test() {
             .await
             .unwrap(),
     );
-    let insert = true;
     if insert {
         db.destroy().await;
     }
     //assign_id::test(db).await;
-    blobs::test(db).await;
-    //query::test(db, insert).await;
+    //blobs::test(db).await;
+    query::test(db, insert).await;
     temp_dir.delete();
 }
 
 pub fn deflate_artwork_data() -> Vec<u8> {
     let mut csv_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    csv_path.push("src");
-    csv_path.push("tests");
     csv_path.push("resources");
     csv_path.push("artwork_data.csv.gz");
 

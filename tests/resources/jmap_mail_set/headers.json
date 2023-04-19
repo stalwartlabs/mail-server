@@ -1,0 +1,186 @@
+{
+    "keywords": {
+        "$seen": true,
+        "$draft": true
+    },
+    "from": [
+        {
+            "name": "Joe Bloggs",
+            "email": "joe@example.com"
+        }
+    ],
+    "subject": "Headers test",
+    "receivedAt": "2018-07-10T01:03:11Z",
+    "sentAt": "2018-07-10T11:03:11+10:00",
+    "messageId": [
+        "my-message-id"
+    ],
+    "inReplyTo": [
+        "other-message-id",
+        "yet-another-message-id"
+    ],
+    "references": [
+        "first-message-id",
+        "second-message-id"
+    ],
+    "sender": [
+        {
+            "name": "ハロー・ワールド",
+            "email": "joe@example.com"
+        }
+    ],
+    "to": [
+        {
+            "email": "gvaudre@NRI.Reston.VA.US",
+            "name": "Greg Vaudreuil"
+        },
+        {
+            "email": "ned@innosoft.com",
+            "name": "Ned Freed"
+        },
+        {
+            "email": "moore@cs.utk.edu",
+            "name": "Keith Moore"
+        }
+    ],
+    "cc": [
+        {
+            "name": "Привет, мир",
+            "email": "addr0@example.com"
+        }
+    ],
+    "bcc": [
+        {
+            "name": "¡El ñandú comió ñoquis!",
+            "email": "addr1@example.com"
+        }
+    ],
+    "replyTo": [
+        {
+            "name": "안녕하세요 세계",
+            "email": "addr2@example.com"
+        },
+        {
+            "name": "Antoine de Saint-Exupéry",
+            "email": "addr3@example.com"
+        }
+    ],
+    "header:Resent-Date:asDate:all": [
+        "2005-07-02T11:52:37+02:00",
+        "2005-07-03T12:52:37+03:00",
+        "2005-07-04T13:52:37+04:00"
+    ],
+    "header:X-Text:asText:all": [
+        "this is some text",
+        "a b"
+    ],
+    "header:List-Owner:asURLs": [
+        "http://www.host.com/list.cgi?cmd=sub&lst=list",
+        "mailto:list-manager@host.com?body=subscribe%20list"
+    ],
+    "header:List-Subscribe:asURLs:all": [
+        [
+            "mailto:list-manager@host.com?body=subscribe%20list"
+        ],
+        [
+            "ftp://ftp.host.com/list.txt",
+            "mailto:list@host.com?subject=subscribe"
+        ]
+    ],
+    "header:X-References:asMessageIds:all": [
+        [
+            "1234@local.machine.example",
+            "3456@example.net"
+        ],
+        [
+            "789@local.machine.example",
+            "abcd@example.net"
+        ]
+    ],
+    "header:X-AddressesGroup:asGroupedAddresses:all": [
+        [
+            {
+                "addresses": [
+                    {
+                        "email": "c@a.test",
+                        "name": "Ed Jones"
+                    },
+                    {
+                        "email": "joe@where.test",
+                        "name": null
+                    },
+                    {
+                        "email": "jdoe@one.test",
+                        "name": "John"
+                    }
+                ],
+                "name": "A Group"
+            }
+        ],
+        [
+            {
+                "addresses": [
+                    {
+                        "email": "addr1@test.com",
+                        "name": null
+                    },
+                    {
+                        "email": "addr2@test.com",
+                        "name": null
+                    }
+                ],
+                "name": "List 1"
+            },
+            {
+                "addresses": [
+                    {
+                        "email": "addr3@test.com",
+                        "name": null
+                    },
+                    {
+                        "email": "addr4@test.com",
+                        "name": null
+                    }
+                ],
+                "name": "List 2"
+            },
+            {
+                "addresses": [
+                    {
+                        "email": "addr5@test.com",
+                        "name": null
+                    },
+                    {
+                        "email": "addr6@test.com",
+                        "name": null
+                    }
+                ],
+                "name": null
+            }
+        ]
+    ],
+    "textBody": [
+        {
+            "type": "text/plain",
+            "blobId": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we",
+            "charset": "us-ascii",
+            "header:Content-Language": "en",
+            "header:X-Header": "just a value",
+            "header:X-Text": "more text"
+        }
+    ],
+    "htmlBody": [
+        {
+            "type": "text/html",
+            "partId": "a49d",
+            "location": "https://example.com/html-body.html",
+            "name": "html-body.html"
+        }
+    ],
+    "bodyValues": {
+        "a49d": {
+            "value": "<!DOCTYPE html><html><head><title></title><style type=\"text/css\">div{font-size:16px}</style></head><body><div>I have the most <b>brilliant</b> plan.  Let me tell you all about it.  What we do is, we</div></body></html>",
+            "isTruncated": false
+        }
+    }
+}

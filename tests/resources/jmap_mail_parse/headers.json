@@ -1,0 +1,1257 @@
+{
+  "mailboxIds": null,
+  "messageId": [
+    "5678.21-Nov-1997@example.com"
+  ],
+  "references": [
+    "789@local.machine.example",
+    "abcd@example.net"
+  ],
+  "from": [
+    {
+      "name": "Art Vandelay (Vandelay Industries)",
+      "email": "art@vandelay.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "  James Smythe",
+      "email": "james@example.com"
+    },
+    {
+      "name": null,
+      "email": "jane@example.com"
+    },
+    {
+      "name": "John Smîth",
+      "email": "john@example.com"
+    }
+  ],
+  "cc": [
+    {
+      "name": null,
+      "email": "addr1@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr2@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr3@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr4@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr5@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr6@test.com"
+    }
+  ],
+  "bcc": [
+    {
+      "name": null,
+      "email": "ietf-822@dimacs.rutgers.edu"
+    },
+    {
+      "name": null,
+      "email": "ojarnef@admin.kth.se"
+    }
+  ],
+  "subject": "Why not both importing AND exporting? ☺",
+  "sentAt": "2003-07-01T08:52:37Z",
+  "textBody": [
+    {
+      "size": 175,
+      "type": "text/html",
+      "charset": "us-ascii"
+    }
+  ],
+  "htmlBody": [
+    {
+      "size": 175,
+      "type": "text/html",
+      "charset": "us-ascii"
+    }
+  ],
+  "attachments": [
+    {
+      "size": 723,
+      "type": "message/rfc822"
+    }
+  ],
+  "preview": "I was thinking about quitting the “exporting” to focus just on the “importing”,\nbut then I thought, why not do both? ☺\n",
+  "header:Bcc": " ietf-822@dimacs.rutgers.edu, ojarnef@admin.kth.se",
+  "header:Bcc:all": [
+    " Greg Vaudreuil <gvaudre@NRI.Reston.VA.US>, Ned Freed\n        <ned@innosoft.com>, Keith Moore <moore@cs.utk.edu>",
+    " ietf-822@dimacs.rutgers.edu, ojarnef@admin.kth.se"
+  ],
+  "header:Bcc:asAddresses": [
+    {
+      "name": null,
+      "email": "ietf-822@dimacs.rutgers.edu"
+    },
+    {
+      "name": null,
+      "email": "ojarnef@admin.kth.se"
+    }
+  ],
+  "header:Bcc:asAddresses:all": [
+    [
+      {
+        "name": "Greg Vaudreuil",
+        "email": "gvaudre@NRI.Reston.VA.US"
+      },
+      {
+        "name": "Ned Freed",
+        "email": "ned@innosoft.com"
+      },
+      {
+        "name": "Keith Moore",
+        "email": "moore@cs.utk.edu"
+      }
+    ],
+    [
+      {
+        "name": null,
+        "email": "ietf-822@dimacs.rutgers.edu"
+      },
+      {
+        "name": null,
+        "email": "ojarnef@admin.kth.se"
+      }
+    ]
+  ],
+  "header:Bcc:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": null,
+          "email": "ietf-822@dimacs.rutgers.edu"
+        },
+        {
+          "name": null,
+          "email": "ojarnef@admin.kth.se"
+        }
+      ]
+    }
+  ],
+  "header:Bcc:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Greg Vaudreuil",
+            "email": "gvaudre@NRI.Reston.VA.US"
+          },
+          {
+            "name": "Ned Freed",
+            "email": "ned@innosoft.com"
+          },
+          {
+            "name": "Keith Moore",
+            "email": "moore@cs.utk.edu"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": null,
+            "email": "ietf-822@dimacs.rutgers.edu"
+          },
+          {
+            "name": null,
+            "email": "ojarnef@admin.kth.se"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:Cc": " =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: addr1@test.com, \n       addr2@test.com; =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: \n       addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com",
+  "header:Cc:all": [
+    " List 1: addr1@test.com, addr2@test.com; List 2: addr3@test.com, \n       addr4@test.com; addr5@test.com, addr6@test.com",
+    " =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: addr1@test.com, \n       addr2@test.com; =?utf-8?b?VGjDrXMgw61zIHbDoWzDrWQgw5pURjg=?=: \n       addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com"
+  ],
+  "header:Cc:asAddresses": [
+    {
+      "name": null,
+      "email": "addr1@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr2@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr3@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr4@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr5@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr6@test.com"
+    }
+  ],
+  "header:Cc:asAddresses:all": [
+    [
+      {
+        "name": null,
+        "email": "addr1@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr2@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr3@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr4@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr5@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr6@test.com"
+      }
+    ],
+    [
+      {
+        "name": null,
+        "email": "addr1@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr2@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr3@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr4@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr5@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr6@test.com"
+      }
+    ]
+  ],
+  "header:Cc:asGroupedAddresses": [
+    {
+      "name": "Thís ís válíd ÚTF8",
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr1@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr2@test.com"
+        }
+      ]
+    },
+    {
+      "name": "Thís ís válíd ÚTF8",
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr3@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr4@test.com"
+        }
+      ]
+    },
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr5@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr6@test.com"
+        }
+      ]
+    }
+  ],
+  "header:Cc:asGroupedAddresses:all": [
+    [
+      {
+        "name": "List 1",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr1@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr2@test.com"
+          }
+        ]
+      },
+      {
+        "name": "List 2",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr3@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr4@test.com"
+          }
+        ]
+      },
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr5@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr6@test.com"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "name": "Thís ís válíd ÚTF8",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr1@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr2@test.com"
+          }
+        ]
+      },
+      {
+        "name": "Thís ís válíd ÚTF8",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr3@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr4@test.com"
+          }
+        ]
+      },
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr5@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr6@test.com"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:Date": " Tue, 1 Jul 2003 10:52:37 +0200",
+  "header:Date:all": [
+    " Tue, 1 Jul 2003 10:52:37 +0200"
+  ],
+  "header:Date:asDate": "2003-07-01T08:52:37Z",
+  "header:Date:asDate:all": [
+    "2003-07-01T08:52:37Z"
+  ],
+  "header:From": " Art Vandelay <art@vandelay.com> (Vandelay Industries)",
+  "header:From:all": [
+    " Art Vandelay <art@vandelay.com> (Vandelay Industries)"
+  ],
+  "header:From:asAddresses": [
+    {
+      "name": "Art Vandelay (Vandelay Industries)",
+      "email": "art@vandelay.com"
+    }
+  ],
+  "header:From:asAddresses:all": [
+    [
+      {
+        "name": "Art Vandelay (Vandelay Industries)",
+        "email": "art@vandelay.com"
+      }
+    ]
+  ],
+  "header:From:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "Art Vandelay (Vandelay Industries)",
+          "email": "art@vandelay.com"
+        }
+      ]
+    }
+  ],
+  "header:From:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Art Vandelay (Vandelay Industries)",
+            "email": "art@vandelay.com"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:Keywords": " multipart, alternative, example",
+  "header:Keywords:all": [
+    " multipart, alternative, example"
+  ],
+  "header:Keywords:asText": "multipart, alternative, example",
+  "header:Keywords:asText:all": [
+    "multipart, alternative, example"
+  ],
+  "header:List-Owner": " <http://www.host.com/list.cgi?cmd=sub&lst=list>,\n       <mailto:list-manager@host.com?body=subscribe%20list>",
+  "header:List-Owner:all": [
+    " <http://www.host.com/list.cgi?cmd=sub&lst=list>,\n       <mailto:list-manager@host.com?body=subscribe%20list>"
+  ],
+  "header:List-Owner:asURLs": [
+    "http://www.host.com/list.cgi?cmd=sub&lst=list",
+    "mailto:list-manager@host.com?body=subscribe%20list"
+  ],
+  "header:List-Owner:asURLs:all": [
+    [
+      "http://www.host.com/list.cgi?cmd=sub&lst=list",
+      "mailto:list-manager@host.com?body=subscribe%20list"
+    ]
+  ],
+  "header:List-Post": " <mailto:moderator@host.com> (Postings are Moderated)",
+  "header:List-Post:all": [
+    " <mailto:moderator@host.com> (Postings are Moderated)"
+  ],
+  "header:List-Post:asURLs": [
+    "mailto:moderator@host.com"
+  ],
+  "header:List-Post:asURLs:all": [
+    [
+      "mailto:moderator@host.com"
+    ]
+  ],
+  "header:List-Subscribe": " <ftp://ftp.host.com/list.txt> (FTP),  \n               <mailto:list@host.com?subject=subscribe>",
+  "header:List-Subscribe:all": [
+    " (Use this command to join the list)\n       <mailto:list-manager@host.com?body=subscribe%20list>",
+    " <ftp://ftp.host.com/list.txt> (FTP),  \n               <mailto:list@host.com?subject=subscribe>"
+  ],
+  "header:List-Subscribe:asURLs": [
+    "ftp://ftp.host.com/list.txt",
+    "mailto:list@host.com?subject=subscribe"
+  ],
+  "header:List-Subscribe:asURLs:all": [
+    [
+      "mailto:list-manager@host.com?body=subscribe%20list"
+    ],
+    [
+      "ftp://ftp.host.com/list.txt",
+      "mailto:list@host.com?subject=subscribe"
+    ]
+  ],
+  "header:List-Unsubscribe": " (Use this command to get off the list)\n         <mailto:list-manager@host.com?body=unsubscribe%20list>",
+  "header:List-Unsubscribe:all": [
+    " (Use this command to get off the list)\n         <mailto:list-manager@host.com?body=unsubscribe%20list>"
+  ],
+  "header:List-Unsubscribe:asURLs": [
+    "mailto:list-manager@host.com?body=unsubscribe%20list"
+  ],
+  "header:List-Unsubscribe:asURLs:all": [
+    [
+      "mailto:list-manager@host.com?body=unsubscribe%20list"
+    ]
+  ],
+  "header:Message-ID": " <5678.21-Nov-1997@example.com>",
+  "header:Message-ID:all": [
+    " <5678.21-Nov-1997@example.com>"
+  ],
+  "header:Message-ID:asMessageIds": [
+    "5678.21-Nov-1997@example.com"
+  ],
+  "header:Message-ID:asMessageIds:all": [
+    [
+      "5678.21-Nov-1997@example.com"
+    ]
+  ],
+  "header:References": " <789@local.machine.example>\n            <abcd@example.net>",
+  "header:References:all": [
+    " <1234@local.machine.example>\n            <3456@example.net>",
+    " <789@local.machine.example>\n            <abcd@example.net>"
+  ],
+  "header:References:asMessageIds": [
+    "789@local.machine.example",
+    "abcd@example.net"
+  ],
+  "header:References:asMessageIds:all": [
+    [
+      "1234@local.machine.example",
+      "3456@example.net"
+    ],
+    [
+      "789@local.machine.example",
+      "abcd@example.net"
+    ]
+  ],
+  "header:Resent-Date": " Tue, 4 Jul 2005 13:52:37 +0400",
+  "header:Resent-Date:all": [
+    " Tue, 2 Jul 2005 11:52:37 +0200",
+    " Tue, 3 Jul 2005 12:52:37 +0300",
+    " Tue, 4 Jul 2005 13:52:37 +0400"
+  ],
+  "header:Resent-Date:asDate": "2005-07-04T09:52:37Z",
+  "header:Resent-Date:asDate:all": [
+    "2005-07-02T09:52:37Z",
+    "2005-07-03T09:52:37Z",
+    "2005-07-04T09:52:37Z"
+  ],
+  "header:Subject": " Why not both importing AND exporting? =?utf-8?b?4pi6?=",
+  "header:Subject:all": [
+    " Why not both importing AND exporting? =?utf-8?b?4pi6?="
+  ],
+  "header:Subject:asText": "Why not both importing AND exporting? ☺",
+  "header:Subject:asText:all": [
+    "Why not both importing AND exporting? ☺"
+  ],
+  "header:To": " \"  James Smythe\" <james@example.com>, Friends:\n      jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?=\n      <john@example.com>;",
+  "header:To:all": [
+    " \"  James Smythe\" <james@example.com>, Friends:\n      jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?=\n      <john@example.com>;"
+  ],
+  "header:To:asAddresses": [
+    {
+      "name": "  James Smythe",
+      "email": "james@example.com"
+    },
+    {
+      "name": null,
+      "email": "jane@example.com"
+    },
+    {
+      "name": "John Smîth",
+      "email": "john@example.com"
+    }
+  ],
+  "header:To:asAddresses:all": [
+    [
+      {
+        "name": "  James Smythe",
+        "email": "james@example.com"
+      },
+      {
+        "name": null,
+        "email": "jane@example.com"
+      },
+      {
+        "name": "John Smîth",
+        "email": "john@example.com"
+      }
+    ]
+  ],
+  "header:To:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "  James Smythe",
+          "email": "james@example.com"
+        }
+      ]
+    },
+    {
+      "name": "Friends",
+      "addresses": [
+        {
+          "name": null,
+          "email": "jane@example.com"
+        },
+        {
+          "name": "John Smîth",
+          "email": "john@example.com"
+        }
+      ]
+    }
+  ],
+  "header:To:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "  James Smythe",
+            "email": "james@example.com"
+          }
+        ]
+      },
+      {
+        "name": "Friends",
+        "addresses": [
+          {
+            "name": null,
+            "email": "jane@example.com"
+          },
+          {
+            "name": "John Smîth",
+            "email": "john@example.com"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-Address": " John Doe <jdoe@machine.example>",
+  "header:X-Address:all": [
+    " Mary Smith <mary@example.net>",
+    " John Doe <jdoe@machine.example>"
+  ],
+  "header:X-Address:asAddresses": [
+    {
+      "name": "John Doe",
+      "email": "jdoe@machine.example"
+    }
+  ],
+  "header:X-Address:asAddresses:all": [
+    [
+      {
+        "name": "Mary Smith",
+        "email": "mary@example.net"
+      }
+    ],
+    [
+      {
+        "name": "John Doe",
+        "email": "jdoe@machine.example"
+      }
+    ]
+  ],
+  "header:X-Address:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "John Doe",
+          "email": "jdoe@machine.example"
+        }
+      ]
+    }
+  ],
+  "header:X-Address:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Mary Smith",
+            "email": "mary@example.net"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "John Doe",
+            "email": "jdoe@machine.example"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-Address-Single": " =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>",
+  "header:X-Address-Single:all": [
+    " =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>"
+  ],
+  "header:X-Address-Single:asAddresses": [
+    {
+      "name": "André Pirard",
+      "email": "PIRARD@vm1.ulg.ac.be"
+    }
+  ],
+  "header:X-Address-Single:asAddresses:all": [
+    [
+      {
+        "name": "André Pirard",
+        "email": "PIRARD@vm1.ulg.ac.be"
+      }
+    ]
+  ],
+  "header:X-Address-Single:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "André Pirard",
+          "email": "PIRARD@vm1.ulg.ac.be"
+        }
+      ]
+    }
+  ],
+  "header:X-Address-Single:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "André Pirard",
+            "email": "PIRARD@vm1.ulg.ac.be"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-AddressList": " =?ISO-8859-1?Q?Keld_J=F8rn_Simonsen?= <keld@dkuug.dk>,\n                =?ISO-8859-1?Q?Olle_J=E4rnefors?= <ojarnef@admin.kth.se>",
+  "header:X-AddressList:all": [
+    " =?US-ASCII*EN?Q?Keith_Moore?= <moore@cs.utk.edu>, \n                John =?US-ASCII*EN?Q?Doe?= <moore@cs.utk.edu>",
+    " =?ISO-8859-1?Q?Keld_J=F8rn_Simonsen?= <keld@dkuug.dk>,\n                =?ISO-8859-1?Q?Olle_J=E4rnefors?= <ojarnef@admin.kth.se>"
+  ],
+  "header:X-AddressList:asAddresses": [
+    {
+      "name": "Keld Jørn Simonsen",
+      "email": "keld@dkuug.dk"
+    },
+    {
+      "name": "Olle Järnefors",
+      "email": "ojarnef@admin.kth.se"
+    }
+  ],
+  "header:X-AddressList:asAddresses:all": [
+    [
+      {
+        "name": "Keith Moore",
+        "email": "moore@cs.utk.edu"
+      },
+      {
+        "name": "John Doe",
+        "email": "moore@cs.utk.edu"
+      }
+    ],
+    [
+      {
+        "name": "Keld Jørn Simonsen",
+        "email": "keld@dkuug.dk"
+      },
+      {
+        "name": "Olle Järnefors",
+        "email": "ojarnef@admin.kth.se"
+      }
+    ]
+  ],
+  "header:X-AddressList:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "Keld Jørn Simonsen",
+          "email": "keld@dkuug.dk"
+        },
+        {
+          "name": "Olle Järnefors",
+          "email": "ojarnef@admin.kth.se"
+        }
+      ]
+    }
+  ],
+  "header:X-AddressList:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Keith Moore",
+            "email": "moore@cs.utk.edu"
+          },
+          {
+            "name": "John Doe",
+            "email": "moore@cs.utk.edu"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Keld Jørn Simonsen",
+            "email": "keld@dkuug.dk"
+          },
+          {
+            "name": "Olle Järnefors",
+            "email": "ojarnef@admin.kth.se"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-AddressList-Single": " Mary Smith <mary@x.test>, jdoe@example.org, Who? <one@y.test>",
+  "header:X-AddressList-Single:all": [
+    " Mary Smith <mary@x.test>, jdoe@example.org, Who? <one@y.test>"
+  ],
+  "header:X-AddressList-Single:asAddresses": [
+    {
+      "name": "Mary Smith",
+      "email": "mary@x.test"
+    },
+    {
+      "name": null,
+      "email": "jdoe@example.org"
+    },
+    {
+      "name": "Who?",
+      "email": "one@y.test"
+    }
+  ],
+  "header:X-AddressList-Single:asAddresses:all": [
+    [
+      {
+        "name": "Mary Smith",
+        "email": "mary@x.test"
+      },
+      {
+        "name": null,
+        "email": "jdoe@example.org"
+      },
+      {
+        "name": "Who?",
+        "email": "one@y.test"
+      }
+    ]
+  ],
+  "header:X-AddressList-Single:asGroupedAddresses": [
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": "Mary Smith",
+          "email": "mary@x.test"
+        },
+        {
+          "name": null,
+          "email": "jdoe@example.org"
+        },
+        {
+          "name": "Who?",
+          "email": "one@y.test"
+        }
+      ]
+    }
+  ],
+  "header:X-AddressList-Single:asGroupedAddresses:all": [
+    [
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": "Mary Smith",
+            "email": "mary@x.test"
+          },
+          {
+            "name": null,
+            "email": "jdoe@example.org"
+          },
+          {
+            "name": "Who?",
+            "email": "one@y.test"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-AddressesGroup": " \"List 1\": addr1@test.com, addr2@test.com; \"List 2\": \n            addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com",
+  "header:X-AddressesGroup:all": [
+    " A Group:Ed Jones <c@a.test>,joe@where.test,John <jdoe@one.test>;",
+    " \"List 1\": addr1@test.com, addr2@test.com; \"List 2\": \n            addr3@test.com, addr4@test.com; addr5@test.com, addr6@test.com"
+  ],
+  "header:X-AddressesGroup:asAddresses": [
+    {
+      "name": null,
+      "email": "addr1@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr2@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr3@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr4@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr5@test.com"
+    },
+    {
+      "name": null,
+      "email": "addr6@test.com"
+    }
+  ],
+  "header:X-AddressesGroup:asAddresses:all": [
+    [
+      {
+        "name": "Ed Jones",
+        "email": "c@a.test"
+      },
+      {
+        "name": null,
+        "email": "joe@where.test"
+      },
+      {
+        "name": "John",
+        "email": "jdoe@one.test"
+      }
+    ],
+    [
+      {
+        "name": null,
+        "email": "addr1@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr2@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr3@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr4@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr5@test.com"
+      },
+      {
+        "name": null,
+        "email": "addr6@test.com"
+      }
+    ]
+  ],
+  "header:X-AddressesGroup:asGroupedAddresses": [
+    {
+      "name": "List 1",
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr1@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr2@test.com"
+        }
+      ]
+    },
+    {
+      "name": "List 2",
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr3@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr4@test.com"
+        }
+      ]
+    },
+    {
+      "name": null,
+      "addresses": [
+        {
+          "name": null,
+          "email": "addr5@test.com"
+        },
+        {
+          "name": null,
+          "email": "addr6@test.com"
+        }
+      ]
+    }
+  ],
+  "header:X-AddressesGroup:asGroupedAddresses:all": [
+    [
+      {
+        "name": "A Group",
+        "addresses": [
+          {
+            "name": "Ed Jones",
+            "email": "c@a.test"
+          },
+          {
+            "name": null,
+            "email": "joe@where.test"
+          },
+          {
+            "name": "John",
+            "email": "jdoe@one.test"
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "name": "List 1",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr1@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr2@test.com"
+          }
+        ]
+      },
+      {
+        "name": "List 2",
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr3@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr4@test.com"
+          }
+        ]
+      },
+      {
+        "name": null,
+        "addresses": [
+          {
+            "name": null,
+            "email": "addr5@test.com"
+          },
+          {
+            "name": null,
+            "email": "addr6@test.com"
+          }
+        ]
+      }
+    ]
+  ],
+  "header:X-AddressesGroup-Single": " A Group(Some people)\n            :Chris Jones <c@(Chris's host.)public.example>,\n            joe@example.org,     John <jdoe@one.test> (my dear\n            friend); (the end of the group)",
+  "header:X-AddressesGroup-Single:all": [
+    " A Group(Some people)\n            :Chris Jones <c@(Chris's host.)public.example>,\n            joe@example.org,     John <jdoe@one.test> (my dear\n            friend); (the end of the group)"
+  ],
+  "header:X-AddressesGroup-Single:asAddresses": [
+    {
+      "name": "Chris Jones (Chris's host.)",
+      "email": "c@public.example"
+    },
+    {
+      "name": null,
+      "email": "joe@example.org"
+    },
+    {
+      "name": "John (my dear friend)",
+      "email": "jdoe@one.test"
+    }
+  ],
+  "header:X-AddressesGroup-Single:asAddresses:all": [
+    [
+      {
+        "name": "Chris Jones (Chris's host.)",
+        "email": "c@public.example"
+      },
+      {
+        "name": null,
+        "email": "joe@example.org"
+      },
+      {
+        "name": "John (my dear friend)",
+        "email": "jdoe@one.test"
+      }
+    ]
+  ],
+  "header:X-AddressesGroup-Single:asGroupedAddresses": [
+    {
+      "name": "A Group (Some people)",
+      "addresses": [
+        {
+          "name": "Chris Jones (Chris's host.)",
+          "email": "c@public.example"
+        },
+        {
+          "name": null,
+          "email": "joe@example.org"
+        },
+        {
+          "name": "John (my dear friend)",
+          "email": "jdoe@one.test"
+        }
+      ]
+    },
+    {
+      "name": null,
+      "addresses": []
+    }
+  ],
+  "header:X-AddressesGroup-Single:asGroupedAddresses:all": [
+    [
+      {
+        "name": "A Group (Some people)",
+        "addresses": [
+          {
+            "name": "Chris Jones (Chris's host.)",
+            "email": "c@public.example"
+          },
+          {
+            "name": null,
+            "email": "joe@example.org"
+          },
+          {
+            "name": "John (my dear friend)",
+            "email": "jdoe@one.test"
+          }
+        ]
+      },
+      {
+        "name": null,
+        "addresses": []
+      }
+    ]
+  ],
+  "header:X-Date": " Sun, 21 Nov 2021 15:23:02 -0900",
+  "header:X-Date:all": [
+    " Sat, 20 Nov 2021 14:22:01 -0800",
+    " Sun, 21 Nov 2021 15:23:02 -0900"
+  ],
+  "header:X-Date:asDate": "2021-11-22T00:23:02Z",
+  "header:X-Date:asDate:all": [
+    "2021-11-20T22:22:01Z",
+    "2021-11-22T00:23:02Z"
+  ],
+  "header:X-Date-Single": " Tue, 5 Jul 2006 13:52:37 -0500",
+  "header:X-Date-Single:all": [
+    " Tue, 5 Jul 2006 13:52:37 -0500"
+  ],
+  "header:X-Date-Single:asDate": "2006-07-05T18:52:37Z",
+  "header:X-Date-Single:asDate:all": [
+    "2006-07-05T18:52:37Z"
+  ],
+  "header:X-Id": " <myid4@example.com> <myid5@example.com>",
+  "header:X-Id:all": [
+    " <myid3@example.com>",
+    " <myid4@example.com> <myid5@example.com>"
+  ],
+  "header:X-Id:asMessageIds": [
+    "myid4@example.com",
+    "myid5@example.com"
+  ],
+  "header:X-Id:asMessageIds:all": [
+    [
+      "myid3@example.com"
+    ],
+    [
+      "myid4@example.com",
+      "myid5@example.com"
+    ]
+  ],
+  "header:X-Id-Single": " <myid@example.com> <myid2@example.com>",
+  "header:X-Id-Single:all": [
+    " <myid@example.com> <myid2@example.com>"
+  ],
+  "header:X-Id-Single:asMessageIds": [
+    "myid@example.com",
+    "myid2@example.com"
+  ],
+  "header:X-Id-Single:asMessageIds:all": [
+    [
+      "myid@example.com",
+      "myid2@example.com"
+    ]
+  ],
+  "header:X-List": " <http://www.mylist2.com/list2>,\n       <mailto:list2@mylist2.com>",
+  "header:X-List:all": [
+    " <http://www.mylist.com/list>,\n       <mailto:list@mylist.com>",
+    " <http://www.mylist2.com/list2>,\n       <mailto:list2@mylist2.com>"
+  ],
+  "header:X-List:asURLs": [
+    "http://www.mylist2.com/list2",
+    "mailto:list2@mylist2.com"
+  ],
+  "header:X-List:asURLs:all": [
+    [
+      "http://www.mylist.com/list",
+      "mailto:list@mylist.com"
+    ],
+    [
+      "http://www.mylist2.com/list2",
+      "mailto:list2@mylist2.com"
+    ]
+  ],
+  "header:X-List-Single": " <mailto:x-moderator@host.com> (X-Postings are Moderated)",
+  "header:X-List-Single:all": [
+    " <mailto:x-moderator@host.com> (X-Postings are Moderated)"
+  ],
+  "header:X-List-Single:asURLs": [
+    "mailto:x-moderator@host.com"
+  ],
+  "header:X-List-Single:asURLs:all": [
+    [
+      "mailto:x-moderator@host.com"
+    ]
+  ],
+  "header:X-Text": " =?ISO-8859-1?Q?a?= =?ISO-8859-2?Q?_b?=",
+  "header:X-Text:all": [
+    " =?iso-8859-1?q?this=20is=20some=20text?=",
+    " =?ISO-8859-1?Q?a?= =?ISO-8859-2?Q?_b?="
+  ],
+  "header:X-Text:asText": "a b",
+  "header:X-Text:asText:all": [
+    "this is some text",
+    "a b"
+  ],
+  "header:X-Text-Single": " =?ISO-8859-1?B?SWYgeW91IGNhbiByZWFkIHRoaXMgeW8=?=\n              =?ISO-8859-2?B?dSB1bmRlcnN0YW5kIHRoZSBleGFtcGxlLg==?=",
+  "header:X-Text-Single:all": [
+    " =?ISO-8859-1?B?SWYgeW91IGNhbiByZWFkIHRoaXMgeW8=?=\n              =?ISO-8859-2?B?dSB1bmRlcnN0YW5kIHRoZSBleGFtcGxlLg==?="
+  ],
+  "header:X-Text-Single:asText": "If you can read this you understand the example.",
+  "header:X-Text-Single:asText:all": [
+    "If you can read this you understand the example."
+  ]
+}

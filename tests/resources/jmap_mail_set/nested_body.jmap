@@ -1,0 +1,592 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "$draft": true,
+    "$seen": true
+  },
+  "receivedAt": "2018-07-10T01:03:11Z",
+  "messageId": [
+    "my-message-id"
+  ],
+  "from": [
+    {
+      "name": "Joe Bloggs",
+      "email": "joe@example.com"
+    }
+  ],
+  "subject": "RFC 8621 Section 4.1.4 test",
+  "sentAt": "2018-07-10T01:03:11Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Date",
+        "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+      },
+      {
+        "name": "From",
+        "value": " \"Joe Bloggs\" <joe@example.com>"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <my-message-id>"
+      },
+      {
+        "name": "Subject",
+        "value": " RFC 8621 Section 4.1.4 test"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed; \r\n\tboundary=\"boundary_0\""
+      }
+    ],
+    "type": "multipart/mixed",
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 6,
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": " inline"
+          },
+          {
+            "name": "Content-Type",
+            "value": " text/plain"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "us-ascii",
+        "disposition": "inline"
+      },
+      {
+        "size": 0,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " multipart/mixed; \r\n\tboundary=\"boundary_1\""
+          }
+        ],
+        "type": "multipart/mixed",
+        "subParts": [
+          {
+            "size": 0,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " multipart/alternative; \r\n\tboundary=\"boundary_2\""
+              }
+            ],
+            "type": "multipart/alternative",
+            "subParts": [
+              {
+                "size": 0,
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": " multipart/mixed; \r\n\tboundary=\"boundary_3\""
+                  }
+                ],
+                "type": "multipart/mixed",
+                "subParts": [
+                  {
+                    "partId": "5",
+                    "blobId": "blob_1",
+                    "size": 6,
+                    "headers": [
+                      {
+                        "name": "Content-Disposition",
+                        "value": " inline"
+                      },
+                      {
+                        "name": "Content-Type",
+                        "value": " text/plain"
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": " 7bit"
+                      }
+                    ],
+                    "type": "text/plain",
+                    "charset": "us-ascii",
+                    "disposition": "inline"
+                  },
+                  {
+                    "partId": "6",
+                    "blobId": "blob_2",
+                    "size": 6,
+                    "headers": [
+                      {
+                        "name": "Content-Disposition",
+                        "value": " inline"
+                      },
+                      {
+                        "name": "Content-Type",
+                        "value": " image/jpeg"
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": " base64"
+                      }
+                    ],
+                    "type": "image/jpeg",
+                    "disposition": "inline"
+                  },
+                  {
+                    "partId": "7",
+                    "blobId": "blob_3",
+                    "size": 6,
+                    "headers": [
+                      {
+                        "name": "Content-Disposition",
+                        "value": " inline"
+                      },
+                      {
+                        "name": "Content-Type",
+                        "value": " text/plain"
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": " 7bit"
+                      }
+                    ],
+                    "type": "text/plain",
+                    "charset": "us-ascii",
+                    "disposition": "inline"
+                  }
+                ]
+              },
+              {
+                "size": 0,
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": " multipart/related; \r\n\tboundary=\"boundary_4\""
+                  }
+                ],
+                "type": "multipart/related",
+                "subParts": [
+                  {
+                    "partId": "9",
+                    "blobId": "blob_4",
+                    "size": 6,
+                    "headers": [
+                      {
+                        "name": "Content-Type",
+                        "value": " text/html"
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": " 7bit"
+                      }
+                    ],
+                    "type": "text/html",
+                    "charset": "us-ascii"
+                  },
+                  {
+                    "partId": "10",
+                    "blobId": "blob_5",
+                    "size": 6,
+                    "headers": [
+                      {
+                        "name": "Content-Type",
+                        "value": " image/jpeg"
+                      },
+                      {
+                        "name": "Content-Transfer-Encoding",
+                        "value": " base64"
+                      }
+                    ],
+                    "type": "image/jpeg"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "partId": "11",
+            "blobId": "blob_6",
+            "size": 6,
+            "headers": [
+              {
+                "name": "Content-Disposition",
+                "value": " attachment"
+              },
+              {
+                "name": "Content-Type",
+                "value": " image/jpeg"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              }
+            ],
+            "type": "image/jpeg",
+            "disposition": "attachment"
+          },
+          {
+            "partId": "12",
+            "blobId": "blob_7",
+            "size": 6,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " application/x-excel"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              }
+            ],
+            "type": "application/x-excel"
+          },
+          {
+            "partId": "13",
+            "blobId": "blob_8",
+            "size": 6,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " x-message/rfc822"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              }
+            ],
+            "type": "x-message/rfc822"
+          }
+        ]
+      },
+      {
+        "partId": "14",
+        "blobId": "blob_9",
+        "size": 6,
+        "headers": [
+          {
+            "name": "Content-Disposition",
+            "value": " inline"
+          },
+          {
+            "name": "Content-Type",
+            "value": " text/plain"
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " 7bit"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "us-ascii",
+        "disposition": "inline"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "Part A",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "14": {
+      "value": "Part K",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "5": {
+      "value": "Part B",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "6": {
+      "value": "Part C",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "7": {
+      "value": "Part D",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "9": {
+      "value": "Part E",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    },
+    {
+      "partId": "5",
+      "blobId": "blob_1",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    },
+    {
+      "partId": "6",
+      "blobId": "blob_2",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/jpeg"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/jpeg",
+      "disposition": "inline"
+    },
+    {
+      "partId": "7",
+      "blobId": "blob_3",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    },
+    {
+      "partId": "14",
+      "blobId": "blob_9",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    },
+    {
+      "partId": "9",
+      "blobId": "blob_4",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/html"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/html",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "14",
+      "blobId": "blob_9",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "us-ascii",
+      "disposition": "inline"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "6",
+      "blobId": "blob_2",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/jpeg"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/jpeg",
+      "disposition": "inline"
+    },
+    {
+      "partId": "10",
+      "blobId": "blob_5",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/jpeg"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/jpeg"
+    },
+    {
+      "partId": "11",
+      "blobId": "blob_6",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Disposition",
+          "value": " attachment"
+        },
+        {
+          "name": "Content-Type",
+          "value": " image/jpeg"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/jpeg",
+      "disposition": "attachment"
+    },
+    {
+      "partId": "12",
+      "blobId": "blob_7",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " application/x-excel"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "application/x-excel"
+    },
+    {
+      "partId": "13",
+      "blobId": "blob_8",
+      "size": 6,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " x-message/rfc822"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "x-message/rfc822"
+    }
+  ],
+  "hasAttachment": true,
+  "preview": "Part A"
+}

@@ -1,0 +1,98 @@
+Date: Tue, 10 Jul 2018 01:03:11 +0000
+From: "Joe Bloggs" <joe@example.com>
+Message-ID: <my-message-id>
+Subject: RFC 8621 Section 4.1.4 test
+Content-Type: multipart/mixed; 
+	boundary="boundary_0"
+
+
+--boundary_0
+Content-Disposition: inline
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Part A
+--boundary_0
+Content-Type: multipart/mixed; 
+	boundary="boundary_1"
+
+
+--boundary_1
+Content-Type: multipart/alternative; 
+	boundary="boundary_2"
+
+
+--boundary_2
+Content-Type: multipart/mixed; 
+	boundary="boundary_3"
+
+
+--boundary_3
+Content-Disposition: inline
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Part B
+--boundary_3
+Content-Disposition: inline
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+UGFydCBD
+
+--boundary_3
+Content-Disposition: inline
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Part D
+--boundary_3--
+
+--boundary_2
+Content-Type: multipart/related; 
+	boundary="boundary_4"
+
+
+--boundary_4
+Content-Type: text/html
+Content-Transfer-Encoding: 7bit
+
+Part E
+--boundary_4
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+UGFydCBG
+
+--boundary_4--
+
+--boundary_2--
+
+--boundary_1
+Content-Disposition: attachment
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+UGFydCBH
+
+--boundary_1
+Content-Type: application/x-excel
+Content-Transfer-Encoding: base64
+
+UGFydCBI
+
+--boundary_1
+Content-Type: x-message/rfc822
+Content-Transfer-Encoding: base64
+
+UGFydCBK
+
+--boundary_1--
+
+--boundary_0
+Content-Disposition: inline
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Part K
+--boundary_0--

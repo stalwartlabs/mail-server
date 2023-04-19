@@ -1,0 +1,383 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 11304,
+  "receivedAt": "2328-03-18T08:00:00Z",
+  "messageId": [
+    "4.2.0.58.20000519003556.00a918e0@pop.example.com"
+  ],
+  "from": [
+    {
+      "name": "Doug Sauder",
+      "email": "dwsauder@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "Heinz Muller",
+      "email": "mueller@example.com"
+    }
+  ],
+  "subject": "Die Hasen und die Frosche",
+  "sentAt": "2000-05-19T04:36:58Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "Message-ID",
+        "value": " <4.2.0.58.20000519003556.00a918e0@pop.example.com>"
+      },
+      {
+        "name": "X-Sender",
+        "value": " dwsauder@pop.example.com (Unverified)"
+      },
+      {
+        "name": "X-Mailer",
+        "value": " QUALCOMM Windows Eudora Pro Version 4.2.0.58"
+      },
+      {
+        "name": "X-Priority",
+        "value": " 2 (High)"
+      },
+      {
+        "name": "Date",
+        "value": " Fri, 19 May 2000 00:36:58 -0400"
+      },
+      {
+        "name": "To",
+        "value": " Heinz =?iso-8859-1?Q?Muller?= <mueller@example.com>"
+      },
+      {
+        "name": "From",
+        "value": " Doug Sauder <dwsauder@example.com>"
+      },
+      {
+        "name": "Subject",
+        "value": " =?iso-8859-1?Q?Die_Hasen_und_die_Frosche?="
+      },
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed;\n\tboundary=\"=====================_715392540==_\""
+      }
+    ],
+    "type": "multipart/mixed",
+    "subParts": [
+      {
+        "size": 0,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " multipart/related;\n\ttype=\"multipart/alternative\";\n\tboundary=\"=====================_715392540==_.REL\""
+          }
+        ],
+        "type": "multipart/related",
+        "subParts": [
+          {
+            "size": 0,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " multipart/alternative;\n\tboundary=\"=====================_715392550==_.ALT\""
+              }
+            ],
+            "type": "multipart/alternative",
+            "subParts": [
+              {
+                "partId": "3",
+                "blobId": "blob_0",
+                "size": 779,
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": " text/plain; charset=\"iso-8859-1\""
+                  },
+                  {
+                    "name": "Content-Transfer-Encoding",
+                    "value": " quoted-printable"
+                  }
+                ],
+                "type": "text/plain",
+                "charset": "iso-8859-1"
+              },
+              {
+                "partId": "4",
+                "blobId": "blob_1",
+                "size": 1154,
+                "headers": [
+                  {
+                    "name": "Content-Type",
+                    "value": " text/html; charset=\"iso-8859-1\""
+                  },
+                  {
+                    "name": "Content-Transfer-Encoding",
+                    "value": " quoted-printable"
+                  }
+                ],
+                "type": "text/html",
+                "charset": "iso-8859-1"
+              }
+            ]
+          },
+          {
+            "partId": "5",
+            "blobId": "blob_2",
+            "size": 1325,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " image/png; name=\"2aa3ed95.png\""
+              },
+              {
+                "name": "Content-ID",
+                "value": " <4.2.0.58.20000519003556.00a918e0@pop.example.com.2>"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": " inline; filename=\"2aa3ed95.png\""
+              }
+            ],
+            "name": "2aa3ed95.png",
+            "type": "image/png",
+            "disposition": "inline",
+            "cid": "4.2.0.58.20000519003556.00a918e0@pop.example.com.2"
+          },
+          {
+            "partId": "6",
+            "blobId": "blob_3",
+            "size": 1453,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " image/png; name=\"2aa3edd1.png\""
+              },
+              {
+                "name": "Content-ID",
+                "value": " <4.2.0.58.20000519003556.00a918e0@pop.example.com.3>"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": " inline; filename=\"2aa3edd1.png\""
+              }
+            ],
+            "name": "2aa3edd1.png",
+            "type": "image/png",
+            "disposition": "inline",
+            "cid": "4.2.0.58.20000519003556.00a918e0@pop.example.com.3"
+          }
+        ]
+      },
+      {
+        "partId": "7",
+        "blobId": "blob_4",
+        "size": 1325,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " image/png; name=\"blueball.png\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " base64"
+          },
+          {
+            "name": "Content-Disposition",
+            "value": " attachment; filename=\"blueball.png\""
+          }
+        ],
+        "name": "blueball.png",
+        "type": "image/png",
+        "disposition": "attachment"
+      },
+      {
+        "partId": "8",
+        "blobId": "blob_5",
+        "size": 1298,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " image/png; name=\"greenball.png\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " base64"
+          },
+          {
+            "name": "Content-Disposition",
+            "value": " attachment; filename=\"greenball.png\""
+          }
+        ],
+        "name": "greenball.png",
+        "type": "image/png",
+        "disposition": "attachment"
+      }
+    ]
+  },
+  "bodyValues": {
+    "3": {
+      "value": "Die Hasen und die Frösche\n\nDie Hasen klagten einst über ihre mißliche Lage; \"wir leben\", sprac...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    },
+    "4": {
+      "value": "<html>\n<font face=\"Arial, Helvetica\" size=5 color=\"#0000FF\"><b>Die Hasen und die\nFrösche<br>\n...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "3",
+      "blobId": "blob_0",
+      "size": 779,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"iso-8859-1\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "iso-8859-1"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "4",
+      "blobId": "blob_1",
+      "size": 1154,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/html; charset=\"iso-8859-1\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        }
+      ],
+      "type": "text/html",
+      "charset": "iso-8859-1"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "5",
+      "blobId": "blob_2",
+      "size": 1325,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/png; name=\"2aa3ed95.png\""
+        },
+        {
+          "name": "Content-ID",
+          "value": " <4.2.0.58.20000519003556.00a918e0@pop.example.com.2>"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline; filename=\"2aa3ed95.png\""
+        }
+      ],
+      "name": "2aa3ed95.png",
+      "type": "image/png",
+      "disposition": "inline",
+      "cid": "4.2.0.58.20000519003556.00a918e0@pop.example.com.2"
+    },
+    {
+      "partId": "6",
+      "blobId": "blob_3",
+      "size": 1453,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/png; name=\"2aa3edd1.png\""
+        },
+        {
+          "name": "Content-ID",
+          "value": " <4.2.0.58.20000519003556.00a918e0@pop.example.com.3>"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline; filename=\"2aa3edd1.png\""
+        }
+      ],
+      "name": "2aa3edd1.png",
+      "type": "image/png",
+      "disposition": "inline",
+      "cid": "4.2.0.58.20000519003556.00a918e0@pop.example.com.3"
+    },
+    {
+      "partId": "7",
+      "blobId": "blob_4",
+      "size": 1325,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/png; name=\"blueball.png\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " attachment; filename=\"blueball.png\""
+        }
+      ],
+      "name": "blueball.png",
+      "type": "image/png",
+      "disposition": "attachment"
+    },
+    {
+      "partId": "8",
+      "blobId": "blob_5",
+      "size": 1298,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/png; name=\"greenball.png\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " attachment; filename=\"greenball.png\""
+        }
+      ],
+      "name": "greenball.png",
+      "type": "image/png",
+      "disposition": "attachment"
+    }
+  ],
+  "hasAttachment": true,
+  "preview": "Die Hasen und die Frösche\n\nDie Hasen klagten einst über ihre mißliche Lage; \"wir leben\", sprach ein Redner, \"in steter Furcht vor Menschen und Tieren, eine Beute der Hunde, der Adler, ja fast aller Raubtiere! Unsere stete Angst ist ärger als der Tod..."
+}

@@ -1,0 +1,50 @@
+Date: Sat, 20 Nov 2021 22:22:01 +0000
+From: "Art Vandelay (Vandelay Industries)" <art@vandelay.com>
+Message-ID: <my-message-id>
+Subject: =?utf-8?Q?Why_not_both_importing_AND_exporting=3F_=E2=98=BA?=
+To: "Colleagues": "James Smythe" <james@vandelay.com>; 
+	"Friends": <jane@example.com>, 
+	"=?utf-8?Q?John_Sm=C3=AEth?=" <john@example.com>
+Content-Type: multipart/mixed; 
+	boundary="boundary_0"
+
+
+--boundary_0
+Content-Type: multipart/alternative; 
+	boundary="boundary_1"
+
+
+--boundary_1
+Content-Language: en
+Content-Type: text/plain
+Content-Transfer-Encoding: quoted-printable
+
+I was thinking about quitting the =E2=80=9Cexporting=E2=80=9D to focus just =
+on the =E2=80=9Cimporting=E2=80=9D,
+but then I thought, why not do both? =E2=98=BA
+
+--boundary_1
+Content-Language: en_US
+Content-Type: text/html
+Content-Transfer-Encoding: 7bit
+
+<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to focus just on the &ldquo;importing&rdquo;,</p><p>but then I thought, why not do both? &#x263A;</p></html>
+--boundary_1--
+
+--boundary_0
+Content-ID: <cid:1234-5678-9012-3456>
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+
+aGVyZSBhcmUgdGhlIGVtYmVkZGVkIGltYWdlIGNvbnRlbnRzIQ==
+
+--boundary_0
+Content-Disposition: attachment; filename="=?utf-8?Q?Book_about_=E2=98=95_tables.pdf?="
+Content-Type: x-document/pdf
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+4oSM8J2UovCdlKnwnZStIPCdlKrwnZSiIPCdlKLwnZS18J2UrfCdlKzwnZSv
+8J2UsSDwnZSq8J2UtiDwnZSf8J2UrPCdlKzwnZSoIPCdlK3wnZSp8J2UovCdlJ7wnZSw8J2UoiE8
+L2JvZHk+PC9odG1sPg==
+
+--boundary_0--

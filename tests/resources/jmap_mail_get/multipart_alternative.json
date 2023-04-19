@@ -1,0 +1,154 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 616,
+  "receivedAt": "1989-07-09T15:06:40Z",
+  "from": [
+    {
+      "name": null,
+      "email": "sender@example.com"
+    }
+  ],
+  "to": [
+    {
+      "name": null,
+      "email": "recipient@example.com"
+    }
+  ],
+  "subject": "Multipart Email Example",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "From",
+        "value": " sender@example.com"
+      },
+      {
+        "name": "To",
+        "value": " recipient@example.com"
+      },
+      {
+        "name": "Subject",
+        "value": " Multipart Email Example"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/alternative; boundary=\"boundary-string\""
+      }
+    ],
+    "type": "multipart/alternative",
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 87,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/plain; charset=\"utf-8\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " quoted-printable"
+          },
+          {
+            "name": "Content-Disposition",
+            "value": " inline"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "utf-8",
+        "disposition": "inline"
+      },
+      {
+        "partId": "2",
+        "blobId": "blob_1",
+        "size": 93,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/html; charset=\"utf-8\""
+          },
+          {
+            "name": "Content-Transfer-Encoding",
+            "value": " quoted-printable"
+          },
+          {
+            "name": "Content-Disposition",
+            "value": " inline"
+          }
+        ],
+        "type": "text/html",
+        "charset": "utf-8",
+        "disposition": "inline"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "Plain text email goes here!\nThis is the fallback if email client does not support HTML\n",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    },
+    "2": {
+      "value": "<h1>This is the HTML Section!</h1>\n<p>This is what displays in most modern email clients</p>\n",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 87,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8",
+      "disposition": "inline"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 93,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/html; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " quoted-printable"
+        },
+        {
+          "name": "Content-Disposition",
+          "value": " inline"
+        }
+      ],
+      "type": "text/html",
+      "charset": "utf-8",
+      "disposition": "inline"
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "Plain text email goes here!\nThis is the fallback if email client does not support HTML\n"
+}

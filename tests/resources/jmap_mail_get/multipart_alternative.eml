@@ -1,0 +1,22 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Multipart Email Example
+Content-Type: multipart/alternative; boundary="boundary-string"
+
+--boundary-string
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+Content-Disposition: inline
+
+Plain text email goes here!
+This is the fallback if email client does not support HTML
+
+--boundary-string
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+Content-Disposition: inline
+
+<h1>This is the HTML Section!</h1>
+<p>This is what displays in most modern email clients</p>
+
+--boundary-string--

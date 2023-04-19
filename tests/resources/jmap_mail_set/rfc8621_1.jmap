@@ -1,0 +1,155 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "$draft": true,
+    "$seen": true
+  },
+  "receivedAt": "2018-07-10T01:03:11Z",
+  "messageId": [
+    "my-message-id"
+  ],
+  "from": [
+    {
+      "name": "Joe Bloggs",
+      "email": "joe@example.com"
+    }
+  ],
+  "subject": "World domination",
+  "sentAt": "2018-07-10T01:03:11Z",
+  "bodyStructure": {
+    "partId": "0",
+    "blobId": "blob_0",
+    "size": 81,
+    "headers": [
+      {
+        "name": "Date",
+        "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+      },
+      {
+        "name": "From",
+        "value": " \"Joe Bloggs\" <joe@example.com>"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <my-message-id>"
+      },
+      {
+        "name": "Subject",
+        "value": " World domination"
+      },
+      {
+        "name": "Content-Language",
+        "value": " en"
+      },
+      {
+        "name": "Content-Type",
+        "value": " text/plain; charset=\"utf-8\""
+      },
+      {
+        "name": "Content-Transfer-Encoding",
+        "value": " 7bit"
+      }
+    ],
+    "type": "text/plain",
+    "charset": "utf-8",
+    "language": [
+      "en"
+    ]
+  },
+  "bodyValues": {
+    "0": {
+      "value": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we",
+      "isEncodingProblem": false,
+      "isTruncated": false
+    }
+  },
+  "textBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 81,
+      "headers": [
+        {
+          "name": "Date",
+          "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+        },
+        {
+          "name": "From",
+          "value": " \"Joe Bloggs\" <joe@example.com>"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <my-message-id>"
+        },
+        {
+          "name": "Subject",
+          "value": " World domination"
+        },
+        {
+          "name": "Content-Language",
+          "value": " en"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8",
+      "language": [
+        "en"
+      ]
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "0",
+      "blobId": "blob_0",
+      "size": 81,
+      "headers": [
+        {
+          "name": "Date",
+          "value": " Tue, 10 Jul 2018 01:03:11 +0000"
+        },
+        {
+          "name": "From",
+          "value": " \"Joe Bloggs\" <joe@example.com>"
+        },
+        {
+          "name": "Message-ID",
+          "value": " <my-message-id>"
+        },
+        {
+          "name": "Subject",
+          "value": " World domination"
+        },
+        {
+          "name": "Content-Language",
+          "value": " en"
+        },
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=\"utf-8\""
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " 7bit"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "utf-8",
+      "language": [
+        "en"
+      ]
+    }
+  ],
+  "attachments": [],
+  "hasAttachment": false,
+  "preview": "I have the most brilliant plan.  Let me tell you all about it.  What we do is, we"
+}

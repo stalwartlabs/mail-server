@@ -1,0 +1,89 @@
+{
+    "keywords": {
+        "$seen": true,
+        "$draft": true
+    },
+    "from": [
+        {
+            "name": "Joe Bloggs",
+            "email": "joe@example.com"
+        }
+    ],
+    "subject": "RFC 8621 Section 4.1.4 test",
+    "receivedAt": "2018-07-10T01:03:11Z",
+    "sentAt": "2018-07-10T11:03:11+10:00",
+    "messageId": [
+        "my-message-id"
+    ],
+    "bodyStructure": {
+        "subParts": [
+            {
+                "blobId": "Part A",
+                "disposition": "inline",
+                "type": "text/plain"
+            },
+            {
+                "subParts": [
+                    {
+                        "subParts": [
+                            {
+                                "subParts": [
+                                    {
+                                        "blobId": "Part B",
+                                        "disposition": "inline",
+                                        "type": "text/plain"
+                                    },
+                                    {
+                                        "blobId": "Part C",
+                                        "disposition": "inline",
+                                        "type": "image/jpeg"
+                                    },
+                                    {
+                                        "blobId": "Part D",
+                                        "disposition": "inline",
+                                        "type": "text/plain"
+                                    }
+                                ],
+                                "type": "multipart/mixed"
+                            },
+                            {
+                                "subParts": [
+                                    {
+                                        "blobId": "Part E",
+                                        "type": "text/html"
+                                    },
+                                    {
+                                        "blobId": "Part F",
+                                        "type": "image/jpeg"
+                                    }
+                                ],
+                                "type": "multipart/related"
+                            }
+                        ],
+                        "type": "multipart/alternative"
+                    },
+                    {
+                        "blobId": "Part G",
+                        "disposition": "attachment",
+                        "type": "image/jpeg"
+                    },
+                    {
+                        "blobId": "Part H",
+                        "type": "application/x-excel"
+                    },
+                    {
+                        "blobId": "Part J",
+                        "type": "x-message/rfc822"
+                    }
+                ],
+                "type": "multipart/mixed"
+            },
+            {
+                "blobId": "Part K",
+                "disposition": "inline",
+                "type": "text/plain"
+            }
+        ],
+        "type": "multipart/mixed"
+    }
+}

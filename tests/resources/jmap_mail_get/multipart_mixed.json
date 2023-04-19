@@ -1,0 +1,266 @@
+{
+  "mailboxIds": {
+    "a": true
+  },
+  "keywords": {
+    "tag": true
+  },
+  "size": 1853,
+  "receivedAt": "2028-09-19T18:13:20Z",
+  "from": [
+    {
+      "name": "Nathaniel Borenstein",
+      "email": "nsb@nsb.fv.com"
+    }
+  ],
+  "to": [
+    {
+      "name": "Ned Freed",
+      "email": "ned@innosoft.com"
+    }
+  ],
+  "subject": "A multipart example",
+  "sentAt": "1994-10-07T23:15:05Z",
+  "bodyStructure": {
+    "size": 0,
+    "headers": [
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
+        "name": "From",
+        "value": " Nathaniel Borenstein <nsb@nsb.fv.com>"
+      },
+      {
+        "name": "To",
+        "value": " Ned Freed <ned@innosoft.com>"
+      },
+      {
+        "name": "Date",
+        "value": " Fri, 07 Oct 1994 16:15:05 -0700 (PDT)"
+      },
+      {
+        "name": "Subject",
+        "value": " A multipart example"
+      },
+      {
+        "name": "Content-Type",
+        "value": " multipart/mixed;\n            boundary=unique-boundary-1"
+      }
+    ],
+    "type": "multipart/mixed",
+    "subParts": [
+      {
+        "partId": "1",
+        "blobId": "blob_0",
+        "size": 262,
+        "type": "text/plain",
+        "charset": "us-ascii"
+      },
+      {
+        "partId": "2",
+        "blobId": "blob_1",
+        "size": 111,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/plain; charset=US-ASCII"
+          }
+        ],
+        "type": "text/plain",
+        "charset": "US-ASCII"
+      },
+      {
+        "size": 0,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " multipart/parallel; boundary=unique-boundary-2"
+          }
+        ],
+        "type": "multipart/parallel",
+        "subParts": [
+          {
+            "partId": "4",
+            "blobId": "blob_2",
+            "size": 85,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " audio/basic"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              }
+            ],
+            "type": "audio/basic",
+            "charset": "us-ascii"
+          },
+          {
+            "partId": "5",
+            "blobId": "blob_3",
+            "size": 44,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": " image/jpeg"
+              },
+              {
+                "name": "Content-Transfer-Encoding",
+                "value": " base64"
+              }
+            ],
+            "type": "image/jpeg",
+            "charset": "us-ascii"
+          }
+        ]
+      },
+      {
+        "partId": "6",
+        "blobId": "blob_4",
+        "size": 140,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " text/enriched"
+          }
+        ],
+        "type": "text/enriched",
+        "charset": "us-ascii"
+      },
+      {
+        "partId": "7",
+        "blobId": "blob_5",
+        "size": 223,
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": " message/rfc822"
+          }
+        ],
+        "type": "message/rfc822"
+      }
+    ]
+  },
+  "bodyValues": {
+    "1": {
+      "value": "... Some text appears here ...\n\n[Note that the blank between the boundary and the start\nof the te...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    },
+    "2": {
+      "value": "This could have been part of the previous part, but\nillustrates explicit versus implicit typing o...",
+      "isEncodingProblem": false,
+      "isTruncated": true
+    }
+  },
+  "textBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 262,
+      "type": "text/plain",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 111,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=US-ASCII"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "US-ASCII"
+    }
+  ],
+  "htmlBody": [
+    {
+      "partId": "1",
+      "blobId": "blob_0",
+      "size": 262,
+      "type": "text/plain",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "2",
+      "blobId": "blob_1",
+      "size": 111,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/plain; charset=US-ASCII"
+        }
+      ],
+      "type": "text/plain",
+      "charset": "US-ASCII"
+    }
+  ],
+  "attachments": [
+    {
+      "partId": "4",
+      "blobId": "blob_2",
+      "size": 85,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " audio/basic"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "audio/basic",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "5",
+      "blobId": "blob_3",
+      "size": 44,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " image/jpeg"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": " base64"
+        }
+      ],
+      "type": "image/jpeg",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "6",
+      "blobId": "blob_4",
+      "size": 140,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " text/enriched"
+        }
+      ],
+      "type": "text/enriched",
+      "charset": "us-ascii"
+    },
+    {
+      "partId": "7",
+      "blobId": "blob_5",
+      "size": 223,
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": " message/rfc822"
+        }
+      ],
+      "type": "message/rfc822"
+    }
+  ],
+  "hasAttachment": true,
+  "preview": "... Some text appears here ...\n\n[Note that the blank between the boundary and the start\nof the text in this part means no header fields were\ngiven and this is text in the US-ASCII character set.\nIt could have been done with explicit typing as in the\nnex..."
+}

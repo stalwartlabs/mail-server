@@ -2,14 +2,21 @@
 name = "tests"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 
 [dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
+jmap = { path = "../crates/jmap" }
+jmap_proto = { path = "../crates/jmap-proto" }
 utils = { path = "../crates/utils" }
-
-[dev-dependencies]
+jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
+mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 tokio = { version = "1.23", features = ["full"] }
 csv = "1.1"
 rayon = { version = "1.5.1" }
 flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

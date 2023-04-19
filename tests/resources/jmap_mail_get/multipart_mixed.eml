@@ -1,0 +1,72 @@
+MIME-Version: 1.0
+From: Nathaniel Borenstein <nsb@nsb.fv.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Fri, 07 Oct 1994 16:15:05 -0700 (PDT)
+Subject: A multipart example
+Content-Type: multipart/mixed;
+            boundary=unique-boundary-1
+
+This is the preamble area of a multipart message.
+Mail readers that understand multipart format
+should ignore this preamble.
+
+If you are reading this text, you might want to
+consider changing to a mail reader that understands
+how to properly display multipart messages.
+
+--unique-boundary-1
+
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+--unique-boundary-1
+Content-type: text/plain; charset=US-ASCII
+
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+--unique-boundary-1
+Content-Type: multipart/parallel; boundary=unique-boundary-2
+
+--unique-boundary-2
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+--unique-boundary-2
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+... base64-encoded image data goes here ...
+
+--unique-boundary-2--
+
+--unique-boundary-1
+Content-type: text/enriched
+
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+--unique-boundary-1
+Content-Type: message/rfc822
+
+From: (mailbox in US-ASCII)
+To: (address in US-ASCII)
+Subject: (subject in US-ASCII)
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+... Additional text in ISO-8859-1 goes here ...
+
+--unique-boundary-1--
