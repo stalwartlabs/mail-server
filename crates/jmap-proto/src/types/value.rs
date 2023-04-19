@@ -5,7 +5,6 @@ use serde::Serialize;
 use store::BlobKind;
 
 use crate::{
-    error::method::MethodError,
     object::Object,
     parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::reference::{MaybeReference, ResultReference},
@@ -154,16 +153,6 @@ impl Value {
                 .map(Value::Bool)
                 .unwrap_or(Value::Null)),
             _ => Value::parse::<String, String>(parser),
-        }
-    }
-
-    pub fn as_blob(&self) -> Result<&BlobId, MethodError> {
-        match self {
-            Value::BlobId(blob) => Ok(blob),
-            _ => {
-                let log = "log";
-                Err(MethodError::ServerPartialFail)
-            }
         }
     }
 }

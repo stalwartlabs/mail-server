@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use jmap::{api::SessionManager, JMAP};
 use jmap_client::client::{Client, Credentials};
@@ -136,6 +136,7 @@ pub fn replace_boundaries(string: String) -> String {
 pub fn replace_blob_ids(string: String) -> String {
     let values = find_values(&string, "blobId\":");
     if !values.is_empty() {
+        let values = BTreeSet::from_iter(values).into_iter().collect::<Vec<_>>();
         replace_values(
             string,
             &values,
