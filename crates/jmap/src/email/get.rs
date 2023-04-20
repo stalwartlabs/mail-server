@@ -16,9 +16,10 @@ use super::body::{ToBodyPart, TruncateBody};
 impl JMAP {
     pub async fn email_get(
         &self,
-        request: GetRequest<GetArguments>,
+        mut request: GetRequest<GetArguments>,
     ) -> Result<GetResponse, MethodError> {
-        let properties = request.properties.map(|v| v.unwrap()).unwrap_or_else(|| {
+        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let properties = request.unwrap_properties().unwrap_or_else(|| {
             vec![
                 Property::Id,
                 Property::BlobId,
@@ -65,13 +66,29 @@ impl JMAP {
         let fetch_all_body_values = request.arguments.fetch_all_body_values.unwrap_or(false);
         let max_body_value_bytes = request.arguments.max_body_value_bytes.unwrap_or(0);
 
-        let ids = if let Some(ids) = request.ids.map(|v| v.unwrap()) {
+        let account_id = request.account_id.document_id();
+        let ids = if let Some(ids) = ids {
             ids
         } else {
-            let implement = "";
-            todo!()
+            let document_ids = self
+                .get_document_ids(account_id, Collection::Email)
+                .await?
+                .unwrap_or_default()
+                .into_iter()
+                .take(self.config.get_max_objects)
+                .collect::<Vec<_>>();
+            self.get_properties::<u32>(
+                account_id,
+                Collection::Email,
+                &document_ids,
+                Property::ThreadId,
+            )
+            .await?
+            .into_iter()
+            .zip(document_ids)
+            .filter_map(|(thread_id, document_id)| Id::from_parts(thread_id?, document_id).into())
+            .collect()
         };
-        let account_id = request.account_id.document_id();
         let mut response = GetResponse {
             account_id: Some(request.account_id),
             state: self.get_state(account_id, Collection::Email).await?,

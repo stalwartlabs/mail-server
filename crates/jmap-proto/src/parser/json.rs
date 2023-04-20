@@ -252,15 +252,25 @@ impl<'x> Parser<'x> {
         Err(self.error("Unexpected EOF"))
     }
 
-    pub fn next_dict_key<T: JsonObjectParser + Display + Eq>(&mut self) -> super::Result<T> {
-        self.next_token::<T>().and_then(|k| {
-            let k = k.unwrap_string("")?;
-            self.next_token::<T>()?.assert(Token::Colon)?;
-            Ok(k)
-        })
+    pub fn next_dict_key<T: JsonObjectParser + Display + Eq>(
+        &mut self,
+    ) -> super::Result<Option<T>> {
+        loop {
+            match self.next_token::<T>()? {
+                Token::String(k) => {
+                    self.next_token::<T>()?.assert(Token::Colon)?;
+                    return Ok(Some(k));
+                }
+                Token::Comma => (),
+                Token::DictEnd => return Ok(None),
+                token => {
+                    return Err(self.error(&format!("Expected object property, found {}", token)))
+                }
+            }
+        }
     }
 
-    pub fn is_dict_end(&mut self) -> super::Result<bool> {
+    /*pub fn is_dict_end(&mut self) -> super::Result<bool> {
         match self.next_token::<String>()? {
             Token::Comma => Ok(false),
             Token::DictEnd => Ok(true),
@@ -274,7 +284,7 @@ impl<'x> Parser<'x> {
             Token::ArrayEnd => Ok(true),
             token => Err(self.error(&format!("Expected ',' or ']', found {}", token))),
         }
-    }
+    }*/
 
     pub fn skip_token(
         &mut self,

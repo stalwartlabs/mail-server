@@ -34,7 +34,6 @@
   "subject": "Why not both importing AND exporting? ☺",
   "sentAt": "2021-11-20T22:22:01Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Date",
@@ -64,7 +63,6 @@
     "type": "multipart/mixed",
     "subParts": [
       {
-        "size": 0,
         "headers": [
           {
             "name": "Content-Type",

@@ -56,13 +56,12 @@ impl JsonObjectParser for GetSearchSnippetRequest {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
-                0x6449_746e_756f_6363_61 if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
+                0x6449_746e_756f_6363_61 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                0x7265_746c_6966 if !property.is_ref => match parser.next_token::<Ignore>()? {
+                0x7265_746c_6966 if !key.is_ref => match parser.next_token::<Ignore>()? {
                     Token::DictStart => {
                         request.filter = parse_filter(parser)?;
                     }
@@ -72,7 +71,7 @@ impl JsonObjectParser for GetSearchSnippetRequest {
                     }
                 },
                 0x7364_496c_6961_6d65 => {
-                    request.email_ids = if !property.is_ref {
+                    request.email_ids = if !key.is_ref {
                         MaybeReference::Value(<Vec<Id>>::parse(parser)?)
                     } else {
                         MaybeReference::Reference(ResultReference::parse(parser)?)
@@ -82,9 +81,7 @@ impl JsonObjectParser for GetSearchSnippetRequest {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }

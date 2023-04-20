@@ -69,7 +69,6 @@
   "subject": "Headers test",
   "sentAt": "2018-07-10T01:03:11Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Bcc",

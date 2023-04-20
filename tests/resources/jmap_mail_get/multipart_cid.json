@@ -25,7 +25,6 @@
   "subject": "Test message from Microsoft Outlook 00",
   "sentAt": "2000-05-17T23:44:45Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "From",
@@ -79,7 +78,6 @@
     "type": "multipart/related",
     "subParts": [
       {
-        "size": 0,
         "headers": [
           {
             "name": "Content-Type",

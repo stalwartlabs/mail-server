@@ -13,6 +13,7 @@ pub mod api;
 pub mod blob;
 pub mod changes;
 pub mod email;
+pub mod thread;
 
 pub struct JMAP {
     pub store: Store,
@@ -62,11 +63,12 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         document_id: u32,
-        property: &Property,
+        property: impl AsRef<Property>,
     ) -> Result<Option<U>, MethodError>
     where
         U: Deserialize + 'static,
     {
+        let property = property.as_ref();
         match self
             .store
             .get_value::<U>(ValueKey::new(account_id, collection, document_id, property))
@@ -82,6 +84,44 @@ impl JMAP {
                                 property = ?property,
                                 error = ?err,
                                 "Failed to retrieve property");
+                Err(MethodError::ServerPartialFail)
+            }
+        }
+    }
+
+    pub async fn get_properties<U>(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        document_ids: &[u32],
+        property: impl AsRef<Property>,
+    ) -> Result<Vec<Option<U>>, MethodError>
+    where
+        U: Deserialize + 'static,
+    {
+        let property = property.as_ref();
+        match self
+            .store
+            .get_values::<U>(
+                document_ids
+                    .iter()
+                    .map(|document_id| {
+                        ValueKey::new(account_id, collection, *document_id, property)
+                    })
+                    .collect(),
+            )
+            .await
+        {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                collection = ?collection,
+                                document_ids = ?document_ids,
+                                property = ?property,
+                                error = ?err,
+                                "Failed to retrieve properties");
                 Err(MethodError::ServerPartialFail)
             }
         }

@@ -177,7 +177,13 @@ impl IntoForm for HeaderValue<'_> {
                 grouplist
                     .into_iter()
                     .flat_map(|group| group.addresses)
-                    .map(Into::into)
+                    .filter_map(|addr| {
+                        if addr.address.as_ref()?.contains('@') {
+                            Some(addr.into())
+                        } else {
+                            None
+                        }
+                    })
                     .collect(),
             ),
             (HeaderValue::Address(addr), HeaderForm::GroupedAddresses) => {

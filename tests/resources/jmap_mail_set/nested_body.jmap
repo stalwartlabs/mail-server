@@ -19,7 +19,6 @@
   "subject": "RFC 8621 Section 4.1.4 test",
   "sentAt": "2018-07-10T01:03:11Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Date",
@@ -67,7 +66,6 @@
         "disposition": "inline"
       },
       {
-        "size": 0,
         "headers": [
           {
             "name": "Content-Type",
@@ -77,7 +75,6 @@
         "type": "multipart/mixed",
         "subParts": [
           {
-            "size": 0,
             "headers": [
               {
                 "name": "Content-Type",
@@ -87,7 +84,6 @@
             "type": "multipart/alternative",
             "subParts": [
               {
-                "size": 0,
                 "headers": [
                   {
                     "name": "Content-Type",
@@ -164,7 +160,6 @@
                 ]
               },
               {
-                "size": 0,
                 "headers": [
                   {
                     "name": "Content-Type",

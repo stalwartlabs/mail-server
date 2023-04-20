@@ -8,6 +8,8 @@ use tokio::sync::watch;
 use crate::{add_test_certs, store::TempDir};
 
 pub mod email_get;
+pub mod email_query;
+pub mod thread_get;
 
 const SERVER: &str = "
 [server]
@@ -47,6 +49,8 @@ pub async fn jmap_tests() {
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
     email_get::test(params.server.clone(), &mut params.client).await;
+    //email_query::test(params.server.clone(), &mut params.client).await;
+    //thread_get::test(params.server.clone(), &mut params.client).await;
     if delete {
         params.temp_dir.delete();
     }
@@ -136,7 +140,7 @@ pub fn replace_boundaries(string: String) -> String {
 pub fn replace_blob_ids(string: String) -> String {
     let values = find_values(&string, "blobId\":");
     if !values.is_empty() {
-        let values = BTreeSet::from_iter(values).into_iter().collect::<Vec<_>>();
+        //let values = BTreeSet::from_iter(values).into_iter().collect::<Vec<_>>();
         replace_values(
             string,
             &values,

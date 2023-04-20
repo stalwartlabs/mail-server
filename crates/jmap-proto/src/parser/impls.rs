@@ -175,12 +175,14 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
         let mut vec = Vec::new();
 
         parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
-        while {
-            vec.push(parser.next_token::<T>()?.unwrap_string("")?);
-
-            !parser.is_array_end()?
-        } {}
-
+        loop {
+            match parser.next_token::<T>()? {
+                Token::String(item) => vec.push(item),
+                Token::Comma => (),
+                Token::ArrayEnd => break,
+                token => return Err(token.error("", &token.to_string())),
+            }
+        }
         Ok(vec)
     }
 }
@@ -193,12 +195,14 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
         match parser.next_token::<Ignore>()? {
             Token::ArrayStart => {
                 let mut vec = Vec::new();
-                while {
-                    vec.push(parser.next_token::<T>()?.unwrap_string("")?);
-
-                    !parser.is_array_end()?
-                } {}
-
+                loop {
+                    match parser.next_token::<T>()? {
+                        Token::String(item) => vec.push(item),
+                        Token::Comma => (),
+                        Token::ArrayEnd => break,
+                        token => return Err(token.error("", &token.to_string())),
+                    }
+                }
                 Ok(Some(vec))
             }
             Token::Null => Ok(None),
@@ -215,10 +219,9 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser f
         let mut map = VecMap::new();
 
         parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
-        while {
-            map.append(parser.next_dict_key()?, V::parse(parser)?);
-            !parser.is_dict_end()?
-        } {}
+        while let Some(key) = parser.next_dict_key()? {
+            map.append(key, V::parse(parser)?);
+        }
 
         Ok(map)
     }
@@ -235,10 +238,9 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
             Token::DictStart => {
                 let mut map = VecMap::new();
 
-                while {
-                    map.append(parser.next_dict_key()?, V::parse(parser)?);
-                    !parser.is_dict_end()?
-                } {}
+                while let Some(key) = parser.next_dict_key()? {
+                    map.append(key, V::parse(parser)?);
+                }
 
                 Ok(Some(map))
             }

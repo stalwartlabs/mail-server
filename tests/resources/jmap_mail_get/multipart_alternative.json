@@ -21,7 +21,6 @@
   ],
   "subject": "Multipart Email Example",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "From",

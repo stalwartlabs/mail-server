@@ -36,11 +36,10 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                 } else {
                     None
                 };
-                let mut add_subparts = false;
 
                 for property in properties {
                     let value = match property {
-                        Property::PartId => part_id.to_string().into(),
+                        Property::PartId if multipart.is_none() => part_id.to_string().into(),
                         Property::BlobId if multipart.is_none() => {
                             let base_offset = blob_id.start_offset();
                             BlobId::new_section(
@@ -77,7 +76,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                             .content_type()
                             .and_then(|ct| ct.attribute("charset"))
                             .or(match &part.body {
-                                PartType::Text(_) | PartType::Html(_) => Some("utf-8"),
+                                PartType::Text(_) | PartType::Html(_) => Some("us-ascii"),
                                 _ => None,
                             })
                             .into(),
@@ -97,13 +96,7 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                         Property::Location => part.content_location().into(),
                         Property::Header(_) => part.header_to_value(property, raw_message),
                         Property::Headers => part.headers_to_value(raw_message),
-                        Property::SubParts => match multipart {
-                            Some(multipart) if !multipart.is_empty() => {
-                                add_subparts = true;
-                                continue;
-                            }
-                            _ => Vec::<String>::new().into(),
-                        },
+                        Property::SubParts => continue,
                         _ => Value::Null,
                     };
                     values.append(property.clone(), value);
@@ -111,8 +104,8 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
 
                 subparts.push(values);
 
-                if add_subparts {
-                    let multipart = multipart.unwrap().clone();
+                if let Some(multipart) = multipart {
+                    let multipart = multipart.clone();
                     parts_stack.push((
                         parts,
                         std::mem::replace(&mut subparts, Vec::with_capacity(multipart.len())),

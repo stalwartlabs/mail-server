@@ -25,7 +25,6 @@
   "subject": "World domination",
   "sentAt": "2018-07-10T01:05:08Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Date",

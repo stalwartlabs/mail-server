@@ -171,9 +171,8 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
                 0x6449_746e_756f_6363_61 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
@@ -214,14 +213,12 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 }
 
                 _ => {
-                    if !request.arguments.parse(parser, property)? {
+                    if !request.arguments.parse(parser, key)? {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                     }
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }
@@ -463,8 +460,8 @@ impl JsonObjectParser for Comparator {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            match parser.next_dict_key::<u128>()? {
+        while let Some(key) = parser.next_dict_key::<u128>()? {
+            match key {
                 0x676e_6964_6e65_6373_4173_69 => {
                     comp.is_ascending = parser
                         .next_token::<Ignore>()?
@@ -490,9 +487,7 @@ impl JsonObjectParser for Comparator {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(comp)
     }

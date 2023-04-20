@@ -22,7 +22,6 @@
   "subject": "A multipart example",
   "sentAt": "1994-10-07T23:15:05Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "MIME-Version",
@@ -55,6 +54,7 @@
         "partId": "1",
         "blobId": "blob_0",
         "size": 262,
+        "headers": [],
         "type": "text/plain",
         "charset": "us-ascii"
       },
@@ -72,7 +72,6 @@
         "charset": "US-ASCII"
       },
       {
-        "size": 0,
         "headers": [
           {
             "name": "Content-Type",
@@ -161,6 +160,7 @@
       "partId": "1",
       "blobId": "blob_0",
       "size": 262,
+      "headers": [],
       "type": "text/plain",
       "charset": "us-ascii"
     },
@@ -183,6 +183,7 @@
       "partId": "1",
       "blobId": "blob_0",
       "size": 262,
+      "headers": [],
       "type": "text/plain",
       "charset": "us-ascii"
     },

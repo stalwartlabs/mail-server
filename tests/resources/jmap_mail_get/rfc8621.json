@@ -9,7 +9,6 @@
   "receivedAt": "1997-07-27T10:40:00Z",
   "subject": "RFC 8621 Section 4.1.4 test",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Subject",
@@ -41,7 +40,6 @@
         "disposition": "inline"
       },
       {
-        "size": 0,
         "headers": [
           {
             "name": "Content-Type",
@@ -51,7 +49,6 @@
         "type": "multipart/mixed",
         "subParts": [
           {
-            "size": 0,
             "headers": [
               {
                 "name": "Content-Type",
@@ -61,7 +58,6 @@
             "type": "multipart/alternative",
             "subParts": [
               {
-                "size": 0,
                 "headers": [
                   {
                     "name": "Content-Type",
@@ -126,7 +122,6 @@
                 ]
               },
               {
-                "size": 0,
                 "headers": [
                   {
                     "name": "Content-Type",

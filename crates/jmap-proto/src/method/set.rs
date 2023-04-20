@@ -121,39 +121,36 @@ impl JsonObjectParser for SetRequest {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
-                0x6449_746e_756f_6363_61 if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
+                0x6449_746e_756f_6363_61 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                0x6574_6165_7263 if !property.is_ref => {
+                0x6574_6165_7263 if !key.is_ref => {
                     request.create = <Option<VecMap<String, Object<SetValue>>>>::parse(parser)?;
                 }
-                0x6574_6164_7075 if !property.is_ref => {
+                0x6574_6164_7075 if !key.is_ref => {
                     request.update = <Option<VecMap<Id, Object<SetValue>>>>::parse(parser)?;
                 }
                 0x0079_6f72_7473_6564 => {
-                    request.destroy = if !property.is_ref {
+                    request.destroy = if !key.is_ref {
                         <Option<Vec<Id>>>::parse(parser)?.map(MaybeReference::Value)
                     } else {
                         Some(MaybeReference::Reference(ResultReference::parse(parser)?))
                     };
                 }
-                0x6574_6174_536e_4966_69 if !property.is_ref => {
+                0x6574_6174_536e_4966_69 if !key.is_ref => {
                     request.if_in_state = parser
                         .next_token::<State>()?
                         .unwrap_string_or_null("ifInState")?;
                 }
                 _ => {
-                    if !request.arguments.parse(parser, property)? {
+                    if !request.arguments.parse(parser, key)? {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                     }
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }
@@ -172,10 +169,9 @@ impl JsonObjectParser for Object<SetValue> {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let mut property = parser.next_dict_key::<SetProperty>()?;
-            let value = if !property.is_ref {
-                match &property.property {
+        while let Some(mut key) = parser.next_dict_key::<SetProperty>()? {
+            let value = if !key.is_ref {
+                match &key.property {
                     Property::Id | Property::ThreadId => parser
                         .next_token::<Id>()?
                         .unwrap_string_or_null("")?
@@ -221,7 +217,10 @@ impl JsonObjectParser for Object<SetValue> {
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::TextBody | Property::HtmlBody => {
                         if let MethodObject::Email = &parser.ctx {
-                            SetValue::Value(Value::parse::<ObjectProperty, String>(parser)?)
+                            SetValue::Value(Value::parse::<ObjectProperty, String>(
+                                parser.next_token()?,
+                                parser,
+                            )?)
                         } else {
                             parser
                                 .next_token::<String>()?
@@ -249,17 +248,17 @@ impl JsonObjectParser for Object<SetValue> {
                         .map(SetValue::IdReference)
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::MailboxIds => {
-                        if property.patch.is_empty() {
+                        if key.patch.is_empty() {
                             SetValue::IdReferences(
                                 <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
                             )
                         } else {
-                            property.patch.push(Value::Bool(bool::parse(parser)?));
-                            SetValue::Patch(property.patch)
+                            key.patch.push(Value::Bool(bool::parse(parser)?));
+                            SetValue::Patch(key.patch)
                         }
                     }
                     Property::Keywords => {
-                        if property.patch.is_empty() {
+                        if key.patch.is_empty() {
                             SetValue::Value(Value::List(
                                 <SetValueMap<Keyword>>::parse(parser)?
                                     .values
@@ -268,12 +267,14 @@ impl JsonObjectParser for Object<SetValue> {
                                     .collect(),
                             ))
                         } else {
-                            property.patch.push(Value::Bool(bool::parse(parser)?));
-                            SetValue::Patch(property.patch)
+                            key.patch.push(Value::Bool(bool::parse(parser)?));
+                            SetValue::Patch(key.patch)
                         }
                     }
 
-                    Property::Acl => SetValue::Value(Value::parse::<String, Acl>(parser)?),
+                    Property::Acl => {
+                        SetValue::Value(Value::parse::<String, Acl>(parser.next_token()?, parser)?)
+                    }
                     Property::Aliases
                     | Property::Attachments
                     | Property::Bcc
@@ -293,19 +294,24 @@ impl JsonObjectParser for Object<SetValue> {
                     | Property::SubParts
                     | Property::To
                     | Property::UndoStatus => {
-                        SetValue::Value(Value::parse::<ObjectProperty, String>(parser)?)
+                        SetValue::Value(Value::parse::<ObjectProperty, String>(
+                            parser.next_token()?,
+                            parser,
+                        )?)
                     }
-                    Property::Members => {
-                        SetValue::Value(Value::parse::<ObjectProperty, Id>(parser)?)
-                    }
+                    Property::Members => SetValue::Value(Value::parse::<ObjectProperty, Id>(
+                        parser.next_token()?,
+                        parser,
+                    )?),
                     Property::Header(h) => SetValue::Value(if matches!(h.form, HeaderForm::Date) {
-                        Value::parse::<ObjectProperty, UTCDate>(parser)
+                        Value::parse::<ObjectProperty, UTCDate>(parser.next_token()?, parser)
                     } else {
-                        Value::parse::<ObjectProperty, String>(parser)
+                        Value::parse::<ObjectProperty, String>(parser.next_token()?, parser)
                     }?),
-                    Property::Types => {
-                        SetValue::Value(Value::parse::<ObjectProperty, TypeState>(parser)?)
-                    }
+                    Property::Types => SetValue::Value(Value::parse::<ObjectProperty, TypeState>(
+                        parser.next_token()?,
+                        parser,
+                    )?),
                     _ => {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                         SetValue::Value(Value::Null)
@@ -315,10 +321,8 @@ impl JsonObjectParser for Object<SetValue> {
                 SetValue::ResultReference(ResultReference::parse(parser)?)
             };
 
-            obj.properties.append(property.property, value);
-
-            !parser.is_dict_end()?
-        } {}
+            obj.properties.append(key.property, value);
+        }
 
         Ok(obj)
     }

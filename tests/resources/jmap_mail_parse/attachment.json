@@ -19,7 +19,6 @@
   "subject": "Map of Argentina with Description",
   "sentAt": "1998-08-13T07:42:41Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "Content-Type",

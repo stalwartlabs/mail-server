@@ -57,10 +57,9 @@ impl JsonObjectParser for ParseEmailRequest {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match (&property.hash[0], &property.hash[1]) {
-                (0x6449_746e_756f_6363_61, _) if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match (&key.hash[0], &key.hash[1]) {
+                (0x6449_746e_756f_6363_61, _) if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 (0x7364_4962_6f6c_62, _) => {
@@ -96,9 +95,7 @@ impl JsonObjectParser for ParseEmailRequest {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }

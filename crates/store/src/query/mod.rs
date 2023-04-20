@@ -70,6 +70,16 @@ pub struct SortedResultSet {
     pub found_anchor: bool,
 }
 
+impl ResultSet {
+    pub fn new(account_id: u32, collection: impl Into<u8>, results: RoaringBitmap) -> Self {
+        ResultSet {
+            account_id,
+            collection: collection.into(),
+            results,
+        }
+    }
+}
+
 impl Filter {
     pub fn cond(field: impl Into<u8>, op: Operator, value: impl Serialize) -> Self {
         Filter::MatchValue {

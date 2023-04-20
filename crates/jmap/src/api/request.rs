@@ -9,6 +9,7 @@ use crate::JMAP;
 
 impl JMAP {
     pub async fn handle_request(&self, bytes: &[u8]) -> Result<Response, RequestError> {
+        println!("<- {}", String::from_utf8_lossy(bytes));
         let request = Request::parse(
             bytes,
             self.config.request_max_calls,
@@ -32,7 +33,7 @@ impl JMAP {
                         self.email_get(call.with_arguments(arguments)).await.into()
                     }
                     get::RequestArguments::Mailbox => todo!(),
-                    get::RequestArguments::Thread => todo!(),
+                    get::RequestArguments::Thread => self.thread_get(call).await.into(),
                     get::RequestArguments::Identity => todo!(),
                     get::RequestArguments::EmailSubmission => todo!(),
                     get::RequestArguments::PushSubscription => todo!(),

@@ -25,7 +25,6 @@
   "subject": "Test message from Microsoft Outlook 00",
   "sentAt": "2000-05-17T23:36:13Z",
   "bodyStructure": {
-    "size": 0,
     "headers": [
       {
         "name": "From",

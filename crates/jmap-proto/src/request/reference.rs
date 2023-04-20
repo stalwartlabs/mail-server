@@ -44,8 +44,8 @@ impl JsonObjectParser for ResultReference {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            match parser.next_dict_key::<u64>()? {
+        while let Some(key) = parser.next_dict_key::<u64>()? {
+            match key {
                 0x664f_746c_7573_6572 => {
                     result_of = Some(parser.next_token::<String>()?.unwrap_string("resultOf")?);
                 }
@@ -59,9 +59,7 @@ impl JsonObjectParser for ResultReference {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         if let (Some(result_of), Some(name), Some(path)) = (result_of, name, path) {
             Ok(Self {

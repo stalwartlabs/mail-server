@@ -58,26 +58,31 @@ pub trait IntoValue: Eq {
 
 impl Value {
     pub fn parse<K: JsonObjectParser + IntoProperty, V: JsonObjectParser + IntoValue>(
+        token: Token<V>,
         parser: &mut Parser<'_>,
     ) -> crate::parser::Result<Self> {
-        Ok(match parser.next_token::<V>()? {
+        Ok(match token {
             Token::String(v) => v.into_value(),
             Token::DictStart => {
                 let mut properties = Object::with_capacity(4);
-                while {
-                    let property = parser.next_dict_key::<K>()?.into_property();
+                while let Some(key) = parser.next_dict_key::<K>()? {
+                    let property = key.into_property();
                     let value = Value::from_property(parser, &property)?;
                     properties.append(property, value);
-                    !parser.is_dict_end()?
-                } {}
+                }
                 Value::Object(properties)
             }
             Token::ArrayStart => {
                 let mut values = Vec::with_capacity(4);
-                while {
-                    values.push(Value::parse::<K, V>(parser)?);
-                    !parser.is_array_end()?
-                } {}
+                loop {
+                    match parser.next_token::<V>()? {
+                        Token::Comma => (),
+                        Token::ArrayEnd => break,
+                        token => {
+                            values.push(Value::parse::<K, V>(token, parser)?);
+                        }
+                    }
+                }
                 Value::List(values)
             }
             Token::Integer(v) => Value::UnsignedInt(std::cmp::max(v, 0) as u64),
@@ -124,9 +129,9 @@ impl Value {
 
             Property::Header(h) => {
                 if matches!(h.form, HeaderForm::Date) {
-                    Value::parse::<ObjectProperty, UTCDate>(parser)
+                    Value::parse::<ObjectProperty, UTCDate>(parser.next_token()?, parser)
                 } else {
-                    Value::parse::<ObjectProperty, String>(parser)
+                    Value::parse::<ObjectProperty, String>(parser.next_token()?, parser)
                 }
             }
 
@@ -134,8 +139,12 @@ impl Value {
             | Property::Addresses
             | Property::MailFrom
             | Property::RcptTo
-            | Property::SubParts => Value::parse::<ObjectProperty, String>(parser),
-            Property::Language | Property::Parameters => Value::parse::<String, String>(parser),
+            | Property::SubParts => {
+                Value::parse::<ObjectProperty, String>(parser.next_token()?, parser)
+            }
+            Property::Language | Property::Parameters => {
+                Value::parse::<String, String>(parser.next_token()?, parser)
+            }
 
             Property::IsEncodingProblem
             | Property::IsTruncated
@@ -152,7 +161,7 @@ impl Value {
                 .unwrap_bool_or_null("")?
                 .map(Value::Bool)
                 .unwrap_or(Value::Null)),
-            _ => Value::parse::<String, String>(parser),
+            _ => Value::parse::<String, String>(parser.next_token()?, parser),
         }
     }
 }
@@ -165,13 +174,11 @@ impl<T: JsonObjectParser + Display + Eq> JsonObjectParser for SetValueMap<T> {
         let mut values = Vec::new();
         match parser.next_token::<Ignore>()? {
             Token::DictStart => {
-                while {
-                    let value = parser.next_dict_key::<T>()?;
+                while let Some(value) = parser.next_dict_key()? {
                     if bool::parse(parser)? {
                         values.push(value);
                     }
-                    !parser.is_dict_end()?
-                } {}
+                }
             }
             Token::Null => (),
             token => return Err(token.error("", &token.to_string())),
@@ -334,7 +341,22 @@ impl From<Group<'_>> for Value {
         Value::Object(
             Object::with_capacity(2)
                 .with_property(Property::Name, group.name)
-                .with_property(Property::Addresses, group.addresses),
+                .with_property(
+                    Property::Addresses,
+                    Value::List(
+                        group
+                            .addresses
+                            .into_iter()
+                            .filter_map(|addr| {
+                                if addr.address.as_ref()?.contains('@') {
+                                    Some(addr.into())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<Value>>(),
+                    ),
+                ),
         )
     }
 }

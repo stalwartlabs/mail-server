@@ -38,16 +38,25 @@ impl Request {
             let mut found_valid_keys = false;
             let mut parser = Parser::new(json);
             parser.next_token::<String>()?.assert(Token::DictStart)?;
-            while {
-                match parser.next_dict_key::<u128>()? {
+            while let Some(key) = parser.next_dict_key::<u128>()? {
+                match key {
                     0x676e_6973_75 => {
                         found_valid_keys = true;
                         parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
-                        while {
-                            request.using |=
-                                parser.next_token::<Capability>()?.unwrap_string("using")? as u32;
-                            !parser.is_array_end()?
-                        } {}
+                        loop {
+                            match parser.next_token::<Capability>()? {
+                                Token::String(capability) => {
+                                    request.using |= capability as u32;
+                                }
+                                Token::Comma => (),
+                                Token::ArrayEnd => break,
+                                token => {
+                                    return Err(token
+                                        .error("capability", &token.to_string())
+                                        .into())
+                                }
+                            }
+                        }
                     }
                     0x736c_6c61_4364_6f68_7465_6d => {
                         found_valid_keys = true;
@@ -55,11 +64,16 @@ impl Request {
                         parser
                             .next_token::<Ignore>()?
                             .assert_jmap(Token::ArrayStart)?;
-                        while {
+                        loop {
+                            match parser.next_token::<Ignore>()? {
+                                Token::ArrayStart => (),
+                                Token::Comma => continue,
+                                Token::ArrayEnd => break,
+                                token => {
+                                    return Err(RequestError::not_request("Invalid JMAP request"));
+                                }
+                            };
                             if request.method_calls.len() < max_calls {
-                                parser
-                                    .next_token::<Ignore>()?
-                                    .assert_jmap(Token::ArrayStart)?;
                                 let method_name = match parser.next_token::<MethodName>() {
                                     Ok(Token::String(method)) => method,
                                     Ok(_) => {
@@ -148,29 +162,25 @@ impl Request {
                             } else {
                                 return Err(RequestError::limit(RequestLimitError::CallsIn));
                             }
-                            !parser.is_array_end()?
-                        } {}
+                        }
                     }
                     0x7364_4964_6574_6165_7263 => {
                         found_valid_keys = true;
                         let mut created_ids = HashMap::new();
                         parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
-                        while {
+                        while let Some(key) = parser.next_dict_key::<String>()? {
                             created_ids.insert(
-                                parser.next_dict_key::<String>()?,
+                                key,
                                 parser.next_token::<Id>()?.unwrap_string("createdIds")?,
                             );
-                            !parser.is_dict_end()?
-                        } {}
+                        }
                         request.created_ids = Some(created_ids);
                     }
                     _ => {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                     }
                 }
-
-                !parser.is_dict_end()?
-            } {}
+            }
 
             if found_valid_keys {
                 Ok(request)

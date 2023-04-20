@@ -77,35 +77,32 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
-                0x6449_746e_756f_6363_61 if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
+                0x6449_746e_756f_6363_61 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x7364_69 => {
-                    request.ids = if !property.is_ref {
+                    request.ids = if !key.is_ref {
                         <Option<Vec<Id>>>::parse(parser)?.map(MaybeReference::Value)
                     } else {
                         Some(MaybeReference::Reference(ResultReference::parse(parser)?))
                     };
                 }
                 0x7365_6974_7265_706f_7270 => {
-                    request.properties = if !property.is_ref {
+                    request.properties = if !key.is_ref {
                         <Option<Vec<Property>>>::parse(parser)?.map(MaybeReference::Value)
                     } else {
                         Some(MaybeReference::Reference(ResultReference::parse(parser)?))
                     };
                 }
                 _ => {
-                    if !request.arguments.parse(parser, property)? {
+                    if !request.arguments.parse(parser, key)? {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                     }
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }
@@ -136,6 +133,33 @@ impl GetRequest<RequestArguments> {
             account_id: self.account_id,
             ids: self.ids,
             properties: self.properties,
+        }
+    }
+}
+
+impl<T> GetRequest<T> {
+    pub fn unwrap_properties(&mut self) -> Option<Vec<Property>> {
+        let mut properties = self.properties.take()?.unwrap();
+        // Add Id Property
+        if !properties.contains(&Property::Id) {
+            properties.push(Property::Id);
+        }
+        Some(properties)
+    }
+
+    pub fn unwrap_ids(
+        &mut self,
+        max_objects_in_get: usize,
+    ) -> Result<Option<Vec<Id>>, MethodError> {
+        if let Some(ids) = self.ids.take() {
+            let ids = ids.unwrap();
+            if ids.len() <= max_objects_in_get {
+                Ok(Some(ids))
+            } else {
+                Err(MethodError::RequestTooLarge)
+            }
+        } else {
+            Ok(None)
         }
     }
 }

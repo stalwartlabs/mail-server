@@ -77,16 +77,15 @@ impl JsonObjectParser for RequestProperty {
 
         'outer: for hash in hash.iter_mut() {
             while let Some(ch) = parser.next_unescaped()? {
-                if shift < 128 {
-                    if ch != b'#' || parser.pos > parser.pos_marker + 1 {
-                        *hash |= (ch as u128) << shift;
-                        shift += 8;
-                    } else {
-                        is_ref = true;
+                if ch != b'#' || parser.pos > parser.pos_marker + 1 {
+                    *hash |= (ch as u128) << shift;
+                    shift += 8;
+                    if shift == 128 {
+                        shift = 0;
+                        continue 'outer;
                     }
                 } else {
-                    shift = 0;
-                    continue 'outer;
+                    is_ref = true;
                 }
             }
             break;

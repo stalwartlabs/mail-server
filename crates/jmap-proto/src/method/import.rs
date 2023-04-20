@@ -69,27 +69,24 @@ impl JsonObjectParser for ImportEmailRequest {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
-                0x6449_746e_756f_6363_61 if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
+                0x6449_746e_756f_6363_61 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                0x6574_6174_536e_4966_69 if !property.is_ref => {
+                0x6574_6174_536e_4966_69 if !key.is_ref => {
                     request.if_in_state = parser
                         .next_token::<State>()?
                         .unwrap_string_or_null("ifInState")?;
                 }
-                0x736c_6961_6d65 if !property.is_ref => {
+                0x736c_6961_6d65 if !key.is_ref => {
                     request.emails = <VecMap<String, ImportEmail>>::parse(parser)?;
                 }
                 _ => {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }
@@ -111,14 +108,13 @@ impl JsonObjectParser for ImportEmail {
             .next_token::<String>()?
             .assert_jmap(Token::DictStart)?;
 
-        while {
-            let property = parser.next_dict_key::<RequestProperty>()?;
-            match &property.hash[0] {
-                0x6449_626f_6c62 if !property.is_ref => {
+        while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
+            match &key.hash[0] {
+                0x6449_626f_6c62 if !key.is_ref => {
                     request.blob_id = parser.next_token::<BlobId>()?.unwrap_string("blobId")?;
                 }
                 0x7364_4978_6f62_6c69_616d => {
-                    request.mailbox_ids = if !property.is_ref {
+                    request.mailbox_ids = if !key.is_ref {
                         MaybeReference::Value(
                             <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
                         )
@@ -126,10 +122,10 @@ impl JsonObjectParser for ImportEmail {
                         MaybeReference::Reference(ResultReference::parse(parser)?)
                     };
                 }
-                0x7364_726f_7779_656b if !property.is_ref => {
+                0x7364_726f_7779_656b if !key.is_ref => {
                     request.keywords = <SetValueMap<Keyword>>::parse(parser)?.values;
                 }
-                0x7441_6465_7669_6563_6572 if !property.is_ref => {
+                0x7441_6465_7669_6563_6572 if !key.is_ref => {
                     request.received_at = parser
                         .next_token::<UTCDate>()?
                         .unwrap_string_or_null("receivedAt")?;
@@ -138,9 +134,7 @@ impl JsonObjectParser for ImportEmail {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 }
             }
-
-            !parser.is_dict_end()?
-        } {}
+        }
 
         Ok(request)
     }
