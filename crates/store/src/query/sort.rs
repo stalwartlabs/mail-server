@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use ahash::{AHashMap, AHashSet};
 
 use crate::{ReadTransaction, Store, ValueKey};
@@ -155,7 +157,10 @@ impl ReadTransaction<'_> {
 
             let mut seen_prefixes = AHashSet::new();
             let mut sorted_ids = sorted_ids.into_iter().collect::<Vec<_>>();
-            sorted_ids.sort_by(|a, b| a.1.cmp(&b.1));
+            sorted_ids.sort_by(|a, b| match a.1.cmp(&b.1) {
+                Ordering::Equal => a.0.cmp(&b.0),
+                other => other,
+            });
             for (document_id, _) in sorted_ids {
                 // Obtain document prefixId
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
@@ -252,13 +257,17 @@ impl Pagination {
 
         // Pagination
         if !self.has_anchor {
-            if self.position > 0 {
-                self.position -= 1;
+            if self.position >= 0 {
+                if self.position > 0 {
+                    self.position -= 1;
+                } else {
+                    self.ids.push(id);
+                    if self.ids.len() == self.limit {
+                        return false;
+                    }
+                }
             } else {
                 self.ids.push(id);
-                if self.ids.len() == self.limit {
-                    return false;
-                }
             }
         } else if self.anchor_offset >= 0 {
             if !self.anchor_found {

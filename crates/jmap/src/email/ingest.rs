@@ -9,9 +9,10 @@ use mail_parser::{
     parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, RfcHeader,
 };
 use store::{
+    ahash::AHashSet,
     query::Filter,
     write::{log::ChangeLogBuilder, now, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
-    ValueKey,
+    BitmapKey, ValueKey,
 };
 use utils::map::vec_map::VecMap;
 
@@ -210,6 +211,7 @@ impl JMAP {
     ) -> Result<Option<u32>, MaybeError> {
         let mut try_count = 0;
 
+        println!("-----------\nthread name: {:?}", thread_name);
         loop {
             // Find messages with matching references
             let mut filters = Vec::with_capacity(references.len() + 3);
@@ -232,6 +234,9 @@ impl JMAP {
                     MaybeError::Temporary
                 })?
                 .results;
+
+            println!("found messages {:?}", results);
+
             if results.is_empty() {
                 return Ok(None);
             }
@@ -261,6 +266,7 @@ impl JMAP {
                         "Failed to obtain threadIds.");
                     MaybeError::Temporary
                 })?;
+            println!("found thread ids {:?}", thread_ids);
             if thread_ids.len() == 1 {
                 return Ok(thread_ids.into_iter().next().unwrap());
             }
@@ -277,6 +283,7 @@ impl JMAP {
                     thread_id = *thread_id_;
                 }
             }
+            println!("common thread id {:?}", thread_id);
             if thread_id == u32::MAX {
                 return Ok(None); // This should never happen
             } else if thread_counts.len() == 1 {
@@ -310,19 +317,38 @@ impl JMAP {
 
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
-            for (document_id, old_thread_id) in results.iter().zip(thread_ids.into_iter()) {
-                let old_thread_id = old_thread_id.unwrap_or(u32::MAX);
+            for old_thread_id in thread_ids.into_iter().flatten().collect::<AHashSet<_>>() {
                 if thread_id != old_thread_id {
-                    batch
-                        .update_document(document_id)
-                        .assert_value(Property::ThreadId, old_thread_id)
-                        .value(Property::ThreadId, old_thread_id, F_BITMAP | F_CLEAR)
-                        .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
-                    changes.log_move(
-                        Collection::Email,
-                        Id::from_parts(old_thread_id, document_id),
-                        Id::from_parts(thread_id, document_id),
-                    )
+                    for document_id in self
+                        .store
+                        .get_bitmap(BitmapKey::value(
+                            account_id,
+                            Collection::Email,
+                            Property::ThreadId,
+                            old_thread_id,
+                        ))
+                        .await
+                        .map_err(|err| {
+                            tracing::error!(
+                            event = "error",
+                            context = "find_or_merge_thread",
+                            error = ?err,
+                            "Failed to obtain threadId bitmap.");
+                            MaybeError::Temporary
+                        })?
+                        .unwrap_or_default()
+                    {
+                        batch
+                            .update_document(document_id)
+                            .assert_value(Property::ThreadId, old_thread_id)
+                            .value(Property::ThreadId, old_thread_id, F_BITMAP | F_CLEAR)
+                            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
+                        changes.log_move(
+                            Collection::Email,
+                            Id::from_parts(old_thread_id, document_id),
+                            Id::from_parts(thread_id, document_id),
+                        );
+                    }
                 }
             }
             batch.custom(changes).map_err(|err| {

@@ -65,6 +65,10 @@ impl<'x> FtsIndexBuilder<'x> {
             self.tokens.insert((field, token));
         }
     }
+
+    pub fn index_raw_token(&mut self, field: impl Into<u8>, token: impl Into<String>) {
+        self.tokens.insert((field.into(), token.into()));
+    }
 }
 
 impl<'x> IntoOperations for FtsIndexBuilder<'x> {

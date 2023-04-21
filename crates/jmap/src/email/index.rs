@@ -4,7 +4,6 @@ use jmap_proto::{
     object::Object,
     types::{
         date::UTCDate,
-        id::Id,
         keyword::Keyword,
         property::{HeaderForm, Property},
         value::Value,
@@ -16,7 +15,10 @@ use mail_parser::{
     Addr, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType, RfcHeader,
 };
 use store::{
-    fts::{builder::FtsIndexBuilder, Language},
+    fts::{
+        builder::{FtsIndexBuilder, MAX_TOKEN_LENGTH},
+        Language,
+    },
     write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
 };
 
@@ -89,28 +91,30 @@ impl IndexMessage for BatchBuilder {
                 language = part_language;
                 for header in part.headers.into_iter().rev() {
                     if let HeaderName::Rfc(rfc_header) = header.name {
+                        // Index hasHeader property
+                        let header_num = (rfc_header as u8).to_string();
+                        fts.index_raw_token(Property::Headers, &header_num);
+
                         match rfc_header {
                             RfcHeader::MessageId
                             | RfcHeader::InReplyTo
                             | RfcHeader::References
                             | RfcHeader::ResentMessageId => {
-                                match &header.value {
-                                    HeaderValue::Text(id) if id.len() < MAX_ID_LENGTH => {
-                                        self.value(Property::MessageId, id.as_ref(), F_INDEX);
+                                header.value.visit_text(|id| {
+                                    // Add ids to inverted index
+                                    if id.len() < MAX_ID_LENGTH {
+                                        println!("indexing {}: {}", rfc_header.as_str(), id);
+                                        self.value(Property::MessageId, id, F_INDEX);
                                     }
-                                    HeaderValue::TextList(ids) => {
-                                        for id in ids {
-                                            if id.len() < MAX_ID_LENGTH {
-                                                self.value(
-                                                    Property::MessageId,
-                                                    id.as_ref(),
-                                                    F_INDEX,
-                                                );
-                                            }
-                                        }
+
+                                    // Index ids without stemming
+                                    if id.len() < MAX_TOKEN_LENGTH {
+                                        fts.index_raw_token(
+                                            Property::Headers,
+                                            format!("{header_num}{id}"),
+                                        );
                                     }
-                                    _ => (),
-                                }
+                                });
 
                                 if matches!(
                                     rfc_header,
@@ -135,6 +139,7 @@ impl IndexMessage for BatchBuilder {
                             | RfcHeader::Bcc
                             | RfcHeader::ReplyTo
                             | RfcHeader::Sender => {
+                                let property = Property::from(rfc_header);
                                 let seen_header = seen_headers[rfc_header as usize];
                                 if matches!(
                                     rfc_header,
@@ -172,13 +177,13 @@ impl IndexMessage for BatchBuilder {
                                         }
 
                                         // Index an address name or email without stemming
-                                        fts.index_raw(rfc_header, value);
+                                        fts.index_raw(u8::from(&property), value);
                                     });
 
                                     if !seen_header {
                                         // Add address to inverted index
                                         self.value(
-                                            rfc_header,
+                                            u8::from(&property),
                                             if !sort_text.is_empty() {
                                                 &sort_text
                                             } else {
@@ -192,7 +197,7 @@ impl IndexMessage for BatchBuilder {
                                 if !seen_header {
                                     // Add address to object
                                     object.append(
-                                        rfc_header.into(),
+                                        property,
                                         header
                                             .value
                                             .trim_text(MAX_STORED_FIELD_LENGTH)
@@ -254,6 +259,20 @@ impl IndexMessage for BatchBuilder {
 
                                 // Index subject for FTS
                                 fts.index(Property::Subject, subject, language);
+                            }
+
+                            RfcHeader::Comments | RfcHeader::Keywords | RfcHeader::ListId => {
+                                // Index headers
+                                header.value.visit_text(|text| {
+                                    for token in text.split_ascii_whitespace() {
+                                        if token.len() < MAX_TOKEN_LENGTH {
+                                            fts.index_raw_token(
+                                                Property::Headers,
+                                                format!("{header_num}{}", token.to_lowercase()),
+                                            );
+                                        }
+                                    }
+                                });
                             }
                             _ => (),
                         }
@@ -370,11 +389,12 @@ impl GetContentLanguage for MessagePart<'_> {
     }
 }
 
-trait VisitAddresses {
+trait VisitValues {
     fn visit_addresses(&self, visitor: impl FnMut(&str, bool));
+    fn visit_text(&self, visitor: impl FnMut(&str));
 }
 
-impl VisitAddresses for HeaderValue<'_> {
+impl VisitValues for HeaderValue<'_> {
     fn visit_addresses(&self, mut visitor: impl FnMut(&str, bool)) {
         match self {
             HeaderValue::Address(addr) => {
@@ -421,6 +441,19 @@ impl VisitAddresses for HeaderValue<'_> {
                             visitor(addr.as_ref(), true);
                         }
                     }
+                }
+            }
+            _ => (),
+        }
+    }
+    fn visit_text(&self, mut visitor: impl FnMut(&str)) {
+        match &self {
+            HeaderValue::Text(text) => {
+                visitor(text.as_ref());
+            }
+            HeaderValue::TextList(texts) => {
+                for text in texts {
+                    visitor(text.as_ref());
                 }
             }
             _ => (),

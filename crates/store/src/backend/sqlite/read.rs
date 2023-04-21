@@ -38,6 +38,7 @@ impl ReadTransaction<'_> {
     ) -> crate::Result<()> {
         let begin = key.serialize();
         key.block_num = u32::MAX;
+        let key_len = begin.len();
         let end = key.serialize();
         let mut query = self
             .conn
@@ -46,27 +47,29 @@ impl ReadTransaction<'_> {
 
         while let Some(row) = rows.next()? {
             let key = row.get_ref(0)?.as_bytes()?;
-            let block_num = key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
+            if key.len() == key_len {
+                let block_num = key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
 
-            for word_num in 0..WORDS_PER_BLOCK {
-                match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
-                    0 => (),
-                    u64::MAX => {
-                        bm.insert_range(
-                            block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
-                                ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS)
-                                    + WORD_SIZE_BITS,
-                        );
-                    }
-                    mut word => {
-                        while word != 0 {
-                            let trailing_zeros = word.trailing_zeros();
-                            bm.insert(
-                                block_num * BITS_PER_BLOCK
-                                    + word_num * WORD_SIZE_BITS
-                                    + trailing_zeros,
+                for word_num in 0..WORDS_PER_BLOCK {
+                    match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
+                        0 => (),
+                        u64::MAX => {
+                            bm.insert_range(
+                                block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
+                                    ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS)
+                                        + WORD_SIZE_BITS,
                             );
-                            word ^= 1 << trailing_zeros;
+                        }
+                        mut word => {
+                            while word != 0 {
+                                let trailing_zeros = word.trailing_zeros();
+                                bm.insert(
+                                    block_num * BITS_PER_BLOCK
+                                        + word_num * WORD_SIZE_BITS
+                                        + trailing_zeros,
+                                );
+                                word ^= 1 << trailing_zeros;
+                            }
                         }
                     }
                 }

@@ -42,28 +42,46 @@ impl IdCacheKey {
 
 #[derive(Clone)]
 pub struct IdAssigner {
-    pub available_document_ids: RoaringBitmap,
+    pub freed_document_ids: Option<RoaringBitmap>,
+    pub next_document_id: u32,
     pub next_change_id: u64,
 }
 
 impl IdAssigner {
     pub fn new(used_ids: Option<RoaringBitmap>, next_change_id: u64) -> Self {
         let mut assigner = IdAssigner {
-            available_document_ids: RoaringBitmap::full(),
+            freed_document_ids: None,
+            next_document_id: 0,
             next_change_id,
         };
-
         if let Some(used_ids) = used_ids {
-            assigner.available_document_ids ^= &used_ids;
+            if let Some(max) = used_ids.max() {
+                assigner.next_document_id = max + 1;
+                let mut freed_ids =
+                    RoaringBitmap::from_sorted_iter(0..assigner.next_document_id).unwrap();
+                freed_ids ^= used_ids;
+                if !freed_ids.is_empty() {
+                    assigner.freed_document_ids = Some(freed_ids);
+                }
+            }
         }
 
         assigner
     }
 
     pub fn assign_document_id(&mut self) -> u32 {
-        let id = self.available_document_ids.min().unwrap();
-        self.available_document_ids.remove(id);
-        id
+        if let Some(freed_ids) = &mut self.freed_document_ids {
+            let id = freed_ids.min().unwrap();
+            freed_ids.remove(id);
+            if freed_ids.is_empty() {
+                self.freed_document_ids = None;
+            }
+            id
+        } else {
+            let id = self.next_document_id;
+            self.next_document_id += 1;
+            id
+        }
     }
 
     pub fn assign_change_id(&mut self) -> u64 {

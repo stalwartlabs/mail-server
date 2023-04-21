@@ -69,6 +69,10 @@ impl ReadTransaction<'_> {
                         )
                         .await?
                     }
+                    TextMatch::Raw => {
+                        self.get_bitmap(BitmapKey::hash(&text, account_id, collection, 0, field))
+                            .await?
+                    }
                 },
                 Filter::InBitmap { family, field, key } => {
                     self.get_bitmap(BitmapKey {

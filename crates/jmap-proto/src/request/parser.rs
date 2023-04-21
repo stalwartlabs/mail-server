@@ -69,7 +69,7 @@ impl Request {
                                 Token::ArrayStart => (),
                                 Token::Comma => continue,
                                 Token::ArrayEnd => break,
-                                token => {
+                                _ => {
                                     return Err(RequestError::not_request("Invalid JMAP request"));
                                 }
                             };

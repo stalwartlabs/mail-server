@@ -16,57 +16,59 @@ const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
 const MAX_MESSAGES_PER_THREAD: usize = 100;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
     println!("Running Email Query tests...");
 
-    // Add some "virtual" mailbox ids so create doesn't fail
-    let mut batch = BatchBuilder::new();
-    let account_id = Id::from_bytes(client.default_account_id().as_bytes())
-        .unwrap()
-        .document_id();
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::Mailbox);
-    for mailbox_id in 0..99999 {
-        batch.create_document(mailbox_id);
-    }
-    server.store.write(batch.build()).await.unwrap();
+    if insert {
+        // Add some "virtual" mailbox ids so create doesn't fail
+        let mut batch = BatchBuilder::new();
+        let account_id = Id::from_bytes(client.default_account_id().as_bytes())
+            .unwrap()
+            .document_id();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Mailbox);
+        for mailbox_id in 0..99999 {
+            batch.create_document(mailbox_id);
+        }
+        server.store.write(batch.build()).await.unwrap();
 
-    // Create test messages
-    println!("Inserting JMAP Mail query test messages...");
-    create(client).await;
+        // Create test messages
+        println!("Inserting JMAP Mail query test messages...");
+        create(client).await;
 
-    // Remove mailboxes
-    let mut batch = BatchBuilder::new();
-    batch
-        .with_account_id(account_id)
-        .with_collection(Collection::Mailbox);
-    for mailbox_id in 0..99999 {
-        batch.delete_document(mailbox_id);
-    }
-    server.store.write(batch.build()).await.unwrap();
+        // Remove mailboxes
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Mailbox);
+        for mailbox_id in 0..99999 {
+            batch.delete_document(mailbox_id);
+        }
+        server.store.write(batch.build()).await.unwrap();
 
-    for thread_id in 0..MAX_THREADS {
+        for thread_id in 0..MAX_THREADS {
+            assert!(
+                client
+                    .thread_get(&Id::new(thread_id as u64).to_string())
+                    .await
+                    .unwrap()
+                    .is_some(),
+                "thread {} not found",
+                thread_id
+            );
+        }
+
         assert!(
             client
-                .thread_get(&Id::new(thread_id as u64).to_string())
+                .thread_get(&Id::new(MAX_THREADS as u64).to_string())
                 .await
                 .unwrap()
-                .is_some(),
-            "thread {} not found",
-            thread_id
+                .is_none(),
+            "thread {} found",
+            MAX_THREADS
         );
     }
-
-    assert!(
-        client
-            .thread_get(&Id::new(MAX_THREADS as u64).to_string())
-            .await
-            .unwrap()
-            .is_none(),
-        "thread {} found",
-        MAX_THREADS
-    );
 
     println!("Running JMAP Mail query tests...");
     query(client).await;
@@ -305,8 +307,8 @@ pub async fn query(client: &mut Client) {
         let mut request = client.build();
         let query_request = request
             .query_email()
-            .filter(filter)
-            .sort(sort)
+            .filter(filter.clone())
+            .sort(sort.clone())
             .calculate_total(true);
         query_request.arguments().collapse_threads(false);
         let query_result_ref = query_request.result_reference();
@@ -314,22 +316,36 @@ pub async fn query(client: &mut Client) {
             .get_email()
             .ids_ref(query_result_ref)
             .properties([email::Property::MessageId]);
+        let results = request
+            .send()
+            .await
+            .unwrap_or_else(|_| panic!("invalid response for {filter:?}"))
+            .unwrap_method_responses()
+            .pop()
+            .unwrap_or_else(|| panic!("invalid response for {filter:?}"))
+            .unwrap_get_email()
+            .unwrap_or_else(|_| panic!("invalid response for {filter:?}"))
+            .take_list()
+            .into_iter()
+            .map(|e| e.message_id().unwrap().first().unwrap().to_string())
+            .collect::<Vec<_>>();
+
+        let mut missing = Vec::new();
+        let mut extra = Vec::new();
+        for &expected in &expected_results {
+            if !results.iter().any(|r| r.as_str() == expected) {
+                missing.push(expected);
+            }
+        }
+        for result in &results {
+            if !expected_results.contains(&result.as_str()) {
+                extra.push(result.as_str());
+            }
+        }
 
         assert_eq!(
-            request
-                .send()
-                .await
-                .unwrap()
-                .unwrap_method_responses()
-                .pop()
-                .unwrap()
-                .unwrap_get_email()
-                .unwrap()
-                .take_list()
-                .into_iter()
-                .map(|e| e.message_id().unwrap().first().unwrap().to_string())
-                .collect::<Vec<_>>(),
-            expected_results
+            results, expected_results,
+            "failed test!\nfilter: {filter:?}\nsort: {sort:?}\nmissing: {missing:?}\nextra: {extra:?}"
         );
     }
 }

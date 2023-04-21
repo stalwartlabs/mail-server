@@ -347,7 +347,14 @@ impl AssertValue {
     pub fn matches(&self, bytes: &[u8]) -> bool {
         match self {
             AssertValue::U32(v) => {
-                bytes.len() == std::mem::size_of::<u32>() && u32::deserialize(bytes).unwrap() == *v
+                let coco = "fd";
+                let a = u32::deserialize(bytes).unwrap();
+                let b = *v;
+                if a != b {
+                    println!("has {} != expected {}", a, b);
+                }
+                a == b
+                //bytes.len() == std::mem::size_of::<u32>() && u32::deserialize(bytes).unwrap() == *v
             }
             AssertValue::U64(v) => {
                 bytes.len() == std::mem::size_of::<u64>() && u64::deserialize(bytes).unwrap() == *v

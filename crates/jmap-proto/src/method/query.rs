@@ -185,9 +185,15 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                         return Err(token.error("filter", "object or null"));
                     }
                 },
-                0x7472_6f73 => {
-                    request.sort = <Option<Vec<Comparator>>>::parse(parser)?;
-                }
+                0x7472_6f73 => match parser.next_token::<Ignore>()? {
+                    Token::ArrayStart => {
+                        request.sort = parse_sort(parser)?.into();
+                    }
+                    Token::Null => (),
+                    token => {
+                        return Err(token.error("sort", "array or null"));
+                    }
+                },
                 0x6e6f_6974_6973_6f70 => {
                     request.position = parser
                         .next_token::<Ignore>()?
@@ -444,53 +450,59 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
     Ok(filter)
 }
 
-impl JsonObjectParser for Comparator {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut comp = Comparator {
-            is_ascending: true,
-            collation: None,
-            property: SortProperty::Type,
-            keyword: None,
-        };
+pub fn parse_sort(parser: &mut Parser) -> crate::parser::Result<Vec<Comparator>> {
+    let mut sort = vec![];
 
-        parser
-            .next_token::<String>()?
-            .assert_jmap(Token::DictStart)?;
-
-        while let Some(key) = parser.next_dict_key::<u128>()? {
-            match key {
-                0x676e_6964_6e65_6373_4173_69 => {
-                    comp.is_ascending = parser
-                        .next_token::<Ignore>()?
-                        .unwrap_bool_or_null("isAscending")?
-                        .unwrap_or_default();
+    loop {
+        match parser.next_token::<String>()? {
+            Token::DictStart => {
+                let mut comp = Comparator {
+                    is_ascending: true,
+                    collation: None,
+                    property: SortProperty::Type,
+                    keyword: None,
+                };
+                while let Some(key) = parser.next_dict_key::<u128>()? {
+                    match key {
+                        0x676e_6964_6e65_6373_4173_69 => {
+                            comp.is_ascending = parser
+                                .next_token::<Ignore>()?
+                                .unwrap_bool_or_null("isAscending")?
+                                .unwrap_or_default();
+                        }
+                        0x6e6f_6974_616c_6c6f_63 => {
+                            comp.collation = parser
+                                .next_token::<String>()?
+                                .unwrap_string_or_null("collation")?;
+                        }
+                        0x7974_7265_706f_7270 => {
+                            comp.property = parser
+                                .next_token::<SortProperty>()?
+                                .unwrap_string("property")?;
+                        }
+                        0x6472_6f77_7965_6b => {
+                            comp.keyword = parser
+                                .next_token::<Keyword>()?
+                                .unwrap_string_or_null("keyword")?;
+                        }
+                        _ => {
+                            parser.skip_token(parser.depth_array, parser.depth_dict)?;
+                        }
+                    }
                 }
-                0x6e6f_6974_616c_6c6f_63 => {
-                    comp.collation = parser
-                        .next_token::<String>()?
-                        .unwrap_string_or_null("collation")?;
-                }
-                0x7974_7265_706f_7270 => {
-                    comp.property = parser
-                        .next_token::<SortProperty>()?
-                        .unwrap_string("property")?;
-                }
-                0x6472_6f77_7965_6b => {
-                    comp.keyword = parser
-                        .next_token::<Keyword>()?
-                        .unwrap_string_or_null("keyword")?;
-                }
-                _ => {
-                    parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                }
+                sort.push(comp);
+            }
+            Token::Comma => (),
+            Token::ArrayEnd => {
+                break;
+            }
+            token => {
+                return Err(token.error("sort", "object"));
             }
         }
-
-        Ok(comp)
     }
+
+    Ok(sort)
 }
 
 impl JsonObjectParser for SortProperty {
@@ -678,6 +690,18 @@ impl QueryRequest<RequestArguments> {
             anchor_offset: self.anchor_offset,
             limit: self.limit,
             calculate_total: self.calculate_total,
+        }
+    }
+}
+
+impl From<Filter> for store::query::Filter {
+    fn from(value: Filter) -> Self {
+        match value {
+            Filter::And => Self::And,
+            Filter::Or => Self::Or,
+            Filter::Not => Self::Not,
+            Filter::Close => Self::End,
+            _ => unreachable!(),
         }
     }
 }

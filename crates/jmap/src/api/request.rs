@@ -9,7 +9,6 @@ use crate::JMAP;
 
 impl JMAP {
     pub async fn handle_request(&self, bytes: &[u8]) -> Result<Response, RequestError> {
-        println!("<- {}", String::from_utf8_lossy(bytes));
         let request = Request::parse(
             bytes,
             self.config.request_max_calls,

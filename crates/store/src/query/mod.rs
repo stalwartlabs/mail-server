@@ -49,6 +49,7 @@ pub enum TextMatch {
     Exact(Language),
     Stemmed(Language),
     Tokenized,
+    Raw,
 }
 
 #[derive(Debug)]
@@ -129,27 +130,32 @@ impl Filter {
         }
     }
 
-    pub fn has_text(field: impl Into<u8>, text: impl Into<String>, mut language: Language) -> Self {
+    pub fn has_text_detect(
+        field: impl Into<u8>,
+        text: impl Into<String>,
+        default_language: Language,
+    ) -> Self {
         let mut text = text.into();
+        let language = if let Some((l, t)) = text
+            .split_once(':')
+            .and_then(|(l, t)| (Language::from_iso_639(l)?, t.to_string()).into())
+        {
+            text = t;
+            l
+        } else {
+            LanguageDetector::detect_single(&text)
+                .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
+                .unwrap_or(default_language)
+        };
+        Self::has_text(field, text, language)
+    }
+
+    pub fn has_text(field: impl Into<u8>, text: impl Into<String>, language: Language) -> Self {
+        let text = text.into();
         let op = if !matches!(language, Language::None) {
-            let match_phrase = (text.starts_with('"') && text.ends_with('"'))
-                || (text.starts_with('\'') && text.ends_with('\''));
-
-            if !match_phrase && language == Language::Unknown {
-                language = if let Some((l, t)) = text
-                    .split_once(':')
-                    .and_then(|(l, t)| (Language::from_iso_639(l)?, t.to_string()).into())
-                {
-                    text = t;
-                    l
-                } else {
-                    LanguageDetector::detect_single(&text)
-                        .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
-                        .unwrap_or(Language::Unknown)
-                };
-            }
-
-            if match_phrase {
+            if (text.starts_with('"') && text.ends_with('"'))
+                || (text.starts_with('\'') && text.ends_with('\''))
+            {
                 TextMatch::Exact(language)
             } else {
                 TextMatch::Stemmed(language)
@@ -162,6 +168,14 @@ impl Filter {
             field: field.into(),
             text,
             op,
+        }
+    }
+
+    pub fn has_raw_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
+        Filter::HasText {
+            field: field.into(),
+            text: text.into(),
+            op: TextMatch::Raw,
         }
     }
 

@@ -5,7 +5,7 @@ use crate::{
     types::{id::Id, state::State},
 };
 
-use super::query::{parse_filter, Comparator, Filter, RequestArguments};
+use super::query::{parse_filter, parse_sort, Comparator, Filter, RequestArguments};
 
 #[derive(Debug, Clone)]
 pub struct QueryChangesRequest {
@@ -97,9 +97,15 @@ impl JsonObjectParser for QueryChangesRequest {
                         return Err(token.error("filter", "object or null"));
                     }
                 },
-                0x7472_6f73 => {
-                    request.sort = <Option<Vec<Comparator>>>::parse(parser)?;
-                }
+                0x7472_6f73 => match parser.next_token::<Ignore>()? {
+                    Token::ArrayStart => {
+                        request.sort = parse_sort(parser)?.into();
+                    }
+                    Token::Null => (),
+                    token => {
+                        return Err(token.error("sort", "array or null"));
+                    }
+                },
                 0x6574_6174_5379_7265_7551_6563_6e69_73 => {
                     request.since_query_state = parser
                         .next_token::<State>()?

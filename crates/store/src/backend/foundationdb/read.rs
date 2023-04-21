@@ -42,6 +42,7 @@ impl ReadTransaction<'_> {
         let begin = key.serialize();
         key.block_num = u32::MAX;
         let end = key.serialize();
+        let key_len = begin.len();
         let mut values = self.trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(begin),
@@ -56,10 +57,12 @@ impl ReadTransaction<'_> {
         while let Some(values) = values.next().await {
             for value in values? {
                 let key = value.key();
-                bm.deserialize_block(
-                    value.value(),
-                    key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
-                );
+                if key.len() == key_len {
+                    bm.deserialize_block(
+                        value.value(),
+                        key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
+                    );
+                }
             }
         }
 

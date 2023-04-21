@@ -4,8 +4,9 @@ use jmap_proto::{
     object::email::QueryArguments,
     types::{collection::Collection, keyword::Keyword, property::Property},
 };
+use mail_parser::{HeaderName, RfcHeader};
 use store::{
-    fts::Language,
+    fts::{builder::MAX_TOKEN_LENGTH, Language},
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
     ValueKey,
@@ -87,20 +88,20 @@ impl JMAP {
                         &text,
                         Language::None,
                     ));
-                    filters.push(query::Filter::has_text(
+                    filters.push(query::Filter::has_text_detect(
                         Property::Subject,
                         &text,
-                        Language::Unknown,
+                        self.config.default_language,
                     ));
-                    filters.push(query::Filter::has_text(
+                    filters.push(query::Filter::has_text_detect(
                         Property::TextBody,
                         &text,
-                        Language::Unknown,
+                        self.config.default_language,
                     ));
-                    filters.push(query::Filter::has_text(
+                    filters.push(query::Filter::has_text_detect(
                         Property::Attachments,
                         text,
-                        Language::Unknown,
+                        self.config.default_language,
                     ));
                     filters.push(query::Filter::End);
                 }
@@ -118,21 +119,78 @@ impl JMAP {
                 Filter::Bcc(text) => {
                     filters.push(query::Filter::has_text(Property::Bcc, text, Language::None))
                 }
-                Filter::Subject(text) => filters.push(query::Filter::has_text(
+                Filter::Subject(text) => filters.push(query::Filter::has_text_detect(
                     Property::Subject,
                     text,
-                    Language::Unknown,
+                    self.config.default_language,
                 )),
-                Filter::Body(text) => filters.push(query::Filter::has_text(
+                Filter::Body(text) => filters.push(query::Filter::has_text_detect(
                     Property::TextBody,
                     text,
-                    Language::Unknown,
+                    self.config.default_language,
                 )),
                 Filter::Header(header) => {
-                    return Err(MethodError::InvalidArguments(format!(
-                        "Querying headers '{}' is not supported.",
-                        header.join(":")
-                    )));
+                    let mut header = header.into_iter();
+                    let header_name = header.next().ok_or_else(|| {
+                        MethodError::InvalidArguments("Header name is missing.".to_string())
+                    })?;
+                    if let Some(HeaderName::Rfc(header_name)) = HeaderName::parse(&header_name) {
+                        let is_id = matches!(
+                            header_name,
+                            RfcHeader::MessageId
+                                | RfcHeader::InReplyTo
+                                | RfcHeader::References
+                                | RfcHeader::ResentMessageId
+                        );
+                        let tokens = if let Some(header_value) = header.next() {
+                            let header_num = u8::from(header_name).to_string();
+                            header_value
+                                .split_ascii_whitespace()
+                                .filter_map(|token| {
+                                    if token.len() < MAX_TOKEN_LENGTH {
+                                        if is_id {
+                                            format!("{header_num}{token}")
+                                        } else {
+                                            format!("{header_num}{}", token.to_lowercase())
+                                        }
+                                        .into()
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            vec![]
+                        };
+                        match tokens.len() {
+                            0 => {
+                                filters.push(query::Filter::has_raw_text(
+                                    Property::Headers,
+                                    u8::from(header_name).to_string(),
+                                ));
+                            }
+                            1 => {
+                                filters.push(query::Filter::has_raw_text(
+                                    Property::Headers,
+                                    tokens.into_iter().next().unwrap(),
+                                ));
+                            }
+                            _ => {
+                                filters.push(query::Filter::And);
+                                for token in tokens {
+                                    filters.push(query::Filter::has_raw_text(
+                                        Property::Headers,
+                                        token,
+                                    ));
+                                }
+                                filters.push(query::Filter::End);
+                            }
+                        }
+                    } else {
+                        return Err(MethodError::InvalidArguments(format!(
+                            "Querying non-RFC header '{header_name}' is not allowed.",
+                        )));
+                    };
                 }
 
                 // Non-standard
@@ -149,6 +207,9 @@ impl JMAP {
                     Property::ThreadId,
                     id.document_id(),
                 )),
+                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
+                    filters.push(cond.into());
+                }
 
                 other => return Err(MethodError::UnsupportedFilter(other.to_string())),
             }

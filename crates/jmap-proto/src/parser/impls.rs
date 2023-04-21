@@ -200,13 +200,13 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
                         Token::String(item) => vec.push(item),
                         Token::Comma => (),
                         Token::ArrayEnd => break,
-                        token => return Err(token.error("", &token.to_string())),
+                        token => return Err(token.error("", "string")),
                     }
                 }
                 Ok(Some(vec))
             }
             Token::Null => Ok(None),
-            token => Err(token.error("", &token.to_string())),
+            token => Err(token.error("", "array or null")),
         }
     }
 }

@@ -38,12 +38,17 @@ impl JMAP {
             "jmap" => match (path.next().unwrap_or(""), req.method()) {
                 ("", &Method::POST) => {
                     return match fetch_body(req, self.config.request_max_size).await {
-                        Ok(bytes) => match self.handle_request(&bytes).await {
-                            Ok(response) => response.into_http_response(),
-                            Err(err) => err.into_http_response(),
-                        },
+                        Ok(bytes) => {
+                            let delete = "fd";
+                            //println!("<- {}", String::from_utf8_lossy(&bytes));
+
+                            match self.handle_request(&bytes).await {
+                                Ok(response) => response.into_http_response(),
+                                Err(err) => err.into_http_response(),
+                            }
+                        }
                         Err(err) => err.into_http_response(),
-                    }
+                    };
                 }
                 ("download", &Method::GET) => {
                     if let (Some(account_id), Some(blob_id), Some(name)) = (
@@ -258,8 +263,8 @@ trait ToHttpResponse {
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let delete = "";
-        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        //let delete = "";
+        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -274,8 +279,6 @@ impl ToHttpResponse for Response {
 
 impl ToHttpResponse for Session {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let delete = "";
-        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -315,9 +318,6 @@ impl ToHttpResponse for DownloadResponse {
 
 impl ToHttpResponse for UploadResponse {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let delete = "";
-        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
-
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
@@ -332,9 +332,6 @@ impl ToHttpResponse for UploadResponse {
 
 impl ToHttpResponse for RequestError {
     fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let delete = "";
-        println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
-
         hyper::Response::builder()
             .status(self.status)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
