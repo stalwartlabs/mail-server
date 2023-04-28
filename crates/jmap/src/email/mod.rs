@@ -5,3 +5,4 @@ pub mod import;
 pub mod index;
 pub mod ingest;
 pub mod query;
+pub mod set;

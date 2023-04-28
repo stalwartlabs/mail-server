@@ -7,6 +7,9 @@ use crate::{
     Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC,
 };
 
+use self::assert::AssertValue;
+
+pub mod assert;
 pub mod batch;
 pub mod key;
 pub mod log;
@@ -66,13 +69,6 @@ pub enum Operation {
         collection: u8,
         set: Vec<u8>,
     },
-}
-
-#[derive(Debug)]
-pub enum AssertValue {
-    U32(u32),
-    U64(u64),
-    Hash(u64),
 }
 
 impl Serialize for u32 {
@@ -311,57 +307,14 @@ impl Serialize for () {
     }
 }
 
+impl ToBitmaps for () {
+    fn to_bitmaps(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
+        unreachable!()
+    }
+}
+
 pub trait IntoOperations {
-    fn build(self, batch: &mut BatchBuilder) -> crate::Result<()>;
-}
-
-pub trait ToAssertValue {
-    fn to_assert_value(&self) -> AssertValue;
-}
-
-impl ToAssertValue for u64 {
-    fn to_assert_value(&self) -> AssertValue {
-        AssertValue::U64(*self)
-    }
-}
-
-impl ToAssertValue for u32 {
-    fn to_assert_value(&self) -> AssertValue {
-        AssertValue::U32(*self)
-    }
-}
-
-impl ToAssertValue for &[u8] {
-    fn to_assert_value(&self) -> AssertValue {
-        AssertValue::Hash(xxhash_rust::xxh3::xxh3_64(self))
-    }
-}
-
-impl ToAssertValue for Vec<u8> {
-    fn to_assert_value(&self) -> AssertValue {
-        self.as_slice().to_assert_value()
-    }
-}
-
-impl AssertValue {
-    pub fn matches(&self, bytes: &[u8]) -> bool {
-        match self {
-            AssertValue::U32(v) => {
-                let coco = "fd";
-                let a = u32::deserialize(bytes).unwrap();
-                let b = *v;
-                if a != b {
-                    println!("has {} != expected {}", a, b);
-                }
-                a == b
-                //bytes.len() == std::mem::size_of::<u32>() && u32::deserialize(bytes).unwrap() == *v
-            }
-            AssertValue::U64(v) => {
-                bytes.len() == std::mem::size_of::<u64>() && u64::deserialize(bytes).unwrap() == *v
-            }
-            AssertValue::Hash(v) => xxhash_rust::xxh3::xxh3_64(bytes) == *v,
-        }
-    }
+    fn build(self, batch: &mut BatchBuilder);
 }
 
 #[inline(always)]

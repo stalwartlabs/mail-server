@@ -17,12 +17,9 @@ impl JMAP {
     ) -> Result<ImportEmailResponse, MethodError> {
         // Validate state
         let account_id = request.account_id.document_id();
-        let old_state: State = self.get_state(account_id, Collection::Email).await?;
-        if let Some(if_in_state) = request.if_in_state {
-            if old_state != if_in_state {
-                return Err(MethodError::StateMismatch);
-            }
-        }
+        let old_state: State = self
+            .assert_state(account_id, Collection::Email, &request.if_in_state)
+            .await?;
 
         let cococ = "implement ACLS";
         let valid_mailbox_ids = self

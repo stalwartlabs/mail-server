@@ -20,7 +20,7 @@ async fn test_1(db: Arc<Store>) {
     for id in 0..100 {
         handles.push({
             let db = db.clone();
-            tokio::spawn(async move { db.assign_change_id(0, 0).await })
+            tokio::spawn(async move { db.assign_change_id(0).await })
         });
         expected_ids.insert(id);
     }

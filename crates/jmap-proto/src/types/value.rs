@@ -47,6 +47,12 @@ pub enum SetValue {
     ResultReference(ResultReference),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaybePatchValue {
+    Value(Value),
+    Patch(Vec<Value>),
+}
+
 #[derive(Debug, Clone)]
 pub struct SetValueMap<T> {
     pub values: Vec<T>,
@@ -161,7 +167,70 @@ impl Value {
                 .unwrap_bool_or_null("")?
                 .map(Value::Bool)
                 .unwrap_or(Value::Null)),
-            _ => Value::parse::<String, String>(parser.next_token()?, parser),
+            _ => Value::parse::<ObjectProperty, String>(parser.next_token()?, parser),
+        }
+    }
+
+    pub fn unwrap_id(self) -> Id {
+        match self {
+            Value::Id(id) => id,
+            _ => panic!("Expected id"),
+        }
+    }
+
+    pub fn unwrap_bool(self) -> bool {
+        match self {
+            Value::Bool(b) => b,
+            _ => panic!("Expected bool"),
+        }
+    }
+
+    pub fn unwrap_keyword(self) -> Keyword {
+        match self {
+            Value::Keyword(k) => k,
+            _ => panic!("Expected keyword"),
+        }
+    }
+
+    pub fn try_unwrap_string(self) -> Option<String> {
+        match self {
+            Value::Text(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_object(self) -> Option<Object<Value>> {
+        match self {
+            Value::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_list(self) -> Option<Vec<Value>> {
+        match self {
+            Value::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_date(self) -> Option<UTCDate> {
+        match self {
+            Value::Date(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_blob_id(self) -> Option<BlobId> {
+        match self {
+            Value::BlobId(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    pub fn try_unwrap_uint(self) -> Option<u64> {
+        match self {
+            Value::UnsignedInt(u) => Some(u),
+            _ => None,
         }
     }
 }

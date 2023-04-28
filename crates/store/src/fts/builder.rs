@@ -72,7 +72,7 @@ impl<'x> FtsIndexBuilder<'x> {
 }
 
 impl<'x> IntoOperations for FtsIndexBuilder<'x> {
-    fn build(self, batch: &mut BatchBuilder) -> crate::Result<()> {
+    fn build(self, batch: &mut BatchBuilder) {
         let default_language = self
             .detect
             .most_frequent_language()
@@ -122,7 +122,5 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
                 .ops
                 .push(Operation::hash(&token, HASH_EXACT, field, true));
         }
-
-        Ok(())
     }
 }

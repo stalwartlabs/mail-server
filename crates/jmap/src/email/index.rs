@@ -30,6 +30,11 @@ pub const MAX_SORT_FIELD_LENGTH: usize = 255;
 pub const MAX_STORED_FIELD_LENGTH: usize = 512;
 pub const PREVIEW_LENGTH: usize = 256;
 
+pub struct SortedAddressBuilder {
+    last_is_space: bool,
+    buf: String,
+}
+
 pub(super) trait IndexMessage {
     fn index_message(
         &mut self,
@@ -50,7 +55,7 @@ impl IndexMessage for BatchBuilder {
         received_at: u64,
         default_language: Language,
     ) -> store::Result<()> {
-        let mut object = Object::with_capacity(15);
+        let mut metadata = Object::with_capacity(15);
 
         // Index keywords
         self.value(Property::Keywords, keywords, F_VALUE | F_BITMAP);
@@ -59,11 +64,11 @@ impl IndexMessage for BatchBuilder {
         self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
 
         // Index size
-        object.append(Property::Size, message.raw_message.len());
+        metadata.append(Property::Size, message.raw_message.len());
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX);
 
         // Index receivedAt
-        object.append(
+        metadata.append(
             Property::ReceivedAt,
             Value::Date(UTCDate::from_timestamp(received_at as i64)),
         );
@@ -89,6 +94,7 @@ impl IndexMessage for BatchBuilder {
             let part_language = part.language().unwrap_or(language);
             if part_id == 0 {
                 language = part_language;
+                let mut extra_ids = Vec::new();
                 for header in part.headers.into_iter().rev() {
                     if let HeaderName::Rfc(rfc_header) = header.name {
                         // Index hasHeader property
@@ -103,7 +109,6 @@ impl IndexMessage for BatchBuilder {
                                 header.value.visit_text(|id| {
                                     // Add ids to inverted index
                                     if id.len() < MAX_ID_LENGTH {
-                                        println!("indexing {}: {}", rfc_header.as_str(), id);
                                         self.value(Property::MessageId, id, F_INDEX);
                                     }
 
@@ -123,7 +128,7 @@ impl IndexMessage for BatchBuilder {
                                         | RfcHeader::References
                                 ) && !seen_headers[rfc_header as usize]
                                 {
-                                    object.append(
+                                    metadata.append(
                                         rfc_header.into(),
                                         header
                                             .value
@@ -131,6 +136,10 @@ impl IndexMessage for BatchBuilder {
                                             .into_form(&HeaderForm::MessageIds),
                                     );
                                     seen_headers[rfc_header as usize] = true;
+                                } else {
+                                    header.value.into_visit_text(|id| {
+                                        extra_ids.push(Value::Text(id));
+                                    });
                                 }
                             }
                             RfcHeader::From
@@ -148,31 +157,20 @@ impl IndexMessage for BatchBuilder {
                                         | RfcHeader::Cc
                                         | RfcHeader::Bcc
                                 ) {
-                                    let mut sort_text =
-                                        String::with_capacity(MAX_SORT_FIELD_LENGTH);
+                                    let mut sort_text = SortedAddressBuilder::new();
                                     let mut found_addr = seen_header;
-                                    let mut last_is_space = true;
 
-                                    header.value.visit_addresses(|value, is_addr| {
+                                    header.value.visit_addresses(|element, value| {
                                         if !found_addr {
-                                            if !sort_text.is_empty() {
-                                                sort_text.push(' ');
-                                                last_is_space = true;
-                                            }
-                                            found_addr = is_addr;
-                                            'outer: for ch in value.chars() {
-                                                for ch in ch.to_lowercase() {
-                                                    if sort_text.len() < MAX_SORT_FIELD_LENGTH {
-                                                        let is_space = ch.is_whitespace();
-                                                        if !is_space || !last_is_space {
-                                                            sort_text.push(ch);
-                                                            last_is_space = is_space;
-                                                        }
-                                                    } else {
-                                                        found_addr = true;
-                                                        break 'outer;
-                                                    }
+                                            match element {
+                                                AddressElement::Name => {
+                                                    found_addr = sort_text.push(value);
                                                 }
+                                                AddressElement::Address => {
+                                                    sort_text.push(value);
+                                                    found_addr = true;
+                                                }
+                                                AddressElement::GroupName => (),
                                             }
                                         }
 
@@ -182,21 +180,13 @@ impl IndexMessage for BatchBuilder {
 
                                     if !seen_header {
                                         // Add address to inverted index
-                                        self.value(
-                                            u8::from(&property),
-                                            if !sort_text.is_empty() {
-                                                &sort_text
-                                            } else {
-                                                "!"
-                                            },
-                                            F_INDEX,
-                                        );
+                                        self.value(u8::from(&property), sort_text.build(), F_INDEX);
                                     }
                                 }
 
                                 if !seen_header {
-                                    // Add address to object
-                                    object.append(
+                                    // Add address to metadata
+                                    metadata.append(
                                         property,
                                         header
                                             .value
@@ -215,7 +205,7 @@ impl IndexMessage for BatchBuilder {
                                             F_INDEX,
                                         );
                                     }
-                                    object.append(
+                                    metadata.append(
                                         Property::SentAt,
                                         header.value.into_form(&HeaderForm::Date),
                                     );
@@ -233,8 +223,8 @@ impl IndexMessage for BatchBuilder {
                                 };
 
                                 if !seen_headers[rfc_header as usize] {
-                                    // Add to object
-                                    object.append(
+                                    // Add to metadata
+                                    metadata.append(
                                         Property::Subject,
                                         header
                                             .value
@@ -278,14 +268,19 @@ impl IndexMessage for BatchBuilder {
                         }
                     }
                 }
+
+                // Add any extra Ids to metadata
+                if !extra_ids.is_empty() {
+                    metadata.append(Property::EmailIds, Value::List(extra_ids));
+                }
             }
 
             match part.body {
                 PartType::Text(text) => {
                     if part_id == preview_part_id {
-                        object.append(
+                        metadata.append(
                             Property::Preview,
-                            preview_text(text.clone(), PREVIEW_LENGTH),
+                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH),
                         );
                     }
 
@@ -300,9 +295,9 @@ impl IndexMessage for BatchBuilder {
                 PartType::Html(html) => {
                     let text = html_to_text(&html);
                     if part_id == preview_part_id {
-                        object.append(
+                        metadata.append(
                             Property::Preview,
-                            preview_text(text.clone().into(), PREVIEW_LENGTH),
+                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH),
                         );
                     }
 
@@ -354,18 +349,64 @@ impl IndexMessage for BatchBuilder {
         }
 
         // Store and index hasAttachment property
-        object.append(Property::HasAttachment, has_attachments);
+        metadata.append(Property::HasAttachment, has_attachments);
         if has_attachments {
             self.bitmap(Property::HasAttachment, (), 0);
         }
 
         // Store properties
-        self.value(Property::BodyStructure, object, F_VALUE);
+        self.value(Property::BodyStructure, metadata, F_VALUE);
 
         // Store full text index
-        self.custom(fts)?;
+        self.custom(fts);
 
         Ok(())
+    }
+}
+
+impl SortedAddressBuilder {
+    pub fn new() -> Self {
+        Self {
+            last_is_space: true,
+            buf: String::with_capacity(32),
+        }
+    }
+
+    pub fn push(&mut self, text: &str) -> bool {
+        if !text.is_empty() {
+            if !self.buf.is_empty() {
+                self.buf.push(' ');
+                self.last_is_space = true;
+            }
+            for ch in text.chars() {
+                for ch in ch.to_lowercase() {
+                    if self.buf.len() < MAX_SORT_FIELD_LENGTH {
+                        let is_space = ch.is_whitespace();
+                        if !is_space || !self.last_is_space {
+                            self.buf.push(ch);
+                            self.last_is_space = is_space;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub fn build(self) -> String {
+        if !self.buf.is_empty() {
+            self.buf
+        } else {
+            "!".to_string()
+        }
+    }
+}
+
+impl Default for SortedAddressBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -390,55 +431,64 @@ impl GetContentLanguage for MessagePart<'_> {
 }
 
 trait VisitValues {
-    fn visit_addresses(&self, visitor: impl FnMut(&str, bool));
+    fn visit_addresses(&self, visitor: impl FnMut(AddressElement, &str));
     fn visit_text(&self, visitor: impl FnMut(&str));
+    fn into_visit_text(self, visitor: impl FnMut(String));
+}
+
+enum AddressElement {
+    Name,
+    Address,
+    GroupName,
 }
 
 impl VisitValues for HeaderValue<'_> {
-    fn visit_addresses(&self, mut visitor: impl FnMut(&str, bool)) {
+    fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
             HeaderValue::Address(addr) => {
                 if let Some(name) = &addr.name {
-                    visitor(name.as_ref(), false);
+                    visitor(AddressElement::Name, name);
                 }
                 if let Some(addr) = &addr.address {
-                    visitor(addr.as_ref(), true);
+                    visitor(AddressElement::Address, addr);
                 }
             }
             HeaderValue::AddressList(addr_list) => {
                 for addr in addr_list {
                     if let Some(name) = &addr.name {
-                        visitor(name.as_ref(), false);
+                        visitor(AddressElement::Name, name);
                     }
                     if let Some(addr) = &addr.address {
-                        visitor(addr.as_ref(), true);
+                        visitor(AddressElement::Address, addr);
                     }
                 }
             }
             HeaderValue::Group(group) => {
                 if let Some(name) = &group.name {
-                    visitor(name.as_ref(), false);
+                    visitor(AddressElement::GroupName, name);
                 }
+
                 for addr in &group.addresses {
                     if let Some(name) = &addr.name {
-                        visitor(name.as_ref(), false);
+                        visitor(AddressElement::Name, name);
                     }
                     if let Some(addr) = &addr.address {
-                        visitor(addr.as_ref(), true);
+                        visitor(AddressElement::Address, addr);
                     }
                 }
             }
             HeaderValue::GroupList(groups) => {
                 for group in groups {
                     if let Some(name) = &group.name {
-                        visitor(name.as_ref(), false);
+                        visitor(AddressElement::GroupName, name);
                     }
+
                     for addr in &group.addresses {
                         if let Some(name) = &addr.name {
-                            visitor(name.as_ref(), false);
+                            visitor(AddressElement::Name, name);
                         }
                         if let Some(addr) = &addr.address {
-                            visitor(addr.as_ref(), true);
+                            visitor(AddressElement::Address, addr);
                         }
                     }
                 }
@@ -446,6 +496,7 @@ impl VisitValues for HeaderValue<'_> {
             _ => (),
         }
     }
+
     fn visit_text(&self, mut visitor: impl FnMut(&str)) {
         match &self {
             HeaderValue::Text(text) => {
@@ -454,6 +505,20 @@ impl VisitValues for HeaderValue<'_> {
             HeaderValue::TextList(texts) => {
                 for text in texts {
                     visitor(text.as_ref());
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn into_visit_text(self, mut visitor: impl FnMut(String)) {
+        match self {
+            HeaderValue::Text(text) => {
+                visitor(text.into_owned());
+            }
+            HeaderValue::TextList(texts) => {
+                for text in texts {
+                    visitor(text.into_owned());
                 }
             }
             _ => (),

@@ -24,4 +24,20 @@ impl JMAP {
             }
         }
     }
+
+    pub async fn assert_state(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        if_in_state: &Option<State>,
+    ) -> Result<State, MethodError> {
+        let old_state: State = self.get_state(account_id, collection).await?;
+        if let Some(if_in_state) = if_in_state {
+            if &old_state != if_in_state {
+                return Err(MethodError::StateMismatch);
+            }
+        }
+
+        Ok(old_state)
+    }
 }

@@ -19,3 +19,6 @@ http-body-util = "0.1.0-rc.2"
 form_urlencoded = "1.1.0"
 tracing = "0.1"
 tokio = { version = "1.23", features = ["rt"] }
+
+[features]
+test_mode = []

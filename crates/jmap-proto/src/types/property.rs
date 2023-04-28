@@ -668,6 +668,23 @@ impl Property {
             Property::_T(value.to_string())
         }
     }
+
+    pub fn as_rfc_header(&self) -> RfcHeader {
+        match self {
+            Property::MessageId => RfcHeader::MessageId,
+            Property::InReplyTo => RfcHeader::InReplyTo,
+            Property::References => RfcHeader::References,
+            Property::Sender => RfcHeader::Sender,
+            Property::From => RfcHeader::From,
+            Property::To => RfcHeader::To,
+            Property::Cc => RfcHeader::Cc,
+            Property::Bcc => RfcHeader::Bcc,
+            Property::ReplyTo => RfcHeader::ReplyTo,
+            Property::Subject => RfcHeader::Subject,
+            Property::SentAt => RfcHeader::Date,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for Property {
@@ -968,6 +985,7 @@ impl From<RfcHeader> for Property {
             RfcHeader::InReplyTo => Property::InReplyTo,
             RfcHeader::MessageId => Property::MessageId,
             RfcHeader::References => Property::References,
+            RfcHeader::ResentMessageId => Property::EmailIds,
             _ => unreachable!(),
         }
     }

@@ -53,8 +53,7 @@ impl JMAP {
                 ("download", &Method::GET) => {
                     if let (Some(account_id), Some(blob_id), Some(name)) = (
                         path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
-                        path.next()
-                            .and_then(|p| BlobId::from_iter(&mut p.as_bytes().iter())),
+                        path.next().and_then(BlobId::from_base32),
                         path.next(),
                     ) {
                         return match self.blob_download(&blob_id, account_id.document_id()).await {

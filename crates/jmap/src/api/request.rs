@@ -1,7 +1,10 @@
 use jmap_proto::{
-    error::request::RequestError,
+    error::{method::MethodError, request::RequestError},
     method::{get, query},
-    request::{method::MethodName, Request, RequestMethod},
+    request::{
+        method::{MethodName, MethodObject},
+        Request, RequestMethod,
+    },
     response::{Response, ResponseMethod},
 };
 
@@ -27,12 +30,12 @@ impl JMAP {
             }
 
             let method_response: ResponseMethod = match call.method {
-                RequestMethod::Get(mut call) => match call.take_arguments() {
+                RequestMethod::Get(mut req) => match req.take_arguments() {
                     get::RequestArguments::Email(arguments) => {
-                        self.email_get(call.with_arguments(arguments)).await.into()
+                        self.email_get(req.with_arguments(arguments)).await.into()
                     }
                     get::RequestArguments::Mailbox => todo!(),
-                    get::RequestArguments::Thread => self.thread_get(call).await.into(),
+                    get::RequestArguments::Thread => self.thread_get(req).await.into(),
                     get::RequestArguments::Identity => todo!(),
                     get::RequestArguments::EmailSubmission => todo!(),
                     get::RequestArguments::PushSubscription => todo!(),
@@ -40,26 +43,28 @@ impl JMAP {
                     get::RequestArguments::VacationResponse => todo!(),
                     get::RequestArguments::Principal => todo!(),
                 },
-                RequestMethod::Query(mut call) => match call.take_arguments() {
-                    query::RequestArguments::Email(arguments) => self
-                        .email_query(call.with_arguments(arguments))
-                        .await
-                        .into(),
+                RequestMethod::Query(mut req) => match req.take_arguments() {
+                    query::RequestArguments::Email(arguments) => {
+                        self.email_query(req.with_arguments(arguments)).await.into()
+                    }
                     query::RequestArguments::Mailbox(_) => todo!(),
                     query::RequestArguments::EmailSubmission => todo!(),
                     query::RequestArguments::SieveScript => todo!(),
                     query::RequestArguments::Principal => todo!(),
                 },
-                RequestMethod::Set(_) => todo!(),
+                RequestMethod::Set(req) => match call.name.obj {
+                    MethodObject::Email => self.email_set(req, &response).await.into(),
+                    _ => MethodError::UnknownMethod(format!("{}/set", call.name.obj)).into(),
+                },
                 RequestMethod::Changes(_) => todo!(),
                 RequestMethod::Copy(_) => todo!(),
                 RequestMethod::CopyBlob(_) => todo!(),
-                RequestMethod::ImportEmail(call) => self.email_import(call).await.into(),
+                RequestMethod::ImportEmail(req) => self.email_import(req).await.into(),
                 RequestMethod::ParseEmail(_) => todo!(),
                 RequestMethod::QueryChanges(_) => todo!(),
                 RequestMethod::SearchSnippet(_) => todo!(),
                 RequestMethod::ValidateScript(_) => todo!(),
-                RequestMethod::Echo(call) => call.into(),
+                RequestMethod::Echo(req) => req.into(),
                 RequestMethod::Error(error) => error.into(),
             };
 

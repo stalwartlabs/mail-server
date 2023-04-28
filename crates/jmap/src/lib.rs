@@ -1,13 +1,15 @@
 use api::session::BaseCapabilities;
 use jmap_proto::{
     error::method::MethodError,
+    method::set::{SetRequest, SetResponse},
+    request::reference::MaybeReference,
     types::{collection::Collection, property::Property},
 };
 use store::{
-    fts::Language, roaring::RoaringBitmap, write::BitmapFamily, BitmapKey, Deserialize, Serialize,
-    Store, ValueKey,
+    ahash::AHashMap, fts::Language, roaring::RoaringBitmap, write::BitmapFamily, BitmapKey,
+    Deserialize, Serialize, Store, ValueKey,
 };
-use utils::UnwrapFailure;
+use utils::{map::vec_map::VecMap, UnwrapFailure};
 
 pub mod api;
 pub mod blob;
@@ -175,5 +177,43 @@ impl JMAP {
                 Err(MethodError::ServerPartialFail)
             }
         }
+    }
+
+    pub async fn prepare_set_response(
+        &self,
+        request: &SetRequest,
+        collection: Collection,
+    ) -> Result<SetResponse, MethodError> {
+        let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
+        let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
+        let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
+            if let MaybeReference::Value(ids) = objs {
+                ids.len()
+            } else {
+                0
+            }
+        });
+        if n_create + n_update + n_destroy > self.config.set_max_objects {
+            return Err(MethodError::RequestTooLarge);
+        }
+        let old_state = self
+            .assert_state(
+                request.account_id.document_id(),
+                collection,
+                &request.if_in_state,
+            )
+            .await?;
+
+        Ok(SetResponse {
+            account_id: request.account_id.into(),
+            new_state: old_state.clone().into(),
+            old_state: old_state.into(),
+            created: AHashMap::with_capacity(n_create),
+            updated: VecMap::with_capacity(n_update),
+            destroyed: Vec::with_capacity(n_destroy),
+            not_created: VecMap::new(),
+            not_updated: VecMap::new(),
+            not_destroyed: VecMap::new(),
+        })
     }
 }

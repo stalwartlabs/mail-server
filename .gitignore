@@ -2,3 +2,4 @@
 /Cargo.lock
 .vscode
 *.failed
+*_failed

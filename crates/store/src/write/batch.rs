@@ -1,8 +1,8 @@
 use crate::BM_DOCUMENT_IDS;
 
 use super::{
-    Batch, BatchBuilder, BitmapFamily, HasFlag, IntoOperations, Operation, Serialize,
-    ToAssertValue, ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    assert::ToAssertValue, Batch, BatchBuilder, BitmapFamily, HasFlag, IntoOperations, Operation,
+    Serialize, ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -124,7 +124,7 @@ impl BatchBuilder {
         self
     }
 
-    pub fn custom(&mut self, value: impl IntoOperations) -> crate::Result<()> {
+    pub fn custom(&mut self, value: impl IntoOperations) {
         value.build(self)
     }
 

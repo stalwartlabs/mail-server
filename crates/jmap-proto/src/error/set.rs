@@ -34,11 +34,17 @@ pub struct SetError {
     description: Option<Cow<'static, str>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    properties: Option<Vec<Property>>,
+    properties: Option<Vec<InvalidProperty>>,
 
     #[serde(rename = "existingId")]
     #[serde(skip_serializing_if = "Option::is_none")]
     existing_id: Option<Id>,
+}
+
+#[derive(Debug, Clone)]
+pub enum InvalidProperty {
+    Property(Property),
+    Path(Vec<Property>),
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -142,13 +148,20 @@ impl SetError {
         self
     }
 
-    pub fn with_property(mut self, property: Property) -> Self {
-        self.properties = vec![property].into();
+    pub fn with_property(mut self, property: impl Into<InvalidProperty>) -> Self {
+        self.properties = vec![property.into()].into();
         self
     }
 
-    pub fn with_properties(mut self, properties: impl IntoIterator<Item = Property>) -> Self {
-        self.properties = properties.into_iter().collect::<Vec<_>>().into();
+    pub fn with_properties(
+        mut self,
+        properties: impl IntoIterator<Item = impl Into<InvalidProperty>>,
+    ) -> Self {
+        self.properties = properties
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>()
+            .into();
         self
     }
 
@@ -165,9 +178,49 @@ impl SetError {
         Self::new(SetErrorType::Forbidden)
     }
 
+    pub fn not_found() -> Self {
+        Self::new(SetErrorType::NotFound)
+    }
+
     pub fn already_exists() -> Self {
         Self::new(SetErrorType::AlreadyExists)
     }
+
+    pub fn will_destroy() -> Self {
+        Self::new(SetErrorType::WillDestroy).with_description("ID will be destroyed.")
+    }
 }
 
-pub type Result<T> = std::result::Result<T, SetError>;
+impl From<Property> for InvalidProperty {
+    fn from(property: Property) -> Self {
+        InvalidProperty::Property(property)
+    }
+}
+
+impl From<(Property, Property)> for InvalidProperty {
+    fn from((a, b): (Property, Property)) -> Self {
+        InvalidProperty::Path(vec![a, b])
+    }
+}
+
+impl serde::Serialize for InvalidProperty {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            InvalidProperty::Property(p) => p.serialize(serializer),
+            InvalidProperty::Path(p) => {
+                use std::fmt::Write;
+                let mut path = String::with_capacity(64);
+                for (i, p) in p.iter().enumerate() {
+                    if i > 0 {
+                        path.push('/');
+                    }
+                    let _ = write!(path, "{}", p);
+                }
+                path.serialize(serializer)
+            }
+        }
+    }
+}

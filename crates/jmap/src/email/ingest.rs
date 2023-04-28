@@ -104,7 +104,7 @@ impl JMAP {
             })?;
         let change_id = self
             .store
-            .assign_change_id(account_id, Collection::Email)
+            .assign_change_id(account_id)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -178,14 +178,7 @@ impl JMAP {
                 MaybeError::Temporary
             })?;
         batch.value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
-        batch.custom(changes).map_err(|err| {
-            tracing::error!(
-                event = "error",
-                context = "email_ingest",
-                error = ?err,
-                "Failed to add changelog to write batch.");
-            MaybeError::Temporary
-        })?;
+        batch.custom(changes);
         self.store.write(batch.build()).await.map_err(|err| {
             tracing::error!(
                 event = "error",
@@ -211,7 +204,6 @@ impl JMAP {
     ) -> Result<Option<u32>, MaybeError> {
         let mut try_count = 0;
 
-        println!("-----------\nthread name: {:?}", thread_name);
         loop {
             // Find messages with matching references
             let mut filters = Vec::with_capacity(references.len() + 3);
@@ -234,8 +226,6 @@ impl JMAP {
                     MaybeError::Temporary
                 })?
                 .results;
-
-            println!("found messages {:?}", results);
 
             if results.is_empty() {
                 return Ok(None);
@@ -266,7 +256,7 @@ impl JMAP {
                         "Failed to obtain threadIds.");
                     MaybeError::Temporary
                 })?;
-            println!("found thread ids {:?}", thread_ids);
+
             if thread_ids.len() == 1 {
                 return Ok(thread_ids.into_iter().next().unwrap());
             }
@@ -283,7 +273,7 @@ impl JMAP {
                     thread_id = *thread_id_;
                 }
             }
-            println!("common thread id {:?}", thread_id);
+
             if thread_id == u32::MAX {
                 return Ok(None); // This should never happen
             } else if thread_counts.len() == 1 {
@@ -294,7 +284,7 @@ impl JMAP {
             let mut batch = BatchBuilder::new();
             let change_id = self
                 .store
-                .assign_change_id(account_id, Collection::Thread)
+                .assign_change_id(account_id)
                 .await
                 .map_err(|err| {
                     tracing::error!(
@@ -351,14 +341,7 @@ impl JMAP {
                     }
                 }
             }
-            batch.custom(changes).map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "find_or_merge_thread",
-                    error = ?err,
-                    "Failed to add changelog to write batch.");
-                MaybeError::Temporary
-            })?;
+            batch.custom(changes);
 
             match self.store.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),

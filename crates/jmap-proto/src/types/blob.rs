@@ -29,7 +29,7 @@ use store::{
     BlobKind,
 };
 use utils::codec::{
-    base32_custom::Base32Writer,
+    base32_custom::{Base32Reader, Base32Writer},
     leb128::{Leb128Iterator, Leb128Writer},
 };
 
@@ -107,6 +107,10 @@ impl BlobId {
             kind,
             section: None,
         }
+    }
+
+    pub fn from_base32(value: &str) -> Option<Self> {
+        BlobId::from_iter(&mut Base32Reader::new(value.as_bytes()))
     }
 
     #[allow(clippy::should_implement_trait)]

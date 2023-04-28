@@ -12,7 +12,7 @@ use crate::{
     types::{
         id::Id,
         property::Property,
-        value::{SetValue, Value},
+        value::{MaybePatchValue, SetValue, Value},
     },
 };
 
@@ -291,6 +291,53 @@ impl Response {
         }
 
         Ok(())
+    }
+}
+
+impl Object<SetValue> {
+    pub fn iterate_and_eval_references(
+        self,
+        response: &Response,
+    ) -> impl Iterator<Item = Result<(Property, MaybePatchValue), MethodError>> + '_ {
+        self.properties
+            .into_iter()
+            .map(|(property, set_value)| match set_value {
+                SetValue::Value(value) => Ok((property, MaybePatchValue::Value(value))),
+                SetValue::Patch(patch) => Ok((property, MaybePatchValue::Patch(patch))),
+                SetValue::IdReference(MaybeReference::Reference(id_ref)) => {
+                    if let Some(id) = response.created_ids.get(&id_ref) {
+                        Ok((property, MaybePatchValue::Value(Value::Id(*id))))
+                    } else {
+                        Err(MethodError::InvalidResultReference(format!(
+                            "Id reference {id_ref:?} not found."
+                        )))
+                    }
+                }
+                SetValue::IdReference(MaybeReference::Value(id)) => {
+                    Ok((property, MaybePatchValue::Value(Value::Id(id))))
+                }
+                SetValue::IdReferences(id_refs) => {
+                    let mut ids = Vec::with_capacity(id_refs.len());
+                    for id_ref in id_refs {
+                        match id_ref {
+                            MaybeReference::Value(id) => {
+                                ids.push(Value::Id(id));
+                            }
+                            MaybeReference::Reference(id_ref) => {
+                                if let Some(id) = response.created_ids.get(&id_ref) {
+                                    ids.push(Value::Id(*id));
+                                } else {
+                                    return Err(MethodError::InvalidResultReference(format!(
+                                        "Id reference {id_ref:?} not found."
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    Ok((property, MaybePatchValue::Value(Value::List(ids))))
+                }
+                _ => unreachable!(),
+            })
     }
 }
 

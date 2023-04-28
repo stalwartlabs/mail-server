@@ -108,12 +108,9 @@ impl Store {
         unreachable!()
     }
 
-    pub async fn assign_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-    ) -> crate::Result<u64> {
-        let key = IdCacheKey::new(account_id, collection.into());
+    pub async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
+        let collection = u8::MAX;
+        let key = IdCacheKey::new(account_id, collection);
         for _ in 0..2 {
             if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
                 return Ok(assigner.assign_change_id());

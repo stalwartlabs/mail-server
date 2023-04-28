@@ -242,14 +242,7 @@ impl Store {
                 }
             } else {
                 // Find the next available id
-                let mut key = BitmapKey {
-                    account_id,
-                    collection,
-                    family: BM_DOCUMENT_IDS,
-                    field: u8::MAX,
-                    key: b"",
-                    block_num: 0,
-                };
+                let mut key = BitmapKey::document_ids(account_id, collection);
                 let begin = key.serialize();
                 key.block_num = u32::MAX;
                 let end = key.serialize();

@@ -68,7 +68,7 @@ impl ChangeLogBuilder {
 }
 
 impl IntoOperations for ChangeLogBuilder {
-    fn build(self, batch: &mut super::BatchBuilder) -> crate::Result<()> {
+    fn build(self, batch: &mut super::BatchBuilder) {
         for (collection, changes) in self.changes {
             batch.ops.push(Operation::Log {
                 change_id: self.change_id,
@@ -76,8 +76,6 @@ impl IntoOperations for ChangeLogBuilder {
                 set: changes.serialize(),
             });
         }
-
-        Ok(())
     }
 }
 

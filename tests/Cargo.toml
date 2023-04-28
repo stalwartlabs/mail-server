@@ -6,10 +6,11 @@ resolver = "2"
 
 [dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
-jmap = { path = "../crates/jmap" }
+jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 utils = { path = "../crates/utils" }
-jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
+#jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
+jmap-client = { path = "/home/vagrant/code/jmap-client", features = ["websockets", "debug", "async"] } 
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 tokio = { version = "1.23", features = ["full"] }
 csv = "1.1"

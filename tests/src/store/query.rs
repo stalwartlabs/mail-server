@@ -163,7 +163,7 @@ pub async fn test(db: Arc<Store>, do_insert: bool) {
                         }
                     }
 
-                    builder.custom(fts_builder).unwrap();
+                    builder.custom(fts_builder);
                     documents.lock().unwrap().push(builder.build());
                 });
             }

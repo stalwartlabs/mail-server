@@ -2,7 +2,10 @@ use ahash::AHashMap;
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::{method::MethodError, set::SetError},
+    error::{
+        method::MethodError,
+        set::{InvalidProperty, SetError},
+    },
     object::{email_submission, mailbox, sieve, Object},
     parser::{json::Parser, Error, JsonObjectParser, Token},
     request::{
@@ -340,5 +343,60 @@ impl RequestPropertyParser for RequestArguments {
             RequestArguments::SieveScript(args) => args.parse(parser, property),
             _ => Ok(false),
         }
+    }
+}
+
+impl SetRequest {
+    pub fn validate(&self, max_objects_in_set: usize) -> Result<(), MethodError> {
+        if self.create.as_ref().map_or(0, |objs| objs.len())
+            + self.update.as_ref().map_or(0, |objs| objs.len())
+            + self.destroy.as_ref().map_or(0, |objs| {
+                if let MaybeReference::Value(ids) = objs {
+                    ids.len()
+                } else {
+                    0
+                }
+            })
+            > max_objects_in_set
+        {
+            Err(MethodError::RequestTooLarge)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn unwrap_create(&mut self) -> VecMap<String, Object<SetValue>> {
+        self.create.take().unwrap_or_default()
+    }
+
+    pub fn unwrap_update(&mut self) -> VecMap<Id, Object<SetValue>> {
+        self.update.take().unwrap_or_default()
+    }
+
+    pub fn unwrap_destroy(&mut self) -> Vec<Id> {
+        self.destroy
+            .take()
+            .map(|ids| ids.unwrap())
+            .unwrap_or_default()
+    }
+}
+
+impl SetResponse {
+    pub fn invalid_property_create(&mut self, id: String, property: impl Into<InvalidProperty>) {
+        self.not_created.append(
+            id,
+            SetError::invalid_properties()
+                .with_property(property)
+                .with_description("Invalid property or value.".to_string()),
+        );
+    }
+
+    pub fn invalid_property_update(&mut self, id: Id, property: impl Into<InvalidProperty>) {
+        self.not_updated.append(
+            id,
+            SetError::invalid_properties()
+                .with_property(property)
+                .with_description("Invalid property or value.".to_string()),
+        );
     }
 }
