@@ -1,10 +1,7 @@
 use jmap_proto::{
-    error::{method::MethodError, request::RequestError},
-    method::{get, query},
-    request::{
-        method::{MethodName, MethodObject},
-        Request, RequestMethod,
-    },
+    error::request::RequestError,
+    method::{get, query, set},
+    request::{method::MethodName, Request, RequestMethod},
     response::{Response, ResponseMethod},
 };
 
@@ -34,7 +31,7 @@ impl JMAP {
                     get::RequestArguments::Email(arguments) => {
                         self.email_get(req.with_arguments(arguments)).await.into()
                     }
-                    get::RequestArguments::Mailbox => todo!(),
+                    get::RequestArguments::Mailbox => self.mailbox_get(req).await.into(),
                     get::RequestArguments::Thread => self.thread_get(req).await.into(),
                     get::RequestArguments::Identity => todo!(),
                     get::RequestArguments::EmailSubmission => todo!(),
@@ -47,14 +44,26 @@ impl JMAP {
                     query::RequestArguments::Email(arguments) => {
                         self.email_query(req.with_arguments(arguments)).await.into()
                     }
-                    query::RequestArguments::Mailbox(_) => todo!(),
+                    query::RequestArguments::Mailbox(arguments) => self
+                        .mailbox_query(req.with_arguments(arguments))
+                        .await
+                        .into(),
                     query::RequestArguments::EmailSubmission => todo!(),
                     query::RequestArguments::SieveScript => todo!(),
                     query::RequestArguments::Principal => todo!(),
                 },
-                RequestMethod::Set(req) => match call.name.obj {
-                    MethodObject::Email => self.email_set(req, &response).await.into(),
-                    _ => MethodError::UnknownMethod(format!("{}/set", call.name.obj)).into(),
+                RequestMethod::Set(mut req) => match req.take_arguments() {
+                    set::RequestArguments::Email => self.email_set(req, &response).await.into(),
+                    set::RequestArguments::Mailbox(arguments) => self
+                        .mailbox_set(req.with_arguments(arguments), &response)
+                        .await
+                        .into(),
+                    set::RequestArguments::Identity => todo!(),
+                    set::RequestArguments::EmailSubmission(_) => todo!(),
+                    set::RequestArguments::PushSubscription => todo!(),
+                    set::RequestArguments::SieveScript(_) => todo!(),
+                    set::RequestArguments::VacationResponse => todo!(),
+                    set::RequestArguments::Principal => todo!(),
                 },
                 RequestMethod::Changes(_) => todo!(),
                 RequestMethod::Copy(_) => todo!(),

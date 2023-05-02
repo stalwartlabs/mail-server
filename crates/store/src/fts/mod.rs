@@ -36,7 +36,7 @@ pub mod ngram;
 pub mod query;
 //pub mod search_snippet;
 pub mod stemmer;
-//pub mod term_index;
+pub mod term_index;
 pub mod tokenizers;
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, serde::Serialize, serde::Deserialize)]

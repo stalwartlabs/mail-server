@@ -19,34 +19,32 @@ impl JMAP {
         mut request: GetRequest<GetArguments>,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
-        let properties = request.unwrap_properties().unwrap_or_else(|| {
-            vec![
-                Property::Id,
-                Property::BlobId,
-                Property::ThreadId,
-                Property::MailboxIds,
-                Property::Keywords,
-                Property::Size,
-                Property::ReceivedAt,
-                Property::MessageId,
-                Property::InReplyTo,
-                Property::References,
-                Property::Sender,
-                Property::From,
-                Property::To,
-                Property::Cc,
-                Property::Bcc,
-                Property::ReplyTo,
-                Property::Subject,
-                Property::SentAt,
-                Property::HasAttachment,
-                Property::Preview,
-                Property::BodyValues,
-                Property::TextBody,
-                Property::HtmlBody,
-                Property::Attachments,
-            ]
-        });
+        let properties = request.unwrap_properties(&[
+            Property::Id,
+            Property::BlobId,
+            Property::ThreadId,
+            Property::MailboxIds,
+            Property::Keywords,
+            Property::Size,
+            Property::ReceivedAt,
+            Property::MessageId,
+            Property::InReplyTo,
+            Property::References,
+            Property::Sender,
+            Property::From,
+            Property::To,
+            Property::Cc,
+            Property::Bcc,
+            Property::ReplyTo,
+            Property::Subject,
+            Property::SentAt,
+            Property::HasAttachment,
+            Property::Preview,
+            Property::BodyValues,
+            Property::TextBody,
+            Property::HtmlBody,
+            Property::Attachments,
+        ]);
         let body_properties = request.arguments.body_properties.unwrap_or_else(|| {
             vec![
                 Property::PartId,
@@ -80,7 +78,7 @@ impl JMAP {
             self.get_properties::<u32>(
                 account_id,
                 Collection::Email,
-                &document_ids,
+                document_ids.iter().copied(),
                 Property::ThreadId,
             )
             .await?

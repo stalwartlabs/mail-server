@@ -1,5 +1,6 @@
 pub mod email;
 pub mod email_submission;
+pub mod index;
 pub mod mailbox;
 pub mod sieve;
 

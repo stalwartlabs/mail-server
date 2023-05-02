@@ -1,19 +1,11 @@
-use std::time::Instant;
-
 use roaring::RoaringBitmap;
 
 use crate::{
-    fts::{
-        bloom::{BloomFilter, BloomHashGroup},
-        builder::MAX_TOKEN_LENGTH,
-        ngram::ToNgrams,
-        stemmer::Stemmer,
-        tokenizers::Tokenizer,
-    },
-    BitmapKey, ReadTransaction, ValueKey, BLOOM_BIGRAM, BLOOM_TRIGRAM, HASH_EXACT, HASH_STEMMED,
+    fts::{builder::MAX_TOKEN_LENGTH, stemmer::Stemmer, tokenizers::Tokenizer},
+    BitmapKey, ReadTransaction, ValueKey, HASH_EXACT, HASH_STEMMED,
 };
 
-use super::Language;
+use super::{term_index::TermIndex, Language};
 
 impl ReadTransaction<'_> {
     #[maybe_async::maybe_async]
@@ -26,10 +18,8 @@ impl ReadTransaction<'_> {
         language: Language,
         match_phrase: bool,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let real_now = Instant::now();
-
-        let (bitmaps, hashes, family) = if match_phrase {
-            let mut tokens = Vec::new();
+        if match_phrase {
+            let mut phrase = Vec::new();
             let mut bit_keys = Vec::new();
             for token in Tokenizer::new(text, language, MAX_TOKEN_LENGTH) {
                 let key = BitmapKey::hash(
@@ -43,26 +33,66 @@ impl ReadTransaction<'_> {
                     bit_keys.push(key);
                 }
 
-                tokens.push(token.word);
+                phrase.push(token.word);
             }
             let bitmaps = match self.get_bitmaps_intersection(bit_keys).await? {
                 Some(b) if !b.is_empty() => b,
                 _ => return Ok(None),
             };
 
-            match tokens.len() {
+            match phrase.len() {
                 0 => return Ok(None),
                 1 => return Ok(Some(bitmaps)),
-                2 => (
-                    bitmaps,
-                    <Vec<BloomHashGroup>>::to_ngrams(&tokens, 2),
-                    BLOOM_BIGRAM,
-                ),
-                _ => (
-                    bitmaps,
-                    <Vec<BloomHashGroup>>::to_ngrams(&tokens, 3),
-                    BLOOM_TRIGRAM,
-                ),
+                _ => (),
+            }
+
+            let mut results = RoaringBitmap::new();
+            for document_id in bitmaps {
+                self.refresh_if_old().await?;
+                if let Some(term_index) = self
+                    .get_value::<TermIndex>(ValueKey::term_index(
+                        account_id,
+                        collection,
+                        document_id,
+                    ))
+                    .await?
+                {
+                    if term_index
+                        .match_terms(
+                            &phrase
+                                .iter()
+                                .map(|w| term_index.get_match_term(w, None))
+                                .collect::<Vec<_>>(),
+                            field.into(),
+                            true,
+                            false,
+                            false,
+                        )
+                        .map_err(|e| {
+                            crate::Error::InternalError(format!(
+                                "TermIndex match_terms failed for {account_id}/{collection}/{document_id}: {e:?}"
+                            ))
+                        })?
+                        .is_some()
+                    {
+                        results.insert(document_id);
+                    }
+                } else {
+                    tracing::debug!(
+                        event = "error",
+                        context = "fts_query",
+                        account_id = account_id,
+                        collection = collection,
+                        document_id = document_id,
+                        "Document is missing a term index",
+                    );
+                }
+            }
+
+            if !results.is_empty() {
+                Ok(Some(results))
+            } else {
+                Ok(None)
             }
         } else {
             let mut bitmaps = RoaringBitmap::new();
@@ -96,48 +126,7 @@ impl ReadTransaction<'_> {
                 };
             }
 
-            return Ok(Some(bitmaps));
-        };
-
-        let b_count = bitmaps.len();
-
-        let mut bm = RoaringBitmap::new();
-        for document_id in bitmaps {
-            self.refresh_if_old().await?;
-
-            if let Some(bloom) = self
-                .get_value::<BloomFilter>(ValueKey {
-                    account_id,
-                    collection,
-                    document_id,
-                    family,
-                    field,
-                })
-                .await?
-            {
-                if !bloom.is_empty() {
-                    let mut matched = true;
-                    for hash in &hashes {
-                        if !(bloom.contains(&hash.h1)
-                            || hash.h2.as_ref().map_or(false, |h2| bloom.contains(h2)))
-                        {
-                            matched = false;
-                            break;
-                        }
-                    }
-
-                    if matched {
-                        bm.insert(document_id);
-                    }
-                }
-            }
+            Ok(Some(bitmaps))
         }
-
-        println!(
-            "bloom_match {text:?} {b_count} items in {:?}ms",
-            real_now.elapsed().as_millis()
-        );
-
-        Ok(Some(bm))
     }
 }

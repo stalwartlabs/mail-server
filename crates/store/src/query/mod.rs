@@ -60,8 +60,8 @@ pub enum Comparator {
 
 #[derive(Debug)]
 pub struct ResultSet {
-    account_id: u32,
-    collection: u8,
+    pub account_id: u32,
+    pub collection: u8,
     pub results: RoaringBitmap,
 }
 

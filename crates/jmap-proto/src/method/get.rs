@@ -79,10 +79,10 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 if !key.is_ref => {
+                0x0064_4974_6e75_6f63_6361 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                0x7364_69 => {
+                0x0073_6469 => {
                     request.ids = if !key.is_ref {
                         <Option<Vec<Id>>>::parse(parser)?.map(MaybeReference::Value)
                     } else {
@@ -138,13 +138,16 @@ impl GetRequest<RequestArguments> {
 }
 
 impl<T> GetRequest<T> {
-    pub fn unwrap_properties(&mut self) -> Option<Vec<Property>> {
-        let mut properties = self.properties.take()?.unwrap();
-        // Add Id Property
-        if !properties.contains(&Property::Id) {
-            properties.push(Property::Id);
+    pub fn unwrap_properties(&mut self, default: &[Property]) -> Vec<Property> {
+        if let Some(mut properties) = self.properties.take().map(|p| p.unwrap()) {
+            // Add Id Property
+            if !properties.contains(&Property::Id) {
+                properties.push(Property::Id);
+            }
+            properties
+        } else {
+            default.to_vec()
         }
-        Some(properties)
     }
 
     pub fn unwrap_ids(

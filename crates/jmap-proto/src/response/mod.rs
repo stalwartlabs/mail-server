@@ -50,7 +50,7 @@ pub struct Response {
     #[serde(serialize_with = "serialize_hex")]
     pub session_state: u32,
 
-    #[serde(rename(deserialize = "createdIds"))]
+    #[serde(rename = "createdIds")]
     pub created_ids: HashMap<String, Id>,
 }
 

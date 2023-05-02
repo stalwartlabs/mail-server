@@ -10,8 +10,8 @@ pub struct SetArguments {
 
 #[derive(Debug, Clone, Default)]
 pub struct QueryArguments {
-    sort_as_tree: Option<bool>,
-    filter_as_tree: Option<bool>,
+    pub sort_as_tree: Option<bool>,
+    pub filter_as_tree: Option<bool>,
 }
 
 impl RequestPropertyParser for SetArguments {
@@ -21,7 +21,7 @@ impl RequestPropertyParser for SetArguments {
         property: RequestProperty,
     ) -> crate::parser::Result<bool> {
         if property.hash[0] == 0x4565_766f_6d65_5279_6f72_7473_6544_6e6f
-            && property.hash[1] == 0x736c_6961_6d
+            && property.hash[1] == 0x0073_6c69_616d
         {
             self.on_destroy_remove_emails = parser
                 .next_token::<Ignore>()?

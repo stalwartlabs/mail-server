@@ -57,6 +57,7 @@ impl JsonObjectParser for Keyword {
     where
         Self: Sized,
     {
+        let pos = parser.pos;
         if parser
             .next_unescaped()?
             .ok_or_else(|| parser.error_value())?
@@ -93,8 +94,7 @@ impl JsonObjectParser for Keyword {
 
         if parser.is_eof || parser.skip_string() {
             Ok(Keyword::Other(
-                String::from_utf8_lossy(parser.bytes[parser.pos_marker..parser.pos - 1].as_ref())
-                    .into_owned(),
+                String::from_utf8_lossy(parser.bytes[pos..parser.pos - 1].as_ref()).into_owned(),
             ))
         } else {
             Err(parser.error_unterminated())

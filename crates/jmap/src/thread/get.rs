@@ -26,8 +26,8 @@ impl JMAP {
                 .collect()
         };
         let add_email_ids = request
-            .unwrap_properties()
-            .map_or(true, |properties| properties.contains(&Property::EmailIds));
+            .properties
+            .map_or(true, |p| p.unwrap().contains(&Property::EmailIds));
         let mut response = GetResponse {
             account_id: Some(request.account_id),
             state: self.get_state(account_id, Collection::Thread).await?,
@@ -49,14 +49,7 @@ impl JMAP {
                             .sort(
                                 ResultSet::new(account_id, Collection::Email, document_ids.clone()),
                                 vec![Comparator::ascending(Property::ReceivedAt)],
-                                Pagination::new(
-                                    document_ids.len() as usize,
-                                    0,
-                                    None,
-                                    0,
-                                    None,
-                                    false,
-                                ),
+                                Pagination::new(document_ids.len() as usize, 0, None, 0),
                             )
                             .await
                             .map_err(|err| {

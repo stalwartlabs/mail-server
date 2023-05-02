@@ -30,6 +30,7 @@ siphasher = "0.3"
 parking_lot = { version = "0.12.1", optional = true }
 lru-cache = { version = "0.1.2", optional = true }
 blake3 = "1.3.3"
+tracing = "0.1"
 
 [features]
 default = ["sqlite"]

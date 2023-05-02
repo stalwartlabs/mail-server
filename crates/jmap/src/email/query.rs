@@ -7,7 +7,7 @@ use jmap_proto::{
 use mail_parser::{HeaderName, RfcHeader};
 use store::{
     fts::{builder::MAX_TOKEN_LENGTH, Language},
-    query::{self, sort::Pagination},
+    query::{self},
     roaring::RoaringBitmap,
     ValueKey,
 };
@@ -17,12 +17,12 @@ use crate::JMAP;
 impl JMAP {
     pub async fn email_query(
         &self,
-        request: QueryRequest<QueryArguments>,
+        mut request: QueryRequest<QueryArguments>,
     ) -> Result<QueryResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
-        for cond in request.filter {
+        for cond in std::mem::take(&mut request.filter) {
             match cond {
                 Filter::InMailbox(mailbox) => filters.push(query::Filter::is_in_bitmap(
                     Property::MailboxIds,
@@ -215,51 +215,11 @@ impl JMAP {
             }
         }
 
-        let result_set = match self
-            .store
-            .filter(account_id, Collection::Email, filters)
-            .await
-        {
-            Ok(result_set) => result_set,
-            Err(err) => {
-                tracing::error!(event = "error",
-                    context = "store",
-                    account_id = account_id,
-                    collection = "email",
-                    error = ?err,
-                    "Filter failed");
-                return Err(MethodError::ServerPartialFail);
-            }
-        };
-        let total = result_set.results.len() as usize;
-        let (limit_total, limit) = if let Some(limit) = request.limit {
-            if limit > 0 {
-                let limit = std::cmp::min(limit, self.config.query_max_results);
-                (std::cmp::min(limit, total), limit)
-            } else {
-                (0, 0)
-            }
-        } else {
-            (
-                std::cmp::min(self.config.query_max_results, total),
-                self.config.query_max_results,
-            )
-        };
-        let mut response = QueryResponse {
-            account_id: request.account_id,
-            query_state: self.get_state(account_id, Collection::Email).await?,
-            can_calculate_changes: true,
-            position: 0,
-            ids: vec![],
-            total: if request.calculate_total.unwrap_or(false) {
-                Some(total)
-            } else {
-                None
-            },
-            limit: if total > limit { Some(limit) } else { None },
-        };
+        let (response, result_set, paginate) = self
+            .query(account_id, Collection::Email, filters, &request)
+            .await?;
 
-        if limit_total > 0 {
+        if let Some(paginate) = paginate {
             // Parse sort criteria
             let mut comparators = Vec::with_capacity(request.sort.as_ref().map_or(1, |s| s.len()));
             for comparator in request
@@ -325,48 +285,23 @@ impl JMAP {
             }
 
             // Sort results
-            let result = match self
-                .store
-                .sort(
-                    result_set,
-                    comparators,
-                    Pagination::new(
-                        limit_total,
-                        request.position.unwrap_or(0),
-                        request.anchor.map(|a| a.document_id()),
-                        request.anchor_offset.unwrap_or(0),
-                        ValueKey::new(account_id, Collection::Email, 0, Property::ThreadId).into(),
-                        request.arguments.collapse_threads.unwrap_or(false),
-                    ),
-                )
-                .await
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    tracing::error!(event = "error",
-                    context = "store",
-                    account_id = account_id,
-                    collection = "email",
-                    error = ?err,
-                    "Sort failed");
-                    return Err(MethodError::ServerPartialFail);
-                }
-            };
-
-            // Prepare response
-            if result.found_anchor {
-                response.position = result.position;
-                response.ids = result
-                    .ids
-                    .into_iter()
-                    .map(|id| id.into())
-                    .collect::<Vec<_>>();
-            } else {
-                return Err(MethodError::AnchorNotFound);
-            }
+            self.sort(
+                result_set,
+                comparators,
+                paginate
+                    .with_prefix_key(ValueKey::new(
+                        account_id,
+                        Collection::Email,
+                        0,
+                        Property::ThreadId,
+                    ))
+                    .with_prefix_unique(request.arguments.collapse_threads.unwrap_or(false)),
+                response,
+            )
+            .await
+        } else {
+            Ok(response)
         }
-
-        Ok(response)
     }
 
     async fn thread_keywords(

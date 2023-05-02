@@ -142,7 +142,7 @@ impl JsonObjectParser for Property {
                 } else {
                     first_char = ch;
                 }
-            } else if ch == b':' && first_char == b'h' && hash == 0x7265_6461_65 {
+            } else if ch == b':' && first_char == b'h' && hash == 0x0072_6564_6165 {
                 return parse_header_property(parser);
             } else {
                 return parser.invalid_property();
@@ -188,7 +188,7 @@ impl JsonObjectParser for SetProperty {
                         is_patch = true;
                         break;
                     }
-                    b':' if first_char == b'h' && hash == 0x7265_6461_65 && !is_ref => {
+                    b':' if first_char == b'h' && hash == 0x0072_6564_6165 && !is_ref => {
                         return parse_header_property(parser).map(|property| SetProperty {
                             property,
                             patch: vec![],
@@ -534,7 +534,7 @@ impl JsonObjectParser for ObjectProperty {
                 } else {
                     first_char = ch;
                 }
-            } else if ch == b':' && first_char == b'h' && hash == 0x7265_6461_65 {
+            } else if ch == b':' && first_char == b'h' && hash == 0x0072_6564_6165 {
                 return parse_header_property(parser).map(ObjectProperty);
             } else {
                 return parser.invalid_property().map(ObjectProperty);
@@ -544,11 +544,11 @@ impl JsonObjectParser for ObjectProperty {
         Ok(ObjectProperty(match first_char {
             b'a' => match hash {
                 0x7365_7373_6572_6464 => Property::Addresses,
-                0x6874_75 => Property::Auth,
+                0x0068_7475 => Property::Auth,
                 _ => parser.invalid_property()?,
             },
             b'b' => match hash {
-                0x6449_626f_6c => Property::BlobId,
+                0x0064_4962_6f6c => Property::BlobId,
                 _ => parser.invalid_property()?,
             },
             b'c' => match hash {
@@ -571,7 +571,7 @@ impl JsonObjectParser for ObjectProperty {
                 _ => parser.invalid_property()?,
             },
             b'i' => match hash {
-                0x656c_626f_7250_676e_6964_6f63_6e45_73 => Property::IsEncodingProblem,
+                0x0065_6c62_6f72_5067_6e69_646f_636e_4573 => Property::IsEncodingProblem,
                 0x6465_7461_636e_7572_5473 => Property::IsTruncated,
                 _ => parser.invalid_property()?,
             },

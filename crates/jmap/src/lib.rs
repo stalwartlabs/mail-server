@@ -1,13 +1,20 @@
 use api::session::BaseCapabilities;
 use jmap_proto::{
     error::method::MethodError,
-    method::set::{SetRequest, SetResponse},
+    method::{
+        query::{QueryRequest, QueryResponse},
+        set::{SetRequest, SetResponse},
+    },
     request::reference::MaybeReference,
     types::{collection::Collection, property::Property},
 };
 use store::{
-    ahash::AHashMap, fts::Language, roaring::RoaringBitmap, write::BitmapFamily, BitmapKey,
-    Deserialize, Serialize, Store, ValueKey,
+    ahash::AHashMap,
+    fts::Language,
+    query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
+    roaring::RoaringBitmap,
+    write::BitmapFamily,
+    BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
 use utils::{map::vec_map::VecMap, UnwrapFailure};
 
@@ -15,6 +22,7 @@ pub mod api;
 pub mod blob;
 pub mod changes;
 pub mod email;
+pub mod mailbox;
 pub mod thread;
 
 pub struct JMAP {
@@ -25,6 +33,7 @@ pub struct JMAP {
 pub struct Config {
     pub default_language: Language,
     pub query_max_results: usize,
+    pub changes_max_results: usize,
 
     pub request_max_size: usize,
     pub request_max_calls: usize,
@@ -58,6 +67,24 @@ impl JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
         }
+    }
+
+    pub async fn assign_document_id(
+        &self,
+        account_id: u32,
+        collection: Collection,
+    ) -> Result<u32, MethodError> {
+        self.store
+            .assign_document_id(account_id, collection)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "assign_document_id",
+                    error = ?err,
+                    "Failed to assign documentId.");
+                MethodError::ServerPartialFail
+            })
     }
 
     pub async fn get_property<U>(
@@ -95,7 +122,7 @@ impl JMAP {
         &self,
         account_id: u32,
         collection: Collection,
-        document_ids: &[u32],
+        document_ids: impl Iterator<Item = u32>,
         property: impl AsRef<Property>,
     ) -> Result<Vec<Option<U>>, MethodError>
     where
@@ -106,10 +133,7 @@ impl JMAP {
             .store
             .get_values::<U>(
                 document_ids
-                    .iter()
-                    .map(|document_id| {
-                        ValueKey::new(account_id, collection, *document_id, property)
-                    })
+                    .map(|document_id| ValueKey::new(account_id, collection, document_id, property))
                     .collect(),
             )
             .await
@@ -120,7 +144,6 @@ impl JMAP {
                                 context = "store",
                                 account_id = account_id,
                                 collection = ?collection,
-                                document_ids = ?document_ids,
                                 property = ?property,
                                 error = ?err,
                                 "Failed to retrieve properties");
@@ -179,9 +202,9 @@ impl JMAP {
         }
     }
 
-    pub async fn prepare_set_response(
+    pub async fn prepare_set_response<T>(
         &self,
-        request: &SetRequest,
+        request: &SetRequest<T>,
         collection: Collection,
     ) -> Result<SetResponse, MethodError> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
@@ -215,5 +238,126 @@ impl JMAP {
             not_updated: VecMap::new(),
             not_destroyed: VecMap::new(),
         })
+    }
+
+    pub async fn filter(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        filters: Vec<Filter>,
+    ) -> Result<ResultSet, MethodError> {
+        self.store
+            .filter(account_id, collection, filters)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                                context = "mailbox_set",
+                                account_id = account_id,
+                                collection = ?collection,
+                                error = ?err,
+                                "Failed to execute filter.");
+
+                MethodError::ServerPartialFail
+            })
+    }
+
+    pub async fn query<T>(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        filters: Vec<Filter>,
+        request: &QueryRequest<T>,
+    ) -> Result<(QueryResponse, ResultSet, Option<Pagination>), MethodError> {
+        let result_set = self.filter(account_id, collection, filters).await?;
+        let total = result_set.results.len() as usize;
+        let (limit_total, limit) = if let Some(limit) = request.limit {
+            if limit > 0 {
+                let limit = std::cmp::min(limit, self.config.query_max_results);
+                (std::cmp::min(limit, total), limit)
+            } else {
+                (0, 0)
+            }
+        } else {
+            (
+                std::cmp::min(self.config.query_max_results, total),
+                self.config.query_max_results,
+            )
+        };
+        Ok((
+            QueryResponse {
+                account_id: request.account_id,
+                query_state: self.get_state(account_id, collection).await?,
+                can_calculate_changes: true,
+                position: 0,
+                ids: vec![],
+                total: if request.calculate_total.unwrap_or(false) {
+                    Some(total)
+                } else {
+                    None
+                },
+                limit: if total > limit { Some(limit) } else { None },
+            },
+            result_set,
+            if limit_total > 0 {
+                Pagination::new(
+                    limit_total,
+                    request.position.unwrap_or(0),
+                    request.anchor.map(|a| a.document_id()),
+                    request.anchor_offset.unwrap_or(0),
+                )
+                .into()
+            } else {
+                None
+            },
+        ))
+    }
+
+    pub async fn sort(
+        &self,
+        result_set: ResultSet,
+        comparators: Vec<Comparator>,
+        paginate: Pagination,
+        mut response: QueryResponse,
+    ) -> Result<QueryResponse, MethodError> {
+        // Sort results
+        let collection = result_set.collection;
+        let account_id = result_set.account_id;
+        response.update_results(
+            match self.store.sort(result_set, comparators, paginate).await {
+                Ok(result) => result,
+                Err(err) => {
+                    tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                collection = ?collection,
+                                error = ?err,
+                                "Sort failed");
+                    return Err(MethodError::ServerPartialFail);
+                }
+            },
+        )?;
+
+        Ok(response)
+    }
+}
+
+trait UpdateResults: Sized {
+    fn update_results(&mut self, sorted_results: SortedResultSet) -> Result<(), MethodError>;
+}
+
+impl UpdateResults for QueryResponse {
+    fn update_results(&mut self, sorted_results: SortedResultSet) -> Result<(), MethodError> {
+        // Prepare response
+        if sorted_results.found_anchor {
+            self.position = sorted_results.position;
+            self.ids = sorted_results
+                .ids
+                .into_iter()
+                .map(|id| id.into())
+                .collect::<Vec<_>>();
+            Ok(())
+        } else {
+            Err(MethodError::AnchorNotFound)
+        }
     }
 }

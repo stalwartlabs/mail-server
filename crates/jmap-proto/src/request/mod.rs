@@ -20,7 +20,7 @@ use crate::{
         query::{self, QueryRequest},
         query_changes::QueryChangesRequest,
         search_snippet::GetSearchSnippetRequest,
-        set::SetRequest,
+        set::{self, SetRequest},
         validate::ValidateSieveScriptRequest,
     },
     parser::{json::Parser, JsonObjectParser},
@@ -52,7 +52,7 @@ pub struct RequestProperty {
 #[derive(Debug)]
 pub enum RequestMethod {
     Get(GetRequest<get::RequestArguments>),
-    Set(SetRequest),
+    Set(SetRequest<set::RequestArguments>),
     Changes(ChangesRequest),
     Copy(CopyRequest),
     CopyBlob(CopyBlobRequest),

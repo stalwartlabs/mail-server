@@ -379,48 +379,10 @@ impl Serialize for TermIndexBuilder {
 }
 
 impl Deserialize for TermIndex {
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
-        let (num_tokens, mut pos) = bytes.read_leb128()?;
-        let mut token_map = AHashMap::with_capacity(num_tokens as usize);
-        for term_id in 0..num_tokens {
-            let nil_pos = bytes.get(pos..)?.iter().position(|b| b == &0)?;
-            token_map.insert(
-                String::from_utf8(bytes.get(pos..pos + nil_pos)?.to_vec()).ok()?,
-                term_id,
-            );
-            pos += nil_pos + 1;
-        }
-
-        let mut term_index = TermIndex {
-            items: Vec::new(),
-            token_map,
-        };
-
-        while pos < bytes.len() {
-            let item_len =
-                u32::from_le_bytes(bytes.get(pos..pos + LENGTH_SIZE)?.try_into().ok()?) as usize;
-            pos += LENGTH_SIZE;
-
-            let field = bytes.get(pos)?;
-            pos += 1;
-
-            let (part_id, bytes_read) = bytes.get(pos..)?.read_leb128()?;
-            pos += bytes_read;
-
-            let (terms_len, bytes_read) = bytes.get(pos..)?.read_leb128()?;
-            pos += bytes_read;
-
-            term_index.items.push(TermIndexItem {
-                field_id: *field,
-                part_id,
-                terms_len,
-                terms: bytes.get(pos..pos + item_len)?.to_vec(),
-            });
-
-            pos += item_len;
-        }
-
-        Some(term_index)
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        TermIndex::from_bytes(bytes).ok_or_else(|| {
+            crate::Error::InternalError("Failed to deserialize term index".to_string())
+        })
     }
 }
 
@@ -518,7 +480,7 @@ impl TermIndex {
     pub fn match_terms(
         &self,
         match_terms: &[MatchTerm],
-        match_in: Option<AHashSet<u8>>,
+        match_field: Option<u8>,
         match_phrase: bool,
         match_many: bool,
         include_offsets: bool,
@@ -537,10 +499,8 @@ impl TermIndex {
         let mut matched_mask = words_mask;
 
         for item in &self.items {
-            if let Some(ref match_in) = match_in {
-                if !match_in.contains(&item.field_id) {
-                    continue;
-                }
+            if match_field.map_or(false, |match_field| match_field != item.field_id) {
+                continue;
             }
 
             let mut terms = Vec::new();
@@ -675,6 +635,50 @@ impl TermIndex {
             None
         })
     }
+
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        let (num_tokens, mut pos) = bytes.read_leb128()?;
+        let mut token_map = AHashMap::with_capacity(num_tokens as usize);
+        for term_id in 0..num_tokens {
+            let nil_pos = bytes.get(pos..)?.iter().position(|b| b == &0)?;
+            token_map.insert(
+                String::from_utf8(bytes.get(pos..pos + nil_pos)?.to_vec()).ok()?,
+                term_id,
+            );
+            pos += nil_pos + 1;
+        }
+
+        let mut term_index = TermIndex {
+            items: Vec::new(),
+            token_map,
+        };
+
+        while pos < bytes.len() {
+            let item_len =
+                u32::from_le_bytes(bytes.get(pos..pos + LENGTH_SIZE)?.try_into().ok()?) as usize;
+            pos += LENGTH_SIZE;
+
+            let field = bytes.get(pos)?;
+            pos += 1;
+
+            let (part_id, bytes_read) = bytes.get(pos..)?.read_leb128()?;
+            pos += bytes_read;
+
+            let (terms_len, bytes_read) = bytes.get(pos..)?.read_leb128()?;
+            pos += bytes_read;
+
+            term_index.items.push(TermIndexItem {
+                field_id: *field,
+                part_id,
+                terms_len,
+                terms: bytes.get(pos..pos + item_len)?.to_vec(),
+            });
+
+            pos += item_len;
+        }
+
+        Some(term_index)
+    }
 }
 
 #[derive(Default)]
@@ -690,7 +694,15 @@ pub struct TokenIndex {
 }
 
 impl Deserialize for TokenIndex {
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Self::from_bytes(bytes).ok_or_else(|| {
+            crate::Error::InternalError("Failed to deserialize token index.".to_string())
+        })
+    }
+}
+
+impl TokenIndex {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let (num_tokens, mut pos) = bytes.read_leb128::<u32>()?;
         let mut tokens = Vec::with_capacity(num_tokens as usize);
         for _ in 0..num_tokens {
@@ -754,7 +766,7 @@ impl Deserialize for TokenIndex {
 #[cfg(test)]
 mod tests {
 
-    use ahash::{AHashMap, AHashSet};
+    use ahash::AHashMap;
 
     use crate::{
         fts::{
@@ -932,17 +944,7 @@ mod tests {
             }
 
             let result = term_index
-                .match_terms(
-                    &match_terms,
-                    field_id.and_then(|f| {
-                        let mut h = AHashSet::default();
-                        h.insert(f);
-                        Some(h)
-                    }),
-                    match_phrase,
-                    true,
-                    true,
-                )
+                .match_terms(&match_terms, field_id, match_phrase, true, true)
                 .unwrap()
                 .unwrap_or_default();
 

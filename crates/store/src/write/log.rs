@@ -20,6 +20,13 @@ pub struct Changes {
 }
 
 impl ChangeLogBuilder {
+    pub fn new() -> ChangeLogBuilder {
+        ChangeLogBuilder {
+            change_id: u64::MAX,
+            changes: VecMap::default(),
+        }
+    }
+
     pub fn with_change_id(change_id: u64) -> ChangeLogBuilder {
         ChangeLogBuilder {
             change_id,
@@ -64,6 +71,26 @@ impl ChangeLogBuilder {
         let change = self.changes.get_mut_or_insert(collection.into());
         change.deletes.insert(old_jmap_id.into());
         change.inserts.insert(new_jmap_id.into());
+    }
+
+    pub fn merge(&mut self, changes: ChangeLogBuilder) {
+        for (collection, other) in changes.changes {
+            let this = self.changes.get_mut_or_insert(collection);
+            for id in other.deletes {
+                if !this.inserts.remove(&id) {
+                    this.deletes.insert(id);
+                }
+                this.updates.remove(&id);
+                this.child_updates.remove(&id);
+            }
+            this.inserts.extend(other.inserts);
+            this.updates.extend(other.updates);
+            this.child_updates.extend(other.child_updates);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
     }
 }
 

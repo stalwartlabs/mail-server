@@ -220,6 +220,13 @@ impl Value {
         }
     }
 
+    pub fn try_unwrap_id(self) -> Option<Id> {
+        match self {
+            Value::Id(i) => Some(i),
+            _ => None,
+        }
+    }
+
     pub fn try_unwrap_blob_id(self) -> Option<BlobId> {
         match self {
             Value::BlobId(b) => Some(b),
@@ -230,6 +237,35 @@ impl Value {
     pub fn try_unwrap_uint(self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(u),
+            _ => None,
+        }
+    }
+
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            Value::Text(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_id(&self) -> Option<&Id> {
+        match self {
+            Value::Id(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn as_list(&self) -> Option<&Vec<Value>> {
+        match self {
+            Value::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    pub fn try_cast_uint(&self) -> Option<u64> {
+        match self {
+            Value::UnsignedInt(u) => Some(*u),
+            Value::Id(id) => Some(id.id()),
             _ => None,
         }
     }

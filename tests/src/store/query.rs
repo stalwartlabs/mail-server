@@ -327,7 +327,7 @@ pub async fn test_filter(db: Arc<Store>) {
             .sort(
                 docset,
                 vec![Comparator::ascending(fields["accession_number"])],
-                Pagination::new(0, 0, None, 0, None, false),
+                Pagination::new(0, 0, None, 0),
             )
             .await
             .unwrap();
@@ -423,7 +423,7 @@ pub async fn test_sort(db: Arc<Store>) {
             .sort(
                 docset,
                 sort,
-                Pagination::new(expected_results.len(), 0, None, 0, None, false),
+                Pagination::new(expected_results.len(), 0, None, 0),
             )
             .await
             .unwrap();

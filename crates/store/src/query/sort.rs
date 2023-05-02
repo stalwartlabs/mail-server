@@ -9,7 +9,7 @@ use super::{Comparator, ResultSet, SortedResultSet};
 pub struct Pagination {
     requested_position: i32,
     position: i32,
-    limit: usize,
+    pub limit: usize,
     anchor: u32,
     anchor_offset: i32,
     has_anchor: bool,
@@ -228,14 +228,7 @@ impl Store {
 }
 
 impl Pagination {
-    pub fn new(
-        limit: usize,
-        position: i32,
-        anchor: Option<u32>,
-        anchor_offset: i32,
-        prefix_key: Option<ValueKey>,
-        prefix_unique: bool,
-    ) -> Self {
+    pub fn new(limit: usize, position: i32, anchor: Option<u32>, anchor_offset: i32) -> Self {
         let (has_anchor, anchor) = anchor.map(|anchor| (true, anchor)).unwrap_or((false, 0));
 
         Self {
@@ -247,9 +240,19 @@ impl Pagination {
             has_anchor,
             anchor_found: false,
             ids: Vec::with_capacity(limit),
-            prefix_key,
-            prefix_unique,
+            prefix_key: None,
+            prefix_unique: false,
         }
+    }
+
+    pub fn with_prefix_key(mut self, prefix_key: ValueKey) -> Self {
+        self.prefix_key = Some(prefix_key);
+        self
+    }
+
+    pub fn with_prefix_unique(mut self, prefix_unique: bool) -> Self {
+        self.prefix_unique = prefix_unique;
+        self
     }
 
     pub fn add(&mut self, prefix_id: u32, document_id: u32) -> bool {

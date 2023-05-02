@@ -13,6 +13,12 @@ pub enum AssertValue {
     Hash(u64),
 }
 
+impl<T: Deserialize + Default> HashedValue<T> {
+    pub fn take(&mut self) -> T {
+        std::mem::take(&mut self.inner)
+    }
+}
+
 pub trait ToAssertValue {
     fn to_assert_value(&self) -> AssertValue;
 }

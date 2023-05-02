@@ -101,6 +101,12 @@ impl Serialize for &str {
     }
 }
 
+impl Serialize for &String {
+    fn serialize(self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+}
+
 impl Serialize for String {
     fn serialize(self) -> Vec<u8> {
         self.into_bytes()

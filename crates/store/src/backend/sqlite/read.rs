@@ -265,6 +265,7 @@ impl ReadTransaction<'_> {
         let mut rows = query.query([&begin, &end])?;
 
         while let Some(row) = rows.next()? {
+            //TODO remove subspace in Foundation
             let key = row.get_ref(0)?.as_bytes()?;
             let value = row.get_ref(1)?.as_bytes()?;
 

@@ -77,7 +77,7 @@ impl JsonObjectParser for ChangesRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 => {
+                0x0064_4974_6e75_6f63_6361 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x6574_6174_5365_636e_6973 => {

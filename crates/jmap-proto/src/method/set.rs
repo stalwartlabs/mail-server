@@ -29,13 +29,13 @@ use crate::{
 use super::ahash_is_empty;
 
 #[derive(Debug, Clone)]
-pub struct SetRequest {
+pub struct SetRequest<T> {
     pub account_id: Id,
     pub if_in_state: Option<State>,
     pub create: Option<VecMap<String, Object<SetValue>>>,
     pub update: Option<VecMap<Id, Object<SetValue>>>,
     pub destroy: Option<MaybeReference<Vec<Id>, ResultReference>>,
-    pub arguments: RequestArguments,
+    pub arguments: T,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +89,7 @@ pub struct SetResponse {
     pub not_destroyed: VecMap<Id, SetError>,
 }
 
-impl JsonObjectParser for SetRequest {
+impl JsonObjectParser for SetRequest<RequestArguments> {
     fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
     where
         Self: Sized,
@@ -346,7 +346,7 @@ impl RequestPropertyParser for RequestArguments {
     }
 }
 
-impl SetRequest {
+impl<T> SetRequest<T> {
     pub fn validate(&self, max_objects_in_set: usize) -> Result<(), MethodError> {
         if self.create.as_ref().map_or(0, |objs| objs.len())
             + self.update.as_ref().map_or(0, |objs| objs.len())
@@ -365,6 +365,14 @@ impl SetRequest {
         }
     }
 
+    pub fn has_updates(&self) -> bool {
+        self.update.as_ref().map_or(false, |objs| !objs.is_empty())
+    }
+
+    pub fn has_creates(&self) -> bool {
+        self.create.as_ref().map_or(false, |objs| !objs.is_empty())
+    }
+
     pub fn unwrap_create(&mut self) -> VecMap<String, Object<SetValue>> {
         self.create.take().unwrap_or_default()
     }
@@ -381,7 +389,31 @@ impl SetRequest {
     }
 }
 
+impl SetRequest<RequestArguments> {
+    pub fn take_arguments(&mut self) -> RequestArguments {
+        std::mem::replace(&mut self.arguments, RequestArguments::Principal)
+    }
+
+    pub fn with_arguments<T>(self, arguments: T) -> SetRequest<T> {
+        SetRequest {
+            account_id: self.account_id,
+            if_in_state: self.if_in_state,
+            create: self.create,
+            update: self.update,
+            destroy: self.destroy,
+            arguments,
+        }
+    }
+}
+
 impl SetResponse {
+    pub fn created(&mut self, id: String, document_id: u32) {
+        self.created.insert(
+            id,
+            Object::with_capacity(1).with_property(Property::Id, Value::Id(document_id.into())),
+        );
+    }
+
     pub fn invalid_property_create(&mut self, id: String, property: impl Into<InvalidProperty>) {
         self.not_created.append(
             id,

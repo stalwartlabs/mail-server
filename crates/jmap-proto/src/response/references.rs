@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::method::MethodError,
+    error::{method::MethodError, set::SetError},
     object::Object,
     request::{
         reference::{MaybeReference, ResultReference},
@@ -54,6 +54,17 @@ impl Response {
 
                     // Perform topological sort
                     if !graph.is_empty() {
+                        // Make sure all references exist
+                        for (from_id, to_ids) in graph.iter() {
+                            for to_id in to_ids {
+                                if !create.contains_key(to_id) {
+                                    return Err(MethodError::InvalidResultReference(format!(
+                                        "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
+                                    )));
+                                }
+                            }
+                        }
+
                         let mut sorted_create = VecMap::with_capacity(create.len());
                         let mut it_stack = Vec::new();
                         let keys = graph.keys().cloned().collect::<Vec<_>>();
@@ -298,7 +309,10 @@ impl Object<SetValue> {
     pub fn iterate_and_eval_references(
         self,
         response: &Response,
-    ) -> impl Iterator<Item = Result<(Property, MaybePatchValue), MethodError>> + '_ {
+    ) -> impl Iterator<Item = Result<(Property, MaybePatchValue), SetError>> + '_ {
+        // Resolve id references, which were previously validated.
+        // If the ID is not found it means that set failed for that id, so we return a setError
+        // instead of failing the entire request with a MethodError::InvalidResultReference.
         self.properties
             .into_iter()
             .map(|(property, set_value)| match set_value {
@@ -308,9 +322,8 @@ impl Object<SetValue> {
                     if let Some(id) = response.created_ids.get(&id_ref) {
                         Ok((property, MaybePatchValue::Value(Value::Id(*id))))
                     } else {
-                        Err(MethodError::InvalidResultReference(format!(
-                            "Id reference {id_ref:?} not found."
-                        )))
+                        Err(SetError::not_found()
+                            .with_description(format!("Id reference {id_ref:?} not found.")))
                     }
                 }
                 SetValue::IdReference(MaybeReference::Value(id)) => {
@@ -327,7 +340,7 @@ impl Object<SetValue> {
                                 if let Some(id) = response.created_ids.get(&id_ref) {
                                     ids.push(Value::Id(*id));
                                 } else {
-                                    return Err(MethodError::InvalidResultReference(format!(
+                                    return Err(SetError::not_found().with_description(format!(
                                         "Id reference {id_ref:?} not found."
                                     )));
                                 }

@@ -5,11 +5,12 @@ use jmap_proto::{
         method::MethodError,
         set::{SetError, SetErrorType},
     },
-    method::set::{SetRequest, SetResponse},
+    method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     response::Response,
     types::{
         collection::Collection,
+        id::Id,
         keyword::Keyword,
         property::Property,
         value::{MaybePatchValue, SetValue, Value},
@@ -26,11 +27,12 @@ use mail_builder::{
 use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     ahash::AHashSet,
+    fts::term_index::TokenIndex,
     write::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
         ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
     },
-    BlobKind, Serialize,
+    BlobKind, Serialize, ValueKey,
 };
 
 use crate::JMAP;
@@ -43,7 +45,7 @@ use super::{
 impl JMAP {
     pub async fn email_set(
         &self,
-        mut request: SetRequest,
+        mut request: SetRequest<RequestArguments>,
         response: &Response,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
@@ -61,6 +63,9 @@ impl JMAP {
         let remove = "fdf";
         mailbox_ids.insert(0);
         mailbox_ids.insert(1);
+        mailbox_ids.insert(2);
+        mailbox_ids.insert(3);
+        mailbox_ids.insert(4);
 
         let will_destroy = request.unwrap_destroy();
 
@@ -103,7 +108,14 @@ impl JMAP {
 
             // Parse properties
             for item in object.iterate_and_eval_references(response) {
-                match item? {
+                let item = match item {
+                    Ok(item) => item,
+                    Err(err) => {
+                        set_response.not_created.append(id, err);
+                        continue 'create;
+                    }
+                };
+                match item {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes = ids
                             .into_iter()
@@ -684,6 +696,7 @@ impl JMAP {
         }
 
         // Process updates
+        let mut changes = ChangeLogBuilder::new();
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
             if will_destroy.contains(&id) {
@@ -707,7 +720,7 @@ impl JMAP {
                     account_id,
                     Collection::Email,
                     document_id,
-                    Property::MailboxIds,
+                    Property::Keywords,
                 )
                 .await?,
             ) {
@@ -717,8 +730,21 @@ impl JMAP {
                 continue 'update;
             };
 
+            // Prepare write batch
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Email);
+
             for item in object.iterate_and_eval_references(response) {
-                match item? {
+                let item = match item {
+                    Ok(item) => item,
+                    Err(err) => {
+                        set_response.not_updated.append(id, err);
+                        continue 'update;
+                    }
+                };
+                match item {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes.set(
                             ids.into_iter()
@@ -764,28 +790,9 @@ impl JMAP {
                 continue 'update;
             }
 
-            // Prepare write batch
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Email)
-                .update_document(document_id);
-
             // Log change
+            batch.update_document(document_id);
             let mut changed_mailboxes = AHashSet::new();
-            let mut changes = ChangeLogBuilder::with_change_id(
-                self.store
-                    .assign_change_id(account_id)
-                    .await
-                    .map_err(|err| {
-                        tracing::error!(
-                        event = "error",
-                        context = "email_set",
-                        error = ?err,
-                        "Failed to assign changeId for email update.");
-                        MethodError::ServerPartialFail
-                    })?,
-            );
             changes.log_update(Collection::Email, id);
 
             // Process keywords
@@ -849,19 +856,66 @@ impl JMAP {
             }
 
             // Write changes
-            batch.custom(changes);
-            self.store.write(batch.build()).await.map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_set",
-                    error = ?err,
-                    "Failed to write message changes to database.");
-                MethodError::ServerPartialFail
-            })?;
+            if !batch.is_empty() {
+                match self.store.write(batch.build()).await {
+                    Ok(_) => {
+                        // Add to updated list
+                        set_response.updated.append(id, None);
+                    }
+                    Err(store::Error::AssertValueFailed) => {
+                        set_response.not_updated.append(
+                            id,
+                            SetError::forbidden().with_description(
+                                "Another process modified this message, please try again.",
+                            ),
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            event = "error",
+                            context = "email_set",
+                            error = ?err,
+                            "Failed to write message changes to database.");
+                        return Err(MethodError::ServerPartialFail);
+                    }
+                }
+            }
         }
 
-        for destroy_id in will_destroy {
-            // Todo
+        // Process deletions
+        if !will_destroy.is_empty() {
+            let email_ids = self
+                .get_document_ids(account_id, Collection::Email)
+                .await?
+                .unwrap_or_default();
+            for destroy_id in will_destroy {
+                if email_ids.contains(destroy_id.document_id()) {
+                    match self
+                        .email_delete(account_id, destroy_id.document_id())
+                        .await?
+                    {
+                        Ok(change) => {
+                            changes.merge(change);
+                            set_response.destroyed.push(destroy_id);
+                        }
+                        Err(err) => {
+                            set_response
+                                .not_destroyed
+                                .append(destroy_id, SetError::not_found());
+                        }
+                    }
+                } else {
+                    set_response
+                        .not_destroyed
+                        .append(destroy_id, SetError::not_found());
+                }
+            }
+        }
+
+        if !changes.is_empty() {
+            set_response.new_state = self.commit_changes(account_id, changes).await?.into();
+        } else if !set_response.created.is_empty() {
+            set_response.new_state = self.get_state(account_id, Collection::Email).await?.into();
         }
 
         Ok(set_response)
@@ -871,11 +925,14 @@ impl JMAP {
         &self,
         account_id: u32,
         document_id: u32,
-        batch: &mut BatchBuilder,
-        changes: &mut ChangeLogBuilder,
-    ) -> Result<bool, MethodError> {
+    ) -> Result<Result<ChangeLogBuilder, SetError>, MethodError> {
+        // Create batch
+        let mut batch = BatchBuilder::new();
+        let mut changes = ChangeLogBuilder::with_change_id(0);
+
         // Delete document
         batch
+            .with_account_id(account_id)
             .with_collection(Collection::Email)
             .delete_document(document_id);
 
@@ -891,7 +948,14 @@ impl JMAP {
         {
             mailboxes
         } else {
-            return Ok(false);
+            tracing::debug!(
+                event = "error",
+                context = "email_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Failed to fetch mailboxIds.",
+            );
+            return Ok(Err(SetError::not_found()));
         };
         for mailbox_id in &mailboxes.inner {
             changes.log_child_update(Collection::Mailbox, *mailbox_id);
@@ -918,10 +982,18 @@ impl JMAP {
                 F_VALUE | F_BITMAP | F_CLEAR,
             );
         } else {
-            return Ok(false);
+            tracing::debug!(
+                event = "error",
+                context = "email_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Failed to fetch keywords.",
+            );
+            return Ok(Err(SetError::not_found()));
         };
 
         // Remove threadIds
+        let mut delete_thread_id = None;
         if let Some(thread_id) = self
             .get_property::<u32>(
                 account_id,
@@ -941,10 +1013,7 @@ impl JMAP {
                     changes.log_child_update(Collection::Thread, thread_id);
                 } else {
                     // Thread is empty, delete it
-                    batch
-                        .with_collection(Collection::Thread)
-                        .delete_document(thread_id)
-                        .with_collection(Collection::Email);
+                    delete_thread_id = thread_id.into();
                     changes.log_delete(Collection::Thread, thread_id);
                 }
 
@@ -954,11 +1023,29 @@ impl JMAP {
                     thread_id,
                     F_VALUE | F_BITMAP | F_CLEAR,
                 );
+
+                // Log message deletion
+                changes.log_delete(Collection::Email, Id::from_parts(thread_id, document_id));
             } else {
-                return Ok(false);
+                tracing::debug!(
+                    event = "error",
+                    context = "email_delete",
+                    account_id = account_id,
+                    thread_id = thread_id,
+                    document_id = document_id,
+                    "Failed to fetch thread tags.",
+                );
+                return Ok(Err(SetError::not_found()));
             }
         } else {
-            return Ok(false);
+            tracing::debug!(
+                event = "error",
+                context = "email_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Failed to fetch threadId.",
+            );
+            return Ok(Err(SetError::not_found()));
         }
 
         // Obtain message metadata
@@ -967,14 +1054,24 @@ impl JMAP {
                 account_id,
                 Collection::Email,
                 document_id,
-                Property::ThreadId,
+                Property::BodyStructure,
             )
             .await?
         {
             metadata
         } else {
-            return Ok(false);
+            tracing::debug!(
+                event = "error",
+                context = "email_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Failed to fetch message metadata.",
+            );
+            return Ok(Err(SetError::not_found()));
         };
+
+        // Delete metadata
+        batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
 
         // Remove properties from index
         for (property, value) in metadata.properties {
@@ -1036,8 +1133,60 @@ impl JMAP {
             }
         }
 
-        // Delete metadata
-        batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
+        // Delete term index
+        if let Some(token_index) = self
+            .store
+            .get_value::<TokenIndex>(ValueKey::term_index(
+                account_id,
+                Collection::Email,
+                document_id,
+            ))
+            .await
+            .map_err(|err| {
+                tracing::error!(
+            event = "error",
+            context = "email_delete",
+            error = ?err,
+            "Failed to deserialize term index.");
+                MethodError::ServerPartialFail
+            })?
+        {
+            batch.custom(token_index);
+        } else {
+            tracing::debug!(
+                event = "error",
+                context = "email_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Failed to fetch term index.",
+            );
+            return Ok(Err(SetError::not_found()));
+        }
+
+        // Delete threadId
+        if let Some(thread_id) = delete_thread_id {
+            batch
+                .with_collection(Collection::Thread)
+                .delete_document(thread_id);
+        }
+
+        // Commit batch
+        match self.store.write(batch.build()).await {
+            Ok(_) => (),
+            Err(store::Error::AssertValueFailed) => {
+                return Ok(Err(SetError::forbidden().with_description(
+                    "Another process modified this message, please try again.",
+                )));
+            }
+            Err(err) => {
+                tracing::error!(
+                    event = "error",
+                    context = "email_delete",
+                    error = ?err,
+                    "Failed to commit batch.");
+                return Err(MethodError::ServerPartialFail);
+            }
+        }
 
         // Delete blob
         self.store
@@ -1055,7 +1204,7 @@ impl JMAP {
                 MethodError::ServerPartialFail
             })?;
 
-        Ok(true)
+        Ok(Ok(changes))
     }
 }
 

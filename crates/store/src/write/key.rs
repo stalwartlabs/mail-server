@@ -1,7 +1,9 @@
 use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
-use crate::{AclKey, BitmapKey, IndexKey, IndexKeyPrefix, LogKey, Serialize, ValueKey};
+use crate::{
+    AclKey, BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey, SUBSPACE_LOGS,
+};
 
 pub struct KeySerializer {
     buf: Vec<u8>,
@@ -129,6 +131,16 @@ impl ValueKey {
             document_id,
             family: 0,
             field: field.into(),
+        }
+    }
+
+    pub fn term_index(account_id: u32, collection: impl Into<u8>, document_id: u32) -> Self {
+        ValueKey {
+            account_id,
+            collection: collection.into(),
+            document_id,
+            family: u8::MAX,
+            field: u8::MAX,
         }
     }
 
@@ -272,5 +284,17 @@ impl Serialize for &LogKey {
         .write(self.collection)
         .write(self.change_id)
         .finalize()
+    }
+}
+
+impl Serialize for LogKey {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl Key for LogKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_LOGS
     }
 }
