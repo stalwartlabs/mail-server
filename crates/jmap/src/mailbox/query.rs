@@ -47,11 +47,7 @@ impl JMAP {
                 }
                 Filter::Role(role) => {
                     if let Some(role) = role {
-                        filters.push(query::Filter::has_text(
-                            Property::Role,
-                            &role,
-                            Language::None,
-                        ));
+                        filters.push(query::Filter::eq(Property::Role, role));
                     } else {
                         filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_bitmap(Property::Role, ()));
@@ -170,7 +166,7 @@ impl JMAP {
             for comparator in request
                 .sort
                 .and_then(|s| if !s.is_empty() { s.into() } else { None })
-                .unwrap_or_else(|| vec![Comparator::descending(SortProperty::ParentId)])
+                .unwrap_or_else(|| vec![Comparator::ascending(SortProperty::ParentId)])
             {
                 comparators.push(match comparator.property {
                     SortProperty::Name => {

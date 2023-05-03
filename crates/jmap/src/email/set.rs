@@ -7,7 +7,6 @@ use jmap_proto::{
     },
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
-    response::Response,
     types::{
         collection::Collection,
         id::Id,
@@ -46,7 +45,6 @@ impl JMAP {
     pub async fn email_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-        response: &Response,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
@@ -59,13 +57,6 @@ impl JMAP {
             .get_document_ids(account_id, Collection::Mailbox)
             .await?
             .unwrap_or_default();
-
-        let remove = "fdf";
-        mailbox_ids.insert(0);
-        mailbox_ids.insert(1);
-        mailbox_ids.insert(2);
-        mailbox_ids.insert(3);
-        mailbox_ids.insert(4);
 
         let will_destroy = request.unwrap_destroy();
 
@@ -107,15 +98,15 @@ impl JMAP {
             let mut size_attachments = 0;
 
             // Parse properties
-            for item in object.iterate_and_eval_references(response) {
-                let item = match item {
-                    Ok(item) => item,
+            for (property, value) in object.properties {
+                let value = match set_response.eval_object_references(value) {
+                    Ok(value) => value,
                     Err(err) => {
                         set_response.not_created.append(id, err);
                         continue 'create;
                     }
                 };
-                match item {
+                match (property, value) {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes = ids
                             .into_iter()
@@ -736,15 +727,15 @@ impl JMAP {
                 .with_account_id(account_id)
                 .with_collection(Collection::Email);
 
-            for item in object.iterate_and_eval_references(response) {
-                let item = match item {
-                    Ok(item) => item,
+            for (property, value) in object.properties {
+                let value = match set_response.eval_object_references(value) {
+                    Ok(value) => value,
                     Err(err) => {
                         set_response.not_updated.append(id, err);
                         continue 'update;
                     }
                 };
-                match item {
+                match (property, value) {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes.set(
                             ids.into_iter()
@@ -899,9 +890,7 @@ impl JMAP {
                             set_response.destroyed.push(destroy_id);
                         }
                         Err(err) => {
-                            set_response
-                                .not_destroyed
-                                .append(destroy_id, SetError::not_found());
+                            set_response.not_destroyed.append(destroy_id, err);
                         }
                     }
                 } else {

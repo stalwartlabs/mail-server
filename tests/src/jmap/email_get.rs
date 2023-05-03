@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc, time::Instant};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use jmap::JMAP;
 use jmap_client::{
@@ -41,14 +41,12 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     test_dir.push("resources");
     test_dir.push("jmap_mail_get");
 
-    let coco1 = "implement";
-    let mailbox_id = "a".to_string();
-    /*let mailbox_id = client
-    .set_default_account_id(Id::new(1).to_string())
-    .mailbox_create("JMAP Get", None::<String>, Role::None)
-    .await
-    .unwrap()
-    .take_id();*/
+    let mailbox_id = client
+        .set_default_account_id(Id::new(1).to_string())
+        .mailbox_create("JMAP Get", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
@@ -182,10 +180,9 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    let coco = "implement";
-    //client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
 
-    //server.store.assert_is_empty();
+    server.store.assert_is_empty().await;
 }
 
 pub fn all_headers() -> Vec<email::Property> {

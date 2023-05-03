@@ -8,7 +8,7 @@ use roaring::RoaringBitmap;
 use crate::{
     fts::{lang::LanguageDetector, Language},
     write::BitmapFamily,
-    BitmapKey, Serialize, BM_DOCUMENT_IDS,
+    BitmapKey, Serialize, Store, BM_DOCUMENT_IDS,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -233,5 +233,12 @@ impl BitmapKey<&'static [u8]> {
             key: b"",
             block_num: 0,
         }
+    }
+}
+
+#[cfg(feature = "test_mode")]
+impl Store {
+    pub async fn assert_is_empty(&self) {
+        todo!()
     }
 }

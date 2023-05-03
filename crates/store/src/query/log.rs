@@ -71,7 +71,7 @@ impl Store {
                 move |changelog, key, value| {
                     let change_id =
                         key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())?;
-                    if !is_inclusive || change_id != from_change_id {
+                    if is_inclusive || change_id != from_change_id {
                         if changelog.changes.is_empty() {
                             changelog.from_change_id = change_id;
                         }

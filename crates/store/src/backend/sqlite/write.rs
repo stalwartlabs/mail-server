@@ -129,7 +129,7 @@ impl Store {
                             trx.prepare_cached("INSERT OR REPLACE INTO i (k) VALUES (?)")?
                                 .execute([&key])?;
                         } else {
-                            trx.prepare_cached("DELETE FROM v WHERE k = ?")?
+                            trx.prepare_cached("DELETE FROM i WHERE k = ?")?
                                 .execute([&key])?;
                         }
                     }
@@ -230,6 +230,7 @@ impl Store {
         .await
     }
 
+    #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
         use crate::{
             SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES, SUBSPACE_LOGS,

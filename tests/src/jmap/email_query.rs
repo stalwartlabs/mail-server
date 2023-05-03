@@ -77,8 +77,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
     query_options(client).await;
 
     println!("Deleting all messages...");
-    let implement = "fds";
-    /*let mut request = client.build();
+    let mut request = client.build();
     let result_ref = request.query_email().result_reference();
     request.set_email().destroy_ref(result_ref);
     let response = request.send().await.unwrap();
@@ -89,7 +88,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
         .unwrap_set_email()
         .unwrap();
 
-    server.store.assert_is_empty();*/
+    server.store.assert_is_empty().await;
 }
 
 pub async fn query(client: &mut Client) {

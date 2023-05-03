@@ -181,6 +181,9 @@ impl JMAP {
 
                 mailbox.append(property.clone(), value);
             }
+
+            // Add result to response
+            response.list.push(mailbox);
         }
         Ok(response)
     }

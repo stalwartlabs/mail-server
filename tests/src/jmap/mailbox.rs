@@ -611,8 +611,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         client.mailbox_destroy(&id, true).await.unwrap();
     }
 
-    let todo = "yes";
-    //server.store.assert_is_empty();
+    server.store.assert_is_empty().await;
 }
 
 async fn create_test_mailboxes(client: &mut Client) -> AHashMap<String, String> {

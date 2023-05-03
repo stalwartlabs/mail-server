@@ -39,7 +39,7 @@ impl JMAP {
                 ("", &Method::POST) => {
                     return match fetch_body(req, self.config.request_max_size).await {
                         Ok(bytes) => {
-                            let delete = "fd";
+                            //let delete = "fd";
                             //println!("<- {}", String::from_utf8_lossy(&bytes));
 
                             match self.handle_request(&bytes).await {

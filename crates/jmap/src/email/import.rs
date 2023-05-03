@@ -47,8 +47,7 @@ impl JMAP {
                 );
                 continue;
             }
-            let enable = "true";
-            /*for mailbox_id in &mailbox_ids {
+            for mailbox_id in &mailbox_ids {
                 if !valid_mailbox_ids.contains(*mailbox_id) {
                     not_created.append(
                         id,
@@ -58,7 +57,7 @@ impl JMAP {
                     );
                     continue 'outer;
                 }
-            }*/
+            }
 
             // Fetch raw message to import
             let raw_message = match self.blob_download(&email.blob_id, account_id).await {

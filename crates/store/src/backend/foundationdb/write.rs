@@ -354,6 +354,7 @@ impl Store {
         }
     }
 
+    #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
         let trx = self.db.create_trx().unwrap();
         trx.clear_range(&[0u8], &[u8::MAX]);

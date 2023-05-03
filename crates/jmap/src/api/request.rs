@@ -53,11 +53,10 @@ impl JMAP {
                     query::RequestArguments::Principal => todo!(),
                 },
                 RequestMethod::Set(mut req) => match req.take_arguments() {
-                    set::RequestArguments::Email => self.email_set(req, &response).await.into(),
-                    set::RequestArguments::Mailbox(arguments) => self
-                        .mailbox_set(req.with_arguments(arguments), &response)
-                        .await
-                        .into(),
+                    set::RequestArguments::Email => self.email_set(req).await.into(),
+                    set::RequestArguments::Mailbox(arguments) => {
+                        self.mailbox_set(req.with_arguments(arguments)).await.into()
+                    }
                     set::RequestArguments::Identity => todo!(),
                     set::RequestArguments::EmailSubmission(_) => todo!(),
                     set::RequestArguments::PushSubscription => todo!(),
@@ -65,7 +64,7 @@ impl JMAP {
                     set::RequestArguments::VacationResponse => todo!(),
                     set::RequestArguments::Principal => todo!(),
                 },
-                RequestMethod::Changes(_) => todo!(),
+                RequestMethod::Changes(req) => self.changes(req).await.into(),
                 RequestMethod::Copy(_) => todo!(),
                 RequestMethod::CopyBlob(_) => todo!(),
                 RequestMethod::ImportEmail(req) => self.email_import(req).await.into(),

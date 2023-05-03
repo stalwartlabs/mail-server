@@ -7,14 +7,12 @@ use jmap_proto::types::id::Id;
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Thread tests...");
 
-    let mailbox_id = "a".to_string();
-    let implementer = "fd";
-    /*let mailbox_id = client
-    .set_default_account_id(Id::new(1).to_string())
-    .mailbox_create("JMAP Get", None::<String>, Role::None)
-    .await
-    .unwrap()
-    .take_id();*/
+    let mailbox_id = client
+        .set_default_account_id(Id::new(1).to_string())
+        .mailbox_create("JMAP Get", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
 
     let mut expected_result = vec!["".to_string(); 5];
     let mut thread_id = "".to_string();
@@ -43,8 +41,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         expected_result
     );
 
-    let implement = "fd";
-    //client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
 
-    //server.store.assert_is_empty();
+    server.store.assert_is_empty().await;
 }

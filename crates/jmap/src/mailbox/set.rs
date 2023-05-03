@@ -9,7 +9,6 @@ use jmap_proto::{
         mailbox::SetArguments,
         Object,
     },
-    response::Response,
     types::{
         collection::Collection,
         id::Id,
@@ -27,10 +26,10 @@ use crate::JMAP;
 
 use super::{INBOX_ID, TRASH_ID};
 
-struct SetContext<'x> {
+struct SetContext {
     account_id: u32,
     primary_id: u32,
-    response: &'x Response,
+    set_response: SetResponse,
     mailbox_ids: RoaringBitmap,
     will_destroy: Vec<Id>,
 }
@@ -42,12 +41,10 @@ static SCHEMA: &[IndexProperty] = &[
             index: true,
         })
         .required(),
-    IndexProperty::new(Property::Role)
-        .index_as(IndexAs::Text {
-            tokenize: false,
-            index: true,
-        })
-        .required(),
+    IndexProperty::new(Property::Role).index_as(IndexAs::Text {
+        tokenize: false,
+        index: true,
+    }),
     IndexProperty::new(Property::Role).index_as(IndexAs::HasProperty),
     IndexProperty::new(Property::ParentId).index_as(IndexAs::Integer),
     IndexProperty::new(Property::SortOrder).index_as(IndexAs::Integer),
@@ -59,18 +56,16 @@ impl JMAP {
     pub async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
-        response: &Response,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
-        let mut set_response = self
-            .prepare_set_response(&request, Collection::Mailbox)
-            .await?;
         let on_destroy_remove_emails = request.arguments.on_destroy_remove_emails.unwrap_or(false);
         let mut ctx = SetContext {
             account_id,
             primary_id: account_id,
-            response,
+            set_response: self
+                .prepare_set_response(&request, Collection::Mailbox)
+                .await?,
             mailbox_ids: self
                 .get_document_ids(account_id, Collection::Mailbox)
                 .await?
@@ -104,10 +99,10 @@ impl JMAP {
                         MethodError::ServerPartialFail
                     })?;
 
-                    set_response.created(id, document_id);
+                    ctx.set_response.created(id, document_id);
                 }
                 Err(err) => {
-                    set_response.not_created.append(id, err);
+                    ctx.set_response.not_created.append(id, err);
                     continue 'create;
                 }
             }
@@ -143,7 +138,7 @@ impl JMAP {
                             match self.store.write(batch.build()).await {
                                 Ok(_) => (),
                                 Err(store::Error::AssertValueFailed) => {
-                                    set_response.not_updated.append(id, SetError::forbidden().with_description(
+                                    ctx.set_response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",
                                     ));
                                     continue 'update;
@@ -159,15 +154,17 @@ impl JMAP {
                                 }
                             }
                         }
-                        set_response.updated.append(id, None);
+                        ctx.set_response.updated.append(id, None);
                     }
                     Err(err) => {
-                        set_response.not_updated.append(id, err);
+                        ctx.set_response.not_updated.append(id, err);
                         continue 'update;
                     }
                 }
             } else {
-                set_response.not_updated.append(id, SetError::not_found());
+                ctx.set_response
+                    .not_updated
+                    .append(id, SetError::not_found());
             }
         }
 
@@ -175,8 +172,9 @@ impl JMAP {
         'destroy: for id in ctx.will_destroy {
             let document_id = id.document_id();
             // Internal folders cannot be deleted
+            #[cfg(not(feature = "test_mode"))]
             if document_id == INBOX_ID || document_id == TRASH_ID {
-                set_response.not_destroyed.append(
+                ctx.set_response.not_destroyed.append(
                     id,
                     SetError::forbidden()
                         .with_description("You are not allowed to delete Inbox or Trash folders."),
@@ -195,7 +193,7 @@ impl JMAP {
                 .results
                 .is_empty()
             {
-                set_response.not_destroyed.append(
+                ctx.set_response.not_destroyed.append(
                     id,
                     SetError::new(SetErrorType::MailboxHasChild)
                         .with_description("Mailbox has at least one children."),
@@ -262,7 +260,7 @@ impl JMAP {
                                             Id::from_parts(thread_id, message_id),
                                         ),
                                         Err(store::Error::AssertValueFailed) => {
-                                            set_response.not_destroyed.append(
+                                            ctx.set_response.not_destroyed.append(
                                                 id,
                                                 SetError::forbidden().with_description(
                                                     concat!("Another process modified a message in this mailbox ",
@@ -296,7 +294,7 @@ impl JMAP {
                             } else {
                                 // Delete message
                                 if let Ok(mut change) =
-                                    self.email_delete(account_id, document_id).await?
+                                    self.email_delete(account_id, message_id).await?
                                 {
                                     change.changes.remove(&(Collection::Mailbox as u8));
                                     changes.merge(change);
@@ -314,7 +312,7 @@ impl JMAP {
                         }
                     }
                 } else {
-                    set_response.not_destroyed.append(
+                    ctx.set_response.not_destroyed.append(
                         id,
                         SetError::new(SetErrorType::MailboxHasEmail)
                             .with_description("Mailbox is not empty."),
@@ -342,9 +340,12 @@ impl JMAP {
                     .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox.inner));
 
                 match self.store.write(batch.build()).await {
-                    Ok(_) => changes.log_delete(Collection::Mailbox, document_id),
+                    Ok(_) => {
+                        changes.log_delete(Collection::Mailbox, document_id);
+                        ctx.set_response.destroyed.push(id);
+                    }
                     Err(store::Error::AssertValueFailed) => {
-                        set_response.not_destroyed.append(
+                        ctx.set_response.not_destroyed.append(
                             id,
                             SetError::forbidden().with_description(concat!(
                                 "Another process modified this mailbox ",
@@ -364,16 +365,18 @@ impl JMAP {
                     }
                 }
             } else {
-                set_response.not_destroyed.append(id, SetError::not_found());
+                ctx.set_response
+                    .not_destroyed
+                    .append(id, SetError::not_found());
             }
         }
 
         // Write changes
         if !changes.is_empty() {
-            set_response.new_state = self.commit_changes(account_id, changes).await?.into();
+            ctx.set_response.new_state = self.commit_changes(account_id, changes).await?.into();
         }
 
-        Ok(set_response)
+        Ok(ctx.set_response)
     }
 
     #[allow(clippy::blocks_in_if_conditions)]
@@ -381,22 +384,22 @@ impl JMAP {
         &self,
         changes_: Object<SetValue>,
         update: Option<(u32, Object<Value>)>,
-        ctx: &SetContext<'_>,
+        ctx: &SetContext,
     ) -> Result<Result<ObjectIndexBuilder, SetError>, MethodError> {
         // Parse properties
         let mut changes = Object::with_capacity(changes_.properties.len());
-        for item in changes_.iterate_and_eval_references(ctx.response) {
-            let item = match item {
-                Ok(item) => item,
+        for (property, value) in changes_.properties {
+            let value = match ctx.set_response.eval_object_references(value) {
+                Ok(value) => value,
                 Err(err) => {
                     return Ok(Err(err));
                 }
             };
-            match item {
+            let value = match (&property, value) {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
                     let value = value.trim();
                     if !value.is_empty() && value.len() < self.config.mailbox_name_max_len {
-                        changes.append(Property::Name, Value::Text(value.to_string()));
+                        Value::Text(value.to_string())
                     } else {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(Property::Name)
@@ -420,11 +423,9 @@ impl JMAP {
                             .with_description("Parent ID does not exist.")));
                     }
 
-                    changes.append(Property::ParentId, Value::Id((parent_id + 1).into()));
+                    Value::Id((parent_id + 1).into())
                 }
-                (Property::ParentId, MaybePatchValue::Value(Value::Null)) => {
-                    changes.append(Property::ParentId, Value::Id(0u64.into()))
-                }
+                (Property::ParentId, MaybePatchValue::Value(Value::Null)) => Value::Id(0u64.into()),
                 (Property::IsSubscribed, MaybePatchValue::Value(Value::Bool(subscribe))) => {
                     let fixme = "true";
                     let account_id = Value::Id(ctx.primary_id.into());
@@ -459,16 +460,14 @@ impl JMAP {
                             }
                         }
                     }
-                    changes.append(
-                        Property::IsSubscribed,
-                        if let Some(new_value) = new_value {
-                            new_value
-                        } else if subscribe {
-                            Value::List(vec![account_id])
-                        } else {
-                            continue;
-                        },
-                    );
+
+                    if let Some(new_value) = new_value {
+                        new_value
+                    } else if subscribe {
+                        Value::List(vec![account_id])
+                    } else {
+                        continue;
+                    }
                 }
                 (Property::Role, MaybePatchValue::Value(Value::Text(value))) => {
                     let role = value.trim().to_lowercase();
@@ -477,28 +476,28 @@ impl JMAP {
                     ]
                     .contains(&role.as_str())
                     {
-                        changes.append(Property::Role, Value::Text(role));
+                        Value::Text(role)
                     } else {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(Property::Role)
                             .with_description(format!("Invalid role {role:?}."))));
                     }
                 }
-                (Property::Role, MaybePatchValue::Value(Value::Null)) => {
-                    changes.append(Property::Role, Value::Null)
-                }
+                (Property::Role, MaybePatchValue::Value(Value::Null)) => Value::Null,
                 (Property::SortOrder, MaybePatchValue::Value(Value::UnsignedInt(value))) => {
-                    changes.append(Property::SortOrder, Value::UnsignedInt(value));
+                    Value::UnsignedInt(value)
                 }
                 (Property::Acl, _) => {
                     todo!()
                 }
-                (property, _) => {
+                _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property)
                         .with_description("Invalid property or value.".to_string())))
                 }
             };
+
+            changes.append(property, value);
         }
 
         // Validate depth and circular parent-child relationship

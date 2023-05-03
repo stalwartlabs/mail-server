@@ -7,9 +7,6 @@ use store::ahash::{AHashMap, AHashSet};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Merge Threads tests...");
-
-    simple_test(client).await;
-
     let mut all_mailboxes = AHashMap::default();
 
     for (base_test_num, test) in [test_1(), test_2(), test_3()].iter().enumerate() {
@@ -23,16 +20,14 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         let mut mailbox_ids = Vec::with_capacity(6);
 
         for test_num in 0..=5 {
-            mailbox_ids.push(char::from(b'a' + test_num as u8).to_string());
-            let coco = "fd";
-            /*mailbox_ids.push(
+            mailbox_ids.push(
                 client
                     .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string())
                     .mailbox_create("Thread nightmare", None::<String>, Role::None)
                     .await
                     .unwrap()
                     .take_id(),
-            );*/
+            );
         }
 
         for message in &messages {
@@ -177,8 +172,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     // Delete all messages and make sure no keys are left in the store.
-    let implement = "fdf";
-    /*for (base_test_num, mailbox_ids) in all_mailboxes {
+    for (base_test_num, mailbox_ids) in all_mailboxes {
         for (test_num, mailbox_id) in mailbox_ids.into_iter().enumerate() {
             client
                 .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string())
@@ -188,169 +182,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    server.store.assert_is_empty();*/
-}
-
-async fn simple_test(client: &mut Client) {
-    let coco = "fdf";
-    let mailbox_id = "a".to_string();
-    /*
-    let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
-        .mailbox_create("JMAP Get", None::<String>, Role::None)
-        .await
-        .unwrap()
-        .take_id();*/
-
-    // A simple thread that uses in-reply-to to link messages together
-    let thread_1 = vec![
-        client
-            .email_import(
-                "Message-ID: <t1-msg1>
-From: test1@example.com
-To: test2@example.com
-Subject: my thread
-
-message here!"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(1),
-            )
-            .await
-            .unwrap(),
-        client
-            .email_import(
-                "Message-ID: <t1-msg2>
-From: test2@example.com
-To: test1@example.com
-In-Reply-To: <t1-msg1>
-Subject: Re: my thread
-
-reply here!"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(2),
-            )
-            .await
-            .unwrap(),
-        client
-            .email_import(
-                "Message-ID: <t1-msg3>
-From: test1@example.com
-To: test2@example.com
-In-Reply-To: <t1-msg2>
-Subject: Re: my thread
-
-last reply"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(3),
-            )
-            .await
-            .unwrap(),
-    ];
-
-    // Another simple thread, but this time with a shared reference header instead
-    let thread_2 = vec![
-        client
-            .email_import(
-                "Message-ID: <t2-msg1>
-From: test1@example.com
-To: test2@example.com
-Subject: my thread
-
-message here!"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(1),
-            )
-            .await
-            .unwrap(),
-        client
-            .email_import(
-                "Message-ID: <t2-msg2>
-References: <t2-msg1>
-From: test2@example.com
-To: test1@example.com
-Subject: my thread
-
-reply here!"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(2),
-            )
-            .await
-            .unwrap(),
-        client
-            .email_import(
-                "Message-ID: <t2-msg3>
-References: <t2-msg1>
-From: test1@example.com
-To: test2@example.com
-Subject: my thread
-
-reply here!"
-                    .into(),
-                [&mailbox_id],
-                None::<Vec<String>>,
-                Some(3),
-            )
-            .await
-            .unwrap(),
-    ];
-
-    // Make sure none of the separate threads end up with the same thread ID
-    assert_ne!(
-        thread_1.first().unwrap().thread_id().unwrap(),
-        thread_2.first().unwrap().thread_id().unwrap(),
-        "Making sure thread 1 and thread 2 have different thread IDs"
-    );
-
-    // Make sure each message in each thread ends up with the right thread ID
-    assert_thread_ids_match(client, &thread_1, "thread chained with In-Reply-To header").await;
-    assert_thread_ids_match(client, &thread_2, "thread with References header").await;
-
-    //client.mailbox_destroy(&mailbox_id, true).await.unwrap();
-}
-
-async fn assert_thread_ids_match(
-    client: &mut Client,
-    emails: &Vec<jmap_client::email::Email>,
-    description: &str,
-) {
-    let thread_id = emails.first().unwrap().thread_id().unwrap();
-
-    // First, make sure the thread ID is the same for all messages in the thread
-    for email in emails {
-        assert_eq!(
-            email.thread_id().unwrap(),
-            thread_id,
-            "Comparing thread IDs of messages in: {}",
-            description
-        );
-    }
-
-    // Next, make sure querying the thread yields the same messages
-    let full_thread = client.thread_get(thread_id).await.unwrap().unwrap();
-    let mut email_ids_in_fetched_thread = full_thread.email_ids().to_vec();
-    email_ids_in_fetched_thread.sort();
-
-    let mut expected_email_ids = emails
-        .iter()
-        .map(|email| email.id().unwrap())
-        .collect::<Vec<_>>();
-    expected_email_ids.sort();
-
-    assert_eq!(
-        email_ids_in_fetched_thread, expected_email_ids,
-        "Comparing email IDs in: {}",
-        description
-    );
+    server.store.assert_is_empty().await;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

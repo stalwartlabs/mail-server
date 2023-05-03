@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 use store::{
     fts::builder::ToTokens,
-    write::{BatchBuilder, IntoOperations, Operation},
+    write::{BatchBuilder, BitmapFamily, IntoOperations, Operation},
     Serialize, BM_TAG, HASH_EXACT,
 };
 
@@ -124,7 +124,7 @@ impl IntoOperations for ObjectIndexBuilder {
             }
             (Some(current), None) => {
                 // Deletion
-                build_batch(batch, self.index, &current, true);
+                build_batch(batch, self.index, &current, false);
                 batch.ops.push(Operation::Value {
                     field: Property::Value.into(),
                     family: 0,
@@ -149,190 +149,186 @@ fn merge_batch(
         if current_value == &value {
             continue;
         }
-        match index
-            .iter()
-            .find_map(|i| {
-                if i.property == property {
-                    Some(i.index_as)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default()
-        {
-            IndexAs::Text { tokenize, index } => {
-                // Remove current text from index
-                let mut add_tokens = HashSet::new();
-                let mut remove_tokens = HashSet::new();
-                if let Some(text) = current_value.as_string() {
-                    if index {
-                        batch.ops.push(Operation::Index {
-                            field: property.clone().into(),
-                            key: text.serialize(),
-                            set: false,
-                        });
-                    }
-                    if tokenize {
-                        remove_tokens = text.to_tokens();
-                    }
-                }
 
-                // Add new text to index
-                if let Some(text) = value.as_string() {
-                    if index {
-                        batch.ops.push(Operation::Index {
-                            field: property.clone().into(),
-                            key: text.serialize(),
-                            set: true,
-                        });
-                    }
-                    if tokenize {
-                        for token in text.to_tokens() {
-                            if !remove_tokens.remove(&token) {
-                                add_tokens.insert(token);
-                            }
-                        }
-                    }
-                }
-
-                // Update tokens
-                for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
-                    for token in token {
-                        batch.ops.push(Operation::hash(
-                            &token,
-                            HASH_EXACT,
-                            property.clone().into(),
-                            set,
-                        ));
-                    }
-                }
+        for index_property in index {
+            if index_property.property != property {
+                continue;
             }
-            IndexAs::TextList { tokenize, index } => {
-                let mut add_tokens = HashSet::new();
-                let mut remove_tokens = HashSet::new();
-                let mut add_values = HashSet::new();
-                let mut remove_values = HashSet::new();
+            match index_property.index_as {
+                IndexAs::Text { tokenize, index } => {
+                    // Remove current text from index
+                    let mut add_tokens = HashSet::new();
+                    let mut remove_tokens = HashSet::new();
+                    if let Some(text) = current_value.as_string() {
+                        if index {
+                            batch.ops.push(Operation::Index {
+                                field: property.clone().into(),
+                                key: text.serialize(),
+                                set: false,
+                            });
+                        }
+                        if tokenize {
+                            remove_tokens = text.to_tokens();
+                        }
+                    }
 
-                // Remove current text from index
-                if let Some(current_values) = current_value.as_list() {
-                    for current_value in current_values {
-                        if let Some(text) = current_value.as_string() {
-                            if index {
-                                remove_values.insert(text);
-                            }
-                            if tokenize {
-                                remove_tokens.extend(text.to_tokens());
+                    // Add new text to index
+                    if let Some(text) = value.as_string() {
+                        if index {
+                            batch.ops.push(Operation::Index {
+                                field: property.clone().into(),
+                                key: text.serialize(),
+                                set: true,
+                            });
+                        }
+                        if tokenize {
+                            for token in text.to_tokens() {
+                                if !remove_tokens.remove(&token) {
+                                    add_tokens.insert(token);
+                                }
                             }
                         }
                     }
-                }
 
-                // Add new text to index
-                if let Some(values) = value.as_list() {
-                    for value in values {
-                        if let Some(text) = value.as_string() {
-                            if index && !remove_values.remove(text) {
-                                add_values.insert(text);
+                    // Update tokens
+                    for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
+                        for token in token {
+                            batch.ops.push(Operation::hash(
+                                &token,
+                                HASH_EXACT,
+                                property.clone().into(),
+                                set,
+                            ));
+                        }
+                    }
+                }
+                IndexAs::TextList { tokenize, index } => {
+                    let mut add_tokens = HashSet::new();
+                    let mut remove_tokens = HashSet::new();
+                    let mut add_values = HashSet::new();
+                    let mut remove_values = HashSet::new();
+
+                    // Remove current text from index
+                    if let Some(current_values) = current_value.as_list() {
+                        for current_value in current_values {
+                            if let Some(text) = current_value.as_string() {
+                                if index {
+                                    remove_values.insert(text);
+                                }
+                                if tokenize {
+                                    remove_tokens.extend(text.to_tokens());
+                                }
                             }
-                            if tokenize {
-                                for token in text.to_tokens() {
-                                    if !remove_tokens.remove(&token) {
-                                        add_tokens.insert(token);
+                        }
+                    }
+
+                    // Add new text to index
+                    if let Some(values) = value.as_list() {
+                        for value in values {
+                            if let Some(text) = value.as_string() {
+                                if index && !remove_values.remove(text) {
+                                    add_values.insert(text);
+                                }
+                                if tokenize {
+                                    for token in text.to_tokens() {
+                                        if !remove_tokens.remove(&token) {
+                                            add_tokens.insert(token);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                // Update index
-                for (values, set) in [(add_values, true), (remove_values, false)] {
-                    for value in values {
-                        batch.ops.push(Operation::Index {
-                            field: property.clone().into(),
-                            key: value.serialize(),
-                            set,
-                        });
+                    // Update index
+                    for (values, set) in [(add_values, true), (remove_values, false)] {
+                        for value in values {
+                            batch.ops.push(Operation::Index {
+                                field: property.clone().into(),
+                                key: value.serialize(),
+                                set,
+                            });
+                        }
                     }
-                }
 
-                // Update tokens
-                for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
-                    for token in token {
-                        batch.ops.push(Operation::hash(
-                            &token,
-                            HASH_EXACT,
-                            property.clone().into(),
-                            set,
-                        ));
-                    }
-                }
-            }
-            index_as @ (IndexAs::Integer | IndexAs::LongInteger) => {
-                if let Some(current_value) = current_value.try_cast_uint() {
-                    batch.ops.push(Operation::Index {
-                        field: property.clone().into(),
-                        key: current_value.into_index(index_as),
-                        set: false,
-                    });
-                }
-                if let Some(value) = value.try_cast_uint() {
-                    batch.ops.push(Operation::Index {
-                        field: property.clone().into(),
-                        key: value.into_index(index_as),
-                        set: false,
-                    });
-                }
-            }
-            IndexAs::IntegerList => {
-                let mut add_values = HashSet::new();
-                let mut remove_values = HashSet::new();
-
-                if let Some(current_values) = current_value.as_list() {
-                    for current_value in current_values {
-                        if let Some(current_value) = current_value.try_cast_uint() {
-                            remove_values.insert(current_value);
+                    // Update tokens
+                    for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
+                        for token in token {
+                            batch.ops.push(Operation::hash(
+                                &token,
+                                HASH_EXACT,
+                                property.clone().into(),
+                                set,
+                            ));
                         }
                     }
                 }
-                if let Some(values) = value.as_list() {
-                    for value in values {
-                        if let Some(value) = value.try_cast_uint() {
-                            if !remove_values.remove(&value) {
-                                add_values.insert(value);
+                index_as @ (IndexAs::Integer | IndexAs::LongInteger) => {
+                    if let Some(current_value) = current_value.try_cast_uint() {
+                        batch.ops.push(Operation::Index {
+                            field: property.clone().into(),
+                            key: current_value.into_index(index_as),
+                            set: false,
+                        });
+                    }
+                    if let Some(value) = value.try_cast_uint() {
+                        batch.ops.push(Operation::Index {
+                            field: property.clone().into(),
+                            key: value.into_index(index_as),
+                            set: true,
+                        });
+                    }
+                }
+                IndexAs::IntegerList => {
+                    let mut add_values = HashSet::new();
+                    let mut remove_values = HashSet::new();
+
+                    if let Some(current_values) = current_value.as_list() {
+                        for current_value in current_values {
+                            if let Some(current_value) = current_value.try_cast_uint() {
+                                remove_values.insert(current_value);
                             }
                         }
                     }
-                }
+                    if let Some(values) = value.as_list() {
+                        for value in values {
+                            if let Some(value) = value.try_cast_uint() {
+                                if !remove_values.remove(&value) {
+                                    add_values.insert(value);
+                                }
+                            }
+                        }
+                    }
 
-                for (values, set) in [(add_values, true), (remove_values, false)] {
-                    for value in values {
-                        batch.ops.push(Operation::Index {
+                    for (values, set) in [(add_values, true), (remove_values, false)] {
+                        for value in values {
+                            batch.ops.push(Operation::Index {
+                                field: property.clone().into(),
+                                key: (value as u32).serialize(),
+                                set,
+                            });
+                        }
+                    }
+                }
+                IndexAs::HasProperty => {
+                    if current_value == &Value::Null {
+                        batch.ops.push(Operation::Bitmap {
+                            family: ().family(),
                             field: property.clone().into(),
-                            key: (value as u32).serialize(),
-                            set,
+                            key: vec![],
+                            set: true,
+                        });
+                    } else if value == Value::Null {
+                        batch.ops.push(Operation::Bitmap {
+                            family: ().family(),
+                            field: property.clone().into(),
+                            key: vec![],
+                            set: false,
                         });
                     }
                 }
+                IndexAs::None => (),
             }
-            IndexAs::HasProperty => {
-                if current_value == &Value::Null {
-                    batch.ops.push(Operation::Bitmap {
-                        family: BM_TAG,
-                        field: property.clone().into(),
-                        key: vec![],
-                        set: true,
-                    });
-                } else if value == Value::Null {
-                    batch.ops.push(Operation::Bitmap {
-                        family: BM_TAG,
-                        field: property.clone().into(),
-                        key: vec![],
-                        set: false,
-                    });
-                }
-            }
-            IndexAs::None => (),
         }
         if value != Value::Null {
             current.set(property, value);
@@ -373,7 +369,7 @@ fn build_batch(
                             &token,
                             HASH_EXACT,
                             (&item.property).into(),
-                            true,
+                            set,
                         ));
                     }
                 }
@@ -403,7 +399,7 @@ fn build_batch(
                         &token,
                         HASH_EXACT,
                         (&item.property).into(),
-                        true,
+                        set,
                     ));
                 }
             }
@@ -440,7 +436,7 @@ fn build_batch(
             }
             (value, IndexAs::HasProperty) if value != &Value::Null => {
                 batch.ops.push(Operation::Bitmap {
-                    family: BM_TAG,
+                    family: ().family(),
                     field: (&item.property).into(),
                     key: vec![],
                     set,

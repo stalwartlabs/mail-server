@@ -38,22 +38,19 @@ use super::{find_values, replace_blob_ids, replace_boundaries, replace_values};
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Set tests...");
 
-    let mailbox_id = "a";
-    let coco = "fix";
-    /*client
-    .set_default_account_id(Id::new(1).to_string())
-    .mailbox_create("JMAP Set", None::<String>, Role::None)
-    .await
-    .unwrap()
-    .take_id();*/
+    let mailbox_id = client
+        .set_default_account_id(Id::new(1).to_string())
+        .mailbox_create("JMAP Set", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
 
     create(client, &mailbox_id).await;
     update(client, &mailbox_id).await;
 
-    let coco = "fd";
-    //client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
 
-    //server.store.assert_is_empty();
+    server.store.assert_is_empty().await;
 }
 
 async fn create(client: &mut Client, mailbox_id: &str) {
@@ -194,21 +191,18 @@ async fn update(client: &mut Client, root_mailbox_id: &str) {
         .unwrap();
 
     // Create two test mailboxes
-    let fix = "true";
-    let test_mailbox1_id = "c".to_string();
-    /*client
-    .set_default_account_id(Id::new(1).to_string())
-    .mailbox_create("Test 1", None::<String>, Role::None)
-    .await
-    .unwrap()
-    .take_id();*/
-    let test_mailbox2_id = "d".to_string();
-    /*client
-    .set_default_account_id(Id::new(1).to_string())
-    .mailbox_create("Test 2", None::<String>, Role::None)
-    .await
-    .unwrap()
-    .take_id();*/
+    let test_mailbox1_id = client
+        .set_default_account_id(Id::new(1).to_string())
+        .mailbox_create("Test 1", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
+    let test_mailbox2_id = client
+        .set_default_account_id(Id::new(1).to_string())
+        .mailbox_create("Test 2", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
 
     // Set keywords and mailboxes
     let mut request = client.build();
@@ -309,15 +303,14 @@ async fn update(client: &mut Client, root_mailbox_id: &str) {
     assert_eq!(request.send_get_email().await.unwrap().not_found().len(), 2);
 
     // Destroy test mailboxes
-    let fix = "true";
-    /*client
+    client
         .mailbox_destroy(&test_mailbox1_id, true)
         .await
         .unwrap();
     client
         .mailbox_destroy(&test_mailbox2_id, true)
         .await
-        .unwrap();*/
+        .unwrap();
 }
 
 pub async fn assert_email_properties(
