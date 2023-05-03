@@ -40,10 +40,10 @@ impl JsonObjectParser for TypeState {
         }
 
         match hash {
-            0x6c69_616d_45 => Ok(TypeState::Email),
-            0x7972_6576_696c_6544_6c69_616d_45 => Ok(TypeState::EmailDelivery),
-            0x6e6f_6973_7369_6d62_7553_6c69_616d_45 => Ok(TypeState::EmailSubmission),
-            0x786f_626c_6961_4d => Ok(TypeState::Mailbox),
+            0x006c_6961_6d45 => Ok(TypeState::Email),
+            0x0079_7265_7669_6c65_446c_6961_6d45 => Ok(TypeState::EmailDelivery),
+            0x006e_6f69_7373_696d_6275_536c_6961_6d45 => Ok(TypeState::EmailSubmission),
+            0x0078_6f62_6c69_614d => Ok(TypeState::Mailbox),
             0x6461_6572_6854 => Ok(TypeState::Thread),
             0x7974_6974_6e65_6449 => Ok(TypeState::Identity),
             _ => Err(parser.error_value()),

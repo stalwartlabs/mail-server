@@ -40,7 +40,7 @@ impl Request {
             parser.next_token::<String>()?.assert(Token::DictStart)?;
             while let Some(key) = parser.next_dict_key::<u128>()? {
                 match key {
-                    0x676e_6973_75 => {
+                    0x0067_6e69_7375 => {
                         found_valid_keys = true;
                         parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
                         loop {
@@ -58,7 +58,7 @@ impl Request {
                             }
                         }
                     }
-                    0x736c_6c61_4364_6f68_7465_6d => {
+                    0x0073_6c6c_6143_646f_6874_656d => {
                         found_valid_keys = true;
 
                         parser

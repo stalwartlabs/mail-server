@@ -59,10 +59,10 @@ impl JsonObjectParser for ParseEmailRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match (&key.hash[0], &key.hash[1]) {
-                (0x6449_746e_756f_6363_61, _) if !key.is_ref => {
+                (0x0064_4974_6e75_6f63_6361, _) if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                (0x7364_4962_6f6c_62, _) => {
+                (0x0073_6449_626f_6c62, _) => {
                     request.blob_ids = <Vec<BlobId>>::parse(parser)?;
                 }
                 (0x7365_6974_7265_706f_7270, _) => {
@@ -71,12 +71,12 @@ impl JsonObjectParser for ParseEmailRequest {
                 (0x7365_6974_7265_706f_7250_7964_6f62, _) => {
                     request.body_properties = <Option<Vec<Property>>>::parse(parser)?;
                 }
-                (0x6c61_5679_646f_4274_7865_5468_6374_6566, 0x7365_75) => {
+                (0x6c61_5679_646f_4274_7865_5468_6374_6566, 0x0073_6575) => {
                     request.fetch_text_body_values = parser
                         .next_token::<Ignore>()?
                         .unwrap_bool_or_null("fetchTextBodyValues")?;
                 }
-                (0x6c61_5679_646f_424c_4d54_4868_6374_6566, 0x7365_75) => {
+                (0x6c61_5679_646f_424c_4d54_4868_6374_6566, 0x0073_6575) => {
                     request.fetch_html_body_values = parser
                         .next_token::<Ignore>()?
                         .unwrap_bool_or_null("fetchHTMLBodyValues")?;

@@ -173,7 +173,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 => {
+                0x0064_4974_6e75_6f63_6361 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x7265_746c_6966 => match parser.next_token::<Ignore>()? {
@@ -207,7 +207,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                         .next_token::<Ignore>()?
                         .unwrap_ints_or_null("anchorOffset")?;
                 }
-                0x7469_6d69_6c => {
+                0x0074_696d_696c => {
                     request.limit = parser
                         .next_token::<Ignore>()?
                         .unwrap_usize_or_null("limit")?;
@@ -241,9 +241,9 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                 filter[*pos_stack.last().unwrap()] = match &property.hash[0] {
                     0x726f_7461_7265_706f => {
                         match parser.next_token::<u64>()?.unwrap_string("operator")? {
-                            0x444e_41 => Filter::And,
+                            0x0044_4e41 => Filter::And,
                             0x524f => Filter::Or,
-                            0x544f_4e => Filter::Not,
+                            0x0054_4f4e => Filter::Not,
                             _ => return Err(parser.error_value()),
                         }
                     }
@@ -252,7 +252,7 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         continue;
                     }
                     _ => match (&property.hash[0], &property.hash[1]) {
-                        (0x6c69_616d_65, _) => {
+                        (0x006c_6961_6d65, _) => {
                             Filter::Email(parser.next_token::<String>()?.unwrap_string("email")?)
                         }
                         (0x656d_616e, _) => {
@@ -270,7 +270,7 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         (0x656e_6f7a_656d_6974, _) => Filter::Timezone(
                             parser.next_token::<String>()?.unwrap_string("timezone")?,
                         ),
-                        (0x7372_6562_6d65_6d, _) => {
+                        (0x0073_7265_626d_656d, _) => {
                             Filter::Members(parser.next_token::<Id>()?.unwrap_string("members")?)
                         }
                         (0x6e61_6854_7265_776f_4c61_746f_7571, _) => Filter::QuotaLt(
@@ -285,11 +285,11 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                                 .unwrap_uint_or_null("quotaGreaterThan")?
                                 .unwrap_or_default() as u32,
                         ),
-                        (0x7364_4979_7469_746e_6564_69, _) => {
+                        (0x0073_6449_7974_6974_6e65_6469, _) => {
                             Filter::IdentityIds(<Vec<Id>>::parse(parser)?)
                         }
                         (0x7364_496c_6961_6d65, _) => Filter::EmailIds(<Vec<Id>>::parse(parser)?),
-                        (0x7364_4964_6165_7268_74, _) => {
+                        (0x0073_6449_6461_6572_6874, _) => {
                             Filter::ThreadIds(<Vec<Id>>::parse(parser)?)
                         }
                         (0x7375_7461_7453_6f64_6e75, _) => Filter::UndoStatus(
@@ -298,22 +298,22 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         (0x6572_6f66_6562, _) => {
                             Filter::Before(parser.next_token::<UTCDate>()?.unwrap_string("before")?)
                         }
-                        (0x7265_7466_61, _) => {
+                        (0x0072_6574_6661, _) => {
                             Filter::After(parser.next_token::<UTCDate>()?.unwrap_string("after")?)
                         }
-                        (0x786f_626c_6961_4d6e_69, _) => Filter::InMailbox(
+                        (0x0078_6f62_6c69_614d_6e69, _) => Filter::InMailbox(
                             parser.next_token::<Id>()?.unwrap_string("inMailbox")?,
                         ),
                         (0x6854_7265_6874_4f78_6f62_6c69_614d_6e69, 0x6e61) => {
                             Filter::InMailboxOtherThan(<Vec<Id>>::parse(parser)?)
                         }
-                        (0x657a_6953_6e69_6d, _) => Filter::MinSize(
+                        (0x0065_7a69_536e_696d, _) => Filter::MinSize(
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("minSize")?
                                 .unwrap_or_default() as u32,
                         ),
-                        (0x657a_6953_7861_6d, _) => Filter::MaxSize(
+                        (0x0065_7a69_5378_616d, _) => Filter::MaxSize(
                             parser
                                 .next_token::<String>()?
                                 .unwrap_uint_or_null("maxSize")?
@@ -326,14 +326,14 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                                     .unwrap_string("allInThreadHaveKeyword")?,
                             )
                         }
-                        (0x6576_6148_6461_6572_6854_6e49_656d_6f73, 0x6472_6f77_7965_4b) => {
+                        (0x6576_6148_6461_6572_6854_6e49_656d_6f73, 0x0064_726f_7779_654b) => {
                             Filter::SomeInThreadHaveKeyword(
                                 parser
                                     .next_token::<Keyword>()?
                                     .unwrap_string("someInThreadHaveKeyword")?,
                             )
                         }
-                        (0x6576_6148_6461_6572_6854_6e49_656e_6f6e, 0x6472_6f77_7965_4b) => {
+                        (0x6576_6148_6461_6572_6854_6e49_656e_6f6e, 0x0064_726f_7779_654b) => {
                             Filter::NoneInThreadHaveKeyword(
                                 parser
                                     .next_token::<Keyword>()?
@@ -350,7 +350,7 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                                 .next_token::<Keyword>()?
                                 .unwrap_string("notKeyword")?,
                         ),
-                        (0x746e_656d_6863_6174_7441_7361_68, _) => Filter::HasAttachment(
+                        (0x0074_6e65_6d68_6361_7474_4173_6168, _) => Filter::HasAttachment(
                             parser
                                 .next_token::<String>()?
                                 .unwrap_bool("hasAttachment")?,
@@ -364,10 +364,10 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         (0x6363, _) => {
                             Filter::Cc(parser.next_token::<String>()?.unwrap_string("cc")?)
                         }
-                        (0x6363_62, _) => {
+                        (0x0063_6362, _) => {
                             Filter::Bcc(parser.next_token::<String>()?.unwrap_string("bcc")?)
                         }
-                        (0x7463_656a_6275_73, _) => Filter::Subject(
+                        (0x0074_6365_6a62_7573, _) => Filter::Subject(
                             parser.next_token::<String>()?.unwrap_string("subject")?,
                         ),
                         (0x7964_6f62, _) => {
@@ -380,7 +380,7 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                                 .next_token::<UTCDate>()?
                                 .unwrap_string("sentBefore")?,
                         ),
-                        (0x7265_7466_4174_6e65_73, _) => Filter::SentAfter(
+                        (0x0072_6574_6641_746e_6573, _) => Filter::SentAfter(
                             parser.next_token::<UTCDate>()?.unwrap_string("sentAfter")?,
                         ),
                         (0x6461_6572_6854_6e69, _) => {
@@ -464,13 +464,13 @@ pub fn parse_sort(parser: &mut Parser) -> crate::parser::Result<Vec<Comparator>>
                 };
                 while let Some(key) = parser.next_dict_key::<u128>()? {
                     match key {
-                        0x676e_6964_6e65_6373_4173_69 => {
+                        0x0067_6e69_646e_6563_7341_7369 => {
                             comp.is_ascending = parser
                                 .next_token::<Ignore>()?
                                 .unwrap_bool_or_null("isAscending")?
                                 .unwrap_or_default();
                         }
-                        0x6e6f_6974_616c_6c6f_63 => {
+                        0x006e_6f69_7461_6c6c_6f63 => {
                             comp.collation = parser
                                 .next_token::<String>()?
                                 .unwrap_string_or_null("collation")?;
@@ -480,7 +480,7 @@ pub fn parse_sort(parser: &mut Parser) -> crate::parser::Result<Vec<Comparator>>
                                 .next_token::<SortProperty>()?
                                 .unwrap_string("property")?;
                         }
-                        0x6472_6f77_7965_6b => {
+                        0x0064_726f_7779_656b => {
                             comp.keyword = parser
                                 .next_token::<Keyword>()?
                                 .unwrap_string_or_null("keyword")?;
@@ -530,17 +530,17 @@ impl JsonObjectParser for SortProperty {
         match hash {
             0x6570_7974 => Ok(SortProperty::Type),
             0x656d_616e => Ok(SortProperty::Name),
-            0x6c69_616d_65 => Ok(SortProperty::Email),
-            0x6449_6c69_616d_65 => Ok(SortProperty::EmailId),
+            0x006c_6961_6d65 => Ok(SortProperty::Email),
+            0x0064_496c_6961_6d65 => Ok(SortProperty::EmailId),
             0x6449_6461_6572_6874 => Ok(SortProperty::ThreadId),
             0x7441_746e_6573 => Ok(SortProperty::SentAt),
             0x7441_6465_7669_6563_6572 => Ok(SortProperty::ReceivedAt),
             0x657a_6973 => Ok(SortProperty::Size),
             0x6d6f_7266 => Ok(SortProperty::From),
             0x6f74 => Ok(SortProperty::To),
-            0x7463_656a_6275_73 => Ok(SortProperty::Subject),
+            0x0074_6365_6a62_7573 => Ok(SortProperty::Subject),
             0x6363 => Ok(SortProperty::Cc),
-            0x7265_6472_4f74_726f_73 => Ok(SortProperty::SortOrder),
+            0x0072_6564_724f_7472_6f73 => Ok(SortProperty::SortOrder),
             0x6449_746e_6572_6170 => Ok(SortProperty::ParentId),
             0x6576_6974_6341_7369 => Ok(SortProperty::IsActive),
             0x6472_6f77_7965_4b73_6168 => Ok(SortProperty::HasKeyword),

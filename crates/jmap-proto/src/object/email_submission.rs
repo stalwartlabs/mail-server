@@ -27,7 +27,7 @@ impl RequestPropertyParser for SetArguments {
                 <Option<VecMap<MaybeReference<Id, String>, Object<SetValue>>>>::parse(parser)?;
             Ok(true)
         } else if property.hash[0] == 0x796f_7274_7365_4473_7365_6363_7553_6e6f
-            && property.hash[1] == 0x6c69_616d_45
+            && property.hash[1] == 0x006c_6961_6d45
         {
             self.on_success_destroy_email =
                 <Option<Vec<MaybeReference<Id, String>>>>::parse(parser)?;

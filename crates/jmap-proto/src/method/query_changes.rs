@@ -85,7 +85,7 @@ impl JsonObjectParser for QueryChangesRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 => {
+                0x0064_4974_6e75_6f63_6361 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x7265_746c_6966 => match parser.next_token::<Ignore>()? {
@@ -106,7 +106,7 @@ impl JsonObjectParser for QueryChangesRequest {
                         return Err(token.error("sort", "array or null"));
                     }
                 },
-                0x6574_6174_5379_7265_7551_6563_6e69_73 => {
+                0x0065_7461_7453_7972_6575_5165_636e_6973 => {
                     request.since_query_state = parser
                         .next_token::<State>()?
                         .unwrap_string("sinceQueryState")?;

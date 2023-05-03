@@ -126,7 +126,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 if !key.is_ref => {
+                0x0064_4974_6e75_6f63_6361 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x6574_6165_7263 if !key.is_ref => {
@@ -142,7 +142,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                         Some(MaybeReference::Reference(ResultReference::parse(parser)?))
                     };
                 }
-                0x6574_6174_536e_4966_69 if !key.is_ref => {
+                0x0065_7461_7453_6e49_6669 if !key.is_ref => {
                     request.if_in_state = parser
                         .next_token::<State>()?
                         .unwrap_string_or_null("ifInState")?;

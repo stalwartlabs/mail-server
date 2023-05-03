@@ -58,7 +58,7 @@ impl JsonObjectParser for GetSearchSnippetRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 if !key.is_ref => {
+                0x0064_4974_6e75_6f63_6361 if !key.is_ref => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x7265_746c_6966 if !key.is_ref => match parser.next_token::<Ignore>()? {

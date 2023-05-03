@@ -28,12 +28,12 @@ impl RequestPropertyParser for GetArguments {
             (0x7365_6974_7265_706f_7250_7964_6f62, _) => {
                 self.body_properties = <Option<Vec<Property>>>::parse(parser)?;
             }
-            (0x6c61_5679_646f_4274_7865_5468_6374_6566, 0x7365_75) => {
+            (0x6c61_5679_646f_4274_7865_5468_6374_6566, 0x0073_6575) => {
                 self.fetch_text_body_values = parser
                     .next_token::<Ignore>()?
                     .unwrap_bool_or_null("fetchTextBodyValues")?;
             }
-            (0x6c61_5679_646f_424c_4d54_4868_6374_6566, 0x7365_75) => {
+            (0x6c61_5679_646f_424c_4d54_4868_6374_6566, 0x0073_6575) => {
                 self.fetch_html_body_values = parser
                     .next_token::<Ignore>()?
                     .unwrap_bool_or_null("fetchHTMLBodyValues")?;
@@ -61,7 +61,7 @@ impl RequestPropertyParser for QueryArguments {
         parser: &mut Parser,
         property: RequestProperty,
     ) -> crate::parser::Result<bool> {
-        if property.hash[0] == 0x7364_6165_7268_5465_7370_616c_6c6f_63 {
+        if property.hash[0] == 0x0073_6461_6572_6854_6573_7061_6c6c_6f63 {
             self.collapse_threads = parser
                 .next_token::<Ignore>()?
                 .unwrap_bool_or_null("collapseThreads")?;

@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashSet};
 use store::{
     fts::builder::ToTokens,
     write::{BatchBuilder, BitmapFamily, IntoOperations, Operation},
-    Serialize, BM_TAG, HASH_EXACT,
+    Serialize, HASH_EXACT,
 };
 
 use crate::{

@@ -108,18 +108,18 @@ impl JsonObjectParser for CopyRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 => {
+                0x0064_4974_6e75_6f63_6361 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
                 0x6574_6165_7263 => {
                     request.create =
                         <VecMap<MaybeReference<Id, String>, Object<SetValue>>>::parse(parser)?;
                 }
-                0x6449_746e_756f_6363_416d_6f72_66 => {
+                0x0064_4974_6e75_6f63_6341_6d6f_7266 => {
                     request.from_account_id =
                         parser.next_token::<Id>()?.unwrap_string("fromAccountId")?;
                 }
-                0x6574_6174_536e_496d_6f72_4666_69 => {
+                0x0065_7461_7453_6e49_6d6f_7246_6669 => {
                     request.if_from_in_state = parser
                         .next_token::<State>()?
                         .unwrap_string_or_null("ifFromInState")?;
@@ -134,7 +134,7 @@ impl JsonObjectParser for CopyRequest {
                         .next_token::<State>()?
                         .unwrap_string_or_null("destroyFromIfInState")?;
                 }
-                0x6574_6174_536e_4966_69 => {
+                0x0065_7461_7453_6e49_6669 => {
                     request.if_in_state = parser
                         .next_token::<State>()?
                         .unwrap_string_or_null("ifInState")?;
@@ -166,14 +166,14 @@ impl JsonObjectParser for CopyBlobRequest {
 
         while let Some(key) = parser.next_dict_key::<RequestProperty>()? {
             match &key.hash[0] {
-                0x6449_746e_756f_6363_61 => {
+                0x0064_4974_6e75_6f63_6361 => {
                     request.account_id = parser.next_token::<Id>()?.unwrap_string("accountId")?;
                 }
-                0x6449_746e_756f_6363_416d_6f72_66 => {
+                0x0064_4974_6e75_6f63_6341_6d6f_7266 => {
                     request.from_account_id =
                         parser.next_token::<Id>()?.unwrap_string("fromAccountId")?;
                 }
-                0x7364_4962_6f6c_62 => {
+                0x0073_6449_626f_6c62 => {
                     request.blob_ids = parser
                         .next_token::<Vec<BlobId>>()?
                         .unwrap_string("blobIds")?;
