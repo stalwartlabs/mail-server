@@ -21,6 +21,30 @@
   "bodyStructure": {
     "headers": [
       {
+        "name": "To",
+        "value": " \"email@example.com\" <email@example.com>"
+      },
+      {
+        "name": "From",
+        "value": " Name <email@example.com>"
+      },
+      {
+        "name": "Subject",
+        "value": " HTML test"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <random-message-id@example.com>"
+      },
+      {
+        "name": "Date",
+        "value": " Tue, 14 Dec 2021 11:48:25 +0100"
+      },
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " multipart/alternative;\r\n boundary=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""
       },

@@ -38,7 +38,7 @@ impl JMAP {
         let (items_sent, mut changelog) = match &request.since_state {
             State::Initial => {
                 let changelog = self
-                    .query_changes(account_id, collection, Query::All)
+                    .changes_(account_id, collection, Query::All)
                     .await?
                     .unwrap();
                 if changelog.changes.is_empty() && changelog.from_change_id == 0 {
@@ -49,7 +49,7 @@ impl JMAP {
             }
             State::Exact(change_id) => (
                 0,
-                self.query_changes(account_id, collection, Query::Since(*change_id))
+                self.changes_(account_id, collection, Query::Since(*change_id))
                     .await?
                     .ok_or_else(|| {
                         MethodError::InvalidArguments(
@@ -59,7 +59,7 @@ impl JMAP {
             ),
             State::Intermediate(intermediate_state) => {
                 let mut changelog = self
-                    .query_changes(
+                    .changes_(
                         account_id,
                         collection,
                         Query::RangeInclusive(intermediate_state.from_id, intermediate_state.to_id),
@@ -73,7 +73,7 @@ impl JMAP {
                 if intermediate_state.items_sent >= changelog.changes.len() {
                     (
                         0,
-                        self.query_changes(
+                        self.changes_(
                             account_id,
                             collection,
                             Query::Since(intermediate_state.to_id),
@@ -141,7 +141,7 @@ impl JMAP {
         Ok(response)
     }
 
-    async fn query_changes(
+    async fn changes_(
         &self,
         account_id: u32,
         collection: Collection,

@@ -36,7 +36,7 @@ impl ReadTransaction<'_> {
         mut key: BitmapKey<T>,
         bm: &mut RoaringBitmap,
     ) -> crate::Result<()> {
-        let begin = key.serialize();
+        let begin = (&key).serialize();
         key.block_num = u32::MAX;
         let key_len = begin.len();
         let end = key.serialize();
@@ -315,5 +315,52 @@ impl Store {
             conn: self.conn_pool.get()?,
             _p: std::marker::PhantomData,
         })
+    }
+
+    #[cfg(feature = "test_mode")]
+    pub async fn assert_is_empty(&self) {
+        let conn = self.read_transaction().unwrap();
+        let mut query = conn.conn.prepare_cached("SELECT k, v FROM v").unwrap();
+        let mut rows = query.query([]).unwrap();
+
+        while let Some(row) = rows.next().unwrap() {
+            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+            let value = row.get_ref(1).unwrap().as_bytes().unwrap();
+
+            panic!("Table values is not empty: {key:?} {value:?}");
+        }
+
+        let mut query = conn.conn.prepare_cached("SELECT k FROM i").unwrap();
+        let mut rows = query.query([]).unwrap();
+
+        while let Some(row) = rows.next().unwrap() {
+            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+
+            panic!(
+                "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
+                u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                key[4],
+                u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
+                key[5],
+                String::from_utf8_lossy(&key[6..key.len()-4]),
+                key
+            );
+        }
+
+        let mut query = conn
+            .conn
+            .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b")
+            .unwrap();
+        let mut rows = query.query([]).unwrap();
+
+        while let Some(row) = rows.next().unwrap() {
+            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+            for bit_pos in 1..=16 {
+                let bit_value = row.get::<_, i64>(bit_pos).unwrap() as u64;
+                if bit_value != 0 {
+                    panic!("Table bitmaps is not empty: {key:?} {bit_pos} {bit_value}");
+                }
+            }
+        }
     }
 }

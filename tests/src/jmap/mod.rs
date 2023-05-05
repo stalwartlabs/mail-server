@@ -7,8 +7,12 @@ use tokio::sync::watch;
 
 use crate::{add_test_certs, store::TempDir};
 
+pub mod email_changes;
 pub mod email_get;
+pub mod email_parse;
 pub mod email_query;
+pub mod email_query_changes;
+pub mod email_search_snippet;
 pub mod email_set;
 pub mod mailbox;
 pub mod thread_get;
@@ -38,6 +42,10 @@ blob.path = '{TMP}'
 [certificate.default]
 cert = 'file://{CERT}'
 private-key = 'file://{PK}'
+
+[jmap.protocol]
+set.max-objects = 100000
+
 ";
 
 #[tokio::test]
@@ -51,12 +59,16 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
+    //email_query::test(params.server.clone(), &mut params.client, delete).await;
     //email_get::test(params.server.clone(), &mut params.client).await;
     //email_set::test(params.server.clone(), &mut params.client).await;
-    //email_query::test(params.server.clone(), &mut params.client, delete).await;
+    //email_parse::test(params.server.clone(), &mut params.client).await;
+    //email_search_snippet::test(params.server.clone(), &mut params.client).await;
+    //email_changes::test(params.server.clone(), &mut params.client).await;
+    email_query_changes::test(params.server.clone(), &mut params.client).await;
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
-    mailbox::test(params.server.clone(), &mut params.client).await;
+    //mailbox::test(params.server.clone(), &mut params.client).await;
     if delete {
         params.temp_dir.delete();
     }

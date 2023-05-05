@@ -26,7 +26,7 @@ use crate::{
     BitmapKey, Serialize, BM_HASH,
 };
 
-use self::{bloom::hash_token, builder::MAX_TOKEN_MASK};
+use self::{bloom::hash_token, builder::MAX_TOKEN_MASK, lang::LanguageDetector};
 
 pub mod lang;
 //pub mod pdf;
@@ -34,7 +34,7 @@ pub mod bloom;
 pub mod builder;
 pub mod ngram;
 pub mod query;
-//pub mod search_snippet;
+pub mod search_snippet;
 pub mod stemmer;
 pub mod term_index;
 pub mod tokenizers;
@@ -206,6 +206,22 @@ impl Operation {
             field,
             key: hash_token(word),
             set,
+        }
+    }
+}
+
+impl Language {
+    pub fn detect(text: String, default: Language) -> (String, Language) {
+        if let Some((l, t)) = text
+            .split_once(':')
+            .and_then(|(l, t)| (Language::from_iso_639(l)?, t).into())
+        {
+            (t.to_string(), l)
+        } else {
+            let l = LanguageDetector::detect_single(&text)
+                .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
+                .unwrap_or(default);
+            (text, l)
         }
     }
 }

@@ -10,6 +10,7 @@ pub enum Change {
     Delete(u64),
 }
 
+#[derive(Debug)]
 pub struct Changes {
     pub changes: Vec<Change>,
     pub from_change_id: u64,

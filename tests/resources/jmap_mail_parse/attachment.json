@@ -21,6 +21,42 @@
   "bodyStructure": {
     "headers": [
       {
+        "name": "Return-Path",
+        "value": " <president@whitehouse.gov>"
+      },
+      {
+        "name": "Received",
+        "value": " from mailhost.whitehouse.gov ([192.168.51.200])\n        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453\n        for <vice-president@heartbeat.whitehouse.gov>;\n        Mon, 13 Aug 1998 l8:14:23 +1000"
+      },
+      {
+        "name": "Received",
+        "value": " from the_big_box.whitehouse.gov ([192.168.51.50])\n        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366\n        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000"
+      },
+      {
+        "name": "Date",
+        "value": " Mon, 13 Aug 1998 17:42:41 +1000"
+      },
+      {
+        "name": "Message-ID",
+        "value": " <199804130742.RAA20366@mai1host.whitehouse.gov>"
+      },
+      {
+        "name": "From",
+        "value": " Bill Clinton <president@whitehouse.gov>"
+      },
+      {
+        "name": "To",
+        "value": " A1 (The Enforcer) Gore <vice-president@whitehouse.gov>"
+      },
+      {
+        "name": "Subject",
+        "value": "  Map of Argentina with Description"
+      },
+      {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " multipart/mixed;\n              boundary=\"DC8------------DC8638F443D87A7F0726DEF7\""
       }

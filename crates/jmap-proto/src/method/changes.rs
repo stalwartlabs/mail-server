@@ -100,3 +100,9 @@ impl JsonObjectParser for ChangesRequest {
         Ok(request)
     }
 }
+
+impl ChangesResponse {
+    pub fn has_changes(&self) -> bool {
+        !self.created.is_empty() || !self.updated.is_empty() || !self.destroyed.is_empty()
+    }
+}

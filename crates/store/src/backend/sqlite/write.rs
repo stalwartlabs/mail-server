@@ -233,15 +233,13 @@ impl Store {
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
         use crate::{
-            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-            SUBSPACE_VALUES,
+            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
         };
 
         let conn = self.conn_pool.get().unwrap();
         for table in [
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
-            SUBSPACE_BLOBS,
             SUBSPACE_ACLS,
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,

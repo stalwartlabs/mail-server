@@ -655,6 +655,30 @@ impl RequestPropertyParser for RequestArguments {
     }
 }
 
+impl Filter {
+    pub fn is_immutable(&self) -> bool {
+        matches!(
+            self,
+            Filter::Before(_)
+                | Filter::After(_)
+                | Filter::MinSize(_)
+                | Filter::MaxSize(_)
+                | Filter::Text(_)
+                | Filter::HasAttachment(_)
+                | Filter::From(_)
+                | Filter::To(_)
+                | Filter::Cc(_)
+                | Filter::Bcc(_)
+                | Filter::Subject(_)
+                | Filter::Body(_)
+                | Filter::Header(_)
+                | Filter::Id(_)
+                | Filter::SentBefore(_)
+                | Filter::SentAfter(_)
+        )
+    }
+}
+
 impl Comparator {
     pub fn descending(property: SortProperty) -> Self {
         Self {
@@ -664,6 +688,7 @@ impl Comparator {
             keyword: None,
         }
     }
+
     pub fn ascending(property: SortProperty) -> Self {
         Self {
             property,
@@ -672,14 +697,29 @@ impl Comparator {
             keyword: None,
         }
     }
+
+    pub fn is_immutable(&self) -> bool {
+        matches!(
+            &self.property,
+            SortProperty::SentAt
+                | SortProperty::ReceivedAt
+                | SortProperty::Size
+                | SortProperty::From
+                | SortProperty::To
+                | SortProperty::Subject
+                | SortProperty::Cc
+        )
+    }
 }
 
 impl QueryRequest<RequestArguments> {
     pub fn take_arguments(&mut self) -> RequestArguments {
         std::mem::replace(&mut self.arguments, RequestArguments::Principal)
     }
+}
 
-    pub fn with_arguments<T>(self, arguments: T) -> QueryRequest<T> {
+impl<T> QueryRequest<T> {
+    pub fn with_arguments<A>(self, arguments: A) -> QueryRequest<A> {
         QueryRequest {
             arguments,
             account_id: self.account_id,

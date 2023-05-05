@@ -2,7 +2,8 @@ use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    AclKey, BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey, SUBSPACE_LOGS,
+    AclKey, BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey,
+    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 pub struct KeySerializer {
@@ -296,5 +297,41 @@ impl Serialize for LogKey {
 impl Key for LogKey {
     fn subspace(&self) -> u8 {
         SUBSPACE_LOGS
+    }
+}
+
+impl Key for ValueKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
+    }
+}
+
+impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for IndexKey<T> {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_INDEXES
+    }
+}
+
+impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BitmapKey<T> {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_BITMAPS
+    }
+}
+
+impl Serialize for ValueKey {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for IndexKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl<T: AsRef<[u8]>> Serialize for BitmapKey<T> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
     }
 }

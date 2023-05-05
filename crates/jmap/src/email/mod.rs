@@ -4,5 +4,7 @@ pub mod headers;
 pub mod import;
 pub mod index;
 pub mod ingest;
+pub mod parse;
 pub mod query;
 pub mod set;
+pub mod snippet;

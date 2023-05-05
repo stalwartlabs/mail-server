@@ -10,31 +10,31 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct ParseEmailRequest {
     pub account_id: Id,
-    blob_ids: Vec<BlobId>,
-    properties: Option<Vec<Property>>,
-    body_properties: Option<Vec<Property>>,
-    fetch_text_body_values: Option<bool>,
-    fetch_html_body_values: Option<bool>,
-    fetch_all_body_values: Option<bool>,
-    max_body_value_bytes: Option<usize>,
+    pub blob_ids: Vec<BlobId>,
+    pub properties: Option<Vec<Property>>,
+    pub body_properties: Option<Vec<Property>>,
+    pub fetch_text_body_values: Option<bool>,
+    pub fetch_html_body_values: Option<bool>,
+    pub fetch_all_body_values: Option<bool>,
+    pub max_body_value_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ParseEmailResponse {
     #[serde(rename = "accountId")]
-    account_id: Id,
+    pub account_id: Id,
 
     #[serde(rename = "parsed")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
-    parsed: VecMap<BlobId, Object<Value>>,
+    pub parsed: VecMap<BlobId, Object<Value>>,
 
     #[serde(rename = "notParsable")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    not_parsable: Vec<BlobId>,
+    pub not_parsable: Vec<BlobId>,
 
     #[serde(rename = "notFound")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    not_found: Vec<BlobId>,
+    pub not_found: Vec<BlobId>,
 }
 
 impl JsonObjectParser for ParseEmailRequest {

@@ -25,8 +25,8 @@ pub struct GetSearchSnippetResponse {
     pub list: Vec<SearchSnippet>,
 
     #[serde(rename = "notFound")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub not_found: Option<Vec<Id>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub not_found: Vec<Id>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]

@@ -73,6 +73,31 @@ impl ChangeLogBuilder {
         change.inserts.insert(new_jmap_id.into());
     }
 
+    pub fn with_log_insert(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
+        self.log_insert(collection, jmap_id);
+        self
+    }
+
+    pub fn with_log_move(
+        mut self,
+        collection: impl Into<u8>,
+        old_jmap_id: impl Into<u64>,
+        new_jmap_id: impl Into<u64>,
+    ) -> Self {
+        self.log_move(collection, old_jmap_id, new_jmap_id);
+        self
+    }
+
+    pub fn with_log_update(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
+        self.log_update(collection, jmap_id);
+        self
+    }
+
+    pub fn with_log_delete(mut self, collection: impl Into<u8>, jmap_id: impl Into<u64>) -> Self {
+        self.log_delete(collection, jmap_id);
+        self
+    }
+
     pub fn merge(&mut self, changes: ChangeLogBuilder) {
         for (collection, other) in changes.changes {
             let this = self.changes.get_mut_or_insert(collection);

@@ -177,6 +177,5 @@ pub const TAG_STATIC: u8 = 1 << 1;
 pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
-pub const SUBSPACE_BLOBS: u8 = b'o';
 pub const SUBSPACE_INDEXES: u8 = b'i';
 pub const SUBSPACE_ACLS: u8 = b'c';

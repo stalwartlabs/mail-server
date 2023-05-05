@@ -46,6 +46,9 @@ impl crate::Config {
             mail_attachments_max_size: settings
                 .property("jmap.email.max-attachment-size")?
                 .unwrap_or(50000000),
+            mail_parse_max_items: settings
+                .property("jmap.email.parse.max-items")?
+                .unwrap_or(50000000),
             sieve_max_script_name: settings
                 .property("jmap.sieve.max-name-length")?
                 .unwrap_or(512),

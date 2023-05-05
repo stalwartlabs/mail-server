@@ -10,7 +10,7 @@ use jmap_proto::{
 };
 use store::{
     ahash::AHashMap,
-    fts::Language,
+    fts::{term_index::TermIndex, Language},
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::BitmapFamily,
@@ -49,6 +49,7 @@ pub struct Config {
     pub mailbox_max_depth: usize,
     pub mailbox_name_max_len: usize,
     pub mail_attachments_max_size: usize,
+    pub mail_parse_max_items: usize,
 
     pub sieve_max_script_name: usize,
     pub sieve_max_scripts: usize,
@@ -147,6 +148,37 @@ impl JMAP {
                                 property = ?property,
                                 error = ?err,
                                 "Failed to retrieve properties");
+                Err(MethodError::ServerPartialFail)
+            }
+        }
+    }
+
+    pub async fn get_term_index(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        document_id: u32,
+    ) -> Result<Option<TermIndex>, MethodError> {
+        match self
+            .store
+            .get_value::<TermIndex>(ValueKey {
+                account_id,
+                collection: collection.into(),
+                document_id,
+                family: u8::MAX,
+                field: u8::MAX,
+            })
+            .await
+        {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                collection = ?collection,
+                                document_id = document_id,
+                                error = ?err,
+                                "Failed to retrieve term index");
                 Err(MethodError::ServerPartialFail)
             }
         }

@@ -305,10 +305,11 @@ impl JMAP {
                         if let Some(message) = &message {
                             let mut body_values = Object::with_capacity(message.parts.len());
                             for (part_id, part) in message.parts.iter().enumerate() {
-                                if (message.html_body.contains(&part_id)
+                                if ((message.html_body.contains(&part_id)
                                     && (fetch_all_body_values || fetch_html_body_values))
                                     || (message.text_body.contains(&part_id)
-                                        && (fetch_all_body_values || fetch_text_body_values))
+                                        && (fetch_all_body_values || fetch_text_body_values)))
+                                    && part.is_text()
                                 {
                                     let (is_truncated, value) =
                                         part.body.truncate(max_body_value_bytes);

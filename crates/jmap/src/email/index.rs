@@ -32,7 +32,7 @@ pub const PREVIEW_LENGTH: usize = 256;
 
 pub struct SortedAddressBuilder {
     last_is_space: bool,
-    buf: String,
+    pub buf: String,
 }
 
 pub(super) trait IndexMessage {
@@ -164,7 +164,7 @@ impl IndexMessage for BatchBuilder {
                                         if !found_addr {
                                             match element {
                                                 AddressElement::Name => {
-                                                    found_addr = sort_text.push(value);
+                                                    found_addr = !sort_text.push(value);
                                                 }
                                                 AddressElement::Address => {
                                                     sort_text.push(value);

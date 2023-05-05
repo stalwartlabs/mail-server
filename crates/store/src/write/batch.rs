@@ -124,8 +124,9 @@ impl BatchBuilder {
         self
     }
 
-    pub fn custom(&mut self, value: impl IntoOperations) {
-        value.build(self)
+    pub fn custom(&mut self, value: impl IntoOperations) -> &mut Self {
+        value.build(self);
+        self
     }
 
     pub fn build(self) -> Batch {

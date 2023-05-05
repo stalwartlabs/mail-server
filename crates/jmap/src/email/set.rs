@@ -1088,7 +1088,10 @@ impl JMAP {
                         }
                     }
                 }
-                (Property::From | Property::To | Property::Bcc, Value::List(addresses)) => {
+                (
+                    Property::From | Property::To | Property::Cc | Property::Bcc,
+                    Value::List(addresses),
+                ) => {
                     let mut sort_text = SortedAddressBuilder::new();
                     'outer: for addr in addresses {
                         if let Some(addr) = addr.try_unwrap_object() {

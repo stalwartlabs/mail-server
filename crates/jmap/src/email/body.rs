@@ -167,6 +167,7 @@ impl TruncateBody for PartType<'_> {
                     let mut in_tag = false;
                     let mut in_comment = false;
                     let mut last_tag_end_pos = 0;
+                    let mut cr_count = 0;
                     for (pos, ch) in html.char_indices() {
                         let mut set_last_tag = 0;
                         match ch {
@@ -189,16 +190,20 @@ impl TruncateBody for PartType<'_> {
                                     set_last_tag = pos + 1;
                                 }
                             }
-                            '\r' => continue,
+                            '\r' => {
+                                cr_count += 1;
+                                continue;
+                            }
                             _ => (),
                         }
-                        if ch.len_utf8() + pos > max_len {
+                        if ch.len_utf8() + pos - cr_count > max_len {
                             result.push_str(
                                 &html[0..if (in_tag || set_last_tag > 0) && last_tag_end_pos > 0 {
                                     last_tag_end_pos
                                 } else {
                                     pos
-                                }],
+                                }]
+                                    .replace('\r', ""),
                             );
                             if add_dots {
                                 result.push_str("...");

@@ -5,11 +5,7 @@ pub mod sort;
 
 use roaring::RoaringBitmap;
 
-use crate::{
-    fts::{lang::LanguageDetector, Language},
-    write::BitmapFamily,
-    BitmapKey, Serialize, Store, BM_DOCUMENT_IDS,
-};
+use crate::{fts::Language, write::BitmapFamily, BitmapKey, Serialize, BM_DOCUMENT_IDS};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Operator {
@@ -135,18 +131,7 @@ impl Filter {
         text: impl Into<String>,
         default_language: Language,
     ) -> Self {
-        let mut text = text.into();
-        let language = if let Some((l, t)) = text
-            .split_once(':')
-            .and_then(|(l, t)| (Language::from_iso_639(l)?, t.to_string()).into())
-        {
-            text = t;
-            l
-        } else {
-            LanguageDetector::detect_single(&text)
-                .and_then(|(l, c)| if c > 0.3 { Some(l) } else { None })
-                .unwrap_or(default_language)
-        };
+        let (text, language) = Language::detect(text.into(), default_language);
         Self::has_text(field, text, language)
     }
 
@@ -233,12 +218,5 @@ impl BitmapKey<&'static [u8]> {
             key: b"",
             block_num: 0,
         }
-    }
-}
-
-#[cfg(feature = "test_mode")]
-impl Store {
-    pub async fn assert_is_empty(&self) {
-        todo!()
     }
 }

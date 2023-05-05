@@ -13,6 +13,7 @@ use crate::{
         parse::ParseEmailRequest,
         query::QueryRequest,
         query_changes::QueryChangesRequest,
+        search_snippet::GetSearchSnippetRequest,
         set::SetRequest,
         validate::ValidateSieveScriptRequest,
     },
@@ -95,7 +96,12 @@ impl Request {
 
                                 let method = match (&method_name.fnc, &method_name.obj) {
                                     (MethodFunction::Get, _) => {
-                                        GetRequest::parse(&mut parser).map(RequestMethod::Get)
+                                        if method_name.obj != MethodObject::SearchSnippet {
+                                            GetRequest::parse(&mut parser).map(RequestMethod::Get)
+                                        } else {
+                                            GetSearchSnippetRequest::parse(&mut parser)
+                                                .map(RequestMethod::SearchSnippet)
+                                        }
                                     }
                                     (MethodFunction::Query, _) => {
                                         QueryRequest::parse(&mut parser).map(RequestMethod::Query)
