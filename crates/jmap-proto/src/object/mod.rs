@@ -82,6 +82,12 @@ impl ToBitmaps for Object<Value> {
     }
 }
 
+impl ToBitmaps for &Object<Value> {
+    fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
+        unreachable!()
+    }
+}
+
 const TEXT: u8 = 0;
 const UNSIGNED_INT: u8 = 1;
 const BOOL_TRUE: u8 = 2;
@@ -112,6 +118,12 @@ impl Deserialize for Value {
 }
 
 impl Serialize for Object<Value> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl Serialize for &Object<Value> {
     fn serialize(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(1024);
         self.serialize_into(&mut buf);

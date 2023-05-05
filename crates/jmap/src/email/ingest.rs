@@ -23,6 +23,7 @@ use crate::{
 
 use super::index::{TrimTextValue, MAX_SORT_FIELD_LENGTH};
 
+#[derive(Default)]
 pub struct IngestedEmail {
     pub id: Id,
     pub change_id: u64,
@@ -176,9 +177,9 @@ impl JMAP {
                     error = ?err,
                     "Failed to index message.");
                 MaybeError::Temporary
-            })?;
-        batch.value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
-        batch.custom(changes);
+            })?
+            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
+            .custom(changes);
         self.store.write(batch.build()).await.map_err(|err| {
             tracing::error!(
                 event = "error",
@@ -196,7 +197,7 @@ impl JMAP {
         })
     }
 
-    async fn find_or_merge_thread(
+    pub async fn find_or_merge_thread(
         &self,
         account_id: u32,
         thread_name: &str,

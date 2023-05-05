@@ -113,6 +113,10 @@ impl Display for MethodName {
 }
 
 impl MethodName {
+    pub fn new(obj: MethodObject, fnc: MethodFunction) -> Self {
+        Self { obj, fnc }
+    }
+
     pub fn error() -> Self {
         Self {
             obj: MethodObject::Thread,

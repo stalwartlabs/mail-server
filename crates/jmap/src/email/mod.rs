@@ -1,4 +1,5 @@
 pub mod body;
+pub mod copy;
 pub mod get;
 pub mod headers;
 pub mod import;

@@ -23,13 +23,12 @@ use mail_builder::{
     mime::{BodyPart, MimePart},
     MessageBuilder,
 };
-use mail_parser::parsers::fields::thread::thread_name;
 use store::{
     ahash::AHashSet,
     fts::term_index::TokenIndex,
     write::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
-        ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+        ToBitmaps, F_BITMAP, F_CLEAR, F_VALUE,
     },
     BlobKind, Serialize, ValueKey,
 };
@@ -38,7 +37,7 @@ use crate::JMAP;
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
-    index::{SortedAddressBuilder, TrimTextValue, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
+    index::EmailIndexBuilder,
 };
 
 impl JMAP {
@@ -53,7 +52,7 @@ impl JMAP {
             .await?;
 
         // Obtain mailboxIds
-        let mut mailbox_ids = self
+        let mailbox_ids = self
             .get_document_ids(account_id, Collection::Mailbox)
             .await?
             .unwrap_or_default();
@@ -1037,8 +1036,8 @@ impl JMAP {
             return Ok(Err(SetError::not_found()));
         }
 
-        // Obtain message metadata
-        let metadata = if let Some(metadata) = self
+        // Remove message metadata
+        if let Some(metadata) = self
             .get_property::<Object<Value>>(
                 account_id,
                 Collection::Email,
@@ -1047,7 +1046,7 @@ impl JMAP {
             )
             .await?
         {
-            metadata
+            batch.custom(EmailIndexBuilder::clear(metadata));
         } else {
             tracing::debug!(
                 event = "error",
@@ -1058,72 +1057,6 @@ impl JMAP {
             );
             return Ok(Err(SetError::not_found()));
         };
-
-        // Delete metadata
-        batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
-
-        // Remove properties from index
-        for (property, value) in metadata.properties {
-            match (&property, value) {
-                (Property::Size, Value::UnsignedInt(size)) => {
-                    batch.value(Property::Size, size as u32, F_INDEX | F_CLEAR);
-                }
-                (Property::ReceivedAt | Property::SentAt, Value::Date(date)) => {
-                    batch.value(property, date.timestamp() as u64, F_INDEX | F_CLEAR);
-                }
-                (
-                    Property::MessageId
-                    | Property::InReplyTo
-                    | Property::References
-                    | Property::EmailIds,
-                    Value::List(ids),
-                ) => {
-                    // Remove messageIds from index
-                    for id in ids {
-                        match id {
-                            Value::Text(id) if id.len() < MAX_ID_LENGTH => {
-                                batch.value(Property::MessageId, id, F_INDEX | F_CLEAR);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                (
-                    Property::From | Property::To | Property::Cc | Property::Bcc,
-                    Value::List(addresses),
-                ) => {
-                    let mut sort_text = SortedAddressBuilder::new();
-                    'outer: for addr in addresses {
-                        if let Some(addr) = addr.try_unwrap_object() {
-                            for part in [Property::Name, Property::Email] {
-                                if let Some(Value::Text(value)) = addr.properties.get(&part) {
-                                    if !sort_text.push(value) || part == Property::Email {
-                                        break 'outer;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    batch.value(property, sort_text.build(), F_INDEX | F_CLEAR);
-                }
-                (Property::Subject, Value::Text(value)) => {
-                    let thread_name = thread_name(&value);
-                    batch.value(
-                        Property::Subject,
-                        if !thread_name.is_empty() {
-                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                        } else {
-                            "!"
-                        },
-                        F_INDEX | F_CLEAR,
-                    );
-                }
-                (Property::HasAttachment, Value::Bool(true)) => {
-                    batch.bitmap(Property::HasAttachment, (), F_CLEAR);
-                }
-                _ => {}
-            }
-        }
 
         // Delete term index
         if let Some(token_index) = self

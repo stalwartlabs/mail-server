@@ -4,6 +4,7 @@ use ahash::AHashSet;
 use utils::map::vec_map::VecMap;
 
 use crate::{
+    query::RawValue,
     write::{BatchBuilder, IntoOperations, Operation},
     Serialize, HASH_EXACT, HASH_STEMMED,
 };
@@ -132,8 +133,8 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
     }
 }
 
-impl IntoOperations for TokenIndex {
-    fn build(self, batch: &mut BatchBuilder) {
+impl TokenIndex {
+    fn build_index(self, batch: &mut BatchBuilder, set: bool) {
         for term in self.terms {
             for (term_ids, is_exact) in [(term.exact_terms, true), (term.stemmed_terms, false)] {
                 for term_id in term_ids {
@@ -142,17 +143,33 @@ impl IntoOperations for TokenIndex {
                             word,
                             if is_exact { HASH_EXACT } else { HASH_STEMMED },
                             term.field_id,
-                            false,
+                            set,
                         ));
                     }
                 }
             }
         }
+    }
+}
 
+impl IntoOperations for TokenIndex {
+    fn build(self, batch: &mut BatchBuilder) {
+        self.build_index(batch, false);
         batch.ops.push(Operation::Value {
             field: u8::MAX,
             family: u8::MAX,
             set: None,
+        });
+    }
+}
+
+impl IntoOperations for RawValue<TokenIndex> {
+    fn build(self, batch: &mut BatchBuilder) {
+        self.inner.build_index(batch, true);
+        batch.ops.push(Operation::Value {
+            field: u8::MAX,
+            family: u8::MAX,
+            set: self.raw.into(),
         });
     }
 }

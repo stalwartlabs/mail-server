@@ -8,6 +8,7 @@ use tokio::sync::watch;
 use crate::{add_test_certs, store::TempDir};
 
 pub mod email_changes;
+pub mod email_copy;
 pub mod email_get;
 pub mod email_parse;
 pub mod email_query;
@@ -65,7 +66,8 @@ pub async fn jmap_tests() {
     //email_parse::test(params.server.clone(), &mut params.client).await;
     //email_search_snippet::test(params.server.clone(), &mut params.client).await;
     //email_changes::test(params.server.clone(), &mut params.client).await;
-    email_query_changes::test(params.server.clone(), &mut params.client).await;
+    //email_query_changes::test(params.server.clone(), &mut params.client).await;
+    email_copy::test(params.server.clone(), &mut params.client).await;
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
     //mailbox::test(params.server.clone(), &mut params.client).await;

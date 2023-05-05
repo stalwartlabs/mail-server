@@ -153,15 +153,15 @@ impl JMAP {
         }
     }
 
-    pub async fn get_term_index(
+    pub async fn get_term_index<T: Deserialize + 'static>(
         &self,
         account_id: u32,
         collection: Collection,
         document_id: u32,
-    ) -> Result<Option<TermIndex>, MethodError> {
+    ) -> Result<Option<T>, MethodError> {
         match self
             .store
-            .get_value::<TermIndex>(ValueKey {
+            .get_value::<T>(ValueKey {
                 account_id,
                 collection: collection.into(),
                 document_id,

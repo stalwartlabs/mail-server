@@ -13,7 +13,7 @@ use crate::{
     error::method::MethodError,
     method::{
         changes::ChangesRequest,
-        copy::{CopyBlobRequest, CopyRequest},
+        copy::{self, CopyBlobRequest, CopyRequest},
         get::{self, GetRequest},
         import::ImportEmailRequest,
         parse::ParseEmailRequest,
@@ -54,7 +54,7 @@ pub enum RequestMethod {
     Get(GetRequest<get::RequestArguments>),
     Set(SetRequest<set::RequestArguments>),
     Changes(ChangesRequest),
-    Copy(CopyRequest),
+    Copy(CopyRequest<copy::RequestArguments>),
     CopyBlob(CopyBlobRequest),
     ImportEmail(ImportEmailRequest),
     ParseEmail(ParseEmailRequest),

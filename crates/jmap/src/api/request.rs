@@ -26,65 +26,79 @@ impl JMAP {
                 continue;
             }
 
-            let method_response: ResponseMethod = match call.method {
-                RequestMethod::Get(mut req) => match req.take_arguments() {
-                    get::RequestArguments::Email(arguments) => {
-                        self.email_get(req.with_arguments(arguments)).await.into()
+            loop {
+                let mut next_call = None;
+                let method_response: ResponseMethod = match call.method {
+                    RequestMethod::Get(mut req) => match req.take_arguments() {
+                        get::RequestArguments::Email(arguments) => {
+                            self.email_get(req.with_arguments(arguments)).await.into()
+                        }
+                        get::RequestArguments::Mailbox => self.mailbox_get(req).await.into(),
+                        get::RequestArguments::Thread => self.thread_get(req).await.into(),
+                        get::RequestArguments::Identity => todo!(),
+                        get::RequestArguments::EmailSubmission => todo!(),
+                        get::RequestArguments::PushSubscription => todo!(),
+                        get::RequestArguments::SieveScript => todo!(),
+                        get::RequestArguments::VacationResponse => todo!(),
+                        get::RequestArguments::Principal => todo!(),
+                    },
+                    RequestMethod::Query(mut req) => match req.take_arguments() {
+                        query::RequestArguments::Email(arguments) => {
+                            self.email_query(req.with_arguments(arguments)).await.into()
+                        }
+                        query::RequestArguments::Mailbox(arguments) => self
+                            .mailbox_query(req.with_arguments(arguments))
+                            .await
+                            .into(),
+                        query::RequestArguments::EmailSubmission => todo!(),
+                        query::RequestArguments::SieveScript => todo!(),
+                        query::RequestArguments::Principal => todo!(),
+                    },
+                    RequestMethod::Set(mut req) => match req.take_arguments() {
+                        set::RequestArguments::Email => self.email_set(req).await.into(),
+                        set::RequestArguments::Mailbox(arguments) => {
+                            self.mailbox_set(req.with_arguments(arguments)).await.into()
+                        }
+                        set::RequestArguments::Identity => todo!(),
+                        set::RequestArguments::EmailSubmission(_) => todo!(),
+                        set::RequestArguments::PushSubscription => todo!(),
+                        set::RequestArguments::SieveScript(_) => todo!(),
+                        set::RequestArguments::VacationResponse => todo!(),
+                        set::RequestArguments::Principal => todo!(),
+                    },
+                    RequestMethod::Changes(req) => self.changes(req).await.into(),
+                    RequestMethod::Copy(req) => self.email_copy(req, &mut next_call).await.into(),
+                    RequestMethod::CopyBlob(_) => todo!(),
+                    RequestMethod::ImportEmail(req) => self.email_import(req).await.into(),
+                    RequestMethod::ParseEmail(req) => self.email_parse(req).await.into(),
+                    RequestMethod::QueryChanges(req) => self.query_changes(req).await.into(),
+                    RequestMethod::SearchSnippet(req) => {
+                        self.email_search_snippet(req).await.into()
                     }
-                    get::RequestArguments::Mailbox => self.mailbox_get(req).await.into(),
-                    get::RequestArguments::Thread => self.thread_get(req).await.into(),
-                    get::RequestArguments::Identity => todo!(),
-                    get::RequestArguments::EmailSubmission => todo!(),
-                    get::RequestArguments::PushSubscription => todo!(),
-                    get::RequestArguments::SieveScript => todo!(),
-                    get::RequestArguments::VacationResponse => todo!(),
-                    get::RequestArguments::Principal => todo!(),
-                },
-                RequestMethod::Query(mut req) => match req.take_arguments() {
-                    query::RequestArguments::Email(arguments) => {
-                        self.email_query(req.with_arguments(arguments)).await.into()
-                    }
-                    query::RequestArguments::Mailbox(arguments) => self
-                        .mailbox_query(req.with_arguments(arguments))
-                        .await
-                        .into(),
-                    query::RequestArguments::EmailSubmission => todo!(),
-                    query::RequestArguments::SieveScript => todo!(),
-                    query::RequestArguments::Principal => todo!(),
-                },
-                RequestMethod::Set(mut req) => match req.take_arguments() {
-                    set::RequestArguments::Email => self.email_set(req).await.into(),
-                    set::RequestArguments::Mailbox(arguments) => {
-                        self.mailbox_set(req.with_arguments(arguments)).await.into()
-                    }
-                    set::RequestArguments::Identity => todo!(),
-                    set::RequestArguments::EmailSubmission(_) => todo!(),
-                    set::RequestArguments::PushSubscription => todo!(),
-                    set::RequestArguments::SieveScript(_) => todo!(),
-                    set::RequestArguments::VacationResponse => todo!(),
-                    set::RequestArguments::Principal => todo!(),
-                },
-                RequestMethod::Changes(req) => self.changes(req).await.into(),
-                RequestMethod::Copy(_) => todo!(),
-                RequestMethod::CopyBlob(_) => todo!(),
-                RequestMethod::ImportEmail(req) => self.email_import(req).await.into(),
-                RequestMethod::ParseEmail(req) => self.email_parse(req).await.into(),
-                RequestMethod::QueryChanges(req) => self.query_changes(req).await.into(),
-                RequestMethod::SearchSnippet(req) => self.email_search_snippet(req).await.into(),
-                RequestMethod::ValidateScript(_) => todo!(),
-                RequestMethod::Echo(req) => req.into(),
-                RequestMethod::Error(error) => error.into(),
-            };
+                    RequestMethod::ValidateScript(_) => todo!(),
+                    RequestMethod::Echo(req) => req.into(),
+                    RequestMethod::Error(error) => error.into(),
+                };
 
-            response.push_response(
-                call.id,
-                if !matches!(method_response, ResponseMethod::Error(_)) {
-                    call.name
+                // Add response
+                response.push_response(
+                    call.id,
+                    if !matches!(method_response, ResponseMethod::Error(_)) {
+                        call.name
+                    } else {
+                        MethodName::error()
+                    },
+                    method_response,
+                );
+
+                // Process next call
+                if let Some(next_call) = next_call {
+                    call = next_call;
+                    call.id = response.method_responses.last().unwrap().id.clone();
                 } else {
-                    MethodName::error()
-                },
-                method_response,
-            );
+                    break;
+                }
+            }
         }
 
         Ok(response)

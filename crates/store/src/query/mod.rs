@@ -5,7 +5,9 @@ pub mod sort;
 
 use roaring::RoaringBitmap;
 
-use crate::{fts::Language, write::BitmapFamily, BitmapKey, Serialize, BM_DOCUMENT_IDS};
+use crate::{
+    fts::Language, write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Operator {
@@ -218,5 +220,20 @@ impl BitmapKey<&'static [u8]> {
             key: b"",
             block_num: 0,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct RawValue<T: Deserialize> {
+    pub raw: Vec<u8>,
+    pub inner: T,
+}
+
+impl<T: Deserialize> Deserialize for RawValue<T> {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(RawValue {
+            inner: T::deserialize(bytes)?,
+            raw: bytes.to_vec(),
+        })
     }
 }

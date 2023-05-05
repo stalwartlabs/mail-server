@@ -12,7 +12,7 @@ use store::{
         builder::MAX_TOKEN_LENGTH,
         search_snippet::generate_snippet,
         stemmer::Stemmer,
-        term_index::{self},
+        term_index::{self, TermIndex},
         tokenizers::Tokenizer,
         Language,
     },
@@ -110,7 +110,7 @@ impl JMAP {
 
             // Obtain the term index and raw message
             let (term_index, raw_message) = if let (Some(term_index), Some(raw_message)) = (
-                self.get_term_index(account_id, Collection::Email, document_id)
+                self.get_term_index::<TermIndex>(account_id, Collection::Email, document_id)
                     .await?,
                 self.get_blob(
                     &BlobKind::LinkedMaildir {

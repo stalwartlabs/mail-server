@@ -262,6 +262,13 @@ impl Value {
         }
     }
 
+    pub fn as_uint(&self) -> Option<u64> {
+        match self {
+            Value::UnsignedInt(u) => Some(*u),
+            _ => None,
+        }
+    }
+
     pub fn try_cast_uint(&self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(*u),

@@ -19,7 +19,7 @@ use store::{
         builder::{FtsIndexBuilder, MAX_TOKEN_LENGTH},
         Language,
     },
-    write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
+    write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
 };
 
 use crate::email::headers::IntoForm;
@@ -43,7 +43,7 @@ pub(super) trait IndexMessage {
         mailbox_ids: Vec<u32>,
         received_at: u64,
         default_language: Language,
-    ) -> store::Result<()>;
+    ) -> store::Result<&mut Self>;
 }
 
 impl IndexMessage for BatchBuilder {
@@ -54,7 +54,7 @@ impl IndexMessage for BatchBuilder {
         mailbox_ids: Vec<u32>,
         received_at: u64,
         default_language: Language,
-    ) -> store::Result<()> {
+    ) -> store::Result<&mut Self> {
         let mut metadata = Object::with_capacity(15);
 
         // Index keywords
@@ -360,7 +360,99 @@ impl IndexMessage for BatchBuilder {
         // Store full text index
         self.custom(fts);
 
-        Ok(())
+        Ok(self)
+    }
+}
+
+pub struct EmailIndexBuilder {
+    inner: Object<Value>,
+    set: bool,
+}
+
+impl EmailIndexBuilder {
+    pub fn set(inner: Object<Value>) -> Self {
+        Self { inner, set: true }
+    }
+
+    pub fn clear(inner: Object<Value>) -> Self {
+        Self { inner, set: false }
+    }
+}
+
+impl IntoOperations for EmailIndexBuilder {
+    fn build(self, batch: &mut BatchBuilder) {
+        let options = if self.set {
+            // Serialize metadata
+            batch.value(Property::BodyStructure, &self.inner, F_VALUE);
+            0
+        } else {
+            // Delete metadata
+            batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
+            F_CLEAR
+        };
+
+        // Remove properties from index
+        for (property, value) in self.inner.properties {
+            match (&property, value) {
+                (Property::Size, Value::UnsignedInt(size)) => {
+                    batch.value(Property::Size, size as u32, F_INDEX | options);
+                }
+                (Property::ReceivedAt | Property::SentAt, Value::Date(date)) => {
+                    batch.value(property, date.timestamp() as u64, F_INDEX | options);
+                }
+                (
+                    Property::MessageId
+                    | Property::InReplyTo
+                    | Property::References
+                    | Property::EmailIds,
+                    Value::List(ids),
+                ) => {
+                    // Remove messageIds from index
+                    for id in ids {
+                        match id {
+                            Value::Text(id) if id.len() < MAX_ID_LENGTH => {
+                                batch.value(Property::MessageId, id, F_INDEX | options);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                (
+                    Property::From | Property::To | Property::Cc | Property::Bcc,
+                    Value::List(addresses),
+                ) => {
+                    let mut sort_text = SortedAddressBuilder::new();
+                    'outer: for addr in addresses {
+                        if let Some(addr) = addr.try_unwrap_object() {
+                            for part in [Property::Name, Property::Email] {
+                                if let Some(Value::Text(value)) = addr.properties.get(&part) {
+                                    if !sort_text.push(value) || part == Property::Email {
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    batch.value(property, sort_text.build(), F_INDEX | options);
+                }
+                (Property::Subject, Value::Text(value)) => {
+                    let thread_name = thread_name(&value);
+                    batch.value(
+                        Property::Subject,
+                        if !thread_name.is_empty() {
+                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                        } else {
+                            "!"
+                        },
+                        F_INDEX | options,
+                    );
+                }
+                (Property::HasAttachment, Value::Bool(true)) => {
+                    batch.bitmap(Property::HasAttachment, (), options);
+                }
+                _ => {}
+            }
+        }
     }
 }
 

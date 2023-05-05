@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct CopyRequest {
+pub struct CopyRequest<T> {
     pub from_account_id: Id,
     pub if_from_in_state: Option<State>,
     pub account_id: Id,
@@ -23,7 +23,7 @@ pub struct CopyRequest {
     pub create: VecMap<MaybeReference<Id, String>, Object<SetValue>>,
     pub on_success_destroy_original: Option<bool>,
     pub destroy_from_if_in_state: Option<State>,
-    pub arguments: RequestArguments,
+    pub arguments: T,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -78,7 +78,7 @@ pub enum RequestArguments {
     Email,
 }
 
-impl JsonObjectParser for CopyRequest {
+impl JsonObjectParser for CopyRequest<RequestArguments> {
     fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
     where
         Self: Sized,
