@@ -26,7 +26,7 @@ pub mod listener;
 pub mod parser;
 pub mod utils;
 
-use std::{collections::BTreeMap, fmt::Display, net::SocketAddr};
+use std::{collections::BTreeMap, fmt::Display, net::SocketAddr, time::Duration};
 
 use rustls::ServerConfig;
 use tokio::net::TcpSocket;
@@ -68,6 +68,12 @@ pub enum ServerProtocol {
     Jmap,
     Imap,
     Http,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct Rate {
+    pub requests: u64,
+    pub period: Duration,
 }
 
 impl Display for ServerProtocol {

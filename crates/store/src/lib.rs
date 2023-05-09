@@ -9,6 +9,8 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
+pub use blake3;
+pub use parking_lot;
 pub use rand;
 pub use roaring;
 
@@ -178,4 +180,3 @@ pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
-pub const SUBSPACE_ACLS: u8 = b'c';

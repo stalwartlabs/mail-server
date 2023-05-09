@@ -11,7 +11,6 @@ use crate::{
 };
 
 use super::{
-    acl::Acl,
     blob::BlobId,
     date::UTCDate,
     id::Id,
@@ -31,7 +30,6 @@ pub enum Value {
     BlobId(BlobId),
     Keyword(Keyword),
     TypeState(TypeState),
-    Acl(Acl),
     List(Vec<Value>),
     Object(Object<Value>),
     #[default]
@@ -269,6 +267,13 @@ impl Value {
         }
     }
 
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
     pub fn try_cast_uint(&self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(*u),
@@ -314,12 +319,6 @@ impl IntoValue for Id {
 impl IntoValue for UTCDate {
     fn into_value(self) -> Value {
         Value::Date(self)
-    }
-}
-
-impl IntoValue for Acl {
-    fn into_value(self) -> Value {
-        Value::Acl(self)
     }
 }
 
@@ -392,12 +391,6 @@ impl From<BlobKind> for Value {
 impl From<Id> for Value {
     fn from(value: Id) -> Self {
         Value::Id(value)
-    }
-}
-
-impl From<Acl> for Value {
-    fn from(value: Acl) -> Self {
-        Value::Acl(value)
     }
 }
 

@@ -270,22 +270,6 @@ impl<'x> Parser<'x> {
         }
     }
 
-    /*pub fn is_dict_end(&mut self) -> super::Result<bool> {
-        match self.next_token::<String>()? {
-            Token::Comma => Ok(false),
-            Token::DictEnd => Ok(true),
-            token => Err(self.error(&format!("Expected ',' or '}}', found {}", token))),
-        }
-    }
-
-    pub fn is_array_end(&mut self) -> super::Result<bool> {
-        match self.next_token::<String>()? {
-            Token::Comma => Ok(false),
-            Token::ArrayEnd => Ok(true),
-            token => Err(self.error(&format!("Expected ',' or ']', found {}", token))),
-        }
-    }*/
-
     pub fn skip_token(
         &mut self,
         start_depth_array: u32,

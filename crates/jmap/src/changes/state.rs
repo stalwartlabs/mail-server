@@ -9,15 +9,16 @@ impl JMAP {
     pub async fn get_state(
         &self,
         account_id: u32,
-        collection: Collection,
+        collection: impl Into<u8>,
     ) -> Result<State, MethodError> {
+        let collection = collection.into();
         match self.store.get_last_change_id(account_id, collection).await {
             Ok(id) => Ok(id.into()),
             Err(err) => {
                 tracing::error!(event = "error",
                     context = "store",
                     account_id = account_id,
-                    collection = ?collection,
+                    collection = ?Collection::from(collection),
                     error = ?err,
                     "Failed to obtain state");
                 Err(MethodError::ServerPartialFail)

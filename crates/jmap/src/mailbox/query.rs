@@ -2,7 +2,7 @@ use jmap_proto::{
     error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
-    types::{collection::Collection, property::Property, value::Value},
+    types::{acl::Acl, collection::Collection, property::Property, value::Value},
 };
 use store::{
     ahash::{AHashMap, AHashSet},
@@ -11,15 +11,14 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{UpdateResults, JMAP};
+use crate::{auth::AclToken, UpdateResults, JMAP};
 
 impl JMAP {
     pub async fn mailbox_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
+        acl_token: &AclToken,
     ) -> Result<QueryResponse, MethodError> {
-        let todo = "fix primary";
-        let primary_account_id = request.account_id.document_id();
         let account_id = request.account_id.document_id();
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
@@ -69,7 +68,7 @@ impl JMAP {
                     }
                     filters.push(query::Filter::eq(
                         Property::IsSubscribed,
-                        primary_account_id,
+                        acl_token.primary_id,
                     ));
                     if !is_subscribed {
                         filters.push(query::Filter::End);
@@ -83,9 +82,16 @@ impl JMAP {
             }
         }
 
-        let (mut response, mut result_set, mut paginate) = self
-            .query(account_id, Collection::Mailbox, filters, &request)
+        let mut result_set = self
+            .filter(account_id, Collection::Mailbox, filters)
             .await?;
+        if acl_token.is_shared(account_id) {
+            result_set.apply_mask(
+                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::Read)
+                    .await?,
+            );
+        }
+        let (mut response, mut paginate) = self.build_query_response(&result_set, &request).await?;
 
         // Build mailbox tree
         let mut hierarchy = AHashMap::default();

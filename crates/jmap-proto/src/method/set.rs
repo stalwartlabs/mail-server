@@ -1,5 +1,5 @@
 use ahash::AHashMap;
-use utils::map::vec_map::VecMap;
+use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
     error::{
@@ -275,9 +275,29 @@ impl JsonObjectParser for Object<SetValue> {
                         }
                     }
 
-                    Property::Acl => {
-                        SetValue::Value(Value::parse::<String, Acl>(parser.next_token()?, parser)?)
-                    }
+                    Property::Acl => match key.patch.len() {
+                        0 => {
+                            parser
+                                .next_token::<String>()?
+                                .assert_jmap(Token::DictStart)?;
+                            let mut acls = Vec::new();
+                            while let Some(account) = parser.next_dict_key::<String>()? {
+                                acls.push(Value::Text(account));
+                                acls.push(Value::UnsignedInt(<Bitmap<Acl>>::parse(parser)?.into()));
+                            }
+                            SetValue::Value(Value::List(acls))
+                        }
+                        1 => {
+                            key.patch
+                                .push(Value::UnsignedInt(<Bitmap<Acl>>::parse(parser)?.into()));
+                            SetValue::Patch(key.patch)
+                        }
+                        2 => {
+                            key.patch.push(Value::Bool(bool::parse(parser)?));
+                            SetValue::Patch(key.patch)
+                        }
+                        _ => unreachable!(),
+                    },
                     Property::Aliases
                     | Property::Attachments
                     | Property::Bcc

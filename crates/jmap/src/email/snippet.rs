@@ -4,7 +4,7 @@ use jmap_proto::{
         query::Filter,
         search_snippet::{GetSearchSnippetRequest, GetSearchSnippetResponse, SearchSnippet},
     },
-    types::collection::Collection,
+    types::{acl::Acl, collection::Collection},
 };
 use mail_parser::{decoders::html::html_to_text, Message, PartType};
 use store::{
@@ -19,7 +19,7 @@ use store::{
     BlobKind,
 };
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 use super::index::MAX_MESSAGE_PARTS;
 
@@ -27,6 +27,7 @@ impl JMAP {
     pub async fn email_search_snippet(
         &self,
         request: GetSearchSnippetRequest,
+        acl_token: &AclToken,
     ) -> Result<GetSearchSnippetResponse, MethodError> {
         let mut filter_stack = vec![];
         let mut include_term = true;
@@ -77,11 +78,9 @@ impl JMAP {
             }
         }
         let account_id = request.account_id.document_id();
-        let todo = "acls";
         let document_ids = self
-            .get_document_ids(account_id, Collection::Email)
-            .await?
-            .unwrap_or_default();
+            .owned_or_shared_messages(acl_token, account_id, Acl::ReadItems)
+            .await?;
         let email_ids = request.email_ids.unwrap();
         let mut response = GetSearchSnippetResponse {
             account_id: request.account_id,

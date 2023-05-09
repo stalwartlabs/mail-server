@@ -82,11 +82,11 @@ impl BlobId {
         }
     }
 
-    pub fn has_access(&self, account_id: u32) -> bool {
+    pub fn account_id(&self) -> u32 {
         match &self.kind {
-            BlobKind::Linked { account_id: a, .. } => *a == account_id,
-            BlobKind::LinkedMaildir { account_id: a, .. } => *a == account_id,
-            BlobKind::Temporary { account_id: a, .. } => *a == account_id,
+            BlobKind::Linked { account_id, .. } => *account_id,
+            BlobKind::LinkedMaildir { account_id, .. } => *account_id,
+            BlobKind::Temporary { account_id, .. } => *account_id,
         }
     }
 }

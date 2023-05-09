@@ -7,7 +7,7 @@ use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
-    Store, ValueKey,
+    Store,
 };
 
 use super::{BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
@@ -15,7 +15,7 @@ use super::{BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
 impl ReadTransaction<'_> {
     #[inline(always)]
     #[maybe_async::maybe_async]
-    pub async fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
+    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {

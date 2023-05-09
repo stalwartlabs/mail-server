@@ -1,24 +1,58 @@
 use std::ops::Range;
 
-use jmap_proto::{error::method::MethodError, types::blob::BlobId};
+use jmap_proto::{
+    error::method::MethodError,
+    types::{acl::Acl, blob::BlobId},
+};
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
 use store::BlobKind;
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 impl JMAP {
     pub async fn blob_download(
         &self,
         blob_id: &BlobId,
-        account_id: u32,
+        acl_token: &AclToken,
     ) -> store::Result<Option<Vec<u8>>> {
-        if !blob_id.has_access(account_id) {
-            // TODO: validate ACL
-            let acl = "true";
-            return Ok(None);
+        if !acl_token.is_member(blob_id.account_id()) {
+            match &blob_id.kind {
+                BlobKind::Linked {
+                    account_id,
+                    collection,
+                    document_id,
+                } => {
+                    match self
+                        .has_access_to_document(
+                            acl_token,
+                            *account_id,
+                            *collection,
+                            *document_id,
+                            Acl::Read.into(),
+                        )
+                        .await
+                    {
+                        Ok(has_access) if has_access => (),
+                        _ => return Ok(None),
+                    }
+                }
+                BlobKind::LinkedMaildir {
+                    account_id,
+                    document_id,
+                } => {
+                    match self
+                        .shared_messages(acl_token, *account_id, Acl::ReadItems)
+                        .await
+                    {
+                        Ok(shared_messages) if shared_messages.contains(*document_id) => (),
+                        _ => return Ok(None),
+                    }
+                }
+                BlobKind::Temporary { .. } => return Ok(None),
+            }
         }
 
         if let Some(section) = &blob_id.section {

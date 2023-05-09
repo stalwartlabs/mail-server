@@ -2,7 +2,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::{
     write::{Batch, Operation},
-    AclKey, BitmapKey, IndexKey, LogKey, Serialize, Store, ValueKey,
+    AclKey, BitmapKey, IndexKey, Key, LogKey, Serialize, Store, ValueKey,
 };
 
 use super::{BITS_MASK, BITS_PER_BLOCK};
@@ -176,10 +176,10 @@ impl Store {
                         .serialize();
 
                         if let Some(value) = set {
-                            trx.prepare_cached("INSERT OR REPLACE INTO a (k, v) VALUES (?, ?)")?
+                            trx.prepare_cached("INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)")?
                                 .execute([&key, value])?;
                         } else {
-                            trx.prepare_cached("DELETE FROM a WHERE k = ?")?
+                            trx.prepare_cached("DELETE FROM v WHERE k = ?")?
                                 .execute([&key])?;
                         }
                     }
@@ -230,17 +230,30 @@ impl Store {
         .await
     }
 
+    #[inline(always)]
+    pub async fn set_value(&self, key: impl Key, value: impl Serialize) -> crate::Result<()> {
+        let key = key.serialize();
+        let value = value.serialize();
+
+        let conn = self.conn_pool.get()?;
+        self.spawn_worker(move || {
+            conn.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")?
+                .execute([&key, &value])
+                .map_err(Into::into)
+        })
+        .await?;
+
+        Ok(())
+    }
+
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        use crate::{
-            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
-        };
+        use crate::{SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES};
 
         let conn = self.conn_pool.get().unwrap();
         for table in [
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
-            SUBSPACE_ACLS,
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
         ] {

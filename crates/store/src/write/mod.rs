@@ -49,6 +49,10 @@ pub enum Operation {
         family: u8,
         set: Option<Vec<u8>>,
     },
+    Acl {
+        grant_account_id: u32,
+        set: Option<Vec<u8>>,
+    },
     Index {
         field: u8,
         key: Vec<u8>,
@@ -59,10 +63,6 @@ pub enum Operation {
         field: u8,
         key: Vec<u8>,
         set: bool,
-    },
-    Acl {
-        grant_account_id: u32,
-        set: Option<Vec<u8>>,
     },
     Log {
         change_id: u64,

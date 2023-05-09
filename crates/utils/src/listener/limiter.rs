@@ -19,6 +19,7 @@ pub struct ConcurrencyLimiter {
     pub concurrent: Arc<AtomicU64>,
 }
 
+#[derive(Default)]
 pub struct InFlight {
     concurrent: Arc<AtomicU64>,
 }

@@ -10,6 +10,7 @@ use jmap_proto::{
         Object,
     },
     types::{
+        acl::Acl,
         collection::Collection,
         id::Id,
         property::Property,
@@ -22,19 +23,23 @@ use store::{
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
 };
 
-use crate::JMAP;
+use crate::{
+    auth::{acl::EffectiveAcl, AclToken},
+    JMAP, SUPERUSER_ID,
+};
 
 use super::{INBOX_ID, TRASH_ID};
 
-struct SetContext {
+struct SetContext<'x> {
     account_id: u32,
-    primary_id: u32,
+    acl_token: &'x AclToken,
+    is_shared: bool,
     set_response: SetResponse,
     mailbox_ids: RoaringBitmap,
     will_destroy: Vec<Id>,
 }
 
-static SCHEMA: &[IndexProperty] = &[
+pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::Name)
         .index_as(IndexAs::Text {
             tokenize: true,
@@ -49,6 +54,7 @@ static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::ParentId).index_as(IndexAs::Integer),
     IndexProperty::new(Property::SortOrder).index_as(IndexAs::Integer),
     IndexProperty::new(Property::IsSubscribed).index_as(IndexAs::IntegerList),
+    IndexProperty::new(Property::Acl).index_as(IndexAs::Acl),
 ];
 
 impl JMAP {
@@ -56,20 +62,19 @@ impl JMAP {
     pub async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
+        acl_token: &AclToken,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let on_destroy_remove_emails = request.arguments.on_destroy_remove_emails.unwrap_or(false);
         let mut ctx = SetContext {
             account_id,
-            primary_id: account_id,
+            is_shared: acl_token.is_shared(account_id),
+            acl_token,
             set_response: self
                 .prepare_set_response(&request, Collection::Mailbox)
                 .await?,
-            mailbox_ids: self
-                .get_document_ids(account_id, Collection::Mailbox)
-                .await?
-                .unwrap_or_default(),
+            mailbox_ids: self.mailbox_get_or_create(account_id).await?,
             will_destroy: request.unwrap_destroy(),
         };
 
@@ -121,6 +126,29 @@ impl JMAP {
                 )
                 .await?
             {
+                // Validate ACL
+                if ctx.is_shared {
+                    let acl = mailbox.inner.effective_acl(acl_token);
+                    if !acl.contains(Acl::Modify) {
+                        ctx.set_response.not_updated.append(
+                            id,
+                            SetError::forbidden()
+                                .with_description("You are not allowed to modify this mailbox."),
+                        );
+                        continue 'update;
+                    } else if object.properties.contains_key(&Property::Acl)
+                        && !acl.contains(Acl::Administer)
+                    {
+                        ctx.set_response.not_updated.append(
+                            id,
+                            SetError::forbidden().with_description(
+                                "You are not allowed to change the permissions of this mailbox.",
+                            ),
+                        );
+                        continue 'update;
+                    }
+                }
+
                 match self
                     .mailbox_set_item(object, (document_id, mailbox.take()).into(), &ctx)
                     .await?
@@ -172,8 +200,9 @@ impl JMAP {
         'destroy: for id in ctx.will_destroy {
             let document_id = id.document_id();
             // Internal folders cannot be deleted
-            #[cfg(not(feature = "test_mode"))]
-            if document_id == INBOX_ID || document_id == TRASH_ID {
+            if (document_id == INBOX_ID || document_id == TRASH_ID)
+                && !acl_token.is_member(SUPERUSER_ID)
+            {
                 ctx.set_response.not_destroyed.append(
                     id,
                     SetError::forbidden()
@@ -331,6 +360,28 @@ impl JMAP {
                 )
                 .await?
             {
+                // Validate ACLs
+                if ctx.is_shared {
+                    let acl = mailbox.inner.effective_acl(acl_token);
+                    if !acl.contains(Acl::Administer) {
+                        if !acl.contains(Acl::Delete) {
+                            ctx.set_response.not_destroyed.append(
+                                id,
+                                SetError::forbidden().with_description(
+                                    "You are not allowed to delete this mailbox.",
+                                ),
+                            );
+                        } else if on_destroy_remove_emails && !acl.contains(Acl::RemoveItems) {
+                            ctx.set_response.not_destroyed.append(
+                                id,
+                                SetError::forbidden().with_description(
+                                    "You are not allowed to delete emails from this mailbox.",
+                                ),
+                            );
+                        }
+                    }
+                }
+
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
@@ -384,7 +435,7 @@ impl JMAP {
         &self,
         changes_: Object<SetValue>,
         update: Option<(u32, Object<Value>)>,
-        ctx: &SetContext,
+        ctx: &SetContext<'_>,
     ) -> Result<Result<ObjectIndexBuilder, SetError>, MethodError> {
         // Parse properties
         let mut changes = Object::with_capacity(changes_.properties.len());
@@ -427,8 +478,7 @@ impl JMAP {
                 }
                 (Property::ParentId, MaybePatchValue::Value(Value::Null)) => Value::Id(0u64.into()),
                 (Property::IsSubscribed, MaybePatchValue::Value(Value::Bool(subscribe))) => {
-                    let fixme = "true";
-                    let account_id = Value::Id(ctx.primary_id.into());
+                    let account_id = Value::Id(ctx.acl_token.primary_id().into());
                     let mut new_value = None;
                     if let Some((_, current_fields)) = update.as_ref() {
                         if let Value::List(subscriptions) =
@@ -487,9 +537,18 @@ impl JMAP {
                 (Property::SortOrder, MaybePatchValue::Value(Value::UnsignedInt(value))) => {
                     Value::UnsignedInt(value)
                 }
-                (Property::Acl, _) => {
-                    todo!()
+                (Property::Acl, value) => {
+                    match self
+                        .acl_set(&mut changes, update.as_ref().map(|(_, obj)| obj), value)
+                        .await
+                    {
+                        Ok(_) => continue,
+                        Err(err) => {
+                            return Ok(Err(err));
+                        }
+                    }
                 }
+
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property)
@@ -507,12 +566,16 @@ impl JMAP {
                 .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
             let mut mailbox_parent_id = mailbox_parent_id.document_id();
             let mut success = false;
-            for _ in 0..self.config.mailbox_max_depth {
+            for depth in 0..self.config.mailbox_max_depth {
                 if mailbox_parent_id == current_mailbox_id {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(Property::ParentId)
                         .with_description("Mailbox cannot be a parent of itself.")));
                 } else if mailbox_parent_id == 0 {
+                    if depth == 0 && ctx.is_shared {
+                        return Ok(Err(SetError::forbidden()
+                            .with_description("You are not allowed to create root folders.")));
+                    }
                     success = true;
                     break;
                 }
@@ -527,6 +590,17 @@ impl JMAP {
                     )
                     .await?
                 {
+                    if depth == 0
+                        && ctx.is_shared
+                        && !fields
+                            .effective_acl(ctx.acl_token)
+                            .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
+                    {
+                        return Ok(Err(SetError::forbidden().with_description(
+                            "You are not allowed to create sub mailboxes under this mailbox.",
+                        )));
+                    }
+
                     mailbox_parent_id = fields
                         .properties
                         .remove(&Property::ParentId)
@@ -651,5 +725,55 @@ impl JMAP {
             .with_changes(changes)
             .with_current_opt(update.map(|(_, current)| current))
             .validate())
+    }
+
+    pub async fn mailbox_get_or_create(
+        &self,
+        account_id: u32,
+    ) -> Result<RoaringBitmap, MethodError> {
+        let mut mailbox_ids = self
+            .get_document_ids(account_id, Collection::Mailbox)
+            .await?
+            .unwrap_or_default();
+        if !mailbox_ids.is_empty() {
+            return Ok(mailbox_ids);
+        }
+
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Mailbox);
+
+        // Create mailboxes
+        for (name, role) in [
+            ("Inbox", "inbox"),
+            ("Deleted Items", "trash"),
+            ("Drafts", "drafts"),
+            ("Sent Items", "sent"),
+            ("Junk Mail", "junk"),
+        ] {
+            let mailbox_id = self
+                .assign_document_id(account_id, Collection::Mailbox)
+                .await?;
+            batch.create_document(mailbox_id).custom(
+                ObjectIndexBuilder::new(SCHEMA).with_changes(
+                    Object::with_capacity(3)
+                        .with_property(Property::Name, name)
+                        .with_property(Property::Role, role)
+                        .with_property(Property::ParentId, 0u32),
+                ),
+            );
+            mailbox_ids.insert(mailbox_id);
+        }
+        self.store.write(batch.build()).await.map_err(|err| {
+            tracing::error!(
+                event = "error",
+                context = "mailbox_get_or_create",
+                error = ?err,
+                "Failed to create mailboxes.");
+            MethodError::ServerPartialFail
+        })?;
+
+        Ok(mailbox_ids)
     }
 }

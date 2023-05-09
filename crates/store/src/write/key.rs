@@ -2,8 +2,8 @@ use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    AclKey, BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize, ValueKey,
-    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    AclKey, BitmapKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize,
+    ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 pub struct KeySerializer {
@@ -209,7 +209,7 @@ impl Serialize for &ValueKey {
                 KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
             }
         }
-        .write_leb128(self.account_id)
+        .write(self.account_id)
         .write(self.collection)
         .write_leb128(self.document_id);
 
@@ -260,12 +260,25 @@ impl Serialize for &AclKey {
                 KeySerializer::new(std::mem::size_of::<AclKey>())
             }
         }
-        .write_leb128(self.grant_account_id)
+        .write(self.grant_account_id)
         .write(u8::MAX)
-        .write_leb128(self.to_account_id)
+        .write(self.to_account_id)
         .write(self.to_collection)
-        .write_leb128(self.to_document_id)
+        .write(self.to_document_id)
         .finalize()
+    }
+}
+
+impl Deserialize for AclKey {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(AclKey {
+            grant_account_id: bytes.deserialize_be_u32(0)?,
+            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
+            to_collection: *bytes
+                .get((std::mem::size_of::<u32>() * 2) + 1)
+                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
+            to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
+        })
     }
 }
 
@@ -306,6 +319,12 @@ impl Key for ValueKey {
     }
 }
 
+impl Key for AclKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
+    }
+}
+
 impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for IndexKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_INDEXES
@@ -319,6 +338,12 @@ impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BitmapKey<T> {
 }
 
 impl Serialize for ValueKey {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl Serialize for AclKey {
     fn serialize(self) -> Vec<u8> {
         (&self).serialize()
     }

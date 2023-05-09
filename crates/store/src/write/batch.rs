@@ -116,14 +116,6 @@ impl BatchBuilder {
         self
     }
 
-    pub fn acl(&mut self, grant_account_id: u32, acl: Option<impl Serialize>) -> &mut Self {
-        self.ops.push(Operation::Acl {
-            grant_account_id,
-            set: acl.map(|acl| acl.serialize()),
-        });
-        self
-    }
-
     pub fn custom(&mut self, value: impl IntoOperations) -> &mut Self {
         value.build(self);
         self

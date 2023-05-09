@@ -5,17 +5,42 @@ use jmap_proto::{
 };
 use store::query::log::{Change, Changes, Query};
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 impl JMAP {
-    pub async fn changes(&self, request: ChangesRequest) -> Result<ChangesResponse, MethodError> {
+    pub async fn changes(
+        &self,
+        request: ChangesRequest,
+        acl_token: &AclToken,
+    ) -> Result<ChangesResponse, MethodError> {
+        // Map collection and validate ACLs
         let collection = match request.arguments {
-            RequestArguments::Email => Collection::Email,
-            RequestArguments::Mailbox => Collection::Mailbox,
-            RequestArguments::Thread => Collection::Thread,
-            RequestArguments::Identity => Collection::Identity,
-            RequestArguments::EmailSubmission => Collection::EmailSubmission,
+            RequestArguments::Email => {
+                acl_token.assert_has_access(request.account_id, Collection::Email)?;
+                Collection::Email
+            }
+            RequestArguments::Mailbox => {
+                acl_token.assert_has_access(request.account_id, Collection::Mailbox)?;
+
+                Collection::Mailbox
+            }
+            RequestArguments::Thread => {
+                acl_token.assert_has_access(request.account_id, Collection::Email)?;
+
+                Collection::Thread
+            }
+            RequestArguments::Identity => {
+                acl_token.assert_is_member(request.account_id)?;
+
+                Collection::Identity
+            }
+            RequestArguments::EmailSubmission => {
+                acl_token.assert_is_member(request.account_id)?;
+
+                Collection::EmailSubmission
+            }
         };
+
         let max_changes = if self.config.changes_max_results > 0
             && self.config.changes_max_results < request.max_changes.unwrap_or(0)
         {

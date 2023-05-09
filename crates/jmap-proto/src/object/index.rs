@@ -34,6 +34,7 @@ pub enum IndexAs {
     IntegerList,
     LongInteger,
     HasProperty,
+    Acl,
     #[default]
     None,
 }
@@ -70,21 +71,24 @@ impl ObjectIndexBuilder {
         self
     }
 
+    pub fn get(&self, property: &Property) -> &Value {
+        self.changes
+            .as_ref()
+            .and_then(|c| c.properties.get(property))
+            .or_else(|| {
+                self.current
+                    .as_ref()
+                    .and_then(|c| c.properties.get(property))
+            })
+            .unwrap_or(&Value::Null)
+    }
+
     pub fn validate(self) -> Result<Self, SetError> {
         for item in self.index {
             if item.required || item.max_size > 0 {
-                let value = self
-                    .changes
-                    .as_ref()
-                    .and_then(|c| c.properties.get(&item.property))
-                    .or_else(|| {
-                        self.current
-                            .as_ref()
-                            .and_then(|c| c.properties.get(&item.property))
-                    });
-                let error: Cow<str> = match value {
-                    None if item.required => "Property cannot be empty.".into(),
-                    Some(Value::Text(text)) => {
+                let error: Cow<str> = match self.get(&item.property) {
+                    Value::Null if item.required => "Property cannot be empty.".into(),
+                    Value::Text(text) => {
                         if item.required && text.trim().is_empty() {
                             "Property cannot be empty.".into()
                         } else if item.max_size > 0 && text.len() > item.max_size {
@@ -327,6 +331,52 @@ fn merge_batch(
                         });
                     }
                 }
+                IndexAs::Acl => {
+                    if let (Some(current_value), Some(value)) =
+                        (current_value.as_list(), value.as_list())
+                    {
+                        // Remove deleted ACLs
+                        for item in current_value.chunks_exact(2) {
+                            if let Some(Value::Id(id)) = item.first() {
+                                if !value.contains(&item[1]) {
+                                    batch.ops.push(Operation::Acl {
+                                        grant_account_id: id.document_id(),
+                                        set: None,
+                                    });
+                                }
+                            }
+                        }
+
+                        // Update ACLs
+                        for item in value.chunks_exact(2) {
+                            if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
+                                (item.first(), item.last())
+                            {
+                                let mut add_item = true;
+                                for current_item in current_value.chunks_exact(2) {
+                                    if let (
+                                        Some(Value::Id(current_id)),
+                                        Some(Value::UnsignedInt(current_acl)),
+                                    ) = (current_item.first(), current_item.last())
+                                    {
+                                        if id == current_id {
+                                            if acl != current_acl {
+                                                add_item = false;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                                if add_item {
+                                    batch.ops.push(Operation::Acl {
+                                        grant_account_id: id.document_id(),
+                                        set: acl.serialize().into(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
                 IndexAs::None => (),
             }
         }
@@ -432,6 +482,18 @@ fn build_batch(
                         key: value.into_index(item.index_as),
                         set,
                     });
+                }
+            }
+            (Value::List(values), IndexAs::Acl) => {
+                for item in values.chunks_exact(2) {
+                    if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
+                        (item.first(), item.last())
+                    {
+                        batch.ops.push(Operation::Acl {
+                            grant_account_id: id.document_id(),
+                            set: acl.serialize().into(),
+                        });
+                    }
                 }
             }
             (value, IndexAs::HasProperty) if value != &Value::Null => {

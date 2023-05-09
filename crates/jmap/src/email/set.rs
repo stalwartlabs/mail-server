@@ -8,6 +8,7 @@ use jmap_proto::{
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     types::{
+        acl::Acl,
         collection::Collection,
         id::Id,
         keyword::Keyword,
@@ -33,7 +34,7 @@ use store::{
     BlobKind, Serialize, ValueKey,
 };
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
@@ -44,18 +45,33 @@ impl JMAP {
     pub async fn email_set(
         &self,
         mut request: SetRequest<RequestArguments>,
+        acl_token: &AclToken,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
-        let mut set_response = self
+        let mut response = self
             .prepare_set_response(&request, Collection::Email)
             .await?;
 
         // Obtain mailboxIds
-        let mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
+        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) = if acl_token
+            .is_shared(account_id)
+        {
+            (
+                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+                    .await?
+                    .into(),
+                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::RemoveItems)
+                    .await?
+                    .into(),
+                self.shared_messages(acl_token, account_id, Acl::ModifyItems)
+                    .await?
+                    .into(),
+            )
+        } else {
+            (None, None, None)
+        };
 
         let will_destroy = request.unwrap_destroy();
 
@@ -98,10 +114,10 @@ impl JMAP {
 
             // Parse properties
             for (property, value) in object.properties {
-                let value = match set_response.eval_object_references(value) {
+                let value = match response.eval_object_references(value) {
                     Ok(value) => value,
                     Err(err) => {
-                        set_response.not_created.append(id, err);
+                        response.not_created.append(id, err);
                         continue 'create;
                     }
                 };
@@ -173,7 +189,7 @@ impl JMAP {
                             builder =
                                 builder.header(header.as_rfc_header(), Address::List(addresses));
                         } else {
-                            set_response.invalid_property_create(id, header);
+                            response.invalid_property_create(id, header);
                             continue 'create;
                         }
                     }
@@ -211,7 +227,7 @@ impl JMAP {
                                         }),
                                     )
                                 } else {
-                                    set_response.not_created.append(
+                                    response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_property(property)
@@ -224,7 +240,7 @@ impl JMAP {
                                 (value.try_unwrap_list().unwrap_or_default(), None)
                             }
                             _ => {
-                                set_response.not_created.append(
+                                response.not_created.append(
                                     id,
                                     SetError::invalid_properties()
                                         .with_properties([property, Property::BodyStructure])
@@ -331,7 +347,7 @@ impl JMAP {
                                                 }
                                             }
                                             (Property::Headers, _) => {
-                                                set_response.not_created.append(
+                                                response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
                                                         .with_property((
@@ -351,7 +367,7 @@ impl JMAP {
                                                 subparts = values.into();
                                             }
                                             (body_property, value) if value != Value::Null => {
-                                                set_response.not_created.append(
+                                                response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
                                                         .with_property((property, body_property))
@@ -370,7 +386,7 @@ impl JMAP {
                                 let is_multipart = content_type.starts_with("multipart/");
                                 if is_multipart {
                                     if !matches!(property, Property::BodyStructure) {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
                                                 .with_property((property, Property::Type))
@@ -382,7 +398,7 @@ impl JMAP {
                                     .as_ref()
                                     .map_or(false, |v| v != &content_type)
                                 {
-                                    set_response.not_created.append(
+                                    response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_property((property, Property::Type))
@@ -397,7 +413,7 @@ impl JMAP {
                                 // Validate partId/blobId
                                 match (blob_id.is_some(), part_id.is_some()) {
                                     (true, true) if !is_multipart => {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_properties([(property.clone(), Property::BlobId), (property, Property::PartId)])
@@ -408,7 +424,7 @@ impl JMAP {
                                         continue 'create;
                                     }
                                     (false, false) if !is_multipart => {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_description("Expected a \"partId\" or \"blobId\" field in body part."),
@@ -416,7 +432,7 @@ impl JMAP {
                                         continue 'create;
                                     }
                                     (false, true) if !is_multipart && has_size => {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_property((property, Property::Size))
@@ -427,7 +443,7 @@ impl JMAP {
                                         continue 'create;
                                     }
                                     (true, _) | (_, true) if is_multipart => {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                         id,
                                         SetError::invalid_properties()
                                             .with_properties([(property.clone(), Property::BlobId), (property, Property::PartId)])
@@ -449,7 +465,7 @@ impl JMAP {
                                                 .attributes
                                                 .push(("charset".into(), charset.into()));
                                         } else {
-                                            set_response.not_created.append(
+                                            response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
                                                 .with_property((property, Property::Charset))
@@ -502,12 +518,12 @@ impl JMAP {
                                     headers,
                                     contents: if !is_multipart {
                                         if let Some(blob_id) = blob_id {
-                                            match self.blob_download(&blob_id, account_id).await {
+                                            match self.blob_download(&blob_id, acl_token).await {
                                                 Ok(Some(contents)) => {
                                                     BodyPart::Binary(contents.into())
                                                 }
                                                 Ok(None) => {
-                                                    set_response.not_created.append(
+                                                    response.not_created.append(
                                                     id,
                                                     SetError::new(SetErrorType::BlobNotFound).with_description(
                                                         format!("blobId {blob_id} does not exist on this server.")
@@ -531,7 +547,7 @@ impl JMAP {
                                             {
                                                 BodyPart::Text(contents.as_str().into())
                                             } else {
-                                                set_response.not_created.append(
+                                                response.not_created.append(
                                                     id,
                                                     SetError::invalid_properties()
                                                         .with_property((property, Property::PartId))
@@ -555,7 +571,7 @@ impl JMAP {
                                     if self.config.mail_attachments_max_size > 0
                                         && size_attachments > self.config.mail_attachments_max_size
                                     {
-                                        set_response.not_created.append(
+                                        response.not_created.append(
                                             id,
                                             SetError::invalid_properties()
                                                 .with_property(property)
@@ -606,7 +622,7 @@ impl JMAP {
                                 builder = builder_;
                             }
                             Err(header) => {
-                                set_response.invalid_property_create(id, Property::Header(header));
+                                response.invalid_property_create(id, Property::Header(header));
                                 continue 'create;
                             }
                         }
@@ -615,7 +631,7 @@ impl JMAP {
                     (_, MaybePatchValue::Value(Value::Null)) => (),
 
                     (property, _) => {
-                        set_response.invalid_property_create(id, property);
+                        response.invalid_property_create(id, property);
                         continue 'create;
                     }
                 }
@@ -623,7 +639,7 @@ impl JMAP {
 
             // Make sure message belongs to at least one mailbox
             if mailboxes.is_empty() {
-                set_response.not_created.append(
+                response.not_created.append(
                     id,
                     SetError::invalid_properties()
                         .with_property(Property::MailboxIds)
@@ -635,11 +651,19 @@ impl JMAP {
             // Verify that the mailboxIds are valid
             for mailbox_id in &mailboxes {
                 if !mailbox_ids.contains(*mailbox_id) {
-                    set_response.not_created.append(
+                    response.not_created.append(
                         id,
                         SetError::invalid_properties()
                             .with_property(Property::MailboxIds)
                             .with_description(format!("mailboxId {mailbox_id} does not exist.")),
+                    );
+                    continue 'create;
+                } else if matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
+                    response.not_created.append(
+                        id,
+                        SetError::forbidden().with_description(format!(
+                            "You are not allowed to add messages to mailbox {mailbox_id}."
+                        )),
                     );
                     continue 'create;
                 }
@@ -652,7 +676,7 @@ impl JMAP {
                 && builder.text_body.is_none()
                 && builder.attachments.is_none()
             {
-                set_response.not_created.append(
+                response.not_created.append(
                     id,
                     SetError::invalid_properties()
                         .with_description("Message has to have at least one header or body part."),
@@ -676,7 +700,7 @@ impl JMAP {
             builder.write_to(&mut raw_message).unwrap_or_default();
 
             // Ingest message
-            set_response.created.insert(
+            response.created.insert(
                 id,
                 self.email_ingest(&raw_message, account_id, mailboxes, keywords, received_at)
                     .await
@@ -690,9 +714,7 @@ impl JMAP {
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
             if will_destroy.contains(&id) {
-                set_response
-                    .not_updated
-                    .append(id, SetError::will_destroy());
+                response.not_updated.append(id, SetError::will_destroy());
                 continue 'update;
             }
 
@@ -716,7 +738,7 @@ impl JMAP {
             ) {
                 (TagManager::new(mailboxes), TagManager::new(keywords))
             } else {
-                set_response.not_updated.append(id, SetError::not_found());
+                response.not_updated.append(id, SetError::not_found());
                 continue 'update;
             };
 
@@ -727,10 +749,10 @@ impl JMAP {
                 .with_collection(Collection::Email);
 
             for (property, value) in object.properties {
-                let value = match set_response.eval_object_references(value) {
+                let value = match response.eval_object_references(value) {
                     Ok(value) => value,
                     Err(err) => {
-                        set_response.not_updated.append(id, err);
+                        response.not_updated.append(id, err);
                         continue 'update;
                     }
                 };
@@ -765,14 +787,14 @@ impl JMAP {
                         );
                     }
                     (property, _) => {
-                        set_response.invalid_property_update(id, property);
+                        response.invalid_property_update(id, property);
                         continue 'update;
                     }
                 }
             }
 
             if !mailboxes.has_changes() && !keywords.has_changes() {
-                set_response.not_updated.append(
+                response.not_updated.append(
                     id,
                     SetError::invalid_properties()
                         .with_description("No changes found in request.".to_string()),
@@ -787,6 +809,16 @@ impl JMAP {
 
             // Process keywords
             if keywords.has_changes() {
+                // Verify permissions on shared accounts
+                if matches!(&can_modify_message_ids, Some(ids) if !ids.contains(document_id)) {
+                    response.not_updated.append(
+                        id,
+                        SetError::forbidden()
+                            .with_description("You are not allowed to modify keywords."),
+                    );
+                    continue 'update;
+                }
+
                 // Set all current mailboxes as changed if the Seen tag changed
                 if keywords
                     .changed_tags()
@@ -805,7 +837,7 @@ impl JMAP {
             if mailboxes.has_changes() {
                 // Make sure the message is at least in one mailbox
                 if !mailboxes.has_tags() {
-                    set_response.not_updated.append(
+                    response.not_updated.append(
                         id,
                         SetError::invalid_properties()
                             .with_property(Property::MailboxIds)
@@ -817,9 +849,21 @@ impl JMAP {
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in mailboxes.added() {
                     if mailbox_ids.contains(*mailbox_id) {
-                        changed_mailboxes.insert(*mailbox_id);
+                        // Verify permissions on shared accounts
+                        if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id))
+                        {
+                            changed_mailboxes.insert(*mailbox_id);
+                        } else {
+                            response.not_updated.append(
+                                id,
+                                SetError::forbidden().with_description(format!(
+                                    "You are not allowed to add messages to mailbox {mailbox_id}."
+                                )),
+                            );
+                            continue 'update;
+                        }
                     } else {
-                        set_response.not_updated.append(
+                        response.not_updated.append(
                             id,
                             SetError::invalid_properties()
                                 .with_property(Property::MailboxIds)
@@ -833,7 +877,18 @@ impl JMAP {
 
                 // Add all removed mailboxes to change list
                 for mailbox_id in mailboxes.removed() {
-                    changed_mailboxes.insert(*mailbox_id);
+                    // Verify permissions on shared accounts
+                    if !matches!(&can_delete_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
+                        changed_mailboxes.insert(*mailbox_id);
+                    } else {
+                        response.not_updated.append(
+                            id,
+                            SetError::forbidden().with_description(format!(
+                                "You are not allowed to delete messages from mailbox {mailbox_id}."
+                            )),
+                        );
+                        continue 'update;
+                    }
                 }
 
                 // Update mailboxIds property
@@ -850,10 +905,10 @@ impl JMAP {
                 match self.store.write(batch.build()).await {
                     Ok(_) => {
                         // Add to updated list
-                        set_response.updated.append(id, None);
+                        response.updated.append(id, None);
                     }
                     Err(store::Error::AssertValueFailed) => {
-                        set_response.not_updated.append(
+                        response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(
                                 "Another process modified this message, please try again.",
@@ -878,22 +933,37 @@ impl JMAP {
                 .get_document_ids(account_id, Collection::Email)
                 .await?
                 .unwrap_or_default();
+            let can_destroy_message_ids = if acl_token.is_shared(account_id) {
+                self.shared_messages(acl_token, account_id, Acl::RemoveItems)
+                    .await?
+                    .into()
+            } else {
+                None
+            };
             for destroy_id in will_destroy {
-                if email_ids.contains(destroy_id.document_id()) {
-                    match self
-                        .email_delete(account_id, destroy_id.document_id())
-                        .await?
+                let document_id = destroy_id.document_id();
+
+                if email_ids.contains(document_id) {
+                    if !matches!(&can_destroy_message_ids, Some(ids) if !ids.contains(document_id))
                     {
-                        Ok(change) => {
-                            changes.merge(change);
-                            set_response.destroyed.push(destroy_id);
+                        match self.email_delete(account_id, document_id).await? {
+                            Ok(change) => {
+                                changes.merge(change);
+                                response.destroyed.push(destroy_id);
+                            }
+                            Err(err) => {
+                                response.not_destroyed.append(destroy_id, err);
+                            }
                         }
-                        Err(err) => {
-                            set_response.not_destroyed.append(destroy_id, err);
-                        }
+                    } else {
+                        response.not_destroyed.append(
+                            destroy_id,
+                            SetError::forbidden()
+                                .with_description("You are not allowed to delete this message."),
+                        );
                     }
                 } else {
-                    set_response
+                    response
                         .not_destroyed
                         .append(destroy_id, SetError::not_found());
                 }
@@ -901,12 +971,12 @@ impl JMAP {
         }
 
         if !changes.is_empty() {
-            set_response.new_state = self.commit_changes(account_id, changes).await?.into();
-        } else if !set_response.created.is_empty() {
-            set_response.new_state = self.get_state(account_id, Collection::Email).await?.into();
+            response.new_state = self.commit_changes(account_id, changes).await?.into();
+        } else if !response.created.is_empty() {
+            response.new_state = self.get_state(account_id, Collection::Email).await?.into();
         }
 
-        Ok(set_response)
+        Ok(response)
     }
 
     pub async fn email_delete(

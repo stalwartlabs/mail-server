@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
@@ -20,6 +20,7 @@ use tokio::{
 use utils::listener::{ServerInstance, SessionData, SessionManager};
 
 use crate::{
+    auth::AclToken,
     blob::{DownloadResponse, UploadResponse},
     JMAP,
 };
@@ -30,10 +31,17 @@ impl JMAP {
     pub async fn parse_request(
         &self,
         req: &mut hyper::Request<hyper::body::Incoming>,
+        remote_ip: IpAddr,
         instance: &ServerInstance,
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
         let mut path = req.uri().path().split('/');
         path.next();
+        let acl_token = AclToken {
+            primary_id: todo!(),
+            member_of: todo!(),
+            access_to: todo!(),
+        };
+
         match path.next().unwrap_or("") {
             "jmap" => match (path.next().unwrap_or(""), req.method()) {
                 ("", &Method::POST) => {
@@ -42,7 +50,7 @@ impl JMAP {
                             //let delete = "fd";
                             //println!("<- {}", String::from_utf8_lossy(&bytes));
 
-                            match self.handle_request(&bytes).await {
+                            match self.handle_request(&bytes, acl_token).await {
                                 Ok(response) => response.into_http_response(),
                                 Err(err) => err.into_http_response(),
                             }
@@ -56,7 +64,7 @@ impl JMAP {
                         path.next().and_then(BlobId::from_base32),
                         path.next(),
                     ) {
-                        return match self.blob_download(&blob_id, account_id.document_id()).await {
+                        return match self.blob_download(&blob_id, &acl_token).await {
                             Ok(Some(blob)) => DownloadResponse {
                                 filename: name.to_string(),
                                 content_type: req
@@ -215,7 +223,9 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
                 let instance = session.instance.clone();
 
                 async move {
-                    let response = jmap.parse_request(&mut req, &instance).await;
+                    let response = jmap
+                        .parse_request(&mut req, session.remote_ip, &instance)
+                        .await;
 
                     tracing::debug!(
                         parent: &span,

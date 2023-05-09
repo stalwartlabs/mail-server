@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use utils::map::vec_map::VecMap;
+use utils::map::{
+    bitmap::{Bitmap, BitmapItem},
+    vec_map::VecMap,
+};
 
 use super::{json::Parser, Ignore, JsonObjectParser, Token};
 
@@ -206,6 +209,30 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
                 Ok(Some(vec))
             }
             Token::Null => Ok(None),
+            token => Err(token.error("", "array or null")),
+        }
+    }
+}
+
+impl<T: JsonObjectParser + Eq + BitmapItem> JsonObjectParser for Bitmap<T> {
+    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut bm = Bitmap::new();
+        match parser.next_token::<Ignore>()? {
+            Token::ArrayStart => {
+                loop {
+                    match parser.next_token::<T>()? {
+                        Token::String(item) => bm.insert(item),
+                        Token::Comma => (),
+                        Token::ArrayEnd => break,
+                        token => return Err(token.error("", "string")),
+                    }
+                }
+                Ok(bm)
+            }
+            Token::Null => Ok(bm),
             token => Err(token.error("", "array or null")),
         }
     }

@@ -4,16 +4,17 @@ use jmap_proto::{
         set::{SetError, SetErrorType},
     },
     method::import::{ImportEmailRequest, ImportEmailResponse},
-    types::{collection::Collection, property::Property, state::State},
+    types::{acl::Acl, collection::Collection, property::Property, state::State},
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{MaybeError, JMAP};
+use crate::{auth::AclToken, MaybeError, JMAP};
 
 impl JMAP {
     pub async fn email_import(
         &self,
         request: ImportEmailRequest,
+        acl_token: &AclToken,
     ) -> Result<ImportEmailResponse, MethodError> {
         // Validate state
         let account_id = request.account_id.document_id();
@@ -21,11 +22,14 @@ impl JMAP {
             .assert_state(account_id, Collection::Email, &request.if_in_state)
             .await?;
 
-        let cococ = "implement ACLS";
-        let valid_mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
+        let valid_mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let can_add_mailbox_ids = if acl_token.is_shared(account_id) {
+            self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+                .await?
+                .into()
+        } else {
+            None
+        };
 
         let mut created = VecMap::with_capacity(request.emails.len());
         let mut not_created = VecMap::with_capacity(request.emails.len());
@@ -56,11 +60,19 @@ impl JMAP {
                             .with_description(format!("Mailbox {} does not exist.", mailbox_id)),
                     );
                     continue 'outer;
+                } else if matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
+                    not_created.append(
+                        id,
+                        SetError::forbidden().with_description(format!(
+                            "You are not allowed to add messages to mailbox {mailbox_id}."
+                        )),
+                    );
+                    continue 'outer;
                 }
             }
 
             // Fetch raw message to import
-            let raw_message = match self.blob_download(&email.blob_id, account_id).await {
+            let raw_message = match self.blob_download(&email.blob_id, acl_token).await {
                 Ok(Some(raw_message)) => raw_message,
                 Ok(None) => {
                     not_created.append(

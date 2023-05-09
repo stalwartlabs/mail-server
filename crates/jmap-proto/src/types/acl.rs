@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use store::write::{DeserializeFrom, SerializeInto};
+use utils::map::bitmap::BitmapItem;
 
 use crate::parser::{json::Parser, JsonObjectParser};
 
@@ -17,6 +17,7 @@ pub enum Acl {
     CreateChild = 7,
     Administer = 8,
     Submit = 9,
+    None = 10,
 }
 
 impl JsonObjectParser for Acl {
@@ -65,6 +66,7 @@ impl Acl {
             Acl::CreateChild => "createChild",
             Acl::Administer => "administer",
             Acl::Submit => "submit",
+            Acl::None => "",
         }
     }
 }
@@ -84,7 +86,41 @@ impl serde::Serialize for Acl {
     }
 }
 
-impl SerializeInto for Acl {
+impl BitmapItem for Acl {
+    fn max() -> u64 {
+        Acl::None as u64
+    }
+
+    fn is_valid(&self) -> bool {
+        !matches!(self, Acl::None)
+    }
+}
+
+impl From<Acl> for u64 {
+    fn from(value: Acl) -> Self {
+        value as u64
+    }
+}
+
+impl From<u64> for Acl {
+    fn from(value: u64) -> Self {
+        match value {
+            0 => Acl::Read,
+            1 => Acl::Modify,
+            2 => Acl::Delete,
+            3 => Acl::ReadItems,
+            4 => Acl::AddItems,
+            5 => Acl::ModifyItems,
+            6 => Acl::RemoveItems,
+            7 => Acl::CreateChild,
+            8 => Acl::Administer,
+            9 => Acl::Submit,
+            _ => Acl::None,
+        }
+    }
+}
+
+/*impl SerializeInto for Acl {
     fn serialize_into(&self, buf: &mut Vec<u8>) {
         buf.push(*self as u8);
     }
@@ -106,4 +142,4 @@ impl DeserializeFrom for Acl {
             _ => None,
         }
     }
-}
+}*/

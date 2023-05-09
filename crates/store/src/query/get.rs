@@ -1,9 +1,9 @@
 use roaring::RoaringBitmap;
 
-use crate::{BitmapKey, Deserialize, Key, Store, ValueKey};
+use crate::{BitmapKey, Deserialize, Key, Store};
 
 impl Store {
-    pub async fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
+    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
@@ -19,7 +19,7 @@ impl Store {
         }
     }
 
-    pub async fn get_values<U>(&self, key: Vec<ValueKey>) -> crate::Result<Vec<Option<U>>>
+    pub async fn get_values<U>(&self, key: Vec<impl Key>) -> crate::Result<Vec<Option<U>>>
     where
         U: Deserialize + 'static,
     {

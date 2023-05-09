@@ -16,7 +16,7 @@ use utils::{
 };
 
 use crate::types::{
-    acl::Acl, blob::BlobId, date::UTCDate, id::Id, keyword::Keyword, property::Property,
+    blob::BlobId, date::UTCDate, id::Id, keyword::Keyword, property::Property,
     type_state::TypeState, value::Value,
 };
 
@@ -97,10 +97,9 @@ const DATE: u8 = 5;
 const BLOB_ID: u8 = 6;
 const KEYWORD: u8 = 7;
 const TYPE_STATE: u8 = 8;
-const ACL: u8 = 9;
-const LIST: u8 = 10;
-const OBJECT: u8 = 11;
-const NULL: u8 = 12;
+const LIST: u8 = 9;
+const OBJECT: u8 = 10;
+const NULL: u8 = 11;
 
 impl Serialize for Value {
     fn serialize(self) -> Vec<u8> {
@@ -194,10 +193,6 @@ impl SerializeInto for Value {
                 buf.push(TYPE_STATE);
                 v.serialize_into(buf);
             }
-            Value::Acl(v) => {
-                buf.push(ACL);
-                v.serialize_into(buf);
-            }
             Value::List(v) => {
                 buf.push(LIST);
                 buf.push_leb128(v.len());
@@ -230,7 +225,6 @@ impl DeserializeFrom for Value {
             BLOB_ID => Some(Value::BlobId(BlobId::deserialize_from(bytes)?)),
             KEYWORD => Some(Value::Keyword(Keyword::deserialize_from(bytes)?)),
             TYPE_STATE => Some(Value::TypeState(TypeState::deserialize_from(bytes)?)),
-            ACL => Some(Value::Acl(Acl::deserialize_from(bytes)?)),
             LIST => {
                 let len = bytes.next_leb128()?;
                 let mut items = Vec::with_capacity(len);

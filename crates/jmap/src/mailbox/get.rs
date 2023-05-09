@@ -2,16 +2,20 @@ use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
-    types::{collection::Collection, keyword::Keyword, property::Property, value::Value},
+    types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property, value::Value},
 };
 use store::{ahash::AHashSet, roaring::RoaringBitmap};
 
-use crate::JMAP;
+use crate::{
+    auth::{acl::EffectiveAcl, AclToken},
+    JMAP,
+};
 
 impl JMAP {
     pub async fn mailbox_get(
         &self,
         mut request: GetRequest<RequestArguments>,
+        acl_token: &AclToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties = request.unwrap_properties(&[
@@ -28,10 +32,12 @@ impl JMAP {
             Property::MyRights,
         ]);
         let account_id = request.account_id.document_id();
-        let mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
+        let mut mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        if acl_token.is_shared(account_id) {
+            mailbox_ids &= self
+                .shared_documents(acl_token, account_id, Collection::Mailbox, Acl::Read)
+                .await?;
+        }
         let message_ids = self.get_document_ids(account_id, Collection::Email).await?;
         let ids = if let Some(ids) = ids {
             ids
@@ -146,36 +152,68 @@ impl JMAP {
                         .await? as u64,
                     ),
                     Property::MyRights => {
-                        let todo = "add shared";
-                        mailbox_rights_owner()
+                        if acl_token.is_shared(account_id) {
+                            let acl = values.effective_acl(acl_token);
+                            Object::with_capacity(9)
+                                .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
+                                .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
+                                .with_property(
+                                    Property::MayRemoveItems,
+                                    acl.contains(Acl::RemoveItems),
+                                )
+                                .with_property(Property::MaySetSeen, acl.contains(Acl::ModifyItems))
+                                .with_property(
+                                    Property::MaySetKeywords,
+                                    acl.contains(Acl::ModifyItems),
+                                )
+                                .with_property(
+                                    Property::MayCreateChild,
+                                    acl.contains(Acl::CreateChild),
+                                )
+                                .with_property(Property::MayRename, acl.contains(Acl::Modify))
+                                .with_property(Property::MayDelete, acl.contains(Acl::Delete))
+                                .with_property(Property::MaySubmit, acl.contains(Acl::Submit))
+                                .into()
+                        } else {
+                            Object::with_capacity(9)
+                                .with_property(Property::MayReadItems, true)
+                                .with_property(Property::MayAddItems, true)
+                                .with_property(Property::MayRemoveItems, true)
+                                .with_property(Property::MaySetSeen, true)
+                                .with_property(Property::MaySetKeywords, true)
+                                .with_property(Property::MayCreateChild, true)
+                                .with_property(Property::MayRename, true)
+                                .with_property(Property::MayDelete, true)
+                                .with_property(Property::MaySubmit, true)
+                                .into()
+                        }
                     }
                     Property::IsSubscribed => values
                         .properties
                         .remove(property)
                         .map(|parent_id| match parent_id {
                             Value::List(values)
-                                if values.contains(&Value::Id(account_id.into())) =>
+                                if values.contains(&Value::Id(acl_token.primary_id().into())) =>
                             {
-                                let todo = "use acl id";
                                 Value::Bool(true)
                             }
                             _ => Value::Bool(false),
                         })
                         .unwrap_or(Value::Bool(false)),
-                    /*Property::ACL
-                        if acl.is_member(account_id)
-                            || self
-                                .mail_shared_folders(account_id, &acl.member_of, Acl::Administer)?
-                                .has_access(document_id) =>
-                    {
-                        let mut acl_get = VecMap::new();
-                        for (account_id, acls) in fields.as_ref().unwrap().get_acls() {
-                            if let Some(email) = self.principal_to_email(account_id)? {
-                                acl_get.append(email, acls);
-                            }
-                        }
-                        Value::ACLGet(acl_get)
-                    }*/
+                    Property::Acl => {
+                        self.acl_get(
+                            values
+                                .properties
+                                .get(&Property::Acl)
+                                .and_then(|v| v.as_list())
+                                .map(|v| &v[..])
+                                .unwrap_or_else(|| &[]),
+                            acl_token,
+                            account_id,
+                        )
+                        .await
+                    }
+
                     _ => Value::Null,
                 };
 
@@ -253,31 +291,3 @@ impl JMAP {
         }
     }
 }
-
-fn mailbox_rights_owner() -> Value {
-    Object::with_capacity(9)
-        .with_property(Property::MayReadItems, true)
-        .with_property(Property::MayAddItems, true)
-        .with_property(Property::MayRemoveItems, true)
-        .with_property(Property::MaySetSeen, true)
-        .with_property(Property::MaySetKeywords, true)
-        .with_property(Property::MayCreateChild, true)
-        .with_property(Property::MayRename, true)
-        .with_property(Property::MayDelete, true)
-        .with_property(Property::MaySubmit, true)
-        .into()
-}
-
-/*fn mailbox_rights_shared(acl: Bitmap<Acl>) -> Value {
-    Object::with_capacity(9)
-        .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
-        .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
-        .with_property(Property::MayRemoveItems, acl.contains(Acl::RemoveItems))
-        .with_property(Property::MaySetSeen, acl.contains(Acl::ModifyItems))
-        .with_property(Property::MaySetKeywords, acl.contains(Acl::ModifyItems))
-        .with_property(Property::MayCreateChild, acl.contains(Acl::CreateChild))
-        .with_property(Property::MayRename, acl.contains(Acl::Modify))
-        .with_property(Property::MayDelete, acl.contains(Acl::Delete))
-        .with_property(Property::MaySubmit, acl.contains(Acl::Submit))
-        .into()
-}*/

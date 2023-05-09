@@ -256,7 +256,7 @@ impl JsonObjectParser for SetProperty {
                             if has_acl {
                                 match Acl::parse(parser) {
                                     Ok(acl) => {
-                                        patch.push(Value::Acl(acl));
+                                        patch.push(Value::UnsignedInt(acl as u64));
                                     }
                                     Err(Error::Method(_)) => {
                                         property = parser.invalid_property()?;

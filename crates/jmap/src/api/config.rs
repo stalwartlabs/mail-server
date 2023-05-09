@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use store::fts::Language;
 
 use super::session::BaseCapabilities;
@@ -56,6 +58,18 @@ impl crate::Config {
                 .property("jmap.protocol.max-scripts")?
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
+            session_cache_ttl: settings
+                .property("jmap.session.cache.ttl")?
+                .unwrap_or(Duration::from_secs(3600)),
+            rate_authenticated: settings
+                .property_or_static("jmap.rate-limit.authenticated.rate", "1000/1s")?,
+            rate_authenticate_req: settings
+                .property_or_static("jmap.rate-limit.authenticate.rate", "10/1s")?,
+            rate_anonymous: settings
+                .property_or_static("jmap.rate-limit.anonymous.rate", "100/1s")?,
+            rate_use_forwarded: settings
+                .property("jmap.rate-limit.use-forwarded")?
+                .unwrap_or(false),
         };
         config.add_capabilites(settings);
         Ok(config)

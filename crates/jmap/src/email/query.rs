@@ -2,7 +2,7 @@ use jmap_proto::{
     error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
-    types::{collection::Collection, keyword::Keyword, property::Property},
+    types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
 use mail_parser::{HeaderName, RfcHeader};
 use store::{
@@ -12,12 +12,13 @@ use store::{
     ValueKey,
 };
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 impl JMAP {
     pub async fn email_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
+        acl_token: &AclToken,
     ) -> Result<QueryResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
@@ -215,9 +216,14 @@ impl JMAP {
             }
         }
 
-        let (response, result_set, paginate) = self
-            .query(account_id, Collection::Email, filters, &request)
-            .await?;
+        let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
+        if acl_token.is_shared(account_id) {
+            result_set.apply_mask(
+                self.shared_messages(acl_token, account_id, Acl::ReadItems)
+                    .await?,
+            );
+        }
+        let (response, paginate) = self.build_query_response(&result_set, &request).await?;
 
         if let Some(paginate) = paginate {
             // Parse sort criteria

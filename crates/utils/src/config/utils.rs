@@ -23,7 +23,7 @@
 
 use std::{net::IpAddr, time::Duration};
 
-use super::Config;
+use super::{Config, Rate};
 
 impl Config {
     pub fn property<T: ParseValue>(&self, key: impl AsKey) -> super::Result<Option<T>> {
@@ -33,6 +33,16 @@ impl Config {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn property_or_static<T: ParseValue>(
+        &self,
+        key: impl AsKey,
+        default: &str,
+    ) -> super::Result<T> {
+        let key = key.as_key();
+        let value = self.keys.get(&key).map_or(default, |v| v.as_str());
+        T::parse_value(key, value)
     }
 
     pub fn property_or_default<T: ParseValue>(
@@ -365,6 +375,36 @@ impl ParseValue for Duration {
                     key.as_key()
                 )
             })
+    }
+}
+
+impl ParseValue for Rate {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        if let Some((requests, period)) = value.split_once('/') {
+            Ok(Rate {
+                requests: requests
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|r| if r > 0 { Some(r) } else { None })
+                    .ok_or_else(|| {
+                        format!(
+                            "Invalid rate value {:?} for property {:?}.",
+                            value,
+                            key.as_key()
+                        )
+                    })?,
+                period: period.parse_key(key)?,
+            })
+        } else if ["false", "none", "unlimited"].contains(&value) {
+            Ok(Rate::default())
+        } else {
+            Err(format!(
+                "Invalid rate value {:?} for property {:?}.",
+                value,
+                key.as_key()
+            ))
+        }
     }
 }
 

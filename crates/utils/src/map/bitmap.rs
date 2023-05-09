@@ -24,7 +24,7 @@
 use std::ops::Deref;
 
 #[derive(
-    Debug, serde::Serialize, serde::Deserialize, Clone, PartialOrd, Ord, PartialEq, Eq, Hash,
+    Debug, serde::Serialize, serde::Deserialize, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash,
 )]
 pub struct Bitmap<T: BitmapItem> {
     pub bitmap: u64,
@@ -67,6 +67,12 @@ impl<T: BitmapItem> Bitmap<T> {
     }
 
     #[inline(always)]
+    pub fn with_item(mut self, item: T) -> Self {
+        self.insert(item);
+        self
+    }
+
+    #[inline(always)]
     pub fn remove(&mut self, item: T) {
         debug_assert!(item.is_valid());
         self.bitmap ^= 1 << item.into();
@@ -86,6 +92,16 @@ impl<T: BitmapItem> Bitmap<T> {
     #[inline(always)]
     pub fn contains(&self, item: T) -> bool {
         self.bitmap & (1 << item.into()) != 0
+    }
+
+    #[inline(always)]
+    pub fn contains_any(&self, items: impl Iterator<Item = T>) -> bool {
+        for item in items {
+            if self.bitmap & (1 << item.into()) != 0 {
+                return true;
+            }
+        }
+        false
     }
 
     #[inline(always)]
@@ -124,6 +140,12 @@ impl<T: BitmapItem> Deref for Bitmap<T> {
 
     fn deref(&self) -> &Self::Target {
         &self.bitmap
+    }
+}
+
+impl<T: BitmapItem> From<Bitmap<T>> for u64 {
+    fn from(value: Bitmap<T>) -> Self {
+        value.bitmap
     }
 }
 

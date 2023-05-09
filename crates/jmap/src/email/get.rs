@@ -3,13 +3,13 @@ use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
     types::{
-        blob::BlobId, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        value::Value,
+        acl::Acl, blob::BlobId, collection::Collection, id::Id, keyword::Keyword,
+        property::Property, value::Value,
     },
 };
 use mail_parser::Message;
 
-use crate::{email::headers::HeaderToValue, JMAP};
+use crate::{auth::AclToken, email::headers::HeaderToValue, JMAP};
 
 use super::body::{ToBodyPart, TruncateBody};
 
@@ -17,6 +17,7 @@ impl JMAP {
     pub async fn email_get(
         &self,
         mut request: GetRequest<GetArguments>,
+        acl_token: &AclToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties = request.unwrap_properties(&[
@@ -65,14 +66,14 @@ impl JMAP {
         let max_body_value_bytes = request.arguments.max_body_value_bytes.unwrap_or(0);
 
         let account_id = request.account_id.document_id();
+        let message_ids = self
+            .owned_or_shared_messages(acl_token, account_id, Acl::ReadItems)
+            .await?;
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            let document_ids = self
-                .get_document_ids(account_id, Collection::Email)
-                .await?
-                .unwrap_or_default()
-                .into_iter()
+            let document_ids = message_ids
+                .iter()
                 .take(self.config.get_max_objects)
                 .collect::<Vec<_>>();
             self.get_properties::<u32>(
@@ -119,6 +120,10 @@ impl JMAP {
 
         for id in ids {
             // Obtain the email object
+            if !message_ids.contains(id.document_id()) {
+                response.not_found.push(id);
+                continue;
+            }
             let mut values = match self
                 .get_property::<Object<Value>>(
                     account_id,

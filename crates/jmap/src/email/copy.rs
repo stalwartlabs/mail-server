@@ -11,6 +11,7 @@ use jmap_proto::{
         Call, RequestMethod,
     },
     types::{
+        acl::Acl,
         blob::BlobId,
         collection::Collection,
         id::Id,
@@ -27,7 +28,7 @@ use store::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
@@ -38,6 +39,7 @@ impl JMAP {
     pub async fn email_copy(
         &self,
         request: CopyRequest<RequestArguments>,
+        acl_token: &AclToken,
         next_call: &mut Option<Call<RequestMethod>>,
     ) -> Result<CopyResponse, MethodError> {
         let account_id = request.account_id.document_id();
@@ -61,13 +63,16 @@ impl JMAP {
         };
 
         let from_message_ids = self
-            .get_document_ids(from_account_id, Collection::Email)
-            .await?
-            .unwrap_or_default();
-        let mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
+            .owned_or_shared_messages(acl_token, from_account_id, Acl::ReadItems)
+            .await?;
+        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
+        let can_add_mailbox_ids = if acl_token.is_shared(account_id) {
+            self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+                .await?
+                .into()
+        } else {
+            None
+        };
         let on_success_delete = request.on_success_destroy_original.unwrap_or(false);
         let mut destroy_ids = Vec::new();
 
@@ -164,10 +169,16 @@ impl JMAP {
                             .with_description(format!("mailboxId {mailbox_id} does not exist.")),
                     );
                     continue 'create;
+                } else if matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
+                    response.not_created.append(
+                        id,
+                        SetError::forbidden().with_description(format!(
+                            "You are not allowed to add messages to mailbox {mailbox_id}."
+                        )),
+                    );
+                    continue 'create;
                 }
             }
-
-            let validate_acl = "true";
 
             // Obtain term index and metadata
             let (mut metadata, token_index) = if let (Some(metadata), Some(token_index)) = (

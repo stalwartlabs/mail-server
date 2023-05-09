@@ -1,4 +1,10 @@
+use std::{sync::Arc, time::Duration};
+
 use api::session::BaseCapabilities;
+use auth::{
+    rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
+    AclToken,
+};
 use jmap_proto::{
     error::method::MethodError,
     method::{
@@ -8,26 +14,33 @@ use jmap_proto::{
     request::reference::MaybeReference,
     types::{collection::Collection, property::Property},
 };
+use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
 use store::{
     ahash::AHashMap,
-    fts::{term_index::TermIndex, Language},
+    fts::Language,
+    parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::BitmapFamily,
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
-use utils::{map::vec_map::VecMap, UnwrapFailure};
+use utils::{config::Rate, map::vec_map::VecMap, UnwrapFailure};
 
 pub mod api;
 pub mod blob;
 pub mod changes;
 pub mod email;
 pub mod mailbox;
+//pub mod principal;
+pub mod auth;
 pub mod thread;
 
 pub struct JMAP {
     pub store: Store,
     pub config: Config,
+    pub sessions: LruCache<String, Arc<AclToken>>,
+    pub rate_limit_auth: LruCache<u32, Arc<Mutex<AuthenticatedLimiter>>>,
+    pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
 }
 
 pub struct Config {
@@ -54,8 +67,16 @@ pub struct Config {
     pub sieve_max_script_name: usize,
     pub sieve_max_scripts: usize,
 
+    pub session_cache_ttl: Duration,
+    pub rate_authenticated: Rate,
+    pub rate_authenticate_req: Rate,
+    pub rate_anonymous: Rate,
+    pub rate_use_forwarded: bool,
+
     pub capabilities: BaseCapabilities,
 }
+
+pub const SUPERUSER_ID: u32 = 0;
 
 pub enum MaybeError {
     Temporary,
@@ -67,6 +88,24 @@ impl JMAP {
         JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
+            sessions: LruCache::with_capacity(
+                config
+                    .property("jmap.session.cache.size")
+                    .failed("Invalid property")
+                    .unwrap_or(100),
+            ),
+            rate_limit_auth: LruCache::with_capacity(
+                config
+                    .property("jmap.rate-limit.authenticated.size")
+                    .failed("Invalid property")
+                    .unwrap_or(1024),
+            ),
+            rate_limit_unauth: LruCache::with_capacity(
+                config
+                    .property("jmap.rate-limit.anonymous.size")
+                    .failed("Invalid property")
+                    .unwrap_or(2048),
+            ),
         }
     }
 
@@ -293,14 +332,11 @@ impl JMAP {
             })
     }
 
-    pub async fn query<T>(
+    pub async fn build_query_response<T>(
         &self,
-        account_id: u32,
-        collection: Collection,
-        filters: Vec<Filter>,
+        result_set: &ResultSet,
         request: &QueryRequest<T>,
-    ) -> Result<(QueryResponse, ResultSet, Option<Pagination>), MethodError> {
-        let result_set = self.filter(account_id, collection, filters).await?;
+    ) -> Result<(QueryResponse, Option<Pagination>), MethodError> {
         let total = result_set.results.len() as usize;
         let (limit_total, limit) = if let Some(limit) = request.limit {
             if limit > 0 {
@@ -318,7 +354,9 @@ impl JMAP {
         Ok((
             QueryResponse {
                 account_id: request.account_id,
-                query_state: self.get_state(account_id, collection).await?,
+                query_state: self
+                    .get_state(result_set.account_id, result_set.collection)
+                    .await?,
                 can_calculate_changes: true,
                 position: 0,
                 ids: vec![],
@@ -329,7 +367,6 @@ impl JMAP {
                 },
                 limit: if total > limit { Some(limit) } else { None },
             },
-            result_set,
             if limit_total > 0 {
                 Pagination::new(
                     limit_total,

@@ -77,6 +77,10 @@ impl ResultSet {
             results,
         }
     }
+
+    pub fn apply_mask(&mut self, mask: RoaringBitmap) {
+        self.results &= mask;
+    }
 }
 
 impl Filter {
