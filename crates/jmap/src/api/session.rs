@@ -1,11 +1,15 @@
+use std::sync::Arc;
+
 use jmap_proto::{
-    error::request::RequestError, request::capability::Capability,
-    response::serialize::serialize_hex, types::id::Id,
+    error::request::RequestError,
+    request::capability::Capability,
+    response::serialize::serialize_hex,
+    types::{acl::Acl, collection::Collection, id::Id},
 };
 use store::ahash::AHashSet;
 use utils::{listener::ServerInstance, map::vec_map::VecMap, UnwrapFailure};
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
@@ -138,15 +142,41 @@ impl JMAP {
     pub async fn handle_session_resource(
         &self,
         instance: &ServerInstance,
+        acl_token: Arc<AclToken>,
     ) -> Result<Session, RequestError> {
         let mut session = Session::new(&instance.data, &self.config.capabilities);
-        session.set_state(0);
+        session.set_state(acl_token.state());
+        let account_name = self
+            .get_account_login(acl_token.primary_id())
+            .await
+            .unwrap_or_else(|| Id::from(acl_token.primary_id()).to_string());
         session.set_primary_account(
-            1u64.into(),
-            "jdoe@example.org".to_string(),
-            "John Doe".to_string(),
+            acl_token.primary_id().into(),
+            account_name.to_string(),
+            account_name,
             None,
         );
+
+        // Add secondary accounts
+        for id in acl_token.secondary_ids() {
+            let is_personal = !acl_token.is_member(*id);
+            let is_readonly = is_personal
+                && self
+                    .shared_documents(&acl_token, *id, Collection::Mailbox, Acl::AddItems)
+                    .await
+                    .map_or(true, |ids| ids.is_empty());
+
+            session.add_account(
+                (*id).into(),
+                self.get_account_login(*id)
+                    .await
+                    .unwrap_or_else(|| Id::from(*id).to_string()),
+                is_personal,
+                is_readonly,
+                Some(&[Capability::Core, Capability::Mail, Capability::WebSocket]),
+            );
+        }
+
         Ok(session)
     }
 }

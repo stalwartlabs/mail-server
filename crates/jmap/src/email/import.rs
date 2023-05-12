@@ -127,16 +127,8 @@ impl JMAP {
                 old_state.clone()
             },
             old_state: old_state.into(),
-            created: if !created.is_empty() {
-                created.into()
-            } else {
-                None
-            },
-            not_created: if !not_created.is_empty() {
-                not_created.into()
-            } else {
-                None
-            },
+            created,
+            not_created,
         })
     }
 }

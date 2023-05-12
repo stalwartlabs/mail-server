@@ -1,6 +1,12 @@
-use std::{sync::atomic::AtomicU32, time::Instant};
+use std::{collections::HashMap, sync::atomic::AtomicU32};
 
+use hyper::{header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
+
+use crate::api::{
+    http::{fetch_body, ToHttpResponse},
+    HtmlResponse, HttpRequest, HttpResponse,
+};
 
 pub mod device_auth;
 pub mod token;
@@ -47,7 +53,6 @@ pub struct OAuth {
 pub struct OAuthCode {
     pub status: AtomicU32,
     pub account_id: AtomicU32,
-    pub expiry: Instant,
     pub client_id: String,
     pub redirect_uri: Option<String>,
 }
@@ -157,16 +162,6 @@ pub struct OAuthMetadata {
     pub authorization_endpoint: String,
 }
 
-// /.well-known/oauth-authorization-server endpoint
-pub async fn handle_oauth_metadata<T>(core: web::Data<JMAPServer<T>>) -> HttpResponse
-where
-    T: for<'x> Store<'x> + 'static,
-{
-    HttpResponse::build(StatusCode::OK)
-        .content_type("application/json")
-        .body(core.oauth.metadata.clone())
-}
-
 impl OAuthMetadata {
     pub fn new(base_url: &str) -> Self {
         OAuthMetadata {
@@ -192,5 +187,38 @@ impl TokenResponse {
 
     pub fn is_error(&self) -> bool {
         matches!(self, TokenResponse::Error { .. })
+    }
+}
+
+pub async fn parse_form_data(
+    req: &mut HttpRequest,
+) -> Result<HashMap<String, String>, HttpResponse> {
+    match (
+        req.headers()
+            .get(CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|val| val.parse::<mime::Mime>().ok()),
+        fetch_body(req, 2048).await,
+    ) {
+        (Some(content_type), Ok(body)) => {
+            let mut fields = HashMap::new();
+            if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
+                for mut field in form_data::FormData::new(&body[..], boundary.as_str()).flatten() {
+                    let value = String::from_utf8(field.bytes().unwrap_or_default().to_vec())
+                        .unwrap_or_default();
+                    fields.insert(field.name, value);
+                }
+            } else {
+                for (key, value) in form_urlencoded::parse(&body) {
+                    fields.insert(key.into_owned(), value.into_owned());
+                }
+            }
+            Ok(fields)
+        }
+        _ => Err(HtmlResponse::with_status(
+            StatusCode::BAD_REQUEST,
+            "Invalid post request".to_string(),
+        )
+        .into_http_response()),
     }
 }

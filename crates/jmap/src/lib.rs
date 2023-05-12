@@ -2,8 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use api::session::BaseCapabilities;
 use auth::{
+    oauth::OAuthCode,
     rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
-    AclToken,
+    AclToken, AuthDatabase, SqlDatabase,
 };
 use jmap_proto::{
     error::method::MethodError,
@@ -15,6 +16,7 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
+use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
     ahash::AHashMap,
     fts::Language,
@@ -24,23 +26,26 @@ use store::{
     write::BitmapFamily,
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
-use utils::{config::Rate, map::vec_map::VecMap, UnwrapFailure};
+use utils::{config::Rate, failed, map::vec_map::VecMap, UnwrapFailure};
 
 pub mod api;
+pub mod auth;
 pub mod blob;
 pub mod changes;
 pub mod email;
 pub mod mailbox;
 //pub mod principal;
-pub mod auth;
 pub mod thread;
 
 pub struct JMAP {
     pub store: Store,
     pub config: Config,
-    pub sessions: LruCache<String, Arc<AclToken>>,
+    pub sessions: LruCache<String, u32>,
+    pub acl_tokens: LruCache<u32, Arc<AclToken>>,
     pub rate_limit_auth: LruCache<u32, Arc<Mutex<AuthenticatedLimiter>>>,
     pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
+    pub oauth_codes: LruCache<String, Arc<OAuthCode>>,
+    pub auth_db: AuthDatabase,
 }
 
 pub struct Config {
@@ -73,6 +78,14 @@ pub struct Config {
     pub rate_anonymous: Rate,
     pub rate_use_forwarded: bool,
 
+    pub oauth_key: String,
+    pub oauth_expiry_user_code: u64,
+    pub oauth_expiry_auth_code: u64,
+    pub oauth_expiry_token: u64,
+    pub oauth_expiry_refresh_token: u64,
+    pub oauth_expiry_refresh_token_renew: u64,
+    pub oauth_max_auth_attempts: u32,
+
     pub capabilities: BaseCapabilities,
 }
 
@@ -85,10 +98,100 @@ pub enum MaybeError {
 
 impl JMAP {
     pub async fn new(config: &utils::config::Config) -> Self {
+        let auth_db = match config
+            .value_require("jmap.auth.database.type")
+            .failed("Invalid property")
+        {
+            "ldap" => AuthDatabase::Ldap,
+            "sql" => {
+                let address = config
+                    .value_require("jmap.auth.database.address")
+                    .failed("Invalid property");
+                let max_connections = config
+                    .property("jmap.auth.database.max-connections")
+                    .failed("Invalid property")
+                    .unwrap_or(10);
+                let min_connections = config
+                    .property("jmap.auth.database.min-connections")
+                    .failed("Invalid property")
+                    .unwrap_or(0);
+                let idle_timeout = config
+                    .property("jmap.auth.database.idle-timeout")
+                    .failed("Invalid property");
+
+                let db = if address.starts_with("postgres:") {
+                    SqlDatabase::Postgres(
+                        PgPoolOptions::new()
+                            .max_connections(max_connections)
+                            .min_connections(min_connections)
+                            .idle_timeout(idle_timeout)
+                            .connect_lazy(address)
+                            .failed(&format!("Failed to create connection pool for {address:?}")),
+                    )
+                } else if address.starts_with("mysql:") {
+                    SqlDatabase::MySql(
+                        MySqlPoolOptions::new()
+                            .max_connections(max_connections)
+                            .min_connections(min_connections)
+                            .idle_timeout(idle_timeout)
+                            .connect_lazy(address)
+                            .failed(&format!("Failed to create connection pool for {address:?}")),
+                    )
+                } else if address.starts_with("mssql:") {
+                    todo!()
+                    /*SqlDatabase::MsSql(
+                        MssqlPoolOptions::new()
+                            .max_connections(max_connections)
+                            .min_connections(min_connections)
+                            .idle_timeout(idle_timeout)
+                            .connect_lazy(address)
+                            .failed(&format!("Failed to create connection pool for {address:?}")),
+                    )*/
+                } else if address.starts_with("sqlite:") {
+                    SqlDatabase::SqlLite(
+                        SqlitePoolOptions::new()
+                            .max_connections(max_connections)
+                            .min_connections(min_connections)
+                            .idle_timeout(idle_timeout)
+                            .connect_lazy(address)
+                            .failed(&format!("Failed to create connection pool for {address:?}")),
+                    )
+                } else {
+                    failed(&format!("Invalid database address {address:?}"));
+                };
+                AuthDatabase::Sql {
+                    db,
+                    query_uid_by_login: config
+                        .value_require("jmap.auth.database.query.uid-by-login")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_login_by_uid: config
+                        .value_require("jmap.auth.database.query.login-by-uid")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_secret_by_uid: config
+                        .value_require("jmap.auth.database.query.secret-by-uid")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_gids_by_uid: config
+                        .value_require("jmap.auth.database.query.gids-by-uid")
+                        .failed("Invalid property")
+                        .to_string(),
+                }
+            }
+            _ => failed("Invalid auth database type"),
+        };
+
         JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: LruCache::with_capacity(
+                config
+                    .property("jmap.session.cache.size")
+                    .failed("Invalid property")
+                    .unwrap_or(100),
+            ),
+            acl_tokens: LruCache::with_capacity(
                 config
                     .property("jmap.session.cache.size")
                     .failed("Invalid property")
@@ -106,6 +209,13 @@ impl JMAP {
                     .failed("Invalid property")
                     .unwrap_or(2048),
             ),
+            oauth_codes: LruCache::with_capacity(
+                config
+                    .property("oauth.code.cache-size")
+                    .failed("Invalid property")
+                    .unwrap_or(128),
+            ),
+            auth_db,
         }
     }
 

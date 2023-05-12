@@ -17,7 +17,7 @@ use crate::{JMAP, SUPERUSER_ID};
 use super::AclToken;
 
 impl JMAP {
-    pub async fn shared_accounts(&self, mut acl_token: AclToken) -> Option<AclToken> {
+    pub async fn update_acl_token(&self, mut acl_token: AclToken) -> Option<AclToken> {
         for &grant_account_id in [acl_token.primary_id]
             .iter()
             .chain(acl_token.member_of.clone().iter())
@@ -240,9 +240,10 @@ impl JMAP {
         to_account_id: u32,
         to_collection: impl Into<u8>,
         to_document_id: u32,
-        check_acls: Bitmap<Acl>,
+        check_acls: impl Into<Bitmap<Acl>>,
     ) -> Result<bool, MethodError> {
         let to_collection = to_collection.into();
+        let check_acls = check_acls.into();
         for &grant_account_id in [acl_token.primary_id]
             .iter()
             .chain(acl_token.member_of.clone().iter())
@@ -293,6 +294,7 @@ impl JMAP {
                 );
             }
             MaybePatchValue::Patch(patch) => {
+                let patch = self.map_acl_accounts(patch).await?;
                 let acl = if let Value::List(acl) =
                     changes
                         .properties
@@ -384,7 +386,7 @@ impl JMAP {
                 if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl_bits))) =
                     (item.first(), item.last())
                 {
-                    if let Some(account_name) = self.map_account_name(id.document_id()).await {
+                    if let Some(account_name) = self.get_account_login(id.document_id()).await {
                         acl_obj.append(
                             Property::_T(account_name),
                             Bitmap::<Acl>::from(*acl_bits)
@@ -401,10 +403,56 @@ impl JMAP {
         }
     }
 
+    pub fn refresh_acls(&self, changes: &Object<Value>, current: &Option<Object<Value>>) {
+        if let Value::List(acl_changes) = changes.get(&Property::Acl) {
+            let mut acl_tokens = self.acl_tokens.lock();
+            if let Some(Value::List(acl_current)) = current
+                .as_ref()
+                .and_then(|current| current.properties.get(&Property::Acl))
+            {
+                for current_item in acl_current.chunks_exact(2) {
+                    let mut invalidate = true;
+                    for change_item in acl_changes.chunks_exact(2) {
+                        if change_item.first() == current_item.first() {
+                            invalidate = change_item.last() != current_item.last();
+                            break;
+                        }
+                    }
+                    if invalidate {
+                        if let Some(Value::Id(id)) = current_item.first() {
+                            acl_tokens.remove(&id.document_id());
+                        }
+                    }
+                }
+
+                for change_item in acl_changes.chunks_exact(2) {
+                    let mut invalidate = true;
+                    for current_item in acl_current.chunks_exact(2) {
+                        if change_item.first() == current_item.first() {
+                            invalidate = change_item.last() != current_item.last();
+                            break;
+                        }
+                    }
+                    if invalidate {
+                        if let Some(Value::Id(id)) = change_item.first() {
+                            acl_tokens.remove(&id.document_id());
+                        }
+                    }
+                }
+            } else {
+                for value in acl_changes {
+                    if let Value::Id(id) = value {
+                        acl_tokens.remove(&id.document_id());
+                    }
+                }
+            }
+        }
+    }
+
     async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
         for item in &mut acl_set {
             if let Value::Text(account_name) = item {
-                if let Some(account_id) = self.map_account_id(account_name).await {
+                if let Some(account_id) = self.get_account_id(account_name).await {
                     *item = Value::Id(account_id.into());
                 } else {
                     return Err(SetError::invalid_properties()
@@ -423,6 +471,12 @@ impl AclToken {
         self.primary_id
     }
 
+    pub fn secondary_ids(&self) -> impl Iterator<Item = &u32> {
+        self.member_of
+            .iter()
+            .chain(self.access_to.iter().map(|(id, _)| id))
+    }
+
     pub fn is_member(&self, account_id: u32) -> bool {
         self.primary_id == account_id
             || self.member_of.contains(&account_id)
@@ -434,7 +488,8 @@ impl AclToken {
         !self.is_member(account_id) && self.access_to.iter().any(|(id, _)| *id == account_id)
     }
 
-    pub fn has_access(&self, to_account_id: u32, to_collection: Collection) -> bool {
+    pub fn has_access(&self, to_account_id: u32, to_collection: impl Into<Collection>) -> bool {
+        let to_collection = to_collection.into();
         self.is_member(to_account_id)
             || self.access_to.iter().any(|(id, collections)| {
                 *id == to_account_id && collections.contains(to_collection)

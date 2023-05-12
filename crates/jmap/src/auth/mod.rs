@@ -9,7 +9,7 @@ use aes_gcm_siv::{
 };
 
 use jmap_proto::types::collection::Collection;
-use store::{blake3, write::key::KeySerializer, Key, Serialize, SUBSPACE_VALUES};
+use store::blake3;
 use utils::map::bitmap::Bitmap;
 
 pub mod account;
@@ -18,27 +18,29 @@ pub mod authenticate;
 pub mod oauth;
 pub mod rate_limit;
 
+pub enum AuthDatabase {
+    Sql {
+        db: SqlDatabase,
+        query_uid_by_login: String,
+        query_login_by_uid: String,
+        query_secret_by_uid: String,
+        query_gids_by_uid: String,
+    },
+    Ldap,
+}
+
+pub enum SqlDatabase {
+    Postgres(sqlx::Pool<sqlx::Postgres>),
+    MySql(sqlx::Pool<sqlx::MySql>),
+    //MsSql(sqlx::Pool<sqlx::Mssql>),
+    SqlLite(sqlx::Pool<sqlx::Sqlite>),
+}
+
 #[derive(Debug, Clone)]
 pub struct AclToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,
     pub access_to: Vec<(u32, Bitmap<Collection>)>,
-}
-
-#[derive(Debug, Clone)]
-pub enum AuthenticationResults {
-    Success(AccountDetails),
-    Failure,
-}
-
-#[derive(Debug, Clone)]
-pub struct AccountDetails {
-    pub id: String,
-    pub member_of: Vec<String>,
-}
-
-pub struct AccountKey {
-    pub name: String,
 }
 
 impl AclToken {
@@ -100,36 +102,5 @@ impl SymmetricEncrypt {
         self.aes
             .decrypt(Nonce::from_slice(nonce), bytes)
             .map_err(|e| e.to_string())
-    }
-}
-
-impl AccountKey {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-}
-
-impl Serialize for AccountKey {
-    fn serialize(self) -> Vec<u8> {
-        {
-            #[cfg(feature = "key_subspace")]
-            {
-                KeySerializer::new(std::mem::size_of::<u32>() + self.name.len() + 1)
-                    .write(SUBSPACE_VALUES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
-                KeySerializer::new(std::mem::size_of::<u32>() + self.name.len())
-            }
-        }
-        .write(0u32)
-        .write(self.name.as_bytes())
-        .finalize()
-    }
-}
-
-impl Key for AccountKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
     }
 }

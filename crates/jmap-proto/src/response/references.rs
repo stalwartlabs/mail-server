@@ -4,7 +4,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     error::{method::MethodError, set::SetError},
-    method::set::SetResponse,
+    method::{copy::CopyResponse, set::SetResponse},
     object::Object,
     request::{
         reference::{MaybeReference, ResultReference},
@@ -306,17 +306,15 @@ impl Response {
     }
 }
 
-impl SetResponse {
-    pub fn eval_object_references(&self, set_value: SetValue) -> Result<MaybePatchValue, SetError> {
+pub trait EvalObjectReferences {
+    fn get_id(&self, id_ref: &str) -> Option<&Id>;
+
+    fn eval_object_references(&self, set_value: SetValue) -> Result<MaybePatchValue, SetError> {
         match set_value {
             SetValue::Value(value) => Ok(MaybePatchValue::Value(value)),
             SetValue::Patch(patch) => Ok(MaybePatchValue::Patch(patch)),
             SetValue::IdReference(MaybeReference::Reference(id_ref)) => {
-                if let Some(Value::Id(id)) = self
-                    .created
-                    .get(&id_ref)
-                    .and_then(|obj| obj.properties.get(&Property::Id))
-                {
+                if let Some(id) = self.get_id(&id_ref) {
                     Ok(MaybePatchValue::Value(Value::Id(*id)))
                 } else {
                     Err(SetError::not_found()
@@ -334,11 +332,7 @@ impl SetResponse {
                             ids.push(Value::Id(id));
                         }
                         MaybeReference::Reference(id_ref) => {
-                            if let Some(Value::Id(id)) = self
-                                .created
-                                .get(&id_ref)
-                                .and_then(|obj| obj.properties.get(&Property::Id))
-                            {
+                            if let Some(id) = self.get_id(&id_ref) {
                                 ids.push(Value::Id(*id));
                             } else {
                                 return Err(SetError::not_found().with_description(format!(
@@ -352,6 +346,21 @@ impl SetResponse {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+impl EvalObjectReferences for SetResponse {
+    fn get_id(&self, id_ref: &str) -> Option<&Id> {
+        self.created
+            .get(id_ref)
+            .and_then(|obj| obj.properties.get(&Property::Id))
+            .and_then(|v| v.as_id())
+    }
+}
+
+impl EvalObjectReferences for CopyResponse {
+    fn get_id(&self, _id_ref: &str) -> Option<&Id> {
+        None
     }
 }
 

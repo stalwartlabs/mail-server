@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use jmap_proto::{
     error::{method::MethodError, request::RequestError},
     method::{get, query, set},
@@ -12,7 +14,7 @@ impl JMAP {
     pub async fn handle_request(
         &self,
         bytes: &[u8],
-        acl_token: AclToken,
+        acl_token: Arc<AclToken>,
     ) -> Result<Response, RequestError> {
         let request = Request::parse(
             bytes,
@@ -20,10 +22,11 @@ impl JMAP {
             self.config.request_max_size,
         )?;
         let mut response = Response::new(
-            0,
+            acl_token.state(),
             request.created_ids.unwrap_or_default(),
             request.method_calls.len(),
         );
+
         for mut call in request.method_calls {
             // Resolve result and id references
             if let Err(method_error) = response.resolve_references(&mut call.method) {
@@ -43,11 +46,7 @@ impl JMAP {
                         response.push_response(call.id, call.name, method_response);
                     }
                     Err(err) => {
-                        response.push_response(
-                            call.id,
-                            MethodName::error(),
-                            ResponseMethod::Error(err),
-                        );
+                        response.push_error(call.id, err);
                     }
                 }
 
@@ -143,7 +142,7 @@ impl JMAP {
 
                 self.email_copy(req, acl_token, next_call).await?.into()
             }
-            RequestMethod::CopyBlob(_) => todo!(),
+            RequestMethod::CopyBlob(req) => self.blob_copy(req, acl_token).await?.into(),
             RequestMethod::ImportEmail(req) => {
                 acl_token.assert_has_access(req.account_id, Collection::Email)?;
 

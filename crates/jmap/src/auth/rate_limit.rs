@@ -103,6 +103,23 @@ impl JMAP {
         }
     }
 
+    pub fn is_upload_allowed(&self, account_id: u32) -> Result<InFlight, RequestError> {
+        if account_id != SUPERUSER_ID {
+            if let Some(in_flight_request) = self
+                .get_authenticated_limiter(account_id)
+                .lock()
+                .concurrent_uploads
+                .is_allowed()
+            {
+                Ok(in_flight_request)
+            } else {
+                Err(RequestError::limit(RequestLimitError::Concurrent))
+            }
+        } else {
+            Ok(InFlight::default())
+        }
+    }
+
     pub fn is_auth_allowed(&self, addr: RemoteAddress) -> Result<(), RequestError> {
         if self
             .get_anonymous_limiter(addr)

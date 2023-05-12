@@ -17,7 +17,7 @@ use super::{rate_limit::RemoteAddress, AclToken};
 impl JMAP {
     pub async fn authenticate_headers(
         &self,
-        req: &mut hyper::Request<hyper::body::Incoming>,
+        req: &hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
     ) -> Result<Option<(InFlight, Arc<AclToken>)>, RequestError> {
         if let Some((mechanism, token)) = req
@@ -26,8 +26,21 @@ impl JMAP {
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
-            let session = if let Some(session) = self.sessions.get(&token) {
-                session.into()
+            let session = if let Some(account_id) = self.sessions.get(&token) {
+                if let Some(acl_token) = self.acl_tokens.get(&account_id) {
+                    acl_token.into()
+                } else {
+                    // Refresh ACL token
+                    self.get_acl_token(account_id).await.map(|acl_token| {
+                        let acl_token = Arc::new(acl_token);
+                        self.acl_tokens.insert(
+                            account_id,
+                            acl_token.clone(),
+                            Instant::now() + self.config.session_cache_ttl,
+                        );
+                        acl_token
+                    })
+                }
             } else {
                 let addr = self.build_remote_addr(req, remote_ip);
                 if mechanism.eq_ignore_ascii_case("basic") {
@@ -56,12 +69,16 @@ impl JMAP {
                     // Enforce anonymous rate limit for bearer auth requests
                     self.is_anonymous_allowed(addr)?;
 
-                    if let Some((account_id, _, _)) =
-                        self.validate_access_token("access_token", &token)
-                    {
-                        self.get_acl_token(account_id).await
-                    } else {
-                        None
+                    match self.validate_access_token("access_token", &token).await {
+                        Ok((account_id, _, _)) => self.get_acl_token(account_id).await,
+                        Err(err) => {
+                            tracing::debug!(
+                                context = "authenticate_headers",
+                                err = err,
+                                "Failed to validate access token."
+                            );
+                            None
+                        }
                     }
                 } else {
                     // Enforce anonymous rate limit
@@ -72,6 +89,11 @@ impl JMAP {
                     let session = Arc::new(session);
                     self.sessions.insert(
                         token,
+                        session.primary_id(),
+                        Instant::now() + self.config.session_cache_ttl,
+                    );
+                    self.acl_tokens.insert(
+                        session.primary_id(),
                         session.clone(),
                         Instant::now() + self.config.session_cache_ttl,
                     );

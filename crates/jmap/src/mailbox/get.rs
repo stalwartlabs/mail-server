@@ -56,6 +56,7 @@ impl JMAP {
                     | Property::Role
                     | Property::SortOrder
                     | Property::Acl
+                    | Property::MyRights
             )
         });
         let mut response = GetResponse {

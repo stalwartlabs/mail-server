@@ -7,6 +7,7 @@ use tokio::sync::watch;
 
 use crate::{add_test_certs, store::TempDir};
 
+pub mod acl;
 pub mod email_changes;
 pub mod email_copy;
 pub mod email_get;
@@ -47,6 +48,16 @@ private-key = 'file://{PK}'
 [jmap.protocol]
 set.max-objects = 100000
 
+[jmap.auth.database]
+type = 'sql'
+address = 'sqlite::memory:'
+
+[jmap.auth.database.query]
+uid-by-login = 'SELECT ROWID - 1 FROM users WHERE login = ?'
+login-by-uid = 'SELECT login FROM users WHERE ROWID - 1 = ?'
+secret-by-uid = 'SELECT secret FROM users WHERE ROWID - 1 = ?'
+gids-by-uid = 'SELECT gid FROM groups WHERE uid = ?'
+
 ";
 
 #[tokio::test]
@@ -67,10 +78,12 @@ pub async fn jmap_tests() {
     //email_search_snippet::test(params.server.clone(), &mut params.client).await;
     //email_changes::test(params.server.clone(), &mut params.client).await;
     //email_query_changes::test(params.server.clone(), &mut params.client).await;
-    email_copy::test(params.server.clone(), &mut params.client).await;
+    //email_copy::test(params.server.clone(), &mut params.client).await;
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
     //mailbox::test(params.server.clone(), &mut params.client).await;
+    acl::test(params.server.clone(), &mut params.client).await;
+
     if delete {
         params.temp_dir.delete();
     }
@@ -99,9 +112,26 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
         server.spawn(manager.clone(), shutdown_rx);
     });
 
+    // Create tables
+    for query in [
+        "CREATE TABLE users (login TEXT PRIMARY KEY, secret TEXT, name TEXT)",
+        "CREATE TABLE groups (uid INTEGER, gid INTEGER, PRIMARY KEY (uid, gid))",
+        "CREATE TABLE emails (uid INTEGER NOT NULL, email TEXT NOT NULL, PRIMARY KEY (uid, email))",
+        "INSERT INTO users (login, secret) VALUES ('admin', 'secret')", // RowID 0 is admin
+    ] {
+        assert!(
+            manager
+                .inner
+                .auth_db
+                .execute(query, Vec::<String>::new().into_iter())
+                .await,
+            "failed for {query}"
+        );
+    }
+
     // Create client
     let mut client = Client::new()
-        .credentials(Credentials::bearer("DO_NOT_ATTEMPT_THIS_AT_HOME"))
+        .credentials(Credentials::basic("admin", "secret"))
         .timeout(Duration::from_secs(60))
         .accept_invalid_certs(true)
         .connect("https://127.0.0.1:8899")

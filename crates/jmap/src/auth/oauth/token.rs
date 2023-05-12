@@ -3,87 +3,58 @@ use std::{sync::atomic, time::SystemTime};
 use hyper::StatusCode;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
-use store::{blake3, rand::thread_rng};
+use mail_send::mail_auth::common::lru::DnsCache;
+use store::{
+    blake3,
+    rand::{thread_rng, Rng},
+};
+use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::{auth::SymmetricEncrypt, JMAP};
-
-use super::{
-    ErrorType, TokenResponse, CLIENT_ID_MAX_LEN, RANDOM_CODE_LEN, STATUS_AUTHORIZED,
-    STATUS_PENDING, STATUS_TOKEN_ISSUED,
+use crate::{
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    auth::SymmetricEncrypt,
+    JMAP,
 };
 
-// Token endpoint
-pub async fn handle_token_request<T>(
-    core: web::Data<JMAPServer<T>>,
-    params: web::Form<TokenRequest>,
-) -> HttpResponse
-where
-    T: for<'x> Store<'x> + 'static,
-{
-    let mut response = TokenResponse::error(ErrorType::InvalidGrant);
+use super::{
+    parse_form_data, ErrorType, TokenResponse, CLIENT_ID_MAX_LEN, RANDOM_CODE_LEN,
+    STATUS_AUTHORIZED, STATUS_PENDING, STATUS_TOKEN_ISSUED,
+};
 
-    if params.grant_type.eq_ignore_ascii_case("authorization_code") {
-        response = if let (Some(code), Some(client_id), Some(redirect_uri)) =
-            (&params.code, &params.client_id, &params.redirect_uri)
-        {
-            if let Some(oauth) = core.oauth_codes.get(code) {
-                if client_id != &oauth.client_id
-                    || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
-                {
-                    TokenResponse::error(ErrorType::InvalidClient)
-                } else if oauth.status.load(atomic::Ordering::Relaxed) == STATUS_AUTHORIZED
-                    && oauth.expiry.elapsed().as_secs() < core.oauth.expiry_auth_code
-                {
-                    // Mark this token as issued
-                    oauth
-                        .status
-                        .store(STATUS_TOKEN_ISSUED, atomic::Ordering::Relaxed);
-
-                    // Issue token
-                    core.issue_token(
-                        oauth.account_id.load(atomic::Ordering::Relaxed),
-                        &oauth.client_id,
-                        true,
-                    )
-                    .await
-                    .unwrap_or_else(|err| {
-                        tracing::error!("Failed to generate OAuth token: {}", err);
-                        TokenResponse::error(ErrorType::InvalidRequest)
-                    })
-                } else {
-                    TokenResponse::error(ErrorType::InvalidGrant)
-                }
-            } else {
-                TokenResponse::error(ErrorType::AccessDenied)
-            }
-        } else {
-            TokenResponse::error(ErrorType::InvalidClient)
+impl JMAP {
+    // Token endpoint
+    pub async fn handle_token_request(&self, req: &mut HttpRequest) -> HttpResponse {
+        // Parse form
+        let params = match parse_form_data(req).await {
+            Ok(params) => params,
+            Err(err) => return err,
         };
-    } else if params
-        .grant_type
-        .eq_ignore_ascii_case("urn:ietf:params:oauth:grant-type:device_code")
-    {
-        response = TokenResponse::error(ErrorType::ExpiredToken);
+        let grant_type = params
+            .get("grant_type")
+            .map(|s| s.as_str())
+            .unwrap_or_default();
 
-        if let (Some(oauth), Some(client_id)) = (
-            params
-                .device_code
-                .as_ref()
-                .and_then(|dc| core.oauth_codes.get(dc)),
-            &params.client_id,
-        ) {
-            if &oauth.client_id != client_id {
-                response = TokenResponse::error(ErrorType::InvalidClient);
-            } else if oauth.expiry.elapsed().as_secs() < core.oauth.expiry_user_code {
-                response = match oauth.status.load(atomic::Ordering::Relaxed) {
-                    STATUS_AUTHORIZED => {
+        let mut response = TokenResponse::error(ErrorType::InvalidGrant);
+
+        if grant_type.eq_ignore_ascii_case("authorization_code") {
+            response = if let (Some(code), Some(client_id), Some(redirect_uri)) = (
+                params.get("code"),
+                params.get("client_id"),
+                params.get("redirect_uri"),
+            ) {
+                if let Some(oauth) = self.oauth_codes.get(code) {
+                    if client_id != &oauth.client_id
+                        || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
+                    {
+                        TokenResponse::error(ErrorType::InvalidClient)
+                    } else if oauth.status.load(atomic::Ordering::Relaxed) == STATUS_AUTHORIZED {
                         // Mark this token as issued
                         oauth
                             .status
                             .store(STATUS_TOKEN_ISSUED, atomic::Ordering::Relaxed);
 
                         // Issue token
-                        core.issue_token(
+                        self.issue_token(
                             oauth.account_id.load(atomic::Ordering::Relaxed),
                             &oauth.client_id,
                             true,
@@ -93,31 +64,70 @@ where
                             tracing::error!("Failed to generate OAuth token: {}", err);
                             TokenResponse::error(ErrorType::InvalidRequest)
                         })
+                    } else {
+                        TokenResponse::error(ErrorType::InvalidGrant)
                     }
-                    status
-                        if (STATUS_PENDING..STATUS_PENDING + core.oauth.max_auth_attempts)
-                            .contains(&status) =>
-                    {
-                        TokenResponse::error(ErrorType::AuthorizationPending)
+                } else {
+                    TokenResponse::error(ErrorType::AccessDenied)
+                }
+            } else {
+                TokenResponse::error(ErrorType::InvalidClient)
+            };
+        } else if grant_type.eq_ignore_ascii_case("urn:ietf:params:oauth:grant-type:device_code") {
+            response = TokenResponse::error(ErrorType::ExpiredToken);
+
+            if let (Some(oauth), Some(client_id)) = (
+                params
+                    .get("device_code")
+                    .and_then(|dc| self.oauth_codes.get(dc)),
+                params.get("client_id"),
+            ) {
+                response = if &oauth.client_id != client_id {
+                    TokenResponse::error(ErrorType::InvalidClient)
+                } else {
+                    match oauth.status.load(atomic::Ordering::Relaxed) {
+                        STATUS_AUTHORIZED => {
+                            // Mark this token as issued
+                            oauth
+                                .status
+                                .store(STATUS_TOKEN_ISSUED, atomic::Ordering::Relaxed);
+
+                            // Issue token
+                            self.issue_token(
+                                oauth.account_id.load(atomic::Ordering::Relaxed),
+                                &oauth.client_id,
+                                true,
+                            )
+                            .await
+                            .unwrap_or_else(|err| {
+                                tracing::error!("Failed to generate OAuth token: {}", err);
+                                TokenResponse::error(ErrorType::InvalidRequest)
+                            })
+                        }
+                        status
+                            if (STATUS_PENDING
+                                ..STATUS_PENDING + self.config.oauth_max_auth_attempts)
+                                .contains(&status) =>
+                        {
+                            TokenResponse::error(ErrorType::AuthorizationPending)
+                        }
+                        STATUS_TOKEN_ISSUED => TokenResponse::error(ErrorType::ExpiredToken),
+                        _ => TokenResponse::error(ErrorType::AccessDenied),
                     }
-                    STATUS_TOKEN_ISSUED => TokenResponse::error(ErrorType::ExpiredToken),
-                    _ => TokenResponse::error(ErrorType::AccessDenied),
                 };
             }
-        }
-    } else if params.grant_type.eq_ignore_ascii_case("refresh_token") {
-        if let Some(refresh_token) = &params.refresh_token {
-            match core
-                .validate_access_token("refresh_token", refresh_token)
-                .await
-            {
-                Ok((account_id, client_id, time_left)) => {
+        } else if grant_type.eq_ignore_ascii_case("refresh_token") {
+            if let Some(refresh_token) = params.get("refresh_token") {
+                if let Ok((account_id, client_id, time_left)) = self
+                    .validate_access_token("refresh_token", refresh_token)
+                    .await
+                {
                     // TODO: implement revoking client ids
-                    response = core
+                    response = self
                         .issue_token(
                             account_id,
                             &client_id,
-                            time_left <= core.oauth.expiry_refresh_token_renew,
+                            time_left <= self.config.oauth_expiry_refresh_token_renew,
                         )
                         .await
                         .unwrap_or_else(|err| {
@@ -125,44 +135,32 @@ where
                             TokenResponse::error(ErrorType::InvalidGrant)
                         });
                 }
-                Err(err) => {
-                    tracing::debug!("Refresh token failed validation: {}", err);
-                }
+            } else {
+                response = TokenResponse::error(ErrorType::InvalidRequest);
             }
-        } else {
-            response = TokenResponse::error(ErrorType::InvalidRequest);
         }
+
+        JsonResponse::with_status(
+            if response.is_error() {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::OK
+            },
+            response,
+        )
+        .into_http_response()
     }
 
-    HttpResponse::build(if response.is_error() {
-        StatusCode::BAD_REQUEST
-    } else {
-        StatusCode::OK
-    })
-    .content_type("application/json")
-    .body(serde_json::to_string(&response).unwrap_or_default())
-}
-
-impl JMAP {
     async fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         with_refresh_token: bool,
-    ) -> store::Result<TokenResponse> {
-        let store = self.store.clone();
+    ) -> Result<TokenResponse, &'static str> {
         let password_hash = self
-            .spawn_worker(move || {
-                // Make sure account still exits
-                if let Some(secret_hash) = store.get_account_secret_hash(account_id)? {
-                    Ok(secret_hash)
-                } else {
-                    Err(StoreError::DeserializeError(
-                        "Account no longer exists".into(),
-                    ))
-                }
-            })
-            .await?;
+            .get_account_secret(account_id)
+            .await
+            .ok_or("Account no longer exists")?;
 
         Ok(TokenResponse::Granted {
             access_token: self.encode_access_token(
@@ -170,17 +168,17 @@ impl JMAP {
                 account_id,
                 &password_hash,
                 client_id,
-                self.oauth.expiry_token,
+                self.config.oauth_expiry_token,
             )?,
             token_type: "bearer".to_string(),
-            expires_in: self.oauth.expiry_token,
+            expires_in: self.config.oauth_expiry_token,
             refresh_token: if with_refresh_token {
                 self.encode_access_token(
                     "refresh_token",
                     account_id,
                     &password_hash,
                     client_id,
-                    self.oauth.expiry_refresh_token,
+                    self.config.oauth_expiry_refresh_token,
                 )?
                 .into()
             } else {
@@ -197,12 +195,12 @@ impl JMAP {
         password_hash: &str,
         client_id: &str,
         expiry_in: u64,
-    ) -> store::Result<String> {
+    ) -> Result<String, &'static str> {
         // Build context
         if client_id.len() > CLIENT_ID_MAX_LEN {
-            return Err(StoreError::DeserializeError("ClientId is too long".into()));
+            return Err("ClientId is too long");
         }
-        let key = self.oauth.key.clone();
+        let key = self.config.oauth_key.clone();
         let context = format!(
             "{} {} {} {}",
             grant_type, client_id, account_id, password_hash
@@ -232,7 +230,7 @@ impl JMAP {
         // Encrypt random bytes
         let mut token = SymmetricEncrypt::new(key.as_bytes(), &context)
             .encrypt(&thread_rng().gen::<[u8; RANDOM_CODE_LEN]>(), &nonce)
-            .map_err(StoreError::DeserializeError)?;
+            .map_err(|_| "Failed to encrypt token.")?;
         token.push_leb128(account_id);
         token.push_leb128(expiry);
         token.extend_from_slice(client_id.as_bytes());
@@ -240,14 +238,13 @@ impl JMAP {
         Ok(String::from_utf8(base64_encode(&token).unwrap_or_default()).unwrap())
     }
 
-    pub fn validate_access_token(
+    pub async fn validate_access_token(
         &self,
         grant_type: &str,
         token: &str,
-    ) -> Option<(u32, String, u64)> {
+    ) -> Result<(u32, String, u64), &'static str> {
         // Base64 decode token
-        let token = base64_decode(token.as_bytes())
-            .ok_or_else(|| StoreError::DeserializeError("Failed to decode.".to_string()))?;
+        let token = base64_decode(token.as_bytes()).ok_or("Failed to decode.")?;
         let (account_id, expiry, client_id) = token
             .get((RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN)..)
             .and_then(|bytes| {
@@ -259,7 +256,7 @@ impl JMAP {
                 )
                     .into()
             })
-            .ok_or_else(|| StoreError::DeserializeError("Failed to decode token.".into()))?;
+            .ok_or("Failed to decode token.")?;
 
         // Validate expiration
         let now = SystemTime::now()
@@ -268,18 +265,17 @@ impl JMAP {
             .unwrap_or(0)
             .saturating_sub(946684800); // Jan 1, 2000
         if expiry <= now {
-            return Err(StoreError::DeserializeError("Token expired.".into()));
+            return Err("Token expired.");
         }
 
         // Optain password hash
-        let store = self.store.clone();
         let password_hash = self
-            .spawn_worker(move || store.get_account_secret_hash(account_id))
-            .await?
-            .ok_or_else(|| StoreError::DeserializeError("Account no longer exists".into()))?;
+            .get_account_secret(account_id)
+            .await
+            .ok_or("Account no longer exists")?;
 
         // Build context
-        let key = self.oauth.key.clone();
+        let key = self.config.oauth_key.clone();
         let context = format!(
             "{} {} {} {}",
             grant_type, client_id, account_id, password_hash
@@ -304,7 +300,7 @@ impl JMAP {
                 &token[..RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN],
                 &nonce,
             )
-            .map_err(|e| StoreError::DeserializeError(format!("Failed to decrypt: {}", e)))?;
+            .map_err(|_| "Failed to decrypt token.")?;
 
         // Success
         Ok((account_id, client_id, expiry - now))

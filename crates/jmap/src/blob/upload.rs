@@ -14,6 +14,17 @@ impl JMAP {
         content_type: &str,
         data: &[u8],
     ) -> Result<UploadResponse, RequestError> {
+        // Limit concurrent uploads
+        let _in_flight = self.is_upload_allowed(account_id.document_id())?;
+
+        #[cfg(feature = "test_mode")]
+        {
+            // Used for concurrent upload tests
+            if data == b"sleep" {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        }
+
         let blob_id = BlobId::temporary(account_id.document_id());
 
         match self.store.put_blob(&blob_id.kind, data).await {

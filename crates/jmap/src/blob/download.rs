@@ -31,7 +31,7 @@ impl JMAP {
                             *account_id,
                             *collection,
                             *document_id,
-                            Acl::Read.into(),
+                            Acl::Read,
                         )
                         .await
                     {

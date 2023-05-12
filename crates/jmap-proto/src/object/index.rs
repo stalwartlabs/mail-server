@@ -332,42 +332,55 @@ fn merge_batch(
                     }
                 }
                 IndexAs::Acl => {
-                    if let (Some(current_value), Some(value)) =
-                        (current_value.as_list(), value.as_list())
-                    {
-                        // Remove deleted ACLs
-                        for item in current_value.chunks_exact(2) {
-                            if let Some(Value::Id(id)) = item.first() {
-                                if !value.contains(&item[1]) {
-                                    batch.ops.push(Operation::Acl {
-                                        grant_account_id: id.document_id(),
-                                        set: None,
-                                    });
+                    match (current_value, &value) {
+                        (Value::List(current_value), Value::List(value)) => {
+                            // Remove deleted ACLs
+                            for item in current_value.chunks_exact(2) {
+                                if let Some(Value::Id(id)) = item.first() {
+                                    if !value.contains(&Value::Id(*id)) {
+                                        batch.ops.push(Operation::Acl {
+                                            grant_account_id: id.document_id(),
+                                            set: None,
+                                        });
+                                    }
+                                }
+                            }
+
+                            // Update ACLs
+                            for item in value.chunks_exact(2) {
+                                if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
+                                    (item.first(), item.last())
+                                {
+                                    let mut add_item = true;
+                                    for current_item in current_value.chunks_exact(2) {
+                                        if let (
+                                            Some(Value::Id(current_id)),
+                                            Some(Value::UnsignedInt(current_acl)),
+                                        ) = (current_item.first(), current_item.last())
+                                        {
+                                            if id == current_id {
+                                                if acl == current_acl {
+                                                    add_item = false;
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if add_item {
+                                        batch.ops.push(Operation::Acl {
+                                            grant_account_id: id.document_id(),
+                                            set: acl.serialize().into(),
+                                        });
+                                    }
                                 }
                             }
                         }
-
-                        // Update ACLs
-                        for item in value.chunks_exact(2) {
-                            if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
-                                (item.first(), item.last())
-                            {
-                                let mut add_item = true;
-                                for current_item in current_value.chunks_exact(2) {
-                                    if let (
-                                        Some(Value::Id(current_id)),
-                                        Some(Value::UnsignedInt(current_acl)),
-                                    ) = (current_item.first(), current_item.last())
-                                    {
-                                        if id == current_id {
-                                            if acl != current_acl {
-                                                add_item = false;
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                                if add_item {
+                        (Value::Null, Value::List(values)) => {
+                            // Add all ACLs
+                            for item in values.chunks_exact(2) {
+                                if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
+                                    (item.first(), item.last())
+                                {
                                     batch.ops.push(Operation::Acl {
                                         grant_account_id: id.document_id(),
                                         set: acl.serialize().into(),
@@ -375,6 +388,18 @@ fn merge_batch(
                                 }
                             }
                         }
+                        (Value::List(current_values), Value::Null) => {
+                            // Remove all ACLs
+                            for item in current_values.chunks_exact(2) {
+                                if let Some(Value::Id(id)) = item.first() {
+                                    batch.ops.push(Operation::Acl {
+                                        grant_account_id: id.document_id(),
+                                        set: None,
+                                    });
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 IndexAs::None => (),
@@ -491,7 +516,7 @@ fn build_batch(
                     {
                         batch.ops.push(Operation::Acl {
                             grant_account_id: id.document_id(),
-                            set: acl.serialize().into(),
+                            set: if set { acl.serialize().into() } else { None },
                         });
                     }
                 }

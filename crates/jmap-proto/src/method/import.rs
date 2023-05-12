@@ -46,12 +46,12 @@ pub struct ImportEmailResponse {
     pub new_state: State,
 
     #[serde(rename = "created")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created: Option<VecMap<String, Object<Value>>>,
+    #[serde(skip_serializing_if = "VecMap::is_empty")]
+    pub created: VecMap<String, Object<Value>>,
 
     #[serde(rename = "notCreated")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub not_created: Option<VecMap<String, SetError>>,
+    #[serde(skip_serializing_if = "VecMap::is_empty")]
+    pub not_created: VecMap<String, SetError>,
 }
 
 impl JsonObjectParser for ImportEmailRequest {

@@ -10,13 +10,14 @@ use jmap_proto::{
         reference::MaybeReference,
         Call, RequestMethod,
     },
+    response::references::EvalObjectReferences,
     types::{
         acl::Acl,
         blob::BlobId,
         collection::Collection,
         id::Id,
         property::Property,
-        value::{SetValue, Value},
+        value::{MaybePatchValue, Value},
     },
 };
 use mail_parser::parsers::fields::thread::thread_name;
@@ -95,15 +96,23 @@ impl JMAP {
             let mut received_at = None;
 
             for (property, value) in create.properties {
+                let value = match response.eval_object_references(value) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        response.not_created.append(id, err);
+                        continue 'create;
+                    }
+                };
+
                 match (property, value) {
-                    (Property::MailboxIds, SetValue::Value(Value::List(ids))) => {
+                    (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes = ids
                             .into_iter()
                             .map(|id| id.unwrap_id().document_id())
                             .collect();
                     }
 
-                    (Property::MailboxIds, SetValue::Patch(patch)) => {
+                    (Property::MailboxIds, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
                         let document_id = patch.next().unwrap().unwrap_id().document_id();
                         if patch.next().unwrap().unwrap_bool() {
@@ -115,14 +124,14 @@ impl JMAP {
                         }
                     }
 
-                    (Property::Keywords, SetValue::Value(Value::List(keywords_))) => {
+                    (Property::Keywords, MaybePatchValue::Value(Value::List(keywords_))) => {
                         keywords = keywords_
                             .into_iter()
                             .map(|keyword| keyword.unwrap_keyword())
                             .collect();
                     }
 
-                    (Property::Keywords, SetValue::Patch(patch)) => {
+                    (Property::Keywords, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
                         let keyword = patch.next().unwrap().unwrap_keyword();
                         if patch.next().unwrap().unwrap_bool() {
@@ -133,7 +142,7 @@ impl JMAP {
                             keywords.retain(|k| k != &keyword);
                         }
                     }
-                    (Property::ReceivedAt, SetValue::Value(Value::Date(value))) => {
+                    (Property::ReceivedAt, MaybePatchValue::Value(Value::Date(value))) => {
                         received_at = value.into();
                     }
                     (property, _) => {

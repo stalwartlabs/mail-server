@@ -65,12 +65,12 @@ pub struct CopyBlobResponse {
     pub account_id: Id,
 
     #[serde(rename = "copied")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub copied: Option<VecMap<BlobId, BlobId>>,
+    #[serde(skip_serializing_if = "VecMap::is_empty")]
+    pub copied: VecMap<BlobId, BlobId>,
 
     #[serde(rename = "notCopied")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub not_copied: Option<VecMap<BlobId, SetError>>,
+    #[serde(skip_serializing_if = "VecMap::is_empty")]
+    pub not_copied: VecMap<BlobId, SetError>,
 }
 
 #[derive(Debug, Clone)]
@@ -174,9 +174,7 @@ impl JsonObjectParser for CopyBlobRequest {
                         parser.next_token::<Id>()?.unwrap_string("fromAccountId")?;
                 }
                 0x0073_6449_626f_6c62 => {
-                    request.blob_ids = parser
-                        .next_token::<Vec<BlobId>>()?
-                        .unwrap_string("blobIds")?;
+                    request.blob_ids = <Vec<BlobId>>::parse(parser)?;
                 }
                 _ => {
                     parser.skip_token(parser.depth_array, parser.depth_dict)?;

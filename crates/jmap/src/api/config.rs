@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use store::fts::Language;
+use store::{
+    fts::Language,
+    rand::{distributions::Alphanumeric, thread_rng, Rng},
+};
 
 use super::session::BaseCapabilities;
 
@@ -70,6 +73,32 @@ impl crate::Config {
             rate_use_forwarded: settings
                 .property("jmap.rate-limit.use-forwarded")?
                 .unwrap_or(false),
+            oauth_key: settings
+                .value("oauth.key")
+                .map(|k| k.into())
+                .unwrap_or_else(|| {
+                    thread_rng()
+                        .sample_iter(Alphanumeric)
+                        .take(64)
+                        .map(char::from)
+                        .collect::<String>()
+                }),
+            oauth_expiry_user_code: settings
+                .property_or_static::<Duration>("oauth.expiry.user-code", "30m")?
+                .as_secs(),
+            oauth_expiry_auth_code: settings
+                .property_or_static::<Duration>("oauth.expiry.auth-code", "10m")?
+                .as_secs(),
+            oauth_expiry_token: settings
+                .property_or_static::<Duration>("oauth.expiry.token", "1h")?
+                .as_secs(),
+            oauth_expiry_refresh_token: settings
+                .property_or_static::<Duration>("oauth.expiry.refresh-token", "30d")?
+                .as_secs(),
+            oauth_expiry_refresh_token_renew: settings
+                .property_or_static::<Duration>("oauth.expiry.refresh-token-renew", "4d")?
+                .as_secs(),
+            oauth_max_auth_attempts: settings.property_or_static("oauth.max-auth-attempts", "3")?,
         };
         config.add_capabilites(settings);
         Ok(config)

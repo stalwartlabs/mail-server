@@ -1,6 +1,6 @@
 use std::{net::IpAddr, sync::Arc};
 
-use http_body_util::{combinators::BoxBody, BodyExt, Full};
+use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
     header::{self, CONTENT_TYPE},
@@ -20,12 +20,12 @@ use tokio::{
 use utils::listener::{ServerInstance, SessionData, SessionManager};
 
 use crate::{
-    auth::AclToken,
+    auth::oauth::OAuthMetadata,
     blob::{DownloadResponse, UploadResponse},
     JMAP,
 };
 
-use super::session::Session;
+use super::{session::Session, HtmlResponse, HttpResponse, JsonResponse};
 
 impl JMAP {
     pub async fn parse_request(
@@ -33,81 +33,28 @@ impl JMAP {
         req: &mut hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
         instance: &ServerInstance,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    ) -> HttpResponse {
         let mut path = req.uri().path().split('/');
         path.next();
-        let acl_token = AclToken {
-            primary_id: todo!(),
-            member_of: todo!(),
-            access_to: todo!(),
-        };
 
         match path.next().unwrap_or("") {
-            "jmap" => match (path.next().unwrap_or(""), req.method()) {
-                ("", &Method::POST) => {
-                    return match fetch_body(req, self.config.request_max_size).await {
-                        Ok(bytes) => {
-                            //let delete = "fd";
-                            //println!("<- {}", String::from_utf8_lossy(&bytes));
+            "jmap" => {
+                // Authenticate request
+                let (_in_flight, acl_token) = match self.authenticate_headers(req, remote_ip).await
+                {
+                    Ok(Some(session)) => session,
+                    Ok(None) => return RequestError::unauthorized().into_http_response(),
+                    Err(err) => return err.into_http_response(),
+                };
 
-                            match self.handle_request(&bytes, acl_token).await {
-                                Ok(response) => response.into_http_response(),
-                                Err(err) => err.into_http_response(),
-                            }
-                        }
-                        Err(err) => err.into_http_response(),
-                    };
-                }
-                ("download", &Method::GET) => {
-                    if let (Some(account_id), Some(blob_id), Some(name)) = (
-                        path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
-                        path.next().and_then(BlobId::from_base32),
-                        path.next(),
-                    ) {
-                        return match self.blob_download(&blob_id, &acl_token).await {
-                            Ok(Some(blob)) => DownloadResponse {
-                                filename: name.to_string(),
-                                content_type: req
-                                    .uri()
-                                    .query()
-                                    .and_then(|q| {
-                                        form_urlencoded::parse(q.as_bytes())
-                                            .find(|(k, _)| k == "accept")
-                                            .map(|(_, v)| v.into_owned())
-                                    })
-                                    .unwrap_or("application/octet-stream".to_string()),
-                                blob,
-                            }
-                            .into_http_response(),
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => {
-                                tracing::error!(event = "error",
-                                context = "blob_store",
-                                account_id = account_id.document_id(),
-                                blob_id = ?blob_id,
-                                error = ?err,
-                                "Failed to download blob");
-                                RequestError::internal_server_error().into_http_response()
-                            }
-                        };
-                    }
-                }
-                ("upload", &Method::POST) => {
-                    if let Some(account_id) = path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
-                    {
-                        return match fetch_body(req, self.config.upload_max_size).await {
+                match (path.next().unwrap_or(""), req.method()) {
+                    ("", &Method::POST) => {
+                        return match fetch_body(req, self.config.request_max_size).await {
                             Ok(bytes) => {
-                                match self
-                                    .blob_upload(
-                                        account_id,
-                                        req.headers()
-                                            .get(CONTENT_TYPE)
-                                            .and_then(|h| h.to_str().ok())
-                                            .unwrap_or("application/octet-stream"),
-                                        &bytes,
-                                    )
-                                    .await
-                                {
+                                //let delete = "fd";
+                                //println!("<- {}", String::from_utf8_lossy(&bytes));
+
+                                match self.handle_request(&bytes, acl_token).await {
                                     Ok(response) => response.into_http_response(),
                                     Err(err) => err.into_http_response(),
                                 }
@@ -115,48 +62,151 @@ impl JMAP {
                             Err(err) => err.into_http_response(),
                         };
                     }
+                    ("download", &Method::GET) => {
+                        if let (Some(account_id), Some(blob_id), Some(name)) = (
+                            path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
+                            path.next().and_then(BlobId::from_base32),
+                            path.next(),
+                        ) {
+                            return match self.blob_download(&blob_id, &acl_token).await {
+                                Ok(Some(blob)) => DownloadResponse {
+                                    filename: name.to_string(),
+                                    content_type: req
+                                        .uri()
+                                        .query()
+                                        .and_then(|q| {
+                                            form_urlencoded::parse(q.as_bytes())
+                                                .find(|(k, _)| k == "accept")
+                                                .map(|(_, v)| v.into_owned())
+                                        })
+                                        .unwrap_or("application/octet-stream".to_string()),
+                                    blob,
+                                }
+                                .into_http_response(),
+                                Ok(None) => RequestError::not_found().into_http_response(),
+                                Err(err) => {
+                                    tracing::error!(event = "error",
+                                context = "blob_store",
+                                account_id = account_id.document_id(),
+                                blob_id = ?blob_id,
+                                error = ?err,
+                                "Failed to download blob");
+                                    RequestError::internal_server_error().into_http_response()
+                                }
+                            };
+                        }
+                    }
+                    ("upload", &Method::POST) => {
+                        if let Some(account_id) =
+                            path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
+                        {
+                            return match fetch_body(req, self.config.upload_max_size).await {
+                                Ok(bytes) => {
+                                    match self
+                                        .blob_upload(
+                                            account_id,
+                                            req.headers()
+                                                .get(CONTENT_TYPE)
+                                                .and_then(|h| h.to_str().ok())
+                                                .unwrap_or("application/octet-stream"),
+                                            &bytes,
+                                        )
+                                        .await
+                                    {
+                                        Ok(response) => response.into_http_response(),
+                                        Err(err) => err.into_http_response(),
+                                    }
+                                }
+                                Err(err) => err.into_http_response(),
+                            };
+                        }
+                    }
+                    ("eventsource", &Method::GET) => {
+                        todo!()
+                    }
+                    ("ws", &Method::GET) => {
+                        todo!()
+                    }
+                    _ => (),
                 }
-                ("eventsource", &Method::GET) => {
-                    todo!()
-                }
-                ("ws", &Method::GET) => {
-                    todo!()
-                }
-                _ => (),
-            },
+            }
             ".well-known" => match (path.next().unwrap_or(""), req.method()) {
                 ("jmap", &Method::GET) => {
-                    return match self.handle_session_resource(instance).await {
+                    // Authenticate request
+                    let (_in_flight, acl_token) =
+                        match self.authenticate_headers(req, remote_ip).await {
+                            Ok(Some(session)) => session,
+                            Ok(None) => return RequestError::unauthorized().into_http_response(),
+                            Err(err) => return err.into_http_response(),
+                        };
+
+                    return match self.handle_session_resource(instance, acl_token).await {
                         Ok(session) => session.into_http_response(),
                         Err(err) => err.into_http_response(),
                     };
                 }
                 ("oauth-authorization-server", &Method::GET) => {
-                    todo!()
+                    let remote_addr = self.build_remote_addr(req, remote_ip);
+                    // Limit anonymous requests
+                    return match self.is_anonymous_allowed(remote_addr) {
+                        Ok(_) => JsonResponse::new(OAuthMetadata::new(&instance.data))
+                            .into_http_response(),
+                        Err(err) => err.into_http_response(),
+                    };
                 }
                 _ => (),
             },
-            "auth" => match (path.next().unwrap_or(""), req.method()) {
-                ("", &Method::GET) => {
-                    todo!()
+            "auth" => {
+                let remote_addr = self.build_remote_addr(req, remote_ip);
+
+                match (path.next().unwrap_or(""), req.method()) {
+                    ("", &Method::GET) => {
+                        // Limit anonymous requests
+                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+                        todo!()
+                    }
+                    ("", &Method::POST) => {
+                        // Limit authentication requests
+                        if let Err(err) = self.is_auth_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+
+                        todo!()
+                    }
+                    ("code", &Method::GET) => {
+                        // Limit anonymous requests
+                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+                        todo!()
+                    }
+                    ("code", &Method::POST) => {
+                        // Limit authentication requests
+                        if let Err(err) = self.is_auth_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+
+                        todo!()
+                    }
+                    ("device", &Method::POST) => {
+                        // Limit anonymous requests
+                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+                        todo!()
+                    }
+                    ("token", &Method::POST) => {
+                        // Limit anonymous requests
+                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
+                            return err.into_http_response();
+                        }
+                        todo!()
+                    }
+                    _ => (),
                 }
-                ("", &Method::POST) => {
-                    todo!()
-                }
-                ("code", &Method::GET) => {
-                    todo!()
-                }
-                ("code", &Method::POST) => {
-                    todo!()
-                }
-                ("device", &Method::POST) => {
-                    todo!()
-                }
-                ("token", &Method::POST) => {
-                    todo!()
-                }
-                _ => (),
-            },
+            }
             _ => (),
         }
         RequestError::not_found().into_http_response()
@@ -249,7 +299,7 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(
     }
 }
 
-async fn fetch_body(
+pub async fn fetch_body(
     req: &mut hyper::Request<hyper::body::Incoming>,
     max_size: usize,
 ) -> Result<Vec<u8>, RequestError> {
@@ -266,42 +316,68 @@ async fn fetch_body(
     Ok(bytes)
 }
 
-trait ToHttpResponse {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>>;
+pub trait ToHttpResponse {
+    fn into_http_response(self) -> HttpResponse;
 }
 
-impl ToHttpResponse for Response {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        //let delete = "";
-        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
+    fn into_http_response(self) -> HttpResponse {
         hyper::Response::builder()
-            .status(StatusCode::OK)
+            .status(self.status)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(
-                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
+                Full::new(Bytes::from(serde_json::to_string(&self.inner).unwrap()))
                     .map_err(|never| match never {})
                     .boxed(),
             )
             .unwrap()
+    }
+}
+
+impl<T: serde::Serialize> JsonResponse<T> {
+    pub fn new(inner: T) -> Self {
+        JsonResponse {
+            inner,
+            status: StatusCode::OK,
+        }
+    }
+
+    pub fn with_status(status: StatusCode, inner: T) -> Self {
+        JsonResponse { inner, status }
+    }
+}
+
+impl HtmlResponse {
+    pub fn new(body: String) -> Self {
+        HtmlResponse {
+            body,
+            status: StatusCode::OK,
+        }
+    }
+
+    pub fn with_status(status: StatusCode, body: String) -> Self {
+        HtmlResponse { body, status }
+    }
+}
+
+impl ToHttpResponse for Response {
+    fn into_http_response(self) -> HttpResponse {
+        //let delete = "";
+        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for Session {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
-            .body(
-                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+    fn into_http_response(self) -> HttpResponse {
+        //let delete = "";
+        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for DownloadResponse {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    fn into_http_response(self) -> HttpResponse {
         hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, self.content_type)
@@ -326,26 +402,25 @@ impl ToHttpResponse for DownloadResponse {
 }
 
 impl ToHttpResponse for UploadResponse {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
-            .body(
-                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+    fn into_http_response(self) -> HttpResponse {
+        JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for RequestError {
-    fn into_http_response(self) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    fn into_http_response(self) -> HttpResponse {
+        JsonResponse::with_status(StatusCode::from_u16(self.status).unwrap(), self)
+            .into_http_response()
+    }
+}
+
+impl ToHttpResponse for HtmlResponse {
+    fn into_http_response(self) -> HttpResponse {
         hyper::Response::builder()
             .status(self.status)
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(
-                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
+                Full::new(Bytes::from(self.body))
                     .map_err(|never| match never {})
                     .boxed(),
             )

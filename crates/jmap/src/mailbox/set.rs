@@ -9,6 +9,7 @@ use jmap_proto::{
         mailbox::SetArguments,
         Object,
     },
+    response::references::EvalObjectReferences,
     types::{
         acl::Acl,
         collection::Collection,
@@ -371,6 +372,7 @@ impl JMAP {
                                     "You are not allowed to delete this mailbox.",
                                 ),
                             );
+                            continue 'destroy;
                         } else if on_destroy_remove_emails && !acl.contains(Acl::RemoveItems) {
                             ctx.set_response.not_destroyed.append(
                                 id,
@@ -378,6 +380,7 @@ impl JMAP {
                                     "You are not allowed to delete emails from this mailbox.",
                                 ),
                             );
+                            continue 'destroy;
                         }
                     }
                 }
@@ -720,10 +723,16 @@ impl JMAP {
             }
         }
 
+        // Refresh ACLs
+        let current = update.map(|(_, current)| current);
+        if changes.properties.contains_key(&Property::Acl) {
+            self.refresh_acls(&changes, &current);
+        }
+
         // Validate
         Ok(ObjectIndexBuilder::new(SCHEMA)
             .with_changes(changes)
-            .with_current_opt(update.map(|(_, current)| current))
+            .with_current_opt(current)
             .validate())
     }
 

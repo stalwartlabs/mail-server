@@ -7,6 +7,7 @@ use jmap_proto::{
     },
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
+    response::references::EvalObjectReferences,
     types::{
         acl::Acl,
         collection::Collection,
