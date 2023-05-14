@@ -199,7 +199,7 @@ impl JMAP {
             ),
             rate_limit_auth: LruCache::with_capacity(
                 config
-                    .property("jmap.rate-limit.authenticated.size")
+                    .property("jmap.rate-limit.account.size")
                     .failed("Invalid property")
                     .unwrap_or(1024),
             ),

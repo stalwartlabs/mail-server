@@ -23,6 +23,7 @@ impl JMAP {
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
         let mut filters = Vec::with_capacity(request.filter.len());
+        let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
@@ -100,11 +101,7 @@ impl JMAP {
             && (paginate.is_some()
                 || (response.total.map_or(false, |total| total > 0) && filter_as_tree))
         {
-            for document_id in self
-                .get_document_ids(account_id, Collection::Mailbox)
-                .await?
-                .unwrap_or_default()
-            {
+            for document_id in mailbox_ids {
                 let parent_id = self
                     .get_property::<Object<Value>>(
                         account_id,

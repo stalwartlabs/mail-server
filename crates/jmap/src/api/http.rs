@@ -86,11 +86,11 @@ impl JMAP {
                                 Ok(None) => RequestError::not_found().into_http_response(),
                                 Err(err) => {
                                     tracing::error!(event = "error",
-                                context = "blob_store",
-                                account_id = account_id.document_id(),
-                                blob_id = ?blob_id,
-                                error = ?err,
-                                "Failed to download blob");
+                                                    context = "blob_store",
+                                                    account_id = account_id.document_id(),
+                                                    blob_id = ?blob_id,
+                                                    error = ?err,
+                                                    "Failed to download blob");
                                     RequestError::internal_server_error().into_http_response()
                                 }
                             };
@@ -161,48 +161,40 @@ impl JMAP {
 
                 match (path.next().unwrap_or(""), req.method()) {
                     ("", &Method::GET) => {
-                        // Limit anonymous requests
-                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_anonymous_allowed(remote_addr) {
+                            Ok(_) => self.handle_user_device_auth(req).await,
+                            Err(err) => err.into_http_response(),
                         }
-                        todo!()
                     }
                     ("", &Method::POST) => {
-                        // Limit authentication requests
-                        if let Err(err) = self.is_auth_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_auth_allowed(remote_addr) {
+                            Ok(_) => self.handle_user_device_auth_post(req).await,
+                            Err(err) => err.into_http_response(),
                         }
-
-                        todo!()
                     }
                     ("code", &Method::GET) => {
-                        // Limit anonymous requests
-                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_anonymous_allowed(remote_addr) {
+                            Ok(_) => self.handle_user_code_auth(req).await,
+                            Err(err) => err.into_http_response(),
                         }
-                        todo!()
                     }
                     ("code", &Method::POST) => {
-                        // Limit authentication requests
-                        if let Err(err) = self.is_auth_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_auth_allowed(remote_addr) {
+                            Ok(_) => self.handle_user_code_auth_post(req).await,
+                            Err(err) => err.into_http_response(),
                         }
-
-                        todo!()
                     }
                     ("device", &Method::POST) => {
-                        // Limit anonymous requests
-                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_anonymous_allowed(remote_addr) {
+                            Ok(_) => self.handle_device_auth(req, instance).await,
+                            Err(err) => err.into_http_response(),
                         }
-                        todo!()
                     }
                     ("token", &Method::POST) => {
-                        // Limit anonymous requests
-                        if let Err(err) = self.is_anonymous_allowed(remote_addr) {
-                            return err.into_http_response();
+                        return match self.is_anonymous_allowed(remote_addr) {
+                            Ok(_) => self.handle_token_request(req).await,
+                            Err(err) => err.into_http_response(),
                         }
-                        todo!()
                     }
                     _ => (),
                 }
@@ -306,7 +298,7 @@ pub async fn fetch_body(
     let mut bytes = Vec::with_capacity(1024);
     while let Some(Ok(frame)) = req.frame().await {
         if let Some(data) = frame.data_ref() {
-            if bytes.len() + data.len() < max_size {
+            if bytes.len() + data.len() <= max_size {
                 bytes.extend_from_slice(data);
             } else {
                 return Err(RequestError::limit(RequestLimitError::Size));
@@ -409,8 +401,15 @@ impl ToHttpResponse for UploadResponse {
 
 impl ToHttpResponse for RequestError {
     fn into_http_response(self) -> HttpResponse {
-        JsonResponse::with_status(StatusCode::from_u16(self.status).unwrap(), self)
-            .into_http_response()
+        hyper::Response::builder()
+            .status(StatusCode::from_u16(self.status).unwrap())
+            .header(header::CONTENT_TYPE, "application/problem+json")
+            .body(
+                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
+            .unwrap()
     }
 }
 

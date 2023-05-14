@@ -25,7 +25,7 @@ use super::{
 
 impl JMAP {
     // Code authorization flow, handles an authorization request
-    pub async fn handle_user_code_auth(req: &mut HttpRequest) -> HttpResponse {
+    pub async fn handle_user_code_auth(&self, req: &mut HttpRequest) -> HttpResponse {
         let params = form_urlencoded::parse(req.uri().query().unwrap_or_default().as_bytes())
             .into_owned()
             .collect::<HashMap<_, _>>();

@@ -47,7 +47,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             server
                 .auth_db
                 .execute(
-                    "INSERT INTO users (login, secret, name) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO users (login, secret, name) VALUES (?, ?, ?)",
                     vec![login.to_string(), secret.to_string(), name.to_string()].into_iter()
                 )
                 .await

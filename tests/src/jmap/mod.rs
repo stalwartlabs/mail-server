@@ -7,7 +7,9 @@ use tokio::sync::watch;
 
 use crate::{add_test_certs, store::TempDir};
 
-pub mod acl;
+pub mod auth_acl;
+pub mod auth_limits;
+pub mod auth_oauth;
 pub mod email_changes;
 pub mod email_copy;
 pub mod email_get;
@@ -48,6 +50,19 @@ private-key = 'file://{PK}'
 [jmap.protocol]
 set.max-objects = 100000
 
+[jmap.protocol.request]
+max-concurrent = 8
+max-concurrent-total = 512
+
+[jmap.protocol.upload]
+max-size = 5000000
+max-concurrent = 4
+
+[jmap.rate-limit]
+account.rate = '100/1m'
+authentication.rate = '100/1m'
+anonymous.rate = '1000/1m'
+
 [jmap.auth.database]
 type = 'sql'
 address = 'sqlite::memory:'
@@ -58,6 +73,15 @@ login-by-uid = 'SELECT login FROM users WHERE ROWID - 1 = ?'
 secret-by-uid = 'SELECT secret FROM users WHERE ROWID - 1 = ?'
 gids-by-uid = 'SELECT gid FROM groups WHERE uid = ?'
 
+[oauth]
+key = 'parerga_und_paralipomena'
+max-auth-attempts = 1
+
+[oauth.expiry]
+user-code = '1s'
+token = '1s'
+refresh-token = '3s'
+refresh-token-renew = '2s'
 ";
 
 #[tokio::test]
@@ -82,7 +106,9 @@ pub async fn jmap_tests() {
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
     //mailbox::test(params.server.clone(), &mut params.client).await;
-    acl::test(params.server.clone(), &mut params.client).await;
+    //auth_acl::test(params.server.clone(), &mut params.client).await;
+    //auth_limits::test(params.server.clone(), &mut params.client).await;
+    auth_oauth::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();
