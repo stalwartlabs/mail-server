@@ -12,21 +12,21 @@ use jmap_proto::{
         query::{QueryRequest, QueryResponse},
         set::{SetRequest, SetResponse},
     },
-    request::reference::MaybeReference,
     types::{collection::Collection, property::Property},
 };
 use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
+use services::state::{self, init_state_manager, spawn_state_manager};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
-    ahash::AHashMap,
     fts::Language,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::BitmapFamily,
+    write::{BatchBuilder, BitmapFamily},
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
-use utils::{config::Rate, failed, map::vec_map::VecMap, UnwrapFailure};
+use tokio::sync::mpsc;
+use utils::{config::Rate, failed, UnwrapFailure};
 
 pub mod api;
 pub mod auth;
@@ -34,7 +34,8 @@ pub mod blob;
 pub mod changes;
 pub mod email;
 pub mod mailbox;
-//pub mod principal;
+pub mod push;
+pub mod services;
 pub mod thread;
 
 pub struct JMAP {
@@ -46,6 +47,7 @@ pub struct JMAP {
     pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
     pub oauth_codes: LruCache<String, Arc<OAuthCode>>,
     pub auth_db: AuthDatabase,
+    pub state_tx: mpsc::Sender<state::Event>,
 }
 
 pub struct Config {
@@ -78,6 +80,9 @@ pub struct Config {
     pub rate_anonymous: Rate,
     pub rate_use_forwarded: bool,
 
+    pub event_source_throttle: Duration,
+    pub push_max_total: usize,
+
     pub oauth_key: String,
     pub oauth_expiry_user_code: u64,
     pub oauth_expiry_auth_code: u64,
@@ -90,6 +95,7 @@ pub struct Config {
 }
 
 pub const SUPERUSER_ID: u32 = 0;
+pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub enum MaybeError {
     Temporary,
@@ -97,7 +103,7 @@ pub enum MaybeError {
 }
 
 impl JMAP {
-    pub async fn new(config: &utils::config::Config) -> Self {
+    pub async fn init(config: &utils::config::Config) -> Arc<Self> {
         let auth_db = match config
             .value_require("jmap.auth.database.type")
             .failed("Invalid property")
@@ -182,7 +188,10 @@ impl JMAP {
             _ => failed("Invalid auth database type"),
         };
 
-        JMAP {
+        // Init state manager
+        let (state_tx, state_rx) = init_state_manager();
+
+        let jmap_server = Arc::new(JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: LruCache::with_capacity(
@@ -216,7 +225,13 @@ impl JMAP {
                     .unwrap_or(128),
             ),
             auth_db,
-        }
+            state_tx,
+        });
+
+        // Spawn state manager
+        spawn_state_manager(jmap_server.clone(), config, state_rx);
+
+        jmap_server
     }
 
     pub async fn assign_document_id(
@@ -388,37 +403,16 @@ impl JMAP {
         request: &SetRequest<T>,
         collection: Collection,
     ) -> Result<SetResponse, MethodError> {
-        let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
-        let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
-        let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
-            if let MaybeReference::Value(ids) = objs {
-                ids.len()
-            } else {
-                0
-            }
-        });
-        if n_create + n_update + n_destroy > self.config.set_max_objects {
-            return Err(MethodError::RequestTooLarge);
-        }
-        let old_state = self
-            .assert_state(
-                request.account_id.document_id(),
-                collection,
-                &request.if_in_state,
-            )
-            .await?;
-
-        Ok(SetResponse {
-            account_id: request.account_id.into(),
-            new_state: old_state.clone().into(),
-            old_state: old_state.into(),
-            created: AHashMap::with_capacity(n_create),
-            updated: VecMap::with_capacity(n_update),
-            destroyed: Vec::with_capacity(n_destroy),
-            not_created: VecMap::new(),
-            not_updated: VecMap::new(),
-            not_destroyed: VecMap::new(),
-        })
+        Ok(
+            SetResponse::from_request(request, self.config.set_max_objects)?.with_state(
+                self.assert_state(
+                    request.account_id.document_id(),
+                    collection,
+                    &request.if_in_state,
+                )
+                .await?,
+            ),
+        )
     }
 
     pub async fn filter(
@@ -517,6 +511,17 @@ impl JMAP {
         )?;
 
         Ok(response)
+    }
+
+    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
+        self.store.write(batch.build()).await.map_err(|err| {
+            tracing::error!(
+            event = "error",
+            context = "write_batch",
+            error = ?err,
+            "Failed to write batch.");
+            MethodError::ServerPartialFail
+        })
     }
 }
 

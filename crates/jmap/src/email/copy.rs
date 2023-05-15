@@ -17,6 +17,8 @@ use jmap_proto::{
         collection::Collection,
         id::Id,
         property::Property,
+        state::{State, StateChange},
+        type_state::TypeState,
         value::{MaybePatchValue, Value},
     },
 };
@@ -61,6 +63,7 @@ impl JMAP {
             old_state,
             created: VecMap::with_capacity(request.create.len()),
             not_created: VecMap::new(),
+            state_change: None,
         };
 
         let from_message_ids = self
@@ -341,6 +344,18 @@ impl JMAP {
             // Add to destroy list
             if on_success_delete {
                 destroy_ids.push(id);
+            }
+        }
+
+        // Update state
+        if !response.created.is_empty() {
+            response.new_state = self.get_state(account_id, Collection::Email).await?;
+            if let State::Exact(change_id) = &response.new_state {
+                response.state_change = StateChange::new(account_id)
+                    .with_change(TypeState::Email, *change_id)
+                    .with_change(TypeState::Mailbox, *change_id)
+                    .with_change(TypeState::Thread, *change_id)
+                    .into()
             }
         }
 

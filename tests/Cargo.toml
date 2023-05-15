@@ -8,6 +8,7 @@ resolver = "2"
 store = { path = "../crates/store", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send" } 
 utils = { path = "../crates/utils" }
 #jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
 jmap-client = { path = "/home/vagrant/code/jmap-client", features = ["websockets", "debug", "async"] } 
@@ -22,4 +23,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"]}
 bytes = "1.4.0"
-
+futures = "0.3"
+ece = "2.2"
+hyper = { version = "1.0.0-rc.3", features = ["server", "http1", "http2"] }
+http-body-util = "0.1.0-rc.2"
+base64 = "0.21"

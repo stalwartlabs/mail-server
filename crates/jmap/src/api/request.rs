@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use jmap_proto::{
     error::{method::MethodError, request::RequestError},
-    method::{get, query, set},
+    method::{
+        get, query,
+        set::{self},
+    },
     request::{method::MethodName, Call, Request, RequestMethod},
     response::{Response, ResponseMethod},
     types::collection::Collection,
@@ -26,6 +29,7 @@ impl JMAP {
             request.created_ids.unwrap_or_default(),
             request.method_calls.len(),
         );
+        let add_created_ids = !response.created_ids.is_empty();
 
         for mut call in request.method_calls {
             // Resolve result and id references
@@ -42,7 +46,39 @@ impl JMAP {
                     .handle_method_call(call.method, &acl_token, &mut next_call)
                     .await
                 {
-                    Ok(method_response) => {
+                    Ok(mut method_response) => {
+                        match &mut method_response {
+                            ResponseMethod::Set(set_response) => {
+                                // Add created ids
+                                if add_created_ids {
+                                    set_response.update_created_ids(&mut response);
+                                }
+
+                                // Publish state changes
+                                if let Some(state_change) = set_response.state_change.take() {
+                                    self.broadcast_state_change(state_change).await;
+                                }
+                            }
+                            ResponseMethod::ImportEmail(import_response) => {
+                                // Add created ids
+                                if add_created_ids {
+                                    import_response.update_created_ids(&mut response);
+                                }
+
+                                // Publish state changes
+                                if let Some(state_change) = import_response.state_change.take() {
+                                    self.broadcast_state_change(state_change).await;
+                                }
+                            }
+                            ResponseMethod::Copy(copy_response) => {
+                                // Publish state changes
+                                if let Some(state_change) = copy_response.state_change.take() {
+                                    self.broadcast_state_change(state_change).await;
+                                }
+                            }
+                            _ => {}
+                        }
+
                         response.push_response(call.id, call.name, method_response);
                     }
                     Err(err) => {
@@ -90,7 +126,9 @@ impl JMAP {
                 }
                 get::RequestArguments::Identity => todo!(),
                 get::RequestArguments::EmailSubmission => todo!(),
-                get::RequestArguments::PushSubscription => todo!(),
+                get::RequestArguments::PushSubscription => {
+                    self.push_subscription_get(req, acl_token).await?.into()
+                }
                 get::RequestArguments::SieveScript => todo!(),
                 get::RequestArguments::VacationResponse => todo!(),
                 get::RequestArguments::Principal => todo!(),
@@ -129,7 +167,9 @@ impl JMAP {
                 }
                 set::RequestArguments::Identity => todo!(),
                 set::RequestArguments::EmailSubmission(_) => todo!(),
-                set::RequestArguments::PushSubscription => todo!(),
+                set::RequestArguments::PushSubscription => {
+                    self.push_subscription_set(req, acl_token).await?.into()
+                }
                 set::RequestArguments::SieveScript(_) => todo!(),
                 set::RequestArguments::VacationResponse => todo!(),
                 set::RequestArguments::Principal => todo!(),

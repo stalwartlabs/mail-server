@@ -18,7 +18,9 @@ pub mod email_query;
 pub mod email_query_changes;
 pub mod email_search_snippet;
 pub mod email_set;
+pub mod event_source;
 pub mod mailbox;
+pub mod push_subscription;
 pub mod thread_get;
 pub mod thread_merge;
 
@@ -62,6 +64,16 @@ max-concurrent = 4
 account.rate = '100/1m'
 authentication.rate = '100/1m'
 anonymous.rate = '1000/1m'
+
+[jmap.event-source]
+throttle = '500ms'
+
+[jmap.web-sockets]
+throttle = '500ms'
+
+[jmap.push]
+throttle = '500ms'
+attempts.interval = '500ms'
 
 [jmap.auth.database]
 type = 'sql'
@@ -108,7 +120,9 @@ pub async fn jmap_tests() {
     //mailbox::test(params.server.clone(), &mut params.client).await;
     //auth_acl::test(params.server.clone(), &mut params.client).await;
     //auth_limits::test(params.server.clone(), &mut params.client).await;
-    auth_oauth::test(params.server.clone(), &mut params.client).await;
+    //auth_oauth::test(params.server.clone(), &mut params.client).await;
+    //event_source::test(params.server.clone(), &mut params.client).await;
+    push_subscription::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();
@@ -133,7 +147,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     let servers = settings.parse_servers().unwrap();
 
     // Start JMAP server
-    let manager = SessionManager::from(JMAP::new(&settings).await);
+    let manager = SessionManager::from(JMAP::init(&settings).await);
     let shutdown_tx = servers.spawn(&settings, |server, shutdown_rx| {
         server.spawn(manager.clone(), shutdown_rx);
     });
@@ -227,4 +241,26 @@ pub fn replace_blob_ids(string: String) -> String {
     } else {
         string
     }
+}
+
+pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &str) -> Id {
+    assert!(
+        jmap.auth_db
+            .execute(
+                "INSERT OR REPLACE INTO users (login, secret, name) VALUES (?, ?, ?)",
+                vec![login.to_string(), secret.to_string(), name.to_string()].into_iter()
+            )
+            .await
+    );
+    Id::new(jmap.get_account_id(login).await.unwrap() as u64)
+}
+
+pub async fn test_account_login(login: &str, secret: &str) -> Client {
+    Client::new()
+        .credentials(Credentials::basic(login, secret))
+        .timeout(Duration::from_secs(5))
+        .accept_invalid_certs(true)
+        .connect("https://127.0.0.1:8899")
+        .await
+        .unwrap()
 }

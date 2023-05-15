@@ -122,7 +122,7 @@ impl JMAP {
                         }
                     }
                     ("eventsource", &Method::GET) => {
-                        todo!()
+                        return self.handle_event_source(req, acl_token).await
                     }
                     ("ws", &Method::GET) => {
                         todo!()

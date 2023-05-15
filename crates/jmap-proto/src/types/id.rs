@@ -193,6 +193,10 @@ impl Id {
     pub fn is_singleton(&self) -> bool {
         self.id == 20080258862541
     }
+
+    pub fn is_valid(&self) -> bool {
+        self.id != u64::MAX
+    }
 }
 
 impl From<u64> for Id {
@@ -257,6 +261,16 @@ impl serde::Serialize for Id {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.as_string().as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Id {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Id::from_bytes(<&str>::deserialize(deserializer)?.as_bytes())
+            .ok_or_else(|| serde::de::Error::custom("invalid JMAP ID"))
     }
 }
 

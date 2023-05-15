@@ -9,30 +9,19 @@ use jmap_client::{
     client::{Client, Credentials},
     mailbox::query::Filter,
 };
-use jmap_proto::types::id::Id;
 use reqwest::{header, redirect::Policy};
 use serde::de::DeserializeOwned;
 use store::ahash::AHashMap;
+
+use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create};
 
 pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     println!("Running OAuth tests...");
 
     // Create test account
-    assert!(
-        server
-            .auth_db
-            .execute(
-                "INSERT OR REPLACE INTO users (login, secret, name) VALUES (?, ?, ?)",
-                vec![
-                    "jdoe@example.com".to_string(),
-                    "abcde".to_string(),
-                    "John Doe".to_string()
-                ]
-                .into_iter()
-            )
-            .await
-    );
-    let john_id = Id::from(1u64).to_string();
+    let john_id = test_account_create(&server, "jdoe@example.com", "abcde", "John Doe")
+        .await
+        .to_string();
 
     // Obtain OAuth metadata
     let metadata: OAuthMetadata =
@@ -216,7 +205,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     );
 
     // Connect to account using token and attempt to search
-    let john_client = Client::new()
+    let mut john_client = Client::new()
         .credentials(Credentials::bearer(&token))
         .accept_invalid_certs(true)
         .connect("https://127.0.0.1:8899")
@@ -281,12 +270,8 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     );
 
     // Destroy test accounts
-    let cleanup = "true";
-    /*for principal_id in [john_id, domain_id] {
-        admin_client.principal_destroy(&principal_id).await.unwrap();
-    }
-    server.store.principal_purge().unwrap();
-    server.store.assert_is_empty();*/
+    destroy_all_mailboxes(&mut john_client).await;
+    server.store.assert_is_empty().await;
 }
 
 async fn post_bytes(url: &str, params: &AHashMap<String, String>) -> Bytes {

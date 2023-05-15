@@ -99,6 +99,9 @@ impl crate::Config {
                 .property_or_static::<Duration>("oauth.expiry.refresh-token-renew", "4d")?
                 .as_secs(),
             oauth_max_auth_attempts: settings.property_or_static("oauth.max-auth-attempts", "3")?,
+            event_source_throttle: settings
+                .property_or_static("jmap.event-source.throttle", "1s")?,
+            push_max_total: settings.property_or_static("jmap.push.max-total", "100")?,
         };
         config.add_capabilites(settings);
         Ok(config)

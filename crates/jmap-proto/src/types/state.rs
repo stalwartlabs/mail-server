@@ -28,7 +28,7 @@ use utils::codec::{
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
-use super::ChangeId;
+use super::{type_state::TypeState, ChangeId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JMAPIntermediateState {
@@ -43,6 +43,34 @@ pub enum State {
     Initial,
     Exact(ChangeId),
     Intermediate(JMAPIntermediateState),
+}
+
+#[derive(Clone, Debug)]
+pub struct StateChange {
+    pub account_id: u32,
+    pub types: Vec<(TypeState, u64)>,
+}
+
+impl StateChange {
+    pub fn new(account_id: u32) -> Self {
+        Self {
+            account_id,
+            types: Vec::with_capacity(0),
+        }
+    }
+
+    pub fn with_change(mut self, type_state: TypeState, change_id: u64) -> Self {
+        if let Some((_, last_change_id)) = self.types.iter_mut().find(|(ts, _)| ts == &type_state) {
+            *last_change_id = change_id;
+        } else {
+            self.types.push((type_state, change_id));
+        }
+        self
+    }
+
+    pub fn has_changes(&self) -> bool {
+        !self.types.is_empty()
+    }
 }
 
 impl From<ChangeId> for State {
@@ -135,6 +163,18 @@ impl serde::Serialize for State {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.to_string().as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for State {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // This is inefficient, but serde deserialize on State is only used in test mode
+        let value = format!("{}\"", <&str>::deserialize(deserializer)?);
+        let mut parser = Parser::new(value.as_bytes());
+        State::parse(&mut parser).map_err(|_| serde::de::Error::custom("invalid JMAP State"))
     }
 }
 

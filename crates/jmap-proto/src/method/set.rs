@@ -13,6 +13,7 @@ use crate::{
         reference::{MaybeReference, ResultReference},
         RequestProperty, RequestPropertyParser,
     },
+    response::Response,
     types::{
         acl::Acl,
         blob::BlobId,
@@ -20,8 +21,7 @@ use crate::{
         id::Id,
         keyword::Keyword,
         property::{HeaderForm, ObjectProperty, Property, SetProperty},
-        state::State,
-        type_state::TypeState,
+        state::{State, StateChange},
         value::{SetValue, SetValueMap, Value},
     },
 };
@@ -87,6 +87,9 @@ pub struct SetResponse {
     #[serde(rename = "notDestroyed")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
     pub not_destroyed: VecMap<Id, SetError>,
+
+    #[serde(skip)]
+    pub state_change: Option<StateChange>,
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
@@ -316,12 +319,11 @@ impl JsonObjectParser for Object<SetValue> {
                     | Property::Sender
                     | Property::SubParts
                     | Property::To
-                    | Property::UndoStatus => {
-                        SetValue::Value(Value::parse::<ObjectProperty, String>(
-                            parser.next_token()?,
-                            parser,
-                        )?)
-                    }
+                    | Property::UndoStatus
+                    | Property::Types => SetValue::Value(Value::parse::<ObjectProperty, String>(
+                        parser.next_token()?,
+                        parser,
+                    )?),
                     Property::Members => SetValue::Value(Value::parse::<ObjectProperty, Id>(
                         parser.next_token()?,
                         parser,
@@ -331,10 +333,7 @@ impl JsonObjectParser for Object<SetValue> {
                     } else {
                         Value::parse::<ObjectProperty, String>(parser.next_token()?, parser)
                     }?),
-                    Property::Types => SetValue::Value(Value::parse::<ObjectProperty, TypeState>(
-                        parser.next_token()?,
-                        parser,
-                    )?),
+
                     _ => {
                         parser.skip_token(parser.depth_array, parser.depth_dict)?;
                         SetValue::Value(Value::Null)
@@ -427,6 +426,47 @@ impl SetRequest<RequestArguments> {
 }
 
 impl SetResponse {
+    pub fn from_request<T>(
+        request: &SetRequest<T>,
+        max_objects: usize,
+    ) -> Result<Self, MethodError> {
+        let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
+        let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
+        let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
+            if let MaybeReference::Value(ids) = objs {
+                ids.len()
+            } else {
+                0
+            }
+        });
+        if n_create + n_update + n_destroy <= max_objects {
+            Ok(SetResponse {
+                account_id: if request.account_id.is_valid() {
+                    request.account_id.into()
+                } else {
+                    None
+                },
+                new_state: None,
+                old_state: None,
+                created: AHashMap::with_capacity(n_create),
+                updated: VecMap::with_capacity(n_update),
+                destroyed: Vec::with_capacity(n_destroy),
+                not_created: VecMap::new(),
+                not_updated: VecMap::new(),
+                not_destroyed: VecMap::new(),
+                state_change: None,
+            })
+        } else {
+            Err(MethodError::RequestTooLarge)
+        }
+    }
+
+    pub fn with_state(mut self, state: State) -> Self {
+        self.old_state = Some(state.clone());
+        self.new_state = Some(state);
+        self
+    }
+
     pub fn created(&mut self, id: String, document_id: u32) {
         self.created.insert(
             id,
@@ -450,5 +490,17 @@ impl SetResponse {
                 .with_property(property)
                 .with_description("Invalid property or value.".to_string()),
         );
+    }
+
+    pub fn update_created_ids(&self, response: &mut Response) {
+        for (user_id, obj) in &self.created {
+            if let Some(id) = obj.get(&Property::Id).as_id() {
+                response.created_ids.insert(user_id.clone(), *id);
+            }
+        }
+    }
+
+    pub fn has_changes(&self) -> bool {
+        !self.created.is_empty() || !self.updated.is_empty() || !self.destroyed.is_empty()
     }
 }

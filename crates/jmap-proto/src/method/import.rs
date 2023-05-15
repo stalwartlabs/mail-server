@@ -8,12 +8,14 @@ use crate::{
         reference::{MaybeReference, ResultReference},
         RequestProperty,
     },
+    response::Response,
     types::{
         blob::BlobId,
         date::UTCDate,
         id::Id,
         keyword::Keyword,
-        state::State,
+        property::Property,
+        state::{State, StateChange},
         value::{SetValueMap, Value},
     },
 };
@@ -52,6 +54,9 @@ pub struct ImportEmailResponse {
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
     pub not_created: VecMap<String, SetError>,
+
+    #[serde(skip)]
+    pub state_change: Option<StateChange>,
 }
 
 impl JsonObjectParser for ImportEmailRequest {
@@ -137,5 +142,15 @@ impl JsonObjectParser for ImportEmail {
         }
 
         Ok(request)
+    }
+}
+
+impl ImportEmailResponse {
+    pub fn update_created_ids(&self, response: &mut Response) {
+        for (user_id, obj) in &self.created {
+            if let Some(id) = obj.get(&Property::Id).as_id() {
+                response.created_ids.insert(user_id.clone(), *id);
+            }
+        }
     }
 }

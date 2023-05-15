@@ -4,7 +4,13 @@ use jmap_proto::{
         set::{SetError, SetErrorType},
     },
     method::import::{ImportEmailRequest, ImportEmailResponse},
-    types::{acl::Acl, collection::Collection, property::Property, state::State},
+    types::{
+        acl::Acl,
+        collection::Collection,
+        property::Property,
+        state::{State, StateChange},
+        type_state::TypeState,
+    },
 };
 use utils::map::vec_map::VecMap;
 
@@ -31,8 +37,14 @@ impl JMAP {
             None
         };
 
-        let mut created = VecMap::with_capacity(request.emails.len());
-        let mut not_created = VecMap::with_capacity(request.emails.len());
+        let mut response = ImportEmailResponse {
+            account_id: request.account_id,
+            new_state: old_state.clone(),
+            old_state: old_state.into(),
+            created: VecMap::with_capacity(request.emails.len()),
+            not_created: VecMap::new(),
+            state_change: None,
+        };
 
         'outer: for (id, email) in request.emails {
             // Validate mailboxIds
@@ -43,7 +55,7 @@ impl JMAP {
                 .map(|m| m.unwrap().document_id())
                 .collect::<Vec<_>>();
             if mailbox_ids.is_empty() {
-                not_created.append(
+                response.not_created.append(
                     id,
                     SetError::invalid_properties()
                         .with_property(Property::MailboxIds)
@@ -53,7 +65,7 @@ impl JMAP {
             }
             for mailbox_id in &mailbox_ids {
                 if !valid_mailbox_ids.contains(*mailbox_id) {
-                    not_created.append(
+                    response.not_created.append(
                         id,
                         SetError::invalid_properties()
                             .with_property(Property::MailboxIds)
@@ -61,7 +73,7 @@ impl JMAP {
                     );
                     continue 'outer;
                 } else if matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
-                    not_created.append(
+                    response.not_created.append(
                         id,
                         SetError::forbidden().with_description(format!(
                             "You are not allowed to add messages to mailbox {mailbox_id}."
@@ -75,7 +87,7 @@ impl JMAP {
             let raw_message = match self.blob_download(&email.blob_id, acl_token).await {
                 Ok(Some(raw_message)) => raw_message,
                 Ok(None) => {
-                    not_created.append(
+                    response.not_created.append(
                         id,
                         SetError::new(SetErrorType::BlobNotFound)
                             .with_description(format!("BlobId {} not found.", email.blob_id)),
@@ -105,10 +117,10 @@ impl JMAP {
                 .await
             {
                 Ok(email) => {
-                    created.append(id, email.into());
+                    response.created.append(id, email.into());
                 }
                 Err(MaybeError::Permanent(reason)) => {
-                    not_created.append(
+                    response.not_created.append(
                         id,
                         SetError::new(SetErrorType::InvalidEmail).with_description(reason),
                     );
@@ -119,16 +131,18 @@ impl JMAP {
             }
         }
 
-        Ok(ImportEmailResponse {
-            account_id: request.account_id,
-            new_state: if !created.is_empty() {
-                self.get_state(account_id, Collection::Email).await?
-            } else {
-                old_state.clone()
-            },
-            old_state: old_state.into(),
-            created,
-            not_created,
-        })
+        // Update state
+        if !response.created.is_empty() {
+            response.new_state = self.get_state(account_id, Collection::Email).await?;
+            if let State::Exact(change_id) = &response.new_state {
+                response.state_change = StateChange::new(account_id)
+                    .with_change(TypeState::Email, *change_id)
+                    .with_change(TypeState::Mailbox, *change_id)
+                    .with_change(TypeState::Thread, *change_id)
+                    .into()
+            }
+        }
+
+        Ok(response)
     }
 }

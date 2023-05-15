@@ -16,7 +16,6 @@ use super::{
     id::Id,
     keyword::Keyword,
     property::{HeaderForm, IntoProperty, ObjectProperty, Property},
-    type_state::TypeState,
 };
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -29,7 +28,6 @@ pub enum Value {
     Date(UTCDate),
     BlobId(BlobId),
     Keyword(Keyword),
-    TypeState(TypeState),
     List(Vec<Value>),
     Object(Object<Value>),
     #[default]
@@ -274,6 +272,13 @@ impl Value {
         }
     }
 
+    pub fn as_date(&self) -> Option<&UTCDate> {
+        match self {
+            Value::Date(d) => Some(d),
+            _ => None,
+        }
+    }
+
     pub fn try_cast_uint(&self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(*u),
@@ -319,12 +324,6 @@ impl IntoValue for Id {
 impl IntoValue for UTCDate {
     fn into_value(self) -> Value {
         Value::Date(self)
-    }
-}
-
-impl IntoValue for TypeState {
-    fn into_value(self) -> Value {
-        Value::TypeState(self)
     }
 }
 

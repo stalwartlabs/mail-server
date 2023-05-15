@@ -18,7 +18,7 @@ use crate::{
         validate::ValidateSieveScriptResponse,
     },
     request::{echo::Echo, method::MethodName, Call},
-    types::{id::Id, property::Property},
+    types::id::Id,
 };
 
 use self::serialize::serialize_hex;
@@ -69,29 +69,11 @@ impl Response {
         name: MethodName,
         method: impl Into<ResponseMethod>,
     ) {
-        // Add created ids
-        let method = method.into();
-        if !self.created_ids.is_empty() {
-            match &method {
-                ResponseMethod::Set(SetResponse { created, .. }) => {
-                    for (user_id, obj) in created {
-                        if let Some(id) = obj.get(&Property::Id).as_id() {
-                            self.created_ids.insert(user_id.clone(), *id);
-                        }
-                    }
-                }
-                ResponseMethod::ImportEmail(ImportEmailResponse { created, .. }) => {
-                    for (user_id, obj) in created {
-                        if let Some(id) = obj.get(&Property::Id).as_id() {
-                            self.created_ids.insert(user_id.clone(), *id);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        self.method_responses.push(Call { id, method, name });
+        self.method_responses.push(Call {
+            id,
+            method: method.into(),
+            name,
+        });
     }
 
     pub fn push_error(&mut self, id: String, err: MethodError) {

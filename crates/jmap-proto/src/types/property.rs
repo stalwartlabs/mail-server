@@ -523,7 +523,7 @@ impl JsonObjectParser for ObjectProperty {
         let mut shift = 0;
 
         while let Some(ch) = parser.next_unescaped()? {
-            if ch.is_ascii_alphabetic() {
+            if ch.is_ascii_alphanumeric() {
                 if first_char != 0 {
                     if shift < 128 {
                         hash |= (ch as u128) << shift;

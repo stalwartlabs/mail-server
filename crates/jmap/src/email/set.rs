@@ -14,6 +14,8 @@ use jmap_proto::{
         id::Id,
         keyword::Keyword,
         property::Property,
+        state::{State, StateChange},
+        type_state::TypeState,
         value::{MaybePatchValue, SetValue, Value},
     },
 };
@@ -971,10 +973,22 @@ impl JMAP {
             }
         }
 
-        if !changes.is_empty() {
-            response.new_state = self.commit_changes(account_id, changes).await?.into();
-        } else if !response.created.is_empty() {
-            response.new_state = self.get_state(account_id, Collection::Email).await?.into();
+        // Update state
+        if !changes.is_empty() || !response.created.is_empty() {
+            let new_state = if !changes.is_empty() {
+                self.commit_changes(account_id, changes).await?
+            } else {
+                self.get_state(account_id, Collection::Email).await?
+            };
+            if let State::Exact(change_id) = &new_state {
+                response.state_change = StateChange::new(account_id)
+                    .with_change(TypeState::Email, *change_id)
+                    .with_change(TypeState::Mailbox, *change_id)
+                    .with_change(TypeState::Thread, *change_id)
+                    .into();
+            }
+
+            response.new_state = new_state.into();
         }
 
         Ok(response)

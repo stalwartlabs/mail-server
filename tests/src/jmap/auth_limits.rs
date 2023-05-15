@@ -5,30 +5,19 @@ use jmap_client::{
     client::{Client, Credentials},
     mailbox::{self},
 };
-use jmap_proto::types::id::Id;
 
-pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
+use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create};
+
+pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running Authorization tests...");
 
     // Create test account
-    assert!(
-        server
-            .auth_db
-            .execute(
-                "INSERT OR REPLACE INTO users (login, secret, name) VALUES (?, ?, ?)",
-                vec![
-                    "jdoe@example.com".to_string(),
-                    "12345".to_string(),
-                    "John Doe".to_string()
-                ]
-                .into_iter()
-            )
-            .await
-    );
-    let account_id = Id::from(1u64).to_string();
+    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
+        .await
+        .to_string();
 
     // Wait for rate limit to be restored after running previous tests
-    //tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(
@@ -164,13 +153,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
         Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));
 
     // Destroy test accounts
-    let implement = "true";
-    /*admin_client
-        .set_default_account_id(Id::new(SUPERUSER_ID as u64))
-        .principal_destroy(&account_id)
-        .await
-        .unwrap();
-    admin_client.principal_destroy(&domain_id).await.unwrap();
-    server.store.principal_purge().unwrap();
-    server.store.assert_is_empty();*/
+    admin_client.set_default_account_id(&account_id);
+    destroy_all_mailboxes(admin_client).await;
+    server.store.assert_is_empty().await;
 }

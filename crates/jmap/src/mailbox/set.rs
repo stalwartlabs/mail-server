@@ -15,6 +15,8 @@ use jmap_proto::{
         collection::Collection,
         id::Id,
         property::Property,
+        state::StateChange,
+        type_state::TypeState,
         value::{MaybePatchValue, SetValue, Value},
     },
 };
@@ -95,16 +97,7 @@ impl JMAP {
                         .custom(builder);
                     changes.log_insert(Collection::Mailbox, document_id);
                     ctx.mailbox_ids.insert(document_id);
-                    self.store.write(batch.build()).await.map_err(|err| {
-                        tracing::error!(
-                        event = "error",
-                        context = "mailbox_set",
-                        account_id = account_id,
-                        error = ?err,
-                        "Failed to create mailbox(es).");
-                        MethodError::ServerPartialFail
-                    })?;
-
+                    self.write_batch(batch).await?;
                     ctx.set_response.created(id, document_id);
                 }
                 Err(err) => {
@@ -116,6 +109,14 @@ impl JMAP {
 
         // Process updates
         'update: for (id, object) in request.unwrap_update() {
+            // Make sure id won't be destroyed
+            if ctx.will_destroy.contains(&id) {
+                ctx.set_response
+                    .not_updated
+                    .append(id, SetError::will_destroy());
+                continue 'update;
+            }
+
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mut mailbox) = self
@@ -198,6 +199,7 @@ impl JMAP {
         }
 
         // Process deletions
+        let mut did_remove_emails = false;
         'destroy: for id in ctx.will_destroy {
             let document_id = id.document_id();
             // Internal folders cannot be deleted
@@ -242,6 +244,9 @@ impl JMAP {
                 .await?
             {
                 if on_destroy_remove_emails {
+                    // Flag removal for state change notification
+                    did_remove_emails = true;
+
                     // If the message is in multiple mailboxes, untag it from the current mailbox,
                     // otherwise delete it.
                     for message_id in message_ids {
@@ -427,6 +432,16 @@ impl JMAP {
 
         // Write changes
         if !changes.is_empty() {
+            let state_change =
+                StateChange::new(account_id).with_change(TypeState::Mailbox, changes.change_id);
+            ctx.set_response.state_change = if did_remove_emails {
+                state_change
+                    .with_change(TypeState::Email, changes.change_id)
+                    .with_change(TypeState::Thread, changes.change_id)
+            } else {
+                state_change
+            }
+            .into();
             ctx.set_response.new_state = self.commit_changes(account_id, changes).await?.into();
         }
 

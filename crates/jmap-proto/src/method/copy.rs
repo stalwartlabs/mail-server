@@ -9,7 +9,7 @@ use crate::{
     types::{
         blob::BlobId,
         id::Id,
-        state::State,
+        state::{State, StateChange},
         value::{SetValue, Value},
     },
 };
@@ -47,6 +47,9 @@ pub struct CopyResponse {
     #[serde(rename = "notCreated")]
     #[serde(skip_serializing_if = "VecMap::is_empty")]
     pub not_created: VecMap<Id, SetError>,
+
+    #[serde(skip)]
+    pub state_change: Option<StateChange>,
 }
 
 #[derive(Debug, Clone)]

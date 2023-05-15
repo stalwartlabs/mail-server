@@ -603,13 +603,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ["inbox", "sent", "spam"]
     );
 
-    let mut request = client.build();
-    request.query_mailbox().arguments().sort_as_tree(true);
-    let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
-    ids.reverse();
-    for id in ids {
-        client.mailbox_destroy(&id, true).await.unwrap();
-    }
+    destroy_all_mailboxes(client).await;
 
     server.store.assert_is_empty().await;
 }
@@ -656,6 +650,16 @@ fn build_create_query(
         if let Some(children) = mailbox.children {
             build_create_query(request, mailbox_map, children, create_mailbox_id.into());
         }
+    }
+}
+
+pub async fn destroy_all_mailboxes(client: &mut Client) {
+    let mut request = client.build();
+    request.query_mailbox().arguments().sort_as_tree(true);
+    let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
+    ids.reverse();
+    for id in ids {
+        client.mailbox_destroy(&id, true).await.unwrap();
     }
 }
 

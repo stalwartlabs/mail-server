@@ -30,7 +30,7 @@ impl JMAP {
             .map_or(true, |p| p.unwrap().contains(&Property::EmailIds));
         let mut response = GetResponse {
             account_id: Some(request.account_id),
-            state: self.get_state(account_id, Collection::Thread).await?,
+            state: self.get_state(account_id, Collection::Thread).await?.into(),
             list: Vec::with_capacity(ids.len()),
             not_found: vec![],
         };

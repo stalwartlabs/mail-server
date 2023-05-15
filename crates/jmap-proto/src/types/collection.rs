@@ -2,6 +2,8 @@ use std::fmt::{self, Display, Formatter};
 
 use utils::map::bitmap::BitmapItem;
 
+use super::type_state::TypeState;
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Collection {
@@ -54,6 +56,21 @@ impl From<Collection> for u8 {
 impl From<Collection> for u64 {
     fn from(collection: Collection) -> u64 {
         collection as u64
+    }
+}
+
+impl TryFrom<Collection> for TypeState {
+    type Error = ();
+
+    fn try_from(value: Collection) -> Result<Self, Self::Error> {
+        match value {
+            Collection::Email => Ok(TypeState::Email),
+            Collection::Mailbox => Ok(TypeState::Mailbox),
+            Collection::Thread => Ok(TypeState::Thread),
+            Collection::Identity => Ok(TypeState::Identity),
+            Collection::EmailSubmission => Ok(TypeState::EmailSubmission),
+            _ => Err(()),
+        }
     }
 }
 

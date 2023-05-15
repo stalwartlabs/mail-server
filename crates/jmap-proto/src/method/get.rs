@@ -37,7 +37,8 @@ pub struct GetResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_id: Option<Id>,
 
-    pub state: State,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<State>,
 
     pub list: Vec<Object<Value>>,
 
