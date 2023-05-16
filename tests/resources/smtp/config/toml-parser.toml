@@ -1,0 +1,61 @@
+[database]
+enabled = true # ignore
+ports = [ 8000, 8001, 8002 ] # ignore
+data = [ ["delta", "phi"], [3.14] ]
+temp_targets = { cpu = 79.5, case = 72.0 }
+
+[servers]
+"127.0.0.1" = "value" # ignore
+"character encoding" = "value"
+
+[servers.alpha]
+ip = "10.0.0.1"
+role = "frontend"
+
+[servers.beta]
+ip = "10.0.0.2"
+role = "backend"
+
+[[products]]
+name = "Hammer"
+sku = 738594937
+
+[[products]]  # empty table within the array
+
+[[products]] # ignore
+name = "Nail"
+sku = 284758393 # ignore
+color = "gray"
+
+[strings."my \"string\" test"]
+str1 = "I'm a string."
+str2 = "You can \"quote\" me."
+str3 = "Name\tTabs\nNew Line."
+lines = '''
+The first newline is
+trimmed in raw strings.
+All other whitespace
+is preserved.
+'''
+
+[arrays]
+integers = [ 1, 2, 3 ]
+colors = [ "red", "yellow", "green" ]
+nested_arrays_of_ints = [ [ 1, 2 ], [3, 4, 5] ]
+nested_mixed_array = [ [ 1, 2 ], ["a", "b", "c"] ]
+string_array = [ "all", 'strings', """are the same""", '''type''' ]
+
+# Mixed-type arrays are allowed
+numbers = [ 0.1, 0.2, 0.5, 1, 2, 5 ]
+integers2 = [
+  1, 2, 3 # this is ok
+]
+integers3 = [
+  4,
+  # comment in the middle
+  5, # this is ok
+]
+contributors = [
+  "Foo Bar <foo@example.com>" ,
+  { name = "Baz Qux", email = "bazqux@example.com", url = "https://example.com/bazqux" }
+]

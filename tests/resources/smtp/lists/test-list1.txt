@@ -1,0 +1,2 @@
+user1@domain.org
+user2@domain.org

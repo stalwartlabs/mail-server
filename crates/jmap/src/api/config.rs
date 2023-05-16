@@ -29,9 +29,6 @@ impl crate::Config {
             request_max_concurrent: settings
                 .property("jmap.protocol.request.max-concurrent")?
                 .unwrap_or(4),
-            request_max_concurrent_total: settings
-                .property("jmap.protocol.request.max-concurrent-total")?
-                .unwrap_or(4),
             get_max_objects: settings
                 .property("jmap.protocol.get.max-objects")?
                 .unwrap_or(500),

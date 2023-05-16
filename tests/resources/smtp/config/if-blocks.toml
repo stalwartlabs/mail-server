@@ -1,0 +1,40 @@
+durations = [
+    {if = "sender", eq = "jdoe", then = "5d"},
+    {any-of = [{if = "priority", eq = -1}, {if = "rcpt", starts-with = "jane"}], then = "1h"},
+    {else = false}
+]
+
+string-list = [
+    {if = "sender", eq = "jdoe", then = ["From", "To", "Date"]},
+    {any-of = [{if = "priority", eq = -1}, {if = "rcpt", starts-with = "jane"}], then = "Other-ID"},
+    {else = []}
+]
+
+string-list-bis = [
+    {if = "sender", eq = "jdoe", then = ["From", "To", "Date"]},
+    {any-of = [{if = "priority", eq = -1}, {if = "rcpt", starts-with = "jane"}], then = []},
+    {else = ["ID-Bis"]}
+]
+
+single-value = "hello world"
+
+bad-multi-value = [
+    {if = "sender", eq = "jdoe", then = 100},
+    {any-of = [{if = "priority", eq = -1}, {if = "rcpt", starts-with = "jane"}], then = [1, 2, 3]},
+    {else = 2}
+]
+
+bad-if-without-then = [
+    {if = "sender", eq = "jdoe"},
+    {else = 1}
+]
+
+bad-if-without-else = [
+    {if = "sender", eq = "jdoe", then = 1}
+]
+
+bad-multiple-else = [
+    {if = "sender", eq = "jdoe", then = 1},
+    {else = 1},
+    {else = 2}
+]

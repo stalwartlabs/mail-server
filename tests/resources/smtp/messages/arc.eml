@@ -1,0 +1,34 @@
+ARC-Seal: i=2; a=rsa-sha256; s=rsa; d=manchego.org; cv=pass;
+        b=wpAAy6QusmF4O8SeziNaKxXL6EleeBYxQ0HrXl2cDgzHLOvYG0N1Wpz0bpVbA8VgteD2X8XCW
+        yrdlZ5dIPTcCvgfLGLXLRTIcYUdKyfFh5IVEciaUOUsxlSRPpekENZKzdHFkL4j1mAAvpDNJ7Ft
+        OFIp0ku5dACn80g7D4cSEU0=;
+ARC-Message-Signature: i=2; a=rsa-sha256; s=rsa; d=manchego.org; c=relaxed/relaxed;
+        h=Subject:To:From:DKIM-Signature; t=1674137914; bh=4ET7siw2kYV7jcN+fzsuYng/
+        sr/BmIzzEjh43dVAv40=; b=V3tMBI1RsyJJY7HUABcebHf0mDJ9odbPm++ZMY5AsCaUYNoSsAm
+        wCf5wYlJQ26KmsluOYXoPwML0a/xvnMXPv6Rs4Z9k4IwzpzhGLsijDXymGPsW3hgq/6ivVTPkwU
+        +pGSCC70rHNrAFFk5P67Ly0tbGYjJ0wZVHBzqL8IJBXK4=;
+ARC-Authentication-Results: i=2; manchego.org;
+        dkim=pass header.d=manchego.org header.s=rsa header.b=IN4oMvqq
+Authentication-Results: manchego.org;
+        dkim=pass header.d=manchego.org header.s=rsa header.b=IN4oMvqq
+ARC-Seal: i=1; a=ed25519-sha256; s=ed; d=scamorza.org; cv=none;
+        b=k/MAHECtaer9v4oczoe00a6XMjrxU4QUVVPlZI8XYegbiOgDSaeR6IrwBSKVcN0ELYU+HXlNW
+        RuUGkRuZXQODA==;
+ARC-Message-Signature: i=1; a=ed25519-sha256; s=ed; d=scamorza.org; c=relaxed/relaxed;
+        h=Subject:To:From:DKIM-Signature; t=1674137914; bh=4ET7siw2kYV7jcN+fzsuYng/
+        sr/BmIzzEjh43dVAv40=; b=ZVPqB/5+mbOEKIgBsq+S71Sfj2JZUlGmYEA0Ygbj0S1VmTAnsVu
+        FQSInMY4/qcIeqU23BtzMgCFVZfAg5i3zDw==;
+ARC-Authentication-Results: i=1; scamorza.org;
+        dkim=pass header.d=manchego.org header.s=rsa header.b=IN4oMvqq
+Authentication-Results: scamorza.org;
+        dkim=pass header.d=manchego.org header.s=rsa header.b=IN4oMvqq
+DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=manchego.org; c=relaxed/relaxed;
+        h=Subject:To:From; t=1674137914; bh=4ET7siw2kYV7jcN+fzsuYng/sr/BmIzzEjh43dV
+        Av40=; b=IN4oMvqqxWCEyC38F7fZecYJcnq+7zP3G/xjcI64M3/Dzys2lmQeLYAXipwwYvEa5a
+        VwCcJ7XUX0kSxtr6igC8FIJEDI6UmdvJgMEj/hnEjXR8m4GPrphigjJy7hagaQymBT9WhlzsDPI
+        QRlUVoW0y5v1aDp3KF9bLVCKTELJPM=;
+From: queso@manchego.org
+To: affumicata@scamorza.org
+Subject: Say cheese
+
+We need to settle which one of us is tastier.

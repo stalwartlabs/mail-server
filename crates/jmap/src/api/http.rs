@@ -242,10 +242,6 @@ impl SessionManager for super::SessionManager {
             }
         });
     }
-
-    fn max_concurrent(&self) -> u64 {
-        self.inner.config.request_max_concurrent_total
-    }
 }
 
 async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + 'static>(

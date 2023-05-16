@@ -1,0 +1,168 @@
+[envelope]
+rcpt-domain = "example.org"
+rcpt = "user@example.org"
+sender-domain = "foo.net"
+sender = "bill@foo.net"
+local-ip = "192.168.9.3"
+remote-ip = "A:B:C::D:E"
+mx = "mx.somedomain.com"
+authenticated-as = "john@foobar.org"
+priority = -4
+listener = 123
+helo-domain = "hi-domain.net"
+
+[rule]
+"eq-true" = {if = "rcpt-domain", eq = "example.org"}
+"eq-false" = {if = "rcpt-domain", eq = "example.com"}
+"listener-eq-true" = {if = "listener", eq = "smtp"}
+"listener-eq-false" = {if = "listener", eq = "smtps"}
+"ip-eq-true" = {if = "local-ip", eq = "192.168.9.0/24"}
+"ip-eq-false" = {if = "remote-ip", eq = "A:B:C::D:F/128"}
+"ne-true" = {if = "authenticated-as", ne = ""}
+"ne-false" = {if = "authenticated-as", ne = "john@foobar.org"}
+"starts-with-true" = {if = "mx", starts-with = "mx.some"}
+"starts-with-false" = {if = "mx", starts-with = "enchilada"}
+"ends-with-true" = {if = "sender", ends-with = "@foo.net"}
+"ends-with-false" = {if = "sender", ends-with = "chimichanga"}
+"in-list-true" = {if = "sender-domain", in-list = "list/domains"}
+"in-list-false" = {if = "rcpt-domain", in-list = "list/domains"}
+"not-in-list-true" = {if = "rcpt-domain", not-in-list = "list/domains"}
+"not-in-list-false" = {if = "sender-domain", not-in-list = "list/domains"}
+"regex-true" = {if = "sender", matches = "^(.+)@(.+)$"}
+"regex-false" = {if = "mx", matches = "/^\\S+@\\S+\\.\\S+$/"}
+
+"any-of-true" = { any-of = [
+    {if = "authenticated-as", ne = "john@foobar.org"},
+    {if = "rcpt-domain", eq = "example.org"},
+    {if = "mx", starts-with = "mx.some"},
+]}
+"any-of-false" = { any-of = [
+    {if = "authenticated-as", eq = "something else"},
+    {if = "rcpt-domain", eq = "something else"},
+    {if = "mx", starts-with = "something else"},
+]}
+"all-of-true" = { all-of = [
+    {if = "rcpt-domain", eq = "example.org"},
+    {if = "listener", eq = "smtp"},
+    {if = "mx", starts-with = "mx.some"}
+]}
+"all-of-false" = { all-of = [
+    {if = "rcpt-domain", eq = "example.org"},
+    {if = "listener", eq = "smtp"},
+    {if = "mx", starts-with = "something else"}
+]}
+"none-of-true" = { none-of = [
+    {if = "authenticated-as", eq = "something else"},
+    {if = "rcpt-domain", eq = "something else"},
+    {if = "mx", starts-with = "something else"},
+]}
+"none-of-false" = { none-of = [
+    {if = "rcpt-domain", eq = "example.org"},
+    {if = "listener", eq = "smtp"},
+    {if = "mx", starts-with = "mx.some"}
+]}
+nested-any-of-true = { any-of = [
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "something else"}
+    ]},
+    { none-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { any-of = [
+        {if = "authenticated-as", ne = "john@foobar.org"},
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "mx", starts-with = "mx.some"},
+    ]}
+]}
+nested-any-of-false = { any-of = [
+    { none-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "something else"}
+    ]},
+    { any-of = [
+        {if = "authenticated-as", eq = "something else"},
+        {if = "rcpt-domain", eq = "something else"},
+        {if = "mx", starts-with = "something else"},
+    ]}
+]}
+nested-all-of-true = { all-of = [
+    { any-of = [
+        {if = "authenticated-as", ne = "john@foobar.org"},
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "mx", starts-with = "mx.some"},
+    ]},
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { none-of = [
+        {if = "authenticated-as", eq = "something else"},
+        {if = "rcpt-domain", eq = "something else"},
+        {if = "mx", starts-with = "something else"},
+    ]}
+]}
+nested-all-of-false = { all-of = [
+    { any-of = [
+        {if = "authenticated-as", ne = "john@foobar.org"},
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "mx", starts-with = "mx.some"},
+    ]},
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { none-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]}
+]}
+nested-none-of-true = { none-of = [
+    { none-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "something else"}
+    ]},
+    { any-of = [
+        {if = "authenticated-as", eq = "something else"},
+        {if = "rcpt-domain", eq = "something else"},
+        {if = "mx", starts-with = "something else"},
+    ]}
+]}
+nested-none-of-false = { none-of = [
+    { any-of = [
+        {if = "authenticated-as", ne = "john@foobar.org"},
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "mx", starts-with = "mx.some"},
+    ]},
+    { all-of = [
+        {if = "rcpt-domain", eq = "example.org"},
+        {if = "listener", eq = "smtp"},
+        {if = "mx", starts-with = "mx.some"}
+    ]},
+    { none-of = [
+        {if = "authenticated-as", eq = "something else"},
+        {if = "rcpt-domain", eq = "something else"},
+        {if = "mx", starts-with = "something else"},
+    ]}
+]}
+
+[list]
+domains = ["mydomain1.org", "foo.net", "otherdomain.net"]

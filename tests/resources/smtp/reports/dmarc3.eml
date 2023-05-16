@@ -1,0 +1,52 @@
+Received: from mail.stalw.art ([mail.stalw.art])
+	by 127.0.0.1 (Stalwart JMAP) with LMTP;
+	Tue, 08 Nov 2022 23:26:41 +0000
+Received: from relay7.m.smailru.net (relay7.m.smailru.net [94.100.178.51])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits))
+	(No client certificate requested)
+	by mail.stalw.art (Postfix) with ESMTPS id DD4337CC09
+	for <domains@stalw.art>; Tue,  8 Nov 2022 23:26:38 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=corp.mail.ru; s=mail4;
+	h=Date:Message-ID:To:From:Subject:MIME-Version:Content-Type:From:Subject:Content-Type:Content-Transfer-Encoding:To:Cc; bh=fooa0+RBCZvyV2mP8Nx/UsLQ5RhazFg+SPGNtxZrCX0=;
+	t=1667950001;x=1668040001; 
+	b=J9aMEkY9eVdOxjkNxaPFJ2Yk+/NCux9uOZl3iJXI0hEFaeYj9g7l+WtmXczk+YvgH3yhVhtvONUEYFsValRWWCAfmePm429N3mSuclVktk7t6RPJ4O5EcMjwrD9882vmX1xpI7ecPOzd5AD67HPt5SIA1RIa5injaOI5CWUXBBa5c0zDfmciyANAiDw0gm1axEMK4AUc61txPsX7H1qRq/FxGNITnnpYdqkkT2lR8sTl5HPwTjEsw4sYGKr5SiMpROhhbLZTM8RpojkP73bmw3UBZ9FI8iKApJUFB8i9tu0hjzHkev4uoDXgOXFYs/RAI1JkCWEp2Rjb3LpTSHT6cA==;
+Received: from [10.161.4.115] (port=60844 helo=60)
+	by relay7.m.smailru.net with esmtp (envelope-from <dmarc_support@corp.mail.ru>)
+	id 1osXzK-0007VC-BD
+	for domains@stalw.art; Wed, 09 Nov 2022 02:26:38 +0300
+Content-Type: multipart/mixed; boundary="===============5640625649776607409=="
+MIME-Version: 1.0
+Subject: Report Domain: stalw.art; Submitter: Mail.Ru;
+ Report-ID: 28551467700969547611667865600
+From: dmarc_support@corp.mail.ru
+To: domains@stalw.art
+Message-ID: <dmarc-1667949998@corp.mail.ru>
+Date: Wed, 09 Nov 2022 02:26:38 +0300
+Auto-Submitted: auto-generated
+Authentication-Results: relay7.m.smailru.net; auth=pass smtp.auth=dmarc_support@corp.mail.ru smtp.mailfrom=dmarc_support@corp.mail.ru; iprev=pass policy.iprev=10.161.4.115
+
+--===============5640625649776607409==
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhbiBhZ2dyZWdhdGUgcmVwb3J0IGZyb20gTWFpbC5SdS4=
+
+--===============5640625649776607409==
+Content-Type: application/gzip
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="mail.ru!stalw.art!1667865600!1667952000.xml.gz"
+
+H4sICK7lamMC/21haWwucnUhc3RhbHcuYXJ0ITE2Njc4NjU2MDAhMTY2Nzk1MjAwMC54bWwAdVNB
+cqMwELzvK3LzKQhYg01qouwHctkPULIYjMogqSThJL/fEQSC18kFzbRmWt0jAS/vQ/9wReeV0c+7
+LEl3D6ilaZQ+P+/G0D4edy/8F7SIzUnICweH1rhQDxhEI4LgYNy51mJA/ipUn/wdga0I4EAYbwbh
+ZO1HGzv/SONsEvHEUe1cAfgenKil0UHIUCvdGt6FYJ8Y67Bfy1lcHyNCjfcdizbV8PxYFNm+PBzS
+tCqrYn8os6wsD8eyKNMU2FchkAmsndBnknvCs9J8WzgjgLqZ4KrI0wjHHNi2ld3NxZpeyY/ajqde
++Q7jUYb0a+6D6N8S4QIxzAiI5qIG7oDNAQhv2ymNK1iujUZgloNfYgrAysCzKCcG9L070CENO67m
+jVrN6CTWyvIiTfL8d5LlVZJVe+Jad0CaURMpsDlYTOBV9CO5jSaUt8arQO/lU8oWgUl/S9dE+GQl
+OpjzyQu7Z2STPNWgDqpV9BQ5dCgadHXrzLAd1xYGdtMhxtDVDv3YB/+pYpm3wtAm9Ca/xu2xRxmM
+m7bI7JrDzMCt8D5e6ZQsTm5Iv7nEleWKvboo76zQef4N+zyO/9in6fysWBqLfIjOiXBKftA6T/l2
+HGx5CGz9j/8BQWPZIPkDAAA=
+--===============5640625649776607409==--

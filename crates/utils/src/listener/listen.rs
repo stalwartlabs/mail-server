@@ -27,7 +27,7 @@ impl Server {
             hostname: self.hostname,
             tls_acceptor: self.tls.map(|config| TlsAcceptor::from(Arc::new(config))),
             is_tls_implicit: self.tls_implicit,
-            limiter: ConcurrencyLimiter::new(manager.max_concurrent()),
+            limiter: ConcurrencyLimiter::new(self.max_connections),
             shutdown_rx,
         });
 

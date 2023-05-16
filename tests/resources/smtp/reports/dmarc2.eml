@@ -1,0 +1,68 @@
+Received: from mail.stalw.art ([mail.stalw.art])
+	by 127.0.0.1 (Stalwart JMAP) with LMTP;
+	Thu, 10 Nov 2022 03:27:19 +0000
+Received: from mx0.backschues.net (lnxs001.backschues.net [85.183.142.13])
+	(using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits)
+	 key-exchange X25519 server-signature RSA-PSS (2048 bits) server-digest SHA256)
+	(No client certificate requested)
+	by mail.stalw.art (Postfix) with ESMTPS id 6DD117CC0B
+	for <domains@stalw.art>; Thu, 10 Nov 2022 03:27:16 +0000 (UTC)
+Received: from mx0.backschues.net (localhost [127.0.0.1])
+	by mx0.backschues.net with SMTP id 4N76hg4lNgz9ryP
+	for <domains@stalw.art>; Thu, 10 Nov 2022 04:27:15 +0100 (CET)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=backschues.net;
+	s=mail-2014-01; t=1668050835;
+	h=from:from:reply-to:subject:subject:date:date:message-id:message-id:
+	 to:to:cc:mime-version:mime-version:content-type:content-type;
+	bh=LTj1tdFz9JQFL/mVJASN0b9hGcolcCtY5v0bhnChJYY=;
+	b=AtRegYc51PTYqDOy/6fB4xETTWAbVc2ivf8AfF4ygu3+6+oqBPyloTuOnEt7xYmjLFnll/
+	SMZFFpRETsMlkiVg/1O0VpPRpIpiTbh4dwtUrRyo1Uw/cDJv5auz4rBMxcRNnDKypHwUKs
+	BUahHWsVKH/TL5SzV79kqyjlYAs1HdJvS+wRINYBaptkeT6UeHGZakL21NnQUdOGt0fj4y
+	eJvWVtCYHZ5DUJ8K8h2W1NlTAWP8nTBoQVVDQrI5Zi1AEvnUWw+H7E8d/q2cF756/IBYso
+	rT56D3PYo2iuSt3aIBth1wL7/GJwc6N4JHcNpJ9XPV6xQbt+lm2b3+W59osL0Q==
+DKIM-Signature: v=1; a=ed25519-sha256; c=relaxed/relaxed; d=backschues.net;
+	s=ed25519-mail-2018-10; t=1668050835;
+	h=from:from:reply-to:subject:subject:date:date:message-id:message-id:
+	 to:to:cc:mime-version:mime-version:content-type:content-type;
+	bh=LTj1tdFz9JQFL/mVJASN0b9hGcolcCtY5v0bhnChJYY=;
+	b=y7d79OWWCrDX40k91FoBdGnUcrjN7xvWYyqskPfQmMoaSqFNSlTHH8gMXC/vXwiYIP3Oxp
+	d/hVvEuIIQBlwMDQ==
+From: "DMARC Aggregate Report" <noreply-dmarc-support@backschues.net>
+To: domains@stalw.art
+Subject: Report Domain: stalw.art
+	Submitter: backschues.net
+	Report-ID: stalw.art.1667948400.1668034800
+Date: Thu, 10 Nov 2022 03:27:02 GMT
+MIME-Version: 1.0
+Message-ID: <afe541eab3ec091f@backschues.net>
+Content-Type: multipart/mixed;
+	boundary="----=_NextPart_84e1fdd0-b285-4922-9fc7-88b070204303"
+
+This is a multipart message in MIME format.
+
+------=_NextPart_84e1fdd0-b285-4922-9fc7-88b070204303
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate report from backschues.net.
+
+Report domain: stalw.art
+Submitter: backschues.net
+Report ID: stalw.art.1667948400.1668034800
+
+------=_NextPart_84e1fdd0-b285-4922-9fc7-88b070204303
+Content-Type: application/gzip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+	filename="backschues.net!stalw.art!1667948400!1668034800.xml.gz"
+
+H4sIAAAAAAAAA5VUsXLbMAzd/RU6D9ksSo6b2heG6dKOndJZR5OQzYtEsiSVNH9fUqQoqXWHT
+gIfgAfgASf8/KvvijcwVij5tK3LaluAZIoLeXna/nj5tjtui2eywS0AP1P2SjZFgQ1oZVzTg6
+OcOhowjypzaSTtgdz9HJR7DNGWXQew5fevLxhld4yGnoqOSOW5uo8d76lhOzvoQPxlkSrBYRR
+jY16qLTixjnbvJTWurB8ePp8Ox0NVBfNY3R+OVYXRHBpTfa/QGCovqQcPneEiJJnzMYrI5AfJ
+yZIyvCMZWrPlaktRsFadYB+NHs6dsFfIjSg/kJwH8GQRiW7KX0VPDEbRSKDV7YiFb4S0l08CR
+jq97QTYCdHMkTr0HYyxy7878ooyZXhcrHqfuNRgGDRCk09Vud/fl/X+VNangyfPnhjJ1CB9FY
+yikQrHMvBGu8HrxLOgXFitrHD+3FKzSyRHhblbv3TvzhKME7YJnlVAt2r5dcRRsOAgnWiFP/G
+UcAXKwTStUf1yBUt4ZPgjE9PBXRsDdujcRLVqLu1QgGtLf+zrpY6XG1KJptaGaxkf0y0Fnpts
+/7iRmS7KcYNukxX7zwbjWtaMicaf30qEEBaPB6P8h/gNNHLX4VQEAAA=
+------=_NextPart_84e1fdd0-b285-4922-9fc7-88b070204303--

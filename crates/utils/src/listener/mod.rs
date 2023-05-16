@@ -37,5 +37,4 @@ pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
 
 pub trait SessionManager: Sync + Send + 'static + Clone {
     fn spawn(&self, session: SessionData<TcpStream>);
-    fn max_concurrent(&self) -> u64;
 }

@@ -1,0 +1,25 @@
+ARC-Seal: i=1; a=rsa-sha256; s=rsa; d=manchego.org; cv=fail;
+        b=wpAAy6QusmF4O8SeziNaKxXL6EleeBYxQ0HrXl2cDgzHLOvYG0N1Wpz0bpVbA8VgteD2X8XCW
+        yrdlZ5dIPTcCvgfLGLXLRTIcYUdKyfFh5IVEciaUOUsxlSRPpekENZKzdHFkL4j1mAAvpDNJ7Ft
+        OFIp0ku5dACn80g7D4cSEU0=;
+ARC-Message-Signature: i=1; a=rsa-sha256; s=rsa; d=manchego.org; c=relaxed/relaxed;
+        h=Subject:To:From:DKIM-Signature; t=1674137914; bh=4ET7siw2kYV7jcN+fzsuYng/
+        sr/BmIzzEjh43dVAv40=; b=V3tMBI1RsyJJY7HUABcebHf0mDJ9odbPm++ZMY5AsCaUYNoSsAm
+        wCf5wYlJQ26KmsluOYXoPwML0a/xvnMXPv6Rs4Z9k4IwzpzhGLsijDXymGPsW3hgq/6ivVTPkwU
+        +pGSCC70rHNrAFFk5P67Ly0tbGYjJ0wZVHBzqL8IJBXK4=;
+ARC-Authentication-Results: i=1; manchego.org;
+        dkim=pass header.d=manchego.org header.s=rsa header.b=IN4oMvqq
+DKIM-Signature: v=1; a=rsa-sha256; s=default; d=example.com; c=relaxed/relaxed; r=y;
+        h=Subject:To:From; t=1674122129; bh=Xcxymouf0VhlJ7c/vHLAM3LPTUR4LKFKX7PRNni
+        WCEs=; b=m5lYqx81xqAIo4ZBC9FDiFIBrRnnep+taSsutc5MkbBQvf9/Lb54AXHhruEdO2EGkG
+        xUxL1c8QDH3eLz84fPTUgZue84tAsAa0q4gJFIYM5q2/GJvJ6cBvsXKZj82FjRTIz4wlLjzkW7p
+        NdR9C5CID2PO4sW+GymS45F8hwqSj4=;
+DKIM-Signature: v=1; a=ed25519-sha256; s=ed; d=example.com; c=relaxed/relaxed;
+        h=Subject:To:From; t=1674122129; bh=Xcxymouf0VhlJ7c/vHLAM3LPTUR4LKFKX7PRNni
+        WCEs=; b=t8z1AsaxeWek+gMSVojbs2QJu+orzeR4CiHVquJYvXzv+Eb52Wq0fEmaOxoyY1teVL
+        Odp57Vq/zTLjMMZ2hbBQ==;
+From: bill@example.com
+To: jdoe@example.com
+Subject: TPS Report
+
+I'm going to need those TPS reports ASAP. So, if you could do that, that'd be great.

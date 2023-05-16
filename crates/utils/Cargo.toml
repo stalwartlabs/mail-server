@@ -11,6 +11,8 @@ tokio = { version = "1.23", features = ["net", "macros"] }
 tokio-rustls = { version = "0.24.0"}
 serde = { version = "1.0", features = ["derive"]}
 tracing = "0.1"
+mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
+smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

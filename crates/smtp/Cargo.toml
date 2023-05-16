@@ -1,0 +1,62 @@
+[package]
+name = "smtp"
+description = "Stalwart SMTP Server"
+authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
+repository = "https://github.com/stalwartlabs/smtp-server"
+homepage = "https://stalw.art/smtp"
+keywords = ["smtp", "email", "mail", "server"]
+categories = ["email"]
+license = "AGPL-3.0-only"
+version = "0.1.1"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+utils = { path =  "../utils" }
+mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
+mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] } 
+smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
+sieve-rs = { git = "https://github.com/stalwartlabs/sieve" }
+ahash = { version = "0.8" }
+rustls = "0.21.0"
+rustls-pemfile = "1.0"
+tokio = { version = "1.23", features = ["full"] }
+tokio-rustls = { version = "0.24.0"}
+webpki-roots = { version = "0.23.0"}
+hyper = { version = "1.0.0-rc.3", features = ["server", "http1", "http2"] }
+http-body-util = "0.1.0-rc.2"
+form_urlencoded = "1.1.0"
+sha1 = "0.10"
+sha2 = "0.10.6"
+rayon = "1.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tracing-opentelemetry = "0.18.0"
+opentelemetry = { version = "0.18.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.11.0", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
+opentelemetry-semantic-conventions = { version = "0.10.0" }
+parking_lot = "0.12"
+regex = "1.7.0"
+dashmap = "5.4"
+blake3 = "1.3"
+lru-cache = "0.1.2"
+rand = "0.8.5"
+x509-parser = "0.15.0"
+sqlx = { version = "0.7.0-alpha.3", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "blocking"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+num_cpus = "1.15.0"
+
+[target.'cfg(unix)'.dependencies]
+privdrop = "0.5.3"
+
+[features]
+test_mode = []
+
+#[[bench]]
+#name = "hash"
+#harness = false

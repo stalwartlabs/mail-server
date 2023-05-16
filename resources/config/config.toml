@@ -1,0 +1,470 @@
+[server]
+hostname = "__HOST__"
+#greeting = "Stalwart SMTP at your service"
+protocol = "smtp"
+
+[server.run-as]
+user = "stalwart-smtp"
+group = "stalwart-smtp"
+
+[server.listener."smtp"]
+bind = ["0.0.0.0:25"]
+max-connections = 8192
+
+[server.listener."submission"]
+bind = ["0.0.0.0:587"]
+max-connections = 8192
+
+[server.listener."submissions"]
+bind = ["0.0.0.0:465"]
+max-connections = 8192
+tls.implicit = true
+
+
+[server.listener."management"]
+bind = ["127.0.0.1:8686"]
+protocol = "http"
+
+[server.tls]
+enable = true
+implicit = false
+timeout = "1m"
+certificate = "default"
+#sni = [{subject = "", certificate = ""}]
+#protocols = ["TLSv1.2", TLSv1.3"]
+#ciphers = []
+ignore-client-order = true
+
+[server.socket]
+reuse-addr = true
+#reuse-port = true
+backlog = 1024
+#ttl = 3600
+#send-buffer-size = 65535
+#recv-buffer-size = 65535
+#linger = 1
+#tos = 1
+
+[global]
+shared-map = {shard = 32, capacity = 10}
+#thread-pool = 8
+
+#[global.tracing]
+#method = "stdout"
+#level = "trace"
+
+#[global.tracing]
+#method = "open-telemetry"
+#transport = "http"
+#endpoint = "https://127.0.0.1/otel"
+#headers = ["Authorization: <place_auth_here>"]
+#level = "debug"
+
+[global.tracing]
+method = "log"
+path = "/usr/local/stalwart-smtp/logs"
+prefix = "smtp.log"
+rotate = "daily"
+level = "info"
+
+[session]
+timeout = "5m"
+transfer-limit = 262144000 # 250 MB
+duration = "10m"
+
+[session.connect]
+#script = "connect.sieve"
+
+[session.ehlo]
+require = true
+reject-non-fqdn = [ { if = "listener", eq = "smtp", then = true},
+                    { else = false } ]
+#script = "ehlo"
+
+[session.extensions]
+pipelining = true
+chunking = true
+requiretls = true
+no-soliciting = ""
+dsn = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
+future-release = [ { if = "authenticated-as", ne = "", then = "7d"},
+                   { else = false } ]
+deliver-by = [ { if = "authenticated-as", ne = "", then = "15d"},
+               { else = false } ]
+mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
+                { else = false } ]
+
+[session.auth]
+mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
+               { else = [] } ]
+lookup = [ { if = "listener", ne = "smtp", then = "remote/imap" }, 
+           { else = false } ]
+require = [ { if = "listener", ne = "smtp", then = true},
+            { else = false } ]
+
+[session.auth.errors]
+total = 3
+wait = "5s"
+
+[session.mail]
+#script = "mail-from"
+
+[session.rcpt]
+#script = "rcpt-to"
+relay = [ { if = "authenticated-as", ne = "", then = true }, 
+          { else = false } ]
+max-recipients = 25
+
+[session.rcpt.lookup]
+domains = "list/domains"
+addresses = "remote/lmtp"
+vrfy = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
+         { else = false } ]
+expn = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
+         { else = false } ]
+
+[session.rcpt.errors]
+total = 5
+wait = "5s"
+
+[session.data]
+#script = "data"
+
+#[session.data.pipe."spam-assassin"]
+#command = "spamc"
+#arguments = []
+#timeout = "10s"
+
+[session.data.limits]
+messages = 10
+size = 104857600
+received-headers = 50
+
+[session.data.add-headers]
+received = [ { if = "listener", eq = "smtp", then = true }, 
+             { else = false } ]
+received-spf = [ { if = "listener", eq = "smtp", then = true }, 
+                 { else = false } ]
+auth-results = [ { if = "listener", eq = "smtp", then = true }, 
+                 { else = false } ]
+message-id = [ { if = "listener", eq = "smtp", then = false }, 
+               { else = true } ]
+date = [ { if = "listener", eq = "smtp", then = false }, 
+         { else = true } ]
+return-path = false
+
+[[session.throttle]]
+#match = {if = "remote-ip", eq = "10.0.0.1"}
+key = ["remote-ip"]
+concurrency = 5
+#rate = "5/1h"
+
+[[session.throttle]]
+key = ["sender-domain", "rcpt"]
+rate = "25/1h"
+
+[auth.dnsbl]
+verify = [ { if = "listener", eq = "smtp", then = ["ip", "iprev", "ehlo", "return-path", "from"] }, 
+           { else = [] } ]
+[auth.dnsbl.lookup]
+ip = ["zen.spamhaus.org", "bl.spamcop.net", "b.barracudacentral.org"]
+domain = ["dbl.spamhaus.org"]
+
+[auth.iprev]
+verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+           { else = "disable" } ]
+
+[auth.dkim]
+verify = "relaxed"
+sign = [ { if = "listener", ne = "smtp", then = ["rsa"] }, 
+         { else = [] } ]
+
+[auth.spf.verify]
+ehlo = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+         { else = "disable" } ]
+mail-from = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+              { else = "disable" } ]
+
+[auth.arc]
+verify = "relaxed"
+seal = ["rsa"]
+
+[auth.dmarc]
+verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+           { else = "disable" } ]
+
+[queue]
+path = "/usr/local/stalwart-smtp/queue"
+hash = 64
+
+[queue.schedule]
+retry = ["2m", "5m", "10m", "15m", "30m", "1h", "2h"]
+notify = ["1d", "3d"]
+expire = "5d"
+
+[queue.outbound]
+#hostname = "__HOST__"
+next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "lmtp" }, 
+             { else = false } ]
+ip-strategy = "ipv4-then-ipv6"
+
+[queue.outbound.tls]
+dane = "optional"
+mta-sts = "optional"
+starttls = "require"
+
+#[queue.outbound.source-ip]
+#v4 = ["10.0.0.10", "10.0.0.11"]
+#v6 = ["a::b", "a::c"]
+
+[queue.outbound.limits]
+mx = 7
+multihomed = 2
+
+[queue.outbound.timeouts]
+connect = "3m"
+greeting = "3m"
+tls = "2m"
+ehlo = "3m"
+mail-from = "3m"
+rcpt-to = "3m"
+data = "10m"
+mta-sts = "2m"
+
+[[queue.quota]]
+#match = {if = "sender-domain", eq = "foobar.org"}
+#key = ["rcpt"]
+messages = 100000
+size = 10737418240 # 10gb
+
+[[queue.throttle]]
+key = ["rcpt-domain"]
+#rate = "100/1h"
+concurrency = 5
+
+[resolver]
+type = "system"
+#preserve-intermediates = true
+concurrency = 2
+timeout = "5s"
+attempts = 2
+try-tcp-on-error = true
+
+[resolver.cache]
+txt = 2048
+mx = 1024
+ipv4 = 1024
+ipv6 = 1024
+ptr = 1024
+tlsa = 1024
+mta-sts = 1024
+
+[report]
+path = "/usr/local/stalwart-smtp/reports"
+hash = 64
+#submitter = "mx.domain.org"
+
+[report.analysis]
+addresses = ["dmarc@*", "abuse@*"]
+forward = true
+#store = "/usr/local/stalwart-smtp/incoming"
+
+[report.dsn]
+from-name = "Mail Delivery Subsystem"
+from-address = "MAILER-DAEMON@__DOMAIN__"
+sign = ["rsa"]
+
+[report.dkim]
+from-name = "Report Subsystem"
+from-address = "noreply-dkim@__DOMAIN__"
+subject = "DKIM Authentication Failure Report"
+sign = ["rsa"]
+send = "1/1d"
+
+[report.spf]
+from-name = "Report Subsystem"
+from-address = "noreply-spf@__DOMAIN__"
+subject = "SPF Authentication Failure Report"
+send = "1/1d"
+sign = ["rsa"]
+
+[report.dmarc]
+from-name = "Report Subsystem"
+from-address = "noreply-dmarc@__DOMAIN__"
+subject = "DMARC Authentication Failure Report"
+send = "1/1d"
+sign = ["rsa"]
+
+[report.dmarc.aggregate]
+from-name = "DMARC Report"
+from-address = "noreply-dmarc@__DOMAIN__"
+org-name = "__DOMAIN__"
+#contact-info = ""
+send = "daily"
+max-size = 26214400 # 25mb
+sign = ["rsa"]
+
+[report.tls.aggregate]
+from-name = "TLS Report"
+from-address = "noreply-tls@__DOMAIN__"
+org-name = "__DOMAIN__"
+#contact-info = ""
+send = "daily"
+max-size = 26214400 # 25 mb
+sign = ["rsa"]
+
+[signature."rsa"]
+#public-key = "file:///usr/local/stalwart-smtp/etc/certs/dkim.crt"
+private-key = "file:///usr/local/stalwart-smtp/etc/private/dkim.key"
+domain = "__DOMAIN__"
+selector = "stalwart_smtp"
+headers = ["From", "To", "Date", "Subject", "Message-ID"]
+algorithm = "rsa-sha256"
+canonicalization = "relaxed/relaxed"
+#expire = "10d"
+#third-party = ""
+#third-party-algo = ""
+#auid = ""
+set-body-length = false
+report = true
+
+[remote."lmtp"]
+address = "__LMTP_HOST__"
+port = __LMTP_PORT__
+protocol = "lmtp"
+concurrency = 10
+timeout = "1m"
+lookup = true
+
+[remote."lmtp".cache]
+entries = 1000
+ttl = {positive = "1d", negative = "1h"}
+
+[remote."lmtp".tls]
+implicit = false
+allow-invalid-certs = true
+
+#[remote."lmtp".auth]
+#username = ""
+#secret = ""
+
+[remote."lmtp".limits]
+errors = 3
+requests = 50
+
+[remote."imap"]
+address = "localhost"
+port = 143
+protocol = "imap"
+concurrency = 10
+timeout = "1m"
+lookup = true
+
+[remote."imap".cache]
+entries = 1000
+ttl = {positive = "1d", negative = "1h"}
+
+[remote."imap".tls]
+implicit = false
+allow-invalid-certs = true
+
+[database."sql"]
+#address = "sqlite:///usr/local/stalwart-smtp/etc/sqlite.db?mode=rwc"
+address = "postgres://postgres:password@localhost/test"
+max-connections = 10
+min-connections = 0
+idle-timeout = "5m"
+
+[database."sql".lookup]
+auth = "SELECT secret FROM users WHERE email=?"
+rcpt = "SELECT EXISTS(SELECT 1 FROM users WHERE email=? LIMIT 1)"
+vrfy = "SELECT email FROM users WHERE email LIKE '%' || ? || '%' LIMIT 5"
+expn = "SELECT member FROM mailing_lists WHERE id = ?"
+domains = "SELECT EXISTS(SELECT 1 FROM domains WHERE name=? LIMIT 1)"
+
+[database."sql".cache]
+enable = ["rcpt", "domains"]
+entries = 1000
+ttl = {positive = "1d", negative = "1h"}
+
+[sieve]
+from-name = "Automated Message"
+from-addr = "no-reply@__DOMAIN__"
+return-path = ""
+#hostname = "__HOST__"
+sign = ["rsa"]
+use-database = "sql"
+
+[sieve.limits]
+redirects = 3
+out-messages = 5
+received-headers = 50
+cpu = 10000
+nested-includes = 5
+duplicate-expiry = "7d"
+
+[sieve.scripts]
+# Note: These scripts are included here for demonstration purposes. 
+#       They should not be used in their current form.
+connect = '''
+    require ["variables", "extlists", "reject"];
+
+    if string :list "${env.remote_ip}" "list/blocked-ips" {
+        reject "Your IP '${env.remote_ip}' is not welcomed here.";
+    }
+'''
+ehlo = '''
+    require ["variables", "extlists", "reject"];
+
+    if string :list "${env.helo_domain}" "list/blocked-domains" {
+        reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
+    }
+'''
+mail = '''
+    require ["variables", "envelope", "reject"];
+
+    if envelope :localpart :is "from" "known_spammer" {
+        reject "We do not accept SPAM.";
+    }
+'''
+rcpt = '''
+    require ["variables", "vnd.stalwart.execute", "envelope", "reject"];
+
+    set "triplet" "${env.remote_ip}.${envelope.from}.${envelope.to}";
+
+    if not execute :query "SELECT EXISTS(SELECT 1 FROM greylist WHERE addr=? LIMIT 1)" ["${triplet}"] {
+        execute :query "INSERT INTO greylist (addr) VALUES (?)" ["${triplet}"];
+        reject "422 4.2.2 Greylisted, please try again in a few moments.";
+    }
+'''
+data = '''
+    require ["envelope", "variables", "replace", "mime", "foreverypart", "editheader", "extracttext"];
+
+    if envelope :domain :is "to" "foobar.net" {
+        set "counter" "a";
+        foreverypart {
+            if header :mime :contenttype "content-type" "text/html" {
+                extracttext :upper "text_content";
+                replace "${text_content}";
+            }
+            set :length "part_num" "${counter}";
+            addheader :last "X-Part-Number" "${part_num}";
+            set "counter" "${counter}a";
+        }
+    }
+'''
+
+[management.auth]
+lookup = "list/admin"
+
+[list]
+domains = ["__DOMAIN__"]
+admin = ["admin:__ADMIN_PASS__"]
+#blocked-ips = ["10.0.0.1"]
+#blocked-domains = ["mail.spammer.com"]
+#users = "file:///usr/local/stalwart-smtp/etc/users.txt"
+
+[certificate."default"]
+cert = "file:///usr/local/stalwart-smtp/etc/certs/tls.crt"
+private-key = "file:///usr/local/stalwart-smtp/etc/private/tls.key"

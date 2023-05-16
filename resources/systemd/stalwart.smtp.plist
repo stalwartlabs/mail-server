@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>stalwart.smtp</string>
+        <key>ServiceDescription</key>
+        <string>Stalwart SMTP Server</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/usr/local/stalwart-smtp/bin/stalwart-smtp</string>
+            <string>--config=/usr/local/stalwart-smtp/etc/config.toml</string>
+        </array>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+    </dict>
+</plist>

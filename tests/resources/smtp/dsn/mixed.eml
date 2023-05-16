@@ -1,0 +1,65 @@
+From: "Mail Delivery Subsystem" <MAILER-DAEMON@example.org>
+To: sender@foobar.org
+Auto-Submitted: auto-generated
+Subject: Partially delivered message
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="mime_boundary"
+
+
+--mime_boundary
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message has been partially delivered:
+
+    ----- Delivery to the following addresses was succesful -----
+<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Message accepted for delivery')
+
+    ----- There was a temporary problem delivering to these addresses -----
+<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection timeout)
+
+    ----- Delivery to the following addresses failed -----
+<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<foobar@example.org>' with code 550 (5.1.2) 'User does not exist')
+
+
+--mime_boundary
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: 7bit
+
+Reporting-MTA: dns;mx.example.org
+Arrival-Date: <date goes here>
+
+Final-Recipient: rfc822;foobar@example.org
+Action: failed
+Status: 5.1.2
+Diagnostic-Code: smtp;550 User does not exist
+Remote-MTA: dns;mx.example.org
+
+Final-Recipient: rfc822;jane@example.org
+Action: delivered
+Status: 2.1.5
+Remote-MTA: dns;mx2.example.org
+
+Original-Recipient: rfc822;jdoe@example.org
+Final-Recipient: rfc822;john.doe@example.org
+Action: delayed
+Status: 4.0.0
+Remote-MTA: dns;mx.domain.org
+Will-Retry-Until: <date goes here>
+
+
+--mime_boundary
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+
+Disclose-recipients: prohibited
+From: Message Router Submission Agent <AMMGR@corp.timeplex.com>
+Subject: Status of: Re: Battery current sense
+To: owner-ups-mib@CS.UTK.EDU
+Message-id: <01HEGJ0WNBY28Y95LN@mr.timeplex.com>
+MIME-version: 1.0
+Content-Type: text/plain
+
+
+--mime_boundary--
+

@@ -1,0 +1,54 @@
+Received: from mail.stalw.art ([mail.stalw.art])	by 127.0.0.1 (Stalwart JMAP) with LMTP;	Tue, 20 Sep 2022 10:28:19 +0000
+Received: from a14-92.smtp-out.amazonses.com (a14-92.smtp-out.amazonses.com [54.240.14.92])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES128-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.stalw.art (Postfix) with ESMTPS id 1337D7E19D
+	for <domains@stalw.art>; Tue, 20 Sep 2022 10:28:18 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+	s=a66wkfbz3zwxdt2n5p6d7lj2ja7sdwuc; d=amazonses.com; t=1663669697;
+	h=From:To:Message-ID:Subject:MIME-Version:Content-Type:Date;
+	bh=h9v7dueDYfUxVokuKSLTqLuOwisdgdDRQ6TLwJOzXes=;
+	b=dHR5EJhoY9s8g2/Y4K4rHdz44k67r7fyC4wr2AWZmemrVBoxYHJPwa295S2VJQtY
+	kxTxppN2GEcNxhUMw8TXBrRwNKdoOLU38ZtrAN1a4hWVxmlwky1dtjXETQ/qJ257Nzg
+	bsXkAo4S1RABFmkQQJ0zSPZGkMW+lpZTBCDzlOHU=
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/simple;
+	s=6gbrjpgwjskckoa6a5zn6fwqkn67xbtw; d=amazonses.com; t=1663669697;
+	h=From:To:Message-ID:Subject:MIME-Version:Content-Type:Date:Feedback-ID;
+	bh=h9v7dueDYfUxVokuKSLTqLuOwisdgdDRQ6TLwJOzXes=;
+	b=UDIvc6rvbihyGbzGRsmSSSzVNFgpfb3V3j0UivcNjlX2y63vjLinol463Z/+3Xh3
+	BmxAOiLHF/DbVnqqNg5ygdxsa7MBHXEJ5we3W8vQr37xNk5DqhV7HPBSFttWP5sy0dg
+	rdjyfMIjqJ1J/2+aM4opFA/6EWif7TGmjo7N1KKM=
+From: postmaster@amazonses.com
+To: domains@stalw.art
+Message-ID: <010001835a70fc8d-a3d7eff5-7adb-41cc-87bd-a646d9776a69-000000@email.amazonses.com>
+Subject: Dmarc Aggregate Report Domain: {stalw.art}  Submitter: {Amazon SES}
+  Date: {2022-09-19}  Report-ID: {6b06c366-0631-4ca0-8337-f5aecf137918}
+MIME-Version: 1.0
+Content-Type: multipart/mixed; 
+	boundary="----=_Part_42492_694130218.1663669697673"
+Date: Tue, 20 Sep 2022 10:28:17 +0000
+Feedback-ID: 1.us-east-1.CTa/CO4t1eWkL0VlHBu5/eINCZhxZraAIsQC/FZHIgk=:AmazonSES
+X-SES-Outgoing: 2022.09.20-54.240.14.92
+
+------=_Part_42492_694130218.1663669697673
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+This MIME email was sent through Amazon SES.
+------=_Part_42492_694130218.1663669697673
+Content-Type: application/octet-stream; 
+	name=amazonses.com!stalw.art!1663545600!1663632000.xml.gz
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; 
+	filename=amazonses.com!stalw.art!1663545600!1663632000.xml.gz
+
+H4sIAAAAAAAAAG1TwXLbIBA9O1/RyV1CWLHszlDSHHJMe8itFw1GK5uJBAwgp+3XlwXJVjK9SOzb
+1b59vBV7/D0OXy7gvDL62z0tq/tHfsd6gO4o5Bu/27A5yauSMrIEEXdgjQvtCEF0IogIbZhxp1aL
+EfjTy9Ovnz+K1+dXRq4gVsAo1MCt8WEUPoD7Lkbx12gPvpRmZCTnsXLurzreHKtG1k1TVE1Niwcp
+quJQ1/ui3wmQPa33X+mBkVs9fh1HgtYJfUq0G3aEk9KcNk29e9g1VcVIRlISdJdSTb2tMIUxNiEf
+ulwpVpKZNYOSf1o7HQflzzCTm6hCcx/E8F4KF2KjjGBSdG9q5I6RfEiQt31C8I2A5dpoYMSmyC+h
+z7GVgVOcEw8I9IbHKD5xyP9MFO9SGpdnc+Y9i/ZmchJaZfm22pd0T0t6OJRb7HtLpUppJh0ZGcmH
+hM0scBHDFC8p9UblykdvVcAdyTOvkbkGZffR5picbyCJ7GdwvoSblA8k0YWsgKkOdFC9iiu52HiB
+wVhoe2dGnher1AP6uU6k2jOIDlwGVj6t4UT2iYSJKZxbB34awsy6jHu1fUV8sz0tNH7FrfAeVykF
+WediO/nUHcuycdHd5Zf8BxMenbqzAwAA
+------=_Part_42492_694130218.1663669697673--

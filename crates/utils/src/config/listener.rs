@@ -286,6 +286,12 @@ impl Config {
                     .failed(&format!("No 'url' directive found for listener {id:?}"))
                     .to_string()
             },
+            max_connections: self
+                .property_or_default(
+                    ("server.listener", id, "max-connections"),
+                    "server.max-connections",
+                )?
+                .unwrap_or(8192),
             protocol,
             listeners,
             tls,
@@ -354,151 +360,5 @@ impl ParseValue for SupportedCipherSuite {
                 ))
             }
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs, path::PathBuf};
-
-    use tokio::net::TcpSocket;
-
-    use crate::config::{Config, Listener, Server, ServerProtocol};
-
-    fn add_test_certs(config: &str) -> String {
-        let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        cert_path.push("resources");
-        cert_path.push("tests");
-        cert_path.push("certs");
-        let mut cert = cert_path.clone();
-        cert.push("tls_cert.pem");
-        let mut pk = cert_path.clone();
-        pk.push("tls_privatekey.pem");
-
-        config
-            .replace("{CERT}", cert.as_path().to_str().unwrap())
-            .replace("{PK}", pk.as_path().to_str().unwrap())
-    }
-
-    #[test]
-    fn parse_servers() {
-        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file.push("resources");
-        file.push("tests");
-        file.push("config");
-        file.push("servers.toml");
-
-        let toml = add_test_certs(&fs::read_to_string(file).unwrap());
-
-        // Parse servers
-        let config = Config::parse(&toml).unwrap();
-        let servers = config.parse_servers().unwrap();
-        let expected_servers = vec![
-            Server {
-                id: "smtp".to_string(),
-                internal_id: 0,
-                hostname: "mx.example.org".to_string(),
-                data: "Stalwart SMTP - hi there!".to_string(),
-                protocol: ServerProtocol::Smtp,
-                listeners: vec![Listener {
-                    socket: TcpSocket::new_v4().unwrap(),
-                    addr: "127.0.0.1:9925".parse().unwrap(),
-                    ttl: 3600.into(),
-                    backlog: 1024.into(),
-                }],
-                tls: None,
-                tls_implicit: false,
-            },
-            Server {
-                id: "smtps".to_string(),
-                internal_id: 1,
-                hostname: "mx.example.org".to_string(),
-                data: "Stalwart SMTP - hi there!".to_string(),
-                protocol: ServerProtocol::Smtp,
-                listeners: vec![
-                    Listener {
-                        socket: TcpSocket::new_v4().unwrap(),
-                        addr: "127.0.0.1:9465".parse().unwrap(),
-                        ttl: 4096.into(),
-                        backlog: 1024.into(),
-                    },
-                    Listener {
-                        socket: TcpSocket::new_v4().unwrap(),
-                        addr: "127.0.0.1:9466".parse().unwrap(),
-                        ttl: 4096.into(),
-                        backlog: 1024.into(),
-                    },
-                ],
-                tls: None,
-                tls_implicit: true,
-            },
-            Server {
-                id: "submission".to_string(),
-                internal_id: 2,
-                hostname: "submit.example.org".to_string(),
-                data: "Stalwart SMTP submission at your service".to_string(),
-                protocol: ServerProtocol::Smtp,
-                listeners: vec![Listener {
-                    socket: TcpSocket::new_v4().unwrap(),
-                    addr: "127.0.0.1:9991".parse().unwrap(),
-                    ttl: 3600.into(),
-                    backlog: 2048.into(),
-                }],
-                tls: None,
-                tls_implicit: true,
-            },
-        ];
-
-        for (server, expected_server) in servers.inner.into_iter().zip(expected_servers) {
-            assert_eq!(
-                server.id, expected_server.id,
-                "failed for {}",
-                expected_server.id
-            );
-            assert_eq!(
-                server.internal_id, expected_server.internal_id,
-                "failed for {}",
-                expected_server.id
-            );
-            assert_eq!(
-                server.hostname, expected_server.hostname,
-                "failed for {}",
-                expected_server.id
-            );
-            assert_eq!(
-                server.data, expected_server.data,
-                "failed for {}",
-                expected_server.id
-            );
-            assert_eq!(
-                server.protocol, expected_server.protocol,
-                "failed for {}",
-                expected_server.id
-            );
-            assert_eq!(
-                server.tls_implicit, expected_server.tls_implicit,
-                "failed for {}",
-                expected_server.id
-            );
-            for (listener, expected_listener) in
-                server.listeners.into_iter().zip(expected_server.listeners)
-            {
-                assert_eq!(
-                    listener.addr, expected_listener.addr,
-                    "failed for {}",
-                    expected_server.id
-                );
-                assert_eq!(
-                    listener.ttl, expected_listener.ttl,
-                    "failed for {}",
-                    expected_server.id
-                );
-                assert_eq!(
-                    listener.backlog, expected_listener.backlog,
-                    "failed for {}",
-                    expected_server.id
-                );
-            }
-        }
     }
 }

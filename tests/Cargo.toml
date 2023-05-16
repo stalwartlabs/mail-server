@@ -8,12 +8,19 @@ resolver = "2"
 store = { path = "../crates/store", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send" } 
+smtp = { path = "../crates/smtp", features = ["test_mode"] }
+smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send" }
+mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }
+sieve-rs = { git = "https://github.com/stalwartlabs/sieve" }
 utils = { path = "../crates/utils" }
 #jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
 jmap-client = { path = "/home/vagrant/code/jmap-client", features = ["websockets", "debug", "async"] } 
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 tokio = { version = "1.23", features = ["full"] }
+tokio-rustls = { version = "0.24.0"}
+rustls = "0.21.0"
+rustls-pemfile = "1.0"
 csv = "1.1"
 rayon = { version = "1.5.1" }
 flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }
@@ -28,3 +35,9 @@ ece = "2.2"
 hyper = { version = "1.0.0-rc.3", features = ["server", "http1", "http2"] }
 http-body-util = "0.1.0-rc.2"
 base64 = "0.21"
+dashmap = "5.4"
+ahash = { version = "0.8" }
+serial_test = "2.0.0"
+sqlx = { version = "0.7.0-alpha.3", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
+num_cpus = "1.15.0"
+async-trait = "0.1.68"

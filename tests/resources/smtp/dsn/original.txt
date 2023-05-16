@@ -1,0 +1,10 @@
+Disclose-recipients: prohibited
+Date: Fri, 08 Jul 1994 09:21:25 -0400 (EDT)
+From: Message Router Submission Agent <AMMGR@corp.timeplex.com>
+Subject: Status of: Re: Battery current sense
+To: owner-ups-mib@CS.UTK.EDU
+Message-id: <01HEGJ0WNBY28Y95LN@mr.timeplex.com>
+MIME-version: 1.0
+Content-Type: text/plain
+
+

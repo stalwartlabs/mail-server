@@ -33,7 +33,7 @@ use tokio::net::TcpSocket;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    keys: BTreeMap<String, String>,
+    pub keys: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default)]
@@ -46,6 +46,7 @@ pub struct Server {
     pub listeners: Vec<Listener>,
     pub tls: Option<ServerConfig>,
     pub tls_implicit: bool,
+    pub max_connections: u64,
 }
 
 pub struct Servers {

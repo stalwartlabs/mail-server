@@ -19,6 +19,7 @@ path = "crates/main/src/main.rs"
 store = { path = "crates/store" }
 jmap = { path = "crates/jmap" }
 jmap_proto = { path = "crates/jmap-proto" }
+smtp = { path = "crates/smtp" }
 utils = { path = "crates/utils" }
 tests = { path = "tests" }
 
@@ -26,6 +27,7 @@ tests = { path = "tests" }
 members = [
     "crates/jmap",
     "crates/jmap-proto",
+    "crates/smtp",
     "crates/store",
     "crates/utils",
     "crates/maybe-async",

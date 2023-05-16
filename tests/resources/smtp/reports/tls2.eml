@@ -1,0 +1,64 @@
+From: tlsrpt@mail.sender.example.com
+Date: Fri, May 09 2017 16:54:30 -0800
+To: mts-sts-tlsrpt@example.net
+Subject: Report Domain: example.net
+    Submitter: mail.sender.example.com
+    Report-ID: <735ff.e317+bf22029@example.net>
+TLS-Report-Domain: example.net
+TLS-Report-Submitter: mail.sender.example.com
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type="tlsrpt";
+    boundary="----=_NextPart_000_024E_01CC9B0A.AFE54C00"
+Content-Language: en-us
+
+This is a multipart message in MIME format.
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate TLS report from mail.sender.example.com
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00
+Content-Type: application/tlsrpt
+Content-Disposition: attachment;
+    filename="mail.sender.example!example.com!1013662812!1013749130.json"
+
+{
+    "report-id": "2020-01-01T00:00:00Z_example.com",
+    "date-range": {
+        "start-datetime": "2020-01-01T00:00:00Z",
+        "end-datetime": "2020-01-07T23:59:59Z"
+    },
+    "organization-name": "Google Inc.",
+    "contact-info": "smtp-tls-reporting@google.com",
+    "policies": [
+        {
+            "policy": {
+                "policy-type": "sts",
+                "policy-string": [
+                    "version: STSv1",
+                    "mode: enforce",
+                    "mx: demo.example.com",
+                    "max_age: 604800"
+                ],
+                "policy-domain": "example.com"
+            },
+            "summary": {
+                "total-successful-session-count": 23,
+                "total-failure-session-count": 1
+            },
+            "failure-details": [
+                {
+                    "result-type": "certificate-host-mismatch",
+                    "sending-mta-ip": "123.123.123.123",
+                    "receiving-ip": "234.234.234.234",
+                    "receiving-mx-hostname": "demo.example.com",
+                    "failed-session-count": 1
+                }
+            ]
+        }
+    ]
+}
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00--

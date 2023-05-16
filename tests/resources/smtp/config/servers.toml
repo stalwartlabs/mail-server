@@ -1,0 +1,51 @@
+[server]
+hostname = "mx.example.org"
+greeting = "Stalwart SMTP - hi there!"
+protocol = "smtp"
+
+[server.listener."smtp"]
+bind = ["127.0.0.1:9925"]
+tls.implicit = false
+
+[server.listener."smtps"]
+bind = ["127.0.0.1:9465", "127.0.0.1:9466"]
+max-connections = 1024
+tls.implicit = true
+tls.ciphers = ["TLS13_CHACHA20_POLY1305_SHA256", "TLS13_AES_256_GCM_SHA384"]
+socket.ttl = 4096
+
+[server.listener."submission"]
+greeting = "Stalwart SMTP submission at your service"
+hostname = "submit.example.org"
+bind = "127.0.0.1:9991"
+#tls.sni = [{subject = "submit.example.org", certificate = "other"},
+#           {subject = "submission.example.org", certificate = "other"}]
+socket.backlog = 2048
+
+[server.tls]
+enable = true
+implicit = true
+timeout = 300
+certificate = "default"
+#sni = [{subject = "other.domain.org", certificate = "default"}]
+protocols = ["TLSv1.2", "TLSv1.3"]
+ciphers = []
+ignore_client_order = true
+
+[server.socket]
+reuse-addr = true
+reuse-port = true
+backlog = 1024
+ttl = 3600
+send-buffer-size = 65535
+recv-buffer-size = 65535
+linger = 1
+tos = 1
+
+[certificate."default"]
+cert = "file://{CERT}"
+private-key = "file://{PK}"
+
+[certificate."other"]
+cert = "file://{CERT}"
+private-key = "file://{PK}"

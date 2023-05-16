@@ -1,0 +1,87 @@
+Message-ID: <433689.81121.example@mta.mail.receiver.example>
+From: "SomeISP Antispam Feedback" <feedback@mail.receiver.example>
+To: arf-failure@sender.example
+Subject: FW: You have a new bill from your bank
+Date: Sat, 8 Oct 2011 15:15:59 -0500 (CDT)
+MIME-Version: 1.0
+Content-Type: multipart/report;
+    boundary="------------Boundary-00=_3BCR4Y7kX93yP9uUPRhg";
+    report-type=feedback-report
+Content-Transfer-Encoding: 7bit
+
+--------------Boundary-00=_3BCR4Y7kX93yP9uUPRhg
+Content-Type: text/plain; charset="us-ascii"
+Content-Disposition: inline
+Content-Transfer-Encoding: 7bit
+
+This is an authentication failure report for an email message
+received from a.sender.example on 8 Oct 2011 20:15:58 +0000 (GMT).
+For more information about this format, please see [RFC6591].
+
+--------------Boundary-00=_3BCR4Y7kX93yP9uUPRhg
+Content-Type: message/feedback-report
+Content-Transfer-Encoding: 7bit
+
+Feedback-Type: auth-failure
+User-Agent: Someisp!Mail-Feedback/1.0
+Version: 1
+Original-Mail-From: anexample.reply@a.sender.example
+Original-Envelope-Id: o3F52gxO029144
+Authentication-Results: mta1011.mail.tp2.receiver.example;
+    dkim=fail (bodyhash) header.d=sender.example
+Auth-Failure: bodyhash
+DKIM-Canonicalized-Body: VGhpcyBpcyBhIG1lc3NhZ2UgYm9keSB0
+    aGF0IGdvdCBtb2RpZmllZCBpbiB0cmFuc2l0LgoKQXQgdGhlIHNhbWU
+    gdGltZSB0aGF0IHRoZSBib2R5aGFzaCBmYWlscyB0byB2ZXJpZnksIH
+    RoZQptZXNzYWdlIGNvbnRlbnQgaXMgY2xlYXJseSBhYnVzaXZlIG9yI
+    HBoaXNoeSwgYXMgdGhlClN1YmplY3QgYWxyZWFkeSBoaW50cy4gIElu
+    ZGVlZCwgdGhpcyBib2R5IGFsc28gY29udGFpbnMKdGhlIGZvbGxvd2l
+    uZyB0ZXh0OgoKICAgUGxlYXNlIGVudGVyIHlvdXIgZnVsbCBiYW5rIG
+    NyZWRlbnRpYWxzIGF0CiAgIGh0dHA6Ly93d3cuc2VuZGVyLmV4YW1wb
+    GUvCgpXZSBhcmUgaW1wbHlpbmcgdGhhdCwgYWx0aG91Z2ggbXVsdGlw
+    bGUgZmFpbHVyZXMKcmVxdWlyZSBtdWx0aXBsZSByZXBvcnRzLCBhIHN
+    pbmdsZSBmYWlsdXJlIGNhbiBiZQpyZXBvcnRlZCBhbG9uZyB3aXRoIH
+    BoaXNoaW5nIGluIGEgc2luZ2xlIHJlcG9ydC4K
+DKIM-Domain: sender.example
+DKIM-Identity: @sender.example
+DKIM-Selector: testkey
+Arrival-Date: 8 Oct 2011 20:15:58 +0000 (GMT)
+Source-IP: 192.0.2.1
+Reported-Domain: a.sender.example
+Reported-URI: http://www.sender.example/
+
+--------------Boundary-00=_3BCR4Y7kX93yP9uUPRhg
+Content-Type: text/rfc822-headers
+Content-Transfer-Encoding: 7bit
+
+Authentication-Results: mta1011.mail.tp2.receiver.example;
+ dkim=fail (bodyhash) header.d=sender.example;
+ spf=pass smtp.mailfrom=anexample.reply@a.sender.example
+Received: from smtp-out.sender.example
+ by mta1011.mail.tp2.receiver.example
+ with SMTP id oB85W8xV000169;
+ Sat, 08 Oct 2011 13:15:58 -0700 (PDT)
+DKIM-Signature: v=1; c=relaxed/simple; a=rsa-sha256;
+ s=testkey; d=sender.example; h=From:To:Subject:Date;
+ bh=2jUSOH9NhtVGCQWNr9BrIAPreKQjO6Sn7XIkfJVOzv8=;
+ b=AuUoFEfDxTDkHlLXSZEpZj79LICEps6eda7W3deTVFOk4yAUoqOB
+ 4nujc7YopdG5dWLSdNg6xNAZpOPr+kHxt1IrE+NahM6L/LbvaHut
+ KVdkLLkpVaVVQPzeRDI009SO2Il5Lu7rDNH6mZckBdrIx0orEtZV
+ 4bmp/YzhwvcubU4=
+Received: from mail.sender.example
+ by smtp-out.sender.example
+ with SMTP id o3F52gxO029144;
+ Sat, 08 Oct 2011 13:15:31 -0700 (PDT)
+ Received: from internal-client-001.sender.example
+ by mail.sender.example
+ with SMTP id o3F3BwdY028431;
+ Sat, 08 Oct 2011 13:15:24 -0700 (PDT)
+Date: Sat, 8 Oct 2011 16:15:24 -0400 (EDT)
+Reply-To: anexample.reply@a.sender.example
+From: anexample@a.sender.example
+To: someuser@receiver.example
+Subject: You have a new bill from your bank
+Message-ID: <87913910.1318094604546@out.sender.example>
+
+--------------Boundary-00=_3BCR4Y7kX93yP9uUPRhg--
+

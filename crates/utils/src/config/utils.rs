@@ -21,7 +21,18 @@
  * for more details.
 */
 
-use std::{net::IpAddr, time::Duration};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+    time::Duration,
+};
+
+use mail_auth::{
+    common::crypto::{Algorithm, HashAlgorithm},
+    dkim::Canonicalization,
+    IpLookupStrategy,
+};
+use smtp_proto::MtPriority;
 
 use super::{Config, Rate};
 
@@ -339,6 +350,111 @@ impl ParseValue for bool {
                 key.as_key()
             )
         })
+    }
+}
+
+impl ParseValue for Ipv4Addr {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid IPv4 value {:?} for key {:?}.", value, key.as_key()))
+    }
+}
+
+impl ParseValue for Ipv6Addr {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid IPv6 value {:?} for key {:?}.", value, key.as_key()))
+    }
+}
+
+impl ParseValue for PathBuf {
+    fn parse_value(_key: impl AsKey, value: &str) -> super::Result<Self> {
+        let path = PathBuf::from(value);
+
+        if path.exists() {
+            Ok(path)
+        } else {
+            Err(format!("Directory {} does not exist.", path.display()))
+        }
+    }
+}
+
+impl ParseValue for MtPriority {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "mixer" => Ok(MtPriority::Mixer),
+            "stanag4406" => Ok(MtPriority::Stanag4406),
+            "nsep" => Ok(MtPriority::Nsep),
+            _ => Err(format!(
+                "Invalid priority value {:?} for property {:?}.",
+                value,
+                key.as_key()
+            )),
+        }
+    }
+}
+
+impl ParseValue for Canonicalization {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        match value {
+            "relaxed" => Ok(Canonicalization::Relaxed),
+            "simple" => Ok(Canonicalization::Simple),
+            _ => Err(format!(
+                "Invalid canonicalization value {:?} for key {:?}.",
+                value,
+                key.as_key()
+            )),
+        }
+    }
+}
+
+impl ParseValue for IpLookupStrategy {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        Ok(match value.to_lowercase().as_str() {
+            "ipv4-only" => IpLookupStrategy::Ipv4Only,
+            "ipv6-only" => IpLookupStrategy::Ipv6Only,
+            //"ipv4-and-ipv6" => IpLookupStrategy::Ipv4AndIpv6,
+            "ipv6-then-ipv4" => IpLookupStrategy::Ipv6thenIpv4,
+            "ipv4-then-ipv6" => IpLookupStrategy::Ipv4thenIpv6,
+            _ => {
+                return Err(format!(
+                    "Invalid IP lookup strategy {:?} for property {:?}.",
+                    value,
+                    key.as_key()
+                ))
+            }
+        })
+    }
+}
+
+impl ParseValue for Algorithm {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        match value {
+            "ed25519-sha256" | "ed25519-sha-256" => Ok(Algorithm::Ed25519Sha256),
+            "rsa-sha-256" | "rsa-sha256" => Ok(Algorithm::RsaSha256),
+            "rsa-sha-1" | "rsa-sha1" => Ok(Algorithm::RsaSha1),
+            _ => Err(format!(
+                "Invalid algorithm {:?} for key {:?}.",
+                value,
+                key.as_key()
+            )),
+        }
+    }
+}
+
+impl ParseValue for HashAlgorithm {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        match value {
+            "sha256" | "sha-256" => Ok(HashAlgorithm::Sha256),
+            "sha-1" | "sha1" => Ok(HashAlgorithm::Sha1),
+            _ => Err(format!(
+                "Invalid hash algorithm {:?} for key {:?}.",
+                value,
+                key.as_key()
+            )),
+        }
     }
 }
 

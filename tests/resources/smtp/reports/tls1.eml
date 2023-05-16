@@ -1,0 +1,41 @@
+From: tlsrpt@mail.sender.example.com
+Date: Fri, May 09 2017 16:54:30 -0800
+To: mts-sts-tlsrpt@example.net
+Subject: Report Domain: example.net
+    Submitter: mail.sender.example.com
+    Report-ID: <735ff.e317+bf22029@example.net>
+TLS-Report-Domain: example.net
+TLS-Report-Submitter: mail.sender.example.com
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type="tlsrpt";
+    boundary="----=_NextPart_000_024E_01CC9B0A.AFE54C00"
+Content-Language: en-us
+
+This is a multipart message in MIME format.
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate TLS report from mail.sender.example.com
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00
+Content-Type: application/tlsrpt+gzip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+    filename="mail.sender.example!example.com!1013662812!1013749130.json.gz"
+
+H4sICCpFtWMAA3JwdDAxLmpzb24uMQCtVVtr2zAYfe+vEN7bmFzZjt3EMLbRhu1hdCUJI+soRpGU
+VMy2jCSHZCX/fZIvzVLHpc0WDDHSOfqOznfxwxkwP0fIFc75b6y5yGGOM+bEwLkUWYHzLZw772oU
+xZpBifOV3X6o1qp1pbHU0O5qXlN95EUQDSDyZgjF1XPbnFIxWE778H4QhyPz3DoVfNfEJiLXmGjI
+86WwDKUVlKwQUvN89ZE0Ujcu2+CsSFkruYZATi0nRFE48C8I9AMawMEFwXARMQRHg4hhxIZksHgk
+FiLlhDNleD8fde/vvMdsD7x4sgf1tmCN3L/u/xSltDS3OAh1AFszqUxmYjCdTdfekYMqVCYoi4Fm
+ylrSC9rE4K2bYZ66rWnbJ6Z1OXiT4JU5exgNEHI6oLv+m1FhQuXWgZdEM+rgvVC634le6V1RByu7
+w2COKrMMy57caaFxClVJCFNqWZpX8287g4gyt+LCwI+OqK95SyOwlKxDClDwrKSWR5k2b+qoB12x
+FVUyVab6sdgIM12x5MS2K9sUXDLal1plOtFUC8w0hryoWxF5MV0MY7wg1PSt58dxb8lJRhhfVwfU
+mWtnR7bxXllk9vqMdlzzEOrgd90jXmZMNah0qmAutMlvYWfDP3kTnOaN/0pv9ke1OgIXuZ4XuGH0
+Sj/NFXoImFJu578pYTtkZVZ9DWy4e60LFZ+f18NUuZ1p2+wklgc+AE7Be9AMW0AABH4AaPAGTBv7
+r4WetuaDbueenN41Tjmtv2FNM708td5o6Iaea8rNjfwT8jA8oQzgApNfZfF/GiV4Bm7HimRYVXBa
+RZ+HaJR8T8aTSXIz+Tb/kdx8mn1Jvo6vP5u/8fxyPL4aXx3JzcHKfsbW63dnuz+8byfQUQgAAA==
+
+------=_NextPart_000_024E_01CC9B0A.AFE54C00--

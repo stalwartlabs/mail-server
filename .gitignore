@@ -3,3 +3,4 @@
 .vscode
 *.failed
 *_failed
+stalwart.toml

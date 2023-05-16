@@ -1,0 +1,46 @@
+From: "Mail Delivery Subsystem" <MAILER-DAEMON@example.org>
+To: sender@foobar.org
+Auto-Submitted: auto-generated
+Subject: Failed to deliver message
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="mime_boundary"
+
+
+--mime_boundary
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message could not be delivered to the following recipients:
+
+<foobar@example.org> (host 'mx.example.org' rejected command 'RCPT TO:<foobar@example.org>' with code 550 (5.1.2) 'User does not exist')
+
+
+--mime_boundary
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: 7bit
+
+Reporting-MTA: dns;mx.example.org
+Arrival-Date: <date goes here>
+
+Final-Recipient: rfc822;foobar@example.org
+Action: failed
+Status: 5.1.2
+Diagnostic-Code: smtp;550 User does not exist
+Remote-MTA: dns;mx.example.org
+
+
+--mime_boundary
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+
+Disclose-recipients: prohibited
+From: Message Router Submission Agent <AMMGR@corp.timeplex.com>
+Subject: Status of: Re: Battery current sense
+To: owner-ups-mib@CS.UTK.EDU
+Message-id: <01HEGJ0WNBY28Y95LN@mr.timeplex.com>
+MIME-version: 1.0
+Content-Type: text/plain
+
+
+--mime_boundary--
+

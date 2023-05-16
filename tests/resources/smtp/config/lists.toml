@@ -1,0 +1,23 @@
+[list]
+local-domains = ["example.org", "example.net"]
+spammer-domains = "thatdomain.net"
+local-users = "file://{LIST1}"
+power-users = ["file://{LIST1}", "file://{LIST2}"]
+
+[remote."lmtp"]
+address = 192.168.0.1
+port = 25
+protocol = "lmtp"
+lookup = true
+
+[remote."lmtp".auth]
+username = "hello"
+secret = "world"
+
+[remote."lmtp".cache]
+entries = 1000
+ttl = {positive = 10, negative = 5}
+
+[remote."lmtp".tls]
+implicit = true
+allow-invalid-certs = true

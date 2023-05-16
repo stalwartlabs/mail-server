@@ -1,0 +1,47 @@
+From: "Mail Delivery Subsystem" <MAILER-DAEMON@example.org>
+To: sender@foobar.org
+Auto-Submitted: auto-generated
+Subject: Warning: Delay in message delivery
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="mime_boundary"
+
+
+--mime_boundary
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+There was a temporary problem delivering your message to the following recipients:
+
+<john.doe@example.org> (connection to 'mx.domain.org' failed: Connection timeout)
+
+
+--mime_boundary
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: 7bit
+
+Reporting-MTA: dns;mx.example.org
+Arrival-Date: <date goes here>
+
+Original-Recipient: rfc822;jdoe@example.org
+Final-Recipient: rfc822;john.doe@example.org
+Action: delayed
+Status: 4.0.0
+Remote-MTA: dns;mx.domain.org
+Will-Retry-Until: <date goes here>
+
+
+--mime_boundary
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+
+Disclose-recipients: prohibited
+From: Message Router Submission Agent <AMMGR@corp.timeplex.com>
+Subject: Status of: Re: Battery current sense
+To: owner-ups-mib@CS.UTK.EDU
+Message-id: <01HEGJ0WNBY28Y95LN@mr.timeplex.com>
+MIME-version: 1.0
+Content-Type: text/plain
+
+
+--mime_boundary--
+

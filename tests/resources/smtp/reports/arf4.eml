@@ -1,0 +1,73 @@
+Return-Path: <opendmarc@box.mydomain.name>
+Received: by box.mydomain.name (Postfix, from userid 116)
+	id CF8FA658E0; Tue,  5 Oct 2021 17:37:02 +1300 (NZDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple; d=box.mydomain.name;
+	s=mail; t=1633408622;
+	bh=yDlkGfe4dFwlsFeoKaIHG6xiRgQs2/PqPnLtiPm5ewk=;
+	h=From:To:Date:Subject:From;
+	b=TwXvJJFoFwJDcb6IKMKsxp2BiRDsrjLOESyQPh/Cc4tRZltVAud/k6f0XP4l5a/T8
+	 kh0iDOGImc0O1WZNFt0MUcwLsfW4qbYjCBtthQDnbPApvv6MJDASwau+wipu5Nrkjc
+	 flg+nMaD97pVgR0LevMoVIWoiy1f5PNC/z0xkY2wnvyoGn91WuDsdocOqyoPo4RmIT
+	 A/f3M4CjOv/QmMEAWBIsa7kAZwf+rNmzDahFOtp2vFLqHt0iZi5vs40fa6O/I0snTM
+	 fRkv2GMZAug7NMU8MN/MhuO87FV6ATZXvB0Kxvsy9z0zZYK7tM1OYHjiCYot45erG3
+	 dlKrYiXsfd3BQ==
+From: OpenDMARC Filter <opendmarc@box.mydomain.name>
+To: postmaster@vericty.interpublication.org
+Date: Tue,  5 Oct 2021 17:37:02 +1300 (NZDT)
+Subject: FW: Wir kaufen dein Auto!
+MIME-Version: 1.0
+Content-Type: multipart/report;
+	report-type=feedback-report;
+	boundary="box.mydomain.name:8BE2660E72"
+Message-Id: <20211005043702.CF8FA658E0@box.mydomain.name>
+
+--box.mydomain.name:8BE2660E72
+Content-Type: text/plain
+
+This is an authentication failure report for an email message received from IP
+148.163.85.135 on Tue,  5 Oct 2021 17:37:02 +1300 (NZDT).
+
+--box.mydomain.name:8BE2660E72
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+Version: 1
+User-Agent: OpenDMARC-Filter/1.3.2
+Auth-Failure: dmarc
+Authentication-Results: box.mydomain.name; dmarc=fail header.from=interpublication.org
+Original-Envelope-Id: 8BE2660E72
+Original-Mail-From: info@interpublication.org
+Source-IP: 148.163.85.135 (sainay.interpublication.org)
+Reported-Domain: interpublication.org
+
+--box.mydomain.name:8BE2660E72
+Content-Type: text/rfc822-headers
+
+Authentication-Results: box.mydomain.name;
+	dkim=fail reason="signature verification failed" (2048-bit key; unprotected) header.d=interpublication.org header.i=@interpublication.org header.b="PrsTNnuH";
+	dkim-atps=neutral
+Received: from dslb-002-202-150-127.002.202.pools.vodafone-ip.de (dslb-188-099-080-029.188.099.pools.vodafone-ip.de [188.99.80.29])
+	by sainay.interpublication.org (Postfix) with ESMTPA id 6BB23A2D3
+	for <address@myotherdomain.name>; Tue,  5 Oct 2021 00:36:52 -0400 (EDT)
+DKIM-Filter: OpenDKIM Filter v2.11.0 sainay.interpublication.org 6BB23A2D3
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+	d=interpublication.org; s=default; t=1633408612;
+	bh=q1/OPSn+VXteY2+DHXqOIgs5LsNCJisEcQIKVW9it6I=;
+	h=From:Subject:To:Reply-To:Date:From;
+	b=PrsTNnuH8D0Ch3gcWqGmXiYc2Kvu1CHGJBsqS521uYazd3G/urp7MHQvmNwK0r1gS
+	 DR3A3KwGejI5uuqzxDCqz28Mq6AkdTkOjFyXw65MLlsKTQddWTgciVnoqJempa6yzw
+	 PSM5550XqVFqqkNxEcYBUBYEwUdy1tY8rc4zhq8cIrsonQVxJJSbc3cdonICM1kLBV
+	 WASv16p3376ZBcKqFLc8UQ58YQKaFm51VZGEjtabfmWbgOQ7VikFFECDG3aRt8fZa6
+	 D03MrzUSngwPUdcRQZuqS/sApW/a9N2YwdbR51OFzPBr4ypUEIw/qprgBG4BfQQKeS
+	 1PhinNvVtgQpQ==
+From: "Rolf Bader" <info@interpublication.org>
+Subject: Wir kaufen dein Auto!
+To: "address" <address@myotherdomain.name>
+Content-Type: multipart/alternative; boundary="TD6gM3Blv=_XBZYNFT7dCsH1DHHOKUuSyA"
+MIME-Version: 1.0
+Reply-To: "Rolf Bader" <auto24-export@gmx.de>
+Organization: AutoTEAM24
+Date: Tue, 5 Oct 2021 06:36:51 +0200
+
+--box.mydomain.name:8BE2660E72--
+

@@ -32,6 +32,7 @@ hostname = 'jmap.example.org'
 bind = ['127.0.0.1:8899']
 url = 'https://127.0.0.1:8899'
 protocol = 'jmap'
+max-connections = 512
 
 [server.socket]
 reuse-addr = true
@@ -54,7 +55,6 @@ set.max-objects = 100000
 
 [jmap.protocol.request]
 max-concurrent = 8
-max-concurrent-total = 512
 
 [jmap.protocol.upload]
 max-size = 5000000

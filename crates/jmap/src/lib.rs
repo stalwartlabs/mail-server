@@ -58,7 +58,6 @@ pub struct Config {
     pub request_max_size: usize,
     pub request_max_calls: usize,
     pub request_max_concurrent: u64,
-    pub request_max_concurrent_total: u64,
 
     pub get_max_objects: usize,
     pub set_max_objects: usize,

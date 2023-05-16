@@ -1,0 +1,34 @@
+From: Hendrik <hendrik@example.com>
+To: Harrie <harrie@example.com>
+Date: Sat, 11 Oct 2010 00:31:44 +0200
+Subject: One Two Three Four
+Content-Type: multipart/mixed; boundary=AA
+
+This is a multi-part message in MIME format.
+--AA
+Content-Type: multipart/mixed; boundary=BB
+
+This is a multi-part message in MIME format.
+--BB
+Content-Type: text/plain; charset="us-ascii"
+
+This is the first message part containing
+plain text. 
+
+--BB
+Content-Type: text/plain; charset="us-ascii"
+
+This is another plain text message part.
+
+--BB--
+This is the end of MIME multipart.
+
+--AA
+Content-Type: text/html; charset="us-ascii"
+
+<html>
+<body>This is a piece of HTML text.</body>
+</html>
+
+--AA--
+This is the end of  MIME multipart.

@@ -1,0 +1,29 @@
+[rule]
+"my-nested-rule" = { any-of = [
+    {if = "rcpt-domain", eq = "example.org"},
+    {if = "remote-ip", eq = "192.168.0.0/24"},
+    {all-of = [
+        {if = "rcpt", starts-with = "no-reply@"},
+        {if = "sender", ends-with = "@domain.org"},
+        {none-of = [
+            {if = "priority", eq = 1},
+            {if = "priority", ne = -2},
+        ]}
+    ]}
+]}
+
+[rule."simple"]
+if = "listener"
+eq = "smtp"
+
+[rule."is-authenticated"]
+if = "authenticated-as"
+ne = ""
+
+[[rule."expanded".all-of]]
+if = "sender-domain"
+starts-with = "example"
+
+[[rule."expanded".all-of]]
+if = "sender"
+in-list = "test-list"

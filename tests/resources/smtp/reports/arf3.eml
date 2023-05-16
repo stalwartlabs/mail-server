@@ -1,0 +1,58 @@
+From: arf-daemon@example.com
+To: recipient@example.net
+Subject: This is a test
+Date: Wed, 14 Apr 2010 12:17:45 -0700 (PDT)
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report;
+    boundary="part1_13d.2e68ed54_boundary"
+
+--part1_13d.2e68ed54_boundary
+Content-Type: text/plain; charset="US-ASCII"
+Content-Transfer-Encoding: 7bit
+
+This is an email abuse report for an email message received
+from IP 192.0.2.1 on Wed, 14 Apr 2010 12:15:31 PDT. For more
+information about this format please see
+http://www.mipassoc.org/arf/.
+
+--part1_13d.2e68ed54_boundary
+Content-Type: message/feedback-report
+
+Feedback-Type: auth-failure
+User-Agent: SomeDKIMFilter/1.0
+Version: 1
+Original-Mail-From: <randomuser@example.net>
+Original-Rcpt-To: <user@example.com>
+Received-Date: Wed, 14 Apr 2010 12:15:31 -0700 (PDT)
+Source-IP: 192.0.2.1
+Authentication-Results: mail.example.com; dkim=fail
+    header.d=example.net
+Reported-Domain: example.net
+DKIM-Domain: example.net
+Auth-Failure: bodyhash
+
+--part1_13d.2e68ed54_boundary
+Content-Type: message/rfc822
+
+DKIM-Signature: v=1; c=relaxed/simple; a=rsa-sha256;
+    s=testkey; d=example.net; h=From:To:Subject:Date;
+    bh=2jUSOH9NhtVGCQWNr9BrIAPreKQjO6Sn7XIkfJVOzv8=;
+    b=AuUoFEfDxTDkHlLXSZEpZj79LICEps6eda7W3deTVFOk4yAUoqOB
+        4nujc7YopdG5dWLSdNg6xNAZpOPr+kHxt1IrE+NahM6L/LbvaHut
+        KVdkLLkpVaVVQPzeRDI009SO2Il5Lu7rDNH6mZckBdrIx0orEtZV
+        4bmp/YzhwvcubU4=
+Received: from smtp-out.example.net by mail.example.com
+    with SMTP id o3F52gxO029144;
+    Wed, 14 Apr 2010 12:15:31 -0700 (PDT)
+Received: from internal-client-001.example.com
+    by mail.example.com
+    with SMTP id o3F3BwdY028431;
+    Wed, 14 Apr 2010 12:12:09 -0700 (PDT)
+From: randomuser@example.net
+To: user@example.com
+Date: Wed, 14 Apr 2010 12:12:09 -0700 (PDT)
+Subject: This is a test
+
+Hi, just making sure DKIM is working!
+
+--part1_13d.2e68ed54_boundary--

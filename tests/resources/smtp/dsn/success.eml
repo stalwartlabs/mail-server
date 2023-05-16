@@ -1,0 +1,45 @@
+From: "Mail Delivery Subsystem" <MAILER-DAEMON@example.org>
+To: sender@foobar.org
+Auto-Submitted: auto-generated
+Subject: Successfully delivered message
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="mime_boundary"
+
+
+--mime_boundary
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message has been successfully delivered to the following recipients:
+
+<jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Message accepted for delivery')
+
+
+--mime_boundary
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: 7bit
+
+Reporting-MTA: dns;mx.example.org
+Arrival-Date: <date goes here>
+
+Final-Recipient: rfc822;jane@example.org
+Action: delivered
+Status: 2.1.5
+Remote-MTA: dns;mx2.example.org
+
+
+--mime_boundary
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+
+Disclose-recipients: prohibited
+From: Message Router Submission Agent <AMMGR@corp.timeplex.com>
+Subject: Status of: Re: Battery current sense
+To: owner-ups-mib@CS.UTK.EDU
+Message-id: <01HEGJ0WNBY28Y95LN@mr.timeplex.com>
+MIME-version: 1.0
+Content-Type: text/plain
+
+
+--mime_boundary--
+
