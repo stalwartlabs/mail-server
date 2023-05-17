@@ -31,11 +31,11 @@ use mail_auth::MX;
 
 use crate::smtp::{
     inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, ParseTestConfig,
-    TestConfig, TestCore,
+    TestConfig, TestSMTP,
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Message, QueueEnvelope},
 };
 
@@ -83,10 +83,10 @@ async fn throttle_outbound() {
     // Build test message
     let mut test_message = new_message(0);
     test_message.return_path_domain = "foobar.org".to_string();
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let mut local_qr = core.init_test_queue("smtp_throttle_outbound");
     core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.throttle = THROTTLE.parse_queue_throttle(&ConfigContext::default());
+    core.queue.config.throttle = THROTTLE.parse_queue_throttle(&ConfigContext::new(&[]));
     core.queue.config.retry = IfBlock::new(vec![Duration::from_secs(86400)]);
     core.queue.config.notify = IfBlock::new(vec![Duration::from_secs(86400)]);
     core.queue.config.expire = IfBlock::new(Duration::from_secs(86400));

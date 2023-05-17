@@ -41,7 +41,7 @@ use crate::smtp::{
 };
 use smtp::{
     config::{AggregateFrequency, IfBlock},
-    core::{management::Report, Core},
+    core::{management::Report, SMTP},
     lookup::Lookup,
     reporting::{
         scheduler::{Scheduler, SpawnReport},
@@ -60,7 +60,7 @@ async fn manage_reports() {
     .unwrap();*/
 
     // Start reporting service
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_management_test", true);
     let config = &mut core.report.config;
     config.path = IfBlock::new(temp_dir.temp_dir.clone());

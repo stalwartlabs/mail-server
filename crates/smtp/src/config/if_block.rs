@@ -298,7 +298,7 @@ mod tests {
         let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
 
         // Create context and add some conditions
-        let context = ConfigContext::default();
+        let context = ConfigContext::new(&[]);
         let available_keys = vec![
             EnvelopeKey::Recipient,
             EnvelopeKey::RecipientDomain,

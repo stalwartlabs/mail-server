@@ -52,7 +52,7 @@ use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
 use tokio::sync::mpsc;
-use utils::config::{Server, ServerProtocol};
+use utils::config::{Rate, Server, ServerProtocol};
 
 use crate::lookup::{self, Lookup, SqlDatabase};
 
@@ -199,12 +199,6 @@ pub const THROTTLE_MX: u16 = 1 << 6;
 pub const THROTTLE_REMOTE_IP: u16 = 1 << 7;
 pub const THROTTLE_LOCAL_IP: u16 = 1 << 8;
 pub const THROTTLE_HELO_DOMAIN: u16 = 1 << 9;
-
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct Rate {
-    pub requests: u64,
-    pub period: Duration,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpAddrMask {
@@ -527,14 +521,23 @@ pub enum VerifyStrategy {
 }
 
 #[derive(Default)]
-pub struct ConfigContext {
-    pub servers: Vec<Server>,
+pub struct ConfigContext<'x> {
+    pub servers: &'x [Server],
     pub hosts: AHashMap<String, Host>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
     pub lookup: AHashMap<String, Arc<Lookup>>,
     pub databases: AHashMap<String, SqlDatabase>,
     pub signers: AHashMap<String, Arc<DkimSigner>>,
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
+}
+
+impl<'x> ConfigContext<'x> {
+    pub fn new(servers: &'x [Server]) -> Self {
+        Self {
+            servers,
+            ..Default::default()
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, String>;

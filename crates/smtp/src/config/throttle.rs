@@ -23,7 +23,7 @@
 
 use super::{condition::ConfigCondition, *};
 use utils::config::{
-    utils::{AsKey, ParseKey, ParseValue},
+    utils::{AsKey, ParseValue},
     Config,
 };
 
@@ -119,36 +119,6 @@ impl ConfigThrottle for Config {
     }
 }
 
-impl ParseValue for Rate {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        if let Some((requests, period)) = value.split_once('/') {
-            Ok(Rate {
-                requests: requests
-                    .trim()
-                    .parse::<u64>()
-                    .ok()
-                    .and_then(|r| if r > 0 { Some(r) } else { None })
-                    .ok_or_else(|| {
-                        format!(
-                            "Invalid rate value {:?} for property {:?}.",
-                            value,
-                            key.as_key()
-                        )
-                    })?,
-                period: period.parse_key(key)?,
-            })
-        } else if ["false", "none", "unlimited"].contains(&value) {
-            Ok(Rate::default())
-        } else {
-            Err(format!(
-                "Invalid rate value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            ))
-        }
-    }
-}
-
 impl ParseValue for EnvelopeKey {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         Ok(match value {
@@ -228,7 +198,7 @@ mod tests {
         ];
 
         let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-        let context = ConfigContext::default();
+        let context = ConfigContext::new(&[]);
         let throttle = config
             .parse_throttle("throttle", &context, &available_keys, u16::MAX)
             .unwrap();

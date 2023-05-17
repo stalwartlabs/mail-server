@@ -33,7 +33,7 @@ use crate::smtp::{
 };
 use smtp::{
     config::{database::ConfigDatabase, ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     lookup::SqlDatabase,
 };
 
@@ -69,9 +69,9 @@ async fn lookup_sql() {
     .unwrap();*/
 
     // Parse settings
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let _temp_dir = make_temp_dir("sql_lookup_test", true);
-    let mut ctx = ConfigContext::default();
+    let mut ctx = ConfigContext::new(&[]);
     let config =
         Config::parse(&CONFIG.replace("%PATH%", _temp_dir.temp_dir.as_path().to_str().unwrap()))
             .unwrap();

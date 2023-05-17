@@ -31,12 +31,12 @@ use crate::smtp::{
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 
 #[tokio::test]
 async fn ehlo() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
@@ -51,16 +51,16 @@ async fn ehlo() {
     let mut config = &mut core.session.config;
     config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1024},
     {else = 2048}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.future_release = r"[{if = 'remote-ip', eq = '10.0.0.1', then = '1h'},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.mt_priority = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'nsep'},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     core.mail_auth.spf.verify_ehlo = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     {else = 'relaxed'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.ehlo.reject_non_fqdn = IfBlock::new(true);
 
     // Reject non-FQDN domains

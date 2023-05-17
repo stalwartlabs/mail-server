@@ -34,7 +34,7 @@ use tokio::fs;
 use crate::smtp::{make_temp_dir, TestConfig};
 use smtp::{
     config::{AggregateFrequency, IfBlock},
-    core::Core,
+    core::SMTP,
     reporting::{
         dmarc::DmarcFormat,
         scheduler::{ReportType, Scheduler},
@@ -52,7 +52,7 @@ async fn report_scheduler() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_scheduler_test", true);
     let config = &mut core.report.config;
     config.path = IfBlock::new(temp_dir.temp_dir.clone());

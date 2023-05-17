@@ -71,7 +71,7 @@ async fn lookup_smtp() {
     let shutdown = spawn_mock_lmtp_server(5);
 
     // Spawn lookup client
-    let mut ctx = ConfigContext::default();
+    let mut ctx = ConfigContext::new(&[]);
     let config = Config::parse(REMOTE).unwrap();
     config.parse_remote_hosts(&mut ctx).unwrap();
     let lookup = ctx.hosts.remove("lmtp").unwrap().spawn(&config);

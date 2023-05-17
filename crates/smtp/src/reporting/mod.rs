@@ -37,7 +37,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     config::{AddressMatch, AggregateFrequency, DkimSigner, IfBlock},
-    core::{management, Core, Session},
+    core::{management, Session, SMTP},
     outbound::{dane::Tlsa, mta_sts::Policy},
     queue::{DomainPart, Message},
     USER_AGENT,
@@ -123,7 +123,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-impl Core {
+impl SMTP {
     pub async fn send_report(
         &self,
         from_addr: &str,

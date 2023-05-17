@@ -23,8 +23,9 @@
 
 use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::config::Rate;
 
-use crate::{config::Rate, core::Session};
+use crate::core::Session;
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn send_spf_report(

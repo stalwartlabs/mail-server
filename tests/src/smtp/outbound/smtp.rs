@@ -33,11 +33,11 @@ use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     outbound::start_test_server,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
 
@@ -52,14 +52,14 @@ async fn smtp_delivery() {
     .unwrap();*/
 
     // Start test server
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_delivery_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.mx_add(
         "foobar.org",
         vec![
@@ -112,10 +112,10 @@ async fn smtp_delivery() {
     config.retry = IfBlock::new(vec![Duration::from_millis(100)]);
     config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
     {else = ['100ms']}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '650ms'},
     {else = '750ms'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
 
     let core = Arc::new(core);
     let mut queue = Queue::default();

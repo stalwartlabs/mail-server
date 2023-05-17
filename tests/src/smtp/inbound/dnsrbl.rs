@@ -25,10 +25,10 @@ use std::time::{Duration, Instant};
 
 use smtp::{
     config::IfBlock,
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 
-use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestConfig, TestCore};
+use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestConfig, TestSMTP};
 
 #[tokio::test]
 async fn dnsrbl() {
@@ -39,7 +39,7 @@ async fn dnsrbl() {
     )
     .unwrap();*/
 
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     for entry in [
         "1.0.0.10.zen.spamhaus.org",
         "2.0.0.10.b.barracudacentral.org",

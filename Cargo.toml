@@ -21,7 +21,8 @@ jmap = { path = "crates/jmap" }
 jmap_proto = { path = "crates/jmap-proto" }
 smtp = { path = "crates/smtp" }
 utils = { path = "crates/utils" }
-tests = { path = "tests" }
+tokio = { version = "1.23", features = ["full"] }
+tracing = "0.1"
 
 [workspace]
 members = [

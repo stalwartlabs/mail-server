@@ -31,26 +31,26 @@ use crate::smtp::{
 };
 use smtp::{
     config::ConfigContext,
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 
 #[tokio::test]
 async fn limits() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let mut config = &mut core.session.config;
     config.transfer_limit = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 10},
     {else = 1024}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.timeout = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '500ms'},
     {else = '30m'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.duration = r"[{if = 'remote-ip', eq = '10.0.0.3', then = '500ms'},
     {else = '60m'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     let (_tx, rx) = watch::channel(true);
 
     // Exceed max line length
-    let mut session = Session::test(core);
+    let mut session = Session::test_with_shutdown(core, rx);
     session.data.remote_ip = "10.0.0.1".parse().unwrap();
     let mut buf = vec![b'A'; 2049];
     session.ingest(&buf).await.unwrap();

@@ -34,11 +34,11 @@ use utils::config::ServerProtocol;
 
 use crate::smtp::{
     inbound::TestQueueEvent, management::send_manage_request, outbound::start_test_server,
-    session::TestSession, TestConfig, TestCore,
+    session::TestSession, TestConfig, TestSMTP,
 };
 use smtp::{
     config::IfBlock,
-    core::{management::Message, Core, Session},
+    core::{management::Message, Session, SMTP},
     lookup::Lookup,
     queue::{
         manager::{Queue, SpawnQueue},
@@ -57,13 +57,13 @@ async fn manage_queue() {
     .unwrap();*/
 
     // Start remote test server
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_manage_queue_remote");
     let _rx_remote = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {

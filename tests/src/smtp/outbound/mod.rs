@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 
-use ::smtp::core::{Core, HttpAdminSessionManager, SmtpSessionManager};
+use ::smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
 use utils::config::{Config, ServerProtocol};
 
 use super::add_test_certs;
@@ -68,23 +68,27 @@ cert = 'file://{CERT}'
 private-key = 'file://{PK}'
 ";
 
-pub fn start_test_server(core: Arc<Core>, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
+pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
     // Spawn listeners
     let config = Config::parse(&add_test_certs(SERVER)).unwrap();
-    let servers = config.parse_servers().unwrap();
+    let mut servers = config.parse_servers().unwrap();
+
+    // Filter out protocols
+    servers
+        .inner
+        .retain(|server| protocols.contains(&server.protocol));
 
     // Start servers
+    servers.bind(&config);
     let smtp_manager = SmtpSessionManager::new(core.clone());
-    let smtp_admin_manager = HttpAdminSessionManager::new(core);
-    servers.spawn(&config, |server, shutdown_rx| {
-        if protocols.contains(&server.protocol) {
-            match &server.protocol {
-                ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                    server.spawn(smtp_manager.clone(), shutdown_rx)
-                }
-                ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
-                ServerProtocol::Imap | ServerProtocol::Jmap => unreachable!(),
-            };
-        }
+    let smtp_admin_manager = SmtpAdminSessionManager::new(core);
+    servers.spawn(|server, shutdown_rx| {
+        match &server.protocol {
+            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
+                server.spawn(smtp_manager.clone(), shutdown_rx)
+            }
+            ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
+            ServerProtocol::Imap | ServerProtocol::Jmap => unreachable!(),
+        };
     })
 }

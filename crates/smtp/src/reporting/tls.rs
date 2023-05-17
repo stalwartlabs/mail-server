@@ -40,7 +40,7 @@ use tokio::runtime::Handle;
 
 use crate::{
     config::AggregateFrequency,
-    core::Core,
+    core::SMTP,
     outbound::mta_sts::{Mode, MxPattern},
     queue::{InstantFromTimestamp, Schedule},
     USER_AGENT,
@@ -74,7 +74,7 @@ pub trait GenerateTlsReport {
 #[cfg(feature = "test_mode")]
 pub static TLS_HTTP_REPORT: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
-impl GenerateTlsReport for Arc<Core> {
+impl GenerateTlsReport for Arc<SMTP> {
     fn generate_tls_report(&self, domain: String, path: ReportPath<Vec<ReportPolicy<PathBuf>>>) {
         let core = self.clone();
         let handle = Handle::current();
@@ -277,7 +277,7 @@ impl GenerateTlsReport for Arc<Core> {
 }
 
 impl Scheduler {
-    pub async fn schedule_tls(&mut self, event: Box<TlsEvent>, core: &Core) {
+    pub async fn schedule_tls(&mut self, event: Box<TlsEvent>, core: &SMTP) {
         let max_size = core
             .report
             .config

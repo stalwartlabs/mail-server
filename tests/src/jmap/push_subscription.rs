@@ -80,7 +80,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Start JMAP server
     let manager = SessionManager::from(push_server.clone());
-    let _shutdown_tx = servers.spawn(&settings, |server, shutdown_rx| {
+    servers.bind(&settings);
+    let _shutdown_tx = servers.spawn(|server, shutdown_rx| {
         server.spawn(manager.clone(), shutdown_rx);
     });
 
@@ -308,9 +309,7 @@ impl utils::listener::SessionManager for SessionManager {
         });
     }
 
-    fn max_concurrent(&self) -> u64 {
-        100
-    }
+    fn shutdown(&self) {}
 }
 
 async fn expect_push(event_rx: &mut mpsc::Receiver<PushMessage>) -> PushMessage {

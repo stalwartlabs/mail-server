@@ -25,9 +25,9 @@ use std::sync::{atomic::Ordering, Arc};
 
 use tokio::sync::oneshot;
 
-use super::Core;
+use super::SMTP;
 
-impl Core {
+impl SMTP {
     pub async fn spawn_worker<U, V>(&self, f: U) -> Option<V>
     where
         U: FnOnce() -> V + Send + 'static,
@@ -73,7 +73,7 @@ pub trait SpawnCleanup {
     fn spawn_cleanup(&self);
 }
 
-impl SpawnCleanup for Arc<Core> {
+impl SpawnCleanup for Arc<SMTP> {
     fn spawn_cleanup(&self) {
         let core = self.clone();
         self.worker_pool.spawn(move || {

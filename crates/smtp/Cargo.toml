@@ -32,12 +32,6 @@ sha1 = "0.10"
 sha2 = "0.10.6"
 rayon = "1.5"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
-tracing-opentelemetry = "0.18.0"
-opentelemetry = { version = "0.18.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.11.0", features = ["http-proto", "reqwest-client", "reqwest-rustls"] }
-opentelemetry-semantic-conventions = { version = "0.10.0" }
 parking_lot = "0.12"
 regex = "1.7.0"
 dashmap = "5.4"

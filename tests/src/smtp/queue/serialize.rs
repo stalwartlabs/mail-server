@@ -29,18 +29,18 @@ use std::{
 use smtp_proto::{Response, MAIL_REQUIRETLS, MAIL_SMTPUTF8, RCPT_CONNEG, RCPT_NOTIFY_FAILURE};
 
 use smtp::{
-    core::Core,
+    core::SMTP,
     queue::{
         Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
         RCPT_STATUS_CHANGED,
     },
 };
 
-use crate::smtp::{inbound::TestQueueEvent, TestConfig, TestCore};
+use crate::smtp::{inbound::TestQueueEvent, TestConfig, TestSMTP};
 
 #[tokio::test]
 async fn queue_serialize() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_queue_serialize_test");

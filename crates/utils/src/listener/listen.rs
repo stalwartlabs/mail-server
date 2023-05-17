@@ -103,6 +103,7 @@ impl Server {
                                 instance = instance.id,
                                 protocol = ?instance.protocol,
                                 "Listener shutting down.");
+                            manager.shutdown();
                             break;
                         }
                     };
@@ -113,11 +114,7 @@ impl Server {
 }
 
 impl Servers {
-    pub fn spawn(
-        self,
-        config: &Config,
-        spawn: impl Fn(Server, watch::Receiver<bool>),
-    ) -> watch::Sender<bool> {
+    pub fn bind(&self, config: &Config) {
         // Bind as root
         for server in &self.inner {
             for listener in &server.listeners {
@@ -139,7 +136,9 @@ impl Servers {
                 pd.apply().failed("Failed to drop privileges");
             }
         }
+    }
 
+    pub fn spawn(self, spawn: impl Fn(Server, watch::Receiver<bool>)) -> watch::Sender<bool> {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.inner {

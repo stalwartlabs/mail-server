@@ -29,11 +29,11 @@ use std::{
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
 
@@ -46,7 +46,7 @@ async fn queue_retry() {
     )
     .unwrap();*/
 
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_queue_retry_test");
@@ -64,10 +64,10 @@ async fn queue_retry() {
     ]);
     config.notify = "[{if = 'sender-domain', eq = 'test.org', then = ['150ms', '200ms']},
     {else = ['15h', '22h']}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.expire = "[{if = 'sender-domain', eq = 'test.org', then = '600ms'},
     {else = '1d'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
 
     // Create test message
     let core = Arc::new(core);

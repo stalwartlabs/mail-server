@@ -39,7 +39,7 @@ use tokio::{
 
 use crate::{
     config::AggregateFrequency,
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{DomainPart, InstantFromTimestamp, Schedule},
 };
 
@@ -296,7 +296,7 @@ pub trait GenerateDmarcReport {
     fn generate_dmarc_report(&self, domain: ReportPolicy<String>, path: ReportPath<PathBuf>);
 }
 
-impl GenerateDmarcReport for Arc<Core> {
+impl GenerateDmarcReport for Arc<SMTP> {
     fn generate_dmarc_report(&self, domain: ReportPolicy<String>, path: ReportPath<PathBuf>) {
         let core = self.clone();
         let handle = Handle::current();
@@ -426,7 +426,7 @@ impl GenerateDmarcReport for Arc<Core> {
 }
 
 impl Scheduler {
-    pub async fn schedule_dmarc(&mut self, event: Box<DmarcEvent>, core: &Core) {
+    pub async fn schedule_dmarc(&mut self, event: Box<DmarcEvent>, core: &SMTP) {
         let max_size = core
             .report
             .config

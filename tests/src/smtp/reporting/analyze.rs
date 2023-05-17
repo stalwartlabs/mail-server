@@ -24,16 +24,16 @@
 use std::{fs, sync::Arc, time::Duration};
 
 use crate::smtp::{
-    inbound::TestQueueEvent, make_temp_dir, session::TestSession, TestConfig, TestCore,
+    inbound::TestQueueEvent, make_temp_dir, session::TestSession, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{AddressMatch, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 
 #[tokio::test]
 async fn report_analyze() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_analyze_report_test");

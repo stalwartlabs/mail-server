@@ -37,7 +37,7 @@ use utils::config::ServerProtocol;
 
 use crate::{
     config::{AggregateFrequency, TlsStrategy},
-    core::Core,
+    core::SMTP,
     queue::ErrorDetails,
     reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
 };
@@ -54,7 +54,7 @@ use crate::queue::{
 };
 
 impl DeliveryAttempt {
-    pub async fn try_deliver(mut self, core: Arc<Core>, queue: &mut Queue) {
+    pub async fn try_deliver(mut self, core: Arc<SMTP>, queue: &mut Queue) {
         // Check that the message still has recipients to be delivered
         let has_pending_delivery = self.has_pending_delivery();
 

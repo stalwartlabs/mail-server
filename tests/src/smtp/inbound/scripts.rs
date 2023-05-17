@@ -26,14 +26,14 @@ use std::path::PathBuf;
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    TestConfig, TestCore,
+    TestConfig, TestSMTP,
 };
 use smtp::{
     config::{
         database::ConfigDatabase, list::ConfigList, scripts::ConfigSieve, session::ConfigSession,
         ConfigContext, EnvelopeKey, IfBlock,
     },
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 use utils::config::Config;
 
@@ -160,9 +160,9 @@ async fn sieve_scripts() {
     pipe_path.push("pipe");
 
     // Prepare config
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_sieve_test");
-    let mut ctx = ConfigContext::default().parse_signatures();
+    let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let config = Config::parse(
         &CONFIG
             .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())

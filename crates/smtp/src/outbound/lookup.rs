@@ -27,13 +27,13 @@ use mail_auth::MX;
 use rand::{seq::SliceRandom, Rng};
 
 use crate::{
-    core::{Core, Envelope},
+    core::{Envelope, SMTP},
     queue::{Error, ErrorDetails, Status},
 };
 
 use super::RemoteHost;
 
-impl Core {
+impl SMTP {
     pub(super) async fn resolve_host(
         &self,
         remote_host: &RemoteHost<'_>,

@@ -36,11 +36,11 @@ use utils::config::Config;
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{auth::ConfigAuth, ConfigContext, IfBlock, VerifyStrategy},
-    core::{Core, Session},
+    core::{Session, SMTP},
     lookup::Lookup,
 };
 
@@ -96,7 +96,7 @@ set-body-length = false
 
 #[tokio::test]
 async fn sign_and_seal() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_sign_test");
@@ -157,7 +157,7 @@ async fn sign_and_seal() {
     config.data.add_received_spf = IfBlock::new(true);
 
     let mut config = &mut core.mail_auth;
-    let ctx = ConfigContext::default().parse_signatures();
+    let ctx = ConfigContext::new(&[]).parse_signatures();
     config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dkim.verify = config.spf.verify_ehlo.clone();
@@ -207,11 +207,11 @@ async fn sign_and_seal() {
         );
 }
 
-pub trait TextConfigContext {
-    fn parse_signatures(self) -> ConfigContext;
+pub trait TextConfigContext<'x> {
+    fn parse_signatures(self) -> ConfigContext<'x>;
 }
 
-impl TextConfigContext for ConfigContext {
+impl<'x> TextConfigContext<'x> for ConfigContext<'x> {
     fn parse_signatures(mut self) -> Self {
         Config::parse(SIGNATURES)
             .unwrap()

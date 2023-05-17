@@ -33,7 +33,7 @@ use tokio::sync::mpsc;
 
 use crate::core::{
     management::{self},
-    Core, QueueCore,
+    QueueCore, SMTP,
 };
 
 use super::{
@@ -51,7 +51,7 @@ pub struct Queue {
 }
 
 impl SpawnQueue for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: Arc<Core>, mut queue: Queue) {
+    fn spawn(mut self, core: Arc<SMTP>, mut queue: Queue) {
         tokio::spawn(async move {
             loop {
                 let result = tokio::time::timeout(queue.wake_up_time(), self.recv()).await;
@@ -557,5 +557,5 @@ impl Default for Queue {
 }
 
 pub trait SpawnQueue {
-    fn spawn(self, core: Arc<Core>, queue: Queue);
+    fn spawn(self, core: Arc<SMTP>, queue: Queue);
 }

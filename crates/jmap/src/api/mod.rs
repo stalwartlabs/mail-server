@@ -14,13 +14,13 @@ pub mod request;
 pub mod session;
 
 #[derive(Clone)]
-pub struct SessionManager {
+pub struct JmapSessionManager {
     pub inner: Arc<JMAP>,
 }
 
-impl From<Arc<JMAP>> for SessionManager {
-    fn from(inner: Arc<JMAP>) -> Self {
-        SessionManager { inner }
+impl JmapSessionManager {
+    pub fn new(inner: Arc<JMAP>) -> Self {
+        Self { inner }
     }
 }
 

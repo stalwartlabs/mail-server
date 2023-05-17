@@ -31,14 +31,14 @@ use crate::smtp::{
 };
 use smtp::{
     config::ConfigContext,
-    core::{Core, Session},
+    core::{Session, SMTP},
     lookup::Lookup,
 };
 
 #[tokio::test]
 async fn vrfy_expn() {
-    let mut core = Core::test();
-    let mut ctx = ConfigContext::default();
+    let mut core = SMTP::test();
+    let mut ctx = ConfigContext::new(&[]);
     ctx.lookup.insert(
         "vrfy".to_string(),
         Arc::new(Lookup::Local(AHashSet::from_iter([

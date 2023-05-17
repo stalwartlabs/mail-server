@@ -46,7 +46,7 @@ use tokio::{
 
 use crate::{
     config::AggregateFrequency,
-    core::{management::ReportRequest, worker::SpawnCleanup, Core, ReportCore},
+    core::{management::ReportRequest, worker::SpawnCleanup, ReportCore, SMTP},
     queue::{InstantFromTimestamp, Schedule},
 };
 
@@ -83,7 +83,7 @@ pub struct ReportPolicy<T> {
 }
 
 impl SpawnReport for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: Arc<Core>, mut scheduler: Scheduler) {
+    fn spawn(mut self, core: Arc<SMTP>, mut scheduler: Scheduler) {
         tokio::spawn(async move {
             let mut last_cleanup = Instant::now();
 
@@ -184,7 +184,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
     }
 }
 
-impl Core {
+impl SMTP {
     pub async fn build_report_path(
         &self,
         domain: ReportType<&str, &str>,
@@ -645,5 +645,5 @@ impl ToTimestamp for Duration {
 }
 
 pub trait SpawnReport {
-    fn spawn(self, core: Arc<Core>, scheduler: Scheduler);
+    fn spawn(self, core: Arc<SMTP>, scheduler: Scheduler);
 }

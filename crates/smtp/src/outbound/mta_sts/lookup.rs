@@ -32,12 +32,12 @@ pub static STS_TEST_POLICY: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::ne
 
 use mail_auth::{common::lru::DnsCache, mta_sts::MtaSts, report::tlsrpt::ResultType};
 
-use crate::core::Core;
+use crate::core::SMTP;
 
 use super::{Error, Policy};
 
 #[allow(unused_variables)]
-impl Core {
+impl SMTP {
     pub async fn lookup_mta_sts_policy<'x>(
         &self,
         domain: &str,

@@ -26,12 +26,12 @@ use std::time::Duration;
 use crate::smtp::{session::TestSession, ParseTestConfig, TestConfig};
 use smtp::{
     config::ConfigContext,
-    core::{Core, Session, SessionAddress},
+    core::{Session, SessionAddress, SMTP},
 };
 
 #[tokio::test]
 async fn throttle_inbound() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     let mut config = &mut core.session.config;
     config.throttle.connect = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
@@ -39,17 +39,17 @@ async fn throttle_inbound() {
     concurrency = 2
     rate = '3/1s'
     "
-    .parse_throttle(&ConfigContext::default());
+    .parse_throttle(&ConfigContext::new(&[]));
     config.throttle.mail_from = r"[[throttle]]
     key = 'sender'
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::default());
+    .parse_throttle(&ConfigContext::new(&[]));
     config.throttle.rcpt_to = r"[[throttle]]
     key = ['remote-ip', 'rcpt']
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::default());
+    .parse_throttle(&ConfigContext::new(&[]));
 
     // Test connection concurrency limit
     let mut session = Session::test(core);

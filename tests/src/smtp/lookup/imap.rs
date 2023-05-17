@@ -79,7 +79,7 @@ async fn lookup_imap() {
     let shutdown = spawn_mock_imap_server(5);
 
     // Spawn lookup client
-    let mut ctx = ConfigContext::default();
+    let mut ctx = ConfigContext::new(&[]);
     let config = Config::parse(REMOTE).unwrap();
     config.parse_remote_hosts(&mut ctx).unwrap();
     let lookup = ctx.hosts.remove("imap").unwrap().spawn(&config);

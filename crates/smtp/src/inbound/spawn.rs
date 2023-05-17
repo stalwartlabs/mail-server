@@ -30,8 +30,11 @@ use tokio::{
 use tokio_rustls::server::TlsStream;
 use utils::listener::SessionManager;
 
-use crate::core::{
-    scripts::ScriptResult, Session, SessionData, SessionParameters, SmtpSessionManager, State,
+use crate::{
+    core::{
+        scripts::ScriptResult, Session, SessionData, SessionParameters, SmtpSessionManager, State,
+    },
+    queue, reporting,
 };
 
 use super::IsTls;
@@ -63,6 +66,15 @@ impl SessionManager for SmtpSessionManager {
                     session.handle_conn().await;
                 }
             }
+        });
+    }
+
+    fn shutdown(&self) {
+        // We spawn to avoid using async_trait
+        let core = self.inner.clone();
+        tokio::spawn(async move {
+            let _ = core.queue.tx.send(queue::Event::Stop).await;
+            let _ = core.report.tx.send(reporting::Event::Stop).await;
         });
     }
 }

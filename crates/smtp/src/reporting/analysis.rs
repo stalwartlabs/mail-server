@@ -37,7 +37,7 @@ use mail_auth::{
 };
 use mail_parser::{DateTime, HeaderValue, Message, MimeHeaders, PartType};
 
-use crate::core::Core;
+use crate::core::SMTP;
 
 enum Compression {
     None,
@@ -61,7 +61,7 @@ pub trait AnalyzeReport {
     fn analyze_report(&self, message: Arc<Vec<u8>>);
 }
 
-impl AnalyzeReport for Arc<Core> {
+impl AnalyzeReport for Arc<SMTP> {
     fn analyze_report(&self, message: Arc<Vec<u8>>) {
         let core = self.clone();
         self.worker_pool.spawn(move || {

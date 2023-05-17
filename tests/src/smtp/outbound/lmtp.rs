@@ -30,11 +30,11 @@ use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     outbound::start_test_server,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{remote::ConfigHost, ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
 use utils::config::{Config, ServerProtocol};
@@ -62,14 +62,14 @@ async fn lmtp_delivery() {
     .unwrap();*/
 
     // Start test server
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("lmtp_delivery_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Lmtp]);
 
     // Add mock DNS entries
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.ipv4_add(
         "lmtp.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
@@ -79,7 +79,7 @@ async fn lmtp_delivery() {
     // Multiple delivery attempts
     let mut local_qr = core.init_test_queue("lmtp_delivery_local");
 
-    let mut ctx = ConfigContext::default();
+    let mut ctx = ConfigContext::new(&[]);
     let config = Config::parse(REMOTE).unwrap();
     config.parse_remote_hosts(&mut ctx).unwrap();
     core.queue.config.next_hop = "[{if = 'rcpt-domain', eq = 'foobar.org', then = 'lmtp'},

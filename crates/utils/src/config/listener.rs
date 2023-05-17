@@ -277,14 +277,20 @@ impl Config {
                 .value_or_default(("server.listener", id, "hostname"), "server.hostname")
                 .ok_or("Hostname directive not found.")?
                 .to_string(),
-            data: if matches!(protocol, ServerProtocol::Smtp | ServerProtocol::Lmtp) {
-                self.value_or_default(("server.listener", id, "data"), "server.data")
+            data: match protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => self
+                    .value_or_default(("server.listener", id, "greeting"), "server.greeting")
                     .unwrap_or("Stalwart SMTP at your service")
-                    .to_string()
-            } else {
-                self.value_or_default(("server.listener", id, "url"), "server.url")
+                    .to_string(),
+
+                ServerProtocol::Jmap => self
+                    .value_or_default(("server.listener", id, "url"), "server.url")
                     .failed(&format!("No 'url' directive found for listener {id:?}"))
-                    .to_string()
+                    .to_string(),
+                ServerProtocol::Imap | ServerProtocol::Http => self
+                    .value_or_default(("server.listener", id, "url"), "server.url")
+                    .unwrap_or_default()
+                    .to_string(),
             },
             max_connections: self
                 .property_or_default(

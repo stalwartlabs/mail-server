@@ -38,11 +38,11 @@ use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     outbound::start_test_server,
     session::{TestSession, VerifyResponse},
-    TestConfig, TestCore,
+    TestConfig, TestSMTP,
 };
 use smtp::{
     config::{AggregateFrequency, IfBlock, RequireOptional},
-    core::{Core, Session},
+    core::{Session, SMTP},
     outbound::dane::{Tlsa, TlsaEntry},
     queue::{manager::Queue, DeliveryAttempt},
     reporting::PolicyType,
@@ -59,13 +59,13 @@ async fn dane_verify() {
     .unwrap();*/
 
     // Start test server
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_dane_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {

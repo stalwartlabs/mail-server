@@ -28,17 +28,17 @@ use ahash::AHashSet;
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{load_test_message, TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session},
+    core::{Session, SMTP},
     lookup::Lookup,
 };
 
 #[tokio::test]
 async fn data() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
@@ -59,7 +59,7 @@ async fn data() {
     let mut config = &mut core.session.config;
     config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.data.add_date = config.data.add_auth_results.clone();
     config.data.add_message_id = config.data.add_auth_results.clone();
     config.data.add_received = config.data.add_auth_results.clone();
@@ -68,7 +68,7 @@ async fn data() {
     config.data.max_received_headers = IfBlock::new(3);
     config.data.max_messages = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1},
     {else = 100}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
 
     core.queue.config.quota = r"[[queue.quota]]
     match = {if = 'sender', eq = 'john@doe.org'}
@@ -85,7 +85,7 @@ async fn data() {
     key = ['rcpt']
     size = 450
     "
-    .parse_quota(&ConfigContext::default());
+    .parse_quota(&ConfigContext::new(&[]));
 
     // Test queue message builder
     let mut session = Session::test(core);

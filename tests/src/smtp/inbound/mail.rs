@@ -35,12 +35,12 @@ use crate::smtp::{
 };
 use smtp::{
     config::{ConfigContext, IfBlock, VerifyStrategy},
-    core::{Core, Session},
+    core::{Session, SMTP},
 };
 
 #[tokio::test]
 async fn mail() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
@@ -72,32 +72,32 @@ async fn mail() {
     core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     core.mail_auth.spf.verify_mail_from = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     {else = 'relaxed'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     core.mail_auth.iprev.verify = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     {else = 'relaxed'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.future_release = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.deliver_by = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.requiretls = r"[{if = 'remote-ip', eq = '10.0.0.2', then = true},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.extensions.mt_priority = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'nsep'},
     {else = false}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 2048},
     {else = 1024}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
 
     config.throttle.mail_from = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
     key = 'sender'
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::default());
+    .parse_throttle(&ConfigContext::new(&[]));
 
     // Be rude and do not say EHLO
     let core = Arc::new(core);

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use jmap::{api::SessionManager, JMAP};
+use jmap::{api::JmapSessionManager, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use tokio::sync::watch;
@@ -147,8 +147,9 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     let servers = settings.parse_servers().unwrap();
 
     // Start JMAP server
-    let manager = SessionManager::from(JMAP::init(&settings).await);
-    let shutdown_tx = servers.spawn(&settings, |server, shutdown_rx| {
+    servers.bind(&settings);
+    let manager = JmapSessionManager::new(JMAP::init(&settings).await);
+    let shutdown_tx = servers.spawn(|server, shutdown_rx| {
         server.spawn(manager.clone(), shutdown_rx);
     });
 

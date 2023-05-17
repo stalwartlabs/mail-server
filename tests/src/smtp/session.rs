@@ -29,7 +29,7 @@ use tokio::{
 };
 
 use smtp::{
-    core::{Core, Session, SessionAddress, SessionData, SessionParameters, State},
+    core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP},
     inbound::IsTls,
 };
 use utils::{
@@ -98,7 +98,8 @@ impl Unpin for DummyIo {}
 
 #[async_trait::async_trait]
 pub trait TestSession {
-    fn test(core: impl Into<Arc<Core>>) -> Self;
+    fn test(core: impl Into<Arc<SMTP>>) -> Self;
+    fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self;
     fn response(&mut self) -> Vec<String>;
     fn write_rx(&mut self, data: &str);
     async fn rset(&mut self);
@@ -113,10 +114,10 @@ pub trait TestSession {
 
 #[async_trait::async_trait]
 impl TestSession for Session<DummyIo> {
-    fn test(core: impl Into<Arc<Core>>) -> Self {
+    fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {
             state: State::default(),
-            instance: Arc::new(ServerInstance::test()),
+            instance: Arc::new(ServerInstance::test_with_shutdown(shutdown_rx)),
             core: core.into(),
             span: tracing::info_span!("test"),
             stream: DummyIo {
@@ -128,6 +129,10 @@ impl TestSession for Session<DummyIo> {
             params: SessionParameters::default(),
             in_flight: vec![],
         }
+    }
+
+    fn test(core: impl Into<Arc<SMTP>>) -> Self {
+        Self::test_with_shutdown(core, watch::channel(false).1)
     }
 
     fn response(&mut self) -> Vec<String> {
@@ -330,8 +335,12 @@ impl VerifyResponse for Vec<String> {
     }
 }
 
-impl TestConfig for ServerInstance {
-    fn test() -> Self {
+pub trait TestServerInstance {
+    fn test_with_shutdown(shutdown_rx: watch::Receiver<bool>) -> Self;
+}
+
+impl TestServerInstance for ServerInstance {
+    fn test_with_shutdown(shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {
             id: "smtp".to_string(),
             listener_id: 1,
@@ -341,7 +350,13 @@ impl TestConfig for ServerInstance {
             tls_acceptor: None,
             is_tls_implicit: false,
             limiter: ConcurrencyLimiter::new(100),
-            shutdown_rx: watch::channel(false).1,
+            shutdown_rx,
         }
+    }
+}
+
+impl TestConfig for ServerInstance {
+    fn test() -> Self {
+        Self::test_with_shutdown(watch::channel(false).1)
     }
 }

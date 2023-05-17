@@ -25,11 +25,11 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig,
 };
-use smtp::core::{Core, Session};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 async fn basic_commands() {
-    let mut session = Session::test(Core::test());
+    let mut session = Session::test(SMTP::test());
 
     // STARTTLS should be available on clear text connections
     session.stream.tls = false;

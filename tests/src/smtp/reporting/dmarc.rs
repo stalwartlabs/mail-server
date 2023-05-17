@@ -37,11 +37,11 @@ use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
     make_temp_dir,
     session::VerifyResponse,
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{AggregateFrequency, ConfigContext, IfBlock},
-    core::Core,
+    core::SMTP,
     reporting::{
         dmarc::GenerateDmarcReport,
         scheduler::{ReportType, Scheduler},
@@ -59,8 +59,8 @@ async fn report_dmarc() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = Core::test();
-    let ctx = ConfigContext::default().parse_signatures();
+    let mut core = SMTP::test();
+    let ctx = ConfigContext::new(&[]).parse_signatures();
     let temp_dir = make_temp_dir("smtp_report_dmarc_test", true);
     let config = &mut core.report.config;
     config.path = IfBlock::new(temp_dir.temp_dir.clone());

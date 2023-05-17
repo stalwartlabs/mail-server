@@ -245,17 +245,19 @@ mod tests {
         file.push("rules-eval.toml");
 
         let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-        let mut context = ConfigContext::default();
-        context.servers.push(Server {
-            id: "smtp".to_string(),
-            internal_id: 123,
-            ..Default::default()
-        });
-        context.servers.push(Server {
-            id: "smtps".to_string(),
-            internal_id: 456,
-            ..Default::default()
-        });
+        let servers = vec![
+            Server {
+                id: "smtp".to_string(),
+                internal_id: 123,
+                ..Default::default()
+            },
+            Server {
+                id: "smtps".to_string(),
+                internal_id: 456,
+                ..Default::default()
+            },
+        ];
+        let mut context = ConfigContext::new(&servers);
         config.parse_lists(&mut context).unwrap();
         let conditions = config.parse_conditions(&context).unwrap();
 

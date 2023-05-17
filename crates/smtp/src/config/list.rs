@@ -111,7 +111,7 @@ mod tests {
             .replace("{LIST2}", list2.as_path().to_str().unwrap());
 
         let config = Config::parse(&toml).unwrap();
-        let mut context = ConfigContext::default();
+        let mut context = ConfigContext::new(&[]);
         config.parse_remote_hosts(&mut context).unwrap();
         config.parse_lists(&mut context).unwrap();
 

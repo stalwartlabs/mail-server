@@ -34,11 +34,11 @@ use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     outbound::start_test_server,
     session::{TestSession, VerifyResponse},
-    TestConfig, TestCore,
+    TestConfig, TestSMTP,
 };
 use smtp::{
     config::IfBlock,
-    core::{Core, Session},
+    core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt},
 };
 
@@ -53,7 +53,7 @@ async fn extensions() {
     .unwrap();*/
 
     // Start test server
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.data.max_message_size = IfBlock::new(1500);
     core.session.config.extensions.dsn = IfBlock::new(true);
@@ -62,7 +62,7 @@ async fn extensions() {
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {

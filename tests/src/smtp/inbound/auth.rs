@@ -32,14 +32,14 @@ use crate::smtp::{
 };
 use smtp::{
     config::ConfigContext,
-    core::{Core, Session, State},
+    core::{Session, State, SMTP},
     lookup::Lookup,
 };
 
 #[tokio::test]
 async fn auth() {
-    let mut core = Core::test();
-    let mut ctx = ConfigContext::default();
+    let mut core = SMTP::test();
+    let mut ctx = ConfigContext::new(&[]);
     ctx.lookup.insert(
         "plain".to_string(),
         Arc::new(Lookup::Local(AHashSet::from_iter([
@@ -72,7 +72,7 @@ async fn auth() {
     core.session.config.extensions.future_release =
         r"[{if = 'authenticated-as', ne = '', then = '1d'},
     {else = false}]"
-            .parse_if(&ConfigContext::default());
+            .parse_if(&ConfigContext::new(&[]));
 
     // EHLO should not avertise plain text auth without TLS
     let mut session = Session::test(core);

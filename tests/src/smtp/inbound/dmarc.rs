@@ -34,22 +34,23 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
+use utils::config::Rate;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, IfBlock, Rate, VerifyStrategy},
-    core::{Core, Session},
+    config::{AggregateFrequency, ConfigContext, IfBlock, VerifyStrategy},
+    core::{Session, SMTP},
     lookup::Lookup,
 };
 
 #[tokio::test]
 async fn dmarc() {
-    let mut core = Core::test();
-    let ctx = ConfigContext::default().parse_signatures();
+    let mut core = SMTP::test();
+    let ctx = ConfigContext::new(&[]).parse_signatures();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dmarc_test");
@@ -147,13 +148,13 @@ async fn dmarc() {
     let mut config = &mut core.mail_auth;
     config.spf.verify_ehlo = "[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     { else = 'relaxed' }]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dmarc.verify = IfBlock::new(VerifyStrategy::Strict);
     config.arc.verify = config.dmarc.verify.clone();
     config.dkim.verify = "[{if = 'sender-domain', eq = 'test.net', then = 'relaxed'},
     { else = 'strict' }]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
 
     let mut config = &mut core.report.config;
     config.spf.sign = "['rsa']"

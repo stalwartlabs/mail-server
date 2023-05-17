@@ -34,11 +34,11 @@ use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
     make_temp_dir,
     session::VerifyResponse,
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::{AggregateFrequency, ConfigContext, IfBlock},
-    core::Core,
+    core::SMTP,
     reporting::{
         scheduler::{ReportType, Scheduler},
         tls::{GenerateTlsReport, TLS_HTTP_REPORT},
@@ -56,8 +56,8 @@ async fn report_tls() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = Core::test();
-    let ctx = ConfigContext::default().parse_signatures();
+    let mut core = SMTP::test();
+    let ctx = ConfigContext::new(&[]).parse_signatures();
     let temp_dir = make_temp_dir("smtp_report_tls_test", true);
     let config = &mut core.report.config;
     config.path = IfBlock::new(temp_dir.temp_dir.clone());

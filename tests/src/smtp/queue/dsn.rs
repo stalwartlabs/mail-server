@@ -32,11 +32,11 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestQueueEvent},
-    ParseTestConfig, TestConfig, TestCore,
+    ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
     config::ConfigContext,
-    core::Core,
+    core::SMTP,
     queue::{
         DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule,
         Status,
@@ -105,8 +105,8 @@ async fn generate_dsn() {
     };
 
     // Load config
-    let mut core = Core::test();
-    let ctx = ConfigContext::default().parse_signatures();
+    let mut core = SMTP::test();
+    let ctx = ConfigContext::new(&[]).parse_signatures();
     let mut config = &mut core.queue.config.dsn;
     config.sign = "['rsa']"
         .parse_if::<Vec<String>>(&ctx)

@@ -31,6 +31,8 @@ use std::{collections::BTreeMap, fmt::Display, net::SocketAddr, time::Duration};
 use rustls::ServerConfig;
 use tokio::net::TcpSocket;
 
+use crate::{failed, UnwrapFailure};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub keys: BTreeMap<String, String>,
@@ -90,3 +92,36 @@ impl Display for ServerProtocol {
 }
 
 pub type Result<T> = std::result::Result<T, String>;
+
+impl Config {
+    pub fn init() -> Self {
+        let mut config_path = None;
+        let mut found_param = false;
+
+        for arg in std::env::args().skip(1) {
+            if let Some((key, value)) = arg.split_once('=') {
+                if key.starts_with("--config") {
+                    config_path = value.trim().to_string().into();
+                    break;
+                } else {
+                    failed(&format!("Invalid command line argument: {key}"));
+                }
+            } else if found_param {
+                config_path = arg.into();
+                break;
+            } else if arg.starts_with("--config") {
+                found_param = true;
+            } else {
+                failed(&format!("Invalid command line argument: {arg}"));
+            }
+        }
+
+        Config::parse(
+            &std::fs::read_to_string(
+                config_path.failed("Missing parameter --config=<path-to-config>."),
+            )
+            .failed("Could not read configuration file"),
+        )
+        .failed("Invalid configuration file")
+    }
+}

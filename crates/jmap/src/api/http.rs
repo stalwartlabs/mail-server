@@ -22,10 +22,11 @@ use utils::listener::{ServerInstance, SessionData, SessionManager};
 use crate::{
     auth::oauth::OAuthMetadata,
     blob::{DownloadResponse, UploadResponse},
+    services::state,
     JMAP,
 };
 
-use super::{session::Session, HtmlResponse, HttpResponse, JsonResponse};
+use super::{session::Session, HtmlResponse, HttpResponse, JmapSessionManager, JsonResponse};
 
 impl JMAP {
     pub async fn parse_request(
@@ -205,7 +206,7 @@ impl JMAP {
     }
 }
 
-impl SessionManager for super::SessionManager {
+impl SessionManager for JmapSessionManager {
     fn spawn(&self, session: SessionData<TcpStream>) {
         let jmap = self.inner.clone();
 
@@ -240,6 +241,13 @@ impl SessionManager for super::SessionManager {
             } else {
                 handle_request(jmap, session).await;
             }
+        });
+    }
+
+    fn shutdown(&self) {
+        let jmap = self.inner.clone();
+        tokio::spawn(async move {
+            let _ = jmap.state_tx.send(state::Event::Stop).await;
         });
     }
 }

@@ -32,13 +32,13 @@ use crate::smtp::{
 };
 use smtp::{
     config::{ConfigContext, IfBlock},
-    core::{Core, Session, State},
+    core::{Session, State, SMTP},
     lookup::Lookup,
 };
 
 #[tokio::test]
 async fn rcpt() {
-    let mut core = Core::test();
+    let mut core = SMTP::test();
 
     let list_addresses = Lookup::Local(AHashSet::from_iter([
         "jane@foobar.org".to_string(),
@@ -54,25 +54,25 @@ async fn rcpt() {
     config.lookup_addresses = IfBlock::new(Some(Arc::new(list_addresses)));
     config.max_recipients = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 5}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.relay = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
     {else = true}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config_ext.dsn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
     {else = true}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 100}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     config.errors_wait = r"[{if = 'remote-ip', eq = '10.0.0.1', then = '5ms'},
     {else = '1s'}]"
-        .parse_if(&ConfigContext::default());
+        .parse_if(&ConfigContext::new(&[]));
     core.session.config.throttle.rcpt_to = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
     key = 'sender'
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::default());
+    .parse_throttle(&ConfigContext::new(&[]));
 
     // RCPT without MAIL FROM
     let mut session = Session::test(core);

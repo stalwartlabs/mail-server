@@ -50,7 +50,7 @@ use crate::{
     },
 };
 
-use super::{Core, HttpAdminSessionManager};
+use super::{SmtpAdminSessionManager, SMTP};
 
 #[derive(Debug)]
 pub enum QueueRequest {
@@ -155,7 +155,7 @@ pub struct Report {
     pub size: usize,
 }
 
-impl SessionManager for HttpAdminSessionManager {
+impl SessionManager for SmtpAdminSessionManager {
     fn spawn(&self, session: utils::listener::SessionData<tokio::net::TcpStream>) {
         let core = self.inner.clone();
         tokio::spawn(async move {
@@ -179,11 +179,15 @@ impl SessionManager for HttpAdminSessionManager {
             }
         });
     }
+
+    fn shutdown(&self) {
+        // No-op
+    }
 }
 
 async fn handle_request(
     stream: impl AsyncRead + AsyncWrite + Unpin + 'static,
-    core: Arc<Core>,
+    core: Arc<SMTP>,
     remote_addr: IpAddr,
     _in_flight: InFlight,
 ) {
@@ -223,7 +227,7 @@ async fn handle_request(
     }
 }
 
-impl Core {
+impl SMTP {
     async fn parse_request(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,

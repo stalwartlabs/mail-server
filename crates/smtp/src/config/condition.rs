@@ -40,6 +40,7 @@ pub trait ConfigCondition {
         ctx: &ConfigContext,
         available_keys: &[EnvelopeKey],
     ) -> super::Result<Conditions>;
+    #[cfg(feature = "test_mode")]
     fn parse_conditions(
         &self,
         ctx: &ConfigContext,
@@ -381,14 +382,15 @@ mod tests {
         file.push("rules.toml");
 
         let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-        let mut context = ConfigContext::default();
-        let list = Arc::new(Lookup::default());
-        context.lookup.insert("test-list".to_string(), list.clone());
-        context.servers.push(Server {
+        let servers = vec![Server {
             id: "smtp".to_string(),
             internal_id: 123,
             ..Default::default()
-        });
+        }];
+        let mut context = ConfigContext::new(&servers);
+        let list = Arc::new(Lookup::default());
+        context.lookup.insert("test-list".to_string(), list.clone());
+
         let mut conditions = config.parse_conditions(&context).unwrap();
         let expected_rules = AHashMap::from_iter([
             (

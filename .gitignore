@@ -1,6 +1,6 @@
 /target
-/Cargo.lock
 .vscode
 *.failed
 *_failed
 stalwart.toml
+run.sh

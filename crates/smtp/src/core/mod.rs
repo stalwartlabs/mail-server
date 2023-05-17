@@ -70,27 +70,27 @@ pub mod worker;
 
 #[derive(Clone)]
 pub struct SmtpSessionManager {
-    pub inner: Arc<Core>,
+    pub inner: Arc<SMTP>,
 }
 
 #[derive(Clone)]
-pub struct HttpAdminSessionManager {
-    pub inner: Arc<Core>,
+pub struct SmtpAdminSessionManager {
+    pub inner: Arc<SMTP>,
 }
 
 impl SmtpSessionManager {
-    pub fn new(inner: Arc<Core>) -> Self {
+    pub fn new(inner: Arc<SMTP>) -> Self {
         Self { inner }
     }
 }
 
-impl HttpAdminSessionManager {
-    pub fn new(inner: Arc<Core>) -> Self {
+impl SmtpAdminSessionManager {
+    pub fn new(inner: Arc<SMTP>) -> Self {
         Self { inner }
     }
 }
 
-pub struct Core {
+pub struct SMTP {
     pub worker_pool: rayon::ThreadPool,
     pub session: SessionCore,
     pub queue: QueueCore,
@@ -163,7 +163,7 @@ pub enum State {
 pub struct Session<T: AsyncWrite + AsyncRead> {
     pub state: State,
     pub instance: Arc<ServerInstance>,
-    pub core: Arc<Core>,
+    pub core: Arc<SMTP>,
     pub span: Span,
     pub stream: T,
     pub data: SessionData,

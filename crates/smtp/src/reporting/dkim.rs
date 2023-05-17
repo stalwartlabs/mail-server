@@ -25,8 +25,9 @@ use mail_auth::{
     common::verify::VerifySignature, AuthenticatedMessage, AuthenticationResults, DkimOutput,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::config::Rate;
 
-use crate::{config::Rate, core::Session};
+use crate::core::Session;
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn send_dkim_report(

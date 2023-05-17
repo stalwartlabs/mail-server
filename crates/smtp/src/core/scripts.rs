@@ -43,7 +43,7 @@ use crate::{
     queue::{DomainPart, InstantFromTimestamp, Message},
 };
 
-use super::{Core, Session};
+use super::{Session, SMTP};
 
 pub enum ScriptResult {
     Accept,
@@ -113,7 +113,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-impl Core {
+impl SMTP {
     fn run_script_blocking(
         &self,
         script: Arc<Sieve>,

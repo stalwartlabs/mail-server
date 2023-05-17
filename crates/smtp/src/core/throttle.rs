@@ -24,6 +24,7 @@
 use ::utils::listener::limiter::{ConcurrencyLimiter, RateLimiter};
 use dashmap::mapref::entry::Entry;
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::config::Rate;
 
 use std::{
     hash::{BuildHasher, Hash, Hasher},

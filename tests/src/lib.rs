@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 #[cfg(test)]
-//pub mod jmap;
-#[cfg(test)]
-//pub mod store;
+pub mod jmap;
 #[cfg(test)]
 pub mod smtp;
+#[cfg(test)]
+pub mod store;
 
 pub fn add_test_certs(config: &str) -> String {
     let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

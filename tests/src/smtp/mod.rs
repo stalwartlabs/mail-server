@@ -45,8 +45,8 @@ use smtp::{
         SessionThrottle, SpfAuthConfig, Throttle, VerifyStrategy,
     },
     core::{
-        throttle::ThrottleKeyHasherBuilder, Core, QueueCore, ReportCore, Resolvers, SessionCore,
-        SieveConfig, SieveCore, TlsConnectors,
+        throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
+        SieveConfig, SieveCore, TlsConnectors, SMTP,
     },
     lookup::Lookup,
     outbound::dane::DnssecResolver,
@@ -134,9 +134,9 @@ pub trait TestConfig {
     fn test() -> Self;
 }
 
-impl TestConfig for Core {
+impl TestConfig for SMTP {
     fn test() -> Self {
-        Core {
+        SMTP {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(num_cpus::get())
                 .build()
@@ -470,12 +470,12 @@ pub struct ReportReceiver {
     pub report_rx: mpsc::Receiver<smtp::reporting::Event>,
 }
 
-pub trait TestCore {
+pub trait TestSMTP {
     fn init_test_queue(&mut self, test_name: &str) -> QueueReceiver;
     fn init_test_report(&mut self) -> ReportReceiver;
 }
 
-impl TestCore for Core {
+impl TestSMTP for SMTP {
     fn init_test_queue(&mut self, test_name: &str) -> QueueReceiver {
         let _temp_dir = make_temp_dir(test_name, true);
         self.queue.config.path = IfBlock::new(_temp_dir.temp_dir.clone());

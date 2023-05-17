@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use mail_auth::{IpLookupStrategy, MX};
 
-use smtp::{config::IfBlock, core::Core, outbound::RemoteHost};
+use smtp::{config::IfBlock, core::SMTP, outbound::RemoteHost};
 
 use super::ToRemoteHost;
 
@@ -20,7 +20,7 @@ async fn lookup_ip() {
         "10.0.0.3".parse().unwrap(),
         "10.0.0.4".parse().unwrap(),
     ];
-    let mut core = Core::test();
+    let mut core = SMTP::test();
     core.queue.config.source_ip.ipv4 = IfBlock::new(ipv4.clone());
     core.queue.config.source_ip.ipv6 = IfBlock::new(ipv6.clone());
     core.resolvers.dns.ipv4_add(
