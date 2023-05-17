@@ -42,7 +42,7 @@ async fn auth() {
     let mut ctx = ConfigContext::new(&[]);
     ctx.lookup.insert(
         "plain".to_string(),
-        Arc::new(Lookup::Local(AHashSet::from_iter([
+        Arc::new(Lookup::List(AHashSet::from_iter([
             "john:secret".to_string(),
             "jane:p4ssw0rd".to_string(),
         ]))),

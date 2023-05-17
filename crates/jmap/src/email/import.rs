@@ -113,6 +113,7 @@ impl JMAP {
                     mailbox_ids,
                     email.keywords,
                     email.received_at.map(|r| r.into()),
+                    false,
                 )
                 .await
             {

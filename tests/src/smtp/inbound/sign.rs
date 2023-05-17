@@ -141,10 +141,10 @@ async fn sign_and_seal() {
     );
 
     let mut config = &mut core.session.config.rcpt;
-    config.lookup_domains = IfBlock::new(Some(Arc::new(Lookup::Local(AHashSet::from_iter([
+    config.lookup_domains = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
         "example.com".to_string(),
     ])))));
-    config.lookup_addresses = IfBlock::new(Some(Arc::new(Lookup::Local(AHashSet::from_iter([
+    config.lookup_addresses = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
         "jdoe@example.com".to_string(),
     ])))));
 

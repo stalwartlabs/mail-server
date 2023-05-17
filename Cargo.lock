@@ -4376,6 +4376,7 @@ name = "utils"
 version = "0.1.0"
 dependencies = [
  "mail-auth",
+ "mail-send",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",

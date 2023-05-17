@@ -25,8 +25,9 @@ use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::ipc::Item;
 
-use crate::{core::Session, lookup::Item};
+use crate::core::Session;
 
 pub struct SaslToken {
     mechanism: u64,

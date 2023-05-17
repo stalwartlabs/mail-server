@@ -36,10 +36,11 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
+use utils::ipc::{Item, LookupItem};
 
 use crate::lookup::spawn::LoggedUnwrap;
 
-use super::{Event, Item, LookupItem, RemoteLookup};
+use super::{Event, RemoteLookup};
 
 pub struct ImapAuthClient<T: AsyncRead + AsyncWrite> {
     stream: T,

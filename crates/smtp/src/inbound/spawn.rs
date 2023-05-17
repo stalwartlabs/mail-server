@@ -75,6 +75,8 @@ impl SessionManager for SmtpSessionManager {
         tokio::spawn(async move {
             let _ = core.queue.tx.send(queue::Event::Stop).await;
             let _ = core.report.tx.send(reporting::Event::Stop).await;
+            #[cfg(feature = "local_delivery")]
+            let _ = core.delivery_tx.send(utils::ipc::DeliveryEvent::Stop).await;
         });
     }
 }

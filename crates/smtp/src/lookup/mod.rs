@@ -22,9 +22,9 @@
 */
 
 use ahash::AHashSet;
-use mail_send::Credentials;
 use parking_lot::Mutex;
 use tokio::sync::{mpsc, oneshot};
+use utils::ipc::DeliveryEvent;
 
 use self::cache::LookupCache;
 
@@ -37,9 +37,11 @@ pub mod sql;
 
 #[derive(Debug)]
 pub enum Lookup {
-    Local(AHashSet<String>),
+    List(AHashSet<String>),
     Remote(LookupChannel),
     Sql(SqlQuery),
+    #[cfg(feature = "local_delivery")]
+    Local(mpsc::Sender<DeliveryEvent>),
 }
 
 #[derive(Debug, Clone)]
@@ -59,42 +61,21 @@ pub struct SqlQuery {
 
 impl Default for Lookup {
     fn default() -> Self {
-        Lookup::Local(AHashSet::default())
+        Lookup::List(AHashSet::default())
     }
 }
 
 #[derive(Debug)]
 pub enum Event {
-    Lookup(LookupItem),
+    Lookup(utils::ipc::LookupItem),
     WorkerReady {
-        item: Item,
+        item: utils::ipc::Item,
         result: Option<bool>,
-        next_lookup: Option<oneshot::Sender<Option<LookupItem>>>,
+        next_lookup: Option<oneshot::Sender<Option<utils::ipc::LookupItem>>>,
     },
     WorkerFailed,
     Reload,
     Stop,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum Item {
-    IsAccount(String),
-    Authenticate(Credentials<String>),
-    Verify(String),
-    Expand(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LookupResult {
-    True,
-    False,
-    Values(Vec<String>),
-}
-
-#[derive(Debug)]
-pub struct LookupItem {
-    pub item: Item,
-    pub result: oneshot::Sender<LookupResult>,
 }
 
 #[derive(Debug, Clone)]
@@ -103,11 +84,11 @@ pub struct LookupChannel {
 }
 
 #[derive(Clone)]
-struct RemoteHost<T: RemoteLookup> {
+struct NextHop<T: RemoteLookup> {
     tx: mpsc::Sender<Event>,
     host: T,
 }
 
 pub trait RemoteLookup: Clone {
-    fn spawn_lookup(&self, lookup: LookupItem, tx: mpsc::Sender<Event>);
+    fn spawn_lookup(&self, lookup: utils::ipc::LookupItem, tx: mpsc::Sender<Event>);
 }

@@ -39,10 +39,12 @@ use tokio::{
     sync::oneshot,
 };
 
-use utils::listener::{limiter::InFlight, SessionManager};
+use utils::{
+    ipc::{Item, LookupResult},
+    listener::{limiter::InFlight, SessionManager},
+};
 
 use crate::{
-    lookup::{Item, LookupResult},
     queue::{self, instant_to_timestamp, InstantFromTimestamp, QueueId, Status},
     reporting::{
         self,

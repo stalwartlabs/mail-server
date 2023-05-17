@@ -22,23 +22,32 @@
 */
 
 use mail_send::Credentials;
+use tokio::sync::{mpsc, oneshot};
+use utils::ipc::{DeliveryEvent, Item, LookupItem, LookupResult};
 
-use super::{Item, Lookup, LookupResult};
+use super::Lookup;
 
 impl Lookup {
     pub async fn contains(&self, entry: &str) -> Option<bool> {
         match self {
+            #[cfg(feature = "local_delivery")]
+            Lookup::Local(tx) => lookup_local(tx, Item::IsAccount(entry.to_string()))
+                .await
+                .map(|r| r.into()),
             Lookup::Remote(tx) => tx
                 .lookup(Item::IsAccount(entry.to_string()))
                 .await
                 .map(|r| r.into()),
             Lookup::Sql(sql) => sql.exists(entry).await,
-            Lookup::Local(entries) => Some(entries.contains(entry)),
+            Lookup::List(entries) => Some(entries.contains(entry)),
         }
     }
 
     pub async fn lookup(&self, item: Item) -> Option<LookupResult> {
         match self {
+            #[cfg(feature = "local_delivery")]
+            Lookup::Local(tx) => lookup_local(tx, item).await,
+
             Lookup::Remote(tx) => tx.lookup(item).await,
 
             Lookup::Sql(sql) => match item {
@@ -57,7 +66,7 @@ impl Lookup {
                 Item::Expand(list) => sql.fetch_many(&list).await.map(LookupResult::from),
             },
 
-            Lookup::Local(list) => match item {
+            Lookup::List(list) => match item {
                 Item::IsAccount(item) => Some(list.contains(&item).into()),
                 Item::Verify(_item) | Item::Expand(_item) => {
                     #[cfg(feature = "test_mode")]
@@ -89,5 +98,21 @@ impl Lookup {
                 }
             },
         }
+    }
+}
+
+async fn lookup_local(
+    delivery_tx: &mpsc::Sender<DeliveryEvent>,
+    item: Item,
+) -> Option<LookupResult> {
+    let (tx, rx) = oneshot::channel();
+    if delivery_tx
+        .send(DeliveryEvent::Lookup(LookupItem { item, result: tx }))
+        .await
+        .is_ok()
+    {
+        rx.await.ok()
+    } else {
+        None
     }
 }

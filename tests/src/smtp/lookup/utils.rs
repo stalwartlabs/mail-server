@@ -2,9 +2,9 @@ use std::time::{Duration, Instant};
 
 use mail_auth::{IpLookupStrategy, MX};
 
-use smtp::{config::IfBlock, core::SMTP, outbound::RemoteHost};
+use smtp::{config::IfBlock, core::SMTP, outbound::NextHop};
 
-use super::ToRemoteHost;
+use super::ToNextHop;
 
 #[tokio::test]
 async fn lookup_ip() {
@@ -40,7 +40,7 @@ async fn lookup_ip() {
     // Ipv4 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
     let (source_ips, remote_ips) = core
-        .resolve_host(&RemoteHost::MX("mx.foobar.org"), &"envelope", 2)
+        .resolve_host(&NextHop::MX("mx.foobar.org"), &"envelope", 2)
         .await
         .unwrap();
     assert!(ipv4.contains(&match source_ips.unwrap() {
@@ -52,7 +52,7 @@ async fn lookup_ip() {
     // Ipv6 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
     let (source_ips, remote_ips) = core
-        .resolve_host(&RemoteHost::MX("mx.foobar.org"), &"envelope", 2)
+        .resolve_host(&NextHop::MX("mx.foobar.org"), &"envelope", 2)
         .await
         .unwrap();
     assert!(ipv6.contains(&match source_ips.unwrap() {
@@ -90,7 +90,7 @@ fn to_remote_hosts() {
     let hosts = mx.to_remote_hosts("domain", 7).unwrap();
     assert_eq!(hosts.len(), 7);
     for host in hosts {
-        if let RemoteHost::MX(host) = host {
+        if let NextHop::MX(host) = host {
             assert!((*host.as_bytes().last().unwrap() - b'0') <= 8);
         }
     }

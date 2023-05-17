@@ -148,7 +148,7 @@ impl JMAP {
             {
                 if let (Some(email), Some(password)) = (fields.get("email"), fields.get("password"))
                 {
-                    if let Some(id) = self.authenticate(email, password).await {
+                    if let Some(id) = self.authenticate_with_token(email, password).await {
                         oauth
                             .account_id
                             .store(id.primary_id(), atomic::Ordering::Relaxed);

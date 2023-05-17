@@ -15,7 +15,10 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
-use services::state::{self, init_state_manager, spawn_state_manager};
+use services::{
+    delivery::spawn_delivery_manager,
+    state::{self, init_state_manager, spawn_state_manager},
+};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
     fts::Language,
@@ -26,7 +29,7 @@ use store::{
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
 use tokio::sync::mpsc;
-use utils::{config::Rate, failed, UnwrapFailure};
+use utils::{config::Rate, failed, ipc::DeliveryEvent, UnwrapFailure};
 
 pub mod api;
 pub mod auth;
@@ -102,7 +105,10 @@ pub enum MaybeError {
 }
 
 impl JMAP {
-    pub async fn init(config: &utils::config::Config) -> Arc<Self> {
+    pub async fn init(
+        config: &utils::config::Config,
+        delivery_rx: mpsc::Receiver<DeliveryEvent>,
+    ) -> Arc<Self> {
         let auth_db = match config
             .value_require("jmap.auth.database.type")
             .failed("Invalid property")
@@ -182,6 +188,22 @@ impl JMAP {
                         .value_require("jmap.auth.database.query.gids-by-uid")
                         .failed("Invalid property")
                         .to_string(),
+                    query_uids_by_address: config
+                        .value_require("jmap.auth.database.query.uids-by-address")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_addresses_by_uid: config
+                        .value_require("jmap.auth.database.query.addresses-by-uid")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_vrfy: config
+                        .value_require("jmap.auth.database.query.vrfy")
+                        .failed("Invalid property")
+                        .to_string(),
+                    query_expn: config
+                        .value_require("jmap.auth.database.query.expn")
+                        .failed("Invalid property")
+                        .to_string(),
                 }
             }
             _ => failed("Invalid auth database type"),
@@ -226,6 +248,9 @@ impl JMAP {
             auth_db,
             state_tx,
         });
+
+        // Spawn delivery manager
+        spawn_delivery_manager(jmap_server.clone(), delivery_rx);
 
         // Spawn state manager
         spawn_state_manager(jmap_server.clone(), config, state_rx);

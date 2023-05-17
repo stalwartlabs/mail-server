@@ -25,6 +25,10 @@ pub enum AuthDatabase {
         query_login_by_uid: String,
         query_secret_by_uid: String,
         query_gids_by_uid: String,
+        query_uids_by_address: String,
+        query_addresses_by_uid: String,
+        query_vrfy: String,
+        query_expn: String,
     },
     Ldap,
 }

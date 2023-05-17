@@ -1,7 +1,11 @@
 use std::time::Duration;
 
-use jmap::{api::JmapSessionManager, JMAP};
-use smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
+use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use smtp::{
+    core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP},
+    outbound::delivery,
+};
+use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol},
     enable_tracing, wait_for_shutdown, UnwrapFailure,
@@ -23,8 +27,9 @@ async fn main() -> std::io::Result<()> {
     );
 
     // Init servers
-    let smtp = SMTP::init(&config, &servers).await;
-    let jmap = JMAP::init(&config).await;
+    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let smtp = SMTP::init(&config, &servers, delivery_tx).await;
+    let jmap = JMAP::init(&config, delivery_rx).await;
 
     // Spawn servers
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {

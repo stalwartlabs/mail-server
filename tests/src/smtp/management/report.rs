@@ -67,7 +67,7 @@ async fn manage_reports() {
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
-    core.queue.config.management_lookup = Arc::new(Lookup::Local(AHashSet::from_iter([
+    core.queue.config.management_lookup = Arc::new(Lookup::List(AHashSet::from_iter([
         "admin:secret".to_string(),
     ])));
     let (report_tx, report_rx) = mpsc::channel(1024);

@@ -21,16 +21,19 @@
  * for more details.
 */
 
-use std::{collections::VecDeque, fmt::Debug, sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 use crate::config::Host;
 use mail_send::smtp::tls::build_tls_connector;
 use tokio::sync::{mpsc, oneshot};
-use utils::config::{Config, ServerProtocol};
+use utils::{
+    config::{Config, ServerProtocol},
+    ipc::{Item, LookupItem, LookupResult},
+};
 
 use super::{
-    cache::LookupCache, imap::ImapAuthClientBuilder, smtp::SmtpClientBuilder, Event, Item,
-    LookupChannel, LookupItem, LookupResult, RemoteHost, RemoteLookup,
+    cache::LookupCache, imap::ImapAuthClientBuilder, smtp::SmtpClientBuilder, Event, LookupChannel,
+    NextHop, RemoteLookup,
 };
 
 impl Host {
@@ -46,7 +49,7 @@ impl Host {
             // Prepare builders
             match self.protocol {
                 ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                    RemoteHost {
+                    NextHop {
                         tx: self.channel_tx,
                         host: Arc::new(SmtpClientBuilder {
                             builder: mail_send::SmtpClientBuilder {
@@ -73,7 +76,7 @@ impl Host {
                     .await;
                 }
                 ServerProtocol::Imap => {
-                    RemoteHost {
+                    NextHop {
                         tx: self.channel_tx,
                         host: Arc::new(
                             ImapAuthClientBuilder::new(
@@ -107,7 +110,7 @@ impl Host {
     }
 }
 
-impl<T: RemoteLookup> RemoteHost<T> {
+impl<T: RemoteLookup> NextHop<T> {
     pub async fn run(
         &self,
         mut rx: mpsc::Receiver<Event>,
@@ -205,32 +208,6 @@ impl From<mpsc::Sender<Event>> for LookupChannel {
     }
 }
 
-impl From<LookupResult> for bool {
-    fn from(value: LookupResult) -> Self {
-        matches!(value, LookupResult::True | LookupResult::Values(_))
-    }
-}
-
-impl From<bool> for LookupResult {
-    fn from(value: bool) -> Self {
-        if value {
-            LookupResult::True
-        } else {
-            LookupResult::False
-        }
-    }
-}
-
-impl From<Vec<String>> for LookupResult {
-    fn from(value: Vec<String>) -> Self {
-        if !value.is_empty() {
-            LookupResult::Values(value)
-        } else {
-            LookupResult::False
-        }
-    }
-}
-
 pub trait LoggedUnwrap {
     fn logged_unwrap(self) -> bool;
 }
@@ -243,17 +220,6 @@ impl<T, E: std::fmt::Debug> LoggedUnwrap for Result<T, E> {
                 tracing::debug!("Failed to send message over channel: {:?}", err);
                 false
             }
-        }
-    }
-}
-
-impl Debug for Item {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IsAccount(arg0) => f.debug_tuple("Rcpt").field(arg0).finish(),
-            Self::Authenticate(_) => f.debug_tuple("Auth").finish(),
-            Self::Expand(arg0) => f.debug_tuple("Expn").field(arg0).finish(),
-            Self::Verify(arg0) => f.debug_tuple("Vrfy").field(arg0).finish(),
         }
     }
 }

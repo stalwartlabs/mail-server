@@ -56,7 +56,7 @@ impl JMAP {
                             })
                         })
                     {
-                        self.authenticate(&account, &secret).await
+                        self.authenticate_with_token(&account, &secret).await
                     } else {
                         tracing::debug!(
                             context = "authenticate_headers",

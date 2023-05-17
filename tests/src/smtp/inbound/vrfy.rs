@@ -41,14 +41,14 @@ async fn vrfy_expn() {
     let mut ctx = ConfigContext::new(&[]);
     ctx.lookup.insert(
         "vrfy".to_string(),
-        Arc::new(Lookup::Local(AHashSet::from_iter([
+        Arc::new(Lookup::List(AHashSet::from_iter([
             "john@foobar.org:john@foobar.org".to_string(),
             "john:john@foobar.org".to_string(),
         ]))),
     );
     ctx.lookup.insert(
         "expn".to_string(),
-        Arc::new(Lookup::Local(AHashSet::from_iter([
+        Arc::new(Lookup::List(AHashSet::from_iter([
             "sales:john@foobar.org,bill@foobar.org,jane@foobar.org".to_string(),
             "support:mike@foobar.org".to_string(),
         ]))),

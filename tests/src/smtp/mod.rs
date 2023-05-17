@@ -158,6 +158,7 @@ impl TestConfig for SMTP {
             mail_auth: MailAuthConfig::test(),
             report: ReportCore::test(),
             sieve: SieveCore::test(),
+            delivery_tx: mpsc::channel(1).0,
         }
     }
 }
@@ -313,7 +314,7 @@ impl TestConfig for QueueConfig {
                 rcpt: vec![],
                 rcpt_domain: vec![],
             },
-            management_lookup: Arc::new(Lookup::Local(AHashSet::default())),
+            management_lookup: Arc::new(Lookup::List(AHashSet::default())),
         }
     }
 }

@@ -32,6 +32,7 @@ pub struct IngestedEmail {
 }
 
 impl JMAP {
+    #[allow(clippy::blocks_in_if_conditions)]
     pub async fn email_ingest(
         &self,
         raw_message: &[u8],
@@ -39,6 +40,7 @@ impl JMAP {
         mailbox_ids: Vec<u32>,
         keywords: Vec<Keyword>,
         received_at: Option<u64>,
+        skip_duplicates: bool,
     ) -> Result<IngestedEmail, MaybeError> {
         // Parse message
         let message = Message::parse(raw_message)
@@ -83,6 +85,39 @@ impl JMAP {
                 _ => (),
             }
         }
+
+        // Check for duplicates
+        if !skip_duplicates
+            && !self
+                .store
+                .filter(
+                    account_id,
+                    Collection::Email,
+                    references
+                        .iter()
+                        .map(|id| Filter::eq(Property::MessageId, *id))
+                        .collect(),
+                )
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "find_duplicates",
+                        error = ?err,
+                        "Duplicate message search failed.");
+                    MaybeError::Temporary
+                })?
+                .results
+                .is_empty()
+        {
+            return Ok(IngestedEmail {
+                id: Id::default(),
+                change_id: u64::MAX,
+                blob_id: BlobId::default(),
+                size: 0,
+            });
+        }
+
         let thread_id = if !references.is_empty() {
             self.find_or_merge_thread(account_id, subject, &references)
                 .await?

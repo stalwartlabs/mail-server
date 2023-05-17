@@ -40,13 +40,13 @@ use smtp::{
 async fn rcpt() {
     let mut core = SMTP::test();
 
-    let list_addresses = Lookup::Local(AHashSet::from_iter([
+    let list_addresses = Lookup::List(AHashSet::from_iter([
         "jane@foobar.org".to_string(),
         "bill@foobar.org".to_string(),
         "mike@foobar.org".to_string(),
         "john@foobar.org".to_string(),
     ]));
-    let list_domains = Lookup::Local(AHashSet::from_iter(["foobar.org".to_string()]));
+    let list_domains = Lookup::List(AHashSet::from_iter(["foobar.org".to_string()]));
 
     let mut config = &mut core.session.config.rcpt;
     let mut config_ext = &mut core.session.config.extensions;

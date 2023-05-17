@@ -26,8 +26,9 @@ use std::sync::Arc;
 use mail_send::smtp::AssertReply;
 use smtp_proto::Severity;
 use tokio::sync::{mpsc, oneshot};
+use utils::ipc::{Item, LookupItem, LookupResult};
 
-use super::{spawn::LoggedUnwrap, Event, Item, LookupItem, LookupResult, RemoteLookup};
+use super::{spawn::LoggedUnwrap, Event, RemoteLookup};
 
 pub struct SmtpClientBuilder {
     pub builder: mail_send::SmtpClientBuilder<String>,

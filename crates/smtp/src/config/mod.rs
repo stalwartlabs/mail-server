@@ -132,7 +132,7 @@ impl Eq for ConditionMatch {}
 impl PartialEq for Lookup {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Local(l0), Self::Local(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
             (Self::Remote(_), Self::Remote(_)) => true,
             _ => false,
         }

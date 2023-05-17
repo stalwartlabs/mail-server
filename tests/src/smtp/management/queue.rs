@@ -87,7 +87,7 @@ async fn manage_queue() {
     core.queue.config.retry = IfBlock::new(vec![Duration::from_secs(1000)]);
     core.queue.config.notify = IfBlock::new(vec![Duration::from_secs(2000)]);
     core.queue.config.expire = IfBlock::new(Duration::from_secs(3000));
-    core.queue.config.management_lookup = Arc::new(Lookup::Local(AHashSet::from_iter([
+    core.queue.config.management_lookup = Arc::new(Lookup::List(AHashSet::from_iter([
         "admin:secret".to_string(),
     ])));
     let local_qr = core.init_test_queue("smtp_manage_queue_local");

@@ -274,7 +274,7 @@ impl SMTP {
                             Recipient::List(list) => {
                                 if let Some(list) = self.sieve.lookup.get(&list) {
                                     match list.as_ref() {
-                                        Lookup::Local(items) => {
+                                        Lookup::List(items) => {
                                             for rcpt in items {
                                                 handle.block_on(
                                                     message.add_recipient(rcpt, &self.queue.config),

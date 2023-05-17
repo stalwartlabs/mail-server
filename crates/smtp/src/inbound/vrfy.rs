@@ -22,11 +22,9 @@
 */
 
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::ipc::{Item, LookupResult};
 
-use crate::{
-    core::Session,
-    lookup::{Item, LookupResult},
-};
+use crate::core::Session;
 use std::fmt::Write;
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {

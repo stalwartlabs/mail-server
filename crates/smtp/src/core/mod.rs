@@ -42,7 +42,10 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 use tracing::Span;
-use utils::listener::{limiter::InFlight, ServerInstance};
+use utils::{
+    ipc::DeliveryEvent,
+    listener::{limiter::InFlight, ServerInstance},
+};
 
 use crate::{
     config::{
@@ -98,6 +101,8 @@ pub struct SMTP {
     pub mail_auth: MailAuthConfig,
     pub report: ReportCore,
     pub sieve: SieveCore,
+    #[cfg(feature = "local_delivery")]
+    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
 }
 
 pub struct SieveCore {

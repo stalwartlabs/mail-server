@@ -43,10 +43,10 @@ use crate::{
 };
 
 use super::{
-    lookup::ToRemoteHost,
+    lookup::ToNextHop,
     mta_sts,
     session::{read_greeting, say_helo, try_start_tls, SessionParams, StartTlsResult},
-    RemoteHost,
+    NextHop,
 };
 use crate::queue::{
     manager::Queue, throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope,
@@ -160,15 +160,31 @@ impl DeliveryAttempt {
                 }
 
                 // Obtain next hop
-                let (mut remote_hosts, is_smtp) =
-                    if let Some(next_hop) = queue_config.next_hop.eval(&envelope).await {
-                        (
-                            vec![RemoteHost::Relay(next_hop)],
-                            next_hop.protocol == ServerProtocol::Smtp,
-                        )
-                    } else {
-                        (Vec::with_capacity(0), true)
-                    };
+                let (mut remote_hosts, is_smtp) = match queue_config.next_hop.eval(&envelope).await
+                {
+                    #[cfg(feature = "local_delivery")]
+                    Some(next_hop) if next_hop.protocol == ServerProtocol::Jmap => {
+                        // Deliver message locally
+                        let delivery_result = self
+                            .message
+                            .deliver_local(
+                                recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
+                                &core.delivery_tx,
+                                &span,
+                            )
+                            .await;
+
+                        // Update status for the current domain and continue with the next one
+                        domain
+                            .set_status(delivery_result, queue_config.retry.eval(&envelope).await);
+                        continue 'next_domain;
+                    }
+                    Some(next_hop) => (
+                        vec![NextHop::Relay(next_hop)],
+                        next_hop.protocol == ServerProtocol::Smtp,
+                    ),
+                    None => (Vec::with_capacity(0), true),
+                };
 
                 // Prepare TLS strategy
                 let mut tls_strategy = TlsStrategy {
@@ -882,7 +898,7 @@ impl DeliveryAttempt {
                     context = "queue",
                     event = "requeue",
                     reason = "concurrency-limited",
-                    "Too many outbound concurrenct connections, message moved to on-hold queue."
+                    "Too many outbound concurrent connections, message moved to on-hold queue."
                 );
 
                 WorkerResult::OnHold(OnHold {

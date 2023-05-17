@@ -32,6 +32,7 @@ use config::{
     session::ConfigSession, ConfigContext,
 };
 use dashmap::DashMap;
+use lookup::Lookup;
 use mail_send::smtp::tls::build_tls_connector;
 use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;
@@ -52,9 +53,20 @@ pub mod reporting;
 pub static USER_AGENT: &str = concat!("StalwartSMTP/", env!("CARGO_PKG_VERSION"),);
 
 impl SMTP {
-    pub async fn init(config: &Config, servers: &Servers) -> Arc<Self> {
+    pub async fn init(
+        config: &Config,
+        servers: &Servers,
+        #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
+    ) -> Arc<Self> {
         // Read configuration parameters
         let mut config_ctx = ConfigContext::new(&servers.inner);
+
+        #[cfg(feature = "local_delivery")]
+        config_ctx.lookup.insert(
+            "local".to_string(),
+            Arc::new(Lookup::Local(delivery_tx.clone())),
+        );
+
         config
             .parse_remote_hosts(&mut config_ctx)
             .failed("Configuration error");
@@ -152,6 +164,8 @@ impl SMTP {
             },
             mail_auth: mail_auth_config,
             sieve: sieve_config,
+            #[cfg(feature = "local_delivery")]
+            delivery_tx,
         });
 
         // Spawn queue manager

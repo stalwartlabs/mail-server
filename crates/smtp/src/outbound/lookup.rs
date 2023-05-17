@@ -31,12 +31,12 @@ use crate::{
     queue::{Error, ErrorDetails, Status},
 };
 
-use super::RemoteHost;
+use super::NextHop;
 
 impl SMTP {
     pub(super) async fn resolve_host(
         &self,
-        remote_host: &RemoteHost<'_>,
+        remote_host: &NextHop<'_>,
         envelope: &impl Envelope,
         max_multihomed: usize,
     ) -> Result<(Option<IpAddr>, Vec<IpAddr>), Status<(), Error>> {
@@ -106,20 +106,20 @@ impl SMTP {
     }
 }
 
-pub(super) trait ToRemoteHost {
+pub(super) trait ToNextHop {
     fn to_remote_hosts<'x, 'y: 'x>(
         &'x self,
         domain: &'y str,
         max_mx: usize,
-    ) -> Option<Vec<RemoteHost<'_>>>;
+    ) -> Option<Vec<NextHop<'_>>>;
 }
 
-impl ToRemoteHost for Vec<MX> {
+impl ToNextHop for Vec<MX> {
     fn to_remote_hosts<'x, 'y: 'x>(
         &'x self,
         domain: &'y str,
         max_mx: usize,
-    ) -> Option<Vec<RemoteHost<'_>>> {
+    ) -> Option<Vec<NextHop<'_>>> {
         if !self.is_empty() {
             // Obtain max number of MX hosts to process
             let mut remote_hosts = Vec::with_capacity(max_mx);
@@ -129,7 +129,7 @@ impl ToRemoteHost for Vec<MX> {
                     let mut slice = mx.exchanges.iter().collect::<Vec<_>>();
                     slice.shuffle(&mut rand::thread_rng());
                     for remote_host in slice {
-                        remote_hosts.push(RemoteHost::MX(remote_host.as_str()));
+                        remote_hosts.push(NextHop::MX(remote_host.as_str()));
                         if remote_hosts.len() == max_mx {
                             break 'outer;
                         }
@@ -139,7 +139,7 @@ impl ToRemoteHost for Vec<MX> {
                     if mx.preference == 0 && remote_host == "." {
                         return None;
                     }
-                    remote_hosts.push(RemoteHost::MX(remote_host.as_str()));
+                    remote_hosts.push(NextHop::MX(remote_host.as_str()));
                     if remote_hosts.len() == max_mx {
                         break;
                     }
@@ -149,7 +149,7 @@ impl ToRemoteHost for Vec<MX> {
         } else {
             // If an empty list of MXs is returned, the address is treated as if it was
             // associated with an implicit MX RR with a preference of 0, pointing to that host.
-            vec![RemoteHost::MX(domain)].into()
+            vec![NextHop::MX(domain)].into()
         }
     }
 }

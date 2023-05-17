@@ -109,7 +109,7 @@ impl JMAP {
 
         // Authenticate user
         if let (Some(email), Some(password)) = (params.get("email"), params.get("password")) {
-            if let Some(acl_token) = self.authenticate(email, password).await {
+            if let Some(acl_token) = self.authenticate_with_token(email, password).await {
                 // Generate client code
                 let client_code = thread_rng()
                     .sample_iter(Alphanumeric)

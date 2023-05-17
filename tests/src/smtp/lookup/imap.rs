@@ -32,12 +32,10 @@ use tokio::{
 };
 use tokio_rustls::TlsAcceptor;
 
-use smtp::{
-    config::{remote::ConfigHost, ConfigContext},
-    lookup::{Item, LookupResult},
-};
+use smtp::config::{remote::ConfigHost, ConfigContext};
 use utils::{
     config::Config,
+    ipc::{Item, LookupResult},
     listener::limiter::{ConcurrencyLimiter, InFlight},
 };
 

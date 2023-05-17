@@ -70,7 +70,7 @@ impl ConfigList for Config {
                 entries.insert(value.to_string());
             }
         }
-        Ok(Lookup::Local(entries))
+        Ok(Lookup::List(entries))
     }
 }
 
@@ -118,27 +118,27 @@ mod tests {
         let mut expected_lists = AHashMap::from_iter([
             (
                 "list/local-domains".to_string(),
-                Arc::new(Lookup::Local(AHashSet::from_iter([
+                Arc::new(Lookup::List(AHashSet::from_iter([
                     "example.org".to_string(),
                     "example.net".to_string(),
                 ]))),
             ),
             (
                 "list/spammer-domains".to_string(),
-                Arc::new(Lookup::Local(AHashSet::from_iter([
+                Arc::new(Lookup::List(AHashSet::from_iter([
                     "thatdomain.net".to_string()
                 ]))),
             ),
             (
                 "list/local-users".to_string(),
-                Arc::new(Lookup::Local(AHashSet::from_iter([
+                Arc::new(Lookup::List(AHashSet::from_iter([
                     "user1@domain.org".to_string(),
                     "user2@domain.org".to_string(),
                 ]))),
             ),
             (
                 "list/power-users".to_string(),
-                Arc::new(Lookup::Local(AHashSet::from_iter([
+                Arc::new(Lookup::List(AHashSet::from_iter([
                     "user1@domain.org".to_string(),
                     "user2@domain.org".to_string(),
                     "user3@example.net".to_string(),

@@ -50,6 +50,7 @@ privdrop = "0.5.3"
 
 [features]
 test_mode = []
+local_delivery = []
 
 #[[bench]]
 #name = "hash"

@@ -34,6 +34,8 @@ use crate::{
 
 pub mod dane;
 pub mod delivery;
+#[cfg(feature = "local_delivery")]
+pub mod local;
 pub mod lookup;
 pub mod mta_sts;
 pub mod session;
@@ -146,6 +148,14 @@ impl Status<(), Error> {
             details: format!("Timeout while {stage}"),
         }))
     }
+
+    #[cfg(feature = "local_delivery")]
+    pub fn local_error() -> Self {
+        Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
+            entity: "localhost".to_string(),
+            details: "Could not deliver message locally.".to_string(),
+        }))
+    }
 }
 
 impl From<mail_auth::Error> for Status<(), Error> {
@@ -221,31 +231,31 @@ impl From<Box<Message>> for DeliveryAttempt {
     }
 }
 
-enum RemoteHost<'x> {
+enum NextHop<'x> {
     Relay(&'x RelayHost),
     MX(&'x str),
 }
 
-impl<'x> RemoteHost<'x> {
+impl<'x> NextHop<'x> {
     #[inline(always)]
     fn hostname(&self) -> &str {
         match self {
-            RemoteHost::MX(host) => {
+            NextHop::MX(host) => {
                 if let Some(host) = host.strip_suffix('.') {
                     host
                 } else {
                     host
                 }
             }
-            RemoteHost::Relay(host) => host.address.as_str(),
+            NextHop::Relay(host) => host.address.as_str(),
         }
     }
 
     #[inline(always)]
     fn fqdn_hostname(&self) -> Cow<'_, str> {
         let host = match self {
-            RemoteHost::MX(host) => host,
-            RemoteHost::Relay(host) => host.address.as_str(),
+            NextHop::MX(host) => host,
+            NextHop::Relay(host) => host.address.as_str(),
         };
         if !host.ends_with('.') {
             format!("{host}.").into()
@@ -258,18 +268,18 @@ impl<'x> RemoteHost<'x> {
     fn port(&self) -> u16 {
         match self {
             #[cfg(feature = "test_mode")]
-            RemoteHost::MX(_) => 9925,
+            NextHop::MX(_) => 9925,
             #[cfg(not(feature = "test_mode"))]
-            RemoteHost::MX(_) => 25,
-            RemoteHost::Relay(host) => host.port,
+            NextHop::MX(_) => 25,
+            NextHop::Relay(host) => host.port,
         }
     }
 
     #[inline(always)]
     fn credentials(&self) -> Option<&Credentials<String>> {
         match self {
-            RemoteHost::MX(_) => None,
-            RemoteHost::Relay(host) => host.auth.as_ref(),
+            NextHop::MX(_) => None,
+            NextHop::Relay(host) => host.auth.as_ref(),
         }
     }
 
@@ -281,24 +291,24 @@ impl<'x> RemoteHost<'x> {
         }
         #[cfg(not(feature = "test_mode"))]
         match self {
-            RemoteHost::MX(_) => false,
-            RemoteHost::Relay(host) => host.tls_allow_invalid_certs,
+            NextHop::MX(_) => false,
+            NextHop::Relay(host) => host.tls_allow_invalid_certs,
         }
     }
 
     #[inline(always)]
     fn implicit_tls(&self) -> bool {
         match self {
-            RemoteHost::MX(_) => false,
-            RemoteHost::Relay(host) => host.tls_implicit,
+            NextHop::MX(_) => false,
+            NextHop::Relay(host) => host.tls_implicit,
         }
     }
 
     #[inline(always)]
     fn is_smtp(&self) -> bool {
         match self {
-            RemoteHost::MX(_) => true,
-            RemoteHost::Relay(host) => host.protocol == ServerProtocol::Smtp,
+            NextHop::MX(_) => true,
+            NextHop::Relay(host) => host.protocol == ServerProtocol::Smtp,
         }
     }
 }

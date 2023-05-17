@@ -27,8 +27,7 @@ use mail_send::Credentials;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use tokio_rustls::TlsAcceptor;
-
-use ::smtp::lookup::{Item, LookupResult};
+use utils::ipc::{Item, LookupResult};
 
 pub mod imap;
 pub mod smtp;

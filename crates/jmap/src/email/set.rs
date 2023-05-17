@@ -705,10 +705,17 @@ impl JMAP {
             // Ingest message
             response.created.insert(
                 id,
-                self.email_ingest(&raw_message, account_id, mailboxes, keywords, received_at)
-                    .await
-                    .map_err(|_| MethodError::ServerPartialFail)?
-                    .into(),
+                self.email_ingest(
+                    &raw_message,
+                    account_id,
+                    mailboxes,
+                    keywords,
+                    received_at,
+                    false,
+                )
+                .await
+                .map_err(|_| MethodError::ServerPartialFail)?
+                .into(),
             );
         }
 

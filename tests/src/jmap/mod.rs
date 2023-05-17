@@ -1,15 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
-use jmap::{api::JmapSessionManager, JMAP};
+use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
-use tokio::sync::watch;
+use smtp::core::{SmtpSessionManager, SMTP};
+use tokio::sync::{mpsc, watch};
+use utils::config::ServerProtocol;
 
 use crate::{add_test_certs, store::TempDir};
 
 pub mod auth_acl;
 pub mod auth_limits;
 pub mod auth_oauth;
+pub mod delivery;
 pub mod email_changes;
 pub mod email_copy;
 pub mod email_get;
@@ -24,15 +27,21 @@ pub mod push_subscription;
 pub mod thread_get;
 pub mod thread_merge;
 
-const SERVER: &str = "
+const SERVER: &str = r#"
 [server]
-hostname = 'jmap.example.org'
+hostname = "jmap.example.org"
 
 [server.listener.jmap]
-bind = ['127.0.0.1:8899']
-url = 'https://127.0.0.1:8899'
-protocol = 'jmap'
+bind = ["127.0.0.1:8899"]
+url = "https://127.0.0.1:8899"
+protocol = "jmap"
 max-connections = 512
+
+[server.listener.lmtp-debug]
+bind = ['127.0.0.1:11200']
+greeting = 'Test LMTP instance'
+protocol = 'lmtp'
+tls.implicit = true
 
 [server.socket]
 reuse-addr = true
@@ -40,15 +49,15 @@ reuse-addr = true
 [server.tls]
 enable = true
 implicit = false
-certificate = 'default'
+certificate = "default"
 
 [store]
-db.path = '{TMP}/sqlite.db'
-blob.path = '{TMP}'
+db.path = "{TMP}/sqlite.db"
+blob.path = "{TMP}"
 
 [certificate.default]
-cert = 'file://{CERT}'
-private-key = 'file://{PK}'
+cert = "file://{CERT}"
+private-key = "file://{PK}"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -61,40 +70,44 @@ max-size = 5000000
 max-concurrent = 4
 
 [jmap.rate-limit]
-account.rate = '100/1m'
-authentication.rate = '100/1m'
-anonymous.rate = '1000/1m'
+account.rate = "100/1m"
+authentication.rate = "100/1m"
+anonymous.rate = "1000/1m"
 
 [jmap.event-source]
-throttle = '500ms'
+throttle = "500ms"
 
 [jmap.web-sockets]
-throttle = '500ms'
+throttle = "500ms"
 
 [jmap.push]
-throttle = '500ms'
-attempts.interval = '500ms'
+throttle = "500ms"
+attempts.interval = "500ms"
 
 [jmap.auth.database]
-type = 'sql'
-address = 'sqlite::memory:'
+type = "sql"
+address = "sqlite::memory:"
 
 [jmap.auth.database.query]
-uid-by-login = 'SELECT ROWID - 1 FROM users WHERE login = ?'
-login-by-uid = 'SELECT login FROM users WHERE ROWID - 1 = ?'
-secret-by-uid = 'SELECT secret FROM users WHERE ROWID - 1 = ?'
-gids-by-uid = 'SELECT gid FROM groups WHERE uid = ?'
+uid-by-login = "SELECT ROWID - 1 FROM users WHERE login = ?"
+login-by-uid = "SELECT login FROM users WHERE ROWID - 1 = ?"
+secret-by-uid = "SELECT secret FROM users WHERE ROWID - 1 = ?"
+gids-by-uid = "SELECT gid FROM groups WHERE uid = ?"
+uids-by-address = "SELECT uid FROM emails WHERE address = ?"
+addresses-by-uid = "SELECT address FROM emails WHERE uid = ?"
+vrfy = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' LIMIT 5"
+expn = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' LIMIT 5"
 
 [oauth]
-key = 'parerga_und_paralipomena'
+key = "parerga_und_paralipomena"
 max-auth-attempts = 1
 
 [oauth.expiry]
-user-code = '1s'
-token = '1s'
-refresh-token = '3s'
-refresh-token-renew = '2s'
-";
+user-code = "1s"
+token = "1s"
+refresh-token = "3s"
+refresh-token-renew = "2s"
+"#;
 
 #[tokio::test]
 pub async fn jmap_tests() {
@@ -118,11 +131,12 @@ pub async fn jmap_tests() {
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
     //mailbox::test(params.server.clone(), &mut params.client).await;
+    delivery::test(params.server.clone(), &mut params.client).await;
     //auth_acl::test(params.server.clone(), &mut params.client).await;
     //auth_limits::test(params.server.clone(), &mut params.client).await;
     //auth_oauth::test(params.server.clone(), &mut params.client).await;
     //event_source::test(params.server.clone(), &mut params.client).await;
-    push_subscription::test(params.server.clone(), &mut params.client).await;
+    //push_subscription::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();
@@ -140,17 +154,27 @@ struct JMAPTest {
 async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("jmap_tests", delete_if_exists);
-    let settings = utils::config::Config::parse(
+    let config = utils::config::Config::parse(
         &add_test_certs(SERVER).replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    let servers = settings.parse_servers().unwrap();
+    let servers = config.parse_servers().unwrap();
 
-    // Start JMAP server
-    servers.bind(&settings);
-    let manager = JmapSessionManager::new(JMAP::init(&settings).await);
+    // Start JMAP and SMTP servers
+    servers.bind(&config);
+    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let smtp = SMTP::init(&config, &servers, delivery_tx).await;
+    let jmap = JMAP::init(&config, delivery_rx).await;
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {
-        server.spawn(manager.clone(), shutdown_rx);
+        match &server.protocol {
+            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
+                server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
+            }
+            ServerProtocol::Jmap => {
+                server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
+            }
+            _ => unreachable!(),
+        };
     });
 
     // Create tables
@@ -161,9 +185,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
         "INSERT INTO users (login, secret) VALUES ('admin', 'secret')", // RowID 0 is admin
     ] {
         assert!(
-            manager
-                .inner
-                .auth_db
+            jmap.auth_db
                 .execute(query, Vec::<String>::new().into_iter())
                 .await,
             "failed for {query}"
@@ -181,7 +203,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     client.set_default_account_id(Id::new(1));
 
     JMAPTest {
-        server: manager.inner,
+        server: jmap,
         temp_dir,
         client,
         shutdown_tx,
@@ -253,7 +275,46 @@ pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &
             )
             .await
     );
-    Id::new(jmap.get_account_id(login).await.unwrap() as u64)
+    let uid = jmap.get_account_id(login).await.unwrap() as u64;
+    assert!(
+        jmap.auth_db
+            .execute(
+                &format!(
+                    "INSERT OR REPLACE INTO emails (uid, email) VALUES ({}, ?)",
+                    uid
+                ),
+                vec![login.to_string()].into_iter()
+            )
+            .await
+    );
+    Id::new(uid)
+}
+
+pub async fn test_alias_create(jmap: &JMAP, login: &str, alias: &str) {
+    let uid = jmap.get_account_id(login).await.unwrap() as u64;
+    assert!(
+        jmap.auth_db
+            .execute(
+                &format!(
+                    "INSERT OR REPLACE INTO emails (uid, email) VALUES ({}, ?)",
+                    uid
+                ),
+                vec![alias.to_string()].into_iter()
+            )
+            .await
+    );
+}
+
+pub async fn test_alias_remove(jmap: &JMAP, login: &str, alias: &str) {
+    let uid = jmap.get_account_id(login).await.unwrap() as u64;
+    assert!(
+        jmap.auth_db
+            .execute(
+                &format!("DELETE FROM emails WHERE uid = {} AND email = ?", uid),
+                vec![alias.to_string()].into_iter()
+            )
+            .await
+    );
 }
 
 pub async fn test_account_login(login: &str, secret: &str) -> Client {

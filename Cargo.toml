@@ -19,7 +19,7 @@ path = "crates/main/src/main.rs"
 store = { path = "crates/store" }
 jmap = { path = "crates/jmap" }
 jmap_proto = { path = "crates/jmap-proto" }
-smtp = { path = "crates/smtp" }
+smtp = { path = "crates/smtp", features = ["local_delivery"] }
 utils = { path = "crates/utils" }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"

@@ -8,7 +8,7 @@ resolver = "2"
 store = { path = "../crates/store", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
-smtp = { path = "../crates/smtp", features = ["test_mode"] }
+smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }

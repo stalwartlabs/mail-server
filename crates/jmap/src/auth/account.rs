@@ -3,15 +3,20 @@ use crate::JMAP;
 use super::{AclToken, AuthDatabase, SqlDatabase};
 
 impl JMAP {
-    pub async fn authenticate(&self, account: &str, secret: &str) -> Option<AclToken> {
+    pub async fn authenticate(&self, account: &str, secret: &str) -> Option<u32> {
         let account_id = self.get_account_id(account).await?;
         let account_secret = self.get_account_secret(account_id).await?;
         if secret == account_secret {
-            self.get_acl_token(account_id).await
+            account_id.into()
         } else {
             tracing::debug!(context = "auth", event = "failed", account = account);
             None
         }
+    }
+
+    pub async fn authenticate_with_token(&self, account: &str, secret: &str) -> Option<AclToken> {
+        self.get_acl_token(self.authenticate(account, secret).await?)
+            .await
     }
 
     pub async fn get_acl_token(&self, account_id: u32) -> Option<AclToken> {
@@ -30,7 +35,7 @@ impl JMAP {
                 query_secret_by_uid,
                 ..
             } => {
-                db.fetch_string(query_secret_by_uid, account_id as i64)
+                db.fetch_uid_to_string(query_secret_by_uid, account_id as i64)
                     .await
             }
             AuthDatabase::Ldap => None,
@@ -44,7 +49,7 @@ impl JMAP {
                 query_uid_by_login,
                 ..
             } => db
-                .fetch_id(query_uid_by_login, account)
+                .fetch_string_to_id(query_uid_by_login, account)
                 .await
                 .map(|id| id as u32),
             AuthDatabase::Ldap => None,
@@ -58,7 +63,7 @@ impl JMAP {
                 query_gids_by_uid,
                 ..
             } => db
-                .fetch_ids(query_gids_by_uid, account_id as i64)
+                .fetch_uid_to_uids(query_gids_by_uid, account_id as i64)
                 .await
                 .into_iter()
                 .map(|id| id as u32)
@@ -73,14 +78,66 @@ impl JMAP {
                 db,
                 query_login_by_uid,
                 ..
-            } => db.fetch_string(query_login_by_uid, account_id as i64).await,
+            } => {
+                db.fetch_uid_to_string(query_login_by_uid, account_id as i64)
+                    .await
+            }
             AuthDatabase::Ldap => None,
+        }
+    }
+
+    pub async fn get_uids_by_address(&self, address: &str) -> Vec<u32> {
+        match &self.auth_db {
+            AuthDatabase::Sql {
+                db,
+                query_gids_by_uid,
+                ..
+            } => db
+                .fetch_string_to_uids(query_gids_by_uid, address)
+                .await
+                .into_iter()
+                .map(|id| id as u32)
+                .collect(),
+            AuthDatabase::Ldap => vec![],
+        }
+    }
+
+    pub async fn get_addresses_by_uid(&self, account_id: u32) -> Vec<String> {
+        match &self.auth_db {
+            AuthDatabase::Sql {
+                db,
+                query_addresses_by_uid,
+                ..
+            } => {
+                db.fetch_uid_to_strings(query_addresses_by_uid, account_id as i64)
+                    .await
+            }
+            AuthDatabase::Ldap => vec![],
+        }
+    }
+
+    pub async fn vrfy_address(&self, address: &str) -> Vec<String> {
+        match &self.auth_db {
+            AuthDatabase::Sql { db, query_vrfy, .. } => {
+                db.fetch_string_to_strings(query_vrfy, address).await
+            }
+            AuthDatabase::Ldap => vec![],
+        }
+    }
+
+    pub async fn expn_address(&self, address: &str) -> Vec<String> {
+        match &self.auth_db {
+            AuthDatabase::Sql { db, query_expn, .. } => {
+                db.fetch_string_to_strings(query_expn, address).await
+            }
+            AuthDatabase::Ldap => vec![],
         }
     }
 }
 
+// TODO abstract this
 impl SqlDatabase {
-    pub async fn fetch_string(&self, query: &str, uid: i64) -> Option<String> {
+    pub async fn fetch_uid_to_string(&self, query: &str, uid: i64) -> Option<String> {
         let result = match &self {
             SqlDatabase::Postgres(pool) => {
                 sqlx::query_scalar::<_, String>(query)
@@ -117,7 +174,7 @@ impl SqlDatabase {
         }
     }
 
-    pub async fn fetch_id(&self, query: &str, param: &str) -> Option<i64> {
+    pub async fn fetch_string_to_id(&self, query: &str, param: &str) -> Option<i64> {
         let result = match &self {
             SqlDatabase::Postgres(pool) => {
                 sqlx::query_scalar::<_, i64>(query)
@@ -154,7 +211,7 @@ impl SqlDatabase {
         }
     }
 
-    pub async fn fetch_strings(&self, query: &str, uid: i64) -> Vec<String> {
+    pub async fn fetch_uid_to_strings(&self, query: &str, uid: i64) -> Vec<String> {
         let result = match &self {
             SqlDatabase::Postgres(pool) => {
                 sqlx::query_scalar::<_, String>(query)
@@ -191,7 +248,7 @@ impl SqlDatabase {
         }
     }
 
-    pub async fn fetch_ids(&self, query: &str, uid: i64) -> Vec<i64> {
+    pub async fn fetch_uid_to_uids(&self, query: &str, uid: i64) -> Vec<i64> {
         let result = match &self {
             SqlDatabase::Postgres(pool) => {
                 sqlx::query_scalar::<_, i64>(query)
@@ -214,6 +271,80 @@ impl SqlDatabase {
             SqlDatabase::SqlLite(pool) => {
                 sqlx::query_scalar::<_, i64>(query)
                     .bind(uid)
+                    .fetch_all(pool)
+                    .await
+            }
+        };
+
+        match result {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::warn!(context = "sql", event = "error", query = query, reason = ?err);
+                vec![]
+            }
+        }
+    }
+
+    pub async fn fetch_string_to_uids(&self, query: &str, param: &str) -> Vec<i64> {
+        let result = match &self {
+            SqlDatabase::Postgres(pool) => {
+                sqlx::query_scalar::<_, i64>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }
+            SqlDatabase::MySql(pool) => {
+                sqlx::query_scalar::<_, i64>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }
+            /*SqlDatabase::MsSql(pool) => {
+                sqlx::query_scalar::<_, i64>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }*/
+            SqlDatabase::SqlLite(pool) => {
+                sqlx::query_scalar::<_, i64>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }
+        };
+
+        match result {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::warn!(context = "sql", event = "error", query = query, reason = ?err);
+                vec![]
+            }
+        }
+    }
+
+    pub async fn fetch_string_to_strings(&self, query: &str, param: &str) -> Vec<String> {
+        let result = match &self {
+            SqlDatabase::Postgres(pool) => {
+                sqlx::query_scalar::<_, String>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }
+            SqlDatabase::MySql(pool) => {
+                sqlx::query_scalar::<_, String>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }
+            /*SqlDatabase::MsSql(pool) => {
+                sqlx::query_scalar::<_, String>(query)
+                    .bind(param)
+                    .fetch_all(pool)
+                    .await
+            }*/
+            SqlDatabase::SqlLite(pool) => {
+                sqlx::query_scalar::<_, String>(query)
+                    .bind(param)
                     .fetch_all(pool)
                     .await
             }
