@@ -25,12 +25,12 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     let account_id_3 = test_account_create(&server, "bill@example.com", "12345", "Bill Foobar")
         .await
         .to_string();
-    test_alias_create(&server, "jdoe@example.com", "john.doe@example.com").await;
+    test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;
 
     // Create a mailing list
-    test_alias_create(&server, "jdoe@example.com", "members@example.com").await;
-    test_alias_create(&server, "jane@example.com", "members@example.com").await;
-    test_alias_create(&server, "bill@example.com", "members@example.com").await;
+    test_alias_create(&server, "jdoe@example.com", "members@example.com", true).await;
+    test_alias_create(&server, "jane@example.com", "members@example.com", true).await;
+    test_alias_create(&server, "bill@example.com", "members@example.com", true).await;
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
@@ -47,6 +47,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         server
             .get_document_ids(
@@ -77,6 +78,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(
         server
             .get_document_ids(
@@ -101,7 +103,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     lmtp.expn("non_existant@example.com", 5).await;
     lmtp.expn("jdoe@example.com", 5).await;
     lmtp.vrfy("jdoe@example.com", 2).await;
-    lmtp.vrfy("members@example.com", 2).await;
+    lmtp.vrfy("members@example.com", 5).await;
     lmtp.vrfy("non_existant@example.com", 5).await;
 
     // Delivering to a mailing list
@@ -118,6 +120,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     for (account_id, num_messages) in [(&account_id_1, 3), (&account_id_2, 1), (&account_id_3, 1)] {
         assert_eq!(
             server
@@ -151,6 +154,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         10,
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     for (account_id, num_messages) in [(&account_id_1, 3), (&account_id_2, 2), (&account_id_3, 2)] {
         assert_eq!(
             server
@@ -188,6 +192,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     for (account_id, num_messages) in [(&account_id_1, 4), (&account_id_2, 3), (&account_id_3, 3)] {
         assert_eq!(
             server
@@ -204,12 +209,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             account_id
         );
     }
-
-    // Size checks
-    lmtp.send("MAIL FROM:<hello@world> SIZE=943718400").await;
-    lmtp.read(1, 5).await;
-    lmtp.send("BDAT 943718400").await;
-    lmtp.read(1, 5).await;
 
     // Remove test data
     for account_id in [&account_id_1, &account_id_2, &account_id_3] {
@@ -269,6 +268,7 @@ impl SmtpConnection {
             writer,
         };
         conn.read(1, 2).await;
+        conn.lhlo().await;
         conn
     }
 

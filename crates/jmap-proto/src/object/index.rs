@@ -83,6 +83,12 @@ impl ObjectIndexBuilder {
             .unwrap_or(&Value::Null)
     }
 
+    pub fn set(&mut self, property: Property, value: Value) {
+        if let Some(changes) = &mut self.changes {
+            changes.properties.set(property, value);
+        }
+    }
+
     pub fn validate(self) -> Result<Self, SetError> {
         for item in self.index {
             if item.required || item.max_size > 0 {
@@ -482,6 +488,13 @@ fn build_batch(
                 batch.ops.push(Operation::Index {
                     field: (&item.property).into(),
                     key: integer.into_index(item.index_as),
+                    set,
+                });
+            }
+            (Value::Bool(boolean), IndexAs::Integer) => {
+                batch.ops.push(Operation::Index {
+                    field: (&item.property).into(),
+                    key: (*boolean as u32).serialize(),
                     set,
                 });
             }

@@ -133,6 +133,15 @@ impl BatchBuilder {
 
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
+            || self.ops.iter().any(|op| {
+                !matches!(
+                    op,
+                    Operation::AccountId { .. }
+                        | Operation::Collection { .. }
+                        | Operation::DocumentId { .. }
+                        | Operation::AssertValue { .. }
+                )
+            })
     }
 }
 

@@ -1,24 +1,22 @@
 use std::{sync::Arc, time::Duration};
 
 use futures::StreamExt;
-use jmap::JMAP;
-use jmap_client::{
-    client::{Client, Credentials},
-    event_source::Changes,
-    mailbox::Role,
-    TypeState,
-};
+use jmap::{mailbox::INBOX_ID, JMAP};
+use jmap_client::{client::Client, event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_account_login};
+use crate::jmap::{
+    delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_create,
+    test_account_login,
+};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running EventSource tests...");
 
     // Create test account
-    test_account_create(&server, "jdoe@example.com", "12345", "John Doe").await;
+    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe").await;
     let mut client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut changes = client
@@ -59,8 +57,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_ping(&mut event_rx).await; // Pings are only received in cfg(test)
 
     // Ingest email and expect state change
-    let implement = "true";
-    /*let mut lmtp = SmtpConnection::connect().await;
+    let mut lmtp = SmtpConnection::connect().await;
     lmtp.ingest(
         "bill@example.com",
         &["jdoe@example.com"],
@@ -86,18 +83,23 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         ],
     )
     .await;
-    assert_ping(&mut event_rx).await;*/
+    assert_ping(&mut event_rx).await;
 
     // Destroy mailbox
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
 
-    /*assert_state(
+    // Destroy Inbox
+    admin_client.set_default_account_id(&account_id.to_string());
+    admin_client
+        .mailbox_destroy(&Id::from(INBOX_ID).to_string(), true)
+        .await
+        .unwrap();
+    assert_state(
         &mut event_rx,
         &[TypeState::Email, TypeState::Thread, TypeState::Mailbox],
     )
-    .await;*/
-    let fix = "true";
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    .await;
     assert_ping(&mut event_rx).await;
     assert_ping(&mut event_rx).await;
 

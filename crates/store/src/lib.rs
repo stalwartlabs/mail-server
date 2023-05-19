@@ -137,6 +137,21 @@ pub enum BlobKind {
     },
 }
 
+impl BlobKind {
+    pub fn is_document(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+        document_id: u32,
+    ) -> bool {
+        matches!(self, BlobKind::Linked {
+            account_id: a,
+            collection: c,
+            document_id: d,
+        } if *a == account_id && *c == collection.into() && *d == document_id)
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]

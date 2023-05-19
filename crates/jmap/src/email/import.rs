@@ -84,24 +84,15 @@ impl JMAP {
             }
 
             // Fetch raw message to import
-            let raw_message = match self.blob_download(&email.blob_id, acl_token).await {
-                Ok(Some(raw_message)) => raw_message,
-                Ok(None) => {
+            let raw_message = match self.blob_download(&email.blob_id, acl_token).await? {
+                Some(raw_message) => raw_message,
+                None => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::BlobNotFound)
                             .with_description(format!("BlobId {} not found.", email.blob_id)),
                     );
                     continue;
-                }
-                Err(err) => {
-                    tracing::error!(event = "error",
-                    context = "store",
-                    account_id = account_id,
-                    blob_id = ?email.blob_id,
-                    error = ?err,
-                    "Failed to retrieve blob");
-                    return Err(MethodError::ServerPartialFail);
                 }
             };
 

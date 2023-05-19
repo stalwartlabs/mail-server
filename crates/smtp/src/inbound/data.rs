@@ -393,6 +393,9 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
                     return message.into_bytes().into();
                 }
+                ScriptResult::Discard => {
+                    return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
+                }
             }
         }
 

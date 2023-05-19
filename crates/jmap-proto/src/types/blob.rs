@@ -35,7 +35,7 @@ use utils::codec::{
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
-use super::date::UTCDate;
+use super::{collection::Collection, date::UTCDate};
 
 const B_LINKED: u8 = 0x10;
 const B_LINKED_MAILDIR: u8 = 0x20;
@@ -47,7 +47,7 @@ pub struct BlobId {
     pub section: Option<BlobSection>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct BlobSection {
     pub offset_start: usize,
     pub size: usize,
@@ -59,6 +59,17 @@ impl BlobId {
         Self {
             kind: BlobKind::LinkedMaildir {
                 account_id,
+                document_id,
+            },
+            section: None,
+        }
+    }
+
+    pub fn linked(account_id: u32, collection: Collection, document_id: u32) -> Self {
+        Self {
+            kind: BlobKind::Linked {
+                account_id,
+                collection: collection.into(),
                 document_id,
             },
             section: None,
@@ -88,6 +99,11 @@ impl BlobId {
             BlobKind::LinkedMaildir { account_id, .. } => *account_id,
             BlobKind::Temporary { account_id, .. } => *account_id,
         }
+    }
+
+    pub fn with_section_size(mut self, size: usize) -> Self {
+        self.section.get_or_insert_with(Default::default).size = size;
+        self
     }
 }
 

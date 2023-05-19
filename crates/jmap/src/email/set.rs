@@ -521,11 +521,11 @@ impl JMAP {
                                     headers,
                                     contents: if !is_multipart {
                                         if let Some(blob_id) = blob_id {
-                                            match self.blob_download(&blob_id, acl_token).await {
-                                                Ok(Some(contents)) => {
+                                            match self.blob_download(&blob_id, acl_token).await? {
+                                                Some(contents) => {
                                                     BodyPart::Binary(contents.into())
                                                 }
-                                                Ok(None) => {
+                                                None => {
                                                     response.not_created.append(
                                                     id,
                                                     SetError::new(SetErrorType::BlobNotFound).with_description(
@@ -533,15 +533,6 @@ impl JMAP {
                                                     ),
                                                 );
                                                     continue 'create;
-                                                }
-                                                Err(err) => {
-                                                    tracing::error!(event = "error",
-                                                context = "email_set",
-                                                account_id = account_id,
-                                                blob_id = ?blob_id,
-                                                error = ?err,
-                                                "Failed to retrieve blob while creating message");
-                                                    return Err(MethodError::ServerPartialFail);
                                                 }
                                             }
                                         } else if let Some(part_id) = part_id {

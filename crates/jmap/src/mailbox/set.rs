@@ -37,7 +37,7 @@ struct SetContext<'x> {
     account_id: u32,
     acl_token: &'x AclToken,
     is_shared: bool,
-    set_response: SetResponse,
+    response: SetResponse,
     mailbox_ids: RoaringBitmap,
     will_destroy: Vec<Id>,
 }
@@ -74,7 +74,7 @@ impl JMAP {
             account_id,
             is_shared: acl_token.is_shared(account_id),
             acl_token,
-            set_response: self
+            response: self
                 .prepare_set_response(&request, Collection::Mailbox)
                 .await?,
             mailbox_ids: self.mailbox_get_or_create(account_id).await?,
@@ -98,10 +98,10 @@ impl JMAP {
                     changes.log_insert(Collection::Mailbox, document_id);
                     ctx.mailbox_ids.insert(document_id);
                     self.write_batch(batch).await?;
-                    ctx.set_response.created(id, document_id);
+                    ctx.response.created(id, document_id);
                 }
                 Err(err) => {
-                    ctx.set_response.not_created.append(id, err);
+                    ctx.response.not_created.append(id, err);
                     continue 'create;
                 }
             }
@@ -111,7 +111,7 @@ impl JMAP {
         'update: for (id, object) in request.unwrap_update() {
             // Make sure id won't be destroyed
             if ctx.will_destroy.contains(&id) {
-                ctx.set_response
+                ctx.response
                     .not_updated
                     .append(id, SetError::will_destroy());
                 continue 'update;
@@ -132,7 +132,7 @@ impl JMAP {
                 if ctx.is_shared {
                     let acl = mailbox.inner.effective_acl(acl_token);
                     if !acl.contains(Acl::Modify) {
-                        ctx.set_response.not_updated.append(
+                        ctx.response.not_updated.append(
                             id,
                             SetError::forbidden()
                                 .with_description("You are not allowed to modify this mailbox."),
@@ -141,7 +141,7 @@ impl JMAP {
                     } else if object.properties.contains_key(&Property::Acl)
                         && !acl.contains(Acl::Administer)
                     {
-                        ctx.set_response.not_updated.append(
+                        ctx.response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(
                                 "You are not allowed to change the permissions of this mailbox.",
@@ -168,7 +168,7 @@ impl JMAP {
                             match self.store.write(batch.build()).await {
                                 Ok(_) => (),
                                 Err(store::Error::AssertValueFailed) => {
-                                    ctx.set_response.not_updated.append(id, SetError::forbidden().with_description(
+                                    ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",
                                     ));
                                     continue 'update;
@@ -184,17 +184,15 @@ impl JMAP {
                                 }
                             }
                         }
-                        ctx.set_response.updated.append(id, None);
+                        ctx.response.updated.append(id, None);
                     }
                     Err(err) => {
-                        ctx.set_response.not_updated.append(id, err);
+                        ctx.response.not_updated.append(id, err);
                         continue 'update;
                     }
                 }
             } else {
-                ctx.set_response
-                    .not_updated
-                    .append(id, SetError::not_found());
+                ctx.response.not_updated.append(id, SetError::not_found());
             }
         }
 
@@ -206,7 +204,7 @@ impl JMAP {
             if (document_id == INBOX_ID || document_id == TRASH_ID)
                 && !acl_token.is_member(SUPERUSER_ID)
             {
-                ctx.set_response.not_destroyed.append(
+                ctx.response.not_destroyed.append(
                     id,
                     SetError::forbidden()
                         .with_description("You are not allowed to delete Inbox or Trash folders."),
@@ -225,7 +223,7 @@ impl JMAP {
                 .results
                 .is_empty()
             {
-                ctx.set_response.not_destroyed.append(
+                ctx.response.not_destroyed.append(
                     id,
                     SetError::new(SetErrorType::MailboxHasChild)
                         .with_description("Mailbox has at least one children."),
@@ -295,7 +293,7 @@ impl JMAP {
                                             Id::from_parts(thread_id, message_id),
                                         ),
                                         Err(store::Error::AssertValueFailed) => {
-                                            ctx.set_response.not_destroyed.append(
+                                            ctx.response.not_destroyed.append(
                                                 id,
                                                 SetError::forbidden().with_description(
                                                     concat!("Another process modified a message in this mailbox ",
@@ -347,7 +345,7 @@ impl JMAP {
                         }
                     }
                 } else {
-                    ctx.set_response.not_destroyed.append(
+                    ctx.response.not_destroyed.append(
                         id,
                         SetError::new(SetErrorType::MailboxHasEmail)
                             .with_description("Mailbox is not empty."),
@@ -371,7 +369,7 @@ impl JMAP {
                     let acl = mailbox.inner.effective_acl(acl_token);
                     if !acl.contains(Acl::Administer) {
                         if !acl.contains(Acl::Delete) {
-                            ctx.set_response.not_destroyed.append(
+                            ctx.response.not_destroyed.append(
                                 id,
                                 SetError::forbidden().with_description(
                                     "You are not allowed to delete this mailbox.",
@@ -379,7 +377,7 @@ impl JMAP {
                             );
                             continue 'destroy;
                         } else if on_destroy_remove_emails && !acl.contains(Acl::RemoveItems) {
-                            ctx.set_response.not_destroyed.append(
+                            ctx.response.not_destroyed.append(
                                 id,
                                 SetError::forbidden().with_description(
                                     "You are not allowed to delete emails from this mailbox.",
@@ -401,10 +399,10 @@ impl JMAP {
                 match self.store.write(batch.build()).await {
                     Ok(_) => {
                         changes.log_delete(Collection::Mailbox, document_id);
-                        ctx.set_response.destroyed.push(id);
+                        ctx.response.destroyed.push(id);
                     }
                     Err(store::Error::AssertValueFailed) => {
-                        ctx.set_response.not_destroyed.append(
+                        ctx.response.not_destroyed.append(
                             id,
                             SetError::forbidden().with_description(concat!(
                                 "Another process modified this mailbox ",
@@ -424,9 +422,7 @@ impl JMAP {
                     }
                 }
             } else {
-                ctx.set_response
-                    .not_destroyed
-                    .append(id, SetError::not_found());
+                ctx.response.not_destroyed.append(id, SetError::not_found());
             }
         }
 
@@ -434,7 +430,7 @@ impl JMAP {
         if !changes.is_empty() {
             let state_change =
                 StateChange::new(account_id).with_change(TypeState::Mailbox, changes.change_id);
-            ctx.set_response.state_change = if did_remove_emails {
+            ctx.response.state_change = if did_remove_emails {
                 state_change
                     .with_change(TypeState::Email, changes.change_id)
                     .with_change(TypeState::Thread, changes.change_id)
@@ -442,10 +438,10 @@ impl JMAP {
                 state_change
             }
             .into();
-            ctx.set_response.new_state = self.commit_changes(account_id, changes).await?.into();
+            ctx.response.new_state = self.commit_changes(account_id, changes).await?.into();
         }
 
-        Ok(ctx.set_response)
+        Ok(ctx.response)
     }
 
     #[allow(clippy::blocks_in_if_conditions)]
@@ -458,7 +454,7 @@ impl JMAP {
         // Parse properties
         let mut changes = Object::with_capacity(changes_.properties.len());
         for (property, value) in changes_.properties {
-            let value = match ctx.set_response.eval_object_references(value) {
+            let value = match ctx.response.eval_object_references(value) {
                 Ok(value) => value,
                 Err(err) => {
                     return Ok(Err(err));

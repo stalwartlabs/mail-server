@@ -5,7 +5,7 @@ use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::{mpsc, watch};
-use utils::config::ServerProtocol;
+use utils::{config::ServerProtocol, UnwrapFailure};
 
 use crate::{add_test_certs, store::TempDir};
 
@@ -41,7 +41,7 @@ max-connections = 512
 bind = ['127.0.0.1:11200']
 greeting = 'Test LMTP instance'
 protocol = 'lmtp'
-tls.implicit = true
+tls.implicit = false
 
 [server.socket]
 reuse-addr = true
@@ -50,6 +50,37 @@ reuse-addr = true
 enable = true
 implicit = false
 certificate = "default"
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt.lookup]
+domains = "list/domains"
+addresses = "local"
+vrfy = "local"
+expn = "local"
+
+[session.rcpt.errors]
+total = 5
+wait = "1ms"
+
+[list]
+domains = ["example.com"]
+
+[queue]
+path = "{TMP}"
+hash = 64
+
+[report]
+path = "{TMP}"
+hash = 64
+
+[resolver]
+type = "system"
+
+[queue.outbound]
+next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "local" }, 
+             { else = false } ]
 
 [store]
 db.path = "{TMP}/sqlite.db"
@@ -93,10 +124,10 @@ uid-by-login = "SELECT ROWID - 1 FROM users WHERE login = ?"
 login-by-uid = "SELECT login FROM users WHERE ROWID - 1 = ?"
 secret-by-uid = "SELECT secret FROM users WHERE ROWID - 1 = ?"
 gids-by-uid = "SELECT gid FROM groups WHERE uid = ?"
-uids-by-address = "SELECT uid FROM emails WHERE address = ?"
-addresses-by-uid = "SELECT address FROM emails WHERE uid = ?"
-vrfy = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' LIMIT 5"
-expn = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' LIMIT 5"
+uids-by-address = "SELECT uid FROM emails WHERE email = ?"
+addresses-by-uid = "SELECT email FROM emails WHERE uid = ?"
+vrfy = "SELECT email FROM emails WHERE email LIKE '%' || ? || '%' AND is_list = false LIMIT 5"
+expn = "SELECT u.login FROM users u INNER JOIN emails e ON u.rowid -1 = e.uid WHERE e.email = ? AND e.is_list = true LIMIT 5"
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -131,11 +162,11 @@ pub async fn jmap_tests() {
     //thread_get::test(params.server.clone(), &mut params.client).await;
     //thread_merge::test(params.server.clone(), &mut params.client).await;
     //mailbox::test(params.server.clone(), &mut params.client).await;
-    delivery::test(params.server.clone(), &mut params.client).await;
+    //delivery::test(params.server.clone(), &mut params.client).await;
     //auth_acl::test(params.server.clone(), &mut params.client).await;
     //auth_limits::test(params.server.clone(), &mut params.client).await;
     //auth_oauth::test(params.server.clone(), &mut params.client).await;
-    //event_source::test(params.server.clone(), &mut params.client).await;
+    event_source::test(params.server.clone(), &mut params.client).await;
     //push_subscription::test(params.server.clone(), &mut params.client).await;
 
     if delete {
@@ -163,8 +194,12 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     // Start JMAP and SMTP servers
     servers.bind(&config);
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, delivery_tx).await;
-    let jmap = JMAP::init(&config, delivery_rx).await;
+    let smtp = SMTP::init(&config, &servers, delivery_tx)
+        .await
+        .failed("Invalid configuration file");
+    let jmap = JMAP::init(&config, delivery_rx)
+        .await
+        .failed("Invalid configuration file");
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {
@@ -181,7 +216,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     for query in [
         "CREATE TABLE users (login TEXT PRIMARY KEY, secret TEXT, name TEXT)",
         "CREATE TABLE groups (uid INTEGER, gid INTEGER, PRIMARY KEY (uid, gid))",
-        "CREATE TABLE emails (uid INTEGER NOT NULL, email TEXT NOT NULL, PRIMARY KEY (uid, email))",
+        "CREATE TABLE emails (uid INTEGER NOT NULL, email TEXT NOT NULL, is_list BOOLEAN DEFAULT 0, PRIMARY KEY (uid, email))",
         "INSERT INTO users (login, secret) VALUES ('admin', 'secret')", // RowID 0 is admin
     ] {
         assert!(
@@ -290,14 +325,15 @@ pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &
     Id::new(uid)
 }
 
-pub async fn test_alias_create(jmap: &JMAP, login: &str, alias: &str) {
+pub async fn test_alias_create(jmap: &JMAP, login: &str, alias: &str, is_list: bool) {
     let uid = jmap.get_account_id(login).await.unwrap() as u64;
     assert!(
         jmap.auth_db
             .execute(
                 &format!(
-                    "INSERT OR REPLACE INTO emails (uid, email) VALUES ({}, ?)",
-                    uid
+                    "INSERT OR REPLACE INTO emails (uid, email, is_list) VALUES ({}, ?, {})",
+                    uid,
+                    if is_list { "true" } else { "false" }
                 ),
                 vec![alias.to_string()].into_iter()
             )

@@ -29,7 +29,7 @@ use std::sync::Arc;
 use config::{
     auth::ConfigAuth, database::ConfigDatabase, list::ConfigList, queue::ConfigQueue,
     remote::ConfigHost, report::ConfigReport, resolver::ConfigResolver, scripts::ConfigSieve,
-    session::ConfigSession, ConfigContext,
+    session::ConfigSession, ConfigContext, Host,
 };
 use dashmap::DashMap;
 use lookup::Lookup;
@@ -38,7 +38,7 @@ use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;
 use tokio::sync::mpsc;
 use utils::{
-    config::{Config, Servers},
+    config::{Config, ServerProtocol, Servers},
     UnwrapFailure,
 };
 
@@ -57,43 +57,50 @@ impl SMTP {
         config: &Config,
         servers: &Servers,
         #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
-    ) -> Arc<Self> {
+    ) -> Result<Arc<Self>, String> {
         // Read configuration parameters
         let mut config_ctx = ConfigContext::new(&servers.inner);
 
         #[cfg(feature = "local_delivery")]
-        config_ctx.lookup.insert(
-            "local".to_string(),
-            Arc::new(Lookup::Local(delivery_tx.clone())),
-        );
+        {
+            config_ctx.lookup.insert(
+                "local".to_string(),
+                Arc::new(Lookup::Local(delivery_tx.clone())),
+            );
+            let (channel_tx, channel_rx) = mpsc::channel(1024);
+            config_ctx.hosts.insert(
+                "local".to_string(),
+                Host {
+                    address: String::new(),
+                    port: 0,
+                    protocol: ServerProtocol::Jmap,
+                    concurrency: Default::default(),
+                    timeout: Default::default(),
+                    tls_implicit: Default::default(),
+                    tls_allow_invalid_certs: Default::default(),
+                    username: Default::default(),
+                    secret: Default::default(),
+                    max_errors: Default::default(),
+                    max_requests: Default::default(),
+                    cache_entries: Default::default(),
+                    cache_ttl_positive: Default::default(),
+                    cache_ttl_negative: Default::default(),
+                    channel_tx,
+                    channel_rx,
+                    lookup: false,
+                },
+            );
+        }
 
-        config
-            .parse_remote_hosts(&mut config_ctx)
-            .failed("Configuration error");
-        config
-            .parse_databases(&mut config_ctx)
-            .failed("Configuration error");
-        config
-            .parse_lists(&mut config_ctx)
-            .failed("Configuration error");
-        config
-            .parse_signatures(&mut config_ctx)
-            .failed("Configuration error");
-        let sieve_config = config
-            .parse_sieve(&mut config_ctx)
-            .failed("Configuration error");
-        let session_config = config
-            .parse_session_config(&config_ctx)
-            .failed("Configuration error");
-        let queue_config = config
-            .parse_queue(&config_ctx)
-            .failed("Configuration error");
-        let mail_auth_config = config
-            .parse_mail_auth(&config_ctx)
-            .failed("Configuration error");
-        let report_config = config
-            .parse_reports(&config_ctx)
-            .failed("Configuration error");
+        config.parse_remote_hosts(&mut config_ctx)?;
+        config.parse_databases(&mut config_ctx)?;
+        config.parse_lists(&mut config_ctx)?;
+        config.parse_signatures(&mut config_ctx)?;
+        let sieve_config = config.parse_sieve(&mut config_ctx)?;
+        let session_config = config.parse_session_config(&config_ctx)?;
+        let queue_config = config.parse_queue(&config_ctx)?;
+        let mail_auth_config = config.parse_mail_auth(&config_ctx)?;
+        let report_config = config.parse_reports(&config_ctx)?;
 
         // Build core
         let (queue_tx, queue_rx) = mpsc::channel(1024);
@@ -102,8 +109,7 @@ impl SMTP {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>("global.thread-pool")
-                        .failed("Failed to parse thread pool size")
+                        .property::<usize>("global.thread-pool")?
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )
@@ -113,14 +119,10 @@ impl SMTP {
             session: SessionCore {
                 config: session_config,
                 throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config
-                        .property("global.shared-map.capacity")
-                        .failed("Failed to parse shared map capacity")
-                        .unwrap_or(2),
+                    config.property("global.shared-map.capacity")?.unwrap_or(2),
                     ThrottleKeyHasherBuilder::default(),
                     config
-                        .property::<u64>("global.shared-map.shard")
-                        .failed("Failed to parse shared map shard amount")
+                        .property::<u64>("global.shared-map.shard")?
                         .unwrap_or(32)
                         .next_power_of_two() as usize,
                 ),
@@ -128,27 +130,19 @@ impl SMTP {
             queue: QueueCore {
                 config: queue_config,
                 throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config
-                        .property("global.shared-map.capacity")
-                        .failed("Failed to parse shared map capacity")
-                        .unwrap_or(2),
+                    config.property("global.shared-map.capacity")?.unwrap_or(2),
                     ThrottleKeyHasherBuilder::default(),
                     config
-                        .property::<u64>("global.shared-map.shard")
-                        .failed("Failed to parse shared map shard amount")
+                        .property::<u64>("global.shared-map.shard")?
                         .unwrap_or(32)
                         .next_power_of_two() as usize,
                 ),
                 id_seq: 0.into(),
                 quota: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config
-                        .property("global.shared-map.capacity")
-                        .failed("Failed to parse shared map capacity")
-                        .unwrap_or(2),
+                    config.property("global.shared-map.capacity")?.unwrap_or(2),
                     ThrottleKeyHasherBuilder::default(),
                     config
-                        .property::<u64>("global.shared-map.shard")
-                        .failed("Failed to parse shared map shard amount")
+                        .property::<u64>("global.shared-map.shard")?
                         .unwrap_or(32)
                         .next_power_of_two() as usize,
                 ),
@@ -181,6 +175,6 @@ impl SMTP {
             }
         }
 
-        core
+        Ok(core)
     }
 }

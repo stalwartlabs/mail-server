@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use ::sieve::{Compiler, Runtime};
 use api::session::BaseCapabilities;
 use auth::{
     oauth::OAuthCode,
@@ -39,18 +40,30 @@ pub mod email;
 pub mod mailbox;
 pub mod push;
 pub mod services;
+pub mod sieve;
 pub mod thread;
+pub mod vacation;
+
+pub const SUPERUSER_ID: u32 = 0;
+pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct JMAP {
     pub store: Store,
     pub config: Config,
+
     pub sessions: LruCache<String, u32>,
     pub acl_tokens: LruCache<u32, Arc<AclToken>>,
+
     pub rate_limit_auth: LruCache<u32, Arc<Mutex<AuthenticatedLimiter>>>,
     pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
+
     pub oauth_codes: LruCache<String, Arc<OAuthCode>>,
     pub auth_db: AuthDatabase,
+
     pub state_tx: mpsc::Sender<state::Event>,
+
+    pub sieve_compiler: Compiler,
+    pub sieve_runtime: Runtime,
 }
 
 pub struct Config {
@@ -96,8 +109,9 @@ pub struct Config {
     pub capabilities: BaseCapabilities,
 }
 
-pub const SUPERUSER_ID: u32 = 0;
-pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
+pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
+    pub inner: T,
+}
 
 pub enum MaybeError {
     Temporary,
@@ -108,27 +122,18 @@ impl JMAP {
     pub async fn init(
         config: &utils::config::Config,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
-    ) -> Arc<Self> {
-        let auth_db = match config
-            .value_require("jmap.auth.database.type")
-            .failed("Invalid property")
-        {
+    ) -> Result<Arc<Self>, String> {
+        let auth_db = match config.value_require("jmap.auth.database.type")? {
             "ldap" => AuthDatabase::Ldap,
             "sql" => {
-                let address = config
-                    .value_require("jmap.auth.database.address")
-                    .failed("Invalid property");
+                let address = config.value_require("jmap.auth.database.address")?;
                 let max_connections = config
-                    .property("jmap.auth.database.max-connections")
-                    .failed("Invalid property")
+                    .property("jmap.auth.database.max-connections")?
                     .unwrap_or(10);
                 let min_connections = config
-                    .property("jmap.auth.database.min-connections")
-                    .failed("Invalid property")
+                    .property("jmap.auth.database.min-connections")?
                     .unwrap_or(0);
-                let idle_timeout = config
-                    .property("jmap.auth.database.idle-timeout")
-                    .failed("Invalid property");
+                let idle_timeout = config.property("jmap.auth.database.idle-timeout")?;
 
                 let db = if address.starts_with("postgres:") {
                     SqlDatabase::Postgres(
@@ -173,36 +178,28 @@ impl JMAP {
                 AuthDatabase::Sql {
                     db,
                     query_uid_by_login: config
-                        .value_require("jmap.auth.database.query.uid-by-login")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.uid-by-login")?
                         .to_string(),
                     query_login_by_uid: config
-                        .value_require("jmap.auth.database.query.login-by-uid")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.login-by-uid")?
                         .to_string(),
                     query_secret_by_uid: config
-                        .value_require("jmap.auth.database.query.secret-by-uid")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.secret-by-uid")?
                         .to_string(),
                     query_gids_by_uid: config
-                        .value_require("jmap.auth.database.query.gids-by-uid")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.gids-by-uid")?
                         .to_string(),
                     query_uids_by_address: config
-                        .value_require("jmap.auth.database.query.uids-by-address")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.uids-by-address")?
                         .to_string(),
                     query_addresses_by_uid: config
-                        .value_require("jmap.auth.database.query.addresses-by-uid")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.addresses-by-uid")?
                         .to_string(),
                     query_vrfy: config
-                        .value_require("jmap.auth.database.query.vrfy")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.vrfy")?
                         .to_string(),
                     query_expn: config
-                        .value_require("jmap.auth.database.query.expn")
-                        .failed("Invalid property")
+                        .value_require("jmap.auth.database.query.expn")?
                         .to_string(),
                 }
             }
@@ -216,37 +213,161 @@ impl JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: LruCache::with_capacity(
-                config
-                    .property("jmap.session.cache.size")
-                    .failed("Invalid property")
-                    .unwrap_or(100),
+                config.property("jmap.session.cache.size")?.unwrap_or(100),
             ),
             acl_tokens: LruCache::with_capacity(
-                config
-                    .property("jmap.session.cache.size")
-                    .failed("Invalid property")
-                    .unwrap_or(100),
+                config.property("jmap.session.cache.size")?.unwrap_or(100),
             ),
             rate_limit_auth: LruCache::with_capacity(
                 config
-                    .property("jmap.rate-limit.account.size")
-                    .failed("Invalid property")
+                    .property("jmap.rate-limit.account.size")?
                     .unwrap_or(1024),
             ),
             rate_limit_unauth: LruCache::with_capacity(
                 config
-                    .property("jmap.rate-limit.anonymous.size")
-                    .failed("Invalid property")
+                    .property("jmap.rate-limit.anonymous.size")?
                     .unwrap_or(2048),
             ),
             oauth_codes: LruCache::with_capacity(
-                config
-                    .property("oauth.code.cache-size")
-                    .failed("Invalid property")
-                    .unwrap_or(128),
+                config.property("oauth.code.cache-size")?.unwrap_or(128),
             ),
             auth_db,
             state_tx,
+            sieve_compiler: Compiler::new()
+                .with_max_script_size(
+                    config
+                        .property("jmap.sieve.limits.script-size")?
+                        .unwrap_or(1024 * 1024),
+                )
+                .with_max_string_size(
+                    config
+                        .property("jmap.sieve.limits.string-size")?
+                        .unwrap_or(4096),
+                )
+                .with_max_variable_name_size(
+                    config
+                        .property("jmap.sieve.limits.variable-name-size")?
+                        .unwrap_or(32),
+                )
+                .with_max_nested_blocks(
+                    config
+                        .property("jmap.sieve.limits.nested-blocks")?
+                        .unwrap_or(15),
+                )
+                .with_max_nested_tests(
+                    config
+                        .property("jmap.sieve.limits.nested-tests")?
+                        .unwrap_or(15),
+                )
+                .with_max_nested_foreverypart(
+                    config
+                        .property("jmap.sieve.limits.nested-foreverypart")?
+                        .unwrap_or(3),
+                )
+                .with_max_match_variables(
+                    config
+                        .property("jmap.sieve.limits.match-variables")?
+                        .unwrap_or(30),
+                )
+                .with_max_local_variables(
+                    config
+                        .property("jmap.sieve.limits.local-variables")?
+                        .unwrap_or(128),
+                )
+                .with_max_header_size(
+                    config
+                        .property("jmap.sieve.limits.header-size")?
+                        .unwrap_or(1024),
+                )
+                .with_max_includes(config.property("jmap.sieve.limits.includes")?.unwrap_or(3)),
+            sieve_runtime: Runtime::new()
+                .with_max_nested_includes(
+                    config
+                        .property("jmap.sieve.limits.nested-includes")?
+                        .unwrap_or(3),
+                )
+                .with_cpu_limit(config.property("jmap.sieve.cpu-limit")?.unwrap_or(5000))
+                .with_max_variable_size(
+                    config
+                        .property("jmap.sieve.limits.variable-size")?
+                        .unwrap_or(4096),
+                )
+                .with_max_redirects(config.property("jmap.sieve.limits.redirects")?.unwrap_or(1))
+                .with_max_received_headers(
+                    config
+                        .property("jmap.sieve.limits.received-headers")?
+                        .unwrap_or(10),
+                )
+                .with_max_header_size(
+                    config
+                        .property("jmap.sieve.limits.header-size")?
+                        .unwrap_or(1024),
+                )
+                .with_max_out_messages(
+                    config
+                        .property("jmap.sieve.limits.outgoing-messages")?
+                        .unwrap_or(3),
+                )
+                .with_default_vacation_expiry(
+                    config
+                        .property::<Duration>("jmap.sieve.default-expiry.vacation")?
+                        .unwrap_or(Duration::from_secs(30 * 86400))
+                        .as_secs(),
+                )
+                .with_default_duplicate_expiry(
+                    config
+                        .property::<Duration>("jmap.sieve.default-expiry.duplicate")?
+                        .unwrap_or(Duration::from_secs(7 * 86400))
+                        .as_secs(),
+                )
+                .without_capabilities(
+                    config
+                        .values("jmap.sieve.disable-capabilities")
+                        .map(|(_, v)| v),
+                )
+                .with_valid_notification_uris({
+                    let values = config
+                        .values("jmap.sieve.notification-uris")
+                        .map(|(_, v)| v.to_string())
+                        .collect::<Vec<_>>();
+                    if !values.is_empty() {
+                        values
+                    } else {
+                        vec!["mailto".to_string()]
+                    }
+                })
+                .with_protected_headers({
+                    let values = config
+                        .values("jmap.sieve.protected-headers")
+                        .map(|(_, v)| v.to_string())
+                        .collect::<Vec<_>>();
+                    if !values.is_empty() {
+                        values
+                    } else {
+                        vec![
+                            "Original-Subject".to_string(),
+                            "Original-From".to_string(),
+                            "Received".to_string(),
+                            "Auto-Submitted".to_string(),
+                        ]
+                    }
+                })
+                .with_vacation_default_subject(
+                    config
+                        .value("jmap.sieve.vacation.default-subject")
+                        .unwrap_or("Automated reply")
+                        .to_string(),
+                )
+                .with_vacation_subject_prefix(
+                    config
+                        .value("jmap.sieve.vacation.subject-prefix")
+                        .unwrap_or("Auto: ")
+                        .to_string(),
+                )
+                .with_env_variable("name", "Stalwart JMAP")
+                .with_env_variable("version", env!("CARGO_PKG_VERSION"))
+                .with_env_variable("location", "MS")
+                .with_env_variable("phase", "during"),
         });
 
         // Spawn delivery manager
@@ -255,7 +376,7 @@ impl JMAP {
         // Spawn state manager
         spawn_state_manager(jmap_server.clone(), config, state_rx);
 
-        jmap_server
+        Ok(jmap_server)
     }
 
     pub async fn assign_document_id(
@@ -546,6 +667,36 @@ impl JMAP {
             "Failed to write batch.");
             MethodError::ServerPartialFail
         })
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for &Bincode<T> {
+    fn serialize(self) -> Vec<u8> {
+        bincode::serialize(&self.inner).unwrap_or_default()
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
+    fn serialize(self) -> Vec<u8> {
+        bincode::serialize(&self.inner).unwrap_or_default()
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize
+    for Bincode<T>
+{
+    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+        bincode::deserialize(bytes)
+            .map(|inner| Self { inner })
+            .map_err(|err| {
+                store::Error::InternalError(format!("Bincode deserialization failed: {err}"))
+            })
     }
 }
 

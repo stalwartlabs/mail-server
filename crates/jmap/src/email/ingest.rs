@@ -88,6 +88,7 @@ impl JMAP {
 
         // Check for duplicates
         if !skip_duplicates
+            && !references.is_empty()
             && !self
                 .store
                 .filter(

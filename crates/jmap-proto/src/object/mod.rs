@@ -94,10 +94,11 @@ const BOOL_FALSE: u8 = 3;
 const ID: u8 = 4;
 const DATE: u8 = 5;
 const BLOB_ID: u8 = 6;
-const KEYWORD: u8 = 7;
-const LIST: u8 = 8;
-const OBJECT: u8 = 9;
-const NULL: u8 = 10;
+const BLOB: u8 = 7;
+const KEYWORD: u8 = 8;
+const LIST: u8 = 9;
+const OBJECT: u8 = 10;
+const NULL: u8 = 11;
 
 impl Serialize for Value {
     fn serialize(self) -> Vec<u8> {
@@ -198,6 +199,10 @@ impl SerializeInto for Value {
                 buf.push(OBJECT);
                 v.serialize_into(buf);
             }
+            Value::Blob(v) => {
+                buf.push(BLOB);
+                v.serialize_into(buf);
+            }
             Value::Null => {
                 buf.push(NULL);
             }
@@ -227,6 +232,7 @@ impl DeserializeFrom for Value {
                 Some(Value::List(items))
             }
             OBJECT => Some(Value::Object(Object::deserialize_from(bytes)?)),
+            BLOB => Some(Value::Blob(Vec::deserialize_from(bytes)?)),
             NULL => Some(Value::Null),
             _ => None,
         }

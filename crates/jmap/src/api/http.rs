@@ -64,7 +64,7 @@ impl JMAP {
                         };
                     }
                     ("download", &Method::GET) => {
-                        if let (Some(account_id), Some(blob_id), Some(name)) = (
+                        if let (Some(_), Some(blob_id), Some(name)) = (
                             path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
                             path.next().and_then(BlobId::from_base32),
                             path.next(),
@@ -85,13 +85,7 @@ impl JMAP {
                                 }
                                 .into_http_response(),
                                 Ok(None) => RequestError::not_found().into_http_response(),
-                                Err(err) => {
-                                    tracing::error!(event = "error",
-                                                    context = "blob_store",
-                                                    account_id = account_id.document_id(),
-                                                    blob_id = ?blob_id,
-                                                    error = ?err,
-                                                    "Failed to download blob");
+                                Err(_) => {
                                     RequestError::internal_server_error().into_http_response()
                                 }
                             };

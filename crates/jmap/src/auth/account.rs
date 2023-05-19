@@ -90,10 +90,10 @@ impl JMAP {
         match &self.auth_db {
             AuthDatabase::Sql {
                 db,
-                query_gids_by_uid,
+                query_uids_by_address,
                 ..
             } => db
-                .fetch_string_to_uids(query_gids_by_uid, address)
+                .fetch_string_to_uids(query_uids_by_address, address)
                 .await
                 .into_iter()
                 .map(|id| id as u32)

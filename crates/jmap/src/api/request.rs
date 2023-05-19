@@ -129,9 +129,16 @@ impl JMAP {
                 get::RequestArguments::PushSubscription => {
                     self.push_subscription_get(req, acl_token).await?.into()
                 }
-                get::RequestArguments::SieveScript => todo!(),
-                get::RequestArguments::VacationResponse => todo!(),
-                get::RequestArguments::Principal => todo!(),
+                get::RequestArguments::SieveScript => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.sieve_script_get(req, acl_token).await?.into()
+                }
+                get::RequestArguments::VacationResponse => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.vacation_response_get(req).await?.into()
+                }
             },
             RequestMethod::Query(mut req) => match req.take_arguments() {
                 query::RequestArguments::Email(arguments) => {
@@ -149,8 +156,11 @@ impl JMAP {
                         .into()
                 }
                 query::RequestArguments::EmailSubmission => todo!(),
-                query::RequestArguments::SieveScript => todo!(),
-                query::RequestArguments::Principal => todo!(),
+                query::RequestArguments::SieveScript => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.sieve_script_query(req).await?.into()
+                }
             },
             RequestMethod::Set(mut req) => match req.take_arguments() {
                 set::RequestArguments::Email => {
@@ -170,9 +180,18 @@ impl JMAP {
                 set::RequestArguments::PushSubscription => {
                     self.push_subscription_set(req, acl_token).await?.into()
                 }
-                set::RequestArguments::SieveScript(_) => todo!(),
-                set::RequestArguments::VacationResponse => todo!(),
-                set::RequestArguments::Principal => todo!(),
+                set::RequestArguments::SieveScript(arguments) => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.sieve_script_set(req.with_arguments(arguments), acl_token)
+                        .await?
+                        .into()
+                }
+                set::RequestArguments::VacationResponse => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.vacation_response_set(req, acl_token).await?.into()
+                }
             },
             RequestMethod::Changes(req) => self.changes(req, acl_token).await?.into(),
             RequestMethod::Copy(req) => {
@@ -199,7 +218,11 @@ impl JMAP {
 
                 self.email_search_snippet(req, acl_token).await?.into()
             }
-            RequestMethod::ValidateScript(_) => todo!(),
+            RequestMethod::ValidateScript(req) => {
+                acl_token.assert_is_member(req.account_id)?;
+
+                self.sieve_script_validate(req, acl_token).await?.into()
+            }
             RequestMethod::Echo(req) => req.into(),
             RequestMethod::Error(error) => return Err(error),
         })

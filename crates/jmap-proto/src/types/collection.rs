@@ -14,7 +14,7 @@ pub enum Collection {
     EmailSubmission = 4,
     SieveScript = 5,
     PushSubscription = 6,
-    None = 8,
+    None = 7,
 }
 
 impl From<u8> for Collection {

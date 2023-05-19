@@ -146,17 +146,14 @@ impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
 
         // Sieve filtering
         if let Some(script) = self.core.session.config.connect.script.eval(self).await {
-            match self.run_script(script.clone(), None).await {
-                ScriptResult::Accept | ScriptResult::Replace(_) => (),
-                ScriptResult::Reject(message) => {
-                    tracing::debug!(parent: &self.span,
+            if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
+                tracing::debug!(parent: &self.span,
                         context = "connect",
                         event = "sieve-reject",
                         reason = message);
 
-                    let _ = self.write(message.as_bytes()).await;
-                    return false;
-                }
+                let _ = self.write(message.as_bytes()).await;
+                return false;
             }
         }
 

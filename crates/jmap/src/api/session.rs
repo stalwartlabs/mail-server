@@ -90,6 +90,8 @@ struct WebSocketCapabilities {
 
 #[derive(Debug, Clone, serde::Serialize)]
 struct SieveCapabilities {
+    #[serde(rename(serialize = "implementation"))]
+    implementation: &'static str,
     #[serde(rename(serialize = "maxSizeScriptName"))]
     max_script_name: usize,
     #[serde(rename(serialize = "maxSizeScript"))]
@@ -378,6 +380,7 @@ impl SieveCapabilities {
                 None
             },
             ext_lists: None,
+            implementation: concat!("Stalwart JMAP v", env!("CARGO_PKG_VERSION"),),
         }
     }
 }

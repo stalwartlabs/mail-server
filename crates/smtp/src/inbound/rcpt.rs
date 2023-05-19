@@ -133,17 +133,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
 
             // Sieve filtering
             if let Some(script) = &self.params.rcpt_script {
-                match self.run_script(script.clone(), None).await {
-                    ScriptResult::Accept | ScriptResult::Replace(_) => (),
-                    ScriptResult::Reject(message) => {
-                        tracing::debug!(parent: &self.span,
+                if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
+                    tracing::debug!(parent: &self.span,
                             context = "rcpt",
                             event = "sieve-reject",
                             address = &self.data.rcpt_to.last().unwrap().address,
                             reason = message);
-                        self.data.rcpt_to.pop();
-                        return self.write(message.as_bytes()).await;
-                    }
+                    self.data.rcpt_to.pop();
+                    return self.write(message.as_bytes()).await;
                 }
             }
 

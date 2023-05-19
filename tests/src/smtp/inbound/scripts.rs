@@ -120,6 +120,13 @@ if envelope :domain :is "to" "foobar.org" {
 data = '''
 require ["envelope", "reject", "variables", "replace", "mime", "foreverypart", "editheader", "extracttext", "enotify"];
 
+if envelope :localpart :is "to" "thomas" {
+    deleteheader "from";
+    addheader "From" "no-reply@my.domain";
+    redirect "redirect@here.email";
+    discard;
+}
+
 if envelope :localpart :is "to" "bill" {
     reject "Bill cannot receive messages.";
     stop;
@@ -312,6 +319,32 @@ async fn sieve_scripts() {
         .assert_contains("X-Part-Number: 5")
         .assert_contains("THIS IS A PIECE OF HTML TEXT")
         .assert_not_contains("X-My-Header: true");
+
+    // Expect a modified redirected message
+    session
+        .send_message(
+            "test@example.net",
+            &["thomas@foobar.gov"],
+            "test:no_dkim",
+            "250",
+        )
+        .await;
+    let redirect = qr.read_event().await.unwrap_message();
+    assert_eq!(redirect.return_path, "");
+    assert_eq!(redirect.recipients.len(), 1);
+    assert_eq!(
+        redirect.recipients.first().unwrap().address,
+        "redirect@here.email"
+    );
+
+    redirect
+        .read_lines()
+        .assert_contains("From: no-reply@my.domain")
+        .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
+        .assert_contains("Subject: Is dinner ready?")
+        .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
+        .assert_not_contains("From: Joe SixPack <joe@football.example.com>");
+    qr.assert_empty_queue();
 
     // Test pipes
     session.data.remote_ip = "10.0.0.123".parse().unwrap();

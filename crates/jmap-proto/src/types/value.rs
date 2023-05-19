@@ -30,6 +30,7 @@ pub enum Value {
     Keyword(Keyword),
     List(Vec<Value>),
     Object(Object<Value>),
+    Blob(Vec<u8>),
     #[default]
     Null,
 }
@@ -283,6 +284,7 @@ impl Value {
         match self {
             Value::UnsignedInt(u) => Some(*u),
             Value::Id(id) => Some(id.id()),
+            Value::Bool(b) => Some(*b as u64),
             _ => None,
         }
     }

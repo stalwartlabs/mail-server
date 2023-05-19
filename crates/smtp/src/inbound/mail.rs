@@ -139,17 +139,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
 
         // Sieve filtering
         if let Some(script) = self.core.session.config.mail.script.eval(self).await {
-            match self.run_script(script.clone(), None).await {
-                ScriptResult::Accept | ScriptResult::Replace(_) => (),
-                ScriptResult::Reject(message) => {
-                    tracing::debug!(parent: &self.span,
+            if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
+                tracing::debug!(parent: &self.span,
                         context = "mail-from",
                         event = "sieve-reject",
                         address = &self.data.mail_from.as_ref().unwrap().address,
                         reason = message);
-                    self.data.mail_from = None;
-                    return self.write(message.as_bytes()).await;
-                }
+                self.data.mail_from = None;
+                return self.write(message.as_bytes()).await;
             }
         }
 

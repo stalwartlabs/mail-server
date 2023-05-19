@@ -17,7 +17,7 @@ impl JMAP {
         &self,
         blob_id: &BlobId,
         acl_token: &AclToken,
-    ) -> store::Result<Option<Vec<u8>>> {
+    ) -> Result<Option<Vec<u8>>, MethodError> {
         if !acl_token.is_member(blob_id.account_id()) {
             match &blob_id.kind {
                 BlobKind::Linked {
@@ -57,7 +57,6 @@ impl JMAP {
 
         if let Some(section) = &blob_id.section {
             Ok(self
-                .store
                 .get_blob(
                     &blob_id.kind,
                     (section.offset_start as u32)
@@ -70,7 +69,7 @@ impl JMAP {
                     Encoding::QuotedPrintable => quoted_printable_decode(&bytes),
                 }))
         } else {
-            self.store.get_blob(&blob_id.kind, 0..u32::MAX).await
+            self.get_blob(&blob_id.kind, 0..u32::MAX).await
         }
     }
 
@@ -90,5 +89,42 @@ impl JMAP {
                 Err(MethodError::ServerPartialFail)
             }
         }
+    }
+
+    pub async fn has_access_blob(
+        &self,
+        blob_id: &BlobId,
+        acl_token: &AclToken,
+    ) -> Result<bool, MethodError> {
+        Ok(match &blob_id.kind {
+            BlobKind::Linked {
+                account_id,
+                collection,
+                document_id,
+            } => {
+                acl_token.is_member(*account_id)
+                    || (acl_token.has_access(*account_id, *collection)
+                        && self
+                            .has_access_to_document(
+                                acl_token,
+                                *account_id,
+                                *collection,
+                                *document_id,
+                                Acl::Read,
+                            )
+                            .await?)
+            }
+            BlobKind::LinkedMaildir {
+                account_id,
+                document_id,
+            } => {
+                acl_token.is_member(*account_id)
+                    || self
+                        .shared_messages(acl_token, *account_id, Acl::ReadItems)
+                        .await?
+                        .contains(*document_id)
+            }
+            BlobKind::Temporary { account_id, .. } => acl_token.is_member(*account_id),
+        })
     }
 }

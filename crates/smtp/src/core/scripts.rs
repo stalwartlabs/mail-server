@@ -49,6 +49,7 @@ pub enum ScriptResult {
     Accept,
     Replace(Vec<u8>),
     Reject(String),
+    Discard,
 }
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
@@ -239,7 +240,7 @@ impl SMTP {
                         input = true.into();
                     }
                     Event::Discard => {
-                        reject_reason = "503 5.5.3 Message rejected.\r\n".to_string().into();
+                        keep_id = usize::MAX - 1;
                         input = true.into();
                     }
                     Event::Reject { reason, .. } => {
@@ -449,6 +450,11 @@ impl SMTP {
             }
         }
 
+        // Keep id
+        // 0 = use original message
+        // MAX = implicit keep
+        // MAX - 1 = discard message
+
         if keep_id == 0 {
             ScriptResult::Accept
         } else if let Some(mut reject_reason) = reject_reason {
@@ -465,12 +471,14 @@ impl SMTP {
             } else {
                 ScriptResult::Reject(format!("503 5.5.3 {reject_reason}"))
             }
-        } else {
+        } else if keep_id != usize::MAX - 1 {
             messages
                 .into_iter()
                 .nth(keep_id - 1)
                 .map(ScriptResult::Replace)
                 .unwrap_or(ScriptResult::Accept)
+        } else {
+            ScriptResult::Discard
         }
     }
 }

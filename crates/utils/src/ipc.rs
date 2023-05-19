@@ -3,6 +3,7 @@ use std::{borrow::Cow, path::PathBuf};
 use mail_send::Credentials;
 use tokio::{fs, io::AsyncReadExt, sync::oneshot};
 
+#[derive(Debug)]
 pub enum DeliveryEvent {
     Ingest {
         message: IngestMessage,
@@ -12,6 +13,7 @@ pub enum DeliveryEvent {
     Stop,
 }
 
+#[derive(Debug)]
 pub struct IngestMessage {
     pub sender_address: String,
     pub recipients: Vec<String>,

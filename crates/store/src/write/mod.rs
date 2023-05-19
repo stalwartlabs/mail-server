@@ -169,6 +169,15 @@ impl SerializeInto for String {
     }
 }
 
+impl SerializeInto for Vec<u8> {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push_leb128(self.len());
+        if !self.is_empty() {
+            buf.extend_from_slice(self.as_slice());
+        }
+    }
+}
+
 impl SerializeInto for u32 {
     fn serialize_into(&self, buf: &mut Vec<u8>) {
         buf.push_leb128(*self);
@@ -195,12 +204,18 @@ impl DeserializeFrom for u64 {
 
 impl DeserializeFrom for String {
     fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
+        <Vec<u8>>::deserialize_from(bytes).and_then(|s| String::from_utf8(s).ok())
+    }
+}
+
+impl DeserializeFrom for Vec<u8> {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
         let len: usize = bytes.next_leb128()?;
-        let mut s = Vec::with_capacity(len);
+        let mut buf = Vec::with_capacity(len);
         for _ in 0..len {
-            s.push(*bytes.next()?);
+            buf.push(*bytes.next()?);
         }
-        String::from_utf8(s).ok()
+        buf.into()
     }
 }
 

@@ -47,7 +47,6 @@ pub enum RequestArguments {
     PushSubscription,
     SieveScript(sieve::SetArguments),
     VacationResponse,
-    Principal,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -108,7 +107,6 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 MethodObject::PushSubscription => RequestArguments::PushSubscription,
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
-                MethodObject::Principal => RequestArguments::Principal,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/set",
@@ -410,7 +408,7 @@ impl<T> SetRequest<T> {
 
 impl SetRequest<RequestArguments> {
     pub fn take_arguments(&mut self) -> RequestArguments {
-        std::mem::replace(&mut self.arguments, RequestArguments::Principal)
+        std::mem::replace(&mut self.arguments, RequestArguments::VacationResponse)
     }
 
     pub fn with_arguments<T>(self, arguments: T) -> SetRequest<T> {
@@ -498,6 +496,22 @@ impl SetResponse {
                 response.created_ids.insert(user_id.clone(), *id);
             }
         }
+    }
+
+    pub fn get_object_by_id(&mut self, id: Id) -> Option<&mut Object<Value>> {
+        if let Some(obj) = self.updated.get_mut(&id) {
+            if let Some(obj) = obj {
+                return Some(obj);
+            } else {
+                *obj = Some(Object::with_capacity(1));
+                return obj.as_mut().unwrap().into();
+            }
+        }
+
+        (&mut self.created)
+            .into_iter()
+            .map(|(_, obj)| obj)
+            .find(|obj| obj.properties.get(&Property::Id) == Some(&Value::Id(id)))
     }
 
     pub fn has_changes(&self) -> bool {

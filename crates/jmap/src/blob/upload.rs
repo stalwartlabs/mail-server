@@ -1,7 +1,8 @@
 use jmap_proto::{
-    error::request::RequestError,
+    error::{method::MethodError, request::RequestError},
     types::{blob::BlobId, id::Id},
 };
+use store::BlobKind;
 
 use crate::JMAP;
 
@@ -45,5 +46,29 @@ impl JMAP {
                 Err(RequestError::internal_server_error())
             }
         }
+    }
+
+    pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> Result<bool, MethodError> {
+        self.store.put_blob(kind, data).await.map_err(|err| {
+            tracing::error!(
+                    event = "error",
+                    context = "blob_put",
+                    kind = ?kind,
+                    error = ?err,
+                    "Failed to store blob.");
+            MethodError::ServerPartialFail
+        })
+    }
+
+    pub async fn delete_blob(&self, kind: &BlobKind) -> Result<bool, MethodError> {
+        self.store.delete_blob(kind).await.map_err(|err| {
+            tracing::error!(
+                    event = "error",
+                    context = "delete_blob",
+                    kind = ?kind,
+                    error = ?err,
+                    "Failed to delete blob.");
+            MethodError::ServerPartialFail
+        })
     }
 }

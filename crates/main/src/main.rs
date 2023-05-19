@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
-use smtp::{
-    core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP},
-    outbound::delivery,
-};
+use smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol},
@@ -28,8 +25,12 @@ async fn main() -> std::io::Result<()> {
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, delivery_tx).await;
-    let jmap = JMAP::init(&config, delivery_rx).await;
+    let smtp = SMTP::init(&config, &servers, delivery_tx)
+        .await
+        .failed("Invalid configuration file");
+    let jmap = JMAP::init(&config, delivery_rx)
+        .await
+        .failed("Invalid configuration file");
 
     // Spawn servers
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {

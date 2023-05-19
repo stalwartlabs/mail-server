@@ -26,7 +26,6 @@ impl JMAP {
         if request.blob_ids.len() > self.config.mail_parse_max_items {
             return Err(MethodError::RequestTooLarge);
         }
-        let account_id = request.account_id.document_id();
         let properties = request.properties.unwrap_or_else(|| {
             vec![
                 Property::BlobId,
@@ -79,20 +78,11 @@ impl JMAP {
 
         for blob_id in request.blob_ids {
             // Fetch raw message to parse
-            let raw_message = match self.blob_download(&blob_id, acl_token).await {
-                Ok(Some(raw_message)) => raw_message,
-                Ok(None) => {
+            let raw_message = match self.blob_download(&blob_id, acl_token).await? {
+                Some(raw_message) => raw_message,
+                None => {
                     response.not_found.push(blob_id);
                     continue;
-                }
-                Err(err) => {
-                    tracing::error!(event = "error",
-                    context = "store",
-                    account_id = account_id,
-                    blob_id = ?blob_id,
-                    error = ?err,
-                    "Failed to retrieve blob");
-                    return Err(MethodError::ServerPartialFail);
                 }
             };
             let message = if let Some(message) = Message::parse(&raw_message) {

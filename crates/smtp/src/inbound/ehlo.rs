@@ -96,20 +96,17 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
             // Sieve filtering
             if let Some(script) = self.core.session.config.ehlo.script.eval(self).await {
-                match self.run_script(script.clone(), None).await {
-                    ScriptResult::Accept | ScriptResult::Replace(_) => (),
-                    ScriptResult::Reject(message) => {
-                        tracing::debug!(parent: &self.span,
+                if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
+                    tracing::debug!(parent: &self.span,
                         context = "ehlo",
                         event = "sieve-reject",
                         domain = &self.data.helo_domain,
                         reason = message);
 
-                        self.data.mail_from = None;
-                        self.data.helo_domain = prev_helo_domain;
-                        self.data.spf_ehlo = None;
-                        return self.write(message.as_bytes()).await;
-                    }
+                    self.data.mail_from = None;
+                    self.data.helo_domain = prev_helo_domain;
+                    self.data.spf_ehlo = None;
+                    return self.write(message.as_bytes()).await;
                 }
             }
 

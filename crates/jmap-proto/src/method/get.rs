@@ -28,7 +28,6 @@ pub enum RequestArguments {
     PushSubscription,
     SieveScript,
     VacationResponse,
-    Principal,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -61,7 +60,6 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 MethodObject::PushSubscription => RequestArguments::PushSubscription,
                 MethodObject::SieveScript => RequestArguments::SieveScript,
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
-                MethodObject::Principal => RequestArguments::Principal,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/get",
@@ -125,7 +123,7 @@ impl RequestPropertyParser for RequestArguments {
 
 impl GetRequest<RequestArguments> {
     pub fn take_arguments(&mut self) -> RequestArguments {
-        std::mem::replace(&mut self.arguments, RequestArguments::Principal)
+        std::mem::replace(&mut self.arguments, RequestArguments::VacationResponse)
     }
 
     pub fn with_arguments<T>(self, arguments: T) -> GetRequest<T> {
