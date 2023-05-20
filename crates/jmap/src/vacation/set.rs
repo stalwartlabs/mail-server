@@ -22,15 +22,14 @@ use store::{
     BlobKind,
 };
 
-use crate::{auth::AclToken, sieve::set::SCHEMA, JMAP};
+use crate::{sieve::set::SCHEMA, JMAP};
 
 impl JMAP {
     pub async fn vacation_response_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-        acl_token: &AclToken,
     ) -> Result<SetResponse, MethodError> {
-        let account_id = acl_token.primary_id();
+        let account_id = request.account_id.document_id();
         let mut response = self
             .prepare_set_response(&request, Collection::SieveScript)
             .await?;

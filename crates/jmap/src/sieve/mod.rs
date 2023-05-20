@@ -5,12 +5,14 @@ use sieve::Sieve;
 use store::{ahash::AHashSet, blake3, write::now};
 
 pub mod get;
+pub mod ingest;
 pub mod query;
 pub mod set;
 pub mod validate;
 
 pub struct ActiveScript {
     pub document_id: u32,
+    pub script_name: String,
     pub script: Arc<Sieve>,
     pub seen_ids: SeenIds,
 }

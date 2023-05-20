@@ -28,7 +28,7 @@ async fn main() -> std::io::Result<()> {
     let smtp = SMTP::init(&config, &servers, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, delivery_rx)
+    let jmap = JMAP::init(&config, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
 

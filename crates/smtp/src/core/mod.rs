@@ -353,3 +353,94 @@ impl PartialOrd for SessionAddress {
         }
     }
 }
+
+#[cfg(feature = "local_delivery")]
+pub struct NullIo();
+
+#[cfg(feature = "local_delivery")]
+impl AsyncWrite for NullIo {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        _buf: &[u8],
+    ) -> std::task::Poll<Result<usize, std::io::Error>> {
+        unreachable!()
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        unreachable!()
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), std::io::Error>> {
+        unreachable!()
+    }
+}
+
+#[cfg(feature = "local_delivery")]
+impl AsyncRead for NullIo {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        _buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        unreachable!()
+    }
+}
+
+#[cfg(feature = "local_delivery")]
+impl Session<NullIo> {
+    pub fn local(
+        core: std::sync::Arc<SMTP>,
+        instance: std::sync::Arc<utils::listener::ServerInstance>,
+        data: SessionData,
+    ) -> Self {
+        Session {
+            state: State::None,
+            instance,
+            core,
+            span: tracing::info_span!(
+                "local_delivery",
+                "return_path" = if let Some(mail_from) = &data.mail_from {
+                    mail_from.address_lcase.as_str()
+                } else {
+                    "<>"
+                },
+                "nrcpt" = data.rcpt_to.len(),
+                "size" = data.message.len(),
+            ),
+            stream: NullIo(),
+            data,
+            params: SessionParameters {
+                timeout: Default::default(),
+                ehlo_require: Default::default(),
+                ehlo_reject_non_fqdn: Default::default(),
+                auth_lookup: Default::default(),
+                auth_require: Default::default(),
+                auth_errors_max: Default::default(),
+                auth_errors_wait: Default::default(),
+                rcpt_script: Default::default(),
+                rcpt_relay: Default::default(),
+                rcpt_errors_max: Default::default(),
+                rcpt_errors_wait: Default::default(),
+                rcpt_max: Default::default(),
+                rcpt_dsn: Default::default(),
+                rcpt_lookup_domain: Default::default(),
+                rcpt_lookup_addresses: Default::default(),
+                rcpt_lookup_expn: Default::default(),
+                rcpt_lookup_vrfy: Default::default(),
+                max_message_size: Default::default(),
+                iprev: crate::config::VerifyStrategy::Disable,
+                spf_ehlo: crate::config::VerifyStrategy::Disable,
+                spf_mail_from: crate::config::VerifyStrategy::Disable,
+                dnsbl_policy: 0,
+            },
+            in_flight: vec![],
+        }
+    }
+}

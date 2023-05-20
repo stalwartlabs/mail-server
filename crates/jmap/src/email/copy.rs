@@ -280,6 +280,7 @@ impl JMAP {
                         document_id: from_message_id,
                     },
                     &email.blob_id.kind,
+                    None,
                 )
                 .await
                 .map_err(|err| {

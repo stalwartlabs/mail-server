@@ -42,6 +42,20 @@ impl JMAP {
         }
     }
 
+    pub async fn get_account_name(&self, account_id: u32) -> Option<String> {
+        match &self.auth_db {
+            AuthDatabase::Sql {
+                db,
+                query_name_by_uid,
+                ..
+            } => {
+                db.fetch_uid_to_string(query_name_by_uid, account_id as i64)
+                    .await
+            }
+            AuthDatabase::Ldap => None,
+        }
+    }
+
     pub async fn get_account_id(&self, account: &str) -> Option<u32> {
         match &self.auth_db {
             AuthDatabase::Sql {

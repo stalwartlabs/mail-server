@@ -796,4 +796,65 @@ impl JMAP {
 
         Ok(mailbox_ids)
     }
+
+    pub async fn mailbox_create_path(
+        &self,
+        account_id: u32,
+        path: &str,
+    ) -> Result<Option<(u32, Option<u64>)>, MethodError> {
+        let expanded_path =
+            if let Some(expand_path) = self.mailbox_expand_path(account_id, path, false).await? {
+                expand_path
+            } else {
+                return Ok(None);
+            };
+
+        let mut next_parent_id = 0;
+        let mut path = expanded_path.path.into_iter().peekable();
+        'outer: while let Some(name) = path.peek() {
+            for (part, parent_id, document_id) in &expanded_path.found_names {
+                if part.eq(name) && *parent_id == next_parent_id {
+                    next_parent_id = *document_id;
+                    path.next();
+                    continue 'outer;
+                }
+            }
+            break;
+        }
+
+        // Create missing folders
+        if path.peek().is_some() {
+            let mut batch = BatchBuilder::new();
+            let mut changes = self.begin_changes(account_id).await?;
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Mailbox);
+
+            for name in path {
+                if name.len() > self.config.mailbox_name_max_len {
+                    return Ok(None);
+                }
+
+                let document_id = self
+                    .assign_document_id(account_id, Collection::Mailbox)
+                    .await?;
+                batch.create_document(document_id).custom(
+                    ObjectIndexBuilder::new(SCHEMA).with_changes(
+                        Object::with_capacity(2)
+                            .with_property(Property::Name, name)
+                            .with_property(Property::ParentId, Value::Id(Id::from(next_parent_id))),
+                    ),
+                );
+                changes.log_insert(Collection::Mailbox, document_id);
+                next_parent_id = document_id + 1;
+            }
+            let change_id = changes.change_id;
+            batch.custom(changes);
+            self.write_batch(batch).await?;
+
+            Ok(Some((next_parent_id - 1, Some(change_id))))
+        } else {
+            Ok(Some((next_parent_id - 1, None)))
+        }
+    }
 }

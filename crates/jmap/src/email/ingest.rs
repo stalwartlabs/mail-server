@@ -31,11 +31,16 @@ pub struct IngestedEmail {
     pub size: usize,
 }
 
+pub struct IngestEmail<'x> {
+    pub raw_message: &'x [u8],
+    pub message: Option<Message<'x>>,
+}
+
 impl JMAP {
     #[allow(clippy::blocks_in_if_conditions)]
     pub async fn email_ingest(
         &self,
-        raw_message: &[u8],
+        ingest_email: IngestEmail<'_>,
         account_id: u32,
         mailbox_ids: Vec<u32>,
         keywords: Vec<Keyword>,
@@ -43,8 +48,11 @@ impl JMAP {
         skip_duplicates: bool,
     ) -> Result<IngestedEmail, MaybeError> {
         // Parse message
-        let message = Message::parse(raw_message)
-            .ok_or_else(|| MaybeError::Permanent("Failed to parse e-mail message.".to_string()))?;
+        let raw_message = ingest_email.raw_message;
+        let message = ingest_email.message.ok_or_else(|| MaybeError::Permanent {
+            code: [5, 5, 0],
+            reason: "Failed to parse e-mail message.".to_string(),
+        })?;
 
         // Obtain message references and thread name
         let mut references = Vec::with_capacity(5);
@@ -394,6 +402,33 @@ impl JMAP {
                     return Err(MaybeError::Temporary);
                 }
             }
+        }
+    }
+}
+
+impl<'x> From<&'x [u8]> for IngestEmail<'x> {
+    fn from(raw_message: &'x [u8]) -> Self {
+        IngestEmail {
+            raw_message,
+            message: Message::parse(raw_message),
+        }
+    }
+}
+
+impl<'x> From<&'x Vec<u8>> for IngestEmail<'x> {
+    fn from(raw_message: &'x Vec<u8>) -> Self {
+        IngestEmail {
+            raw_message,
+            message: Message::parse(raw_message),
+        }
+    }
+}
+
+impl<'x> IngestEmail<'x> {
+    pub fn new(raw_message: &'x [u8], message: Message<'x>) -> Self {
+        IngestEmail {
+            raw_message,
+            message: message.into(),
         }
     }
 }

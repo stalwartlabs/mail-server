@@ -21,11 +21,14 @@ pub mod email_query;
 pub mod email_query_changes;
 pub mod email_search_snippet;
 pub mod email_set;
+pub mod email_submission;
 pub mod event_source;
 pub mod mailbox;
 pub mod push_subscription;
+pub mod sieve_script;
 pub mod thread_get;
 pub mod thread_merge;
+pub mod vacation_response;
 
 const SERVER: &str = r#"
 [server]
@@ -123,6 +126,7 @@ address = "sqlite::memory:"
 uid-by-login = "SELECT ROWID - 1 FROM users WHERE login = ?"
 login-by-uid = "SELECT login FROM users WHERE ROWID - 1 = ?"
 secret-by-uid = "SELECT secret FROM users WHERE ROWID - 1 = ?"
+name-by-uid = "SELECT name FROM users WHERE ROWID - 1 = ?"
 gids-by-uid = "SELECT gid FROM groups WHERE uid = ?"
 uids-by-address = "SELECT uid FROM emails WHERE email = ?"
 addresses-by-uid = "SELECT email FROM emails WHERE uid = ?"
@@ -166,8 +170,11 @@ pub async fn jmap_tests() {
     //auth_acl::test(params.server.clone(), &mut params.client).await;
     //auth_limits::test(params.server.clone(), &mut params.client).await;
     //auth_oauth::test(params.server.clone(), &mut params.client).await;
-    event_source::test(params.server.clone(), &mut params.client).await;
+    //event_source::test(params.server.clone(), &mut params.client).await;
     //push_subscription::test(params.server.clone(), &mut params.client).await;
+    sieve_script::test(params.server.clone(), &mut params.client).await;
+
+    let websockets = "todo";
 
     if delete {
         params.temp_dir.delete();
@@ -197,7 +204,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     let smtp = SMTP::init(&config, &servers, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, delivery_rx)
+    let jmap = JMAP::init(&config, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {

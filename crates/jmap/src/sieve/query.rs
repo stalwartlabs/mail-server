@@ -28,7 +28,7 @@ impl JMAP {
                     Language::None,
                 )),
                 Filter::IsActive(is_active) => {
-                    filters.push(query::Filter::lt(Property::IsActive, is_active as u32))
+                    filters.push(query::Filter::eq(Property::IsActive, is_active as u32))
                 }
                 other => return Err(MethodError::UnsupportedFilter(other.to_string())),
             }
@@ -46,7 +46,7 @@ impl JMAP {
             for comparator in request
                 .sort
                 .and_then(|s| if !s.is_empty() { s.into() } else { None })
-                .unwrap_or_else(|| vec![Comparator::descending(SortProperty::ReceivedAt)])
+                .unwrap_or_else(|| vec![Comparator::descending(SortProperty::Name)])
             {
                 comparators.push(match comparator.property {
                     SortProperty::Name => {

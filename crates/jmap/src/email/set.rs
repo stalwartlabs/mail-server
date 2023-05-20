@@ -697,7 +697,7 @@ impl JMAP {
             response.created.insert(
                 id,
                 self.email_ingest(
-                    &raw_message,
+                    (&raw_message).into(),
                     account_id,
                     mailboxes,
                     keywords,

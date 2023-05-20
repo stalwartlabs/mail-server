@@ -4,7 +4,7 @@ use jmap_proto::{
     object::Object,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property, value::Value},
 };
-use store::{ahash::AHashSet, roaring::RoaringBitmap};
+use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap};
 
 use crate::{
     auth::{acl::EffectiveAcl, AclToken},
@@ -294,4 +294,115 @@ impl JMAP {
             Ok(None)
         }
     }
+
+    pub async fn mailbox_expand_path<'x>(
+        &self,
+        account_id: u32,
+        path: &'x str,
+        exact_match: bool,
+    ) -> Result<Option<ExpandPath<'x>>, MethodError> {
+        let path = path
+            .split('/')
+            .filter_map(|p| {
+                let p = p.trim();
+                if !p.is_empty() {
+                    p.into()
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if path.is_empty() || path.len() > self.config.mailbox_max_depth {
+            return Ok(None);
+        }
+
+        let mut filter = Vec::with_capacity(path.len() + 2);
+        filter.push(Filter::Or);
+        for &item in &path {
+            filter.push(Filter::eq(Property::Name, item));
+        }
+        filter.push(Filter::End);
+
+        let document_ids = self
+            .filter(account_id, Collection::Mailbox, filter)
+            .await?
+            .results;
+        if exact_match && (document_ids.len() as usize) < path.len() {
+            return Ok(None);
+        }
+
+        let mut found_names = Vec::new();
+        for document_id in document_ids {
+            if let Some(mut obj) = self
+                .get_property::<Object<Value>>(
+                    account_id,
+                    Collection::Mailbox,
+                    document_id,
+                    Property::Value,
+                )
+                .await?
+            {
+                if let Some(Value::Text(value)) = obj.properties.remove(&Property::Name) {
+                    found_names.push((
+                        value,
+                        if let Some(Value::Id(value)) = obj.properties.remove(&Property::ParentId) {
+                            value.document_id()
+                        } else {
+                            0
+                        },
+                        document_id + 1,
+                    ));
+                } else {
+                    return Ok(None);
+                }
+            } else {
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(ExpandPath { path, found_names }))
+    }
+
+    pub async fn mailbox_get_by_name(
+        &self,
+        account_id: u32,
+        path: &str,
+    ) -> Result<Option<u32>, MethodError> {
+        Ok(self
+            .mailbox_expand_path(account_id, path, true)
+            .await?
+            .and_then(|ep| {
+                let mut next_parent_id = 0;
+                'outer: for name in ep.path {
+                    for (part, parent_id, document_id) in &ep.found_names {
+                        if part.eq(name) && *parent_id == next_parent_id {
+                            next_parent_id = *document_id;
+                            continue 'outer;
+                        }
+                    }
+                    return None;
+                }
+                Some(next_parent_id - 1)
+            }))
+    }
+
+    pub async fn mailbox_get_by_role(
+        &self,
+        account_id: u32,
+        role: &str,
+    ) -> Result<Option<u32>, MethodError> {
+        self.filter(
+            account_id,
+            Collection::Mailbox,
+            vec![Filter::eq(Property::Role, role)],
+        )
+        .await
+        .map(|r| r.results.min())
+    }
+}
+
+#[derive(Debug)]
+pub struct ExpandPath<'x> {
+    pub path: Vec<&'x str>,
+    pub found_names: Vec<(String, u32, u32)>,
 }

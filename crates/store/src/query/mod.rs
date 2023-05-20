@@ -9,7 +9,7 @@ use crate::{
     fts::Language, write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {
     LowerThan,
     LowerEqualThan,

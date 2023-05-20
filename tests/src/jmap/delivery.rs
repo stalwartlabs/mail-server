@@ -47,7 +47,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
     assert_eq!(
         server
             .get_document_ids(
@@ -78,7 +78,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
     assert_eq!(
         server
             .get_document_ids(
@@ -120,7 +120,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
     for (account_id, num_messages) in [(&account_id_1, 3), (&account_id_2, 1), (&account_id_3, 1)] {
         assert_eq!(
             server
@@ -154,7 +154,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         10,
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
     for (account_id, num_messages) in [(&account_id_1, 3), (&account_id_2, 2), (&account_id_3, 2)] {
         assert_eq!(
             server
@@ -192,7 +192,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         ),
     )
     .await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
+
     for (account_id, num_messages) in [(&account_id_1, 4), (&account_id_2, 3), (&account_id_3, 3)] {
         assert_eq!(
             server
@@ -236,14 +236,16 @@ impl SmtpConnection {
             self.rcpt_to(recipient, 2).await;
         }
         self.data(3).await;
-        self.data_bytes(message, recipients.len(), code).await
+        let result = self.data_bytes(message, recipients.len(), code).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        result
     }
 
     pub async fn ingest(&mut self, from: &str, recipients: &[&str], message: &str) {
         self.ingest_with_code(from, recipients, message, 2).await;
     }
 
-    pub async fn ingest_chunked(
+    async fn ingest_chunked(
         &mut self,
         from: &str,
         recipients: &[&str],
@@ -258,6 +260,7 @@ impl SmtpConnection {
             self.bdat(std::str::from_utf8(chunk).unwrap(), 2).await;
         }
         self.bdat_last("", recipients.len(), 2).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     pub async fn connect() -> Self {

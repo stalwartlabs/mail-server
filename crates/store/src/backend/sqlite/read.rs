@@ -180,9 +180,19 @@ impl ReadTransaction<'_> {
         let mut query = self.conn.prepare_cached(query)?;
         let mut rows = query.query([&begin, &end])?;
 
-        while let Some(row) = rows.next()? {
-            let key = row.get_ref(0)?.as_bytes()?;
-            bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+        if op != Operator::Equal {
+            while let Some(row) = rows.next()? {
+                let key = row.get_ref(0)?.as_bytes()?;
+                bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+            }
+        } else {
+            let key_len = begin.len();
+            while let Some(row) = rows.next()? {
+                let key = row.get_ref(0)?.as_bytes()?;
+                if key.len() == key_len {
+                    bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                }
+            }
         }
 
         Ok(Some(bm))

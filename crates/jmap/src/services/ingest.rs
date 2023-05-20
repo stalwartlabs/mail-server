@@ -21,20 +21,48 @@ impl JMAP {
         // Obtain the UIDs for each recipient
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_uids = AHashMap::with_capacity(message.recipients.len());
-        for rcpt in message.recipients {
-            let uids = self.get_uids_by_address(&rcpt).await;
+        for rcpt in &message.recipients {
+            let uids = self.get_uids_by_address(rcpt).await;
             for uid in &uids {
-                deliver_uids.insert(*uid, DeliveryResult::Success);
+                deliver_uids.insert(*uid, (DeliveryResult::Success, rcpt));
             }
             recipients.push(uids);
         }
 
         // Deliver to each recipient
-        for (uid, status) in &mut deliver_uids {
-            match self
-                .email_ingest(&raw_message, *uid, vec![INBOX_ID], vec![], None, true)
-                .await
-            {
+        for (uid, (status, rcpt)) in &mut deliver_uids {
+            // Check if there is an active sieve script
+            let result = match self.sieve_script_get_active(*uid).await {
+                Ok(Some(active_script)) => {
+                    self.sieve_script_ingest(
+                        &raw_message,
+                        &message.sender_address,
+                        rcpt,
+                        *uid,
+                        active_script,
+                    )
+                    .await
+                }
+                Ok(None) => {
+                    self.email_ingest(
+                        (&raw_message).into(),
+                        *uid,
+                        vec![INBOX_ID],
+                        vec![],
+                        None,
+                        true,
+                    )
+                    .await
+                }
+                Err(_) => {
+                    *status = DeliveryResult::TemporaryFailure {
+                        reason: "Transient server failure.".into(),
+                    };
+                    continue;
+                }
+            };
+
+            match result {
                 Ok(ingested_message) => {
                     // Notify state change
                     if ingested_message.change_id != u64::MAX {
@@ -54,9 +82,9 @@ impl JMAP {
                             reason: "Transient server failure.".into(),
                         }
                     }
-                    MaybeError::Permanent(reason) => {
+                    MaybeError::Permanent { code, reason } => {
                         *status = DeliveryResult::PermanentFailure {
-                            code: [5, 5, 0],
+                            code,
                             reason: reason.into(),
                         }
                     }
@@ -71,7 +99,7 @@ impl JMAP {
                 match uids.len() {
                     1 => {
                         // Delivery to single recipient
-                        deliver_uids.get(&uids[0]).unwrap().clone()
+                        deliver_uids.get(&uids[0]).unwrap().0.clone()
                     }
                     0 => {
                         // Something went wrong
@@ -84,7 +112,7 @@ impl JMAP {
                         let mut success = 0;
                         let mut temp_failures = 0;
                         for uid in uids {
-                            match deliver_uids.get(&uid).unwrap() {
+                            match deliver_uids.get(&uid).unwrap().0 {
                                 DeliveryResult::Success => success += 1,
                                 DeliveryResult::TemporaryFailure { .. } => temp_failures += 1,
                                 DeliveryResult::PermanentFailure { .. } => {}

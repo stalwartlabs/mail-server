@@ -174,10 +174,22 @@ impl ReadTransaction<'_> {
         let mut bm = RoaringBitmap::new();
         let mut range_stream = self.trx.get_ranges(opt, true);
 
-        while let Some(values) = range_stream.next().await {
-            for value in values? {
-                let key = value.key();
-                bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+        if op != Operator::Equal {
+            while let Some(values) = range_stream.next().await {
+                for value in values? {
+                    let key = value.key();
+                    bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                }
+            }
+        } else {
+            let key_len = begin.len();
+            while let Some(values) = range_stream.next().await {
+                for value in values? {
+                    let key = value.key();
+                    if key.len() == key_len {
+                        bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                    }
+                }
             }
         }
 

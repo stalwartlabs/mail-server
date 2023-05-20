@@ -24,6 +24,7 @@ pub enum AuthDatabase {
         query_uid_by_login: String,
         query_login_by_uid: String,
         query_secret_by_uid: String,
+        query_name_by_uid: String,
         query_gids_by_uid: String,
         query_uids_by_address: String,
         query_addresses_by_uid: String,

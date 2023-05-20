@@ -99,7 +99,7 @@ impl JMAP {
             // Import message
             match self
                 .email_ingest(
-                    &raw_message,
+                    (&raw_message).into(),
                     account_id,
                     mailbox_ids,
                     email.keywords,
@@ -111,7 +111,7 @@ impl JMAP {
                 Ok(email) => {
                     response.created.append(id, email.into());
                 }
-                Err(MaybeError::Permanent(reason)) => {
+                Err(MaybeError::Permanent { reason, .. }) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::InvalidEmail).with_description(reason),

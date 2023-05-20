@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
@@ -31,20 +33,34 @@ impl Store {
         }
     }
 
-    pub async fn copy_blob(&self, src: &BlobKind, dest: &BlobKind) -> crate::Result<bool> {
+    pub async fn copy_blob(
+        &self,
+        src: &BlobKind,
+        dest: &BlobKind,
+        range: Option<Range<u32>>,
+    ) -> crate::Result<bool> {
         match &self.blob {
             BlobStore::Local(base_path) => {
-                let src_path = get_path(base_path, src)?;
                 let dest_path = get_path(base_path, dest)?;
 
-                if fs::metadata(&src_path).await.is_err() {
-                    return Ok(false);
+                if let Some(range) = range {
+                    if let Some(bytes) = self.get_blob(src, range).await? {
+                        fs::create_dir_all(dest_path.parent().unwrap()).await?;
+                        fs::write(dest_path, bytes).await?;
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
+                } else {
+                    let src_path = get_path(base_path, src)?;
+                    if fs::metadata(&src_path).await.is_ok() {
+                        fs::create_dir_all(dest_path.parent().unwrap()).await?;
+                        fs::copy(src_path, dest_path).await?;
+                        Ok(true)
+                    } else {
+                        Ok(false)
+                    }
                 }
-
-                fs::create_dir_all(dest_path.parent().unwrap()).await?;
-                fs::copy(src_path, dest_path).await?;
-
-                Ok(true)
             }
             BlobStore::Remote(_) => todo!(),
         }

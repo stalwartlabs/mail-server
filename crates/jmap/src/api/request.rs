@@ -132,7 +132,7 @@ impl JMAP {
                 get::RequestArguments::SieveScript => {
                     acl_token.assert_is_member(req.account_id)?;
 
-                    self.sieve_script_get(req, acl_token).await?.into()
+                    self.sieve_script_get(req).await?.into()
                 }
                 get::RequestArguments::VacationResponse => {
                     acl_token.assert_is_member(req.account_id)?;
@@ -190,7 +190,7 @@ impl JMAP {
                 set::RequestArguments::VacationResponse => {
                     acl_token.assert_is_member(req.account_id)?;
 
-                    self.vacation_response_set(req, acl_token).await?.into()
+                    self.vacation_response_set(req).await?.into()
                 }
             },
             RequestMethod::Changes(req) => self.changes(req, acl_token).await?.into(),

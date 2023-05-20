@@ -30,7 +30,14 @@ impl JMAP {
                 let dest_blob_id = BlobId::temporary(account_id);
                 match self
                     .store
-                    .copy_blob(&blob_id.kind, &dest_blob_id.kind)
+                    .copy_blob(
+                        &blob_id.kind,
+                        &dest_blob_id.kind,
+                        blob_id
+                            .section
+                            .as_ref()
+                            .map(|s| (s.offset_start as u32)..((s.offset_start + s.size) as u32)),
+                    )
                     .await
                 {
                     Ok(success) => {

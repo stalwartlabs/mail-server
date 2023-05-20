@@ -102,6 +102,42 @@ impl JsonObjectParser for Keyword {
     }
 }
 
+impl From<String> for Keyword {
+    fn from(value: String) -> Self {
+        if value.starts_with('$') {
+            let mut hash = 0;
+            let mut shift = 0;
+
+            for &ch in value.as_bytes() {
+                if shift < 128 {
+                    hash |= (ch as u128) << shift;
+                    shift += 8;
+                } else {
+                    break;
+                }
+            }
+
+            match hash {
+                0x6e65_6573 => return Keyword::Seen,
+                0x0074_6661_7264 => return Keyword::Draft,
+                0x0064_6567_6761_6c66 => return Keyword::Flagged,
+                0x6465_7265_7773_6e61 => return Keyword::Answered,
+                0x746e_6563_6572 => return Keyword::Recent,
+                0x0074_6e61_7472_6f70_6d69 => return Keyword::Important,
+                0x676e_6968_7369_6870 => return Keyword::Phishing,
+                0x6b6e_756a => return Keyword::Junk,
+                0x006b_6e75_6a74_6f6e => return Keyword::NotJunk,
+                0x0064_6574_656c_6564 => return Keyword::Deleted,
+                0x0064_6564_7261_7772_6f66 => return Keyword::Forwarded,
+                0x0074_6e65_736e_646d => return Keyword::MdnSent,
+                _ => (),
+            }
+        }
+
+        Keyword::Other(value)
+    }
+}
+
 impl Display for Keyword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -20,13 +20,14 @@ use services::{
     delivery::spawn_delivery_manager,
     state::{self, init_state_manager, spawn_state_manager},
 };
+use smtp::{core::SMTP, queue};
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
     fts::Language,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BitmapFamily},
+    write::{BatchBuilder, BitmapFamily, ToBitmaps},
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
 use tokio::sync::mpsc;
@@ -61,6 +62,7 @@ pub struct JMAP {
     pub auth_db: AuthDatabase,
 
     pub state_tx: mpsc::Sender<state::Event>,
+    pub smtp: Arc<SMTP>,
 
     pub sieve_compiler: Compiler,
     pub sieve_runtime: Runtime,
@@ -115,13 +117,14 @@ pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
 
 pub enum MaybeError {
     Temporary,
-    Permanent(String),
+    Permanent { code: [u8; 3], reason: String },
 }
 
 impl JMAP {
     pub async fn init(
         config: &utils::config::Config,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
+        smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
         let auth_db = match config.value_require("jmap.auth.database.type")? {
             "ldap" => AuthDatabase::Ldap,
@@ -186,6 +189,9 @@ impl JMAP {
                     query_secret_by_uid: config
                         .value_require("jmap.auth.database.query.secret-by-uid")?
                         .to_string(),
+                    query_name_by_uid: config
+                        .value_require("jmap.auth.database.query.name-by-uid")?
+                        .to_string(),
                     query_gids_by_uid: config
                         .value_require("jmap.auth.database.query.gids-by-uid")?
                         .to_string(),
@@ -233,6 +239,7 @@ impl JMAP {
             ),
             auth_db,
             state_tx,
+            smtp,
             sieve_compiler: Compiler::new()
                 .with_max_script_size(
                     config
@@ -697,6 +704,12 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
             .map_err(|err| {
                 store::Error::InternalError(format!("Bincode deserialization failed: {err}"))
             })
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T> {
+    fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
+        unreachable!()
     }
 }
 

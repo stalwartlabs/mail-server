@@ -52,7 +52,7 @@ impl JMAP {
         mut request: SetRequest<SetArguments>,
         acl_token: &AclToken,
     ) -> Result<SetResponse, MethodError> {
-        let account_id = acl_token.primary_id();
+        let account_id = request.account_id.document_id();
         let mut sieve_ids = self
             .get_document_ids(account_id, Collection::SieveScript)
             .await?

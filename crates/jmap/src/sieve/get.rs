@@ -9,7 +9,7 @@ use jmap_proto::{
 use sieve::Sieve;
 use store::{query::Filter, BlobKind, Deserialize, Serialize};
 
-use crate::{auth::AclToken, sieve::SeenIds, Bincode, JMAP};
+use crate::{sieve::SeenIds, Bincode, JMAP};
 
 use super::ActiveScript;
 
@@ -17,12 +17,11 @@ impl JMAP {
     pub async fn sieve_script_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-        acl_token: &AclToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties =
             request.unwrap_properties(&[Property::Id, Property::Name, Property::BlobId]);
-        let account_id = acl_token.primary_id();
+        let account_id = request.account_id.document_id();
         let push_ids = self
             .get_document_ids(account_id, Collection::SieveScript)
             .await?
@@ -113,9 +112,16 @@ impl JMAP {
             .results
             .min()
         {
+            let (script, mut script_object) =
+                self.sieve_script_compile(account_id, document_id).await?;
             Ok(Some(ActiveScript {
                 document_id,
-                script: Arc::new(self.sieve_script_compile(account_id, document_id).await?),
+                script: Arc::new(script),
+                script_name: script_object
+                    .properties
+                    .remove(&Property::Name)
+                    .and_then(|name| name.try_unwrap_string())
+                    .unwrap_or_else(|| account_id.to_string()),
                 seen_ids: self
                     .get_property::<Bincode<SeenIds>>(
                         account_id,
@@ -150,7 +156,7 @@ impl JMAP {
         {
             self.sieve_script_compile(account_id, document_id)
                 .await
-                .map(Some)
+                .map(|(sieve, _)| Some(sieve))
         } else {
             Ok(None)
         }
@@ -160,9 +166,9 @@ impl JMAP {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> Result<Sieve, MethodError> {
-        // Obtain the sieve script length
-        let script_offset = self
+    ) -> Result<(Sieve, Object<Value>), MethodError> {
+        // Obtain script object
+        let script_object = self
             .get_property::<Object<Value>>(
                 account_id,
                 Collection::SieveScript,
@@ -170,7 +176,22 @@ impl JMAP {
                 Property::Value,
             )
             .await?
-            .and_then(|mut object| object.properties.remove(&Property::BlobId))
+            .ok_or_else(|| {
+                tracing::warn!(
+                    context = "sieve_script_compile",
+                    event = "error",
+                    account_id = account_id,
+                    document_id = document_id,
+                    "Failed to obtain sieve script object"
+                );
+
+                MethodError::ServerPartialFail
+            })?;
+
+        // Obtain the sieve script length
+        let script_offset = script_object
+            .properties
+            .get(&Property::BlobId)
             .and_then(|value| value.as_uint())
             .ok_or_else(|| {
                 tracing::warn!(
@@ -202,7 +223,7 @@ impl JMAP {
             .get(script_offset..)
             .and_then(|bytes| Bincode::<Sieve>::deserialize(bytes).ok())
         {
-            Ok(sieve.inner)
+            Ok((sieve.inner, script_object))
         } else {
             // Deserialization failed, probably because the script compiler version changed
             match self
@@ -237,7 +258,7 @@ impl JMAP {
                         )
                         .await;
 
-                    Ok(sieve.inner)
+                    Ok((sieve.inner, script_object))
                 }
                 Err(error) => {
                     tracing::warn!(
