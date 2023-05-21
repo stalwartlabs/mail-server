@@ -85,7 +85,9 @@ impl JMAP {
                 }
             }
             _ => {
-                return Ok(response);
+                if will_destroy.is_empty() {
+                    return Ok(response);
+                }
             }
         }
 
@@ -176,8 +178,9 @@ impl JMAP {
             // Obtain current script
             let document_id = self.get_vacation_sieve_script_id(account_id).await?;
             let mut was_active = false;
-            let mut obj = ObjectIndexBuilder::new(SCHEMA).with_current_opt(
-                if let Some(document_id) = document_id {
+
+            let mut obj = ObjectIndexBuilder::new(SCHEMA)
+                .with_current_opt(if let Some(document_id) = document_id {
                     self.get_property::<HashedValue<Object<Value>>>(
                         account_id,
                         Collection::SieveScript,
@@ -186,7 +189,9 @@ impl JMAP {
                     )
                     .await?
                     .map(|value| {
-                        batch.assert_value(Property::Value, &value);
+                        batch
+                            .update_document(document_id)
+                            .assert_value(Property::Value, &value);
                         was_active = value.inner.properties.get(&Property::IsActive)
                             == Some(&Value::Bool(true));
                         value.inner
@@ -195,8 +200,8 @@ impl JMAP {
                     .into()
                 } else {
                     None
-                },
-            );
+                })
+                .with_changes(changes);
 
             // Create sieve script only if there are changes
             let script_blob = if build_script {
@@ -208,7 +213,6 @@ impl JMAP {
             // Write changes
             let document_id = if let Some(document_id) = document_id {
                 batch
-                    .update_document(document_id)
                     .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
                     .custom(obj);
                 change_log.log_insert(Collection::SieveScript, document_id);
@@ -258,7 +262,8 @@ impl JMAP {
                 if id.is_singleton() {
                     if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await?
                     {
-                        self.sieve_script_delete(account_id, document_id).await?;
+                        self.sieve_script_delete(account_id, document_id, false)
+                            .await?;
                         change_log.log_delete(Collection::SieveScript, document_id);
                         response.destroyed.push(id);
                         continue;
@@ -364,7 +369,6 @@ impl JMAP {
             script.extend_from_slice(b"}\r\n");
         }
 
-        // Compile script
         match self.sieve_compiler.compile(&script) {
             Ok(compiled_script) => {
                 // Update blob length

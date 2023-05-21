@@ -204,28 +204,19 @@ impl JMAP {
         for id in will_destroy {
             let document_id = id.document_id();
             if sieve_ids.contains(document_id) {
-                // Make sure the script is not active
-                if matches!(
-                    self.get_property::<Object<Value>>(
-                        account_id,
-                        Collection::SieveScript,
-                        document_id,
-                        Property::Value,
-                    )
+                if self
+                    .sieve_script_delete(account_id, document_id, true)
                     .await?
-                    .and_then(|mut obj| obj.properties.remove(&Property::IsActive)),
-                    Some(Value::Bool(true))
-                ) {
+                {
+                    changes.log_delete(Collection::SieveScript, document_id);
+                    ctx.response.destroyed.push(id);
+                } else {
                     ctx.response.not_destroyed.append(
                         id,
                         SetError::new(SetErrorType::ScriptIsActive)
                             .with_description("Deactivate Sieve script before deletion."),
                     );
-                    continue;
                 }
-                self.sieve_script_delete(account_id, document_id).await?;
-                changes.log_delete(Collection::SieveScript, document_id);
-                ctx.response.destroyed.push(id);
             } else {
                 ctx.response.not_destroyed.append(id, SetError::not_found());
             }
@@ -277,15 +268,46 @@ impl JMAP {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> Result<(), MethodError> {
+        fail_if_active: bool,
+    ) -> Result<bool, MethodError> {
+        // Fetch record
+        let obj = self
+            .get_property::<Object<Value>>(
+                account_id,
+                Collection::SieveScript,
+                document_id,
+                Property::Value,
+            )
+            .await?
+            .ok_or_else(|| {
+                tracing::warn!(
+                    event = "error",
+                    context = "sieve_script_delete",
+                    account_id = account_id,
+                    document_id = document_id,
+                    "Sieve script not found."
+                );
+                MethodError::ServerPartialFail
+            })?;
+
+        // Make sure the script is not active
+        if fail_if_active
+            && matches!(
+                obj.properties.get(&Property::IsActive),
+                Some(Value::Bool(true))
+            )
+        {
+            return Ok(false);
+        }
+
         // Delete record
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
-            .value(Property::Value, (), F_VALUE | F_CLEAR)
-            .value(Property::EmailIds, (), F_VALUE | F_CLEAR);
+            .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
+            .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));
         self.write_batch(batch).await?;
         let _ = self
             .delete_blob(&BlobKind::Linked {
@@ -294,7 +316,7 @@ impl JMAP {
                 document_id,
             })
             .await;
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::blocks_in_if_conditions)]
@@ -452,11 +474,11 @@ impl JMAP {
     pub async fn sieve_activate_script(
         &self,
         account_id: u32,
-        activate_id: Option<u32>,
+        mut activate_id: Option<u32>,
     ) -> Result<Vec<(u32, bool)>, MethodError> {
         let mut changed_ids = Vec::new();
         // Find the currently active script
-        let active_ids = self
+        let mut active_ids = self
             .filter(
                 account_id,
                 Collection::SieveScript,
@@ -466,8 +488,12 @@ impl JMAP {
             .results;
 
         // Check if script is already active
-        if activate_id.map_or(false, |id| active_ids.contains(id)) {
-            return Ok(changed_ids);
+        if activate_id.map_or(false, |id| active_ids.remove(id)) {
+            if active_ids.is_empty() {
+                return Ok(changed_ids);
+            } else {
+                activate_id = None;
+            }
         }
 
         // Prepare batch

@@ -20,7 +20,7 @@ use services::{
     delivery::spawn_delivery_manager,
     state::{self, init_state_manager, spawn_state_manager},
 };
-use smtp::{core::SMTP, queue};
+use smtp::core::SMTP;
 use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
     fts::Language,
@@ -87,6 +87,7 @@ pub struct Config {
     pub mailbox_name_max_len: usize,
     pub mail_attachments_max_size: usize,
     pub mail_parse_max_items: usize,
+    pub mail_max_size: usize,
 
     pub sieve_max_script_name: usize,
     pub sieve_max_scripts: usize,
@@ -667,11 +668,23 @@ impl JMAP {
 
     pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
         self.store.write(batch.build()).await.map_err(|err| {
-            tracing::error!(
-            event = "error",
-            context = "write_batch",
-            error = ?err,
-            "Failed to write batch.");
+            match err {
+                store::Error::InternalError(err) => {
+                    tracing::error!(
+                        event = "error",
+                        context = "write_batch",
+                        error = ?err,
+                        "Failed to write batch.");
+                }
+                store::Error::AssertValueFailed => {
+                    tracing::debug!(
+                        event = "assert_failed",
+                        context = "write_batch",
+                        "Failed to assert value."
+                    );
+                }
+            }
+
             MethodError::ServerPartialFail
         })
     }

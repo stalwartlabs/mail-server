@@ -156,24 +156,28 @@ impl ConfigCondition for Config {
 
                 let value_str = self.value_require((&prefix, op_str))?;
                 let value = match (key, &op) {
-                    (EnvelopeKey::Listener, MatchType::Equal) => ConditionMatch::UInt(
-                        ctx.servers
-                            .iter()
-                            .find_map(|s| {
-                                if s.id == value_str {
-                                    s.internal_id.into()
-                                } else {
-                                    None
-                                }
-                            })
-                            .ok_or_else(|| {
-                                format!(
-                                    "Listener {:?} does not exist for property {:?}.",
-                                    value_str,
-                                    (&prefix, op_str).as_key()
-                                )
-                            })?,
-                    ),
+                    (EnvelopeKey::Listener, MatchType::Equal) => {
+                        ConditionMatch::UInt(if value_str != "sieve" {
+                            ctx.servers
+                                .iter()
+                                .find_map(|s| {
+                                    if s.id == value_str {
+                                        s.internal_id.into()
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .ok_or_else(|| {
+                                    format!(
+                                        "Listener {:?} does not exist for property {:?}.",
+                                        value_str,
+                                        (&prefix, op_str).as_key()
+                                    )
+                                })?
+                        } else {
+                            u16::MAX
+                        })
+                    }
                     (EnvelopeKey::LocalIp | EnvelopeKey::RemoteIp, MatchType::Equal) => {
                         ConditionMatch::IpAddrMask(value_str.parse_key((&prefix, op_str))?)
                     }

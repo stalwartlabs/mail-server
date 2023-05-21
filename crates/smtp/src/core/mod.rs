@@ -58,7 +58,7 @@ use crate::{
         dane::{DnssecResolver, Tlsa},
         mta_sts,
     },
-    queue::{self, QuotaLimiter},
+    queue::{self, DomainPart, QuotaLimiter},
     reporting,
 };
 
@@ -394,11 +394,37 @@ impl AsyncRead for NullIo {
 }
 
 #[cfg(feature = "local_delivery")]
+impl crate::inbound::IsTls for NullIo {
+    fn is_tls(&self) -> bool {
+        true
+    }
+
+    fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
+}
+
+#[cfg(feature = "local_delivery")]
+lazy_static::lazy_static! {
+static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance {
+    id: "sieve".to_string(),
+    listener_id: u16::MAX,
+    protocol: utils::config::ServerProtocol::Lmtp,
+    hostname: "localhost".to_string(),
+    data: "localhost".to_string(),
+    tls_acceptor: None,
+    is_tls_implicit: true,
+    limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
+    shutdown_rx: tokio::sync::watch::channel(false).1,
+});
+}
+
+#[cfg(feature = "local_delivery")]
 impl Session<NullIo> {
     pub fn local(
         core: std::sync::Arc<SMTP>,
         instance: std::sync::Arc<utils::listener::ServerInstance>,
-        data: SessionData,
+        mail_from: SessionAddress,
+        rcpt_to: Vec<SessionAddress>,
+        message: Vec<u8>,
     ) -> Self {
         Session {
             state: State::None,
@@ -406,16 +432,36 @@ impl Session<NullIo> {
             core,
             span: tracing::info_span!(
                 "local_delivery",
-                "return_path" = if let Some(mail_from) = &data.mail_from {
+                "return_path" = if !mail_from.address_lcase.is_empty() {
                     mail_from.address_lcase.as_str()
                 } else {
                     "<>"
                 },
-                "nrcpt" = data.rcpt_to.len(),
-                "size" = data.message.len(),
+                "nrcpt" = rcpt_to.len(),
+                "size" = message.len(),
             ),
             stream: NullIo(),
-            data,
+            data: SessionData {
+                local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+                helo_domain: "localhost".into(),
+                mail_from: mail_from.into(),
+                rcpt_to,
+                rcpt_errors: 0,
+                message,
+                authenticated_as: "".into(),
+                auth_errors: 0,
+                priority: 0,
+                delivery_by: 0,
+                future_release: 0,
+                valid_until: Instant::now(),
+                bytes_left: 0,
+                messages_sent: 0,
+                iprev: None,
+                spf_ehlo: None,
+                spf_mail_from: None,
+                dnsbl_error: None,
+            },
             params: SessionParameters {
                 timeout: Default::default(),
                 ehlo_require: Default::default(),
@@ -441,6 +487,29 @@ impl Session<NullIo> {
                 dnsbl_policy: 0,
             },
             in_flight: vec![],
+        }
+    }
+
+    pub fn sieve(
+        core: std::sync::Arc<SMTP>,
+        mail_from: SessionAddress,
+        rcpt_to: Vec<SessionAddress>,
+        message: Vec<u8>,
+    ) -> Self {
+        Self::local(core, SIEVE.clone(), mail_from, rcpt_to, message)
+    }
+}
+
+#[cfg(feature = "local_delivery")]
+impl SessionAddress {
+    pub fn new(address: String) -> Self {
+        let address_lcase = address.to_lowercase();
+        SessionAddress {
+            domain: address_lcase.domain_part().to_string(),
+            address_lcase,
+            address,
+            flags: 0,
+            dsn_info: None,
         }
     }
 }

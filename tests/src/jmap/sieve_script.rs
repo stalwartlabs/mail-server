@@ -1,6 +1,11 @@
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use jmap::{JMAP, SUPERUSER_ID};
+use jmap::JMAP;
 use jmap_client::{
     client::Client,
     core::set::{SetError, SetErrorType},
@@ -8,14 +13,13 @@ use jmap_client::{
     sieve::query::{Comparator, Filter},
     Error,
 };
-use jmap_proto::types::id::Id;
 
 use crate::jmap::{
     delivery::SmtpConnection,
     email_submission::{assert_message_delivery, spawn_mock_smtp_server, MockMessage},
+    mailbox::destroy_all_mailboxes,
     test_account_create,
 };
-use crate::smtp::session::VerifyResponse;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Sieve tests...");
@@ -134,10 +138,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap();
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: TPS Report\r\n",
             "\r\n",
@@ -222,10 +226,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap();
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "Bcc: Undisclosed recipients;\r\n",
             "Message-ID: <1234@example.com>\r\n",
             "Subject: Holidays\r\n",
@@ -249,13 +253,20 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Let one sec duplicate ids expire
     tokio::time::sleep(Duration::from_millis(1100)).await;
 
+    // Start mock SMTP server
+    let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
+    server.smtp.resolvers.dns.ipv4_add(
+        "localhost",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + Duration::from_secs(10),
+    );
+
     // Run reject and duplicate check tests
-    let test = "fd";
-    /*lmtp.ingest_with_code(
-        "bill@example.com",
+    lmtp.ingest(
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "Bcc: Undisclosed recipients;\r\n",
             "Message-ID: <1234@example.com>\r\n",
             "Subject: Holidays\r\n",
@@ -263,10 +274,9 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             "Remember to file your T.P.S. reports before ",
             "going on holidays."
         ),
-        5,
     )
-    .await
-    .assert_contains("No soup for you");
+    .await;
+
     assert_eq!(
         client
             .email_query(None::<email::query::Filter>, None::<Vec<_>>)
@@ -276,7 +286,14 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             .len(),
         1,
         "Reject failed."
-    );*/
+    );
+
+    assert_message_delivery(
+        &mut smtp_rx,
+        MockMessage::new("<>", ["<bill@remote.org>"], "@No soup for you"),
+        false,
+    )
+    .await;
 
     // Run include tests
     client
@@ -287,11 +304,11 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .sieve_script_create("test_include", get_script("test_include"), true)
         .await
         .unwrap();
-    lmtp.ingest_with_code(
-        "bill@example.com",
+    lmtp.ingest(
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "Bcc: Undisclosed recipients;\r\n",
             "Message-ID: <1234@example.com>\r\n",
             "Subject: Holidays\r\n",
@@ -299,14 +316,19 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             "Remember to file your T.P.S. reports before ",
             "going on holidays."
         ),
-        5,
     )
-    .await
-    .assert_contains("Rejected from an included script");
+    .await;
 
-    // Start mock SMTP server
-    let coco = "fd";
-    /*let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
+    assert_message_delivery(
+        &mut smtp_rx,
+        MockMessage::new(
+            "<>",
+            ["<bill@remote.org>"],
+            "@Rejected from an included script",
+        ),
+        false,
+    )
+    .await;
 
     // Run enclose + redirect tests
     client
@@ -318,10 +340,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap();
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: TPS Report\r\n",
             "\r\n",
@@ -334,7 +356,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         &mut smtp_rx,
         MockMessage::new(
             "<jdoe@example.com>",
-            ["<jane@example.com>"],
+            ["<jane@remote.org>"],
             "@Attached you'll find",
         ),
         false,
@@ -357,10 +379,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap();
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: Urgently I need those TPS Reports\r\n",
             "\r\n",
@@ -374,7 +396,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         &mut smtp_rx,
         MockMessage::new(
             "<jdoe@example.com>",
-            ["<sms_gateway@example.com>"],
+            ["<sms_gateway@remote.org>"],
             "@It's TPS-o-clock",
         ),
         false,
@@ -436,19 +458,15 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     smtp_settings.lock().do_stop = true;
 
-    */
-
     // Remove test data
-    let todo = "fix";
-    /*for account_id in [&account_id, &domain_id] {
-        client
-            .set_default_account_id(Id::new(SUPERUSER_ID as u64))
-            .principal_destroy(account_id)
-            .await
-            .unwrap();
+    client.sieve_script_deactivate().await.unwrap();
+    let mut request = client.build();
+    request.query_sieve_script();
+    for id in request.send_query_sieve_script().await.unwrap().take_ids() {
+        client.sieve_script_destroy(&id).await.unwrap();
     }
-    server.store.principal_purge().unwrap();
-    server.store.assert_is_empty();*/
+    destroy_all_mailboxes(client).await;
+    server.store.assert_is_empty().await;
 }
 
 fn get_script(name: &str) -> Vec<u8> {

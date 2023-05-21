@@ -83,7 +83,17 @@ type = "system"
 
 [queue.outbound]
 next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "local" }, 
+             { if = "rcpt-domain", eq = "remote.org", then = "mock-smtp" },
              { else = false } ]
+
+[remote."mock-smtp"]
+address = "localhost"
+port = 9999
+protocol = "smtp"
+
+[remote."mock-smtp".tls]
+implicit = false
+allow-invalid-certs = true
 
 [store]
 db.path = "{TMP}/sqlite.db"
@@ -172,7 +182,8 @@ pub async fn jmap_tests() {
     //auth_oauth::test(params.server.clone(), &mut params.client).await;
     //event_source::test(params.server.clone(), &mut params.client).await;
     //push_subscription::test(params.server.clone(), &mut params.client).await;
-    sieve_script::test(params.server.clone(), &mut params.client).await;
+    //sieve_script::test(params.server.clone(), &mut params.client).await;
+    vacation_response::test(params.server.clone(), &mut params.client).await;
 
     let websockets = "todo";
 

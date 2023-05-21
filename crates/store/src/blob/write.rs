@@ -15,13 +15,6 @@ impl Store {
             BlobStore::Local(base_path) => {
                 let blob_path = get_path(base_path, kind)?;
 
-                let metadata = fs::metadata(&blob_path).await;
-                if let Ok(metadata) = metadata {
-                    if metadata.len() as usize == data.len() {
-                        return Ok(false);
-                    }
-                }
-
                 fs::create_dir_all(blob_path.parent().unwrap()).await?;
                 let mut blob_file = File::create(&blob_path).await?;
                 blob_file.write_all(data).await?;

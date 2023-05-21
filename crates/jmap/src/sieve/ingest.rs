@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::Message;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
+use smtp::core::{NullIo, Session, SessionAddress};
 use store::{
     ahash::AHashSet,
     write::{now, BatchBuilder, F_VALUE},
@@ -16,12 +17,6 @@ use crate::{
 };
 
 use super::ActiveScript;
-
-struct OutgoingMessage {
-    pub mail_from: String,
-    pub rcpt_to: Vec<String>,
-    pub message: Vec<u8>,
-}
 
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
@@ -94,7 +89,6 @@ impl JMAP {
             file_into: Vec::new(),
             flags: Vec::new(),
         }];
-        let mut outgoing_messages = Vec::new();
         let now = now();
         let mut ingested_message = IngestedEmail {
             id: Id::default(),
@@ -217,7 +211,9 @@ impl JMAP {
                             do_deliver = true;
                         } else {
                             tracing::error!(
-                                "Sieve filter failed: Unknown message id {}.",
+                                context = "sieve_script_ingest",
+                                event = "error",
+                                "Unknown message id {}.",
                                 message_id
                             );
                         }
@@ -294,7 +290,9 @@ impl JMAP {
                             do_deliver = true;
                         } else {
                             tracing::error!(
-                                "Sieve filter failed: Unknown message id {}.",
+                                context = "sieve_script_ingest",
+                                event = "error",
+                                "Unknown message id {}.",
                                 message_id
                             );
                         }
@@ -306,27 +304,49 @@ impl JMAP {
                         ..
                     } => {
                         input = true.into();
+                        if let Some(message) = messages.get(message_id) {
+                            if message.raw_message.len() <= self.config.mail_max_size {
+                                let result = Session::<NullIo>::sieve(
+                                    self.smtp.clone(),
+                                    SessionAddress::new(mail_from.clone()),
+                                    match recipient {
+                                        Recipient::Address(rcpt) => vec![SessionAddress::new(rcpt)],
+                                        Recipient::Group(rcpts) => {
+                                            rcpts.into_iter().map(SessionAddress::new).collect()
+                                        }
+                                        Recipient::List(_) => {
+                                            // Not yet implemented
+                                            continue;
+                                        }
+                                    },
+                                    message.raw_message.to_vec(),
+                                )
+                                .queue_message()
+                                .await;
 
-                        outgoing_messages.push(OutgoingMessage {
-                            mail_from: mail_from.clone(),
-                            rcpt_to: match recipient {
-                                Recipient::Address(rcpt) => vec![rcpt],
-                                Recipient::Group(rcpts) => rcpts,
-                                Recipient::List(_) => {
-                                    // Not yet implemented
-                                    continue;
-                                }
-                            },
-                            message: if let Some(message) = messages.get(message_id) {
-                                message.raw_message.to_vec()
-                            } else {
-                                tracing::error!(
-                                    "Sieve filter failed: Unknown message id {}.",
-                                    message_id
+                                tracing::debug!(
+                                    context = "sieve_script_ingest",
+                                    event = "send_message",
+                                    smtp_response = std::str::from_utf8(&result).unwrap()
                                 );
-                                continue;
-                            },
-                        });
+                            } else {
+                                tracing::warn!(
+                                    context = "sieve_script_ingest",
+                                    event = "message_too_large",
+                                    from = mail_from.as_str(),
+                                    size = message.raw_message.len(),
+                                    max_size = self.config.mail_max_size
+                                );
+                            }
+                        } else {
+                            tracing::error!(
+                                context = "sieve_script_ingest",
+                                event = "error",
+                                "Unknown message id {}.",
+                                message_id
+                            );
+                            continue;
+                        }
                     }
                     Event::ListContains { .. } | Event::Execute { .. } | Event::Notify { .. } => {
                         // Not allowed
@@ -350,13 +370,16 @@ impl JMAP {
                 }
 
                 Err(err) => {
-                    tracing::debug!("Sieve script runtime error: {}", err);
+                    tracing::debug!(
+                        context = "sieve_script_ingest",
+                        event = "error",
+                        reason = %err,
+                        "Runtime error",
+                    );
                     input = true.into();
                 }
             }
         }
-
-        let coco = "send outgoing";
 
         // Fail-safe, no discard and no keep seen, assume that something went wrong and file anyway.
         if !do_deliver && !do_discard {
@@ -374,7 +397,11 @@ impl JMAP {
                 } else if let Some(message) = Message::parse(&sieve_message.raw_message) {
                     message
                 } else {
-                    tracing::debug!("Failed to parse Sieve generated message.");
+                    tracing::error!(
+                        context = "sieve_script_ingest",
+                        event = "error",
+                        "Failed to parse Sieve generated message.",
+                    );
                     continue;
                 };
 

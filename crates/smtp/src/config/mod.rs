@@ -540,4 +540,16 @@ impl<'x> ConfigContext<'x> {
     }
 }
 
+impl std::fmt::Debug for RelayHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RelayHost")
+            .field("address", &self.address)
+            .field("port", &self.port)
+            .field("protocol", &self.protocol)
+            .field("tls_implicit", &self.tls_implicit)
+            .field("tls_allow_invalid_certs", &self.tls_allow_invalid_certs)
+            .finish()
+    }
+}
+
 pub type Result<T> = std::result::Result<T, String>;

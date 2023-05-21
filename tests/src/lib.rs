@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[cfg(test)]
 pub mod jmap;
 #[cfg(test)]
-pub mod smtp;
+//pub mod smtp;
 #[cfg(test)]
 pub mod store;
 

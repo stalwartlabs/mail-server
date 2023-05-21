@@ -313,7 +313,7 @@ impl DeliveryAttempt {
 
                 // Obtain remote hosts list
                 let mx_list;
-                if is_smtp {
+                if is_smtp && remote_hosts.is_empty() {
                     // Lookup MX
                     mx_list = match core.resolvers.dns.mx_lookup(&domain.domain).await {
                         Ok(mx) => mx,

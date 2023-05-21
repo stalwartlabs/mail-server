@@ -1,35 +1,34 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use chrono::{Duration, Utc};
-use jmap::{JMAP, SUPERUSER_ID};
+use jmap::JMAP;
 use jmap_client::client::Client;
-use jmap_proto::types::id::Id;
 
 use crate::jmap::{
     delivery::SmtpConnection,
     email_submission::{
         assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
     },
+    mailbox::destroy_all_mailboxes,
+    test_account_create,
 };
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Vacation Response tests...");
 
-    // Create INBOX
-    let domain_id = client
-        .set_default_account_id(Id::new(SUPERUSER_ID as u64))
-        .domain_create("example.com")
+    // Create test account
+    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
         .await
-        .unwrap()
-        .take_id();
-    let account_id = client
-        .individual_create("jdoe@example.com", "12345", "John Doe")
-        .await
-        .unwrap()
-        .take_id();
+        .to_string();
+    client.set_default_account_id(&account_id);
 
     // Start mock SMTP server
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
+    server.smtp.resolvers.dns.ipv4_add(
+        "localhost",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + std::time::Duration::from_secs(10),
+    );
 
     // Let people know that we'll be down in Kokomo
     client
@@ -47,10 +46,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Send a message
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: TPS Report\r\n",
             "\r\n",
@@ -63,7 +62,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Await vacation response
     assert_message_delivery(
         &mut smtp_rx,
-        MockMessage::new("<jdoe@example.com>", ["<bill@example.com>"], "@Kokomo"),
+        MockMessage::new("<jdoe@example.com>", ["<bill@remote.org>"], "@Kokomo"),
         false,
     )
     .await;
@@ -71,10 +70,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Further messages from the same recipient should not
     // trigger a vacation response
     lmtp.ingest(
-        "bill@example.com",
+        "bill@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: bill@example.com\r\n",
+            "From: bill@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: TPS Report -- friendly reminder\r\n",
             "\r\n",
@@ -88,7 +87,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Messages from MAILER-DAEMON should not
     // trigger a vacation response
     lmtp.ingest(
-        "MAILER-DAEMON@example.com",
+        "MAILER-DAEMON@remote.org",
         &["jdoe@example.com"],
         concat!(
             "From: MAILER-DAEMON@example.com\r\n",
@@ -108,10 +107,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap();
     lmtp.ingest(
-        "jane_smith@example.com",
+        "jane_smith@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: jane_smith@example.com\r\n",
+            "From: jane_smith@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: When were you going on holidays?\r\n",
             "\r\n",
@@ -128,10 +127,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .unwrap();
     smtp_settings.lock().do_stop = true;
     lmtp.ingest(
-        "jane_smith@example.com",
+        "jane_smith@remote.org",
         &["jdoe@example.com"],
         concat!(
-            "From: jane_smith@example.com\r\n",
+            "From: jane_smith@remote.org\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: When were you going on holidays?\r\n",
             "\r\n",
@@ -143,25 +142,13 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     assert_message_delivery(
         &mut smtp_rx,
-        MockMessage::new(
-            "<jdoe@example.com>",
-            ["<jane_smith@example.com>"],
-            "@Kokomo",
-        ),
+        MockMessage::new("<jdoe@example.com>", ["<jane_smith@remote.org>"], "@Kokomo"),
         false,
     )
     .await;
 
     // Remove test data
-    let implement = "true";
-    /*for account_id in [&account_id, &domain_id] {
-        client
-            .set_default_account_id(Id::new(SUPERUSER_ID as u64))
-            .principal_destroy(account_id)
-            .await
-            .unwrap();
-    }
-    server.store.principal_purge().unwrap();
-    server.store.assert_is_empty();
-    */
+    client.vacation_response_destroy().await.unwrap();
+    destroy_all_mailboxes(client).await;
+    server.store.assert_is_empty().await;
 }

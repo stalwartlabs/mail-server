@@ -231,6 +231,7 @@ impl From<Box<Message>> for DeliveryAttempt {
     }
 }
 
+#[derive(Debug)]
 enum NextHop<'x> {
     Relay(&'x RelayHost),
     MX(&'x str),
@@ -253,14 +254,15 @@ impl<'x> NextHop<'x> {
 
     #[inline(always)]
     fn fqdn_hostname(&self) -> Cow<'_, str> {
-        let host = match self {
-            NextHop::MX(host) => host,
-            NextHop::Relay(host) => host.address.as_str(),
-        };
-        if !host.ends_with('.') {
-            format!("{host}.").into()
-        } else {
-            (*host).into()
+        match self {
+            NextHop::MX(host) => {
+                if !host.ends_with('.') {
+                    format!("{host}.").into()
+                } else {
+                    (*host).into()
+                }
+            }
+            NextHop::Relay(host) => host.address.as_str().into(),
         }
     }
 
