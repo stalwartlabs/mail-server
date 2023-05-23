@@ -1,6 +1,6 @@
 use crate::Deserialize;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HashedValue<T: Deserialize> {
     pub hash: u64,
     pub inner: T,

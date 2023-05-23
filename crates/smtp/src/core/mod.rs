@@ -58,7 +58,7 @@ use crate::{
         dane::{DnssecResolver, Tlsa},
         mta_sts,
     },
-    queue::{self, DomainPart, QuotaLimiter},
+    queue::{self, DomainPart, QueueId, QuotaLimiter},
     reporting,
 };
 
@@ -162,6 +162,7 @@ pub enum State {
     Sasl(LineReceiver<SaslToken>),
     DataTooLarge(DummyDataReceiver),
     RequestTooLarge(DummyLineReceiver),
+    Accepted(QueueId),
     None,
 }
 
@@ -355,30 +356,34 @@ impl PartialOrd for SessionAddress {
 }
 
 #[cfg(feature = "local_delivery")]
-pub struct NullIo();
+#[derive(Default)]
+pub struct NullIo {
+    pub tx_buf: Vec<u8>,
+}
 
 #[cfg(feature = "local_delivery")]
 impl AsyncWrite for NullIo {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
-        _buf: &[u8],
+        buf: &[u8],
     ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        unreachable!()
+        self.tx_buf.extend_from_slice(buf);
+        std::task::Poll::Ready(Ok(buf.len()))
     }
 
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
-        unreachable!()
+        std::task::Poll::Ready(Ok(()))
     }
 
     fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), std::io::Error>> {
-        unreachable!()
+        std::task::Poll::Ready(Ok(()))
     }
 }
 
@@ -422,9 +427,7 @@ impl Session<NullIo> {
     pub fn local(
         core: std::sync::Arc<SMTP>,
         instance: std::sync::Arc<utils::listener::ServerInstance>,
-        mail_from: SessionAddress,
-        rcpt_to: Vec<SessionAddress>,
-        message: Vec<u8>,
+        data: SessionData,
     ) -> Self {
         Session {
             state: State::None,
@@ -432,36 +435,21 @@ impl Session<NullIo> {
             core,
             span: tracing::info_span!(
                 "local_delivery",
-                "return_path" = if !mail_from.address_lcase.is_empty() {
-                    mail_from.address_lcase.as_str()
-                } else {
-                    "<>"
-                },
-                "nrcpt" = rcpt_to.len(),
-                "size" = message.len(),
+                "return_path" =
+                    if let Some(addr) = data.mail_from.as_ref().map(|a| a.address_lcase.as_str()) {
+                        if !addr.is_empty() {
+                            addr
+                        } else {
+                            "<>"
+                        }
+                    } else {
+                        "<>"
+                    },
+                "nrcpt" = data.rcpt_to.len(),
+                "size" = data.message.len(),
             ),
-            stream: NullIo(),
-            data: SessionData {
-                local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-                remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
-                helo_domain: "localhost".into(),
-                mail_from: mail_from.into(),
-                rcpt_to,
-                rcpt_errors: 0,
-                message,
-                authenticated_as: "".into(),
-                auth_errors: 0,
-                priority: 0,
-                delivery_by: 0,
-                future_release: 0,
-                valid_until: Instant::now(),
-                bytes_left: 0,
-                messages_sent: 0,
-                iprev: None,
-                spf_ehlo: None,
-                spf_mail_from: None,
-                dnsbl_error: None,
-            },
+            stream: NullIo::default(),
+            data,
             params: SessionParameters {
                 timeout: Default::default(),
                 ehlo_require: Default::default(),
@@ -496,7 +484,63 @@ impl Session<NullIo> {
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
     ) -> Self {
-        Self::local(core, SIEVE.clone(), mail_from, rcpt_to, message)
+        Self::local(
+            core,
+            SIEVE.clone(),
+            SessionData::local(mail_from.into(), rcpt_to, message),
+        )
+    }
+
+    pub fn has_failed(&mut self) -> Option<String> {
+        if self.stream.tx_buf.first().map_or(true, |&c| c == b'2') {
+            self.stream.tx_buf.clear();
+            None
+        } else {
+            let response = std::str::from_utf8(&self.stream.tx_buf)
+                .unwrap()
+                .trim()
+                .to_string();
+            self.stream.tx_buf.clear();
+            Some(response)
+        }
+    }
+}
+
+#[cfg(feature = "local_delivery")]
+impl SessionData {
+    pub fn local(
+        mail_from: Option<SessionAddress>,
+        rcpt_to: Vec<SessionAddress>,
+        message: Vec<u8>,
+    ) -> Self {
+        SessionData {
+            local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+            remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+            helo_domain: "localhost".into(),
+            mail_from,
+            rcpt_to,
+            rcpt_errors: 0,
+            message,
+            authenticated_as: "local".into(),
+            auth_errors: 0,
+            priority: 0,
+            delivery_by: 0,
+            future_release: 0,
+            valid_until: Instant::now(),
+            bytes_left: 0,
+            messages_sent: 0,
+            iprev: None,
+            spf_ehlo: None,
+            spf_mail_from: None,
+            dnsbl_error: None,
+        }
+    }
+}
+
+#[cfg(feature = "local_delivery")]
+impl Default for SessionData {
+    fn default() -> Self {
+        Self::local(None, vec![], vec![])
     }
 }
 

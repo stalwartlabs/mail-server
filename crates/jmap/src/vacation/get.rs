@@ -25,7 +25,7 @@ impl JMAP {
             Property::HtmlBody,
         ]);
         let mut response = GetResponse {
-            account_id: Some(request.account_id),
+            account_id: request.account_id.into(),
             state: self
                 .get_state(account_id, Collection::SieveScript)
                 .await?

@@ -1,11 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ahash::AHashMap;
-use jmap::{JMAP, SUPERUSER_ID};
+use jmap::JMAP;
 use jmap_client::{
     client::Client,
     core::set::{SetError, SetErrorType, SetObject},
-    email_submission::{Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
+    email_submission::{query::Filter, Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
     mailbox::Role,
     Error,
 };
@@ -18,7 +21,9 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::jmap::email_set::assert_email_properties;
+use crate::jmap::{
+    email_set::assert_email_properties, mailbox::destroy_all_mailboxes, test_account_create,
+};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct MockMessage {
@@ -49,32 +54,26 @@ pub struct MockSMTPSettings {
     pub do_stop: bool,
 }
 
-const TEST_DKIM_KEY: &str = r#"-----BEGIN RSA PRIVATE KEY-----
-MIICXwIBAAKBgQDwIRP/UC3SBsEmGqZ9ZJW3/DkMoGeLnQg1fWn7/zYtIxN2SnFC
-jxOCKG9v3b4jYfcTNh5ijSsq631uBItLa7od+v/RtdC2UzJ1lWT947qR+Rcac2gb
-to/NMqJ0fzfVjH4OuKhitdY9tf6mcwGjaNBcWToIMmPSPDdQPNUYckcQ2QIDAQAB
-AoGBALmn+XwWk7akvkUlqb+dOxyLB9i5VBVfje89Teolwc9YJT36BGN/l4e0l6QX
-/1//6DWUTB3KI6wFcm7TWJcxbS0tcKZX7FsJvUz1SbQnkS54DJck1EZO/BLa5ckJ
-gAYIaqlA9C0ZwM6i58lLlPadX/rtHb7pWzeNcZHjKrjM461ZAkEA+itss2nRlmyO
-n1/5yDyCluST4dQfO8kAB3toSEVc7DeFeDhnC1mZdjASZNvdHS4gbLIA1hUGEF9m
-3hKsGUMMPwJBAPW5v/U+AWTADFCS22t72NUurgzeAbzb1HWMqO4y4+9Hpjk5wvL/
-eVYizyuce3/fGke7aRYw/ADKygMJdW8H/OcCQQDz5OQb4j2QDpPZc0Nc4QlbvMsj
-7p7otWRO5xRa6SzXqqV3+F0VpqvDmshEBkoCydaYwc2o6WQ5EBmExeV8124XAkEA
-qZzGsIxVP+sEVRWZmW6KNFSdVUpk3qzK0Tz/WjQMe5z0UunY9Ax9/4PVhp/j61bf
-eAYXunajbBSOLlx4D+TunwJBANkPI5S9iylsbLs6NkaMHV6k5ioHBBmgCak95JGX
-GMot/L2x0IYyMLAz6oLWh2hm7zwtb0CgOrPo1ke44hFYnfc=
------END RSA PRIVATE KEY-----"#;
-
 #[allow(clippy::disallowed_types)]
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running E-mail submissions tests...");
     // Start mock SMTP server
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
+    server.smtp.resolvers.dns.ipv4_add(
+        "localhost",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + std::time::Duration::from_secs(10),
+    );
+
+    // Create a test account
+    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
+        .await
+        .to_string();
 
     // Create an identity without using a valid address should fail
     match client
-        .set_default_account_id(Id::new(1).to_string())
-        .identity_create("John Doe", "jdoe@example.com")
+        .set_default_account_id(&account_id)
+        .identity_create("John Doe", "someaddress@domain.com")
         .await
         .unwrap_err()
     {
@@ -82,20 +81,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         err => panic!("Unexpected error: {:?}", err),
     }
 
-    // Create a domain and a test account
-    let domain_id = client
-        .set_default_account_id(Id::new(0))
-        .domain_create("example.com")
-        .await
-        .unwrap()
-        .take_id();
-    let account_id = client
-        .individual_create("jdoe@example.com", "12345", "John Doe")
-        .await
-        .unwrap()
-        .take_id();
+    // Create an identity
     let identity_id = client
-        .set_default_account_id(&account_id)
         .identity_create("John Doe", "jdoe@example.com")
         .await
         .unwrap()
@@ -151,7 +138,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             .email_submission_create(&email_id, &identity_id)
             .await,
         Err(Error::Set(SetError {
-            type_: SetErrorType::InvalidProperties,
+            type_: SetErrorType::NoRecipients,
             ..
         }))
     ));
@@ -168,14 +155,14 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             )
             .await,
         Err(Error::Set(SetError {
-            type_: SetErrorType::InvalidProperties,
+            type_: SetErrorType::ForbiddenFrom,
             ..
         }))
     ));
 
     // Submit a valid message submission
     let email_body =
-        "From: jdoe@example.com\r\nTo: jane_smith@example.com\r\nSubject: hey\r\n\r\ntest";
+        "From: jdoe@example.com\r\nTo: jane_smith@remote.org\r\nSubject: hey\r\n\r\ntest";
     let email_id = client
         .email_import(
             email_body.as_bytes().to_vec(),
@@ -196,10 +183,9 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         &mut smtp_rx,
         MockMessage::new(
             "<jdoe@example.com>",
-            ["<jane_smith@example.com>"],
+            ["<jane_smith@remote.org>"],
             email_body,
         ),
-        false,
     )
     .await;
 
@@ -221,20 +207,25 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .unwrap()
         .take_id();
 
-    assert_message_delivery(
-        &mut smtp_rx,
-        MockMessage::new(
-            "<jdoe@example.com>",
-            [
-                "<james@other_domain.com>",
-                "<secret_rcpt@test.com>",
-                "<tim@foobar.com>",
-            ],
-            email_body,
-        ),
-        false,
-    )
-    .await;
+    for _ in 0..3 {
+        let mut message = expect_message_delivery(&mut smtp_rx).await;
+
+        assert_eq!(message.mail_from, "<jdoe@example.com>");
+        let rcpt_to = message.rcpt_to.pop().unwrap();
+        assert!([
+            "<james@other_domain.com>",
+            "<secret_rcpt@test.com>",
+            "<tim@foobar.com>",
+        ]
+        .contains(&rcpt_to.as_str()));
+
+        assert!(
+            message.message.contains(email_body),
+            "Got [{}], Expected[{}]",
+            message.message,
+            email_body
+        );
+    }
 
     // Confirm that the email submission status was updated
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -249,27 +240,31 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         &AHashMap::from_iter([
             (
                 "tim@foobar.com".to_string(),
-                DeliveryStatus::new("250 OK", Delivered::Queued, Displayed::Unknown)
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
             ),
             (
                 "secret_rcpt@test.com".to_string(),
-                DeliveryStatus::new("250 OK", Delivered::Queued, Displayed::Unknown)
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
             ),
             (
                 "james@other_domain.com".to_string(),
-                DeliveryStatus::new("250 OK", Delivered::Queued, Displayed::Unknown)
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
             ),
         ])
     );
 
     // SMTP rejects some of the recipients
-    smtp_settings.lock().fail_rcpt_to = true;
     let email_submission_id = client
         .email_submission_create_envelope(
             &email_id,
             &identity_id,
             "jdoe@example.com",
-            ["tim@foobar.com", "james@other_domain.com", "jane@test.com"],
+            [
+                "nonexistant@example.com",
+                "delay@other_domain.com",
+                "fail@test.com",
+                "tim@foobar.com",
+            ],
         )
         .await
         .unwrap()
@@ -277,61 +272,64 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_message_delivery(
         &mut smtp_rx,
         MockMessage::new("<jdoe@example.com>", ["<tim@foobar.com>"], email_body),
-        false,
     )
     .await;
+    expect_nothing(&mut smtp_rx).await;
 
-    // Confirm that all delivery failures were included
+    // Verify SMTP replies
     tokio::time::sleep(Duration::from_millis(100)).await;
     let email_submission = client
         .email_submission_get(&email_submission_id, None)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(email_submission.undo_status().unwrap(), &UndoStatus::Final);
+    assert_eq!(
+        email_submission.undo_status().unwrap(),
+        &UndoStatus::Pending
+    );
     assert_eq!(
         email_submission.delivery_status().unwrap(),
         &AHashMap::from_iter([
             (
-                "james@other_domain.com".to_string(),
+                "nonexistant@example.com".to_string(),
                 DeliveryStatus::new(
-                    "550 I refuse to accept that recipient.",
+                    "550 5.1.2 Mailbox does not exist.",
                     Delivered::No,
                     Displayed::Unknown
                 )
             ),
             (
-                "jane@test.com".to_string(),
+                "delay@other_domain.com".to_string(),
                 DeliveryStatus::new(
-                    "550 I refuse to accept that recipient.",
+                    "Code: 451, Enhanced code: 4.5.3, Message: Try again later.",
+                    Delivered::Queued,
+                    Displayed::Unknown
+                )
+            ),
+            (
+                "fail@test.com".to_string(),
+                DeliveryStatus::new(
+                    "Code: 550, Enhanced code: 0.0.0, Message: I refuse to accept that recipient.",
                     Delivered::No,
                     Displayed::Unknown
                 )
             ),
             (
                 "tim@foobar.com".to_string(),
-                DeliveryStatus::new("250 OK", Delivered::Queued, Displayed::Unknown)
+                DeliveryStatus::new(
+                    "Code: 250, Enhanced code: 0.0.0, Message: OK",
+                    Delivered::Yes,
+                    Displayed::Unknown
+                )
             ),
         ])
     );
-    smtp_settings.lock().fail_rcpt_to = false;
 
-    // SMTP rejects the message
-    smtp_settings.lock().fail_message = true;
-    let email_submission_id = client
-        .email_submission_create_envelope(
-            &email_id,
-            &identity_id,
-            "jdoe@example.com",
-            ["tim@foobar.com", "james@other_domain.com", "jane@test.com"],
-        )
+    // Cancel submission
+    client
+        .email_submission_change_status(&email_submission_id, UndoStatus::Canceled)
         .await
-        .unwrap()
-        .take_id();
-    expect_nothing(&mut smtp_rx).await;
-
-    // Confirm that all delivery failures were included
-    tokio::time::sleep(Duration::from_millis(100)).await;
+        .unwrap();
     let email_submission = client
         .email_submission_get(&email_submission_id, None)
         .await
@@ -345,73 +343,59 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         email_submission.delivery_status().unwrap(),
         &AHashMap::from_iter([
             (
-                "james@other_domain.com".to_string(),
+                "nonexistant@example.com".to_string(),
                 DeliveryStatus::new(
-                    "503 Thank you but I am saving myself for dessert.",
+                    "550 5.1.2 Mailbox does not exist.",
                     Delivered::No,
                     Displayed::Unknown
                 )
             ),
             (
-                "jane@test.com".to_string(),
-                DeliveryStatus::new(
-                    "503 Thank you but I am saving myself for dessert.",
-                    Delivered::No,
-                    Displayed::Unknown
-                )
+                "delay@other_domain.com".to_string(),
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
+            ),
+            (
+                "fail@test.com".to_string(),
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
             ),
             (
                 "tim@foobar.com".to_string(),
-                DeliveryStatus::new(
-                    "503 Thank you but I am saving myself for dessert.",
-                    Delivered::No,
-                    Displayed::Unknown
-                )
+                DeliveryStatus::new("250 2.1.5 Queued", Delivered::Unknown, Displayed::Unknown)
             ),
         ])
     );
-    smtp_settings.lock().fail_message = false;
-
-    // Enable DKIM for the domain
-    client
-        .set_default_account_id(Id::from(SUPERUSER_ID))
-        .domain_enable_dkim(&domain_id, TEST_DKIM_KEY, "my-selector", None)
-        .await
-        .unwrap();
-    client.set_default_account_id(&account_id);
 
     // Confirm that the sendAt property is updated when using FUTURERELEASE
+    let hold_until = DateTime::parse_rfc3339("2079-11-20T05:00:00Z")
+        .unwrap()
+        .to_timestamp();
     let email_submission_id = client
         .email_submission_create_envelope(
             &email_id,
             &identity_id,
-            Address::new("jdoe@example.com").parameter("HOLDUNTIL", Some("2079-11-20T05:00:00Z")),
-            ["jane_smith@example.com"],
+            Address::new("jdoe@example.com").parameter("HOLDUNTIL", Some(hold_until.to_string())),
+            ["jane_smith@remote.org"],
         )
         .await
         .unwrap()
         .take_id();
-    assert_message_delivery(
-        &mut smtp_rx,
-        MockMessage::new(
-            "<jdoe@example.com> HOLDUNTIL=2079-11-20T05:00:00Z",
-            ["<jane_smith@example.com>"],
-            email_body,
-        ),
-        true,
-    )
-    .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let email_submission = client
         .email_submission_get(&email_submission_id, None)
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(email_submission.send_at().unwrap(), hold_until);
     assert_eq!(
-        email_submission.send_at().unwrap(),
-        DateTime::parse_rfc3339("2079-11-20T05:00:00Z")
-            .unwrap()
-            .to_timestamp()
+        email_submission.undo_status().unwrap(),
+        &UndoStatus::Pending
+    );
+    assert_eq!(
+        email_submission.delivery_status().unwrap(),
+        &AHashMap::from_iter([(
+            "jane_smith@remote.org".to_string(),
+            DeliveryStatus::new("250 2.1.5 Queued", Delivered::Queued, Displayed::Unknown)
+        ),])
     );
 
     // Verify onSuccessUpdateEmail action
@@ -434,7 +418,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_email_properties(client, &email_id, &[&mailbox_id_2], &["$draft"]).await;
 
     // Verify onSuccessDestroyEmail action
-    smtp_settings.lock().do_stop = true;
     let mut request = client.build();
     let set_request = request.set_email_submission();
     let create_id = set_request
@@ -451,17 +434,20 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .await
         .unwrap()
         .is_none());
+    smtp_settings.lock().do_stop = true;
 
     // Destroy the created mailbox, identity and all submissions
-    let todo = "true";
-    /*client
-        .set_default_account_id(Id::from(SUPERUSER_ID))
-        .principal_destroy(&account_id)
+    client.identity_destroy(&identity_id).await.unwrap();
+    for id in client
+        .email_submission_query(None::<Filter>, None::<Vec<_>>)
         .await
-        .unwrap();
-    client.principal_destroy(&domain_id).await.unwrap();
-    server.store.principal_purge().unwrap();
-    server.store.assert_is_empty();*/
+        .unwrap()
+        .take_ids()
+    {
+        client.email_submission_destroy(&id).await.unwrap();
+    }
+    destroy_all_mailboxes(client).await;
+    server.store.assert_is_empty().await;
 }
 
 pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockSMTPSettings>>) {
@@ -504,12 +490,16 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
                         tx.write_all(b"250 OK\r\n").await.unwrap();
                     }
                 } else if buf.starts_with("RCPT TO") {
-                    if settings.lock().fail_rcpt_to && !buf.contains("foobar.com") {
+                    if buf.contains("fail@") {
                         tx.write_all(
                             "550-I refuse to\r\n550 accept that recipient.\r\n".as_bytes(),
                         )
                         .await
                         .unwrap();
+                    } else if buf.contains("delay@") {
+                        tx.write_all("451 4.5.3 Try again later.\r\n".as_bytes())
+                            .await
+                            .unwrap();
                     } else {
                         message
                             .rcpt_to
@@ -573,48 +563,42 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
     (event_rx, _settings)
 }
 
-pub async fn assert_message_delivery(
-    event_rx: &mut mpsc::Receiver<MockMessage>,
-    expected_message: MockMessage,
-    expect_dkim: bool,
-) {
+pub async fn expect_message_delivery(event_rx: &mut mpsc::Receiver<MockMessage>) -> MockMessage {
     match tokio::time::timeout(Duration::from_millis(3000), event_rx.recv()).await {
         Ok(Some(message)) => {
             println!("Got message [{}]", message.message);
 
-            assert_eq!(message.mail_from, expected_message.mail_from);
-            assert_eq!(message.rcpt_to, expected_message.rcpt_to);
-
-            if let Some(needle) = expected_message.message.strip_prefix('@') {
-                assert!(
-                    message.message.contains(needle),
-                    "[{}] needle = {:?}",
-                    message.message,
-                    needle
-                );
-            } else {
-                let message = if expect_dkim {
-                    if message.message.starts_with("DKIM-Signature:") {
-                        message.message.split_once('\n').unwrap().1
-                    } else {
-                        panic!(
-                            "Expected DKIM-Signature header but got: {}",
-                            message.message
-                        );
-                    }
-                } else {
-                    &message.message
-                };
-
-                assert_eq!(message, expected_message.message);
-            }
+            message
         }
         result => {
-            panic!(
-                "Timeout waiting for message {:?}: {:?}",
-                expected_message, result
-            );
+            panic!("Timeout waiting for message, got: {:?}", result);
         }
+    }
+}
+
+pub async fn assert_message_delivery(
+    event_rx: &mut mpsc::Receiver<MockMessage>,
+    expected_message: MockMessage,
+) {
+    let message = expect_message_delivery(event_rx).await;
+
+    assert_eq!(message.mail_from, expected_message.mail_from);
+    assert_eq!(message.rcpt_to, expected_message.rcpt_to);
+
+    if let Some(needle) = expected_message.message.strip_prefix('@') {
+        assert!(
+            message.message.contains(needle),
+            "[{}] needle = {:?}",
+            message.message,
+            needle
+        );
+    } else {
+        assert!(
+            message.message.contains(&expected_message.message),
+            "Got [{}], Expected[{}]",
+            message.message,
+            expected_message.message
+        );
     }
 }
 

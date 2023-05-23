@@ -38,10 +38,12 @@ pub mod auth;
 pub mod blob;
 pub mod changes;
 pub mod email;
+pub mod identity;
 pub mod mailbox;
 pub mod push;
 pub mod services;
 pub mod sieve;
+pub mod submission;
 pub mod thread;
 pub mod vacation;
 
@@ -116,7 +118,7 @@ pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
     pub inner: T,
 }
 
-pub enum MaybeError {
+pub enum IngestError {
     Temporary,
     Permanent { code: [u8; 3], reason: String },
 }

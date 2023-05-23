@@ -44,7 +44,7 @@ use tokio::{
 
 use crate::{
     config::DNSBL_FROM,
-    core::{scripts::ScriptResult, Session, SessionAddress},
+    core::{scripts::ScriptResult, Session, SessionAddress, State},
     queue::{self, DomainPart, Message, SimpleEnvelope},
     reporting::analysis::AnalyzeReport,
 };
@@ -489,12 +489,14 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Verify queue quota
         if self.core.queue.has_quota(&mut message).await {
+            let queue_id = message.id;
             if self
                 .core
                 .queue
                 .queue_message(message, Some(&headers), &raw_message, &self.span)
                 .await
             {
+                self.state = State::Accepted(queue_id);
                 self.data.messages_sent += 1;
                 (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into()
             } else {

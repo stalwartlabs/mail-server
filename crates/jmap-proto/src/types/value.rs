@@ -280,6 +280,20 @@ impl Value {
         }
     }
 
+    pub fn as_obj(&self) -> Option<&Object<Value>> {
+        match self {
+            Value::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn as_obj_mut(&mut self) -> Option<&mut Object<Value>> {
+        match self {
+            Value::Object(o) => Some(o),
+            _ => None,
+        }
+    }
+
     pub fn try_cast_uint(&self) -> Option<u64> {
         match self {
             Value::UnsignedInt(u) => Some(*u),
@@ -408,6 +422,12 @@ impl From<DateTime> for Value {
             tz_hour: date.tz_hour,
             tz_minute: date.tz_minute,
         })
+    }
+}
+
+impl From<UTCDate> for Value {
+    fn from(date: UTCDate) -> Self {
+        Value::Date(date)
     }
 }
 

@@ -9,7 +9,11 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
-use store::{roaring::RoaringBitmap, write::key::DeserializeBigEndian, AclKey, Deserialize, Error};
+use store::{
+    roaring::RoaringBitmap,
+    write::{assert::HashedValue, key::DeserializeBigEndian},
+    AclKey, Deserialize, Error,
+};
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
 use crate::{JMAP, SUPERUSER_ID};
@@ -283,7 +287,7 @@ impl JMAP {
     pub async fn acl_set(
         &self,
         changes: &mut Object<Value>,
-        current: Option<&Object<Value>>,
+        current: Option<&HashedValue<Object<Value>>>,
         acl_changes: MaybePatchValue,
     ) -> Result<(), SetError> {
         match acl_changes {
@@ -300,7 +304,9 @@ impl JMAP {
                         .properties
                         .get_mut_or_insert_with(Property::Acl, || {
                             current
-                                .and_then(|current| current.properties.get(&Property::Acl).cloned())
+                                .and_then(|current| {
+                                    current.inner.properties.get(&Property::Acl).cloned()
+                                })
                                 .unwrap_or_else(|| Value::List(Vec::new()))
                         }) {
                     acl
@@ -403,12 +409,16 @@ impl JMAP {
         }
     }
 
-    pub fn refresh_acls(&self, changes: &Object<Value>, current: &Option<Object<Value>>) {
+    pub fn refresh_acls(
+        &self,
+        changes: &Object<Value>,
+        current: &Option<HashedValue<Object<Value>>>,
+    ) {
         if let Value::List(acl_changes) = changes.get(&Property::Acl) {
             let mut acl_tokens = self.acl_tokens.lock();
             if let Some(Value::List(acl_current)) = current
                 .as_ref()
-                .and_then(|current| current.properties.get(&Property::Acl))
+                .and_then(|current| current.inner.properties.get(&Property::Acl))
             {
                 for current_item in acl_current.chunks_exact(2) {
                     let mut invalidate = true;

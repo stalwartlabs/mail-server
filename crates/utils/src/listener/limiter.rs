@@ -10,7 +10,8 @@ use std::{
 pub struct RateLimiter {
     pub max_requests: f64,
     pub max_interval: f64,
-    limiter: (Instant, f64),
+    last_refill: Instant,
+    tokens: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -35,20 +36,21 @@ impl RateLimiter {
         RateLimiter {
             max_requests: max_requests as f64,
             max_interval: max_interval as f64,
-            limiter: (Instant::now(), max_requests as f64),
+            last_refill: Instant::now(),
+            tokens: max_requests as f64,
         }
     }
 
     pub fn is_allowed(&mut self) -> bool {
         // Check rate limit
-        let elapsed = self.limiter.0.elapsed().as_secs_f64();
-        self.limiter.1 += elapsed * (self.max_requests / self.max_interval);
-        if self.limiter.1 > self.max_requests {
-            self.limiter.1 = self.max_requests;
+        let elapsed = self.last_refill.elapsed().as_secs_f64();
+        self.last_refill = Instant::now();
+        self.tokens += elapsed * (self.max_requests / self.max_interval);
+        if self.tokens > self.max_requests {
+            self.tokens = self.max_requests;
         }
-        if self.limiter.1 >= 1.0 {
-            self.limiter.0 = Instant::now();
-            self.limiter.1 -= 1.0;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
             true
         } else {
             false
@@ -58,16 +60,17 @@ impl RateLimiter {
     pub fn retry_at(&self) -> Instant {
         Instant::now()
             + Duration::from_secs(
-                (self.max_interval as u64).saturating_sub(self.limiter.0.elapsed().as_secs()),
+                (self.max_interval as u64).saturating_sub(self.last_refill.elapsed().as_secs()),
             )
     }
 
     pub fn elapsed(&self) -> Duration {
-        self.limiter.0.elapsed()
+        self.last_refill.elapsed()
     }
 
     pub fn reset(&mut self) {
-        self.limiter = (Instant::now(), self.max_requests);
+        self.last_refill = Instant::now();
+        self.tokens = self.max_requests;
     }
 }
 

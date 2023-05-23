@@ -63,7 +63,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_message_delivery(
         &mut smtp_rx,
         MockMessage::new("<jdoe@example.com>", ["<bill@remote.org>"], "@Kokomo"),
-        false,
     )
     .await;
 
@@ -143,7 +142,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_message_delivery(
         &mut smtp_rx,
         MockMessage::new("<jdoe@example.com>", ["<jane_smith@remote.org>"], "@Kokomo"),
-        false,
     )
     .await;
 

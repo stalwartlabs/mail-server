@@ -194,6 +194,19 @@ impl crate::Config {
             Capabilities::Mail(MailCapabilities::new(self)),
         );
         self.capabilities.capabilities.append(
+            Capability::Submission,
+            Capabilities::Submission(SubmissionCapabilities {
+                max_delayed_send: 86400 * 30,
+                submission_extensions: vec![
+                    "FUTURERELEASE".to_string(),
+                    "SIZE".to_string(),
+                    "DSN".to_string(),
+                    "DELIVERYBY".to_string(),
+                    "MT-PRIORITY".to_string(),
+                ],
+            }),
+        );
+        self.capabilities.capabilities.append(
             Capability::Sieve,
             Capabilities::Sieve(SieveCapabilities::new(self, settings)),
         );

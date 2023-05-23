@@ -3,10 +3,11 @@ use std::{sync::Arc, time::Duration};
 use jmap::JMAP;
 use jmap_client::{
     client::{Client, Credentials},
+    core::set::{SetError, SetErrorType},
     mailbox::{self},
 };
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create};
+use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_alias_create};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running Authorization tests...");
@@ -15,18 +16,19 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
         .await
         .to_string();
+    test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;
 
     // Wait for rate limit to be restored after running previous tests
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    //tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(
-        Client::new()
-            .credentials(Credentials::basic("jdoe@example.com", "abcde"))
-            .accept_invalid_certs(true)
-            .connect("https://127.0.0.1:8899")
-            .await,
-        Err(jmap_client::Error::Problem(err)) if err.status() == Some(401)));
+            Client::new()
+                .credentials(Credentials::basic("jdoe@example.com", "abcde"))
+                .accept_invalid_certs(true)
+                .connect("https://127.0.0.1:8899")
+                .await,
+            Err(jmap_client::Error::Problem(err)) if err.status() == Some(401)));
 
     // Requests should be rate limited
     let mut n_401 = 0;
@@ -44,12 +46,12 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             if problem.status().unwrap() == 401 {
                 n_401 += 1;
                 if n_401 > 100 {
-                    panic!("Rate limiter failed.");
+                    panic!("Rate limiter failed: 429: {n_429}, 401: {n_401}.");
                 }
             } else if problem.status().unwrap() == 429 {
                 n_429 += 1;
                 if n_429 > 11 {
-                    panic!("Rate limiter too restrictive.");
+                    panic!("Rate limiter too restrictive: 429: {n_429}, 401: {n_401}.");
                 }
             } else {
                 panic!("Unexpected error status {}", problem.status().unwrap());
@@ -92,13 +94,12 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Users should be allowed to create identities only
     // using email addresses associated to their principal
-    let implement = "true";
-    /*client
+    let iid1 = client
         .identity_create("John Doe", "jdoe@example.com")
         .await
         .unwrap()
         .take_id();
-    client
+    let iid2 = client
         .identity_create("John Doe (secondary)", "john.doe@example.com")
         .await
         .unwrap()
@@ -111,7 +112,9 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             type_: SetErrorType::InvalidProperties,
             ..
         }))
-    ));*/
+    ));
+    client.identity_destroy(&iid1).await.unwrap();
+    client.identity_destroy(&iid2).await.unwrap();
 
     // Concurrent requests check
     let client = Arc::new(client);

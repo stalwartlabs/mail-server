@@ -18,7 +18,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     email::index::{IndexMessage, MAX_ID_LENGTH},
-    MaybeError, JMAP,
+    IngestError, JMAP,
 };
 
 use super::index::{TrimTextValue, MAX_SORT_FIELD_LENGTH};
@@ -46,10 +46,10 @@ impl JMAP {
         keywords: Vec<Keyword>,
         received_at: Option<u64>,
         skip_duplicates: bool,
-    ) -> Result<IngestedEmail, MaybeError> {
+    ) -> Result<IngestedEmail, IngestError> {
         // Parse message
         let raw_message = ingest_email.raw_message;
-        let message = ingest_email.message.ok_or_else(|| MaybeError::Permanent {
+        let message = ingest_email.message.ok_or_else(|| IngestError::Permanent {
             code: [5, 5, 0],
             reason: "Failed to parse e-mail message.".to_string(),
         })?;
@@ -114,7 +114,7 @@ impl JMAP {
                         context = "find_duplicates",
                         error = ?err,
                         "Duplicate message search failed.");
-                    MaybeError::Temporary
+                    IngestError::Temporary
                 })?
                 .results
                 .is_empty()
@@ -145,7 +145,7 @@ impl JMAP {
                     context = "email_ingest",
                     error = ?err,
                     "Failed to assign documentId.");
-                MaybeError::Temporary
+                IngestError::Temporary
             })?;
         let change_id = self
             .store
@@ -157,7 +157,7 @@ impl JMAP {
                     context = "email_ingest",
                     error = ?err,
                     "Failed to assign changeId.");
-                MaybeError::Temporary
+                IngestError::Temporary
             })?;
 
         // Store blob
@@ -171,7 +171,7 @@ impl JMAP {
                 context = "email_ingest",
                 error = ?err,
                 "Failed to write blob.");
-                MaybeError::Temporary
+                IngestError::Temporary
             })?;
 
         // Build change log
@@ -190,7 +190,7 @@ impl JMAP {
                         context = "email_ingest",
                         error = ?err,
                         "Failed to assign documentId for new thread.");
-                    MaybeError::Temporary
+                    IngestError::Temporary
                 })?;
             changes.log_insert(Collection::Thread, thread_id);
             thread_id
@@ -220,7 +220,7 @@ impl JMAP {
                     context = "email_ingest",
                     error = ?err,
                     "Failed to index message.");
-                MaybeError::Temporary
+                IngestError::Temporary
             })?
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
             .custom(changes);
@@ -230,7 +230,7 @@ impl JMAP {
                 context = "email_ingest",
                 error = ?err,
                 "Failed to write message to database.");
-            MaybeError::Temporary
+            IngestError::Temporary
         })?;
 
         Ok(IngestedEmail {
@@ -246,7 +246,7 @@ impl JMAP {
         account_id: u32,
         thread_name: &str,
         references: &[&str],
-    ) -> Result<Option<u32>, MaybeError> {
+    ) -> Result<Option<u32>, IngestError> {
         let mut try_count = 0;
 
         loop {
@@ -268,7 +268,7 @@ impl JMAP {
                         context = "find_or_merge_thread",
                         error = ?err,
                         "Thread search failed.");
-                    MaybeError::Temporary
+                    IngestError::Temporary
                 })?
                 .results;
 
@@ -299,7 +299,7 @@ impl JMAP {
                         context = "find_or_merge_thread",
                         error = ?err,
                         "Failed to obtain threadIds.");
-                    MaybeError::Temporary
+                    IngestError::Temporary
                 })?;
 
             if thread_ids.len() == 1 {
@@ -337,7 +337,7 @@ impl JMAP {
                         context = "find_or_merge_thread",
                         error = ?err,
                         "Failed to assign changeId for thread merge.");
-                    MaybeError::Temporary
+                    IngestError::Temporary
                 })?;
             let mut changes = ChangeLogBuilder::with_change_id(change_id);
             batch
@@ -369,7 +369,7 @@ impl JMAP {
                             context = "find_or_merge_thread",
                             error = ?err,
                             "Failed to obtain threadId bitmap.");
-                            MaybeError::Temporary
+                            IngestError::Temporary
                         })?
                         .unwrap_or_default()
                     {
@@ -399,7 +399,7 @@ impl JMAP {
                         context = "find_or_merge_thread",
                         error = ?err,
                         "Failed to write thread merge batch.");
-                    return Err(MaybeError::Temporary);
+                    return Err(IngestError::Temporary);
                 }
             }
         }

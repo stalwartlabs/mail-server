@@ -65,11 +65,11 @@ impl crate::Config {
                 .property("jmap.session.cache.ttl")?
                 .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: settings
-                .property_or_static("jmap.rate-limit.account.rate", "1000/1s")?,
+                .property_or_static("jmap.rate-limit.account.rate", "1000/1m")?,
             rate_authenticate_req: settings
-                .property_or_static("jmap.rate-limit.authentication.rate", "10/1s")?,
+                .property_or_static("jmap.rate-limit.authentication.rate", "10/1m")?,
             rate_anonymous: settings
-                .property_or_static("jmap.rate-limit.anonymous.rate", "100/1s")?,
+                .property_or_static("jmap.rate-limit.anonymous.rate", "100/1m")?,
             rate_use_forwarded: settings
                 .property("jmap.rate-limit.use-forwarded")?
                 .unwrap_or(false),

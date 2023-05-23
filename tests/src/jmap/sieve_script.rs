@@ -291,7 +291,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_message_delivery(
         &mut smtp_rx,
         MockMessage::new("<>", ["<bill@remote.org>"], "@No soup for you"),
-        false,
     )
     .await;
 
@@ -326,7 +325,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             ["<bill@remote.org>"],
             "@Rejected from an included script",
         ),
-        false,
     )
     .await;
 
@@ -359,7 +357,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             ["<jane@remote.org>"],
             "@Attached you'll find",
         ),
-        false,
     )
     .await;
     assert_eq!(
@@ -399,7 +396,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             ["<sms_gateway@remote.org>"],
             "@It's TPS-o-clock",
         ),
-        false,
     )
     .await;
 

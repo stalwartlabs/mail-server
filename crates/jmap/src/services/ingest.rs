@@ -2,7 +2,7 @@ use jmap_proto::types::{state::StateChange, type_state::TypeState};
 use store::ahash::AHashMap;
 use utils::ipc::{DeliveryResult, IngestMessage};
 
-use crate::{mailbox::INBOX_ID, MaybeError, JMAP};
+use crate::{mailbox::INBOX_ID, IngestError, JMAP};
 
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
@@ -77,12 +77,12 @@ impl JMAP {
                     }
                 }
                 Err(err) => match err {
-                    MaybeError::Temporary => {
+                    IngestError::Temporary => {
                         *status = DeliveryResult::TemporaryFailure {
                             reason: "Transient server failure.".into(),
                         }
                     }
-                    MaybeError::Permanent { code, reason } => {
+                    IngestError::Permanent { code, reason } => {
                         *status = DeliveryResult::PermanentFailure {
                             code,
                             reason: reason.into(),

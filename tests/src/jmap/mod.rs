@@ -57,6 +57,10 @@ certificate = "default"
 [session.ehlo]
 reject-non-fqdn = false
 
+[session.rcpt]
+relay = [ { if = "authenticated-as", ne = "", then = true }, 
+          { else = false } ]
+
 [session.rcpt.lookup]
 domains = "list/domains"
 addresses = "local"
@@ -69,6 +73,7 @@ wait = "1ms"
 
 [list]
 domains = ["example.com"]
+remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [queue]
 path = "{TMP}"
@@ -83,7 +88,7 @@ type = "system"
 
 [queue.outbound]
 next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "local" }, 
-             { if = "rcpt-domain", eq = "remote.org", then = "mock-smtp" },
+             { if = "rcpt-domain", in-list = "list/remote-domains", then = "mock-smtp" },
              { else = false } ]
 
 [remote."mock-smtp"]
@@ -94,6 +99,10 @@ protocol = "smtp"
 [remote."mock-smtp".tls]
 implicit = false
 allow-invalid-certs = true
+
+[session.extensions]
+future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
+                   { else = false } ]
 
 [store]
 db.path = "{TMP}/sqlite.db"
@@ -114,9 +123,9 @@ max-size = 5000000
 max-concurrent = 4
 
 [jmap.rate-limit]
-account.rate = "100/1m"
+account.rate = "1000/1m"
 authentication.rate = "100/1m"
-anonymous.rate = "1000/1m"
+anonymous.rate = "100/1m"
 
 [jmap.event-source]
 throttle = "500ms"
@@ -183,7 +192,8 @@ pub async fn jmap_tests() {
     //event_source::test(params.server.clone(), &mut params.client).await;
     //push_subscription::test(params.server.clone(), &mut params.client).await;
     //sieve_script::test(params.server.clone(), &mut params.client).await;
-    vacation_response::test(params.server.clone(), &mut params.client).await;
+    //vacation_response::test(params.server.clone(), &mut params.client).await;
+    email_submission::test(params.server.clone(), &mut params.client).await;
 
     let websockets = "todo";
 

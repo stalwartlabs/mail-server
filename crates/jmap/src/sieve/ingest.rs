@@ -13,7 +13,7 @@ use crate::{
     email::ingest::{IngestEmail, IngestedEmail},
     mailbox::{INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
-    Bincode, MaybeError, JMAP,
+    Bincode, IngestError, JMAP,
 };
 
 use super::ActiveScript;
@@ -33,12 +33,12 @@ impl JMAP {
         envelope_to: &str,
         account_id: u32,
         mut active_script: ActiveScript,
-    ) -> Result<IngestedEmail, MaybeError> {
+    ) -> Result<IngestedEmail, IngestError> {
         // Parse message
         let message = if let Some(message) = Message::parse(raw_message) {
             message
         } else {
-            return Err(MaybeError::Permanent {
+            return Err(IngestError::Permanent {
                 code: [5, 5, 0],
                 reason: "Failed to parse message.".to_string(),
             });
@@ -48,7 +48,7 @@ impl JMAP {
         let mailbox_ids = self
             .mailbox_get_or_create(account_id)
             .await
-            .map_err(|_| MaybeError::Temporary)?;
+            .map_err(|_| IngestError::Temporary)?;
 
         // Create Sieve instance
         let mut instance = self.sieve_runtime.filter_parsed(message);
@@ -445,7 +445,7 @@ impl JMAP {
         }
 
         if let Some(reject_reason) = reject_reason {
-            Err(MaybeError::Permanent {
+            Err(IngestError::Permanent {
                 code: [5, 7, 1],
                 reason: reject_reason,
             })
@@ -453,7 +453,7 @@ impl JMAP {
             Ok(ingested_message)
         } else {
             // There were problems during delivery
-            Err(MaybeError::Temporary)
+            Err(IngestError::Temporary)
         }
     }
 }

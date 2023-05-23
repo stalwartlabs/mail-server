@@ -119,7 +119,7 @@ impl JMAP {
 
             // Obtain mailbox
             let document_id = id.document_id();
-            if let Some(mut mailbox) = self
+            if let Some(mailbox) = self
                 .get_property::<HashedValue<Object<Value>>>(
                     account_id,
                     Collection::Mailbox,
@@ -152,7 +152,7 @@ impl JMAP {
                 }
 
                 match self
-                    .mailbox_set_item(object, (document_id, mailbox.take()).into(), &ctx)
+                    .mailbox_set_item(object, (document_id, mailbox).into(), &ctx)
                     .await?
                 {
                     Ok(builder) => {
@@ -161,7 +161,6 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::Mailbox)
                             .create_document(document_id)
-                            .assert_value(Property::Value, &mailbox)
                             .custom(builder);
                         if !batch.is_empty() {
                             changes.log_update(Collection::Mailbox, document_id);
@@ -393,8 +392,7 @@ impl JMAP {
                     .with_account_id(account_id)
                     .with_collection(Collection::Mailbox)
                     .delete_document(document_id)
-                    .assert_value(Property::Value, &mailbox)
-                    .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox.inner));
+                    .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox));
 
                 match self.store.write(batch.build()).await {
                     Ok(_) => {
@@ -448,7 +446,7 @@ impl JMAP {
     async fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, Object<Value>)>,
+        update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
     ) -> Result<Result<ObjectIndexBuilder, SetError>, MethodError> {
         // Parse properties
@@ -496,7 +494,7 @@ impl JMAP {
                     let mut new_value = None;
                     if let Some((_, current_fields)) = update.as_ref() {
                         if let Value::List(subscriptions) =
-                            current_fields.get(&Property::IsSubscribed)
+                            current_fields.inner.get(&Property::IsSubscribed)
                         {
                             if subscribe {
                                 if !subscriptions.contains(&account_id) {
@@ -647,7 +645,7 @@ impl JMAP {
         if let Value::Text(mailbox_role) = changes.get(&Property::Role) {
             if update
                 .as_ref()
-                .map(|(_, update)| update.get(&Property::Role))
+                .map(|(_, update)| update.inner.get(&Property::Role))
                 .and_then(|v| v.as_string())
                 .unwrap_or_default()
                 != mailbox_role
@@ -694,12 +692,14 @@ impl JMAP {
                 (*mailbox_parent_id).into()
             } else if let Some((_, current_fields)) = &update {
                 if current_fields
+                    .inner
                     .properties
                     .get(&Property::Name)
                     .and_then(|n| n.as_string())
                     != Some(mailbox_name)
                 {
                     current_fields
+                        .inner
                         .properties
                         .get(&Property::ParentId)
                         .and_then(|id| id.as_id().map(|id| id.document_id()))

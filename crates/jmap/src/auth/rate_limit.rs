@@ -23,6 +23,7 @@ pub struct AuthenticatedLimiter {
     concurrent_uploads: ConcurrencyLimiter,
 }
 
+#[derive(Debug)]
 pub struct AnonymousLimiter {
     request_limiter: RateLimiter,
     auth_limiter: RateLimiter,

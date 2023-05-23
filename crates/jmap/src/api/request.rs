@@ -10,6 +10,7 @@ use jmap_proto::{
     response::{Response, ResponseMethod},
     types::collection::Collection,
 };
+use utils::listener::ServerInstance;
 
 use crate::{auth::AclToken, JMAP};
 
@@ -18,6 +19,7 @@ impl JMAP {
         &self,
         bytes: &[u8],
         acl_token: Arc<AclToken>,
+        instance: &Arc<ServerInstance>,
     ) -> Result<Response, RequestError> {
         let request = Request::parse(
             bytes,
@@ -43,7 +45,7 @@ impl JMAP {
 
                 // Add response
                 match self
-                    .handle_method_call(call.method, &acl_token, &mut next_call)
+                    .handle_method_call(call.method, &acl_token, &mut next_call, instance)
                     .await
                 {
                     Ok(mut method_response) => {
@@ -104,6 +106,7 @@ impl JMAP {
         method: RequestMethod,
         acl_token: &AclToken,
         next_call: &mut Option<Call<RequestMethod>>,
+        instance: &Arc<ServerInstance>,
     ) -> Result<ResponseMethod, MethodError> {
         Ok(match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
@@ -124,8 +127,16 @@ impl JMAP {
 
                     self.thread_get(req).await?.into()
                 }
-                get::RequestArguments::Identity => todo!(),
-                get::RequestArguments::EmailSubmission => todo!(),
+                get::RequestArguments::Identity => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.identity_get(req).await?.into()
+                }
+                get::RequestArguments::EmailSubmission => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.email_submission_get(req).await?.into()
+                }
                 get::RequestArguments::PushSubscription => {
                     self.push_subscription_get(req, acl_token).await?.into()
                 }
@@ -155,7 +166,11 @@ impl JMAP {
                         .await?
                         .into()
                 }
-                query::RequestArguments::EmailSubmission => todo!(),
+                query::RequestArguments::EmailSubmission => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.email_submission_query(req).await?.into()
+                }
                 query::RequestArguments::SieveScript => {
                     acl_token.assert_is_member(req.account_id)?;
 
@@ -175,8 +190,18 @@ impl JMAP {
                         .await?
                         .into()
                 }
-                set::RequestArguments::Identity => todo!(),
-                set::RequestArguments::EmailSubmission(_) => todo!(),
+                set::RequestArguments::Identity => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.identity_set(req).await?.into()
+                }
+                set::RequestArguments::EmailSubmission(arguments) => {
+                    acl_token.assert_is_member(req.account_id)?;
+
+                    self.email_submission_set(req.with_arguments(arguments), instance, next_call)
+                        .await?
+                        .into()
+                }
                 set::RequestArguments::PushSubscription => {
                     self.push_subscription_set(req, acl_token).await?.into()
                 }

@@ -322,6 +322,10 @@ impl JsonObjectParser for Object<SetValue> {
                         parser.next_token()?,
                         parser,
                     )?),
+                    Property::Parameters => SetValue::Value(Value::parse::<String, String>(
+                        parser.next_token()?,
+                        parser,
+                    )?),
                     Property::Members => SetValue::Value(Value::parse::<ObjectProperty, Id>(
                         parser.next_token()?,
                         parser,

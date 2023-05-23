@@ -315,7 +315,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         break 'outer;
                     }
                 }
-                State::None => unreachable!(),
+                State::None | State::Accepted(_) => unreachable!(),
             }
         }
         self.state = state;

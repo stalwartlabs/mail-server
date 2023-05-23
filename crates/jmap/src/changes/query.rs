@@ -55,7 +55,7 @@ impl JMAP {
                 anchor_offset: None,
                 limit: None,
                 calculate_total: request.calculate_total,
-                arguments: (),
+                arguments: query::RequestArguments::EmailSubmission,
             };
             let is_mutable = query.filter.iter().any(|f| !f.is_immutable())
                 || query
@@ -72,8 +72,7 @@ impl JMAP {
                         .await?
                 }
                 query::RequestArguments::EmailSubmission => {
-                    let implement = "true";
-                    todo!()
+                    self.email_submission_query(query).await?
                 }
                 _ => unreachable!(),
             };

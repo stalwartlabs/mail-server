@@ -128,7 +128,7 @@ impl JMAP {
 
             // Obtain sieve script
             let document_id = id.document_id();
-            if let Some(mut sieve) = self
+            if let Some(sieve) = self
                 .get_property::<HashedValue<Object<Value>>>(
                     account_id,
                     Collection::SieveScript,
@@ -138,7 +138,7 @@ impl JMAP {
                 .await?
             {
                 match self
-                    .sieve_set_item(object, (document_id, sieve.take()).into(), &ctx)
+                    .sieve_set_item(object, (document_id, sieve).into(), &ctx)
                     .await?
                 {
                     Ok((builder, blob)) => {
@@ -158,7 +158,6 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .update_document(document_id)
-                            .assert_value(Property::Value, &sieve)
                             .custom(builder);
                         if !batch.is_empty() {
                             changes.log_update(Collection::SieveScript, document_id);
@@ -272,7 +271,7 @@ impl JMAP {
     ) -> Result<bool, MethodError> {
         // Fetch record
         let obj = self
-            .get_property::<Object<Value>>(
+            .get_property::<HashedValue<Object<Value>>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -293,7 +292,7 @@ impl JMAP {
         // Make sure the script is not active
         if fail_if_active
             && matches!(
-                obj.properties.get(&Property::IsActive),
+                obj.inner.properties.get(&Property::IsActive),
                 Some(Value::Bool(true))
             )
         {
@@ -323,11 +322,11 @@ impl JMAP {
     async fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, Object<Value>)>,
+        update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
     ) -> Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>, MethodError> {
         // Vacation script cannot be modified
-        if matches!(update.as_ref().and_then(|(_, obj)| obj.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
+        if matches!(update.as_ref().and_then(|(_, obj)| obj.inner.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
         {
             return Ok(Err(SetError::forbidden().with_description(
                 "The 'vacation' script cannot be modified, use VacationResponse/set instead.",
@@ -358,7 +357,7 @@ impl JMAP {
                             )));
                     } else if update
                         .as_ref()
-                        .and_then(|(_, obj)| obj.properties.get(&Property::Name))
+                        .and_then(|(_, obj)| obj.inner.properties.get(&Property::Name))
                         .map_or(
                             true,
                             |p| matches!(p, Value::Text (prev_value ) if prev_value != &value),
@@ -516,13 +515,12 @@ impl JMAP {
                 batch
                     .update_document(document_id)
                     .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-                    .assert_value(Property::Value, &sieve)
                     .custom(
                         ObjectIndexBuilder::new(SCHEMA)
                             .with_changes(
                                 Object::with_capacity(1).with_property(Property::IsActive, false),
                             )
-                            .with_current(sieve.inner),
+                            .with_current(sieve),
                     );
                 changed_ids.push((document_id, false));
             }
@@ -539,16 +537,13 @@ impl JMAP {
                 )
                 .await?
             {
-                batch
-                    .update_document(document_id)
-                    .assert_value(Property::Value, &sieve)
-                    .custom(
-                        ObjectIndexBuilder::new(SCHEMA)
-                            .with_changes(
-                                Object::with_capacity(1).with_property(Property::IsActive, true),
-                            )
-                            .with_current(sieve.inner),
-                    );
+                batch.update_document(document_id).custom(
+                    ObjectIndexBuilder::new(SCHEMA)
+                        .with_changes(
+                            Object::with_capacity(1).with_property(Property::IsActive, true),
+                        )
+                        .with_current(sieve),
+                );
                 changed_ids.push((document_id, true));
             }
         }

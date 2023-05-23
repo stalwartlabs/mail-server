@@ -33,7 +33,7 @@ impl JMAP {
         &self,
         req: &mut hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
-        instance: &ServerInstance,
+        instance: &Arc<ServerInstance>,
     ) -> HttpResponse {
         let mut path = req.uri().path().split('/');
         path.next();
@@ -55,7 +55,7 @@ impl JMAP {
                                 //let delete = "fd";
                                 //println!("<- {}", String::from_utf8_lossy(&bytes));
 
-                                match self.handle_request(&bytes, acl_token).await {
+                                match self.handle_request(&bytes, acl_token, instance).await {
                                     Ok(response) => response.into_http_response(),
                                     Err(err) => err.into_http_response(),
                                 }

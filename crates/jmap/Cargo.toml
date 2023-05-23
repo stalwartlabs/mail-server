@@ -9,6 +9,7 @@ store = { path = "../store" }
 jmap_proto = { path = "../jmap-proto" }
 utils = { path =  "../utils" }
 smtp = { path =  "../smtp" }
+smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send" } 

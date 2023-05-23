@@ -14,7 +14,7 @@ use jmap_proto::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AclToken, MaybeError, JMAP};
+use crate::{auth::AclToken, IngestError, JMAP};
 
 impl JMAP {
     pub async fn email_import(
@@ -111,13 +111,13 @@ impl JMAP {
                 Ok(email) => {
                     response.created.append(id, email.into());
                 }
-                Err(MaybeError::Permanent { reason, .. }) => {
+                Err(IngestError::Permanent { reason, .. }) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::InvalidEmail).with_description(reason),
                     );
                 }
-                Err(MaybeError::Temporary) => {
+                Err(IngestError::Temporary) => {
                     return Err(MethodError::ServerPartialFail);
                 }
             }

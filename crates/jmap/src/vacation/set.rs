@@ -189,12 +189,9 @@ impl JMAP {
                     )
                     .await?
                     .map(|value| {
-                        batch
-                            .update_document(document_id)
-                            .assert_value(Property::Value, &value);
                         was_active = value.inner.properties.get(&Property::IsActive)
                             == Some(&Value::Bool(true));
-                        value.inner
+                        value
                     })
                     .ok_or(MethodError::ServerPartialFail)?
                     .into()
@@ -213,6 +210,7 @@ impl JMAP {
             // Write changes
             let document_id = if let Some(document_id) = document_id {
                 batch
+                    .update_document(document_id)
                     .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
                     .custom(obj);
                 change_log.log_insert(Collection::SieveScript, document_id);

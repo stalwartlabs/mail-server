@@ -2,7 +2,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 use store::{
     fts::builder::ToTokens,
-    write::{BatchBuilder, BitmapFamily, IntoOperations, Operation},
+    write::{assert::HashedValue, BatchBuilder, BitmapFamily, IntoOperations, Operation},
     Serialize, HASH_EXACT,
 };
 
@@ -16,7 +16,7 @@ use super::Object;
 #[derive(Debug, Clone, Default)]
 pub struct ObjectIndexBuilder {
     index: &'static [IndexProperty],
-    current: Option<Object<Value>>,
+    current: Option<HashedValue<Object<Value>>>,
     changes: Option<Object<Value>>,
 }
 
@@ -56,7 +56,7 @@ impl ObjectIndexBuilder {
         }
     }
 
-    pub fn with_current(mut self, current: Object<Value>) -> Self {
+    pub fn with_current(mut self, current: HashedValue<Object<Value>>) -> Self {
         self.current = Some(current);
         self
     }
@@ -66,7 +66,7 @@ impl ObjectIndexBuilder {
         self
     }
 
-    pub fn with_current_opt(mut self, current: Option<Object<Value>>) -> Self {
+    pub fn with_current_opt(mut self, current: Option<HashedValue<Object<Value>>>) -> Self {
         self.current = current;
         self
     }
@@ -78,7 +78,7 @@ impl ObjectIndexBuilder {
             .or_else(|| {
                 self.current
                     .as_ref()
-                    .and_then(|c| c.properties.get(property))
+                    .and_then(|c| c.inner.properties.get(property))
             })
             .unwrap_or(&Value::Null)
     }
@@ -130,11 +130,13 @@ impl IntoOperations for ObjectIndexBuilder {
             }
             (Some(current), Some(changes)) => {
                 // Update
-                merge_batch(batch, self.index, current, changes);
+                batch.assert_value(Property::Value, &current);
+                merge_batch(batch, self.index, current.inner, changes);
             }
             (Some(current), None) => {
                 // Deletion
-                build_batch(batch, self.index, &current, false);
+                batch.assert_value(Property::Value, &current);
+                build_batch(batch, self.index, &current.inner, false);
                 batch.ops.push(Operation::Value {
                     field: Property::Value.into(),
                     family: 0,
