@@ -17,15 +17,10 @@ use crate::{auth::AclToken, JMAP};
 impl JMAP {
     pub async fn handle_request(
         &self,
-        bytes: &[u8],
+        request: Request,
         acl_token: Arc<AclToken>,
         instance: &Arc<ServerInstance>,
     ) -> Result<Response, RequestError> {
-        let request = Request::parse(
-            bytes,
-            self.config.request_max_calls,
-            self.config.request_max_size,
-        )?;
         let mut response = Response::new(
             acl_token.state(),
             request.created_ids.unwrap_or_default(),

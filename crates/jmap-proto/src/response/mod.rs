@@ -51,6 +51,7 @@ pub struct Response {
     pub session_state: u32,
 
     #[serde(rename = "createdIds")]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub created_ids: HashMap<String, Id>,
 }
 

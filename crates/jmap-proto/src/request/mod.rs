@@ -3,6 +3,7 @@ pub mod echo;
 pub mod method;
 pub mod parser;
 pub mod reference;
+pub mod websocket;
 
 use std::{
     collections::HashMap,
@@ -29,7 +30,7 @@ use crate::{
 
 use self::{echo::Echo, method::MethodName};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Request {
     pub using: u32,
     pub method_calls: Vec<Call<RequestMethod>>,

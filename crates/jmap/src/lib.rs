@@ -46,6 +46,7 @@ pub mod sieve;
 pub mod submission;
 pub mod thread;
 pub mod vacation;
+pub mod websocket;
 
 pub const SUPERUSER_ID: u32 = 0;
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
@@ -102,6 +103,10 @@ pub struct Config {
 
     pub event_source_throttle: Duration,
     pub push_max_total: usize,
+
+    pub web_socket_throttle: Duration,
+    pub web_socket_timeout: Duration,
+    pub web_socket_heartbeat: Duration,
 
     pub oauth_key: String,
     pub oauth_expiry_user_code: u64,

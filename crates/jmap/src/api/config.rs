@@ -101,6 +101,9 @@ impl crate::Config {
             oauth_max_auth_attempts: settings.property_or_static("oauth.max-auth-attempts", "3")?,
             event_source_throttle: settings
                 .property_or_static("jmap.event-source.throttle", "1s")?,
+            web_socket_throttle: settings.property_or_static("jmap.web-socket.throttle", "1s")?,
+            web_socket_timeout: settings.property_or_static("jmap.web-socket.timeout", "10m")?,
+            web_socket_heartbeat: settings.property_or_static("jmap.web-socket.heartbeat", "1m")?,
             push_max_total: settings.property_or_static("jmap.push.max-total", "100")?,
         };
         config.add_capabilites(settings);

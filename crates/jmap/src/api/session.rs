@@ -143,7 +143,7 @@ pub struct BaseCapabilities {
 impl JMAP {
     pub async fn handle_session_resource(
         &self,
-        instance: &ServerInstance,
+        instance: Arc<ServerInstance>,
         acl_token: Arc<AclToken>,
     ) -> Result<Session, RequestError> {
         let mut session = Session::new(&instance.data, &self.config.capabilities);

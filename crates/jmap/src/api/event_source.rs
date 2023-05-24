@@ -24,7 +24,7 @@ struct Ping {
 impl JMAP {
     pub async fn handle_event_source(
         &self,
-        req: &HttpRequest,
+        req: HttpRequest,
         acl_token: Arc<AclToken>,
     ) -> HttpResponse {
         // Parse query

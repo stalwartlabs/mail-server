@@ -40,152 +40,7 @@ impl Request {
             let mut parser = Parser::new(json);
             parser.next_token::<String>()?.assert(Token::DictStart)?;
             while let Some(key) = parser.next_dict_key::<u128>()? {
-                match key {
-                    0x0067_6e69_7375 => {
-                        found_valid_keys = true;
-                        parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
-                        loop {
-                            match parser.next_token::<Capability>()? {
-                                Token::String(capability) => {
-                                    request.using |= capability as u32;
-                                }
-                                Token::Comma => (),
-                                Token::ArrayEnd => break,
-                                token => {
-                                    return Err(token
-                                        .error("capability", &token.to_string())
-                                        .into())
-                                }
-                            }
-                        }
-                    }
-                    0x0073_6c6c_6143_646f_6874_656d => {
-                        found_valid_keys = true;
-
-                        parser
-                            .next_token::<Ignore>()?
-                            .assert_jmap(Token::ArrayStart)?;
-                        loop {
-                            match parser.next_token::<Ignore>()? {
-                                Token::ArrayStart => (),
-                                Token::Comma => continue,
-                                Token::ArrayEnd => break,
-                                _ => {
-                                    return Err(RequestError::not_request("Invalid JMAP request"));
-                                }
-                            };
-                            if request.method_calls.len() < max_calls {
-                                let method_name = match parser.next_token::<MethodName>() {
-                                    Ok(Token::String(method)) => method,
-                                    Ok(_) => {
-                                        return Err(RequestError::not_request(
-                                            "Invalid JMAP request",
-                                        ));
-                                    }
-                                    Err(Error::Method(MethodError::InvalidArguments(_))) => {
-                                        MethodName::error()
-                                    }
-                                    Err(err) => {
-                                        return Err(err.into());
-                                    }
-                                };
-                                parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
-                                parser.ctx = method_name.obj;
-                                let start_depth_array = parser.depth_array;
-                                let start_depth_dict = parser.depth_dict;
-
-                                let method = match (&method_name.fnc, &method_name.obj) {
-                                    (MethodFunction::Get, _) => {
-                                        if method_name.obj != MethodObject::SearchSnippet {
-                                            GetRequest::parse(&mut parser).map(RequestMethod::Get)
-                                        } else {
-                                            GetSearchSnippetRequest::parse(&mut parser)
-                                                .map(RequestMethod::SearchSnippet)
-                                        }
-                                    }
-                                    (MethodFunction::Query, _) => {
-                                        QueryRequest::parse(&mut parser).map(RequestMethod::Query)
-                                    }
-                                    (MethodFunction::Set, _) => {
-                                        SetRequest::parse(&mut parser).map(RequestMethod::Set)
-                                    }
-                                    (MethodFunction::Changes, _) => {
-                                        ChangesRequest::parse(&mut parser)
-                                            .map(RequestMethod::Changes)
-                                    }
-                                    (MethodFunction::QueryChanges, _) => {
-                                        QueryChangesRequest::parse(&mut parser)
-                                            .map(RequestMethod::QueryChanges)
-                                    }
-                                    (MethodFunction::Copy, MethodObject::Email) => {
-                                        CopyRequest::parse(&mut parser).map(RequestMethod::Copy)
-                                    }
-                                    (MethodFunction::Copy, MethodObject::Blob) => {
-                                        CopyBlobRequest::parse(&mut parser)
-                                            .map(RequestMethod::CopyBlob)
-                                    }
-                                    (MethodFunction::Import, MethodObject::Email) => {
-                                        ImportEmailRequest::parse(&mut parser)
-                                            .map(RequestMethod::ImportEmail)
-                                    }
-                                    (MethodFunction::Parse, MethodObject::Email) => {
-                                        ParseEmailRequest::parse(&mut parser)
-                                            .map(RequestMethod::ParseEmail)
-                                    }
-                                    (MethodFunction::Validate, MethodObject::SieveScript) => {
-                                        ValidateSieveScriptRequest::parse(&mut parser)
-                                            .map(RequestMethod::ValidateScript)
-                                    }
-                                    (MethodFunction::Echo, MethodObject::Core) => {
-                                        Echo::parse(&mut parser).map(RequestMethod::Echo)
-                                    }
-                                    _ => Err(Error::Method(MethodError::UnknownMethod(
-                                        method_name.to_string(),
-                                    ))),
-                                };
-
-                                let method = match method {
-                                    Ok(method) => method,
-                                    Err(Error::Method(err)) => {
-                                        parser.skip_token(start_depth_array, start_depth_dict)?;
-                                        RequestMethod::Error(err)
-                                    }
-                                    Err(err) => {
-                                        return Err(err.into());
-                                    }
-                                };
-
-                                parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
-                                let id = parser.next_token::<String>()?.unwrap_string("")?;
-                                parser
-                                    .next_token::<Ignore>()?
-                                    .assert_jmap(Token::ArrayEnd)?;
-                                request.method_calls.push(Call {
-                                    id,
-                                    method,
-                                    name: method_name,
-                                });
-                            } else {
-                                return Err(RequestError::limit(RequestLimitError::CallsIn));
-                            }
-                        }
-                    }
-                    0x7364_4964_6574_6165_7263 => {
-                        found_valid_keys = true;
-                        let mut created_ids = HashMap::new();
-                        parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
-                        while let Some(key) = parser.next_dict_key::<String>()? {
-                            created_ids.insert(
-                                key,
-                                parser.next_token::<Id>()?.unwrap_string("createdIds")?,
-                            );
-                        }
-                        request.created_ids = Some(created_ids);
-                    }
-                    _ => {
-                        parser.skip_token(parser.depth_array, parser.depth_dict)?;
-                    }
-                }
+                found_valid_keys |= request.parse_key(&mut parser, max_calls, key)?;
             }
 
             if found_valid_keys {
@@ -195,6 +50,147 @@ impl Request {
             }
         } else {
             Err(RequestError::limit(RequestLimitError::Size))
+        }
+    }
+
+    pub(crate) fn parse_key(
+        &mut self,
+        parser: &mut Parser,
+        max_calls: usize,
+        key: u128,
+    ) -> Result<bool, RequestError> {
+        match key {
+            0x0067_6e69_7375 => {
+                parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
+                loop {
+                    match parser.next_token::<Capability>()? {
+                        Token::String(capability) => {
+                            self.using |= capability as u32;
+                        }
+                        Token::Comma => (),
+                        Token::ArrayEnd => break,
+                        token => return Err(token.error("capability", &token.to_string()).into()),
+                    }
+                }
+                Ok(true)
+            }
+            0x0073_6c6c_6143_646f_6874_656d => {
+                parser
+                    .next_token::<Ignore>()?
+                    .assert_jmap(Token::ArrayStart)?;
+                loop {
+                    match parser.next_token::<Ignore>()? {
+                        Token::ArrayStart => (),
+                        Token::Comma => continue,
+                        Token::ArrayEnd => break,
+                        _ => {
+                            return Err(RequestError::not_request("Invalid JMAP request"));
+                        }
+                    };
+                    if self.method_calls.len() < max_calls {
+                        let method_name = match parser.next_token::<MethodName>() {
+                            Ok(Token::String(method)) => method,
+                            Ok(_) => {
+                                return Err(RequestError::not_request("Invalid JMAP request"));
+                            }
+                            Err(Error::Method(MethodError::InvalidArguments(_))) => {
+                                MethodName::error()
+                            }
+                            Err(err) => {
+                                return Err(err.into());
+                            }
+                        };
+                        parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
+                        parser.ctx = method_name.obj;
+                        let start_depth_array = parser.depth_array;
+                        let start_depth_dict = parser.depth_dict;
+
+                        let method = match (&method_name.fnc, &method_name.obj) {
+                            (MethodFunction::Get, _) => {
+                                if method_name.obj != MethodObject::SearchSnippet {
+                                    GetRequest::parse(parser).map(RequestMethod::Get)
+                                } else {
+                                    GetSearchSnippetRequest::parse(parser)
+                                        .map(RequestMethod::SearchSnippet)
+                                }
+                            }
+                            (MethodFunction::Query, _) => {
+                                QueryRequest::parse(parser).map(RequestMethod::Query)
+                            }
+                            (MethodFunction::Set, _) => {
+                                SetRequest::parse(parser).map(RequestMethod::Set)
+                            }
+                            (MethodFunction::Changes, _) => {
+                                ChangesRequest::parse(parser).map(RequestMethod::Changes)
+                            }
+                            (MethodFunction::QueryChanges, _) => {
+                                QueryChangesRequest::parse(parser).map(RequestMethod::QueryChanges)
+                            }
+                            (MethodFunction::Copy, MethodObject::Email) => {
+                                CopyRequest::parse(parser).map(RequestMethod::Copy)
+                            }
+                            (MethodFunction::Copy, MethodObject::Blob) => {
+                                CopyBlobRequest::parse(parser).map(RequestMethod::CopyBlob)
+                            }
+                            (MethodFunction::Import, MethodObject::Email) => {
+                                ImportEmailRequest::parse(parser).map(RequestMethod::ImportEmail)
+                            }
+                            (MethodFunction::Parse, MethodObject::Email) => {
+                                ParseEmailRequest::parse(parser).map(RequestMethod::ParseEmail)
+                            }
+                            (MethodFunction::Validate, MethodObject::SieveScript) => {
+                                ValidateSieveScriptRequest::parse(parser)
+                                    .map(RequestMethod::ValidateScript)
+                            }
+                            (MethodFunction::Echo, MethodObject::Core) => {
+                                Echo::parse(parser).map(RequestMethod::Echo)
+                            }
+                            _ => Err(Error::Method(MethodError::UnknownMethod(
+                                method_name.to_string(),
+                            ))),
+                        };
+
+                        let method = match method {
+                            Ok(method) => method,
+                            Err(Error::Method(err)) => {
+                                parser.skip_token(start_depth_array, start_depth_dict)?;
+                                RequestMethod::Error(err)
+                            }
+                            Err(err) => {
+                                return Err(err.into());
+                            }
+                        };
+
+                        parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
+                        let id = parser.next_token::<String>()?.unwrap_string("")?;
+                        parser
+                            .next_token::<Ignore>()?
+                            .assert_jmap(Token::ArrayEnd)?;
+                        self.method_calls.push(Call {
+                            id,
+                            method,
+                            name: method_name,
+                        });
+                    } else {
+                        return Err(RequestError::limit(RequestLimitError::CallsIn));
+                    }
+                }
+                Ok(true)
+            }
+            0x7364_4964_6574_6165_7263 => {
+                let mut created_ids = HashMap::new();
+                parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
+                while let Some(key) = parser.next_dict_key::<String>()? {
+                    created_ids
+                        .insert(key, parser.next_token::<Id>()?.unwrap_string("createdIds")?);
+                }
+                self.created_ids = Some(created_ids);
+                Ok(true)
+            }
+            _ => {
+                parser.skip_token(parser.depth_array, parser.depth_dict)?;
+                Ok(false)
+            }
         }
     }
 }

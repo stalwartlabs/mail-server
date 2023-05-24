@@ -31,7 +31,7 @@ impl JMAP {
     pub async fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        instance: &ServerInstance,
+        instance: Arc<ServerInstance>,
     ) -> HttpResponse {
         // Parse form
         let client_id = match parse_form_data(req)

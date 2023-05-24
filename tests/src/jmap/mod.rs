@@ -29,6 +29,7 @@ pub mod sieve_script;
 pub mod thread_get;
 pub mod thread_merge;
 pub mod vacation_response;
+pub mod websocket;
 
 const SERVER: &str = r#"
 [server]
@@ -193,9 +194,8 @@ pub async fn jmap_tests() {
     //push_subscription::test(params.server.clone(), &mut params.client).await;
     //sieve_script::test(params.server.clone(), &mut params.client).await;
     //vacation_response::test(params.server.clone(), &mut params.client).await;
-    email_submission::test(params.server.clone(), &mut params.client).await;
-
-    let websockets = "todo";
+    //email_submission::test(params.server.clone(), &mut params.client).await;
+    websocket::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();
