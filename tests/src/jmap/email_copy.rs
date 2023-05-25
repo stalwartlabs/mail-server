@@ -4,6 +4,8 @@ use jmap::JMAP;
 use jmap_client::{client::Client, mailbox::Role};
 use jmap_proto::types::id::Id;
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
+
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Copy tests...");
 
@@ -88,11 +90,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .is_none());
 
     // Empty store
-    client.mailbox_destroy(&ac1_mailbox_id, true).await.unwrap();
-    client
-        .set_default_account_id(Id::new(2).to_string())
-        .mailbox_destroy(&ac2_mailbox_id, true)
-        .await
-        .unwrap();
+    destroy_all_mailboxes(client).await;
+    client.set_default_account_id(Id::new(2).to_string());
+    destroy_all_mailboxes(client).await;
     server.store.assert_is_empty().await;
 }

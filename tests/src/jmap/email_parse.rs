@@ -8,7 +8,7 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 
-use crate::jmap::{email_get::all_headers, replace_blob_ids};
+use crate::jmap::{email_get::all_headers, mailbox::destroy_all_mailboxes, replace_blob_ids};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Parse tests...");
@@ -218,7 +218,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         panic!("Test failed, output saved to {}", test_file.display());
     }
 
-    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    destroy_all_mailboxes(client).await;
 
     server.store.assert_is_empty().await;
 }

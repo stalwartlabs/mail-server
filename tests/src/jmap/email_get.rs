@@ -23,16 +23,15 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use jmap::JMAP;
+use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{
     client::Client,
     email::{self, Header, HeaderForm},
-    mailbox::Role,
 };
 use jmap_proto::types::id::Id;
 use mail_parser::{HeaderName, RfcHeader};
 
-use crate::jmap::replace_blob_ids;
+use crate::jmap::{mailbox::destroy_all_mailboxes, replace_blob_ids};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Get tests...");
@@ -41,12 +40,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     test_dir.push("resources");
     test_dir.push("jmap_mail_get");
 
-    let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
-        .mailbox_create("JMAP Get", None::<String>, Role::None)
-        .await
-        .unwrap()
-        .take_id();
+    let mailbox_id = Id::from(INBOX_ID).to_string();
+    client.set_default_account_id(Id::from(1u64));
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
@@ -180,7 +175,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    destroy_all_mailboxes(client).await;
 
     server.store.assert_is_empty().await;
 }

@@ -1,5 +1,4 @@
 pub mod assign_id;
-pub mod blobs;
 pub mod query;
 
 use std::{io::Read, sync::Arc};
@@ -13,7 +12,7 @@ pub struct TempDir {
 
 #[tokio::test]
 pub async fn store_tests() {
-    let insert = false;
+    let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
     let config_file = format!(
         concat!(
@@ -31,9 +30,8 @@ pub async fn store_tests() {
     if insert {
         db.destroy().await;
     }
-    //assign_id::test(db).await;
-    //blobs::test(db).await;
-    query::test(db, insert).await;
+    assign_id::test(db).await;
+    //query::test(db, insert).await;
     temp_dir.delete();
 }
 

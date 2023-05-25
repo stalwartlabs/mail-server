@@ -4,6 +4,8 @@ use jmap::JMAP;
 use jmap_client::{client::Client, mailbox::Role};
 use jmap_proto::types::id::Id;
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
+
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Thread tests...");
 
@@ -41,7 +43,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         expected_result
     );
 
-    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
-
+    destroy_all_mailboxes(client).await;
     server.store.assert_is_empty().await;
 }

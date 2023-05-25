@@ -18,6 +18,7 @@ use jmap_proto::{
 use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
 use services::{
     delivery::spawn_delivery_manager,
+    housekeeper::{self, init_housekeeper, spawn_housekeeper},
     state::{self, init_state_manager, spawn_state_manager},
 };
 use smtp::core::SMTP;
@@ -65,6 +66,7 @@ pub struct JMAP {
     pub auth_db: AuthDatabase,
 
     pub state_tx: mpsc::Sender<state::Event>,
+    pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
     pub smtp: Arc<SMTP>,
 
     pub sieve_compiler: Compiler,
@@ -220,8 +222,9 @@ impl JMAP {
             _ => failed("Invalid auth database type"),
         };
 
-        // Init state manager
+        // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
+        let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
 
         let jmap_server = Arc::new(JMAP {
             store: Store::open(config).await.failed("Unable to open database"),
@@ -247,6 +250,7 @@ impl JMAP {
             ),
             auth_db,
             state_tx,
+            housekeeper_tx,
             smtp,
             sieve_compiler: Compiler::new()
                 .with_max_script_size(
@@ -390,6 +394,9 @@ impl JMAP {
 
         // Spawn state manager
         spawn_state_manager(jmap_server.clone(), config, state_rx);
+
+        // Spawn housekeeper
+        spawn_housekeeper(jmap_server.clone(), config, housekeeper_rx);
 
         Ok(jmap_server)
     }

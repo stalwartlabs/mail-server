@@ -357,6 +357,7 @@ impl Store {
             );
         }
 
+        self.purge_bitmaps().await.unwrap();
         let mut query = conn
             .conn
             .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b")
@@ -371,6 +372,12 @@ impl Store {
                     panic!("Table bitmaps is not empty: {key:?} {bit_pos} {bit_value}");
                 }
             }
+            panic!("Table bitmaps failed to purge, found key: {key:?}");
         }
+
+        // Delete logs
+        conn.conn.execute("DELETE FROM l", []).unwrap();
+
+        self.id_assigner.lock().clear();
     }
 }

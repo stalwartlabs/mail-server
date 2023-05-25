@@ -95,6 +95,8 @@ const FIELDS_OPTIONS: [FieldType; 20] = [
 
 #[allow(clippy::mutex_atomic)]
 pub async fn test(db: Arc<Store>, do_insert: bool) {
+    println!("Running Store query tests...");
+
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(8)
         .build()

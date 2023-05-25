@@ -118,7 +118,7 @@ impl JMAP {
             }
         }
 
-        for id in ids {
+        'outer: for id in ids {
             // Obtain the email object
             if !message_ids.contains(id.document_id()) {
                 response.not_found.push(id);
@@ -198,9 +198,8 @@ impl JMAP {
                         email.append(Property::BlobId, blob_id.clone());
                     }
                     Property::MailboxIds => {
-                        email.append(
-                            property.clone(),
-                            self.get_property::<Vec<u32>>(
+                        if let Some(mailboxes) = self
+                            .get_property::<Vec<u32>>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
@@ -214,13 +213,21 @@ impl JMAP {
                                 }
                                 Value::Object(obj)
                             })
-                            .unwrap_or(Value::Null),
-                        );
+                        {
+                            email.append(property.clone(), mailboxes);
+                        } else {
+                            tracing::debug!(event = "not-found",
+                                            account_id = account_id,
+                                            collection = ?Collection::Email,
+                                            document_id = id.document_id(),
+                                            "Mailbox property not found");
+                            response.not_found.push(id);
+                            continue 'outer;
+                        }
                     }
                     Property::Keywords => {
-                        email.append(
-                            property.clone(),
-                            self.get_property::<Vec<Keyword>>(
+                        if let Some(keywords) = self
+                            .get_property::<Vec<Keyword>>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
@@ -234,8 +241,17 @@ impl JMAP {
                                 }
                                 Value::Object(obj)
                             })
-                            .unwrap_or(Value::Null),
-                        );
+                        {
+                            email.append(property.clone(), keywords);
+                        } else {
+                            tracing::debug!(event = "not-found",
+                                account_id = account_id,
+                                collection = ?Collection::Email,
+                                document_id = id.document_id(),
+                                "Keywords property not found");
+                            response.not_found.push(id);
+                            continue 'outer;
+                        }
                     }
                     Property::Size
                     | Property::ReceivedAt

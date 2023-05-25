@@ -5,6 +5,8 @@ use jmap_client::{client::Client, email, mailbox::Role};
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
+
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Merge Threads tests...");
     let mut all_mailboxes = AHashMap::default();
@@ -173,12 +175,9 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Delete all messages and make sure no keys are left in the store.
     for (base_test_num, mailbox_ids) in all_mailboxes {
-        for (test_num, mailbox_id) in mailbox_ids.into_iter().enumerate() {
-            client
-                .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string())
-                .mailbox_destroy(&mailbox_id, true)
-                .await
-                .unwrap();
+        for (test_num, _) in mailbox_ids.into_iter().enumerate() {
+            client.set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string());
+            destroy_all_mailboxes(client).await;
         }
     }
 

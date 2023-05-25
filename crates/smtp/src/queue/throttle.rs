@@ -73,8 +73,8 @@ impl QueueCore {
                                 parent: span,
                                 context = "throttle",
                                 event = "rate-limit-exceeded",
-                                max_requests = limiter.max_requests as u64,
-                                max_interval = limiter.max_interval as u64,
+                                max_requests = limiter.max_requests,
+                                max_interval = limiter.max_interval.as_secs(),
                                 "Queue rate limit exceeded."
                             );
                             return Err(Error::Rate {
@@ -92,7 +92,7 @@ impl QueueCore {
                         limiter
                     });
                     let rate = throttle.rate.as_ref().map(|rate| {
-                        let mut r = RateLimiter::new(rate.requests, rate.period.as_secs());
+                        let mut r = RateLimiter::new(rate.requests, rate.period);
                         r.is_allowed();
                         r
                     });

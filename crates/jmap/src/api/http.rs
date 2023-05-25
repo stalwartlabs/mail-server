@@ -14,6 +14,8 @@ use jmap_proto::{
     response::Response,
     types::{blob::BlobId, id::Id},
 };
+use serde_json::Value;
+use store::BlobKind;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -25,7 +27,7 @@ use crate::{
     blob::{DownloadResponse, UploadResponse},
     services::state,
     websocket::upgrade::upgrade_websocket_connection,
-    JMAP,
+    JMAP, SUPERUSER_ID,
 };
 
 use super::{
@@ -111,6 +113,7 @@ pub async fn parse_jmap_request(
                                             .and_then(|h| h.to_str().ok())
                                             .unwrap_or("application/octet-stream"),
                                         &bytes,
+                                        acl_token,
                                     )
                                     .await
                                 {
@@ -198,6 +201,81 @@ pub async fn parse_jmap_request(
                         Ok(_) => jmap.handle_token_request(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
+                }
+                _ => (),
+            }
+        }
+
+        "admin" => {
+            // Make sure the user is a superuser
+            match jmap.authenticate_headers(&req, remote_ip).await {
+                Ok(Some((_, acl_token))) if acl_token.primary_id() == SUPERUSER_ID => (),
+                Ok(_) => return RequestError::unauthorized().into_http_response(),
+                Err(err) => return err.into_http_response(),
+            }
+
+            match (
+                path.next().unwrap_or(""),
+                path.next().unwrap_or(""),
+                req.method(),
+            ) {
+                ("account", "delete", &Method::GET) => {
+                    return if let Some(account_id) = path.next().and_then(|s| s.parse::<u32>().ok())
+                    {
+                        match jmap.delete_account(account_id).await {
+                            Ok(_) => JsonResponse::new(Value::String("success".into()))
+                                .into_http_response(),
+                            Err(err) => RequestError::blank(
+                                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                                "Account deletion failed",
+                                err.to_string(),
+                            )
+                            .into_http_response(),
+                        }
+                    } else {
+                        RequestError::blank(
+                            StatusCode::BAD_REQUEST.as_u16(),
+                            "Invalid parameters",
+                            "Expected account id",
+                        )
+                        .into_http_response()
+                    };
+                }
+                ("blob", "purge", &Method::GET) => {
+                    let mut date = [u16::MAX; 3];
+                    for part in date.iter_mut() {
+                        if let Some(item) = path.next().and_then(|s| s.parse::<u16>().ok()) {
+                            *part = item;
+                        } else {
+                            return RequestError::blank(
+                                StatusCode::BAD_REQUEST.as_u16(),
+                                "Invalid parameters",
+                                "Expected YYYY/MM/DD date",
+                            )
+                            .into_http_response();
+                        }
+                    }
+                    return match jmap
+                        .store
+                        .bulk_delete_blob(&BlobKind::Temporary {
+                            creation_year: date[0],
+                            creation_month: date[1] as u8,
+                            creation_day: date[2] as u8,
+                            account_id: 0,
+                            seq: 0,
+                        })
+                        .await
+                    {
+                        Ok(_) => {
+                            JsonResponse::new(Value::String("success".into())).into_http_response()
+                        }
+                        Err(err) => RequestError::blank(
+                            StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                            "Purge blob failed",
+                            err.to_string(),
+                        )
+                        .into_http_response(),
+                    };
                 }
                 _ => (),
             }

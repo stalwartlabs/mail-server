@@ -23,7 +23,7 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use jmap::JMAP;
+use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{
     client::Client,
     core::set::{SetError, SetErrorType},
@@ -33,22 +33,20 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
+
 use super::{find_values, replace_blob_ids, replace_boundaries, replace_values};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Set tests...");
 
-    let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
-        .mailbox_create("JMAP Set", None::<String>, Role::None)
-        .await
-        .unwrap()
-        .take_id();
+    let mailbox_id = Id::from(INBOX_ID).to_string();
+    client.set_default_account_id(Id::from(1u64));
 
     create(client, &mailbox_id).await;
     update(client, &mailbox_id).await;
 
-    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
+    destroy_all_mailboxes(client).await;
 
     server.store.assert_is_empty().await;
 }

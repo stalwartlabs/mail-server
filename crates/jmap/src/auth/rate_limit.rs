@@ -35,7 +35,7 @@ impl JMAP {
             let limiter = Arc::new(Mutex::new(AuthenticatedLimiter {
                 request_limiter: RateLimiter::new(
                     self.config.rate_authenticated.requests,
-                    self.config.rate_authenticated.period.as_secs(),
+                    self.config.rate_authenticated.period,
                 ),
                 concurrent_requests: ConcurrencyLimiter::new(self.config.request_max_concurrent),
                 concurrent_uploads: ConcurrencyLimiter::new(
@@ -56,11 +56,11 @@ impl JMAP {
             let limiter = Arc::new(Mutex::new(AnonymousLimiter {
                 request_limiter: RateLimiter::new(
                     self.config.rate_anonymous.requests,
-                    self.config.rate_anonymous.period.as_secs(),
+                    self.config.rate_anonymous.period,
                 ),
                 auth_limiter: RateLimiter::new(
                     self.config.rate_authenticate_req.requests,
-                    self.config.rate_authenticate_req.period.as_secs(),
+                    self.config.rate_authenticate_req.period,
                 ),
             }));
             self.rate_limit_unauth.insert(

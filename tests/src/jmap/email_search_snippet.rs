@@ -1,19 +1,17 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
-use jmap::JMAP;
-use jmap_client::{client::Client, core::query, email::query::Filter, mailbox::Role};
+use jmap::{mailbox::INBOX_ID, JMAP};
+use jmap_client::{client::Client, core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashMap;
+
+use crate::jmap::mailbox::destroy_all_mailboxes;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running SearchSnippet tests...");
 
-    let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
-        .mailbox_create("JMAP SearchSnippet", None::<String>, Role::None)
-        .await
-        .unwrap()
-        .take_id();
+    let mailbox_id = Id::from(INBOX_ID).to_string();
+    client.set_default_account_id(Id::from(1u64));
 
     let mut email_ids = AHashMap::default();
 
@@ -157,7 +155,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     // Destroy test data
-    client.mailbox_destroy(&mailbox_id, true).await.unwrap();
-
+    destroy_all_mailboxes(client).await;
     server.store.assert_is_empty().await;
 }

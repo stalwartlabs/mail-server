@@ -7,7 +7,7 @@ use tokio::{
 
 use crate::{BlobKind, Store};
 
-use super::{get_path, BlobStore};
+use super::{get_path, get_root_path, BlobStore};
 
 impl Store {
     pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> crate::Result<bool> {
@@ -71,6 +71,15 @@ impl Store {
                     Ok(false)
                 }
             }
+            BlobStore::Remote(_) => todo!(),
+        }
+    }
+
+    pub async fn bulk_delete_blob(&self, kind: &BlobKind) -> crate::Result<()> {
+        match &self.blob {
+            BlobStore::Local(base_path) => fs::remove_dir_all(get_root_path(base_path, kind)?)
+                .await
+                .map_err(Into::into),
             BlobStore::Remote(_) => todo!(),
         }
     }

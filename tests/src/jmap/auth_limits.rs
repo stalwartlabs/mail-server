@@ -18,8 +18,9 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .to_string();
     test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;
 
-    // Wait for rate limit to be restored after running previous tests
-    //tokio::time::sleep(Duration::from_secs(1)).await;
+    // Reset rate limiters
+    server.rate_limit_auth.lock().clear();
+    server.rate_limit_unauth.lock().clear();
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(

@@ -60,7 +60,7 @@ impl SMTP {
                     .map_or(false, |c| c.concurrent.load(Ordering::Relaxed) > 0)
                     || v.rate
                         .as_ref()
-                        .map_or(false, |r| r.elapsed().as_secs_f64() < r.max_interval)
+                        .map_or(false, |r| r.elapsed() < r.max_interval)
             });
         }
         self.queue.quota.retain(|_, v| {

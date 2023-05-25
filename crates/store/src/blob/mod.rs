@@ -65,3 +65,25 @@ fn get_path(base_path: &Path, kind: &BlobKind) -> crate::Result<PathBuf> {
 
     Ok(path)
 }
+
+fn get_root_path(base_path: &Path, kind: &BlobKind) -> crate::Result<PathBuf> {
+    let mut path = base_path.to_path_buf();
+    match kind {
+        BlobKind::Linked { account_id, .. } | BlobKind::LinkedMaildir { account_id, .. } => {
+            path.push(format!("{:x}", account_id));
+        }
+        BlobKind::Temporary {
+            creation_year,
+            creation_month,
+            creation_day,
+            ..
+        } => {
+            path.push("tmp");
+            path.push(creation_year.to_string());
+            path.push(creation_month.to_string());
+            path.push(creation_day.to_string());
+        }
+    }
+
+    Ok(path)
+}

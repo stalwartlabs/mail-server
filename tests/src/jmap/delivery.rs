@@ -22,7 +22,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     let account_id_2 = test_account_create(&server, "jane@example.com", "abcdef", "Jane Smith")
         .await
         .to_string();
-    let account_id_3 = test_account_create(&server, "bill@example.com", "12345", "Bill Foobar")
+    let account_id_3 = test_account_create(&server, "bill@example.com", "098765", "Bill Foobar")
         .await
         .to_string();
     test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;

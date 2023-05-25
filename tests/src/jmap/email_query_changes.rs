@@ -13,7 +13,10 @@ use store::{
     write::{log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
 };
 
-use crate::jmap::email_changes::{LogAction, ParseState};
+use crate::jmap::{
+    email_changes::{LogAction, ParseState},
+    mailbox::destroy_all_mailboxes,
+};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email QueryChanges tests...");
@@ -260,8 +263,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         states.push(new_state);
     }
 
-    client.mailbox_destroy(&mailbox1_id, true).await.unwrap();
-    client.mailbox_destroy(&mailbox2_id, true).await.unwrap();
+    destroy_all_mailboxes(client).await;
 
     server.store.assert_is_empty().await;
 }

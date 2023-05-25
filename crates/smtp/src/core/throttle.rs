@@ -29,6 +29,7 @@ use utils::config::Rate;
 use std::{
     hash::{BuildHasher, Hash, Hasher},
     net::IpAddr,
+    time::Duration,
 };
 
 use crate::config::*;
@@ -244,8 +245,8 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                                     parent: &self.span,
                                     context = "throttle",
                                     event = "rate-limit-exceeded",
-                                    max_requests = limiter.max_requests as u64,
-                                    max_interval = limiter.max_interval as u64,
+                                    max_requests = limiter.max_requests,
+                                    max_interval = limiter.max_interval.as_secs(),
                                     "Rate limit exceeded."
                                 );
                                 return false;
@@ -263,7 +264,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                         let rate = t.rate.as_ref().map(|rate| {
                             let mut r = RateLimiter::new(
                                 rate.requests,
-                                std::cmp::min(rate.period.as_secs(), 1),
+                                std::cmp::min(rate.period, Duration::from_secs(1)),
                             );
                             r.is_allowed();
                             r
@@ -297,7 +298,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 }
             }
             Entry::Vacant(e) => {
-                let mut limiter = RateLimiter::new(rate.requests, rate.period.as_secs());
+                let mut limiter = RateLimiter::new(rate.requests, rate.period);
                 limiter.is_allowed();
                 e.insert(Limiter {
                     rate: limiter.into(),

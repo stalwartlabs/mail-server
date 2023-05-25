@@ -5,6 +5,8 @@ use store::ahash::AHashSet;
 use store::{write::BatchBuilder, Store};
 
 pub async fn test(db: Arc<Store>) {
+    println!("Running Store ID assignment tests...");
+
     test_1(db.clone()).await;
     test_2(db.clone()).await;
     test_3(db.clone()).await;

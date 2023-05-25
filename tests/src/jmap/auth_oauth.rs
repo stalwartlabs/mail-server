@@ -15,11 +15,11 @@ use store::ahash::AHashMap;
 
 use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create};
 
-pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
+pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running OAuth tests...");
 
     // Create test account
-    let john_id = test_account_create(&server, "jdoe@example.com", "abcde", "John Doe")
+    let john_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
         .await
         .to_string();
 
@@ -53,7 +53,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     );
 
     // Authenticate with the correct password
-    auth_request.insert("password".to_string(), "abcde".to_string());
+    auth_request.insert("password".to_string(), "12345".to_string());
     auth_request.insert(
         "code".to_string(),
         parse_code_input(get_bytes(&auth_endpoint).await),
@@ -170,7 +170,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_client_auth(
         "jdoe@example.com",
-        "abcde",
+        "12345",
         &device_response,
         "Invalid or expired authentication code.",
     )
@@ -189,7 +189,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
         "device_code".to_string(),
         device_response.device_code.to_string(),
     );
-    assert_client_auth("jdoe@example.com", "abcde", &device_response, "successful").await;
+    assert_client_auth("jdoe@example.com", "12345", &device_response, "successful").await;
 
     // Obtain token
     let (token, refresh_token, _) =
@@ -205,7 +205,7 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     );
 
     // Connect to account using token and attempt to search
-    let mut john_client = Client::new()
+    let john_client = Client::new()
         .credentials(Credentials::bearer(&token))
         .accept_invalid_certs(true)
         .connect("https://127.0.0.1:8899")
@@ -270,7 +270,8 @@ pub async fn test(server: Arc<JMAP>, _client: &mut Client) {
     );
 
     // Destroy test accounts
-    destroy_all_mailboxes(&mut john_client).await;
+    admin_client.set_default_account_id(john_id);
+    destroy_all_mailboxes(admin_client).await;
     server.store.assert_is_empty().await;
 }
 

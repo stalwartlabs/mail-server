@@ -1,6 +1,7 @@
 pub mod id_assign;
 pub mod main;
 pub mod pool;
+pub mod purge;
 pub mod read;
 pub mod write;
 

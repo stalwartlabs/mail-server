@@ -8,10 +8,10 @@ use std::{
 
 #[derive(Debug)]
 pub struct RateLimiter {
-    pub max_requests: f64,
-    pub max_interval: f64,
+    pub max_requests: u64,
+    pub max_interval: Duration,
     last_refill: Instant,
-    tokens: f64,
+    tokens: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -32,25 +32,24 @@ impl Drop for InFlight {
 }
 
 impl RateLimiter {
-    pub fn new(max_requests: u64, max_interval: u64) -> Self {
+    pub fn new(max_requests: u64, max_interval: Duration) -> Self {
         RateLimiter {
-            max_requests: max_requests as f64,
-            max_interval: max_interval as f64,
+            max_requests,
+            max_interval,
             last_refill: Instant::now(),
-            tokens: max_requests as f64,
+            tokens: max_requests,
         }
     }
 
     pub fn is_allowed(&mut self) -> bool {
         // Check rate limit
-        let elapsed = self.last_refill.elapsed().as_secs_f64();
-        self.last_refill = Instant::now();
-        self.tokens += elapsed * (self.max_requests / self.max_interval);
-        if self.tokens > self.max_requests {
+        if self.last_refill.elapsed() >= self.max_interval {
+            self.last_refill = Instant::now();
             self.tokens = self.max_requests;
         }
-        if self.tokens >= 1.0 {
-            self.tokens -= 1.0;
+
+        if self.tokens >= 1 {
+            self.tokens -= 1;
             true
         } else {
             false
@@ -59,9 +58,10 @@ impl RateLimiter {
 
     pub fn retry_at(&self) -> Instant {
         Instant::now()
-            + Duration::from_secs(
-                (self.max_interval as u64).saturating_sub(self.last_refill.elapsed().as_secs()),
-            )
+            + (self
+                .max_interval
+                .checked_sub(self.last_refill.elapsed())
+                .unwrap_or_default())
     }
 
     pub fn elapsed(&self) -> Duration {

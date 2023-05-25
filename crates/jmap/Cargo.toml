@@ -36,6 +36,7 @@ sha2 = "0.10.1"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"]}
 tokio-tungstenite = "0.19.0"
 tungstenite = "0.19.0"
+chrono = "0.4"
 
 [dev-dependencies]
 ece = "2.2"

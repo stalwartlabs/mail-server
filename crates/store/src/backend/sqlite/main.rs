@@ -13,29 +13,39 @@ use crate::{
 use super::pool::SqliteConnectionManager;
 
 impl Store {
-    // TODO configure rayon thread pool
-    // TODO configure r2d2 pool
-    // TODO configure id assigner size
     pub async fn open(config: &Config) -> crate::Result<Self> {
         let db = Self {
-            conn_pool: Pool::new(
-                SqliteConnectionManager::file(
+            conn_pool: Pool::builder()
+                .max_size(config.property_or_static("store.db.connection-pool.size", "10")?)
+                .build(
+                    SqliteConnectionManager::file(
+                        config
+                            .value_require("store.db.path")
+                            .failed("Invalid configuration file"),
+                    )
+                    .with_init(|c| {
+                        c.execute_batch(concat!(
+                            "PRAGMA journal_mode = WAL; ",
+                            "PRAGMA synchronous = NORMAL; ",
+                            "PRAGMA temp_store = memory;",
+                            "PRAGMA busy_timeout = 30000;"
+                        ))
+                    }),
+                )?,
+            worker_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(
                     config
-                        .value_require("store.db.path")
-                        .failed("Invalid configuration file"),
+                        .property::<usize>("store.db.worker-pool.size")?
+                        .filter(|v| *v > 0)
+                        .unwrap_or_else(num_cpus::get),
                 )
-                .with_init(|c| {
-                    c.execute_batch(concat!(
-                        "PRAGMA journal_mode = WAL; ",
-                        "PRAGMA synchronous = normal; ",
-                        "PRAGMA temp_store = memory;"
-                    ))
-                }),
-            )?,
-            worker_pool: rayon::ThreadPoolBuilder::new().build().map_err(|err| {
-                crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
-            })?,
-            id_assigner: Arc::new(Mutex::new(LruCache::new(1000))),
+                .build()
+                .map_err(|err| {
+                    crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
+                })?,
+            id_assigner: Arc::new(Mutex::new(LruCache::new(
+                config.property_or_static("store.db.id-cache.size", "1000")?,
+            ))),
             blob: BlobStore::new(config).await?,
         };
         db.create_tables()?;

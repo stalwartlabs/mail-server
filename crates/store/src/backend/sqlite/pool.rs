@@ -79,6 +79,12 @@ impl SqliteConnectionManager {
     }
 }
 
+fn sleeper(attempts: i32) -> bool {
+    tracing::debug!("SQLITE_BUSY, retrying after 200ms (attempt {})", attempts);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    true
+}
+
 impl r2d2::ManageConnection for SqliteConnectionManager {
     type Connection = Connection;
     type Error = rusqlite::Error;
@@ -89,9 +95,12 @@ impl r2d2::ManageConnection for SqliteConnectionManager {
             Source::Memory => Connection::open_in_memory_with_flags(self.flags),
         }
         .map_err(Into::into)
-        .and_then(|mut c| match self.init {
-            None => Ok(c),
-            Some(ref init) => init(&mut c).map(|_| c),
+        .and_then(|mut c| {
+            c.busy_handler(Some(sleeper))?;
+            match self.init {
+                None => Ok(c),
+                Some(ref init) => init(&mut c).map(|_| c),
+            }
         })
     }
 

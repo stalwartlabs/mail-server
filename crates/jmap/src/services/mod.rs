@@ -1,4 +1,5 @@
 pub mod delivery;
+pub mod housekeeper;
 pub mod ingest;
 pub mod state;
 

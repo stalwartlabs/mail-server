@@ -10,7 +10,10 @@ use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::RfcHeader;
 use store::{ahash::AHashMap, write::BatchBuilder};
 
-use crate::store::{deflate_artwork_data, query::FIELDS};
+use crate::{
+    jmap::mailbox::destroy_all_mailboxes,
+    store::{deflate_artwork_data, query::FIELDS},
+};
 
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
@@ -18,7 +21,7 @@ const MAX_MESSAGES_PER_THREAD: usize = 100;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
     println!("Running Email Query tests...");
-
+    client.set_default_account_id(Id::new(1));
     if insert {
         // Add some "virtual" mailbox ids so create doesn't fail
         let mut batch = BatchBuilder::new();
@@ -88,6 +91,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
         .unwrap_set_email()
         .unwrap();
 
+    destroy_all_mailboxes(client).await;
     server.store.assert_is_empty().await;
 }
 

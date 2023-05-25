@@ -16,8 +16,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running EventSource tests...");
 
     // Create test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe").await;
-    let mut client = test_account_login("jdoe@example.com", "12345").await;
+    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
+        .await
+        .to_string();
+    let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut changes = client
         .event_source(None::<Vec<_>>, false, 1.into(), None)
@@ -39,12 +41,11 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Create mailbox and expect state change
     let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("EventSource Test", None::<String>, Role::None)
         .await
         .unwrap()
         .take_id();
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Multiple changes should be grouped and delivered in intervals
     for num in 0..5 {
@@ -53,7 +54,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             .await
             .unwrap();
     }
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
     assert_ping(&mut event_rx).await; // Pings are only received in cfg(test)
 
     // Ingest email and expect state change
@@ -75,6 +76,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     assert_state(
         &mut event_rx,
+        &account_id,
         &[
             TypeState::EmailDelivery,
             TypeState::Email,
@@ -87,7 +89,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Destroy mailbox
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Destroy Inbox
     admin_client.set_default_account_id(&account_id.to_string());
@@ -97,6 +99,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .unwrap();
     assert_state(
         &mut event_rx,
+        &account_id,
         &[TypeState::Email, TypeState::Thread, TypeState::Mailbox],
     )
     .await;
@@ -107,12 +110,16 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     server.store.assert_is_empty().await;
 }
 
-async fn assert_state(event_rx: &mut mpsc::Receiver<Changes>, state: &[TypeState]) {
+async fn assert_state(
+    event_rx: &mut mpsc::Receiver<Changes>,
+    account_id: &str,
+    state: &[TypeState],
+) {
     match tokio::time::timeout(Duration::from_millis(700), event_rx.recv()).await {
         Ok(Some(changes)) => {
             assert_eq!(
                 changes
-                    .changes(&Id::new(1).to_string())
+                    .changes(account_id)
                     .unwrap()
                     .map(|x| x.0)
                     .collect::<AHashSet<&TypeState>>(),

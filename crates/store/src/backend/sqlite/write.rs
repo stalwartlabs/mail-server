@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
     write::{Batch, Operation},
@@ -73,7 +73,7 @@ impl Store {
             let mut bitmap_col_num = 0;
             let mut bitmap_value_set = 0i64;
             let mut bitmap_value_clear = 0i64;
-            let trx = conn.transaction()?;
+            let trx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             for op in &batch.ops {
                 match op {

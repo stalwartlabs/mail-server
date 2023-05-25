@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use jmap_proto::{
     error::{method::MethodError, request::RequestError},
     types::{blob::BlobId, id::Id},
 };
 use store::BlobKind;
 
-use crate::JMAP;
+use crate::{auth::AclToken, JMAP};
 
 use super::UploadResponse;
 
@@ -14,9 +16,10 @@ impl JMAP {
         account_id: Id,
         content_type: &str,
         data: &[u8],
+        acl_token: Arc<AclToken>,
     ) -> Result<UploadResponse, RequestError> {
         // Limit concurrent uploads
-        let _in_flight = self.is_upload_allowed(account_id.document_id())?;
+        let _in_flight = self.is_upload_allowed(acl_token.primary_id())?;
 
         #[cfg(feature = "test_mode")]
         {

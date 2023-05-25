@@ -41,6 +41,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Mailbox tests...");
 
     // Create test mailboxes
+    client.set_default_account_id(Id::from(0u64));
     let id_map = create_test_mailboxes(client).await;
 
     // Sort by name
@@ -604,7 +605,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     );
 
     destroy_all_mailboxes(client).await;
-
+    client.set_default_account_id(Id::from(1u64));
     server.store.assert_is_empty().await;
 }
 
@@ -653,7 +654,7 @@ fn build_create_query(
     }
 }
 
-pub async fn destroy_all_mailboxes(client: &mut Client) {
+pub async fn destroy_all_mailboxes(client: &Client) {
     let mut request = client.build();
     request.query_mailbox().arguments().sort_as_tree(true);
     let mut ids = request.send_query_mailbox().await.unwrap().take_ids();

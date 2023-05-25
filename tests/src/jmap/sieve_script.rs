@@ -375,6 +375,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .sieve_script_create("test_notify_fcc", get_script("test_notify_fcc"), true)
         .await
         .unwrap();
+    smtp_settings.lock().do_stop = true;
     lmtp.ingest(
         "bill@remote.org",
         &["jdoe@example.com"],
@@ -451,8 +452,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
         panic!("Email {:?} not found in: {:#?}", subject, emails);
     }
-
-    smtp_settings.lock().do_stop = true;
 
     // Remove test data
     client.sieve_script_deactivate().await.unwrap();

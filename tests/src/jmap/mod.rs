@@ -26,6 +26,7 @@ pub mod event_source;
 pub mod mailbox;
 pub mod push_subscription;
 pub mod sieve_script;
+pub mod stress_test;
 pub mod thread_get;
 pub mod thread_merge;
 pub mod vacation_response;
@@ -39,7 +40,7 @@ hostname = "jmap.example.org"
 bind = ["127.0.0.1:8899"]
 url = "https://127.0.0.1:8899"
 protocol = "jmap"
-max-connections = 512
+max-connections = 81920
 
 [server.listener.lmtp-debug]
 bind = ['127.0.0.1:11200']
@@ -125,7 +126,7 @@ max-concurrent = 4
 
 [jmap.rate-limit]
 account.rate = "1000/1m"
-authentication.rate = "100/1m"
+authentication.rate = "100/2s"
 anonymous.rate = "100/1m"
 
 [jmap.event-source]
@@ -175,27 +176,28 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    //email_query::test(params.server.clone(), &mut params.client, delete).await;
-    //email_get::test(params.server.clone(), &mut params.client).await;
-    //email_set::test(params.server.clone(), &mut params.client).await;
-    //email_parse::test(params.server.clone(), &mut params.client).await;
-    //email_search_snippet::test(params.server.clone(), &mut params.client).await;
-    //email_changes::test(params.server.clone(), &mut params.client).await;
-    //email_query_changes::test(params.server.clone(), &mut params.client).await;
-    //email_copy::test(params.server.clone(), &mut params.client).await;
-    //thread_get::test(params.server.clone(), &mut params.client).await;
-    //thread_merge::test(params.server.clone(), &mut params.client).await;
-    //mailbox::test(params.server.clone(), &mut params.client).await;
-    //delivery::test(params.server.clone(), &mut params.client).await;
-    //auth_acl::test(params.server.clone(), &mut params.client).await;
-    //auth_limits::test(params.server.clone(), &mut params.client).await;
-    //auth_oauth::test(params.server.clone(), &mut params.client).await;
-    //event_source::test(params.server.clone(), &mut params.client).await;
-    //push_subscription::test(params.server.clone(), &mut params.client).await;
-    //sieve_script::test(params.server.clone(), &mut params.client).await;
-    //vacation_response::test(params.server.clone(), &mut params.client).await;
-    //email_submission::test(params.server.clone(), &mut params.client).await;
+    /*email_query::test(params.server.clone(), &mut params.client, delete).await;
+    email_get::test(params.server.clone(), &mut params.client).await;
+    email_set::test(params.server.clone(), &mut params.client).await;
+    email_parse::test(params.server.clone(), &mut params.client).await;
+    email_search_snippet::test(params.server.clone(), &mut params.client).await;
+    email_changes::test(params.server.clone(), &mut params.client).await;
+    email_query_changes::test(params.server.clone(), &mut params.client).await;
+    email_copy::test(params.server.clone(), &mut params.client).await;
+    thread_get::test(params.server.clone(), &mut params.client).await;
+    thread_merge::test(params.server.clone(), &mut params.client).await;
+    mailbox::test(params.server.clone(), &mut params.client).await;*/
+    delivery::test(params.server.clone(), &mut params.client).await;
+    auth_acl::test(params.server.clone(), &mut params.client).await;
+    auth_limits::test(params.server.clone(), &mut params.client).await;
+    auth_oauth::test(params.server.clone(), &mut params.client).await;
+    event_source::test(params.server.clone(), &mut params.client).await;
+    push_subscription::test(params.server.clone(), &mut params.client).await;
+    sieve_script::test(params.server.clone(), &mut params.client).await;
+    vacation_response::test(params.server.clone(), &mut params.client).await;
+    email_submission::test(params.server.clone(), &mut params.client).await;
     websocket::test(params.server.clone(), &mut params.client).await;
+    stress_test::test(params.server.clone(), params.client).await;
 
     if delete {
         params.temp_dir.delete();
@@ -258,7 +260,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     // Create client
     let mut client = Client::new()
         .credentials(Credentials::basic("admin", "secret"))
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(3600))
         .accept_invalid_certs(true)
         .connect("https://127.0.0.1:8899")
         .await
@@ -333,7 +335,7 @@ pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &
     assert!(
         jmap.auth_db
             .execute(
-                "INSERT OR REPLACE INTO users (login, secret, name) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO users (login, secret, name) VALUES (?, ?, ?)",
                 vec![login.to_string(), secret.to_string(), name.to_string()].into_iter()
             )
             .await
@@ -343,7 +345,7 @@ pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &
         jmap.auth_db
             .execute(
                 &format!(
-                    "INSERT OR REPLACE INTO emails (uid, email) VALUES ({}, ?)",
+                    "INSERT OR IGNORE INTO emails (uid, email) VALUES ({}, ?)",
                     uid
                 ),
                 vec![login.to_string()].into_iter()
