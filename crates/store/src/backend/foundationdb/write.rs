@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use foundationdb::{
     options::{MutationType, StreamingMode},
     FdbError, KeySelector, RangeOption,
@@ -13,32 +13,44 @@ use crate::{
         key::{DeserializeBigEndian, KeySerializer},
         now, Batch, Operation,
     },
-    AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, BM_DOCUMENT_IDS,
-    SUBSPACE_VALUES,
+    AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, SUBSPACE_VALUES,
 };
 
 use super::bitmap::{next_available_index, DenseBitmap, BITS_PER_BLOCK};
 
-#[cfg(feature = "test_mode")]
-const ID_ASSIGNMENT_EXPIRY: u64 = 2; // seconds
 #[cfg(not(feature = "test_mode"))]
 pub const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
-
-const MAX_COMMIT_ATTEMPTS: u8 = 10;
+#[cfg(not(feature = "test_mode"))]
+const MAX_COMMIT_ATTEMPTS: u32 = 10;
+#[cfg(not(feature = "test_mode"))]
 const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);
+
+#[cfg(feature = "test_mode")]
+pub static ID_ASSIGNMENT_EXPIRY: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(60 * 60); // seconds
+#[cfg(feature = "test_mode")]
+const MAX_COMMIT_ATTEMPTS: u32 = 1000;
+#[cfg(feature = "test_mode")]
+const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);
+
+#[cfg(feature = "test_mode")]
+lazy_static::lazy_static! {
+pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>> =
+                    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
+}
 
 impl Store {
     pub async fn write(&self, batch: Batch) -> crate::Result<()> {
         let start = Instant::now();
-        let mut or_bitmap = DenseBitmap::empty();
-        let mut and_bitmap = DenseBitmap::full();
-        let mut block_num = u32::MAX;
         let mut retry_count = 0;
+        let mut set_bitmaps = AHashMap::new();
+        let mut clear_bitmaps = AHashMap::new();
 
         loop {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+
             let trx = self.db.create_trx()?;
 
             for op in &batch.ops {
@@ -56,14 +68,7 @@ impl Store {
                     Operation::DocumentId {
                         document_id: document_id_,
                     } => {
-                        if block_num != u32::MAX {
-                            or_bitmap.reset();
-                            and_bitmap.reset();
-                        }
                         document_id = *document_id_;
-                        or_bitmap.set(document_id);
-                        and_bitmap.clear(document_id);
-                        block_num = or_bitmap.block_num;
                     }
                     Operation::Value { family, field, set } => {
                         let key = ValueKey {
@@ -101,20 +106,26 @@ impl Store {
                         key,
                         set,
                     } => {
-                        let key = BitmapKey {
-                            account_id,
-                            collection,
-                            family: *family,
-                            field: *field,
-                            block_num,
-                            key,
+                        if retry_count == 0 {
+                            if *set {
+                                &mut set_bitmaps
+                            } else {
+                                &mut clear_bitmaps
+                            }
+                            .entry(
+                                BitmapKey {
+                                    account_id,
+                                    collection,
+                                    family: *family,
+                                    field: *field,
+                                    block_num: DenseBitmap::block_num(document_id),
+                                    key,
+                                }
+                                .serialize(),
+                            )
+                            .or_insert_with(DenseBitmap::empty)
+                            .set(document_id);
                         }
-                        .serialize();
-                        if *set {
-                            trx.atomic_op(&key, &or_bitmap.bitmap, MutationType::BitOr);
-                        } else {
-                            trx.atomic_op(&key, &and_bitmap.bitmap, MutationType::BitAnd);
-                        };
                     }
                     Operation::Acl {
                         grant_account_id,
@@ -150,12 +161,97 @@ impl Store {
                         field,
                         family,
                         assert_value,
-                    } => todo!(),
+                    } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            family: *family,
+                            field: *field,
+                        }
+                        .serialize();
+                        if trx
+                            .get(&key, false)
+                            .await
+                            .unwrap_or_default()
+                            .map_or(true, |bytes| !assert_value.matches(bytes.as_ref()))
+                        {
+                            trx.cancel();
+                            return Err(crate::Error::AssertValueFailed);
+                        }
+                    }
                 }
+            }
+
+            for (key, bitmap) in &set_bitmaps {
+                trx.atomic_op(key, &bitmap.bitmap, MutationType::BitOr);
+            }
+
+            for (key, bitmap) in &clear_bitmaps {
+                trx.atomic_op(key, &bitmap.bitmap, MutationType::BitXor);
             }
 
             match trx.commit().await {
                 Ok(_) => {
+                    #[cfg(feature = "test_mode")]
+                    {
+                        for op in &batch.ops {
+                            match op {
+                                Operation::AccountId {
+                                    account_id: account_id_,
+                                } => {
+                                    account_id = *account_id_;
+                                }
+                                Operation::Collection {
+                                    collection: collection_,
+                                } => {
+                                    collection = *collection_;
+                                }
+                                Operation::DocumentId {
+                                    document_id: document_id_,
+                                } => {
+                                    document_id = *document_id_;
+                                }
+                                Operation::Bitmap {
+                                    family,
+                                    field,
+                                    key,
+                                    set,
+                                } => {
+                                    let key = BitmapKey {
+                                        account_id,
+                                        collection,
+                                        family: *family,
+                                        field: *field,
+                                        block_num: DenseBitmap::block_num(document_id),
+                                        key,
+                                    }
+                                    .serialize();
+                                    if *set {
+                                        assert!(
+                                            BITMAPS
+                                                .lock()
+                                                .entry(key.clone())
+                                                .or_default()
+                                                .insert(document_id),
+                                            "key {key:?} already contains document {document_id}"
+                                        );
+                                    } else {
+                                        assert!(
+                                            BITMAPS
+                                                .lock()
+                                                .get_mut(&key)
+                                                .unwrap()
+                                                .remove(&document_id),
+                                            "key {key:?} does not contain document {document_id}"
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
                     return Ok(());
                 }
                 Err(err) => {
@@ -210,7 +306,11 @@ impl Store {
                 true,
             );
 
+            #[cfg(not(feature = "test_mode"))]
             let expired_timestamp = now() - ID_ASSIGNMENT_EXPIRY;
+            #[cfg(feature = "test_mode")]
+            let expired_timestamp =
+                now() - ID_ASSIGNMENT_EXPIRY.load(std::sync::atomic::Ordering::Relaxed);
             let mut reserved_ids = AHashSet::new();
             let mut expired_ids = Vec::new();
             while let Some(values) = values.next().await {
@@ -316,17 +416,11 @@ impl Store {
         }
     }
 
-    pub async fn assign_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-    ) -> crate::Result<u64> {
+    pub async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
         let start = Instant::now();
-        let collection = collection.into();
         let counter = KeySerializer::new(std::mem::size_of::<u32>() + 2)
             .write(SUBSPACE_VALUES)
-            .write_leb128(account_id)
-            .write(collection)
+            .write(account_id)
             .finalize();
 
         loop {

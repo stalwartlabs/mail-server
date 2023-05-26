@@ -174,6 +174,10 @@ impl JMAP {
                 IngestError::Temporary
             })?;
 
+        // Prepare batch
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(account_id);
+
         // Build change log
         let mut changes = ChangeLogBuilder::with_change_id(change_id);
         let thread_id = if let Some(thread_id) = thread_id {
@@ -192,6 +196,9 @@ impl JMAP {
                         "Failed to assign documentId for new thread.");
                     IngestError::Temporary
                 })?;
+            batch
+                .with_collection(Collection::Thread)
+                .create_document(thread_id);
             changes.log_insert(Collection::Thread, thread_id);
             thread_id
         };
@@ -202,9 +209,7 @@ impl JMAP {
         }
 
         // Build write batch
-        let mut batch = BatchBuilder::new();
         batch
-            .with_account_id(account_id)
             .with_collection(Collection::Email)
             .create_document(document_id)
             .index_message(

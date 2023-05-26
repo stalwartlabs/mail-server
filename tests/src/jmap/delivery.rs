@@ -237,7 +237,7 @@ impl SmtpConnection {
         }
         self.data(3).await;
         let result = self.data_bytes(message, recipients.len(), code).await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         result
     }
 
@@ -260,7 +260,7 @@ impl SmtpConnection {
             self.bdat(std::str::from_utf8(chunk).unwrap(), 2).await;
         }
         self.bdat_last("", recipients.len(), 2).await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
     pub async fn connect() -> Self {

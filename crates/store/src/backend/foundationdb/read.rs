@@ -13,15 +13,15 @@ use roaring::RoaringBitmap;
 use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, ReadTransaction, Serialize, Store,
-    ValueKey, SUBSPACE_INDEXES,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
+    Store, SUBSPACE_INDEXES,
 };
 
 use super::bitmap::DeserializeBlock;
 
 impl ReadTransaction<'_> {
     #[inline(always)]
-    pub async fn get_value<U>(&self, key: ValueKey) -> crate::Result<Option<U>>
+    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {
@@ -39,7 +39,7 @@ impl ReadTransaction<'_> {
         mut key: BitmapKey<T>,
         bm: &mut RoaringBitmap,
     ) -> crate::Result<()> {
-        let begin = key.serialize();
+        let begin = (&key).serialize();
         key.block_num = u32::MAX;
         let end = key.serialize();
         let key_len = begin.len();
@@ -162,6 +162,7 @@ impl ReadTransaction<'_> {
                 ),
             ),
         };
+        let key_len = begin.key().len();
 
         let opt = RangeOption {
             begin,
@@ -182,7 +183,6 @@ impl ReadTransaction<'_> {
                 }
             }
         } else {
-            let key_len = begin.len();
             while let Some(values) = range_stream.next().await {
                 for value in values? {
                     let key = value.key();
@@ -256,7 +256,36 @@ impl ReadTransaction<'_> {
         ascending: bool,
         cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
     ) -> crate::Result<T> {
-        todo!()
+        let begin = begin.serialize();
+        let end = end.serialize();
+
+        let mut iter = self.trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(&begin),
+                end: KeySelector::first_greater_than(&end),
+                mode: if first {
+                    options::StreamingMode::Small
+                } else {
+                    options::StreamingMode::Iterator
+                },
+                reverse: !ascending,
+                ..Default::default()
+            },
+            true,
+        );
+
+        while let Some(values) = iter.next().await {
+            for value in values? {
+                let key = value.key().get(1..).unwrap_or_default();
+                let value = value.value();
+
+                if !cb(&mut acc, key, value)? || first {
+                    return Ok(acc);
+                }
+            }
+        }
+
+        Ok(acc)
     }
 
     pub(crate) async fn get_last_change_id(
@@ -264,24 +293,41 @@ impl ReadTransaction<'_> {
         account_id: u32,
         collection: u8,
     ) -> crate::Result<Option<u64>> {
-        todo!()
-        /*let key = LogKey {
+        let from_key = LogKey {
+            account_id,
+            collection,
+            change_id: 0,
+        }
+        .serialize();
+        let to_key = LogKey {
             account_id,
             collection,
             change_id: u64::MAX,
         }
         .serialize();
 
-        self.conn
-            .prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
-            .query_row([&key], |row| {
-                let key = row.get_ref(0)?.as_bytes()?;
+        let mut iter = self.trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(&from_key),
+                end: KeySelector::first_greater_or_equal(&to_key),
+                mode: options::StreamingMode::Small,
+                reverse: true,
+                ..Default::default()
+            },
+            true,
+        );
 
-                key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
-                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
-            })
-            .optional()
-            .map_err(Into::into)*/
+        while let Some(values) = iter.next().await {
+            if let Some(value) = (values?).into_iter().next() {
+                let key = value.key();
+
+                return key
+                    .deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
+                    .map(Some);
+            }
+        }
+
+        Ok(None)
     }
 
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
@@ -300,5 +346,79 @@ impl Store {
             trx: self.db.create_trx()?,
             trx_age: Instant::now(),
         })
+    }
+
+    #[cfg(feature = "test_mode")]
+    pub async fn assert_is_empty(&self) {
+        use crate::{SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
+
+        // Purge bitmaps
+        self.purge_bitmaps().await.unwrap();
+
+        let conn = self.read_transaction().await.unwrap();
+
+        let mut iter = conn.trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(&[0u8][..]),
+                end: KeySelector::first_greater_or_equal(&[u8::MAX][..]),
+                mode: options::StreamingMode::WantAll,
+                reverse: false,
+                ..Default::default()
+            },
+            true,
+        );
+
+        while let Some(values) = iter.next().await {
+            for value in values.unwrap() {
+                let key = value.key();
+                let value = value.value();
+                let subspace = key[0];
+                let key = &key[1..];
+
+                match subspace {
+                    SUBSPACE_INDEXES => {
+                        panic!(
+                            "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
+                            u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                            key[4],
+                            u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
+                            key[5],
+                            String::from_utf8_lossy(&key[6..key.len()-4]),
+                            key
+                        );
+                    }
+                    SUBSPACE_VALUES => {
+                        // Ignore lastId counter
+                        if key.len() == 4
+                            && value.len() == 8
+                            && u32::deserialize(key).is_ok()
+                            && u64::deserialize(value).is_ok()
+                        {
+                            continue;
+                        }
+
+                        panic!("Table values is not empty: {key:?} {value:?}");
+                    }
+                    SUBSPACE_BITMAPS => {
+                        panic!(
+                            "Table bitmaps is not empty, account {}, collection {}, family {}, field {}, key {:?}: {:?}",
+                            u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                            key[4],
+                            key[5],
+                            key[6],
+                            key,
+                            value
+                        );
+                    }
+                    SUBSPACE_LOGS => (),
+
+                    _ => panic!("Invalid key found in database: {key:?} for subspace {subspace}"),
+                }
+            }
+        }
+
+        // Empty database
+        self.destroy().await;
+        crate::backend::foundationdb::write::BITMAPS.lock().clear();
     }
 }

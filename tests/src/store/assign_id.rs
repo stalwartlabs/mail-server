@@ -7,10 +7,16 @@ use store::{write::BatchBuilder, Store};
 pub async fn test(db: Arc<Store>) {
     println!("Running Store ID assignment tests...");
 
+    store::backend::foundationdb::write::ID_ASSIGNMENT_EXPIRY
+        .store(2, std::sync::atomic::Ordering::Relaxed);
+
     test_1(db.clone()).await;
     test_2(db.clone()).await;
     test_3(db.clone()).await;
     test_4(db).await;
+
+    store::backend::foundationdb::write::ID_ASSIGNMENT_EXPIRY
+        .store(60 * 60, std::sync::atomic::Ordering::Relaxed);
 }
 
 async fn test_1(db: Arc<Store>) {

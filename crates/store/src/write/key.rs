@@ -253,7 +253,7 @@ impl Serialize for &AclKey {
         {
             #[cfg(feature = "key_subspace")]
             {
-                KeySerializer::new(std::mem::size_of::<AclKey>() + 1).write(crate::SUBSPACE_ACLS)
+                KeySerializer::new(std::mem::size_of::<AclKey>() + 1).write(crate::SUBSPACE_VALUES)
             }
             #[cfg(not(feature = "key_subspace"))]
             {

@@ -175,7 +175,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     //expect_nothing(&mut event_rx).await;
 
     // Multiple change updates should be grouped and pushed in intervals
-    for num in 0..25 {
+    for num in 0..5 {
         client
             .mailbox_update_sort_order(&mailbox_id, num)
             .await

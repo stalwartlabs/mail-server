@@ -296,6 +296,10 @@ impl JMAP {
                     MethodError::ServerPartialFail
                 })?;
 
+            // Prepare batch
+            let mut batch = BatchBuilder::new();
+            batch.with_account_id(account_id);
+
             // Build change log
             let mut changes = self.begin_changes(account_id).await?;
             let thread_id = if let Some(thread_id) = thread_id {
@@ -305,6 +309,9 @@ impl JMAP {
                 let thread_id = self
                     .assign_document_id(account_id, Collection::Thread)
                     .await?;
+                batch
+                    .with_collection(Collection::Thread)
+                    .create_document(thread_id);
                 changes.log_insert(Collection::Thread, thread_id);
                 thread_id
             };
@@ -316,9 +323,7 @@ impl JMAP {
             }
 
             // Build batch
-            let mut batch = BatchBuilder::new();
             batch
-                .with_account_id(account_id)
                 .with_collection(Collection::Email)
                 .create_document(message_id)
                 .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)

@@ -186,7 +186,7 @@ pub async fn jmap_tests() {
     email_copy::test(params.server.clone(), &mut params.client).await;
     thread_get::test(params.server.clone(), &mut params.client).await;
     thread_merge::test(params.server.clone(), &mut params.client).await;
-    mailbox::test(params.server.clone(), &mut params.client).await;*/
+    mailbox::test(params.server.clone(), &mut params.client).await;
     delivery::test(params.server.clone(), &mut params.client).await;
     auth_acl::test(params.server.clone(), &mut params.client).await;
     auth_limits::test(params.server.clone(), &mut params.client).await;
@@ -196,7 +196,7 @@ pub async fn jmap_tests() {
     sieve_script::test(params.server.clone(), &mut params.client).await;
     vacation_response::test(params.server.clone(), &mut params.client).await;
     email_submission::test(params.server.clone(), &mut params.client).await;
-    websocket::test(params.server.clone(), &mut params.client).await;
+    websocket::test(params.server.clone(), &mut params.client).await;*/
     stress_test::test(params.server.clone(), params.client).await;
 
     if delete {
@@ -255,6 +255,10 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
                 .await,
             "failed for {query}"
         );
+    }
+
+    if delete_if_exists {
+        jmap.store.destroy().await;
     }
 
     // Create client

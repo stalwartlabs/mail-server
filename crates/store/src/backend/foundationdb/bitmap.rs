@@ -8,56 +8,34 @@ pub const BITS_PER_BLOCK: u32 = WORD_SIZE_BITS * WORDS_PER_BLOCK;
 const BITS_MASK: u32 = BITS_PER_BLOCK - 1;
 
 pub struct DenseBitmap {
-    restore_value: u8,
-    restore_pos: usize,
-    pub block_num: u32,
     pub bitmap: [u8; WORD_SIZE * WORDS_PER_BLOCK as usize],
 }
 
 impl DenseBitmap {
     pub fn empty() -> Self {
         Self {
-            block_num: 0,
-            restore_pos: 0,
-            restore_value: 0,
             bitmap: [0; WORD_SIZE * WORDS_PER_BLOCK as usize],
         }
     }
 
     pub fn full() -> Self {
         Self {
-            block_num: 0,
-            restore_pos: 0,
-            restore_value: u8::MAX,
             bitmap: [u8::MAX; WORD_SIZE * WORDS_PER_BLOCK as usize],
         }
     }
 
     pub fn set(&mut self, index: u32) {
-        self.block_num = index / BITS_PER_BLOCK;
         let index = index & BITS_MASK;
-        self.restore_pos = (index / 8) as usize;
-        self.bitmap[self.restore_pos] = 1 << (index & 7);
-    }
-
-    #[cfg(test)]
-    pub fn set_or(&mut self, index: u32) {
-        let _index = index;
-        self.block_num = index / BITS_PER_BLOCK;
-        let index = index & BITS_MASK;
-        self.restore_pos = (index / 8) as usize;
-        self.bitmap[self.restore_pos] |= 1 << (index & 7);
+        self.bitmap[(index / 8) as usize] |= 1 << (index & 7);
     }
 
     pub fn clear(&mut self, index: u32) {
-        self.block_num = index / BITS_PER_BLOCK;
-        let index = BITS_MASK - (index & BITS_MASK);
-        self.restore_pos = (index / 8) as usize;
-        self.bitmap[self.restore_pos] = !(1 << (index & 7));
+        let index = index & BITS_MASK;
+        self.bitmap[(index / 8) as usize] &= !(1 << (index & 7));
     }
 
-    pub fn reset(&mut self) {
-        self.bitmap[self.restore_pos] = self.restore_value;
+    pub fn block_num(index: u32) -> u32 {
+        index / BITS_PER_BLOCK
     }
 }
 
@@ -156,7 +134,7 @@ mod tests {
                 blocks
                     .entry(item / BITS_PER_BLOCK)
                     .or_insert_with(DenseBitmap::empty)
-                    .set_or(item);
+                    .set(item);
             }
             let mut bitmap_blocks = RoaringBitmap::new();
             for (block_num, dense_bitmap) in blocks {
@@ -184,7 +162,7 @@ mod tests {
                 if id < 1023 { Some(id + 1) } else { None },
                 "reserved id failed for {id}"
             );
-            bm.set_or(id);
+            bm.set(id);
         }
     }
 }

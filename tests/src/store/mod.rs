@@ -30,8 +30,8 @@ pub async fn store_tests() {
     if insert {
         db.destroy().await;
     }
-    assign_id::test(db).await;
-    //query::test(db, insert).await;
+    //assign_id::test(db).await;
+    query::test(db, insert).await;
     temp_dir.delete();
 }
 

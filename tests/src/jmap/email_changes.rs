@@ -14,6 +14,8 @@ use store::{
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Changes tests...");
 
+    server.store.destroy().await;
+    client.set_default_account_id(Id::new(1));
     let mut states = vec![State::Initial];
 
     for (change_id, (changes, expected_changelog)) in [
@@ -247,9 +249,30 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
                     }
                 }
 
-                assert_eq!(insertions.len(), 0);
-                assert_eq!(updates.len(), 0);
-                assert_eq!(deletions.len(), 0);
+                assert_eq!(
+                    insertions.len(),
+                    0,
+                    "test_num: {}, state: {:?}, pending: {:?}",
+                    test_num,
+                    state,
+                    insertions
+                );
+                assert_eq!(
+                    updates.len(),
+                    0,
+                    "test_num: {}, state: {:?}, pending: {:?}",
+                    test_num,
+                    state,
+                    updates
+                );
+                assert_eq!(
+                    deletions.len(),
+                    0,
+                    "test_num: {}, state: {:?}, pending: {:?}",
+                    test_num,
+                    state,
+                    deletions
+                );
             }
         }
 

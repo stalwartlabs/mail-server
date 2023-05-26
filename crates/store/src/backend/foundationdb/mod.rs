@@ -4,6 +4,7 @@ use crate::Error;
 
 pub mod bitmap;
 pub mod main;
+pub mod purge;
 pub mod read;
 pub mod write;
 

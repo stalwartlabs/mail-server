@@ -7,6 +7,7 @@ use jmap_proto::{
     types::{
         acl::Acl,
         collection::Collection,
+        id::Id,
         property::Property,
         state::{State, StateChange},
         type_state::TypeState,
@@ -69,14 +70,18 @@ impl JMAP {
                         id,
                         SetError::invalid_properties()
                             .with_property(Property::MailboxIds)
-                            .with_description(format!("Mailbox {} does not exist.", mailbox_id)),
+                            .with_description(format!(
+                                "Mailbox {} does not exist.",
+                                Id::from(*mailbox_id)
+                            )),
                     );
                     continue 'outer;
                 } else if matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
                     response.not_created.append(
                         id,
                         SetError::forbidden().with_description(format!(
-                            "You are not allowed to add messages to mailbox {mailbox_id}."
+                            "You are not allowed to add messages to mailbox {}.",
+                            Id::from(*mailbox_id)
                         )),
                     );
                     continue 'outer;

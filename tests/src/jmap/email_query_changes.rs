@@ -20,7 +20,7 @@ use crate::jmap::{
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email QueryChanges tests...");
-
+    server.store.destroy().await;
     let mailbox1_id = client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("JMAP Changes 1", None::<String>, Role::None)
@@ -117,31 +117,18 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             LogAction::Delete(id) => {
                 let id = *id_map.get(id).unwrap();
                 client.email_destroy(&id.to_string()).await.unwrap();
-
-                // Delete virtual threadId created during tests (so assert_empty_store succeeds)
-                server
-                    .store
-                    .write(
-                        BatchBuilder::new()
-                            .with_account_id(1)
-                            .with_collection(Collection::Email)
-                            .update_document(id.document_id())
-                            .bitmap(Property::ThreadId, id.prefix_id(), F_CLEAR)
-                            .build_batch(),
-                    )
-                    .await
-                    .unwrap();
                 removed_ids.insert(id);
             }
             LogAction::Move(from, to) => {
                 let id = *id_map.get(from).unwrap();
                 let new_id = Id::from_parts(thread_id, id.document_id());
-
                 server
                     .store
                     .write(
                         BatchBuilder::new()
                             .with_account_id(1)
+                            .with_collection(Collection::Thread)
+                            .create_document(thread_id)
                             .with_collection(Collection::Email)
                             .update_document(id.document_id())
                             .value(Property::ThreadId, id.prefix_id(), F_BITMAP | F_CLEAR)
@@ -264,6 +251,19 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     destroy_all_mailboxes(client).await;
+
+    // Delete virtual threads
+    let mut batch = BatchBuilder::new();
+    batch.with_account_id(1).with_collection(Collection::Thread);
+    for thread_id in server
+        .get_document_ids(1, Collection::Thread)
+        .await
+        .unwrap()
+        .unwrap_or_default()
+    {
+        batch.delete_document(thread_id);
+    }
+    server.store.write(batch.build_batch()).await.unwrap();
 
     server.store.assert_is_empty().await;
 }

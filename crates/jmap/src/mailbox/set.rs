@@ -160,7 +160,7 @@ impl JMAP {
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::Mailbox)
-                            .create_document(document_id)
+                            .update_document(document_id)
                             .custom(builder);
                         if !batch.is_empty() {
                             changes.log_update(Collection::Mailbox, document_id);

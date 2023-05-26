@@ -142,7 +142,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));
 
     // Wait for sleep to be done
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // Concurrent upload test
     for _ in 0..4 {
