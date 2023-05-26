@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2020-2022, Stalwart Labs Ltd.
+ * Copyright (c) 2023, Stalwart Labs Ltd.
  *
- * This file is part of the Stalwart JMAP Server.
+ * This file is part of the Stalwart Mail Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as

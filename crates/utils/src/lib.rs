@@ -30,7 +30,6 @@ pub mod config;
 pub mod ipc;
 pub mod listener;
 pub mod map;
-//pub mod queue;
 
 use opentelemetry::{
     sdk::{
