@@ -162,7 +162,7 @@ impl Store {
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
         let collection = collection.into();
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction()
                 .await?

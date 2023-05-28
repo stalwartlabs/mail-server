@@ -30,7 +30,7 @@ impl Store {
     where
         U: Deserialize + 'static,
     {
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction().await?.get_value(key).await
         }
@@ -46,7 +46,7 @@ impl Store {
     where
         U: Deserialize + 'static,
     {
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             let mut trx = self.read_transaction().await?;
             let mut results = Vec::with_capacity(key.len());
@@ -81,7 +81,7 @@ impl Store {
     ) -> crate::Result<Option<u64>> {
         let collection = collection.into();
 
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction()
                 .await?
@@ -101,7 +101,7 @@ impl Store {
         &self,
         key: BitmapKey<T>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction().await?.get_bitmap(key).await
         }
@@ -122,7 +122,7 @@ impl Store {
         ascending: bool,
         cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
     ) -> crate::Result<T> {
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction()
                 .await?

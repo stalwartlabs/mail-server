@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 resolver = "2"
 
+[features]
+default = ["sqlite"]
+sqlite = ["store/sqlite"]
+foundationdb = ["store/foundation"]
+
 [dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }

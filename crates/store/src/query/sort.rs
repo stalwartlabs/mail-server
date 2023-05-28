@@ -233,7 +233,7 @@ impl Store {
             (a, b) => std::cmp::min(a as usize, b),
         };
 
-        #[cfg(feature = "is_async")]
+        #[cfg(not(feature = "is_sync"))]
         {
             self.read_transaction()
                 .await?
