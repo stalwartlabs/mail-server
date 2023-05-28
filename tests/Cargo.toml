@@ -14,8 +14,7 @@ mail-send = { git = "https://github.com/stalwartlabs/mail-send" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }
 sieve-rs = { git = "https://github.com/stalwartlabs/sieve" }
 utils = { path = "../crates/utils", features = ["test_mode"] }
-#jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
-jmap-client = { path = "/home/vagrant/code/jmap-client", features = ["websockets", "debug", "async"] } 
+jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}

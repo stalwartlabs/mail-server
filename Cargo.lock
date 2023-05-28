@@ -1696,6 +1696,7 @@ dependencies = [
 [[package]]
 name = "jmap-client"
 version = "0.3.0"
+source = "git+https://github.com/stalwartlabs/jmap-client#3cba63c2246536c9b7997d7aea0124272af84ec8"
 dependencies = [
  "ahash 0.8.3",
  "async-stream",
