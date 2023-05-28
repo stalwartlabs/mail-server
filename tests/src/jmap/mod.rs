@@ -199,7 +199,7 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    /*email_query::test(params.server.clone(), &mut params.client, delete).await;
+    email_query::test(params.server.clone(), &mut params.client, delete).await;
     email_get::test(params.server.clone(), &mut params.client).await;
     email_set::test(params.server.clone(), &mut params.client).await;
     email_parse::test(params.server.clone(), &mut params.client).await;
@@ -219,7 +219,7 @@ pub async fn jmap_tests() {
     sieve_script::test(params.server.clone(), &mut params.client).await;
     vacation_response::test(params.server.clone(), &mut params.client).await;
     email_submission::test(params.server.clone(), &mut params.client).await;
-    websocket::test(params.server.clone(), &mut params.client).await;*/
+    websocket::test(params.server.clone(), &mut params.client).await;
     stress_test::test(params.server.clone(), params.client).await;
 
     if delete {
