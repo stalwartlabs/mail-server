@@ -20,6 +20,7 @@ store = { path = "crates/store" }
 jmap = { path = "crates/jmap" }
 jmap_proto = { path = "crates/jmap-proto" }
 smtp = { path = "crates/smtp", features = ["local_delivery"] }
+directory = { path = "crates/directory" }
 utils = { path = "crates/utils" }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"
@@ -35,6 +36,7 @@ members = [
     "crates/jmap-proto",
     "crates/smtp",
     "crates/store",
+    "crates/directory",
     "crates/utils",
     "crates/maybe-async",
     "tests",

@@ -303,6 +303,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
+name = "bb8"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1627eccf3aa91405435ba240be23513eeca466b5dc33866422672264de061582"
+dependencies = [
+ "async-trait",
+ "futures-channel",
+ "futures-util",
+ "parking_lot",
+ "tokio",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -781,6 +794,23 @@ dependencies = [
  "const-oid",
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "directory"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.3",
+ "async-trait",
+ "bb8",
+ "ldap3",
+ "mail-send",
+ "rustls 0.21.1",
+ "smtp-proto",
+ "sqlx",
+ "tokio",
+ "tokio-rustls 0.24.0",
+ "tracing",
 ]
 
 [[package]]
@@ -1664,6 +1694,7 @@ dependencies = [
  "base64 0.21.1",
  "bincode",
  "chrono",
+ "directory",
  "ece",
  "form-data",
  "form_urlencoded",
@@ -1759,6 +1790,43 @@ name = "lazycell"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
+
+[[package]]
+name = "lber"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5d85f5e00e12cb50c70c3b1c1f0daff6546eb4c608b44d0a990e38a539e0446"
+dependencies = [
+ "bytes",
+ "nom",
+]
+
+[[package]]
+name = "ldap3"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5cfbd3c59ca16d6671b002b8b3dd013cd825d9c77a1664a3135194d3270511e"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "futures-util",
+ "lazy_static",
+ "lber",
+ "log",
+ "nom",
+ "percent-encoding",
+ "ring",
+ "rustls 0.20.8",
+ "rustls-native-certs",
+ "thiserror",
+ "tokio",
+ "tokio-rustls 0.23.4",
+ "tokio-stream",
+ "tokio-util",
+ "url",
+ "x509-parser 0.14.0",
+]
 
 [[package]]
 name = "libc"
@@ -1929,6 +1997,7 @@ dependencies = [
 name = "mail-server"
 version = "0.3.0"
 dependencies = [
+ "directory",
  "jmap",
  "jmap_proto",
  "smtp",
@@ -3336,7 +3405,7 @@ dependencies = [
  "tracing",
  "utils",
  "webpki-roots 0.23.0",
- "x509-parser",
+ "x509-parser 0.15.0",
 ]
 
 [[package]]
@@ -4709,6 +4778,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "x509-parser"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0ecbeb7b67ce215e40e3cc7f2ff902f94a223acf44995934763467e7b1febc8"
+dependencies = [
+ "asn1-rs",
+ "base64 0.13.1",
+ "data-encoding",
+ "der-parser",
+ "lazy_static",
+ "nom",
+ "oid-registry",
+ "rusticata-macros",
+ "thiserror",
+ "time 0.3.21",
 ]
 
 [[package]]
