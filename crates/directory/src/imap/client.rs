@@ -166,3 +166,33 @@ impl<T: AsyncRead + AsyncWrite + Unpin> ImapClient<T> {
         self.stream.flush().await
     }
 }
+
+#[cfg(test)]
+mod test {
+    use mail_send::smtp::tls::build_tls_connector;
+    use smtp_proto::{AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH, AUTH_XOAUTH2};
+    use std::time::Duration;
+
+    use crate::imap::ImapClient;
+
+    #[ignore]
+    #[tokio::test]
+    async fn imap_auth() {
+        let connector = build_tls_connector(false);
+
+        let mut client = ImapClient::connect(
+            "imap.gmail.com:993",
+            Duration::from_secs(5),
+            &connector,
+            "imap.gmail.com",
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            AUTH_PLAIN | AUTH_XOAUTH | AUTH_XOAUTH2 | AUTH_OAUTHBEARER,
+            client.authentication_mechanisms().await.unwrap()
+        );
+        client.logout().await.unwrap();
+    }
+}

@@ -40,7 +40,10 @@ impl Directory for ImapDirectory {
         };
 
         match client.authenticate(mechanism, credentials).await {
-            Ok(_) => Ok(Some(Principal::default())),
+            Ok(_) => {
+                client.is_valid = false;
+                Ok(Some(Principal::default()))
+            }
             Err(err) => match &err {
                 ImapError::AuthenticationFailed => Ok(None),
                 _ => Err(err.into()),

@@ -1,4 +1,5 @@
 pub mod client;
+pub mod config;
 pub mod lookup;
 pub mod pool;
 pub mod tls;
@@ -25,6 +26,7 @@ pub struct ImapConnectionManager {
 pub struct ImapClient<T: AsyncRead + AsyncWrite> {
     stream: T,
     mechanisms: u64,
+    is_valid: bool,
     timeout: Duration,
 }
 

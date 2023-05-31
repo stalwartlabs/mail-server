@@ -3,12 +3,13 @@ use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 
+pub mod config;
 pub mod imap;
 pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Principal {
     pub id: u32,
     pub name: String,
@@ -29,6 +30,7 @@ pub enum Type {
     Other,
 }
 
+#[derive(Debug)]
 pub enum DirectoryError {
     Ldap(LdapError),
     Sql(sqlx::Error),
@@ -39,7 +41,7 @@ pub enum DirectoryError {
 }
 
 #[async_trait::async_trait]
-pub trait Directory {
+pub trait Directory: Sync + Send {
     async fn authenticate(&self, credentials: &Credentials<String>) -> Result<Option<Principal>>;
     async fn principal_by_name(&self, name: &str) -> Result<Option<Principal>>;
     async fn principal_by_id(&self, id: u32) -> Result<Option<Principal>>;
@@ -54,17 +56,11 @@ pub trait Directory {
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;
 
-impl From<LdapError> for DirectoryError {
-    fn from(error: LdapError) -> Self {
-        DirectoryError::Ldap(error)
-    }
-}
-
 impl From<RunError<LdapError>> for DirectoryError {
     fn from(error: RunError<LdapError>) -> Self {
         match error {
-            RunError::User(error) => DirectoryError::Ldap(error),
-            RunError::TimedOut => DirectoryError::TimedOut,
+            RunError::User(error) => error.into(),
+            RunError::TimedOut => DirectoryError::timeout("ldap"),
         }
     }
 }
@@ -72,8 +68,8 @@ impl From<RunError<LdapError>> for DirectoryError {
 impl From<RunError<ImapError>> for DirectoryError {
     fn from(error: RunError<ImapError>) -> Self {
         match error {
-            RunError::User(error) => DirectoryError::Imap(error),
-            RunError::TimedOut => DirectoryError::TimedOut,
+            RunError::User(error) => error.into(),
+            RunError::TimedOut => DirectoryError::timeout("imap"),
         }
     }
 }
@@ -81,26 +77,64 @@ impl From<RunError<ImapError>> for DirectoryError {
 impl From<RunError<mail_send::Error>> for DirectoryError {
     fn from(error: RunError<mail_send::Error>) -> Self {
         match error {
-            RunError::User(error) => DirectoryError::Smtp(error),
-            RunError::TimedOut => DirectoryError::TimedOut,
+            RunError::User(error) => error.into(),
+            RunError::TimedOut => DirectoryError::timeout("smtp"),
         }
+    }
+}
+
+impl From<LdapError> for DirectoryError {
+    fn from(error: LdapError) -> Self {
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            protocol = "ldap",
+            reason = %error,
+            "LDAP directory error"
+        );
+
+        DirectoryError::Ldap(error)
     }
 }
 
 impl From<sqlx::Error> for DirectoryError {
     fn from(error: sqlx::Error) -> Self {
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            protocol = "sql",
+            reason = %error,
+            "SQL directory error"
+        );
+
         DirectoryError::Sql(error)
     }
 }
 
 impl From<ImapError> for DirectoryError {
     fn from(error: ImapError) -> Self {
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            protocol = "imap",
+            reason = %error,
+            "IMAP directory error"
+        );
+
         DirectoryError::Imap(error)
     }
 }
 
 impl From<mail_send::Error> for DirectoryError {
     fn from(error: mail_send::Error) -> Self {
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            protocol = "smtp",
+            reason = %error,
+            "SMTP directory error"
+        );
+
         DirectoryError::Smtp(error)
     }
 }
@@ -108,13 +142,23 @@ impl From<mail_send::Error> for DirectoryError {
 impl DirectoryError {
     pub fn unsupported(protocol: &str, method: &str) -> Self {
         tracing::warn!(
-            context = "remote",
+            context = "directory",
             event = "error",
             protocol = protocol,
             method = method,
             "Method not supported by directory"
         );
         DirectoryError::Unsupported
+    }
+
+    pub fn timeout(protocol: &str) -> Self {
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            protocol = protocol,
+            "Directory timed out"
+        );
+        DirectoryError::TimedOut
     }
 }
 

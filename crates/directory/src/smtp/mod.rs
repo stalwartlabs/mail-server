@@ -1,3 +1,4 @@
+pub mod config;
 pub mod lookup;
 pub mod pool;
 

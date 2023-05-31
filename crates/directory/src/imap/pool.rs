@@ -39,6 +39,6 @@ impl ManageConnection for ImapConnectionManager {
 
     /// Synchronously determine if the connection is no longer usable, if possible.
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        false
+        !conn.is_valid
     }
 }

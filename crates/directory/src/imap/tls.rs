@@ -44,6 +44,7 @@ impl ImapClient<TcpStream> {
                     .await?,
                 timeout: self.timeout,
                 mechanisms: self.mechanisms,
+                is_valid: true,
             })
         })
         .await
@@ -65,6 +66,7 @@ impl ImapClient<TlsStream<TcpStream>> {
                     stream,
                     timeout,
                     mechanisms: 0,
+                    is_valid: true,
                 }),
                 Err(err) => Err(ImapError::Io(err)),
             }

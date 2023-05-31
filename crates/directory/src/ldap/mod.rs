@@ -1,5 +1,5 @@
 use bb8::Pool;
-use ldap3::LdapConnSettings;
+use ldap3::{ldap_escape, LdapConnSettings};
 
 pub mod config;
 pub mod lookup;
@@ -10,6 +10,7 @@ pub struct LdapDirectory {
     mappings: LdapMappings,
 }
 
+#[derive(Debug, Default)]
 pub struct LdapMappings {
     base_dn: String,
     filter_login: LdapFilter,
@@ -31,13 +32,15 @@ pub struct LdapMappings {
     attrs_email: Vec<String>,
 }
 
+#[derive(Debug, Default)]
 struct LdapFilter {
     filter: Vec<String>,
 }
 
 impl LdapFilter {
     pub fn build(&self, value: &str) -> String {
-        self.filter.join(value)
+        let value = ldap_escape(value);
+        self.filter.join(value.as_ref())
     }
 }
 
