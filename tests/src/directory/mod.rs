@@ -3,8 +3,7 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use ahash::AHashMap;
-use directory::{config::ConfigDirectory, Directory};
+use directory::{config::ConfigDirectory, DirectoryConfig};
 use mail_send::Credentials;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
@@ -16,15 +15,18 @@ const CONFIG: &str = r#"
 protocol = "sql"
 address = "sqlite::memory:"
 
+[directory."sql".pool]
+max-connections = 1
+
 [directory."sql".query]
-login = "SELECT id, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
-name = "SELECT id, type, description, quota FROM accounts WHERE name = ?"
-id = "SELECT name, type, description, quota FROM accounts WHERE id = ?"
+login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
+name = "SELECT id, name, type, description, quota FROM accounts WHERE name = ?"
+id = "SELECT id, name, type, description, quota FROM accounts WHERE id = ?"
 members = "SELECT gid FROM group_members WHERE uid = ?"
 recipients = "SELECT id FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC"
-verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type != 'list' LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' LIMIT 50"
+emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 
 [directory."sql".columns]
 name = "name"
@@ -35,35 +37,41 @@ email = "address"
 quota = "quota"
 type = "type"
 
+[directory."sql".lookup]
+domains = "SELECT name FROM domains WHERE name = ?"
+
 [directory."ldap"]
 protocol = "ldap"
 address = "ldap://localhost:3893"
-base-dn = "dc=example,dc=com"
+base-dn = "dc=example,dc=org"
 
 [directory."ldap".bind]
-dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=com"
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
 
 [directory."ldap".filter]
 login = "(&(objectClass=posixAccount)(accountStatus=active)(cn=?))"
-name = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(cn=?))"
-email = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=?)(mailAliases=?)(mailLists=?)))"
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(cn=?))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(givenName=?)(sn=?)))"
 id = "(|(&(objectClass=posixAccount)(uidNumber=?))(&(objectClass=posixGroup)(gidNumber=?)))"
-verify = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=*?*)(mailAliases=*?*)))"
-expand = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(mailLists=?))"
+verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(givenName=*?*)))"
+expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
 
 [directory."ldap".object-classes]
 user = "posixAccount"
 group = "posixGroup"
 
+# Glauth does not support searchable custom attributes so
+# 'sn' and 'givenName' are used to search for aliases/lists.
+
 [directory."ldap".attributes]
 name = "cn"
-description = "description"
+description = ["principalName", "description"]
 secret = "userPassword"
-groups = "memberOf"
+groups = ["memberOf", "otherGroups"]
 id = ["uidNumber", "gidNumber"]
 email = "mail"
-email-alias = "mailAliases"
+email-alias = "givenName"
 quota = "diskQuota"
 
 [directory."imap"]
@@ -94,9 +102,47 @@ max-connections = 5
 implicit = true
 allow-invalid-certs = true
 
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "12345"
+email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
+email-list = ["info@example.org"]
+member-of = ["sales"]
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "abcde"
+email = "jane@example.org"
+email-list = ["info@example.org"]
+member-of = ["sales", "support"]
+
+[[directory."local".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
+quota = 500000
+email = "bill@example.org"
+email-list = ["info@example.org"]
+
+[[directory."local".groups]]
+name = "sales"
+description = "Sales Team"
+
+[[directory."local".groups]]
+name = "support"
+description = "Support Team"
+
+[directory."local".lookup]
+domains = ["example.org"]
+
 "#;
 
-pub fn parse_config() -> AHashMap<String, Arc<dyn Directory>> {
+pub fn parse_config() -> DirectoryConfig {
     utils::config::Config::parse(CONFIG)
         .unwrap()
         .parse_directory()

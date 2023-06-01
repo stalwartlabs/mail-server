@@ -18,15 +18,15 @@ use super::dummy_tls_acceptor;
 #[tokio::test]
 async fn imap_directory() {
     // Enable logging
-    tracing::subscriber::set_global_default(
+    /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::DEBUG)
             .finish(),
     )
-    .unwrap();
+    .unwrap();*/
 
     // Obtain directory handle
-    let handle = parse_config().remove("imap").unwrap();
+    let handle = parse_config().directories.remove("imap").unwrap();
 
     // Spawn mock LMTP server
     let shutdown = spawn_mock_imap_server(5);

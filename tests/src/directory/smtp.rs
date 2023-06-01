@@ -22,7 +22,7 @@ async fn smtp_directory() {
     let shutdown = spawn_mock_lmtp_server(5);
 
     // Obtain directory handle
-    let handle = parse_config().remove("smtp").unwrap();
+    let handle = parse_config().directories.remove("smtp").unwrap();
 
     // Basic lookup
     let tests = vec![

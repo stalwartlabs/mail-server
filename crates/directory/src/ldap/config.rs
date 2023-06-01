@@ -35,7 +35,7 @@ impl LdapDirectory {
         );
 
         let mut mappings = LdapMappings {
-            base_dn: config.value_require((&prefix, "address"))?.to_string(),
+            base_dn: config.value_require((&prefix, "base-dn"))?.to_string(),
             filter_login: LdapFilter::from_config(config, (&prefix, "filter.login"))?,
             filter_name: LdapFilter::from_config(config, (&prefix, "filter.name"))?,
             filter_email: LdapFilter::from_config(config, (&prefix, "filter.email"))?,
@@ -73,7 +73,7 @@ impl LdapDirectory {
                 .map(|(_, v)| v.to_string())
                 .collect(),
             attr_quota: config
-                .values((&prefix, "attributes."))
+                .values((&prefix, "attributes.quota"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
             attrs_principal: vec!["objectClass".to_string()],

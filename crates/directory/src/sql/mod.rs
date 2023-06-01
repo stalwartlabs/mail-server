@@ -8,6 +8,7 @@ pub struct SqlDirectory {
     mappings: SqlMappings,
 }
 
+#[derive(Debug)]
 pub(crate) struct SqlMappings {
     query_login: String,
     query_name: String,

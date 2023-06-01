@@ -21,7 +21,7 @@ impl Directory for LdapDirectory {
             .await
         {
             Ok(Some(principal)) => {
-                if principal.secret.as_ref().map_or(false, |s| s == secret) {
+                if principal.verify_secret(secret) {
                     Ok(Some(principal))
                 } else {
                     Ok(None)
@@ -49,7 +49,7 @@ impl Directory for LdapDirectory {
         let mut ids = Vec::with_capacity(principal.member_of.len());
         for group in &principal.member_of {
             let (rs, _res) = if group.contains('=') {
-                conn.search(group, Scope::Base, "", &self.mappings.attr_id)
+                conn.search(group, Scope::Base, "objectClass=*", &self.mappings.attr_id)
                     .await?
                     .success()?
             } else {
@@ -126,11 +126,12 @@ impl Directory for LdapDirectory {
         let mut ids = Vec::new();
         for entry in rs {
             let entry = SearchEntry::construct(entry);
-            for attr in &self.mappings.attr_id {
+            'outer: for attr in &self.mappings.attr_id {
                 if let Some(values) = entry.attrs.get(attr) {
                     for id in values {
                         if let Ok(id) = id.parse() {
                             ids.push(id);
+                            break 'outer;
                         }
                     }
                 }
@@ -279,16 +280,20 @@ impl LdapMappings {
             ..Default::default()
         };
         for (attr, value) in entry.attrs {
-            if self.attr_id.contains(&attr) {
-                if let Ok(id) = value.into_iter().next().unwrap_or_default().parse() {
-                    principal.id = id;
+            if let Some(idx) = self.attr_id.iter().position(|a| a == &attr) {
+                if principal.id == u32::MAX || idx == 0 {
+                    if let Ok(id) = value.into_iter().next().unwrap_or_default().parse() {
+                        principal.id = id;
+                    }
                 }
             } else if self.attr_name.contains(&attr) {
                 principal.name = value.into_iter().next().unwrap_or_default();
             } else if self.attr_secret.contains(&attr) {
-                principal.secret = value.into_iter().next();
-            } else if self.attr_description.contains(&attr) {
-                principal.description = value.into_iter().next();
+                principal.secrets.extend(value);
+            } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
+                if principal.description.is_none() || idx == 0 {
+                    principal.description = value.into_iter().next();
+                }
             } else if self.attr_groups.contains(&attr) {
                 principal.member_of.extend(value);
             } else if self.attr_quota.contains(&attr) {

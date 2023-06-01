@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sqlx::any::AnyPoolOptions;
+use sqlx::any::{install_default_drivers, AnyPoolOptions};
 use utils::config::{utils::AsKey, Config};
 
 use crate::Directory;
@@ -14,7 +14,7 @@ impl SqlDirectory {
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
-
+        install_default_drivers();
         let pool = AnyPoolOptions::new()
             .max_connections(
                 config
@@ -64,27 +64,27 @@ impl SqlDirectory {
                 .unwrap_or_default()
                 .to_string(),
             column_name: config
-                .value((&prefix, "column.name"))
+                .value((&prefix, "columns.name"))
                 .unwrap_or_default()
                 .to_string(),
             column_description: config
-                .value((&prefix, "column.description"))
+                .value((&prefix, "columns.description"))
                 .unwrap_or_default()
                 .to_string(),
             column_secret: config
-                .value((&prefix, "column.secret"))
+                .value((&prefix, "columns.secret"))
                 .unwrap_or_default()
                 .to_string(),
             column_id: config
-                .value((&prefix, "column.id"))
+                .value((&prefix, "columns.id"))
                 .unwrap_or_default()
                 .to_string(),
             column_quota: config
-                .value((&prefix, "column.quota"))
+                .value((&prefix, "columns.quota"))
                 .unwrap_or_default()
                 .to_string(),
             column_type: config
-                .value((&prefix, "column.type"))
+                .value((&prefix, "columns.type"))
                 .unwrap_or_default()
                 .to_string(),
         };

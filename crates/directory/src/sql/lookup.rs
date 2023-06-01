@@ -23,7 +23,7 @@ impl Directory for SqlDirectory {
             .await?
         {
             self.mappings.row_to_principal(row).map(|p| {
-                if p.secret.as_ref().map_or(false, |s| s == secret) {
+                if p.verify_secret(secret) {
                     Some(p)
                 } else {
                     None
@@ -85,7 +85,7 @@ impl Directory for SqlDirectory {
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
+        sqlx::query(&self.mappings.query_recipients)
             .bind(address)
             .fetch_optional(&self.pool)
             .await
@@ -136,7 +136,9 @@ impl SqlMappings {
             } else if name.eq_ignore_ascii_case(&self.column_name) {
                 principal.name = row.try_get::<Option<String>, _>(idx)?.unwrap_or_default();
             } else if name.eq_ignore_ascii_case(&self.column_secret) {
-                principal.secret = row.try_get::<Option<String>, _>(idx)?;
+                if let Some(secret) = row.try_get::<Option<String>, _>(idx)? {
+                    principal.secrets.push(secret);
+                }
             } else if name.eq_ignore_ascii_case(&self.column_type) {
                 if let Some(typ) = row.try_get::<Option<String>, _>(idx)? {
                     match typ.as_str() {
@@ -148,7 +150,7 @@ impl SqlMappings {
             } else if name.eq_ignore_ascii_case(&self.column_description) {
                 principal.description = row.try_get::<Option<String>, _>(idx)?;
             } else if name.eq_ignore_ascii_case(&self.column_quota) {
-                principal.quota = row.try_get::<i64, _>(idx)? as u32;
+                principal.quota = row.try_get::<i64, _>(idx).unwrap_or_default() as u32;
             }
         }
 

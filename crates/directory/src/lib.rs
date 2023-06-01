@@ -1,3 +1,6 @@
+use std::{fmt::Debug, sync::Arc};
+
+use ahash::{AHashMap, AHashSet};
 use bb8::RunError;
 use imap::ImapError;
 use ldap3::LdapError;
@@ -6,21 +9,23 @@ use mail_send::Credentials;
 pub mod config;
 pub mod imap;
 pub mod ldap;
+pub mod memory;
+pub mod secret;
 pub mod smtp;
 pub mod sql;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Principal {
     pub id: u32,
     pub name: String,
-    pub secret: Option<String>,
+    pub secrets: Vec<String>,
     pub typ: Type,
     pub description: Option<String>,
     pub quota: u32,
     pub member_of: Vec<String>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Individual,
     Group,
@@ -52,6 +57,72 @@ pub trait Directory: Sync + Send {
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
     async fn query(&self, query: &str, params: &[&str]) -> Result<bool>;
+
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
+#[derive(Clone)]
+pub enum Lookup {
+    Directory {
+        directory: Arc<dyn Directory>,
+        query: String,
+    },
+    List {
+        list: AHashSet<String>,
+    },
+}
+
+impl Lookup {
+    pub async fn contains(&self, item: &str) -> Option<bool> {
+        match self {
+            Lookup::Directory { directory, query } => match directory.query(query, &[item]).await {
+                Ok(result) => result.into(),
+                Err(_) => None,
+            },
+            Lookup::List { list } => list.contains(item).into(),
+        }
+    }
+}
+
+impl PartialEq for Lookup {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Lookup::Directory { query, .. }, Lookup::Directory { query: other, .. }) => {
+                query == other
+            }
+            (Lookup::List { list }, Lookup::List { list: other }) => list == other,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Lookup {}
+
+impl Debug for dyn Directory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Directory")
+            .field("type", &self.type_name())
+            .finish()
+    }
+}
+
+impl Debug for Lookup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Directory { query, .. } => {
+                f.debug_struct("Directory").field("query", query).finish()
+            }
+            Self::List { list } => f.debug_struct("List").field("list", list).finish(),
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct DirectoryConfig {
+    pub directories: AHashMap<String, Arc<dyn Directory>>,
+    pub lookups: AHashMap<String, Arc<Lookup>>,
 }
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;
@@ -159,53 +230,5 @@ impl DirectoryError {
             "Directory timed out"
         );
         DirectoryError::TimedOut
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use ldap3::{LdapConnAsync, LdapConnSettings, Scope, SearchEntry};
-
-    use crate::ldap::{Bind, LdapConnectionManager};
-
-    #[tokio::test]
-    async fn ldap() {
-        let manager = LdapConnectionManager::new(
-            "ldap://localhost:3893".to_string(),
-            LdapConnSettings::new(),
-            Bind::new(
-                "cn=serviceuser,ou=svcaccts,dc=example,dc=com".into(),
-                "mysecret".into(),
-            )
-            .into(),
-        );
-        let pool = bb8::Pool::builder()
-            .min_idle(None)
-            .max_size(10)
-            .max_lifetime(std::time::Duration::from_secs(30 * 60).into())
-            .idle_timeout(std::time::Duration::from_secs(10 * 60).into())
-            .connection_timeout(std::time::Duration::from_secs(30))
-            .test_on_check_out(true)
-            .build(manager)
-            .await
-            .unwrap();
-
-        let mut ldap = pool.get().await.unwrap();
-
-        let (rs, _res) = ldap
-            .search(
-                "dc=example,dc=com",
-                Scope::Subtree,
-                "(&(objectClass=posixAccount)(cn=johndoe))",
-                vec!["cocomiel", "cn", "uidNumber"], //Vec::<String>::new(),
-            )
-            .await
-            .unwrap()
-            .success()
-            .unwrap();
-        for entry in rs {
-            println!("{:#?}", SearchEntry::construct(entry));
-        }
-        ldap.unbind().await.unwrap()
     }
 }

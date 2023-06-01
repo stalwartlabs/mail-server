@@ -7,7 +7,9 @@ resolver = "2"
 [dependencies]
 utils = { path =  "../utils" }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
+mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
 tokio = { version = "1.23", features = ["net"] }
 tokio-rustls = { version = "0.24.0"}
 rustls = "0.21.0"
@@ -18,6 +20,14 @@ async-trait = "0.1.68"
 ahash = { version = "0.8" }
 tracing = "0.1"
 lru-cache = "0.1.2"
+pwhash = "1"
+password-hash = "0.5.0"
+argon2 = "0.5.0"
+pbkdf2 = {version = "0.12.1", features = ["simple"] }
+scrypt = "0.11.0"
+sha1 = "0.10.5"
+sha2 = "0.10.6"
+md5 = "0.7.0"
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }
