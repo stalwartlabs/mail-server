@@ -232,7 +232,7 @@ impl From<Box<Message>> for DeliveryAttempt {
 }
 
 #[derive(Debug)]
-enum NextHop<'x> {
+pub enum NextHop<'x> {
     Relay(&'x RelayHost),
     MX(&'x str),
 }

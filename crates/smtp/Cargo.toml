@@ -13,6 +13,7 @@ resolver = "2"
 
 [dependencies]
 utils = { path =  "../utils" }
+directory = { path =  "../directory" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 

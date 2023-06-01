@@ -21,12 +21,9 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use tokio::sync::mpsc;
 use utils::config::Config;
-
-use crate::lookup::Lookup;
 
 use super::{ConfigContext, Host};
 
@@ -38,22 +35,13 @@ pub trait ConfigHost {
 impl ConfigHost for Config {
     fn parse_remote_hosts(&self, ctx: &mut ConfigContext) -> super::Result<()> {
         for id in self.sub_keys("remote") {
-            let host = self.parse_host(id)?;
-            if host.lookup {
-                ctx.lookup.insert(
-                    format!("remote/{id}"),
-                    Arc::new(Lookup::Remote(host.channel_tx.clone().into())),
-                );
-            }
-            ctx.hosts.insert(id.to_string(), host);
+            ctx.hosts.insert(id.to_string(), self.parse_host(id)?);
         }
 
         Ok(())
     }
 
     fn parse_host(&self, id: &str) -> super::Result<Host> {
-        let (channel_tx, channel_rx) = mpsc::channel(1024);
-
         Ok(Host {
             address: self.property_require(("remote", id, "address"))?,
             port: self.property_require(("remote", id, "port"))?,
@@ -67,25 +55,9 @@ impl ConfigHost for Config {
                 .unwrap_or(false),
             username: self.property(("remote", id, "auth.username"))?,
             secret: self.property(("remote", id, "auth.secret"))?,
-            cache_entries: self
-                .property(("remote", id, "cache.entries"))?
-                .unwrap_or(1024),
-            cache_ttl_positive: self
-                .property(("remote", id, "cache.ttl.positive"))?
-                .unwrap_or(Duration::from_secs(86400)),
-            cache_ttl_negative: self
-                .property(("remote", id, "cache.ttl.positive"))?
-                .unwrap_or(Duration::from_secs(3600)),
             timeout: self
                 .property(("remote", id, "timeout"))?
                 .unwrap_or(Duration::from_secs(60)),
-            max_errors: self.property(("remote", id, "limits.errors"))?.unwrap_or(3),
-            max_requests: self
-                .property(("remote", id, "limits.requests"))?
-                .unwrap_or(50),
-            channel_tx,
-            channel_rx,
-            lookup: self.property(("remote", id, "lookup"))?.unwrap_or(false),
         })
     }
 }

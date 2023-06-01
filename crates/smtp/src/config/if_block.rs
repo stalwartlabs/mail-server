@@ -188,7 +188,7 @@ impl<T: Default> IfBlock<Option<T>> {
 }
 
 impl IfBlock<Option<String>> {
-    pub fn map_if_block<T>(
+    pub fn map_if_block<T: ?Sized>(
         self,
         map: &AHashMap<String, Arc<T>>,
         key_name: impl AsKey,
@@ -209,7 +209,7 @@ impl IfBlock<Option<String>> {
         })
     }
 
-    fn map_value<T>(
+    fn map_value<T: ?Sized>(
         map: &AHashMap<String, Arc<T>>,
         value: Option<String>,
         object_name: &str,
@@ -230,7 +230,7 @@ impl IfBlock<Option<String>> {
 }
 
 impl IfBlock<Vec<String>> {
-    pub fn map_if_block<T>(
+    pub fn map_if_block<T: ?Sized>(
         self,
         map: &AHashMap<String, Arc<T>>,
         key_name: &str,
@@ -250,7 +250,7 @@ impl IfBlock<Vec<String>> {
         })
     }
 
-    fn map_value<T>(
+    fn map_value<T: ?Sized>(
         map: &AHashMap<String, Arc<T>>,
         values: Vec<String>,
         object_name: &str,
@@ -273,196 +273,5 @@ impl IfBlock<Vec<String>> {
 impl<T> IfBlock<Vec<T>> {
     pub fn has_empty_list(&self) -> bool {
         self.default.is_empty() || self.if_then.iter().any(|v| v.then.is_empty())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs, path::PathBuf, time::Duration};
-
-    use utils::config::Config;
-
-    use crate::config::{
-        if_block::ConfigIf, Condition, ConditionMatch, Conditions, ConfigContext, EnvelopeKey,
-        IfBlock, IfThen, StringMatch,
-    };
-
-    #[test]
-    fn parse_if_blocks() {
-        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file.push("resources");
-        file.push("smtp");
-        file.push("config");
-        file.push("if-blocks.toml");
-
-        let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-
-        // Create context and add some conditions
-        let context = ConfigContext::new(&[]);
-        let available_keys = vec![
-            EnvelopeKey::Recipient,
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::Priority,
-        ];
-
-        assert_eq!(
-            config
-                .parse_if_block::<Option<Duration>>("durations", &context, &available_keys)
-                .unwrap()
-                .unwrap(),
-            IfBlock {
-                if_then: vec![
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![Condition::Match {
-                                key: EnvelopeKey::Sender,
-                                value: ConditionMatch::String(StringMatch::Equal(
-                                    "jdoe".to_string()
-                                )),
-                                not: false
-                            }]
-                        },
-                        then: Duration::from_secs(5 * 86400).into()
-                    },
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![
-                                Condition::Match {
-                                    key: EnvelopeKey::Priority,
-                                    value: ConditionMatch::Int(-1),
-                                    not: false
-                                },
-                                Condition::JumpIfTrue { positions: 1 },
-                                Condition::Match {
-                                    key: EnvelopeKey::Recipient,
-                                    value: ConditionMatch::String(StringMatch::StartsWith(
-                                        "jane".to_string()
-                                    )),
-                                    not: false
-                                }
-                            ]
-                        },
-                        then: Duration::from_secs(3600).into()
-                    }
-                ],
-                default: None
-            }
-        );
-
-        assert_eq!(
-            config
-                .parse_if_block::<Vec<String>>("string-list", &context, &available_keys)
-                .unwrap()
-                .unwrap(),
-            IfBlock {
-                if_then: vec![
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![Condition::Match {
-                                key: EnvelopeKey::Sender,
-                                value: ConditionMatch::String(StringMatch::Equal(
-                                    "jdoe".to_string()
-                                )),
-                                not: false
-                            }]
-                        },
-                        then: vec!["From".to_string(), "To".to_string(), "Date".to_string()]
-                    },
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![
-                                Condition::Match {
-                                    key: EnvelopeKey::Priority,
-                                    value: ConditionMatch::Int(-1),
-                                    not: false
-                                },
-                                Condition::JumpIfTrue { positions: 1 },
-                                Condition::Match {
-                                    key: EnvelopeKey::Recipient,
-                                    value: ConditionMatch::String(StringMatch::StartsWith(
-                                        "jane".to_string()
-                                    )),
-                                    not: false
-                                }
-                            ]
-                        },
-                        then: vec!["Other-ID".to_string()]
-                    }
-                ],
-                default: vec![]
-            }
-        );
-
-        assert_eq!(
-            config
-                .parse_if_block::<Vec<String>>("string-list-bis", &context, &available_keys)
-                .unwrap()
-                .unwrap(),
-            IfBlock {
-                if_then: vec![
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![Condition::Match {
-                                key: EnvelopeKey::Sender,
-                                value: ConditionMatch::String(StringMatch::Equal(
-                                    "jdoe".to_string()
-                                )),
-                                not: false
-                            }]
-                        },
-                        then: vec!["From".to_string(), "To".to_string(), "Date".to_string()]
-                    },
-                    IfThen {
-                        conditions: Conditions {
-                            conditions: vec![
-                                Condition::Match {
-                                    key: EnvelopeKey::Priority,
-                                    value: ConditionMatch::Int(-1),
-                                    not: false
-                                },
-                                Condition::JumpIfTrue { positions: 1 },
-                                Condition::Match {
-                                    key: EnvelopeKey::Recipient,
-                                    value: ConditionMatch::String(StringMatch::StartsWith(
-                                        "jane".to_string()
-                                    )),
-                                    not: false
-                                }
-                            ]
-                        },
-                        then: vec![]
-                    }
-                ],
-                default: vec!["ID-Bis".to_string()]
-            }
-        );
-
-        assert_eq!(
-            config
-                .parse_if_block::<String>("single-value", &context, &available_keys)
-                .unwrap()
-                .unwrap(),
-            IfBlock {
-                if_then: vec![],
-                default: "hello world".to_string()
-            }
-        );
-
-        for bad_rule in [
-            "bad-multi-value",
-            "bad-if-without-then",
-            "bad-if-without-else",
-            "bad-multiple-else",
-        ] {
-            if let Ok(value) = config.parse_if_block::<u32>(bad_rule, &context, &available_keys) {
-                panic!("Condition {bad_rule:?} had unexpected result {value:?}");
-            }
-        }
     }
 }

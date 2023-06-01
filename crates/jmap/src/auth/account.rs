@@ -23,155 +23,63 @@
 
 use crate::JMAP;
 
-use super::{AclToken, AuthDatabase, SqlDatabase};
+use super::AclToken;
 
 impl JMAP {
     pub async fn authenticate(&self, account: &str, secret: &str) -> Option<u32> {
-        let account_id = self.get_account_id(account).await?;
-        let account_secret = self.get_account_secret(account_id).await?;
-        if secret == account_secret {
-            account_id.into()
-        } else {
-            tracing::debug!(context = "auth", event = "failed", account = account);
-            None
-        }
+        todo!()
     }
 
     pub async fn authenticate_with_token(&self, account: &str, secret: &str) -> Option<AclToken> {
-        self.get_acl_token(self.authenticate(account, secret).await?)
-            .await
+        todo!()
     }
 
     pub async fn get_acl_token(&self, account_id: u32) -> Option<AclToken> {
-        self.update_acl_token(AclToken {
-            primary_id: account_id,
-            member_of: self.get_account_gids(account_id).await,
-            access_to: Vec::new(),
-        })
-        .await
+        todo!()
     }
 
     pub async fn get_account_secret(&self, account_id: u32) -> Option<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_secret_by_uid,
-                ..
-            } => {
-                db.fetch_uid_to_string(query_secret_by_uid, account_id as i64)
-                    .await
-            }
-            AuthDatabase::Ldap => None,
-        }
+        todo!()
     }
 
     pub async fn get_account_name(&self, account_id: u32) -> Option<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_name_by_uid,
-                ..
-            } => {
-                db.fetch_uid_to_string(query_name_by_uid, account_id as i64)
-                    .await
-            }
-            AuthDatabase::Ldap => None,
-        }
+        todo!()
     }
 
     pub async fn get_account_id(&self, account: &str) -> Option<u32> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_uid_by_login,
-                ..
-            } => db
-                .fetch_string_to_id(query_uid_by_login, account)
-                .await
-                .map(|id| id as u32),
-            AuthDatabase::Ldap => None,
-        }
+        todo!()
     }
 
     pub async fn get_account_gids(&self, account_id: u32) -> Vec<u32> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_gids_by_uid,
-                ..
-            } => db
-                .fetch_uid_to_uids(query_gids_by_uid, account_id as i64)
-                .await
-                .into_iter()
-                .map(|id| id as u32)
-                .collect(),
-            AuthDatabase::Ldap => vec![],
-        }
+        todo!()
     }
 
     pub async fn get_account_login(&self, account_id: u32) -> Option<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_login_by_uid,
-                ..
-            } => {
-                db.fetch_uid_to_string(query_login_by_uid, account_id as i64)
-                    .await
-            }
-            AuthDatabase::Ldap => None,
-        }
+        todo!()
     }
 
     pub async fn get_uids_by_address(&self, address: &str) -> Vec<u32> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_uids_by_address,
-                ..
-            } => db
-                .fetch_string_to_uids(query_uids_by_address, address)
-                .await
-                .into_iter()
-                .map(|id| id as u32)
-                .collect(),
-            AuthDatabase::Ldap => vec![],
-        }
+        todo!()
     }
 
     pub async fn get_addresses_by_uid(&self, account_id: u32) -> Vec<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql {
-                db,
-                query_addresses_by_uid,
-                ..
-            } => {
-                db.fetch_uid_to_strings(query_addresses_by_uid, account_id as i64)
-                    .await
-            }
-            AuthDatabase::Ldap => vec![],
-        }
+        todo!()
     }
 
     pub async fn vrfy_address(&self, address: &str) -> Vec<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql { db, query_vrfy, .. } => {
-                db.fetch_string_to_strings(query_vrfy, address).await
-            }
-            AuthDatabase::Ldap => vec![],
-        }
+        todo!()
     }
 
     pub async fn expn_address(&self, address: &str) -> Vec<String> {
-        match &self.auth_db {
-            AuthDatabase::Sql { db, query_expn, .. } => {
-                db.fetch_string_to_strings(query_expn, address).await
-            }
-            AuthDatabase::Ldap => vec![],
-        }
+        todo!()
     }
 }
 
+struct Remove {
+    remove: bool,
+}
+
+/*
 // TODO abstract this
 impl SqlDatabase {
     pub async fn fetch_uid_to_string(&self, query: &str, uid: i64) -> Option<String> {
@@ -447,3 +355,4 @@ impl AuthDatabase {
         }
     }
 }
+*/

@@ -41,29 +41,6 @@ pub mod authenticate;
 pub mod oauth;
 pub mod rate_limit;
 
-pub enum AuthDatabase {
-    Sql {
-        db: SqlDatabase,
-        query_uid_by_login: String,
-        query_login_by_uid: String,
-        query_secret_by_uid: String,
-        query_name_by_uid: String,
-        query_gids_by_uid: String,
-        query_uids_by_address: String,
-        query_addresses_by_uid: String,
-        query_vrfy: String,
-        query_expn: String,
-    },
-    Ldap,
-}
-
-pub enum SqlDatabase {
-    Postgres(sqlx::Pool<sqlx::Postgres>),
-    MySql(sqlx::Pool<sqlx::MySql>),
-    //MsSql(sqlx::Pool<sqlx::Mssql>),
-    SqlLite(sqlx::Pool<sqlx::Sqlite>),
-}
-
 #[derive(Debug, Clone)]
 pub struct AclToken {
     pub primary_id: u32,

@@ -94,7 +94,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                             } => {
                                 let auth =
                                     *self.core.session.config.auth.mechanisms.eval(self).await;
-                                if auth == 0 || self.params.auth_lookup.is_none() {
+                                if auth == 0 || self.params.auth_directory.is_none() {
                                     self.write(b"503 5.5.1 AUTH not allowed.\r\n").await?;
                                 } else if !self.data.authenticated_as.is_empty() {
                                     self.write(b"503 5.5.1 Already authenticated.\r\n").await?;

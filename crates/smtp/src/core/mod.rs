@@ -31,6 +31,7 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
+use directory::{Directory, Lookup};
 use mail_auth::{common::lru::LruCache, IprevOutput, Resolver, SpfOutput};
 use sieve::{Runtime, Sieve};
 use smtp_proto::request::receiver::{
@@ -53,7 +54,6 @@ use crate::{
         VerifyStrategy,
     },
     inbound::auth::SaslToken,
-    lookup::{Lookup, SqlDatabase},
     outbound::{
         dane::{DnssecResolver, Tlsa},
         mta_sts,
@@ -117,7 +117,7 @@ pub struct SieveConfig {
     pub from_name: String,
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
-    pub db: Option<SqlDatabase>,
+    pub db: Option<Arc<dyn Directory>>,
 }
 
 pub struct Resolvers {
@@ -223,7 +223,7 @@ pub struct SessionParameters {
     pub ehlo_reject_non_fqdn: bool,
 
     // Auth parameters
-    pub auth_lookup: Option<Arc<Lookup>>,
+    pub auth_directory: Option<Arc<dyn Directory>>,
     pub auth_require: bool,
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,
@@ -236,9 +236,9 @@ pub struct SessionParameters {
     pub rcpt_max: usize,
     pub rcpt_dsn: bool,
     pub rcpt_lookup_domain: Option<Arc<Lookup>>,
-    pub rcpt_lookup_addresses: Option<Arc<Lookup>>,
-    pub rcpt_lookup_expn: Option<Arc<Lookup>>,
-    pub rcpt_lookup_vrfy: Option<Arc<Lookup>>,
+    pub rcpt_directory: Option<Arc<dyn Directory>>,
+    pub can_expn: bool,
+    pub can_vrfy: bool,
     pub max_message_size: usize,
 
     // Mail authentication parameters
@@ -454,7 +454,7 @@ impl Session<NullIo> {
                 timeout: Default::default(),
                 ehlo_require: Default::default(),
                 ehlo_reject_non_fqdn: Default::default(),
-                auth_lookup: Default::default(),
+                auth_directory: Default::default(),
                 auth_require: Default::default(),
                 auth_errors_max: Default::default(),
                 auth_errors_wait: Default::default(),
@@ -465,13 +465,13 @@ impl Session<NullIo> {
                 rcpt_max: Default::default(),
                 rcpt_dsn: Default::default(),
                 rcpt_lookup_domain: Default::default(),
-                rcpt_lookup_addresses: Default::default(),
-                rcpt_lookup_expn: Default::default(),
-                rcpt_lookup_vrfy: Default::default(),
+                rcpt_directory: Default::default(),
                 max_message_size: Default::default(),
                 iprev: crate::config::VerifyStrategy::Disable,
                 spf_ehlo: crate::config::VerifyStrategy::Disable,
                 spf_mail_from: crate::config::VerifyStrategy::Disable,
+                can_expn: false,
+                can_vrfy: false,
                 dnsbl_policy: 0,
             },
             in_flight: vec![],

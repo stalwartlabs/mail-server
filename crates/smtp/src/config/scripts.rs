@@ -64,7 +64,7 @@ impl ConfigSieve for Config {
             .with_max_variable_size(102400)
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
-            .with_valid_ext_lists(ctx.lookup.keys().map(|k| k.to_string()));
+            .with_valid_ext_lists(ctx.directory.lookups.keys().map(|k| k.to_string()));
 
         if let Some(value) = self.property("sieve.limits.redirects")? {
             runtime.set_max_redirects(value);
@@ -120,7 +120,7 @@ impl ConfigSieve for Config {
         Ok(SieveCore {
             runtime,
             scripts: ctx.scripts.clone(),
-            lookup: ctx.lookup.clone(),
+            lookup: ctx.directory.lookups.clone(),
             config: SieveConfig {
                 from_addr: self
                     .value("sieve.from-addr")
@@ -135,12 +135,12 @@ impl ConfigSieve for Config {
                     .unwrap_or_default()
                     .to_string(),
                 sign,
-                db: if let Some(db) = self.value("sieve.use-database") {
-                    if let Some(db) = ctx.databases.get(db) {
+                db: if let Some(db) = self.value("sieve.use-directory") {
+                    if let Some(db) = ctx.directory.directories.get(db) {
                         Some(db.clone())
                     } else {
                         return Err(format!(
-                            "Database {db:?} not found for key \"sieve.use-database\"."
+                            "Directory {db:?} not found for key \"sieve.use-directory\"."
                         ));
                     }
                 } else {

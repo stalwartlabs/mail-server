@@ -23,6 +23,7 @@
 
 use std::time::Duration;
 
+use directory::config::ConfigDirectory;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
@@ -35,6 +36,7 @@ use utils::{
 async fn main() -> std::io::Result<()> {
     let config = Config::init();
     let servers = config.parse_servers().failed("Invalid configuration");
+    let directory = config.parse_directory().failed("Invalid configuration");
 
     // Bind ports and drop privileges
     servers.bind(&config);
@@ -42,13 +44,13 @@ async fn main() -> std::io::Result<()> {
     // Enable tracing
     let _tracer = enable_tracing(&config).failed("Failed to enable tracing");
     tracing::info!(
-        "Starting Stalwart mail server v{}...",
+        "Starting Stalwart Mail Server v{}...",
         env!("CARGO_PKG_VERSION")
     );
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, delivery_tx)
+    let smtp = SMTP::init(&config, &servers, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
     let jmap = JMAP::init(&config, delivery_rx, smtp.clone())
@@ -74,7 +76,7 @@ async fn main() -> std::io::Result<()> {
     // Wait for shutdown signal
     wait_for_shutdown().await;
     tracing::info!(
-        "Shutting down Stalwart mail server v{}...",
+        "Shutting down Stalwart Mail Server v{}...",
         env!("CARGO_PKG_VERSION")
     );
 

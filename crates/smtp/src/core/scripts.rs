@@ -24,6 +24,7 @@
 use std::{borrow::Cow, process::Command, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
+use directory::Lookup;
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
@@ -38,10 +39,7 @@ use tokio::{
     runtime::Handle,
 };
 
-use crate::{
-    lookup::Lookup,
-    queue::{DomainPart, InstantFromTimestamp, Message},
-};
+use crate::queue::{DomainPart, InstantFromTimestamp, Message};
 
 use super::{Session, SMTP};
 
@@ -194,26 +192,26 @@ impl SMTP {
                     } => match command_type {
                         CommandType::Query => {
                             if let Some(db) = &self.sieve.config.db {
-                                if command
+                                let result = handle.block_on(db.query(
+                                    &command,
+                                    &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
+                                ));
+
+                                input = if command
                                     .as_bytes()
                                     .get(..6)
                                     .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
                                 {
-                                    input = handle
-                                        .block_on(db.exists(&command, arguments.into_iter()))
-                                        .unwrap_or(false)
-                                        .into();
+                                    result.unwrap_or(false).into()
                                 } else {
-                                    input = handle
-                                        .block_on(db.execute(&command, arguments.into_iter()))
-                                        .into();
-                                }
+                                    result.is_ok().into()
+                                };
                             } else {
                                 tracing::warn!(
                                     parent: &span,
                                     context = "sieve",
                                     event = "config-error",
-                                    reason = "No database configured",
+                                    reason = "No directory configured",
                                 );
                                 input = false.into();
                             }
@@ -275,27 +273,16 @@ impl SMTP {
                             Recipient::List(list) => {
                                 if let Some(list) = self.sieve.lookup.get(&list) {
                                     match list.as_ref() {
-                                        Lookup::List(items) => {
-                                            for rcpt in items {
+                                        Lookup::List { list } => {
+                                            for rcpt in list {
                                                 handle.block_on(
                                                     message.add_recipient(rcpt, &self.queue.config),
                                                 );
                                             }
                                         }
-                                        Lookup::Sql(sql) => {
-                                            if let Some(items) = handle.block_on(sql.fetch_many(""))
-                                            {
-                                                for rcpt in items {
-                                                    handle.block_on(
-                                                        message.add_recipient(
-                                                            rcpt,
-                                                            &self.queue.config,
-                                                        ),
-                                                    );
-                                                }
-                                            }
+                                        Lookup::Directory { .. } => {
+                                            // Not implemented
                                         }
-                                        _ => (),
                                     }
                                 } else {
                                     tracing::warn!(

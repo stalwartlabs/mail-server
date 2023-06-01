@@ -34,7 +34,7 @@ use crate::{
 use super::NextHop;
 
 impl SMTP {
-    pub(super) async fn resolve_host(
+    pub async fn resolve_host(
         &self,
         remote_host: &NextHop<'_>,
         envelope: &impl Envelope,
@@ -106,7 +106,7 @@ impl SMTP {
     }
 }
 
-pub(super) trait ToNextHop {
+pub trait ToNextHop {
     fn to_remote_hosts<'x, 'y: 'x>(
         &'x self,
         domain: &'y str,

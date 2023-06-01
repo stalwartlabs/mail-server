@@ -23,9 +23,7 @@
 
 pub mod auth;
 pub mod condition;
-pub mod database;
 pub mod if_block;
-pub mod list;
 pub mod queue;
 pub mod remote;
 pub mod report;
@@ -42,6 +40,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use directory::{Directory, DirectoryConfig, Lookup};
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
     dkim::{Canonicalization, Done},
@@ -51,10 +50,7 @@ use mail_send::Credentials;
 use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
-use tokio::sync::mpsc;
 use utils::config::{Rate, Server, ServerProtocol};
-
-use crate::lookup::{self, Lookup, SqlDatabase};
 
 #[derive(Debug)]
 pub struct Host {
@@ -67,14 +63,6 @@ pub struct Host {
     pub tls_allow_invalid_certs: bool,
     pub username: Option<String>,
     pub secret: Option<String>,
-    pub max_errors: usize,
-    pub max_requests: usize,
-    pub cache_entries: usize,
-    pub cache_ttl_positive: Duration,
-    pub cache_ttl_negative: Duration,
-    pub channel_tx: mpsc::Sender<lookup::Event>,
-    pub channel_rx: mpsc::Receiver<lookup::Event>,
-    pub lookup: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +88,7 @@ pub enum StringMatch {
     EndsWith(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ConditionMatch {
     String(StringMatch),
     UInt(u16),
@@ -125,19 +113,21 @@ impl PartialEq for ConditionMatch {
     }
 }
 
-#[cfg(feature = "test_mode")]
-impl Eq for ConditionMatch {}
-
-#[cfg(feature = "test_mode")]
-impl PartialEq for Lookup {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::List(l0), Self::List(r0)) => l0 == r0,
-            (Self::Remote(_), Self::Remote(_)) => true,
-            _ => false,
+impl core::fmt::Debug for ConditionMatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::String(arg0) => f.debug_tuple("String").field(arg0).finish(),
+            Self::UInt(arg0) => f.debug_tuple("UInt").field(arg0).finish(),
+            Self::Int(arg0) => f.debug_tuple("Int").field(arg0).finish(),
+            Self::IpAddrMask(arg0) => f.debug_tuple("IpAddrMask").field(arg0).finish(),
+            Self::Lookup(_) => f.debug_tuple("Lookup").finish(),
+            Self::Regex(arg0) => f.debug_tuple("Regex").field(arg0).finish(),
         }
     }
 }
+
+#[cfg(feature = "test_mode")]
+impl Eq for ConditionMatch {}
 
 impl Default for Condition {
     fn default() -> Self {
@@ -221,6 +211,8 @@ pub struct Extensions {
     pub chunking: IfBlock<bool>,
     pub requiretls: IfBlock<bool>,
     pub dsn: IfBlock<bool>,
+    pub vrfy: IfBlock<bool>,
+    pub expn: IfBlock<bool>,
     pub no_soliciting: IfBlock<Option<String>>,
     pub future_release: IfBlock<Option<Duration>>,
     pub deliver_by: IfBlock<Option<Duration>>,
@@ -228,7 +220,7 @@ pub struct Extensions {
 }
 
 pub struct Auth {
-    pub lookup: IfBlock<Option<Arc<Lookup>>>,
+    pub directory: IfBlock<Option<Arc<dyn Directory>>>,
     pub mechanisms: IfBlock<u64>,
     pub require: IfBlock<bool>,
     pub errors_max: IfBlock<usize>,
@@ -243,9 +235,7 @@ pub struct Rcpt {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub relay: IfBlock<bool>,
     pub lookup_domains: IfBlock<Option<Arc<Lookup>>>,
-    pub lookup_addresses: IfBlock<Option<Arc<Lookup>>>,
-    pub lookup_expn: IfBlock<Option<Arc<Lookup>>>,
-    pub lookup_vrfy: IfBlock<Option<Arc<Lookup>>>,
+    pub directory: IfBlock<Option<Arc<dyn Directory>>>,
 
     // Errors
     pub errors_max: IfBlock<usize>,
@@ -334,7 +324,7 @@ pub struct QueueConfig {
     // Throttle and Quotas
     pub throttle: QueueThrottle,
     pub quota: QueueQuotas,
-    pub management_lookup: Arc<Lookup>,
+    pub management_lookup: Arc<dyn Directory>,
 }
 
 pub struct QueueOutboundSourceIp {
@@ -525,8 +515,7 @@ pub struct ConfigContext<'x> {
     pub servers: &'x [Server],
     pub hosts: AHashMap<String, Host>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
-    pub lookup: AHashMap<String, Arc<Lookup>>,
-    pub databases: AHashMap<String, SqlDatabase>,
+    pub directory: DirectoryConfig,
     pub signers: AHashMap<String, Arc<DkimSigner>>,
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
 }

@@ -39,10 +39,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use utils::{
-    ipc::{Item, LookupResult},
-    listener::{limiter::InFlight, SessionManager},
-};
+use utils::listener::{limiter::InFlight, SessionManager};
 
 use crate::{
     queue::{self, instant_to_timestamp, InstantFromTimestamp, QueueId, Status},
@@ -256,13 +253,13 @@ impl SMTP {
                         .queue
                         .config
                         .management_lookup
-                        .lookup(Item::Authenticate(Credentials::Plain { username, secret }))
+                        .authenticate(&Credentials::Plain { username, secret })
                         .await
                     {
-                        Some(LookupResult::True) => {
+                        Ok(Some(_)) => {
                             is_authenticated = true;
                         }
-                        Some(LookupResult::False) => {
+                        Ok(None) => {
                             tracing::debug!(
                                 context = "management",
                                 event = "auth-error",

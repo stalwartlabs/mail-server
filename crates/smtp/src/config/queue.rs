@@ -23,6 +23,7 @@
 
 use std::time::Duration;
 
+use directory::memory::MemoryDirectory;
 use mail_send::Credentials;
 
 use super::{
@@ -192,15 +193,16 @@ impl ConfigQueue for Config {
                     .unwrap_or_default()
                     .map_if_block(&ctx.signers, "report.dsn.sign", "signature")?,
             },
-            management_lookup: if let Some(lookup) = self.value("management.auth.lookup") {
-                ctx.lookup
-                    .get(lookup)
+            management_lookup: if let Some(id) = self.value("management.directory") {
+                ctx.directory
+                    .directories
+                    .get(id)
                     .ok_or_else(|| {
-                        format!("Lookup {lookup:?} not found for key \"management.auth.lookup\".")
+                        format!("Directory {id:?} not found for key \"management.directory\".")
                     })?
                     .clone()
             } else {
-                Arc::new(Lookup::default())
+                Arc::new(MemoryDirectory::default())
             },
         };
 

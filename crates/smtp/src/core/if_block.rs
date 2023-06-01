@@ -169,10 +169,11 @@ impl IpAddrMask {
 mod tests {
     use std::{fs, net::IpAddr, path::PathBuf};
 
+    use directory::config::ConfigDirectory;
     use utils::config::{Config, Server};
 
     use crate::{
-        config::{condition::ConfigCondition, list::ConfigList, ConfigContext, IfBlock, IfThen},
+        config::{condition::ConfigCondition, ConfigContext, IfBlock, IfThen},
         core::Envelope,
     };
 
@@ -258,7 +259,7 @@ mod tests {
             },
         ];
         let mut context = ConfigContext::new(&servers);
-        config.parse_lists(&mut context).unwrap();
+        context.directory = config.parse_directory().unwrap();
         let conditions = config.parse_conditions(&context).unwrap();
 
         let envelope = TestEnvelope {

@@ -21,108 +21,112 @@
  * for more details.
 */
 
+use directory::DirectoryError;
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::ipc::{Item, LookupResult};
 
 use crate::core::Session;
 use std::fmt::Write;
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
-        if let Some(address_lookup) = &self.params.rcpt_lookup_vrfy {
-            if let Some(result) = address_lookup
-                .lookup(Item::Verify(address.to_lowercase()))
-                .await
-            {
-                if let LookupResult::Values(values) = result {
-                    let mut result = String::with_capacity(32);
-                    for (pos, value) in values.iter().enumerate() {
-                        let _ = write!(
-                            result,
-                            "250{}{}\r\n",
-                            if pos == values.len() - 1 { " " } else { "-" },
-                            value
-                        );
+        match &self.params.rcpt_directory {
+            Some(address_lookup) if self.params.can_vrfy => {
+                match address_lookup.vrfy(&address.to_lowercase()).await {
+                    Ok(values) if !values.is_empty() => {
+                        let mut result = String::with_capacity(32);
+                        for (pos, value) in values.iter().enumerate() {
+                            let _ = write!(
+                                result,
+                                "250{}{}\r\n",
+                                if pos == values.len() - 1 { " " } else { "-" },
+                                value
+                            );
+                        }
+
+                        tracing::debug!(parent: &self.span,
+                            context = "vrfy",
+                            event = "success",
+                            address = &address);
+
+                        self.write(result.as_bytes()).await
                     }
+                    Ok(_) | Err(DirectoryError::Unsupported) => {
+                        tracing::debug!(parent: &self.span,
+                            context = "vrfy",
+                            event = "not-found",
+                            address = &address);
 
-                    tracing::debug!(parent: &self.span,
-                        context = "vrfy",
-                        event = "success",
-                        address = &address);
+                        self.write(b"550 5.1.2 Address not found.\r\n").await
+                    }
+                    Err(_) => {
+                        tracing::debug!(parent: &self.span,
+                            context = "vrfy",
+                            event = "temp-fail",
+                            address = &address);
 
-                    self.write(result.as_bytes()).await
-                } else {
-                    tracing::debug!(parent: &self.span,
-                        context = "vrfy",
-                        event = "not-found",
-                        address = &address);
-
-                    self.write(b"550 5.1.2 Address not found.\r\n").await
+                        self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
+                            .await
+                    }
                 }
-            } else {
+            }
+            _ => {
                 tracing::debug!(parent: &self.span,
                     context = "vrfy",
-                    event = "temp-fail",
+                    event = "forbidden",
                     address = &address);
 
-                self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
-                    .await
+                self.write(b"252 2.5.1 VRFY is disabled.\r\n").await
             }
-        } else {
-            tracing::debug!(parent: &self.span,
-                context = "vrfy",
-                event = "forbidden",
-                address = &address);
-
-            self.write(b"252 2.5.1 VRFY is disabled.\r\n").await
         }
     }
 
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
-        if let Some(address_lookup) = &self.params.rcpt_lookup_expn {
-            if let Some(result) = address_lookup
-                .lookup(Item::Expand(address.to_lowercase()))
-                .await
-            {
-                if let LookupResult::Values(values) = result {
-                    let mut result = String::with_capacity(32);
-                    for (pos, value) in values.iter().enumerate() {
-                        let _ = write!(
-                            result,
-                            "250{}{}\r\n",
-                            if pos == values.len() - 1 { " " } else { "-" },
-                            value
-                        );
+        match &self.params.rcpt_directory {
+            Some(address_lookup) if self.params.can_expn => {
+                match address_lookup.expn(&address.to_lowercase()).await {
+                    Ok(values) if !values.is_empty() => {
+                        let mut result = String::with_capacity(32);
+                        for (pos, value) in values.iter().enumerate() {
+                            let _ = write!(
+                                result,
+                                "250{}{}\r\n",
+                                if pos == values.len() - 1 { " " } else { "-" },
+                                value
+                            );
+                        }
+                        tracing::debug!(parent: &self.span,
+                            context = "expn",
+                            event = "success",
+                            address = &address);
+                        self.write(result.as_bytes()).await
                     }
-                    tracing::debug!(parent: &self.span,
-                        context = "expn",
-                        event = "success",
-                        address = &address);
-                    self.write(result.as_bytes()).await
-                } else {
-                    tracing::debug!(parent: &self.span,
-                        context = "expn",
-                        event = "not-found",
-                        address = &address);
+                    Ok(_) | Err(DirectoryError::Unsupported) => {
+                        tracing::debug!(parent: &self.span,
+                            context = "expn",
+                            event = "not-found",
+                            address = &address);
 
-                    self.write(b"550 5.1.2 Mailing list not found.\r\n").await
+                        self.write(b"550 5.1.2 Mailing list not found.\r\n").await
+                    }
+                    Err(_) => {
+                        tracing::debug!(parent: &self.span,
+                            context = "expn",
+                            event = "temp-fail",
+                            address = &address);
+
+                        self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
+                            .await
+                    }
                 }
-            } else {
+            }
+            _ => {
                 tracing::debug!(parent: &self.span,
                     context = "expn",
-                    event = "temp-fail",
+                    event = "forbidden",
                     address = &address);
 
-                self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
-                    .await
+                self.write(b"252 2.5.1 EXPN is disabled.\r\n").await
             }
-        } else {
-            tracing::debug!(parent: &self.span,
-                context = "expn",
-                event = "forbidden",
-                address = &address);
-
-            self.write(b"252 2.5.1 EXPN is disabled.\r\n").await
         }
     }
 }

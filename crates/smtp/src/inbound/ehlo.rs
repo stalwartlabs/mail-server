@@ -129,7 +129,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             response.capabilities |= EXT_START_TLS;
         }
         let ec = &self.core.session.config.extensions;
-        let rc = &self.core.session.config.rcpt;
         let ac = &self.core.session.config.auth;
         let dc = &self.core.session.config.data;
 
@@ -144,12 +143,12 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         }
 
         // Address Expansion
-        if rc.lookup_expn.eval(self).await.is_some() {
+        if *ec.expn.eval(self).await {
             response.capabilities |= EXT_EXPN;
         }
 
         // Recipient Verification
-        if rc.lookup_vrfy.eval(self).await.is_some() {
+        if *ec.vrfy.eval(self).await {
             response.capabilities |= EXT_VRFY;
         }
 

@@ -71,15 +71,13 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         };
 
         // Verify address
-        if let (Some(domain_lookup), Some(address_lookup)) = (
-            &self.params.rcpt_lookup_domain,
-            &self.params.rcpt_lookup_addresses,
-        ) {
+        let cache = "true";
+        if let (Some(domain_lookup), Some(address_lookup)) =
+            (&self.params.rcpt_lookup_domain, &self.params.auth_directory)
+        {
             if let Some(is_local_domain) = domain_lookup.contains(&rcpt.domain).await {
                 if is_local_domain {
-                    if let Some(is_local_address) =
-                        address_lookup.contains(&rcpt.address_lcase).await
-                    {
+                    if let Ok(is_local_address) = address_lookup.rcpt(&rcpt.address_lcase).await {
                         if !is_local_address {
                             tracing::debug!(parent: &self.span,
                                             context = "rcpt", 

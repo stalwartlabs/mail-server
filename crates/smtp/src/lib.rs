@@ -27,12 +27,11 @@ use crate::core::{
 use std::sync::Arc;
 
 use config::{
-    auth::ConfigAuth, database::ConfigDatabase, list::ConfigList, queue::ConfigQueue,
-    remote::ConfigHost, report::ConfigReport, resolver::ConfigResolver, scripts::ConfigSieve,
-    session::ConfigSession, ConfigContext, Host,
+    auth::ConfigAuth, queue::ConfigQueue, remote::ConfigHost, report::ConfigReport,
+    resolver::ConfigResolver, scripts::ConfigSieve, session::ConfigSession, ConfigContext, Host,
 };
 use dashmap::DashMap;
-use lookup::Lookup;
+use directory::DirectoryConfig;
 use mail_send::smtp::tls::build_tls_connector;
 use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;
@@ -45,7 +44,6 @@ use utils::{
 pub mod config;
 pub mod core;
 pub mod inbound;
-pub mod lookup;
 pub mod outbound;
 pub mod queue;
 pub mod reporting;
@@ -56,18 +54,15 @@ impl SMTP {
     pub async fn init(
         config: &Config,
         servers: &Servers,
+        directory: &DirectoryConfig,
         #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
     ) -> Result<Arc<Self>, String> {
         // Read configuration parameters
         let mut config_ctx = ConfigContext::new(&servers.inner);
+        config_ctx.directory = directory.clone();
 
         #[cfg(feature = "local_delivery")]
         {
-            config_ctx.lookup.insert(
-                "local".to_string(),
-                Arc::new(Lookup::Local(delivery_tx.clone())),
-            );
-            let (channel_tx, channel_rx) = mpsc::channel(1024);
             config_ctx.hosts.insert(
                 "local".to_string(),
                 Host {
@@ -80,21 +75,11 @@ impl SMTP {
                     tls_allow_invalid_certs: Default::default(),
                     username: Default::default(),
                     secret: Default::default(),
-                    max_errors: Default::default(),
-                    max_requests: Default::default(),
-                    cache_entries: Default::default(),
-                    cache_ttl_positive: Default::default(),
-                    cache_ttl_negative: Default::default(),
-                    channel_tx,
-                    channel_rx,
-                    lookup: false,
                 },
             );
         }
 
         config.parse_remote_hosts(&mut config_ctx)?;
-        config.parse_databases(&mut config_ctx)?;
-        config.parse_lists(&mut config_ctx)?;
         config.parse_signatures(&mut config_ctx)?;
         let sieve_config = config.parse_sieve(&mut config_ctx)?;
         let session_config = config.parse_session_config(&config_ctx)?;
@@ -167,13 +152,6 @@ impl SMTP {
 
         // Spawn report manager
         report_rx.spawn(core.clone(), core.report.read_reports().await);
-
-        // Spawn remote hosts
-        for host in config_ctx.hosts.into_values() {
-            if host.lookup {
-                host.spawn(config);
-            }
-        }
 
         Ok(core)
     }

@@ -28,7 +28,7 @@ use api::session::BaseCapabilities;
 use auth::{
     oauth::OAuthCode,
     rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
-    AclToken, AuthDatabase, SqlDatabase,
+    AclToken,
 };
 use jmap_proto::{
     error::method::MethodError,
@@ -45,7 +45,6 @@ use services::{
     state::{self, init_state_manager, spawn_state_manager},
 };
 use smtp::core::SMTP;
-use sqlx::{mysql::MySqlPoolOptions, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
 use store::{
     fts::Language,
     parking_lot::Mutex,
@@ -55,7 +54,7 @@ use store::{
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
 use tokio::sync::mpsc;
-use utils::{config::Rate, failed, ipc::DeliveryEvent, UnwrapFailure};
+use utils::{config::Rate, ipc::DeliveryEvent, UnwrapFailure};
 
 pub mod api;
 pub mod auth;
@@ -86,7 +85,6 @@ pub struct JMAP {
     pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
 
     pub oauth_codes: LruCache<String, Arc<OAuthCode>>,
-    pub auth_db: AuthDatabase,
 
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
@@ -159,6 +157,8 @@ impl JMAP {
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
         smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
+        let remove = "true";
+        /*
         let auth_db = match config.value_require("jmap.auth.database.type")? {
             "ldap" => AuthDatabase::Ldap,
             "sql" => {
@@ -243,7 +243,7 @@ impl JMAP {
                 }
             }
             _ => failed("Invalid auth database type"),
-        };
+        };*/
 
         // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
@@ -271,7 +271,6 @@ impl JMAP {
             oauth_codes: LruCache::with_capacity(
                 config.property("oauth.code.cache-size")?.unwrap_or(128),
             ),
-            auth_db,
             state_tx,
             housekeeper_tx,
             smtp,

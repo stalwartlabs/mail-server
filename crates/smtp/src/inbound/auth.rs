@@ -25,7 +25,6 @@ use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::ipc::Item;
 
 use crate::core::Session;
 
@@ -175,16 +174,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 
     pub async fn authenticate(&mut self, credentials: Credentials<String>) -> Result<bool, ()> {
-        if let Some(lookup) = &self.params.auth_lookup {
+        if let Some(lookup) = &self.params.auth_directory {
             let authenticated_as = match &credentials {
                 Credentials::Plain { username, .. }
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            if let Some(is_authenticated) = lookup
-                .lookup(Item::Authenticate(credentials))
-                .await
-                .map(bool::from)
+            if let Ok(is_authenticated) =
+                lookup.authenticate(&credentials).await.map(|r| r.is_some())
             {
                 tracing::debug!(
                     parent: &self.span,
