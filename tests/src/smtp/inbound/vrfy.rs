@@ -21,51 +21,61 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use ahash::AHashSet;
+use directory::config::ConfigDirectory;
+use utils::config::Config;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::ConfigContext,
+    config::{ConfigContext, IfBlock},
     core::{Session, SMTP},
-    lookup::Lookup,
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = ["john@foobar.org"]
+email-list = ["sales@foobar.org"]
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "p4ssw0rd"
+email = "jane@foobar.org"
+email-list = ["sales@foobar.org"]
+
+[[directory."local".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "p4ssw0rd"
+email = "bill@foobar.org"
+email-list = ["sales@foobar.org"]
+
+"#;
 
 #[tokio::test]
 async fn vrfy_expn() {
     let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new(&[]);
-    ctx.lookup.insert(
-        "vrfy".to_string(),
-        Arc::new(Lookup::List(AHashSet::from_iter([
-            "john@foobar.org:john@foobar.org".to_string(),
-            "john:john@foobar.org".to_string(),
-        ]))),
-    );
-    ctx.lookup.insert(
-        "expn".to_string(),
-        Arc::new(Lookup::List(AHashSet::from_iter([
-            "sales:john@foobar.org,bill@foobar.org,jane@foobar.org".to_string(),
-            "support:mike@foobar.org".to_string(),
-        ]))),
-    );
+    let ctx = ConfigContext::new(&[]);
 
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
+    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
 
-    config.lookup_vrfy = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'vrfy'},
+    let mut config = &mut core.session.config.extensions;
+    config.vrfy = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
-        .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
-        .unwrap();
-    config.lookup_expn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'expn'},
+        .parse_if(&ctx);
+    config.expn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
-        .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
-        .unwrap();
+        .parse_if(&ctx);
 
     // EHLO should not avertise VRFY/EXPN to 10.0.0.2
     let mut session = Session::test(core);
@@ -77,7 +87,7 @@ async fn vrfy_expn() {
         .assert_not_contains("EXPN")
         .assert_not_contains("VRFY");
     session.cmd("VRFY john", "252 2.5.1").await;
-    session.cmd("EXPN sales", "252 2.5.1").await;
+    session.cmd("EXPN sales@foobar.org", "252 2.5.1").await;
 
     // EHLO should advertise VRFY/EXPN for 10.0.0.1
     session.data.remote_ip = "10.0.0.1".parse().unwrap();
@@ -93,14 +103,14 @@ async fn vrfy_expn() {
 
     // Successful EXPN
     session
-        .cmd("EXPN sales", "250")
+        .cmd("EXPN sales@foobar.org", "250")
         .await
         .assert_contains("250-john@foobar.org")
-        .assert_contains("250-bill@foobar.org")
-        .assert_contains("250 jane@foobar.org");
+        .assert_contains("250-jane@foobar.org")
+        .assert_contains("250 bill@foobar.org");
 
     // Non-existent VRFY
-    session.cmd("VRFY bill", "550 5.1.2").await;
+    session.cmd("VRFY robert", "550 5.1.2").await;
 
     // Non-existent EXPN
     session.cmd("EXPN procurement", "550 5.1.2").await;

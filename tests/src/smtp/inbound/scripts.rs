@@ -28,23 +28,27 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig, TestSMTP,
 };
+use directory::config::ConfigDirectory;
 use smtp::{
-    config::{
-        database::ConfigDatabase, list::ConfigList, scripts::ConfigSieve, session::ConfigSession,
-        ConfigContext, EnvelopeKey, IfBlock,
-    },
+    config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},
 };
 use utils::config::Config;
 
 const CONFIG: &str = r#"
-[database."sql"]
+[directory."sql"]
+protocol = "sql"
 address = "sqlite://%PATH%/test.db?mode=rwc"
+
+[directory."sql".pool]
 max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[list]
+[directory."local"]
+protocol = "memory"
+
+[directory."local".lookup]
 invalid-ehlos = ["spammer.org", "spammer.net"]
 
 [session.data.pipe."test"]
@@ -59,7 +63,7 @@ from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 sign = ["rsa"]
-use-database = "sql"
+use-directory = "sql"
 
 [sieve.limits]
 redirects = 3
@@ -81,7 +85,7 @@ if string "${env.remote_ip}" "10.0.0.88" {
 ehlo = '''
 require ["variables", "extlists", "reject"];
 
-if string :list "${env.helo_domain}" "list/invalid-ehlos" {
+if string :list "${env.helo_domain}" "local/invalid-ehlos" {
     reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
 }
 '''
@@ -96,7 +100,7 @@ if envelope :localpart :is "from" "spammer" {
 execute :query "CREATE TABLE IF NOT EXISTS blocked_senders (addr TEXT PRIMARY KEY)";
 execute :query "INSERT OR IGNORE INTO blocked_senders (addr) VALUES (?)" "marketing@spam-domain.com";
 
-if execute :query "SELECT EXISTS(SELECT 1 FROM blocked_senders WHERE addr=? LIMIT 1)" ["${envelope.from}"] {
+if execute :query "SELECT 1 FROM blocked_senders WHERE addr=? LIMIT 1" ["${envelope.from}"] {
     reject "Your address has been blocked.";
 }
 '''
@@ -109,7 +113,7 @@ if envelope :domain :is "to" "foobar.org" {
 
     set "triplet" "${env.remote_ip}.${envelope.from}.${envelope.to}";
 
-    if not execute :query "SELECT EXISTS(SELECT 1 FROM greylist WHERE addr=? LIMIT 1)" ["${triplet}"] {
+    if not execute :query "SELECT 1 FROM greylist WHERE addr=? LIMIT 1" ["${triplet}"] {
         execute :query "INSERT INTO greylist (addr) VALUES (?)" ["${triplet}"];
         reject "422 4.2.2 You have been greylisted '${triplet}'.";
     }
@@ -176,8 +180,7 @@ async fn sieve_scripts() {
             .replace("%CFG_PATH%", pipe_path.as_path().to_str().unwrap()),
     )
     .unwrap();
-    config.parse_lists(&mut ctx).unwrap();
-    config.parse_databases(&mut ctx).unwrap();
+    ctx.directory = config.parse_directory().unwrap();
     let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;

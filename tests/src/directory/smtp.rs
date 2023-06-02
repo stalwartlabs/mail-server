@@ -127,10 +127,47 @@ async fn smtp_directory() {
 
     // Shutdown
     shutdown.send(false).ok();
+
+    // Verify that caching works
+    TcpStream::connect("127.0.0.1:9199").await.unwrap_err();
+    assert_eq!(
+        handle.type_name(),
+        "directory::cache::CachedDirectory<directory::smtp::SmtpDirectory>"
+    );
+
+    let mut requests = Vec::new();
+    for n in 0..100 {
+        let (item, expected) = &tests[n % tests.len()];
+        if matches!(item, Item::IsAccount(_)) {
+            let item = item.append(n);
+            let item_clone = item.clone();
+            let handle = handle.clone();
+            requests.push((
+                tokio::spawn(async move {
+                    let result: LookupResult = match &item {
+                        Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
+                        _ => unreachable!(),
+                    };
+
+                    result
+                }),
+                item_clone,
+                expected.append(n),
+            ));
+        }
+    }
+    assert!(!requests.is_empty());
+    for (result, item, expected_result) in requests {
+        assert_eq!(
+            result.await.unwrap(),
+            expected_result,
+            "Failed for {item:?}"
+        );
+    }
 }
 
 pub fn spawn_mock_lmtp_server(max_concurrency: u64) -> watch::Sender<bool> {
-    let (tx, mut rx) = watch::channel(true);
+    let (tx, rx) = watch::channel(true);
 
     tokio::spawn(async move {
         let listener = TcpListener::bind("127.0.0.1:9199")
@@ -140,6 +177,7 @@ pub fn spawn_mock_lmtp_server(max_concurrency: u64) -> watch::Sender<bool> {
             });
         let acceptor = dummy_tls_acceptor();
         let limited = ConcurrencyLimiter::new(max_concurrency);
+        let mut rx_ = rx.clone();
         loop {
             tokio::select! {
                 stream = listener.accept() => {
@@ -147,14 +185,14 @@ pub fn spawn_mock_lmtp_server(max_concurrency: u64) -> watch::Sender<bool> {
                         Ok((stream, _)) => {
                             let acceptor = acceptor.clone();
                             let in_flight = limited.is_allowed();
-                            tokio::spawn(accept_smtp(stream, acceptor, in_flight));
+                            tokio::spawn(accept_smtp(stream, rx.clone(), acceptor, in_flight));
                         }
                         Err(err) => {
                             panic!("Something went wrong: {err}" );
                         }
                     }
                 },
-                _ = rx.changed() => {
+                _ = rx_.changed() => {
                     break;
                 }
             };
@@ -164,7 +202,12 @@ pub fn spawn_mock_lmtp_server(max_concurrency: u64) -> watch::Sender<bool> {
     tx
 }
 
-async fn accept_smtp(stream: TcpStream, acceptor: Arc<TlsAcceptor>, in_flight: Option<InFlight>) {
+async fn accept_smtp(
+    stream: TcpStream,
+    mut rx: watch::Receiver<bool>,
+    acceptor: Arc<TlsAcceptor>,
+    in_flight: Option<InFlight>,
+) {
     let mut stream = acceptor.accept(stream).await.unwrap();
     stream
         .write_all(b"220 [127.0.0.1] Clueless host service ready\r\n")
@@ -178,13 +221,23 @@ async fn accept_smtp(stream: TcpStream, acceptor: Arc<TlsAcceptor>, in_flight: O
     let mut buf_u8 = vec![0u8; 1024];
 
     loop {
-        let br = if let Ok(br) = stream.read(&mut buf_u8).await {
-            br
-        } else {
-            break;
+        let br = tokio::select! {
+            br = stream.read(&mut buf_u8) => {
+                match br {
+                    Ok(br) => {
+                        br
+                    }
+                    Err(_) => {
+                        break;
+                    }
+                }
+            },
+            _ = rx.changed() => {
+                break;
+            }
         };
+
         let buf = std::str::from_utf8(&buf_u8[0..br]).unwrap();
-        //print!("-> {}", buf);
         let response = if buf.starts_with("LHLO") {
             "250-mx.foobar.org\r\n250 AUTH PLAIN\r\n".to_string()
         } else if buf.starts_with("MAIL FROM") {

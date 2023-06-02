@@ -178,6 +178,10 @@ async fn sql_directory() {
         vec![2, 3, 4]
     );
 
+    // Domain validation
+    assert!(handle.is_local_domain("example.org").await.unwrap());
+    assert!(!handle.is_local_domain("other.org").await.unwrap());
+
     // RCPT TO
     assert!(handle.rcpt("jane@example.org").await.unwrap());
     assert!(handle.rcpt("info@example.org").await.unwrap());

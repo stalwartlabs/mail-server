@@ -162,20 +162,59 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
-[jmap.auth.database]
+[directory."sql"]
 type = "sql"
 address = "sqlite::memory:"
 
-[jmap.auth.database.query]
-uid-by-login = "SELECT ROWID - 1 FROM users WHERE login = ?"
-login-by-uid = "SELECT login FROM users WHERE ROWID - 1 = ?"
-secret-by-uid = "SELECT secret FROM users WHERE ROWID - 1 = ?"
-name-by-uid = "SELECT name FROM users WHERE ROWID - 1 = ?"
-gids-by-uid = "SELECT gid FROM groups WHERE uid = ?"
-uids-by-address = "SELECT uid FROM emails WHERE email = ?"
-addresses-by-uid = "SELECT email FROM emails WHERE uid = ?"
-vrfy = "SELECT email FROM emails WHERE email LIKE '%' || ? || '%' AND is_list = false LIMIT 5"
-expn = "SELECT u.login FROM users u INNER JOIN emails e ON u.rowid -1 = e.uid WHERE e.email = ? AND e.is_list = true LIMIT 5"
+[directory."sql".query]
+login = "SELECT id, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
+name = "SELECT id, type, description, quota FROM accounts WHERE name = ?"
+id = "SELECT name, type, description, quota FROM accounts WHERE id = ?"
+members = "SELECT gid FROM group_members WHERE uid = ?"
+recipients = "SELECT id FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type != 'list' LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' LIMIT 50"
+
+[directory."sql".columns]
+name = "name"
+description = "description"
+secret = "secret"
+id = "id"
+email = "address"
+quota = "quota"
+type = "type"
+
+[directory."ldap"]
+type = "ldap"
+address = "ldap://localhost:3893"
+base-dn = "dc=example,dc=com"
+
+[directory."ldap".bind]
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=com"
+secret = "mysecret"
+
+[directory."ldap".filter]
+login = "(&(objectClass=posixAccount)(accountStatus=active)(cn=?))"
+name = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(cn=?))"
+email = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=?)(mailAliases=?)(mailLists=?)))"
+id = "(|(&(objectClass=posixAccount)(uidNumber=?))(&(objectClass=posixGroup)(gidNumber=?)))"
+verify = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=*?*)(mailAliases=*?*)))"
+expand = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(mailLists=?))"
+
+[directory."ldap".object-classes]
+user = "posixAccount"
+group = "posixGroup"
+
+[directory."ldap".attributes]
+name = "cn"
+description = "description"
+secret = "userPassword"
+groups = "memberOf"
+id = ["uidNumber", "gidNumber"]
+email = "mail"
+email-alias = "mailAliases"
+quota = "diskQuota"
 
 [oauth]
 key = "parerga_und_paralipomena"

@@ -23,7 +23,8 @@
 
 use std::sync::Arc;
 
-use ahash::{AHashMap, AHashSet, HashSet};
+use ahash::{AHashMap, HashSet};
+use directory::config::ConfigDirectory;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
@@ -34,7 +35,7 @@ use mail_auth::{
     },
 };
 use tokio::sync::mpsc;
-use utils::config::ServerProtocol;
+use utils::config::{Config, ServerProtocol};
 
 use crate::smtp::{
     make_temp_dir, management::send_manage_request, outbound::start_test_server, TestConfig,
@@ -42,12 +43,22 @@ use crate::smtp::{
 use smtp::{
     config::{AggregateFrequency, IfBlock},
     core::{management::Report, SMTP},
-    lookup::Lookup,
     reporting::{
         scheduler::{Scheduler, SpawnReport},
         DmarcEvent, TlsEvent,
     },
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "admin"
+description = "Superuser"
+secret = "secret"
+
+"#;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -67,9 +78,8 @@ async fn manage_reports() {
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
-    core.queue.config.management_lookup = Arc::new(Lookup::List(AHashSet::from_iter([
-        "admin:secret".to_string(),
-    ])));
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;
     let core = Arc::new(core);

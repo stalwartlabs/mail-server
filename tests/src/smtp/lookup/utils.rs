@@ -1,10 +1,22 @@
-use std::time::{Duration, Instant};
+use std::{
+    net::IpAddr,
+    time::{Duration, Instant},
+};
 
 use mail_auth::{IpLookupStrategy, MX};
 
-use smtp::{config::IfBlock, core::SMTP, outbound::NextHop};
+use ::smtp::{config::IfBlock, core::SMTP, outbound::NextHop};
+use mail_parser::DateTime;
+use smtp::{
+    config::AggregateFrequency,
+    inbound::ehlo::ToDnsbl,
+    outbound::{
+        lookup::ToNextHop,
+        mta_sts::{Mode, MxPattern, Policy},
+    },
+};
 
-use super::ToNextHop;
+use crate::smtp::TestConfig;
 
 #[tokio::test]
 async fn lookup_ip() {
@@ -99,4 +111,109 @@ fn to_remote_hosts() {
         preference: 0,
     }];
     assert!(mx.to_remote_hosts("domain", 10).is_none());
+}
+
+#[test]
+fn ip_to_dnsbl() {
+    assert_eq!(
+        "2001:DB8:abc:123::42"
+            .parse::<IpAddr>()
+            .unwrap()
+            .to_dnsbl("zen.spamhaus.org"),
+        "2.4.0.0.0.0.0.0.0.0.0.0.0.0.0.0.3.2.1.0.c.b.a.0.8.b.d.0.1.0.0.2.zen.spamhaus.org"
+    );
+
+    assert_eq!(
+        "1.2.3.4"
+            .parse::<IpAddr>()
+            .unwrap()
+            .to_dnsbl("zen.spamhaus.org"),
+        "4.3.2.1.zen.spamhaus.org"
+    );
+}
+
+#[test]
+fn parse_policy() {
+    for (policy, expected_policy) in [
+        (
+            r"version: STSv1
+mode: enforce
+mx: mail.example.com
+mx: *.example.net
+mx: backupmx.example.com
+max_age: 604800",
+            Policy {
+                id: "abc".to_string(),
+                mode: Mode::Enforce,
+                mx: vec![
+                    MxPattern::Equals("mail.example.com".to_string()),
+                    MxPattern::StartsWith("example.net".to_string()),
+                    MxPattern::Equals("backupmx.example.com".to_string()),
+                ],
+                max_age: 604800,
+            },
+        ),
+        (
+            r"version: STSv1
+mode: testing
+mx: gmail-smtp-in.l.google.com
+mx: *.gmail-smtp-in.l.google.com
+max_age: 86400
+",
+            Policy {
+                id: "abc".to_string(),
+                mode: Mode::Testing,
+                mx: vec![
+                    MxPattern::Equals("gmail-smtp-in.l.google.com".to_string()),
+                    MxPattern::StartsWith("gmail-smtp-in.l.google.com".to_string()),
+                ],
+                max_age: 86400,
+            },
+        ),
+    ] {
+        assert_eq!(
+            Policy::parse(policy, expected_policy.id.to_string()).unwrap(),
+            expected_policy
+        );
+    }
+}
+
+#[test]
+fn aggregate_to_timestamp() {
+    for (freq, date, expected) in [
+        (
+            AggregateFrequency::Hourly,
+            "2023-01-24T09:10:40Z",
+            "2023-01-24T09:00:00Z",
+        ),
+        (
+            AggregateFrequency::Daily,
+            "2023-01-24T09:10:40Z",
+            "2023-01-24T00:00:00Z",
+        ),
+        (
+            AggregateFrequency::Weekly,
+            "2023-01-24T09:10:40Z",
+            "2023-01-22T00:00:00Z",
+        ),
+        (
+            AggregateFrequency::Weekly,
+            "2023-01-28T23:59:59Z",
+            "2023-01-22T00:00:00Z",
+        ),
+        (
+            AggregateFrequency::Weekly,
+            "2023-01-22T23:59:59Z",
+            "2023-01-22T00:00:00Z",
+        ),
+    ] {
+        assert_eq!(
+            DateTime::from_timestamp(
+                freq.to_timestamp_(DateTime::parse_rfc3339(date).unwrap()) as i64
+            )
+            .to_rfc3339(),
+            expected,
+            "failed for {freq:?} {date} {expected}"
+        );
+    }
 }

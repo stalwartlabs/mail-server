@@ -23,8 +23,9 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use dashmap::DashMap;
+use directory::memory::MemoryDirectory;
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     trust_dns_resolver::config::{ResolverConfig, ResolverOpts},
@@ -48,7 +49,6 @@ use smtp::{
         throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
         SieveConfig, SieveCore, TlsConnectors, SMTP,
     },
-    lookup::Lookup,
     outbound::dane::DnssecResolver,
 };
 use utils::config::{utils::ParseValues, Config};
@@ -204,9 +204,11 @@ impl TestConfig for SessionConfig {
                 deliver_by: IfBlock::new(None),
                 mt_priority: IfBlock::new(None),
                 dsn: IfBlock::new(true),
+                expn: IfBlock::new(true),
+                vrfy: IfBlock::new(true),
             },
             auth: Auth {
-                lookup: IfBlock::new(None),
+                directory: IfBlock::new(None),
                 mechanisms: IfBlock::new(AUTH_PLAIN | AUTH_LOGIN),
                 require: IfBlock::new(false),
                 errors_max: IfBlock::new(10),
@@ -219,9 +221,7 @@ impl TestConfig for SessionConfig {
                 script: IfBlock::new(None),
                 relay: IfBlock::new(false),
                 lookup_domains: IfBlock::new(None),
-                lookup_addresses: IfBlock::new(None),
-                lookup_expn: IfBlock::new(None),
-                lookup_vrfy: IfBlock::new(None),
+                directory: IfBlock::new(None),
                 errors_max: IfBlock::new(3),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),
                 max_recipients: IfBlock::new(3),
@@ -314,7 +314,7 @@ impl TestConfig for QueueConfig {
                 rcpt: vec![],
                 rcpt_domain: vec![],
             },
-            management_lookup: Arc::new(Lookup::List(AHashSet::default())),
+            management_lookup: Arc::new(MemoryDirectory::default()),
         }
     }
 }

@@ -23,39 +23,49 @@
 
 use std::time::Duration;
 
+use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use utils::config::Config;
 
-use crate::smtp::{
-    make_temp_dir,
-    session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
+use crate::{
+    directory::sql::{create_test_directory, create_test_user_with_email, link_test_address},
+    smtp::{
+        session::{TestSession, VerifyResponse},
+        ParseTestConfig, TestConfig,
+    },
 };
 use smtp::{
-    config::{database::ConfigDatabase, ConfigContext, IfBlock},
+    config::{ConfigContext, IfBlock},
     core::{Session, SMTP},
-    lookup::SqlDatabase,
 };
 
 const CONFIG: &str = r#"
-[database."sql"]
-address = "sqlite://%PATH%/test.db?mode=rwc"
-max-connections = 10
-min-connections = 0
-idle-timeout = "5m"
+[directory."sql"]
+protocol = "sql"
+address = "sqlite::memory:"
 
-[database."sql".lookup]
-auth = "SELECT secret FROM users WHERE email=?"
-rcpt = "SELECT EXISTS(SELECT 1 FROM users WHERE email=? LIMIT 1)"
-vrfy = "SELECT email FROM users WHERE email LIKE '%' || ? || '%' LIMIT 5"
-expn = "SELECT member FROM mailing_lists WHERE id = ?"
-domains = "SELECT EXISTS(SELECT 1 FROM domains WHERE name=? LIMIT 1)"
-is_ip_allowed = "SELECT EXISTS(SELECT 1 FROM allowed_ips WHERE addr=? LIMIT 1)"
+[directory."sql".pool]
+max-connections = 1
 
-[database."sql".cache]
-enable = ["rcpt", "domains"]
-entries = 1000
-ttl = {positive = "1d", negative = "1h"}
+[directory."sql".query]
+login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
+recipients = "SELECT id FROM emails WHERE address = ?"
+name = "SELECT id, name, type, description, quota FROM accounts WHERE name = ?"
+emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[directory."sql".columns]
+name = "name"
+secret = "secret"
+id = "id"
+email = "address"
+
+[directory."sql".lookup]
+domains = "SELECT name FROM domains WHERE name = ? LIMIT 1"
+is_ip_allowed = "SELECT addr FROM allowed_ips WHERE addr = ? LIMIT 1"
+
 "#;
 
 #[tokio::test]
@@ -70,70 +80,61 @@ async fn lookup_sql() {
 
     // Parse settings
     let mut core = SMTP::test();
-    let _temp_dir = make_temp_dir("sql_lookup_test", true);
     let mut ctx = ConfigContext::new(&[]);
-    let config =
-        Config::parse(&CONFIG.replace("%PATH%", _temp_dir.temp_dir.as_path().to_str().unwrap()))
-            .unwrap();
-    config.parse_databases(&mut ctx).unwrap();
+    let config = Config::parse(CONFIG).unwrap();
+    ctx.directory = config.parse_directory().unwrap();
+
+    // Obtain directory handle
+    let handle = ctx.directory.directories.get("sql").unwrap().as_ref();
+
+    // Create tables
+    create_test_directory(handle).await;
 
     // Create test records
-    if let SqlDatabase::SqlLite(db) = ctx.databases.get("sql").unwrap() {
-        for query in [
-            "CREATE TABLE users (email TEXT PRIMARY KEY, secret TEXT NOT NULL);",
-            "CREATE TABLE mailing_lists (id TEXT NOT NULL, member TEXT NOT NULL, PRIMARY KEY (id, member));",
-            "CREATE TABLE domains (name TEXT PRIMARY KEY, description TEXT);",
-            "CREATE TABLE allowed_ips (addr TEXT PRIMARY KEY);",
-            "INSERT INTO allowed_ips (addr) VALUES ('10.0.0.50');",
-            "INSERT INTO domains (name, description) VALUES ('foobar.org', 'Main domain');",
-            "INSERT INTO domains (name, description) VALUES ('foobar.net', 'Secondary domain');",
-            "INSERT INTO users (email, secret) VALUES ('jane@foobar.org', 's3cr3tp4ss');",
-            "INSERT INTO users (email, secret) VALUES ('john@foobar.org', 'mypassword');",
-            "INSERT INTO users (email, secret) VALUES ('bill@foobar.org', '123456');",
-            "INSERT INTO mailing_lists (id, member) VALUES ('sales@foobar.org', 'jane@foobar.org');",
-            "INSERT INTO mailing_lists (id, member) VALUES ('sales@foobar.org', 'john@foobar.org');",
-            "INSERT INTO mailing_lists (id, member) VALUES ('sales@foobar.org', 'bill@foobar.org');",
-            "INSERT INTO mailing_lists (id, member) VALUES ('support@foobar.org', 'mike@foobar.net');",
-        ] {
-            sqlx::query(query).execute(db).await.unwrap();
-        }
-    } else {
-        panic!("Unexpected database type");
+    create_test_user_with_email(handle, "jane@foobar.org", "s3cr3tp4ss", "Jane").await;
+    create_test_user_with_email(handle, "john@foobar.org", "mypassword", "John").await;
+    create_test_user_with_email(handle, "bill@foobar.org", "123456", "Bill").await;
+    create_test_user_with_email(handle, "mike@foobar.net", "098765", "Mike").await;
+    link_test_address(handle, "jane@foobar.org", "sales@foobar.org", "list").await;
+    link_test_address(handle, "john@foobar.org", "sales@foobar.org", "list").await;
+    link_test_address(handle, "bill@foobar.org", "sales@foobar.org", "list").await;
+    link_test_address(handle, "mike@foobar.net", "support@foobar.org", "list").await;
+
+    for query in [
+        "CREATE TABLE domains (name TEXT PRIMARY KEY, description TEXT);",
+        "INSERT INTO domains (name, description) VALUES ('foobar.org', 'Main domain');",
+        "INSERT INTO domains (name, description) VALUES ('foobar.net', 'Secondary domain');",
+        "CREATE TABLE allowed_ips (addr TEXT PRIMARY KEY);",
+        "INSERT INTO allowed_ips (addr) VALUES ('10.0.0.50');",
+    ] {
+        handle.query(query, &[]).await.unwrap();
     }
 
     // Enable AUTH
     let mut config = &mut core.session.config.auth;
-    config.lookup = r"'db/sql/auth'"
+    config.directory = r"'sql'"
         .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
+        .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.mechanisms = IfBlock::new(AUTH_PLAIN | AUTH_LOGIN);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable VRFY/EXPN/RCPT
     let mut config = &mut core.session.config.rcpt;
-    config.lookup_addresses = r"'db/sql/rcpt'"
+    config.directory = r"'sql'"
         .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
+        .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
-    config.lookup_domains = r"'db/sql/domains'"
+    config.lookup_domains = r"'sql/domains'"
         .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
-        .unwrap();
-    config.lookup_expn = r"'db/sql/expn'"
-        .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
-        .unwrap();
-    config.lookup_vrfy = r"'db/sql/vrfy'"
-        .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
+        .map_if_block(&ctx.directory.lookups, "", "")
         .unwrap();
     config.relay = IfBlock::new(false);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable REQUIRETLS based on SQL lookup
     core.session.config.extensions.requiretls =
-        r"[{if = 'remote-ip', in-list = 'db/sql/is_ip_allowed', then = true},
+        r"[{if = 'remote-ip', in-list = 'sql/is_ip_allowed', then = true},
     {else = false}]"
             .parse_if(&ctx);
     let mut session = Session::test(core);

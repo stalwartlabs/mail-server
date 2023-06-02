@@ -2,6 +2,7 @@ pub mod config;
 pub mod lookup;
 pub mod pool;
 
+use ahash::AHashSet;
 use bb8::Pool;
 use mail_send::SmtpClientBuilder;
 use smtp_proto::EhloResponse;
@@ -10,6 +11,7 @@ use tokio_rustls::client::TlsStream;
 
 pub struct SmtpDirectory {
     pool: Pool<SmtpConnectionManager>,
+    domains: AHashSet<String>,
 }
 
 pub struct SmtpConnectionManager {

@@ -53,6 +53,15 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let ec = &self.core.session.config.extensions;
         self.params.can_expn = *ec.expn.eval(self).await;
         self.params.can_vrfy = *ec.vrfy.eval(self).await;
+        self.params.rcpt_directory = self
+            .core
+            .session
+            .config
+            .rcpt
+            .directory
+            .eval(self)
+            .await
+            .clone();
     }
 
     pub async fn eval_post_auth_params(&mut self) {
@@ -60,6 +69,15 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let ec = &self.core.session.config.extensions;
         self.params.can_expn = *ec.expn.eval(self).await;
         self.params.can_vrfy = *ec.vrfy.eval(self).await;
+        self.params.rcpt_directory = self
+            .core
+            .session
+            .config
+            .rcpt
+            .directory
+            .eval(self)
+            .await
+            .clone();
     }
 
     pub async fn eval_rcpt_params(&mut self) {
@@ -69,7 +87,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         self.params.rcpt_errors_max = *rc.errors_max.eval(self).await;
         self.params.rcpt_errors_wait = *rc.errors_wait.eval(self).await;
         self.params.rcpt_max = *rc.max_recipients.eval(self).await;
-        self.params.rcpt_lookup_domain = rc.lookup_domains.eval(self).await.clone();
         self.params.rcpt_directory = rc.directory.eval(self).await.clone();
         self.params.rcpt_dsn = *self.core.session.config.extensions.dsn.eval(self).await;
 

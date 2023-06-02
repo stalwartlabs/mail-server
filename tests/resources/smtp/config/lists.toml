@@ -14,10 +14,6 @@ lookup = true
 username = "hello"
 secret = "world"
 
-[remote."lmtp".cache]
-entries = 1000
-ttl = {positive = 10, negative = 5}
-
 [remote."lmtp".tls]
 implicit = true
 allow-invalid-certs = true

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use ldap3::LdapConnSettings;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{config::build_pool, Directory};
+use crate::{cache::CachedDirectory, config::build_pool, Directory};
 
 use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
 
@@ -11,6 +12,7 @@ impl LdapDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        domains: AHashSet<String>,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
@@ -42,6 +44,7 @@ impl LdapDirectory {
             filter_id: LdapFilter::from_config(config, (&prefix, "filter.id"))?,
             filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify"))?,
             filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand"))?,
+            filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains"))?,
             obj_user: config
                 .value_require((&prefix, "object-classes.user"))?
                 .to_string(),
@@ -98,10 +101,15 @@ impl LdapDirectory {
             .attrs_email
             .extend(mappings.attr_email_address.iter().cloned());
 
-        Ok(Arc::new(LdapDirectory {
-            mappings,
-            pool: build_pool(config, &prefix, manager)?,
-        }))
+        CachedDirectory::try_from_config(
+            config,
+            &prefix,
+            LdapDirectory {
+                mappings,
+                pool: build_pool(config, &prefix, manager)?,
+                domains,
+            },
+        )
     }
 }
 

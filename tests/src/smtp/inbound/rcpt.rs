@@ -21,10 +21,11 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use ahash::AHashSet;
+use directory::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
+use utils::config::Config;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -33,25 +34,51 @@ use crate::smtp::{
 use smtp::{
     config::{ConfigContext, IfBlock},
     core::{Session, State, SMTP},
-    lookup::Lookup,
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = "john@foobar.org"
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "p4ssw0rd"
+email = "jane@foobar.org"
+
+[[directory."local".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "p4ssw0rd"
+email = "bill@foobar.org"
+
+[[directory."local".users]]
+name = "mike"
+description = "Mike Foobar"
+secret = "p4ssw0rd"
+email = "mike@foobar.org"
+
+[directory."local".lookup]
+domains = ["foobar.org"]
+"#;
 
 #[tokio::test]
 async fn rcpt() {
     let mut core = SMTP::test();
 
-    let list_addresses = Lookup::List(AHashSet::from_iter([
-        "jane@foobar.org".to_string(),
-        "bill@foobar.org".to_string(),
-        "mike@foobar.org".to_string(),
-        "john@foobar.org".to_string(),
-    ]));
-    let list_domains = Lookup::List(AHashSet::from_iter(["foobar.org".to_string()]));
-
-    let mut config = &mut core.session.config.rcpt;
     let mut config_ext = &mut core.session.config.extensions;
-    config.lookup_domains = IfBlock::new(Some(Arc::new(list_domains)));
-    config.lookup_addresses = IfBlock::new(Some(Arc::new(list_addresses)));
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    let mut config = &mut core.session.config.rcpt;
+    config.lookup_domains = IfBlock::new(Some(
+        directory.lookups.get("local/domains").unwrap().clone(),
+    ));
+    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
     config.max_recipients = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 5}]"
         .parse_if(&ConfigContext::new(&[]));

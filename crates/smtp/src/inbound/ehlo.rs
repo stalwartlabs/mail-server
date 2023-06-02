@@ -329,7 +329,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
     }
 }
 
-trait ToDnsbl {
+pub trait ToDnsbl {
     fn to_dnsbl(&self, host: &str) -> String;
 }
 
@@ -358,31 +358,5 @@ impl ToDnsbl for IpAddr {
                 String::from_utf8(host).unwrap_or_default()
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::net::IpAddr;
-
-    use crate::inbound::ehlo::ToDnsbl;
-
-    #[test]
-    fn ip_to_dnsbl() {
-        assert_eq!(
-            "2001:DB8:abc:123::42"
-                .parse::<IpAddr>()
-                .unwrap()
-                .to_dnsbl("zen.spamhaus.org"),
-            "2.4.0.0.0.0.0.0.0.0.0.0.0.0.0.0.3.2.1.0.c.b.a.0.8.b.d.0.1.0.0.2.zen.spamhaus.org"
-        );
-
-        assert_eq!(
-            "1.2.3.4"
-                .parse::<IpAddr>()
-                .unwrap()
-                .to_dnsbl("zen.spamhaus.org"),
-            "4.3.2.1.zen.spamhaus.org"
-        );
     }
 }

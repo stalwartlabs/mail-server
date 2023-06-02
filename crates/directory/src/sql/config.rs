@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use sqlx::any::{install_default_drivers, AnyPoolOptions};
 use utils::config::{utils::AsKey, Config};
 
-use crate::Directory;
+use crate::{cache::CachedDirectory, Directory};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -11,6 +12,7 @@ impl SqlDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        domains: AHashSet<String>,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
@@ -63,6 +65,10 @@ impl SqlDirectory {
                 .value((&prefix, "query.expand"))
                 .unwrap_or_default()
                 .to_string(),
+            query_domains: config
+                .value((&prefix, "query.domains"))
+                .unwrap_or_default()
+                .to_string(),
             column_name: config
                 .value((&prefix, "columns.name"))
                 .unwrap_or_default()
@@ -89,6 +95,14 @@ impl SqlDirectory {
                 .to_string(),
         };
 
-        Ok(Arc::new(SqlDirectory { pool, mappings }))
+        CachedDirectory::try_from_config(
+            config,
+            &prefix,
+            SqlDirectory {
+                pool,
+                mappings,
+                domains,
+            },
+        )
     }
 }

@@ -120,6 +120,19 @@ impl Directory for SqlDirectory {
             .map(|r| r.is_some())
             .map_err(Into::into)
     }
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+        if self.domains.contains(domain) {
+            return Ok(true);
+        }
+
+        sqlx::query(&self.mappings.query_domains)
+            .bind(domain)
+            .fetch_optional(&self.pool)
+            .await
+            .map(|id| id.is_some())
+            .map_err(Into::into)
+    }
 }
 
 impl SqlMappings {

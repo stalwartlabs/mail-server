@@ -11,7 +11,8 @@ foundationdb = ["store/foundation"]
 
 [dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
-jmap = { path = "../crates/jmap", features = ["test_mode"] }
+directory = { path = "../crates/directory" }
+#jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }

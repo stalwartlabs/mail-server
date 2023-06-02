@@ -81,6 +81,10 @@ impl Directory for SmtpDirectory {
     async fn query(&self, _query: &str, _params: &[&str]) -> crate::Result<bool> {
         Err(DirectoryError::unsupported("smtp", "query"))
     }
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+        Ok(self.domains.contains(domain))
+    }
 }
 
 impl SmtpClient {

@@ -112,4 +112,12 @@ impl Directory for MemoryDirectory {
     async fn query(&self, _query: &str, _params: &[&str]) -> crate::Result<bool> {
         Err(DirectoryError::unsupported("memory", "query"))
     }
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+        let domain = format!("@{domain}");
+        Ok(self
+            .emails_to_ids
+            .keys()
+            .any(|email| email.ends_with(&domain)))
+    }
 }

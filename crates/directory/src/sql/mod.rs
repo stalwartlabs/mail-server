@@ -1,3 +1,4 @@
+use ahash::AHashSet;
 use sqlx::{Any, Pool};
 
 pub mod config;
@@ -6,6 +7,7 @@ pub mod lookup;
 pub struct SqlDirectory {
     pool: Pool<Any>,
     mappings: SqlMappings,
+    domains: AHashSet<String>,
 }
 
 #[derive(Debug)]
@@ -16,6 +18,7 @@ pub(crate) struct SqlMappings {
     query_members: String,
     query_recipients: String,
     query_emails: String,
+    query_domains: String,
     query_verify: String,
     query_expand: String,
     column_name: String,

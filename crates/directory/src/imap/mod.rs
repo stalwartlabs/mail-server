@@ -6,12 +6,14 @@ pub mod tls;
 
 use std::{fmt::Display, sync::atomic::AtomicU64, time::Duration};
 
+use ahash::AHashSet;
 use bb8::Pool;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector;
 
 pub struct ImapDirectory {
     pool: Pool<ImapConnectionManager>,
+    domains: AHashSet<String>,
 }
 
 pub struct ImapConnectionManager {

@@ -27,6 +27,7 @@ recipients = "SELECT id FROM emails WHERE address = ?"
 emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
 [directory."sql".columns]
 name = "name"
@@ -56,6 +57,7 @@ email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(given
 id = "(|(&(objectClass=posixAccount)(uidNumber=?))(&(objectClass=posixGroup)(gidNumber=?)))"
 verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(givenName=*?*)))"
 expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
+domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(givenName=*@?)(sn=*@?)))"
 
 [directory."ldap".object-classes]
 user = "posixAccount"
@@ -101,6 +103,10 @@ max-connections = 5
 [directory."smtp".tls]
 implicit = true
 allow-invalid-certs = true
+
+[directory."smtp".cache]
+entries = 500
+ttl = {positive = '10s', negative = '5s'}
 
 [directory."local"]
 protocol = "memory"

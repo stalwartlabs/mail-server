@@ -21,12 +21,9 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use ahash::AHashSet;
+use directory::config::ConfigDirectory;
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
@@ -41,7 +38,6 @@ use crate::smtp::{
 use smtp::{
     config::{auth::ConfigAuth, ConfigContext, IfBlock, VerifyStrategy},
     core::{Session, SMTP},
-    lookup::Lookup,
 };
 
 const SIGNATURES: &str = "
@@ -94,6 +90,20 @@ canonicalization = 'relaxed/simple'
 set-body-length = false
 ";
 
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = ["jdoe@example.com"]
+
+[directory."local".lookup]
+domains = ["example.com"]
+"#;
+
 #[tokio::test]
 async fn sign_and_seal() {
     let mut core = SMTP::test();
@@ -140,13 +150,12 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.lookup_domains = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
-        "example.com".to_string(),
-    ])))));
-    config.lookup_addresses = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
-        "jdoe@example.com".to_string(),
-    ])))));
+    config.lookup_domains = IfBlock::new(Some(
+        directory.lookups.get("local/domains").unwrap().clone(),
+    ));
+    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
 
     let mut config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);

@@ -6,6 +6,7 @@ use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 
+pub mod cache;
 pub mod config;
 pub mod imap;
 pub mod ldap;
@@ -53,6 +54,7 @@ pub trait Directory: Sync + Send {
     async fn member_of(&self, principal: &Principal) -> Result<Vec<u32>>;
     async fn emails_by_id(&self, id: u32) -> Result<Vec<String>>;
     async fn ids_by_email(&self, email: &str) -> Result<Vec<u32>>;
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
@@ -119,7 +121,7 @@ impl Debug for Lookup {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct DirectoryConfig {
     pub directories: AHashMap<String, Arc<dyn Directory>>,
     pub lookups: AHashMap<String, Arc<Lookup>>,

@@ -26,11 +26,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet, HashMap, HashSet};
+use ahash::{AHashMap, HashMap, HashSet};
+use directory::config::ConfigDirectory;
 use hyper::{header::AUTHORIZATION, StatusCode};
 use mail_auth::MX;
 use mail_parser::DateTime;
-use utils::config::ServerProtocol;
+use utils::config::{Config, ServerProtocol};
 
 use crate::smtp::{
     inbound::TestQueueEvent, management::send_manage_request, outbound::start_test_server,
@@ -39,12 +40,22 @@ use crate::smtp::{
 use smtp::{
     config::IfBlock,
     core::{management::Message, Session, SMTP},
-    lookup::Lookup,
     queue::{
         manager::{Queue, SpawnQueue},
         QueueId, Status,
     },
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "admin"
+description = "Superuser"
+secret = "secret"
+
+"#;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -80,6 +91,8 @@ async fn manage_queue() {
     );
 
     // Start local management interface
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.future_release = IfBlock::new(Some(Duration::from_secs(86400)));
@@ -87,9 +100,6 @@ async fn manage_queue() {
     core.queue.config.retry = IfBlock::new(vec![Duration::from_secs(1000)]);
     core.queue.config.notify = IfBlock::new(vec![Duration::from_secs(2000)]);
     core.queue.config.expire = IfBlock::new(Duration::from_secs(3000));
-    core.queue.config.management_lookup = Arc::new(Lookup::List(AHashSet::from_iter([
-        "admin:secret".to_string(),
-    ])));
     let local_qr = core.init_test_queue("smtp_manage_queue_local");
     let core = Arc::new(core);
     local_qr.queue_rx.spawn(core.clone(), Queue::default());

@@ -21,9 +21,8 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use ahash::AHashSet;
+use directory::config::ConfigDirectory;
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -33,28 +32,59 @@ use crate::smtp::{
 use smtp::{
     config::{ConfigContext, IfBlock},
     core::{Session, SMTP},
-    lookup::Lookup,
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = ["john@foobar.org", "jdoe@example.org", "john.doe@example.org"]
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "p4ssw0rd"
+email = "jane@domain.net"
+
+[[directory."local".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "p4ssw0rd"
+email = "bill@foobar.org"
+
+[[directory."local".users]]
+name = "mike"
+description = "Mike Foobar"
+secret = "p4ssw0rd"
+email = "mike@test.com"
+
+[directory."local".lookup]
+domains = ["foobar.org", "domain.net", "test.com"]
+"#;
 
 #[tokio::test]
 async fn data() {
+    // Enable logging
+    /*tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::DEBUG)
+            .finish(),
+    )
+    .unwrap();*/
     let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
-
+    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.lookup_domains = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
-        "foobar.org".to_string(),
-        "domain.net".to_string(),
-        "test.com".to_string(),
-    ])))));
-    config.lookup_addresses = IfBlock::new(Some(Arc::new(Lookup::List(AHashSet::from_iter([
-        "bill@foobar.org".to_string(),
-        "john@foobar.org".to_string(),
-        "jane@domain.net".to_string(),
-        "mike@test.com".to_string(),
-    ])))));
+    config.lookup_domains = IfBlock::new(Some(
+        directory.lookups.get("local/domains").unwrap().clone(),
+    ));
+    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
 
     let mut config = &mut core.session.config;
     config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},

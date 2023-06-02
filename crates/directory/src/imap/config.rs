@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use mail_send::smtp::tls::build_tls_connector;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{config::build_pool, imap::ImapConnectionManager, Directory};
+use crate::{cache::CachedDirectory, config::build_pool, imap::ImapConnectionManager, Directory};
 
 use super::ImapDirectory;
 
@@ -11,6 +12,7 @@ impl ImapDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        domains: AHashSet<String>,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
@@ -29,8 +31,13 @@ impl ImapDirectory {
             mechanisms: 0.into(),
         };
 
-        Ok(Arc::new(ImapDirectory {
-            pool: build_pool(config, &prefix, manager)?,
-        }))
+        CachedDirectory::try_from_config(
+            config,
+            &prefix,
+            ImapDirectory {
+                pool: build_pool(config, &prefix, manager)?,
+                domains,
+            },
+        )
     }
 }

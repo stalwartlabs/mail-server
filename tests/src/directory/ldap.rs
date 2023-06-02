@@ -8,12 +8,12 @@ use crate::directory::parse_config;
 #[tokio::test]
 async fn ldap_directory() {
     // Enable logging
-    tracing::subscriber::set_global_default(
+    /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::DEBUG)
             .finish(),
     )
-    .unwrap();
+    .unwrap();*/
 
     // Obtain directory handle
     let handle = parse_config().directories.remove("ldap").unwrap();
@@ -151,6 +151,10 @@ async fn ldap_directory() {
         handle.ids_by_email("info@example.org").await.unwrap(),
         vec![2, 3, 4],
     );
+
+    // Domain validation
+    assert!(handle.is_local_domain("example.org").await.unwrap());
+    assert!(!handle.is_local_domain("other.org").await.unwrap());
 
     // RCPT TO
     assert!(handle.rcpt("jane@example.org").await.unwrap());

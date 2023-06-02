@@ -98,7 +98,7 @@ mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
 [session.auth]
 mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
                { else = [] } ]
-lookup = [ { if = "listener", ne = "smtp", then = "remote/imap" }, 
+directory = [ { if = "listener", ne = "smtp", then = "remote/imap" }, 
            { else = false } ]
 require = [ { if = "listener", ne = "smtp", then = true},
             { else = false } ]
@@ -115,14 +115,13 @@ wait = "5s"
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
 max-recipients = 25
-
-[session.rcpt.lookup]
+directory = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
+         { else = false } ]
 domains = "list/domains"
-addresses = "remote/lmtp"
-vrfy = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
-         { else = false } ]
-expn = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
-         { else = false } ]
+
+[session.rcpt.cache]
+entries = 1000
+ttl = {positive = 10, negative = 5}
 
 [session.rcpt.errors]
 total = 5
@@ -394,7 +393,7 @@ from-addr = "no-reply@__DOMAIN__"
 return-path = ""
 #hostname = "__HOST__"
 sign = ["rsa"]
-use-database = "sql"
+use-directory = "sql"
 
 [sieve.limits]
 redirects = 3
@@ -455,8 +454,8 @@ data = '''
     }
 '''
 
-[management.auth]
-lookup = "list/admin"
+[management]
+directory = "local"
 
 [list]
 domains = ["__DOMAIN__"]

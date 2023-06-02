@@ -142,19 +142,20 @@ impl Directory for LdapDirectory {
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        let (rs, _res) = self
-            .pool
+        self.pool
             .get()
             .await?
-            .search(
+            .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_email.build(address),
                 &self.mappings.attr_email_address,
             )
             .await?
-            .success()?;
-        Ok(!rs.is_empty())
+            .next()
+            .await
+            .map(|entry| entry.is_some())
+            .map_err(|e| e.into())
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
@@ -249,6 +250,26 @@ impl Directory for LdapDirectory {
         .next()
         .await?
         .is_some())
+    }
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+        if self.domains.contains(domain) {
+            return Ok(true);
+        }
+        self.pool
+            .get()
+            .await?
+            .streaming_search(
+                &self.mappings.base_dn,
+                Scope::Subtree,
+                &self.mappings.filter_domains.build(domain),
+                Vec::<String>::new(),
+            )
+            .await?
+            .next()
+            .await
+            .map(|entry| entry.is_some())
+            .map_err(|e| e.into())
     }
 }
 

@@ -21,10 +21,9 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use ahash::AHashSet;
+use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
+use utils::config::Config;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -33,30 +32,44 @@ use crate::smtp::{
 use smtp::{
     config::ConfigContext,
     core::{Session, State, SMTP},
-    lookup::Lookup,
 };
+
+const DIRECTORY: &str = r#"
+[directory."local"]
+protocol = "memory"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
+email-list = ["info@example.org"]
+member-of = ["sales"]
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "p4ssw0rd"
+email = "jane@example.org"
+email-list = ["info@example.org"]
+member-of = ["sales", "support"]
+"#;
 
 #[tokio::test]
 async fn auth() {
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]);
-    ctx.lookup.insert(
-        "plain".to_string(),
-        Arc::new(Lookup::List(AHashSet::from_iter([
-            "john:secret".to_string(),
-            "jane:p4ssw0rd".to_string(),
-        ]))),
-    );
+    ctx.directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
 
     let mut config = &mut core.session.config.auth;
 
     config.require = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
         .parse_if(&ctx);
-    config.lookup = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'plain'},
+    config.directory = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'local'},
     {else = false}]"
         .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.lookup, "", "")
+        .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 2},
     {else = 3}]"

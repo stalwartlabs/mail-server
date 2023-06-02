@@ -1,3 +1,4 @@
+use ahash::AHashSet;
 use bb8::Pool;
 use ldap3::{ldap_escape, LdapConnSettings};
 
@@ -8,6 +9,7 @@ pub mod pool;
 pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
+    domains: AHashSet<String>,
 }
 
 #[derive(Debug, Default)]
@@ -19,6 +21,7 @@ pub struct LdapMappings {
     filter_id: LdapFilter,
     filter_verify: LdapFilter,
     filter_expand: LdapFilter,
+    filter_domains: LdapFilter,
     obj_user: String,
     obj_group: String,
     attr_name: Vec<String>,

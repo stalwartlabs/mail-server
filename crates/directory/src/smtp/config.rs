@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use mail_send::{smtp::tls::build_tls_connector, SmtpClientBuilder};
 use utils::config::{utils::AsKey, Config};
 
-use crate::{config::build_pool, smtp::SmtpConnectionManager, Directory};
+use crate::{cache::CachedDirectory, config::build_pool, smtp::SmtpConnectionManager, Directory};
 
 use super::SmtpDirectory;
 
@@ -11,6 +12,7 @@ impl SmtpDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        domains: AHashSet<String>,
         is_lmtp: bool,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
@@ -39,8 +41,13 @@ impl SmtpDirectory {
             max_auth_errors: config.property_or_static((&prefix, "limits.auth-errors"), "3")?,
         };
 
-        Ok(Arc::new(SmtpDirectory {
-            pool: build_pool(config, &prefix, manager)?,
-        }))
+        CachedDirectory::try_from_config(
+            config,
+            &prefix,
+            SmtpDirectory {
+                pool: build_pool(config, &prefix, manager)?,
+                domains,
+            },
+        )
     }
 }

@@ -16,6 +16,7 @@ rustls = "0.21.0"
 sqlx = { version = "0.7.0-alpha.3", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
 bb8 = "0.8.1"
+parking_lot = "0.12"
 async-trait = "0.1.68"
 ahash = { version = "0.8" }
 tracing = "0.1"
