@@ -30,18 +30,20 @@ use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
 use tokio::sync::mpsc;
 
-use crate::jmap::{
-    delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_create,
-    test_account_login,
+use crate::{
+    directory::sql::create_test_user_with_email,
+    jmap::{delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login},
 };
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running EventSource tests...");
 
     // Create test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut changes = client

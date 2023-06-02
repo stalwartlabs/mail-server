@@ -35,18 +35,22 @@ use jmap_client::{
     },
     TypeState,
 };
-use jmap_proto::types::id::Id;
 use tokio::sync::mpsc;
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_account_login};
+use crate::{
+    directory::sql::create_test_user_with_email,
+    jmap::{mailbox::destroy_all_mailboxes, test_account_login},
+};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running WebSockets tests...");
 
     // Authenticate all accounts
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut ws_stream = client.connect_ws().await.unwrap();
@@ -90,7 +94,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .mailbox_update_sort_order(&mailbox_id, 1)
         .await
         .unwrap();
-    assert_state(&mut stream_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut stream_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Multiple changes should be grouped and delivered in intervals
     for num in 0..5 {
@@ -100,7 +104,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             .unwrap();
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_state(&mut stream_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut stream_rx, &account_id, &[TypeState::Mailbox]).await;
     expect_nothing(&mut stream_rx).await;
 
     // Disable push notifications
@@ -140,13 +144,17 @@ async fn expect_response(
     }
 }
 
-async fn assert_state(stream_rx: &mut mpsc::Receiver<WebSocketMessage>, state: &[TypeState]) {
+async fn assert_state(
+    stream_rx: &mut mpsc::Receiver<WebSocketMessage>,
+    id: &str,
+    state: &[TypeState],
+) {
     match tokio::time::timeout(Duration::from_millis(700), stream_rx.recv()).await {
         Ok(Some(message)) => match message {
             WebSocketMessage::StateChange(changes) => {
                 assert_eq!(
                     changes
-                        .changes(&Id::new(1).to_string())
+                        .changes(id)
                         .unwrap()
                         .map(|x| x.0)
                         .collect::<AHashSet<&TypeState>>(),

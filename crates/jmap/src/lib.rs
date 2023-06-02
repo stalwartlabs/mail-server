@@ -28,8 +28,9 @@ use api::session::BaseCapabilities;
 use auth::{
     oauth::OAuthCode,
     rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
-    AclToken,
+    AccessToken,
 };
+use directory::{Directory, DirectoryConfig};
 use jmap_proto::{
     error::method::MethodError,
     method::{
@@ -77,9 +78,10 @@ pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub struct JMAP {
     pub store: Store,
     pub config: Config,
+    pub directory: Arc<dyn Directory>,
 
     pub sessions: LruCache<String, u32>,
-    pub acl_tokens: LruCache<u32, Arc<AclToken>>,
+    pub access_tokens: LruCache<u32, Arc<AccessToken>>,
 
     pub rate_limit_auth: LruCache<u32, Arc<Mutex<AuthenticatedLimiter>>>,
     pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
@@ -154,108 +156,29 @@ pub enum IngestError {
 impl JMAP {
     pub async fn init(
         config: &utils::config::Config,
+        directory_config: &DirectoryConfig,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
         smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
-        let remove = "true";
-        /*
-        let auth_db = match config.value_require("jmap.auth.database.type")? {
-            "ldap" => AuthDatabase::Ldap,
-            "sql" => {
-                let address = config.value_require("jmap.auth.database.address")?;
-                let max_connections = config
-                    .property("jmap.auth.database.max-connections")?
-                    .unwrap_or(10);
-                let min_connections = config
-                    .property("jmap.auth.database.min-connections")?
-                    .unwrap_or(0);
-                let idle_timeout = config.property("jmap.auth.database.idle-timeout")?;
-
-                let db = if address.starts_with("postgres:") {
-                    SqlDatabase::Postgres(
-                        PgPoolOptions::new()
-                            .max_connections(max_connections)
-                            .min_connections(min_connections)
-                            .idle_timeout(idle_timeout)
-                            .connect_lazy(address)
-                            .failed(&format!("Failed to create connection pool for {address:?}")),
-                    )
-                } else if address.starts_with("mysql:") {
-                    SqlDatabase::MySql(
-                        MySqlPoolOptions::new()
-                            .max_connections(max_connections)
-                            .min_connections(min_connections)
-                            .idle_timeout(idle_timeout)
-                            .connect_lazy(address)
-                            .failed(&format!("Failed to create connection pool for {address:?}")),
-                    )
-                } else if address.starts_with("mssql:") {
-                    todo!()
-                    /*SqlDatabase::MsSql(
-                        MssqlPoolOptions::new()
-                            .max_connections(max_connections)
-                            .min_connections(min_connections)
-                            .idle_timeout(idle_timeout)
-                            .connect_lazy(address)
-                            .failed(&format!("Failed to create connection pool for {address:?}")),
-                    )*/
-                } else if address.starts_with("sqlite:") {
-                    SqlDatabase::SqlLite(
-                        SqlitePoolOptions::new()
-                            .max_connections(max_connections)
-                            .min_connections(min_connections)
-                            .idle_timeout(idle_timeout)
-                            .connect_lazy(address)
-                            .failed(&format!("Failed to create connection pool for {address:?}")),
-                    )
-                } else {
-                    failed(&format!("Invalid database address {address:?}"));
-                };
-                AuthDatabase::Sql {
-                    db,
-                    query_uid_by_login: config
-                        .value_require("jmap.auth.database.query.uid-by-login")?
-                        .to_string(),
-                    query_login_by_uid: config
-                        .value_require("jmap.auth.database.query.login-by-uid")?
-                        .to_string(),
-                    query_secret_by_uid: config
-                        .value_require("jmap.auth.database.query.secret-by-uid")?
-                        .to_string(),
-                    query_name_by_uid: config
-                        .value_require("jmap.auth.database.query.name-by-uid")?
-                        .to_string(),
-                    query_gids_by_uid: config
-                        .value_require("jmap.auth.database.query.gids-by-uid")?
-                        .to_string(),
-                    query_uids_by_address: config
-                        .value_require("jmap.auth.database.query.uids-by-address")?
-                        .to_string(),
-                    query_addresses_by_uid: config
-                        .value_require("jmap.auth.database.query.addresses-by-uid")?
-                        .to_string(),
-                    query_vrfy: config
-                        .value_require("jmap.auth.database.query.vrfy")?
-                        .to_string(),
-                    query_expn: config
-                        .value_require("jmap.auth.database.query.expn")?
-                        .to_string(),
-                }
-            }
-            _ => failed("Invalid auth database type"),
-        };*/
-
         // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
 
         let jmap_server = Arc::new(JMAP {
+            directory: directory_config
+                .directories
+                .get(config.value_require("jmap.directory")?)
+                .failed(&format!(
+                    "Unable to find directory '{}'",
+                    config.value_require("jmap.directory")?
+                ))
+                .clone(),
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: LruCache::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
             ),
-            acl_tokens: LruCache::with_capacity(
+            access_tokens: LruCache::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
             ),
             rate_limit_auth: LruCache::with_capacity(

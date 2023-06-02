@@ -293,16 +293,22 @@ pub async fn set_test_quota(handle: &dyn Directory, login: &str, quota: u32) {
 }
 
 pub async fn add_to_group(handle: &dyn Directory, login: &str, group: &str) {
-    let user = handle.principal_by_name(login).await.unwrap().unwrap();
     let group = handle.principal_by_name(group).await.unwrap().unwrap();
-
-    let uid = user.id;
     let gid = group.id;
+    assert_ne!(gid, u32::MAX, "{group:?}");
 
-    assert_ne!(uid, gid, "{user:?} {group:?}");
-    assert_ne!(uid, u32::MAX, "{user:?} {group:?}");
-    assert_ne!(gid, u32::MAX, "{user:?} {group:?}");
+    add_to_group_id(handle, login, gid).await;
+}
 
+pub async fn add_to_group_id(handle: &dyn Directory, login: &str, gid: u32) {
+    let user = handle.principal_by_name(login).await.unwrap().unwrap();
+    let uid = user.id;
+    assert_ne!(uid, u32::MAX, "{user:?}");
+    assert_ne!(uid, gid, "{user:?}");
+    add_user_id_to_group_id(handle, uid, gid).await;
+}
+
+pub async fn add_user_id_to_group_id(handle: &dyn Directory, uid: u32, gid: u32) {
     handle
         .query(
             &format!(
@@ -318,7 +324,10 @@ pub async fn add_to_group(handle: &dyn Directory, login: &str, group: &str) {
 pub async fn remove_from_group(handle: &dyn Directory, uid: u32, gid: u32) {
     handle
         .query(
-            &format!("DELETE FROM groups WHERE uid = {} AND gid = {}", uid, gid),
+            &format!(
+                "DELETE FROM group_members WHERE uid = {} AND gid = {}",
+                uid, gid
+            ),
             &[],
         )
         .await

@@ -29,7 +29,7 @@ use jmap_proto::{
 };
 use store::BlobKind;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::UploadResponse;
 
@@ -39,10 +39,10 @@ impl JMAP {
         account_id: Id,
         content_type: &str,
         data: &[u8],
-        acl_token: Arc<AclToken>,
+        access_token: Arc<AccessToken>,
     ) -> Result<UploadResponse, RequestError> {
         // Limit concurrent uploads
-        let _in_flight = self.is_upload_allowed(acl_token.primary_id())?;
+        let _in_flight = self.is_upload_allowed(&access_token)?;
 
         #[cfg(feature = "test_mode")]
         {

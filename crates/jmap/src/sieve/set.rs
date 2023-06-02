@@ -50,11 +50,11 @@ use store::{
     BlobKind,
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,
-    acl_token: &'x AclToken,
+    access_token: &'x AccessToken,
     response: SetResponse,
 }
 
@@ -73,7 +73,7 @@ impl JMAP {
     pub async fn sieve_script_set(
         &self,
         mut request: SetRequest<SetArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<SetResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut sieve_ids = self
@@ -82,7 +82,7 @@ impl JMAP {
             .unwrap_or_default();
         let mut ctx = SetContext {
             account_id,
-            acl_token,
+            access_token,
             response: self
                 .prepare_set_response(&request, Collection::SieveScript)
                 .await?,
@@ -450,7 +450,7 @@ impl JMAP {
                     .is_document(ctx.account_id, Collection::SieveScript, *document_id)
             }) {
                 // Check access
-                if let Some(mut bytes) = self.blob_download(&blob_id, ctx.acl_token).await? {
+                if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
                     // Compile script
                     match self.sieve_compiler.compile(&bytes) {
                         Ok(script) => {

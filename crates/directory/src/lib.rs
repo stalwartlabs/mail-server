@@ -102,6 +102,28 @@ impl PartialEq for Lookup {
 
 impl Eq for Lookup {}
 
+impl Principal {
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    pub fn has_id(&self) -> bool {
+        self.id != u32::MAX
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn has_name(&self) -> bool {
+        !self.name.is_empty()
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+}
+
 impl Debug for dyn Directory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Directory")
@@ -189,7 +211,7 @@ impl From<ImapError> for DirectoryError {
         tracing::warn!(
             context = "directory",
             event = "error",
-            protocol = "imap",
+            protocol = "ldap",
             reason = %error,
             "IMAP directory error"
         );

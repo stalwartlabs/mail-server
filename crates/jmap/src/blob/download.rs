@@ -33,15 +33,15 @@ use mail_parser::{
 };
 use store::BlobKind;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn blob_download(
         &self,
         blob_id: &BlobId,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<Option<Vec<u8>>, MethodError> {
-        if !acl_token.is_member(blob_id.account_id()) {
+        if !access_token.is_member(blob_id.account_id()) {
             match &blob_id.kind {
                 BlobKind::Linked {
                     account_id,
@@ -50,7 +50,7 @@ impl JMAP {
                 } => {
                     match self
                         .has_access_to_document(
-                            acl_token,
+                            access_token,
                             *account_id,
                             *collection,
                             *document_id,
@@ -67,7 +67,7 @@ impl JMAP {
                     document_id,
                 } => {
                     match self
-                        .shared_messages(acl_token, *account_id, Acl::ReadItems)
+                        .shared_messages(access_token, *account_id, Acl::ReadItems)
                         .await
                     {
                         Ok(shared_messages) if shared_messages.contains(*document_id) => (),
@@ -117,7 +117,7 @@ impl JMAP {
     pub async fn has_access_blob(
         &self,
         blob_id: &BlobId,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<bool, MethodError> {
         Ok(match &blob_id.kind {
             BlobKind::Linked {
@@ -125,11 +125,11 @@ impl JMAP {
                 collection,
                 document_id,
             } => {
-                acl_token.is_member(*account_id)
-                    || (acl_token.has_access(*account_id, *collection)
+                access_token.is_member(*account_id)
+                    || (access_token.has_access(*account_id, *collection)
                         && self
                             .has_access_to_document(
-                                acl_token,
+                                access_token,
                                 *account_id,
                                 *collection,
                                 *document_id,
@@ -141,13 +141,13 @@ impl JMAP {
                 account_id,
                 document_id,
             } => {
-                acl_token.is_member(*account_id)
+                access_token.is_member(*account_id)
                     || self
-                        .shared_messages(acl_token, *account_id, Acl::ReadItems)
+                        .shared_messages(access_token, *account_id, Acl::ReadItems)
                         .await?
                         .contains(*document_id)
             }
-            BlobKind::Temporary { account_id, .. } => acl_token.is_member(*account_id),
+            BlobKind::Temporary { account_id, .. } => access_token.is_member(*account_id),
         })
     }
 }

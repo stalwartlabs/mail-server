@@ -38,7 +38,16 @@ use jmap_client::{
     principal::ACL,
 };
 use jmap_proto::types::id::Id;
+use std::fmt::Debug;
 use store::ahash::AHashMap;
+
+use crate::{
+    directory::sql::{
+        add_user_id_to_group_id, create_test_group_with_email, create_test_user_with_email,
+        remove_from_group,
+    },
+    jmap::{mailbox::destroy_all_mailboxes, test_account_login},
+};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running ACL tests...");
@@ -47,11 +56,16 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     let inbox_id = Id::new(INBOX_ID as u64).to_string();
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
-    let john_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe").await;
+    let directory = server.directory.as_ref();
+    let john_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
     let jane_id =
-        test_account_create(&server, "jane.smith@example.com", "abcde", "Jane Smith").await;
-    let bill_id = test_account_create(&server, "bill@example.com", "098765", "Bill Foobar").await;
-    let sales_id = test_account_create(&server, "sales@example.com", "", "Sales Group").await;
+        create_test_user_with_email(directory, "jane.smith@example.com", "abcde", "Jane Smith")
+            .await;
+    let bill_id =
+        create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
+    let sales_id =
+        create_test_group_with_email(directory, "sales@example.com", "Sales Group").await;
 
     // Authenticate all accounts
     let mut john_client = test_account_login("jdoe@example.com", "12345").await;
@@ -639,21 +653,9 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Add John and Jane to the Sales group
     for id in [jane_id.id(), john_id.id()] {
-        assert!(
-            server
-                .auth_db
-                .execute(
-                    &format!(
-                        "INSERT INTO groups (uid, gid) VALUES ({}, {})",
-                        id,
-                        sales_id.id()
-                    ),
-                    Vec::<String>::new().into_iter(),
-                )
-                .await
-        );
+        add_user_id_to_group_id(directory, id as u32, sales_id.id() as u32).await;
     }
-    server.acl_tokens.lock().clear();
+    server.access_tokens.lock().clear();
     john_client.refresh_session().await.unwrap();
     jane_client.refresh_session().await.unwrap();
     bill_client.refresh_session().await.unwrap();
@@ -747,19 +749,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     );
 
     // Remove John from the sales group
-    assert!(
-        server
-            .auth_db
-            .execute(
-                &format!(
-                    "DELETE FROM groups WHERE uid = {} AND gid ={}",
-                    john_id.id(),
-                    sales_id.id()
-                ),
-                Vec::<String>::new().into_iter(),
-            )
-            .await
-    );
+    remove_from_group(directory, john_id.id() as u32, sales_id.id() as u32).await;
     server.sessions.lock().clear();
     assert_forbidden(
         john_client
@@ -776,9 +766,6 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     server.store.assert_is_empty().await;
 }
 
-use std::fmt::Debug;
-
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_account_login};
 pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {
     if !matches!(
         result,

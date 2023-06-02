@@ -72,7 +72,13 @@ impl JMAP {
 
             // Validate email address
             if let Value::Text(email) = identity.get(&Property::Email) {
-                if !self.get_addresses_by_uid(account_id).await.contains(email) {
+                if !self
+                    .directory
+                    .emails_by_id(account_id)
+                    .await
+                    .unwrap_or_default()
+                    .contains(email)
+                {
                     response.not_created.append(
                         id,
                         SetError::invalid_properties()

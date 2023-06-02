@@ -44,8 +44,9 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::jmap::{
-    email_set::assert_email_properties, mailbox::destroy_all_mailboxes, test_account_create,
+use crate::{
+    directory::sql::create_test_user_with_email,
+    jmap::{email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
 };
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -89,9 +90,11 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     );
 
     // Create a test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
 
     // Create an identity without using a valid address should fail
     match client

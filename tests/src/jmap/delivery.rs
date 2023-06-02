@@ -31,29 +31,40 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::jmap::{
-    mailbox::destroy_all_mailboxes, test_account_create, test_alias_create, test_alias_remove,
+use crate::{
+    directory::sql::{create_test_user_with_email, link_test_address, remove_test_alias},
+    jmap::mailbox::destroy_all_mailboxes,
 };
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running message delivery tests...");
 
     // Create a domain name and a test account
-    let account_id_1 = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
-    let account_id_2 = test_account_create(&server, "jane@example.com", "abcdef", "Jane Smith")
-        .await
-        .to_string();
-    let account_id_3 = test_account_create(&server, "bill@example.com", "098765", "Bill Foobar")
-        .await
-        .to_string();
-    test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;
+    let directory = server.directory.as_ref();
+    let account_id_1 =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
+    let account_id_2 =
+        create_test_user_with_email(directory, "jane@example.com", "abcdef", "Jane Smith")
+            .await
+            .to_string();
+    let account_id_3 =
+        create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar")
+            .await
+            .to_string();
+    link_test_address(
+        directory,
+        "jdoe@example.com",
+        "john.doe@example.com",
+        "alias",
+    )
+    .await;
 
     // Create a mailing list
-    test_alias_create(&server, "jdoe@example.com", "members@example.com", true).await;
-    test_alias_create(&server, "jane@example.com", "members@example.com", true).await;
-    test_alias_create(&server, "bill@example.com", "members@example.com", true).await;
+    link_test_address(directory, "jdoe@example.com", "members@example.com", "list").await;
+    link_test_address(directory, "jane@example.com", "members@example.com", "list").await;
+    link_test_address(directory, "bill@example.com", "members@example.com", "list").await;
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
@@ -162,7 +173,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     // Removing members from the mailing list and chunked ingest
-    test_alias_remove(&server, "jdoe@example.com", "members@example.com").await;
+    remove_test_alias(directory, "jdoe@example.com", "members@example.com").await;
     lmtp.ingest_chunked(
         "bill@example.com",
         &["members@example.com"],

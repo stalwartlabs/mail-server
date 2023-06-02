@@ -30,19 +30,19 @@ use std::{
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::mail_auth::common::lru::DnsCache;
+use mail_send::{mail_auth::common::lru::DnsCache, Credentials};
 use utils::listener::limiter::InFlight;
 
 use crate::JMAP;
 
-use super::{rate_limit::RemoteAddress, AclToken};
+use super::{rate_limit::RemoteAddress, AccessToken};
 
 impl JMAP {
     pub async fn authenticate_headers(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
-    ) -> Result<Option<(InFlight, Arc<AclToken>)>, RequestError> {
+    ) -> Result<Option<(InFlight, Arc<AccessToken>)>, RequestError> {
         if let Some((mechanism, token)) = req
             .headers()
             .get(header::AUTHORIZATION)
@@ -50,18 +50,18 @@ impl JMAP {
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
             let session = if let Some(account_id) = self.sessions.get(&token) {
-                if let Some(acl_token) = self.acl_tokens.get(&account_id) {
-                    acl_token.into()
+                if let Some(access_token) = self.access_tokens.get(&account_id) {
+                    access_token.into()
                 } else {
                     // Refresh ACL token
-                    self.get_acl_token(account_id).await.map(|acl_token| {
-                        let acl_token = Arc::new(acl_token);
-                        self.acl_tokens.insert(
+                    self.get_access_token(account_id).await.map(|access_token| {
+                        let access_token = Arc::new(access_token);
+                        self.access_tokens.insert(
                             account_id,
-                            acl_token.clone(),
+                            access_token.clone(),
                             Instant::now() + self.config.session_cache_ttl,
                         );
-                        acl_token
+                        access_token
                     })
                 }
             } else {
@@ -79,7 +79,7 @@ impl JMAP {
                             })
                         })
                     {
-                        self.authenticate_with_token(&account, &secret).await
+                        self.authenticate_plain(&account, &secret).await
                     } else {
                         tracing::debug!(
                             context = "authenticate_headers",
@@ -93,7 +93,7 @@ impl JMAP {
                     self.is_anonymous_allowed(addr)?;
 
                     match self.validate_access_token("access_token", &token).await {
-                        Ok((account_id, _, _)) => self.get_acl_token(account_id).await,
+                        Ok((account_id, _, _)) => self.get_access_token(account_id).await,
                         Err(err) => {
                             tracing::debug!(
                                 context = "authenticate_headers",
@@ -115,7 +115,7 @@ impl JMAP {
                         session.primary_id(),
                         Instant::now() + self.config.session_cache_ttl,
                     );
-                    self.acl_tokens.insert(
+                    self.access_tokens.insert(
                         session.primary_id(),
                         session.clone(),
                         Instant::now() + self.config.session_cache_ttl,
@@ -126,10 +126,7 @@ impl JMAP {
 
             if let Some(session) = session {
                 // Enforce authenticated rate limit
-                Ok(Some((
-                    self.is_account_allowed(session.primary_id())?,
-                    session,
-                )))
+                Ok(Some((self.is_account_allowed(&session)?, session)))
             } else {
                 Ok(None)
             }
@@ -158,5 +155,53 @@ impl JMAP {
             tracing::debug!("Warning: No remote address found in request, using loopback.");
             RemoteAddress::IpAddress(Ipv4Addr::new(127, 0, 0, 1).into())
         }
+    }
+
+    pub async fn authenticate_plain(&self, username: &str, secret: &str) -> Option<AccessToken> {
+        let mut principal = self
+            .directory
+            .authenticate(&Credentials::Plain {
+                username: username.to_string(),
+                secret: secret.to_string(),
+            })
+            .await
+            .ok()??;
+        if !principal.has_id() {
+            tracing::warn!(
+                context = "authenticate_plain",
+                username = username,
+                "Principal has no ID."
+            );
+            return None;
+        } else if !principal.has_name() {
+            principal.name = username.to_string();
+        }
+        // Obtain groups
+        let member_of = self
+            .directory
+            .member_of(&principal)
+            .await
+            .unwrap_or_default();
+
+        // Create access token
+        self.update_access_token(AccessToken::new(principal).with_member_of(member_of))
+            .await
+    }
+
+    pub async fn get_access_token(&self, id: u32) -> Option<AccessToken> {
+        let mut principal = self.directory.principal_by_id(id).await.ok()??;
+        if !principal.has_id() {
+            principal.id = id;
+        }
+        // Obtain groups
+        let member_of = self
+            .directory
+            .member_of(&principal)
+            .await
+            .unwrap_or_default();
+
+        // Create access token
+        self.update_access_token(AccessToken::new(principal).with_member_of(member_of))
+            .await
     }
 }

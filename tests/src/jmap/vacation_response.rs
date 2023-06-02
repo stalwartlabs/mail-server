@@ -27,22 +27,26 @@ use chrono::{Duration, Utc};
 use jmap::JMAP;
 use jmap_client::client::Client;
 
-use crate::jmap::{
-    delivery::SmtpConnection,
-    email_submission::{
-        assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
+use crate::{
+    directory::sql::create_test_user_with_email,
+    jmap::{
+        delivery::SmtpConnection,
+        email_submission::{
+            assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
+        },
+        mailbox::destroy_all_mailboxes,
     },
-    mailbox::destroy_all_mailboxes,
-    test_account_create,
 };
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Vacation Response tests...");
 
     // Create test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
     client.set_default_account_id(&account_id);
 
     // Start mock SMTP server

@@ -36,18 +36,18 @@ use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 use utils::{listener::ServerInstance, map::bitmap::Bitmap};
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn handle_websocket_stream(
         &self,
         mut stream: WebSocketStream<Upgraded>,
-        acl_token: Arc<AclToken>,
+        access_token: Arc<AccessToken>,
         instance: Arc<ServerInstance>,
     ) {
         let span = tracing::info_span!(
             "WebSocket connection established",
-            "account_id" = acl_token.primary_id(),
+            "account_id" = access_token.primary_id(),
             "url" = instance.data,
         );
 
@@ -63,8 +63,8 @@ impl JMAP {
         // Register with state manager
         let mut change_rx = if let Some(change_rx) = self
             .subscribe_state_manager(
-                acl_token.primary_id(),
-                acl_token.primary_id(),
+                access_token.primary_id(),
+                access_token.primary_id(),
                 Bitmap::all(),
             )
             .await
@@ -97,7 +97,7 @@ impl JMAP {
                                             match self
                                                 .handle_request(
                                                     request.request,
-                                                    acl_token.clone(),
+                                                    access_token.clone(),
                                                     &instance,
                                                 )
                                                 .await

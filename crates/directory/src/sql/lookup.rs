@@ -22,13 +22,11 @@ impl Directory for SqlDirectory {
             .fetch_optional(&self.pool)
             .await?
         {
-            self.mappings.row_to_principal(row).map(|p| {
-                if p.verify_secret(secret) {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
+            match self.mappings.row_to_principal(row) {
+                Ok(principal) if principal.verify_secret(secret).await => Ok(Some(principal)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(err),
+            }
         } else {
             Ok(None)
         }
@@ -122,10 +120,6 @@ impl Directory for SqlDirectory {
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        if self.domains.contains(domain) {
-            return Ok(true);
-        }
-
         sqlx::query(&self.mappings.query_domains)
             .bind(domain)
             .fetch_optional(&self.pool)
@@ -142,26 +136,25 @@ impl SqlMappings {
             ..Default::default()
         };
         for col in row.columns() {
-            let name = col.name();
             let idx = col.ordinal();
+            let name = col.name();
+
             if name.eq_ignore_ascii_case(&self.column_id) {
                 principal.id = row.try_get::<i64, _>(idx)? as u32;
             } else if name.eq_ignore_ascii_case(&self.column_name) {
-                principal.name = row.try_get::<Option<String>, _>(idx)?.unwrap_or_default();
+                principal.name = row.try_get::<String, _>(idx)?;
             } else if name.eq_ignore_ascii_case(&self.column_secret) {
-                if let Some(secret) = row.try_get::<Option<String>, _>(idx)? {
+                if let Ok(secret) = row.try_get::<String, _>(idx) {
                     principal.secrets.push(secret);
                 }
             } else if name.eq_ignore_ascii_case(&self.column_type) {
-                if let Some(typ) = row.try_get::<Option<String>, _>(idx)? {
-                    match typ.as_str() {
-                        "individual" | "person" | "user" => principal.typ = Type::Individual,
-                        "group" => principal.typ = Type::Group,
-                        _ => (),
-                    }
+                match row.try_get::<String, _>(idx)?.as_str() {
+                    "individual" | "person" | "user" => principal.typ = Type::Individual,
+                    "group" => principal.typ = Type::Group,
+                    _ => (),
                 }
             } else if name.eq_ignore_ascii_case(&self.column_description) {
-                principal.description = row.try_get::<Option<String>, _>(idx)?;
+                principal.description = row.try_get::<String, _>(idx).ok();
             } else if name.eq_ignore_ascii_case(&self.column_quota) {
                 principal.quota = row.try_get::<i64, _>(idx).unwrap_or_default() as u32;
             }

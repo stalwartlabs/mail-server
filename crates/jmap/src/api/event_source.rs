@@ -34,7 +34,7 @@ use hyper::{
 use jmap_proto::{error::request::RequestError, types::type_state::TypeState};
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AclToken, JMAP, LONG_SLUMBER};
+use crate::{auth::AccessToken, JMAP, LONG_SLUMBER};
 
 use super::{http::ToHttpResponse, HttpRequest, HttpResponse, StateChangeResponse};
 
@@ -48,7 +48,7 @@ impl JMAP {
     pub async fn handle_event_source(
         &self,
         req: HttpRequest,
-        acl_token: Arc<AclToken>,
+        access_token: Arc<AccessToken>,
     ) -> HttpResponse {
         // Parse query
         let mut ping = 0;
@@ -110,7 +110,7 @@ impl JMAP {
 
         // Register with state manager
         let mut change_rx = if let Some(change_rx) = self
-            .subscribe_state_manager(acl_token.primary_id(), acl_token.primary_id(), types)
+            .subscribe_state_manager(access_token.primary_id(), access_token.primary_id(), types)
             .await
         {
             change_rx

@@ -50,7 +50,7 @@ use store::{
 };
 
 use crate::{
-    auth::{acl::EffectiveAcl, AclToken},
+    auth::{acl::EffectiveAcl, AccessToken},
     JMAP, SUPERUSER_ID,
 };
 
@@ -58,7 +58,7 @@ use super::{INBOX_ID, TRASH_ID};
 
 struct SetContext<'x> {
     account_id: u32,
-    acl_token: &'x AclToken,
+    access_token: &'x AccessToken,
     is_shared: bool,
     response: SetResponse,
     mailbox_ids: RoaringBitmap,
@@ -88,15 +88,15 @@ impl JMAP {
     pub async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let on_destroy_remove_emails = request.arguments.on_destroy_remove_emails.unwrap_or(false);
         let mut ctx = SetContext {
             account_id,
-            is_shared: acl_token.is_shared(account_id),
-            acl_token,
+            is_shared: access_token.is_shared(account_id),
+            access_token,
             response: self
                 .prepare_set_response(&request, Collection::Mailbox)
                 .await?,
@@ -153,7 +153,7 @@ impl JMAP {
             {
                 // Validate ACL
                 if ctx.is_shared {
-                    let acl = mailbox.inner.effective_acl(acl_token);
+                    let acl = mailbox.inner.effective_acl(access_token);
                     if !acl.contains(Acl::Modify) {
                         ctx.response.not_updated.append(
                             id,
@@ -223,8 +223,7 @@ impl JMAP {
         'destroy: for id in ctx.will_destroy {
             let document_id = id.document_id();
             // Internal folders cannot be deleted
-            if (document_id == INBOX_ID || document_id == TRASH_ID)
-                && !acl_token.is_member(SUPERUSER_ID)
+            if (document_id == INBOX_ID || document_id == TRASH_ID) && !access_token.is_super_user()
             {
                 ctx.response.not_destroyed.append(
                     id,
@@ -388,7 +387,7 @@ impl JMAP {
             {
                 // Validate ACLs
                 if ctx.is_shared {
-                    let acl = mailbox.inner.effective_acl(acl_token);
+                    let acl = mailbox.inner.effective_acl(access_token);
                     if !acl.contains(Acl::Administer) {
                         if !acl.contains(Acl::Delete) {
                             ctx.response.not_destroyed.append(
@@ -513,7 +512,7 @@ impl JMAP {
                 }
                 (Property::ParentId, MaybePatchValue::Value(Value::Null)) => Value::Id(0u64.into()),
                 (Property::IsSubscribed, MaybePatchValue::Value(Value::Bool(subscribe))) => {
-                    let account_id = Value::Id(ctx.acl_token.primary_id().into());
+                    let account_id = Value::Id(ctx.access_token.primary_id().into());
                     let mut new_value = None;
                     if let Some((_, current_fields)) = update.as_ref() {
                         if let Value::List(subscriptions) =
@@ -628,7 +627,7 @@ impl JMAP {
                     if depth == 0
                         && ctx.is_shared
                         && !fields
-                            .effective_acl(ctx.acl_token)
+                            .effective_acl(ctx.access_token)
                             .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
                     {
                         return Ok(Err(SetError::forbidden().with_description(

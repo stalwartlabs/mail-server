@@ -42,7 +42,7 @@ use store::{
     BlobKind,
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::index::MAX_MESSAGE_PARTS;
 
@@ -50,7 +50,7 @@ impl JMAP {
     pub async fn email_search_snippet(
         &self,
         request: GetSearchSnippetRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<GetSearchSnippetResponse, MethodError> {
         let mut filter_stack = vec![];
         let mut include_term = true;
@@ -102,7 +102,7 @@ impl JMAP {
         }
         let account_id = request.account_id.document_id();
         let document_ids = self
-            .owned_or_shared_messages(acl_token, account_id, Acl::ReadItems)
+            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
             .await?;
         let email_ids = request.email_ids.unwrap();
         let mut response = GetSearchSnippetResponse {

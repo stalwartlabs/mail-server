@@ -28,37 +28,37 @@ use jmap_proto::{
 };
 use store::query::log::{Change, Changes, Query};
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn changes(
         &self,
         request: ChangesRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<ChangesResponse, MethodError> {
         // Map collection and validate ACLs
         let collection = match request.arguments {
             RequestArguments::Email => {
-                acl_token.assert_has_access(request.account_id, Collection::Email)?;
+                access_token.assert_has_access(request.account_id, Collection::Email)?;
                 Collection::Email
             }
             RequestArguments::Mailbox => {
-                acl_token.assert_has_access(request.account_id, Collection::Mailbox)?;
+                access_token.assert_has_access(request.account_id, Collection::Mailbox)?;
 
                 Collection::Mailbox
             }
             RequestArguments::Thread => {
-                acl_token.assert_has_access(request.account_id, Collection::Email)?;
+                access_token.assert_has_access(request.account_id, Collection::Email)?;
 
                 Collection::Thread
             }
             RequestArguments::Identity => {
-                acl_token.assert_is_member(request.account_id)?;
+                access_token.assert_is_member(request.account_id)?;
 
                 Collection::Identity
             }
             RequestArguments::EmailSubmission => {
-                acl_token.assert_is_member(request.account_id)?;
+                access_token.assert_is_member(request.account_id)?;
 
                 Collection::EmailSubmission
             }

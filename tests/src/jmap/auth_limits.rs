@@ -30,16 +30,27 @@ use jmap_client::{
     mailbox::{self},
 };
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_alias_create};
+use crate::{
+    directory::sql::{create_test_user_with_email, link_test_address},
+    jmap::mailbox::destroy_all_mailboxes,
+};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running Authorization tests...");
 
     // Create test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
-        .await
-        .to_string();
-    test_alias_create(&server, "jdoe@example.com", "john.doe@example.com", false).await;
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
+            .await
+            .to_string();
+    link_test_address(
+        directory,
+        "jdoe@example.com",
+        "john.doe@example.com",
+        "alias",
+    )
+    .await;
 
     // Reset rate limiters
     server.rate_limit_auth.lock().clear();
@@ -98,7 +109,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_eq!(client.session().username(), "jdoe@example.com");
     assert_eq!(
         client.session().account(&account_id).unwrap().name(),
-        "jdoe@example.com"
+        "John Doe"
     );
     assert!(client.session().account(&account_id).unwrap().is_personal());
 

@@ -1,4 +1,3 @@
-use ahash::AHashSet;
 use sqlx::{Any, Pool};
 
 pub mod config;
@@ -7,7 +6,6 @@ pub mod lookup;
 pub struct SqlDirectory {
     pool: Pool<Any>,
     mappings: SqlMappings,
-    domains: AHashSet<String>,
 }
 
 #[derive(Debug)]

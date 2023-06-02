@@ -26,22 +26,36 @@ impl ConfigDirectory for Config {
             lookups: AHashMap::new(),
         };
         for id in self.sub_keys("directory") {
-            // Parse domains list
-            let domains = self.parse_lookup_list(("directory", id, "lookup.domains"))?;
-
             // Parse directory
-            let protocol = self.value_require(("directory", id, "protocol"))?;
+            let protocol = self.value_require(("directory", id, "type"))?;
+            let prefix = ("directory", id);
             let directory = match protocol {
-                "ldap" => LdapDirectory::from_config(self, ("directory", id), domains)?,
-                "sql" => SqlDirectory::from_config(self, ("directory", id), domains)?,
-                "imap" => ImapDirectory::from_config(self, ("directory", id), domains)?,
-                "smtp" => SmtpDirectory::from_config(self, ("directory", id), domains, false)?,
-                "lmtp" => SmtpDirectory::from_config(self, ("directory", id), domains, true)?,
-                "memory" => MemoryDirectory::from_config(self, ("directory", id))?,
+                "ldap" => LdapDirectory::from_config(self, prefix)?,
+                "sql" => SqlDirectory::from_config(self, prefix)?,
+                "imap" => ImapDirectory::from_config(self, prefix)?,
+                "smtp" => SmtpDirectory::from_config(self, prefix, false)?,
+                "lmtp" => SmtpDirectory::from_config(self, prefix, true)?,
+                "memory" => MemoryDirectory::from_config(self, prefix)?,
                 unknown => {
                     return Err(format!("Unknown directory type: {unknown:?}"));
                 }
             };
+
+            // Add queries/filters as lookups
+            if ["sql", "ldap"].contains(&protocol) {
+                let name = if protocol == "sql" { "query" } else { "filter" };
+                for lookup_id in self.sub_keys(("directory", id, name)) {
+                    config.lookups.insert(
+                        format!("{id}/{lookup_id}"),
+                        Arc::new(Lookup::Directory {
+                            directory: directory.clone(),
+                            query: self
+                                .value_require(("directory", id, name, lookup_id))?
+                                .to_string(),
+                        }),
+                    );
+                }
+            }
 
             // Parse lookups
             let is_remote = protocol != "memory";

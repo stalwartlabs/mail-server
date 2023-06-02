@@ -23,7 +23,6 @@
 
 use std::{borrow::Cow, path::PathBuf};
 
-use mail_send::Credentials;
 use tokio::{fs, io::AsyncReadExt, sync::oneshot};
 
 #[derive(Debug)]
@@ -32,7 +31,6 @@ pub enum DeliveryEvent {
         message: IngestMessage,
         result_tx: oneshot::Sender<Vec<DeliveryResult>>,
     },
-    Lookup(LookupItem),
     Stop,
 }
 
@@ -54,64 +52,6 @@ pub enum DeliveryResult {
         code: [u8; 3],
         reason: Cow<'static, str>,
     },
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum Item {
-    IsAccount(String),
-    Authenticate(Credentials<String>),
-    Verify(String),
-    Expand(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LookupResult {
-    True,
-    False,
-    Values(Vec<String>),
-}
-
-#[derive(Debug)]
-pub struct LookupItem {
-    pub item: Item,
-    pub result: oneshot::Sender<LookupResult>,
-}
-
-impl From<LookupResult> for bool {
-    fn from(value: LookupResult) -> Self {
-        matches!(value, LookupResult::True | LookupResult::Values(_))
-    }
-}
-
-impl From<bool> for LookupResult {
-    fn from(value: bool) -> Self {
-        if value {
-            LookupResult::True
-        } else {
-            LookupResult::False
-        }
-    }
-}
-
-impl From<Vec<String>> for LookupResult {
-    fn from(value: Vec<String>) -> Self {
-        if !value.is_empty() {
-            LookupResult::Values(value)
-        } else {
-            LookupResult::False
-        }
-    }
-}
-
-impl core::fmt::Debug for Item {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::IsAccount(arg0) => f.debug_tuple("Rcpt").field(arg0).finish(),
-            Self::Authenticate(_) => f.debug_tuple("Auth").finish(),
-            Self::Expand(arg0) => f.debug_tuple("Expn").field(arg0).finish(),
-            Self::Verify(arg0) => f.debug_tuple("Vrfy").field(arg0).finish(),
-        }
-    }
 }
 
 impl IngestMessage {

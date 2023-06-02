@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use utils::config::{utils::AsKey, Config};
 
-use crate::{Directory, Principal, Type};
+use crate::{config::ConfigDirectory, Directory, Principal, Type};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -94,6 +94,8 @@ impl MemoryDirectory {
                     .collect(),
             });
         }
+
+        directory.domains = config.parse_lookup_list((&prefix, "lookup.domains"))?;
 
         Ok(Arc::new(directory))
     }

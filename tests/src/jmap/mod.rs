@@ -23,6 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use directory::config::ConfigDirectory;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
@@ -30,7 +31,11 @@ use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::{mpsc, watch};
 use utils::{config::ServerProtocol, UnwrapFailure};
 
-use crate::{add_test_certs, store::TempDir};
+use crate::{
+    add_test_certs,
+    directory::sql::{add_to_group_id, create_test_directory, create_test_user},
+    store::TempDir,
+};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -85,20 +90,11 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
-
-[session.rcpt.lookup]
-domains = "list/domains"
-addresses = "local"
-vrfy = "local"
-expn = "local"
+directory = "sql"
 
 [session.rcpt.errors]
 total = 5
 wait = "1ms"
-
-[list]
-domains = ["example.com"]
-remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [queue]
 path = "{TMP}"
@@ -112,8 +108,8 @@ hash = 64
 type = "system"
 
 [queue.outbound]
-next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "local" }, 
-             { if = "rcpt-domain", in-list = "list/remote-domains", then = "mock-smtp" },
+next-hop = [ { if = "rcpt-domain", in-list = "local/domains", then = "local" }, 
+             { if = "rcpt-domain", in-list = "local/remote-domains", then = "mock-smtp" },
              { else = false } ]
 
 [remote."mock-smtp"]
@@ -136,6 +132,9 @@ blob.path = "{TMP}"
 [certificate.default]
 cert = "file://{CERT}"
 private-key = "file://{PK}"
+
+[jmap]
+directory = "sql"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -166,15 +165,19 @@ attempts.interval = "500ms"
 type = "sql"
 address = "sqlite::memory:"
 
+[directory."sql".pool]
+max-connections = 1
+
 [directory."sql".query]
-login = "SELECT id, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
-name = "SELECT id, type, description, quota FROM accounts WHERE name = ?"
-id = "SELECT name, type, description, quota FROM accounts WHERE id = ?"
+login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
+name = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ?"
+id = "SELECT id, name, type, secret, description, quota FROM accounts WHERE id = ?"
 members = "SELECT gid FROM group_members WHERE uid = ?"
 recipients = "SELECT id FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC"
-verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type != 'list' LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' LIMIT 50"
+emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
 [directory."sql".columns]
 name = "name"
@@ -185,36 +188,12 @@ email = "address"
 quota = "quota"
 type = "type"
 
-[directory."ldap"]
-type = "ldap"
-address = "ldap://localhost:3893"
-base-dn = "dc=example,dc=com"
+[directory."local"]
+type = "memory"
 
-[directory."ldap".bind]
-dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=com"
-secret = "mysecret"
-
-[directory."ldap".filter]
-login = "(&(objectClass=posixAccount)(accountStatus=active)(cn=?))"
-name = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(cn=?))"
-email = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=?)(mailAliases=?)(mailLists=?)))"
-id = "(|(&(objectClass=posixAccount)(uidNumber=?))(&(objectClass=posixGroup)(gidNumber=?)))"
-verify = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(!(mail=*?*)(mailAliases=*?*)))"
-expand = "(&(!(objectClass=posixAccount)(objectClass=posixGroup))(mailLists=?))"
-
-[directory."ldap".object-classes]
-user = "posixAccount"
-group = "posixGroup"
-
-[directory."ldap".attributes]
-name = "cn"
-description = "description"
-secret = "userPassword"
-groups = "memberOf"
-id = ["uidNumber", "gidNumber"]
-email = "mail"
-email-alias = "mailAliases"
-quota = "diskQuota"
+[directory."local".lookup]
+domains = ["example.com"]
+remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -282,14 +261,15 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     )
     .unwrap();
     let servers = config.parse_servers().unwrap();
+    let directory = config.parse_directory().unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, delivery_tx)
+    let smtp = SMTP::init(&config, &servers, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, delivery_rx, smtp.clone())
+    let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
     let shutdown_tx = servers.spawn(|server, shutdown_rx| {
@@ -305,19 +285,9 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     });
 
     // Create tables
-    for query in [
-        "CREATE TABLE users (login TEXT PRIMARY KEY, secret TEXT, name TEXT)",
-        "CREATE TABLE groups (uid INTEGER, gid INTEGER, PRIMARY KEY (uid, gid))",
-        "CREATE TABLE emails (uid INTEGER NOT NULL, email TEXT NOT NULL, is_list BOOLEAN DEFAULT 0, PRIMARY KEY (uid, email))",
-        "INSERT INTO users (login, secret) VALUES ('admin', 'secret')", // RowID 0 is admin
-    ] {
-        assert!(
-            jmap.auth_db
-                .execute(query, Vec::<String>::new().into_iter())
-                .await,
-            "failed for {query}"
-        );
-    }
+    create_test_directory(jmap.directory.as_ref()).await;
+    create_test_user(jmap.directory.as_ref(), "admin", "secret", "Superuser").await;
+    add_to_group_id(jmap.directory.as_ref(), "admin", 0).await;
 
     if delete_if_exists {
         jmap.store.destroy().await;
@@ -395,58 +365,6 @@ pub fn replace_blob_ids(string: String) -> String {
     } else {
         string
     }
-}
-
-pub async fn test_account_create(jmap: &JMAP, login: &str, secret: &str, name: &str) -> Id {
-    assert!(
-        jmap.auth_db
-            .execute(
-                "INSERT OR IGNORE INTO users (login, secret, name) VALUES (?, ?, ?)",
-                vec![login.to_string(), secret.to_string(), name.to_string()].into_iter()
-            )
-            .await
-    );
-    let uid = jmap.get_account_id(login).await.unwrap() as u64;
-    assert!(
-        jmap.auth_db
-            .execute(
-                &format!(
-                    "INSERT OR IGNORE INTO emails (uid, email) VALUES ({}, ?)",
-                    uid
-                ),
-                vec![login.to_string()].into_iter()
-            )
-            .await
-    );
-    Id::new(uid)
-}
-
-pub async fn test_alias_create(jmap: &JMAP, login: &str, alias: &str, is_list: bool) {
-    let uid = jmap.get_account_id(login).await.unwrap() as u64;
-    assert!(
-        jmap.auth_db
-            .execute(
-                &format!(
-                    "INSERT OR REPLACE INTO emails (uid, email, is_list) VALUES ({}, ?, {})",
-                    uid,
-                    if is_list { "true" } else { "false" }
-                ),
-                vec![alias.to_string()].into_iter()
-            )
-            .await
-    );
-}
-
-pub async fn test_alias_remove(jmap: &JMAP, login: &str, alias: &str) {
-    let uid = jmap.get_account_id(login).await.unwrap() as u64;
-    assert!(
-        jmap.auth_db
-            .execute(
-                &format!("DELETE FROM emails WHERE uid = {} AND email = ?", uid),
-                vec![alias.to_string()].into_iter()
-            )
-            .await
-    );
 }
 
 pub async fn test_account_login(login: &str, secret: &str) -> Client {

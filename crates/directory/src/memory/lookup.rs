@@ -20,7 +20,7 @@ impl Directory for MemoryDirectory {
             .get(username)
             .and_then(|id| self.principals.get(*id as usize))
         {
-            Some(principal) if principal.verify_secret(secret) => Ok(Some(principal.clone())),
+            Some(principal) if principal.verify_secret(secret).await => Ok(Some(principal.clone())),
             _ => Ok(None),
         }
     }
@@ -114,10 +114,13 @@ impl Directory for MemoryDirectory {
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        let domain = format!("@{domain}");
-        Ok(self
-            .emails_to_ids
-            .keys()
-            .any(|email| email.ends_with(&domain)))
+        Ok(if !self.domains.contains(domain) {
+            let domain = format!("@{domain}");
+            self.emails_to_ids
+                .keys()
+                .any(|email| email.ends_with(&domain))
+        } else {
+            true
+        })
     }
 }

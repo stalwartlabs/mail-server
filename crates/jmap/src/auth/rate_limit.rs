@@ -32,7 +32,9 @@ use mail_send::mail_auth::common::lru::DnsCache;
 use store::parking_lot::Mutex;
 use utils::listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter};
 
-use crate::{JMAP, SUPERUSER_ID};
+use crate::JMAP;
+
+use super::AccessToken;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum RemoteAddress {
@@ -95,22 +97,22 @@ impl JMAP {
         })
     }
 
-    pub fn is_account_allowed(&self, account_id: u32) -> Result<InFlight, RequestError> {
-        if account_id != SUPERUSER_ID {
-            let limiter_ = self.get_authenticated_limiter(account_id);
-            let mut limiter = limiter_.lock();
+    pub fn is_account_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
+        let limiter_ = self.get_authenticated_limiter(access_token.primary_id());
+        let mut limiter = limiter_.lock();
 
-            if limiter.request_limiter.is_allowed() {
-                if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
-                    Ok(in_flight_request)
-                } else {
-                    Err(RequestError::limit(RequestLimitError::Concurrent))
-                }
+        if limiter.request_limiter.is_allowed() {
+            if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
+                Ok(in_flight_request)
+            } else if access_token.is_super_user() {
+                Ok(InFlight::default())
             } else {
-                Err(RequestError::too_many_requests())
+                Err(RequestError::limit(RequestLimitError::Concurrent))
             }
-        } else {
+        } else if access_token.is_super_user() {
             Ok(InFlight::default())
+        } else {
+            Err(RequestError::too_many_requests())
         }
     }
 
@@ -127,20 +129,18 @@ impl JMAP {
         }
     }
 
-    pub fn is_upload_allowed(&self, account_id: u32) -> Result<InFlight, RequestError> {
-        if account_id != SUPERUSER_ID {
-            if let Some(in_flight_request) = self
-                .get_authenticated_limiter(account_id)
-                .lock()
-                .concurrent_uploads
-                .is_allowed()
-            {
-                Ok(in_flight_request)
-            } else {
-                Err(RequestError::limit(RequestLimitError::Concurrent))
-            }
-        } else {
+    pub fn is_upload_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
+        if let Some(in_flight_request) = self
+            .get_authenticated_limiter(access_token.primary_id())
+            .lock()
+            .concurrent_uploads
+            .is_allowed()
+        {
+            Ok(in_flight_request)
+        } else if access_token.is_super_user() {
             Ok(InFlight::default())
+        } else {
+            Err(RequestError::limit(RequestLimitError::Concurrent))
         }
     }
 

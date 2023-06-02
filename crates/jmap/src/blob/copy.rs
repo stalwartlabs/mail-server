@@ -32,13 +32,13 @@ use jmap_proto::{
 
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn blob_copy(
         &self,
         request: CopyBlobRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<CopyBlobResponse, MethodError> {
         let mut response = CopyBlobResponse {
             from_account_id: request.from_account_id,
@@ -49,7 +49,7 @@ impl JMAP {
         let account_id = request.account_id.document_id();
 
         for blob_id in request.blob_ids {
-            if self.has_access_blob(&blob_id, acl_token).await? {
+            if self.has_access_blob(&blob_id, access_token).await? {
                 let dest_blob_id = BlobId::temporary(account_id);
                 match self
                     .store

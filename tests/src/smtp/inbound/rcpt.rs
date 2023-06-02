@@ -38,7 +38,7 @@ use smtp::{
 
 const DIRECTORY: &str = r#"
 [directory."local"]
-protocol = "memory"
+type = "memory"
 
 [[directory."local".users]]
 name = "john"

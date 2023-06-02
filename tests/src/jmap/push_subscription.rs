@@ -49,7 +49,8 @@ use utils::listener::SessionData;
 
 use crate::{
     add_test_certs,
-    jmap::{mailbox::destroy_all_mailboxes, test_account_create, test_account_login},
+    directory::sql::create_test_user_with_email,
+    jmap::{mailbox::destroy_all_mailboxes, test_account_login},
 };
 
 const SERVER: &str = "
@@ -78,9 +79,11 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running Push Subscription tests...");
 
     // Create test account
-    let account_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe").await;
+    let directory = server.directory.as_ref();
+    let account_id =
+        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
     admin_client.set_default_account_id(account_id);
-    let mut client = test_account_login("jdoe@example.com", "12345").await;
+    let client = test_account_login("jdoe@example.com", "12345").await;
 
     // Create channels
     let (event_tx, mut event_rx) = mpsc::channel::<PushMessage>(100);
@@ -127,13 +130,12 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Create a mailbox and expect a state change
     let mailbox_id = client
-        .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("PushSubscription Test", None::<String>, Role::None)
         .await
         .unwrap()
         .take_id();
 
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Receive states just for the requested types
     client
@@ -187,14 +189,14 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     push_server.fail_requests.store(false, Ordering::Relaxed);
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Make a mailbox change and expect state change
     client
         .mailbox_rename(&mailbox_id, "My Mailbox")
         .await
         .unwrap();
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
     //expect_nothing(&mut event_rx).await;
 
     // Multiple change updates should be grouped and pushed in intervals
@@ -204,7 +206,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             .await
             .unwrap();
     }
-    assert_state(&mut event_rx, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
     expect_nothing(&mut event_rx).await;
 
     // Destroy mailbox
@@ -337,7 +339,10 @@ impl utils::listener::SessionManager for SessionManager {
 
 async fn expect_push(event_rx: &mut mpsc::Receiver<PushMessage>) -> PushMessage {
     match tokio::time::timeout(Duration::from_millis(1500), event_rx.recv()).await {
-        Ok(Some(push)) => push,
+        Ok(Some(push)) => {
+            //println!("Push received: {:?}", push);
+            push
+        }
         result => {
             panic!("Timeout waiting for push: {:?}", result);
         }
@@ -353,13 +358,13 @@ async fn expect_nothing(event_rx: &mut mpsc::Receiver<PushMessage>) {
     }
 }
 
-async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, state: &[TypeState]) {
+async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state: &[TypeState]) {
     assert_eq!(
         expect_push(event_rx)
             .await
             .unwrap_state_change()
             .changed
-            .get(&Id::new(1))
+            .get(id)
             .unwrap()
             .iter()
             .map(|x| x.0)

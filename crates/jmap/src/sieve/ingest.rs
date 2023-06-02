@@ -78,8 +78,10 @@ impl JMAP {
 
         // Obtain mail from address
         let mail_from = if let Some(email) = self
-            .get_addresses_by_uid(account_id)
+            .directory
+            .emails_by_id(account_id)
             .await
+            .unwrap_or_default()
             .into_iter()
             .next()
         {
@@ -92,8 +94,8 @@ impl JMAP {
         instance.set_user_address(&mail_from);
 
         // Set account name
-        if let Some(name) = self.get_account_name(account_id).await {
-            instance.set_user_full_name(&name);
+        if let Ok(Some(p)) = self.directory.principal_by_id(account_id).await {
+            instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
         }
 
         // Set envelope

@@ -40,7 +40,7 @@ use store::{
     write::{now, BatchBuilder, F_CLEAR, F_VALUE},
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;
@@ -49,9 +49,9 @@ impl JMAP {
     pub async fn push_subscription_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<SetResponse, MethodError> {
-        let account_id = acl_token.primary_id();
+        let account_id = access_token.primary_id();
         let mut push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)
             .await?

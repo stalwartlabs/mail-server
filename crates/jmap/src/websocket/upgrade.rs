@@ -32,14 +32,14 @@ use utils::listener::ServerInstance;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse},
-    auth::AclToken,
+    auth::AccessToken,
     JMAP,
 };
 
 pub async fn upgrade_websocket_connection(
     jmap: Arc<JMAP>,
     req: HttpRequest,
-    acl_token: Arc<AclToken>,
+    access_token: Arc<AccessToken>,
     instance: Arc<ServerInstance>,
 ) -> HttpResponse {
     let headers = req.headers();
@@ -85,7 +85,7 @@ pub async fn upgrade_websocket_connection(
             Ok(upgraded) => {
                 jmap.handle_websocket_stream(
                     WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await,
-                    acl_token,
+                    access_token,
                     instance,
                 )
                 .await;

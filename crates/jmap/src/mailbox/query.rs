@@ -34,13 +34,13 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{auth::AclToken, UpdateResults, JMAP};
+use crate::{auth::AccessToken, UpdateResults, JMAP};
 
 impl JMAP {
     pub async fn mailbox_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<QueryResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
@@ -92,7 +92,7 @@ impl JMAP {
                     }
                     filters.push(query::Filter::eq(
                         Property::IsSubscribed,
-                        acl_token.primary_id,
+                        access_token.primary_id,
                     ));
                     if !is_subscribed {
                         filters.push(query::Filter::End);
@@ -109,9 +109,9 @@ impl JMAP {
         let mut result_set = self
             .filter(account_id, Collection::Mailbox, filters)
             .await?;
-        if acl_token.is_shared(account_id) {
+        if access_token.is_shared(account_id) {
             result_set.apply_mask(
-                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::Read)
+                self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
                     .await?,
             );
         }

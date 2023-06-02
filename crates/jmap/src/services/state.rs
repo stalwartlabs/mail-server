@@ -114,7 +114,7 @@ pub fn spawn_state_manager(
                 }
                 Event::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
-                    let acl = match core.get_acl_token(account_id).await {
+                    let acl = match core.get_access_token(account_id).await {
                         Some(result) => result,
                         None => {
                             continue;

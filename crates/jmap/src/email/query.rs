@@ -35,13 +35,13 @@ use store::{
     ValueKey,
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn email_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<QueryResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
@@ -240,9 +240,9 @@ impl JMAP {
         }
 
         let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
-        if acl_token.is_shared(account_id) {
+        if access_token.is_shared(account_id) {
             result_set.apply_mask(
-                self.shared_messages(acl_token, account_id, Acl::ReadItems)
+                self.shared_messages(access_token, account_id, Acl::ReadItems)
                     .await?,
             );
         }

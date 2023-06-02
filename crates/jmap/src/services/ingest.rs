@@ -45,7 +45,7 @@ impl JMAP {
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_uids = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
-            let uids = self.get_uids_by_address(rcpt).await;
+            let uids = self.directory.ids_by_email(rcpt).await.unwrap_or_default();
             for uid in &uids {
                 deliver_uids.insert(*uid, (DeliveryResult::Success, rcpt));
             }

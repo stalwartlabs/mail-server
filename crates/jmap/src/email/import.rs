@@ -38,13 +38,13 @@ use jmap_proto::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AclToken, IngestError, JMAP};
+use crate::{auth::AccessToken, IngestError, JMAP};
 
 impl JMAP {
     pub async fn email_import(
         &self,
         request: ImportEmailRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<ImportEmailResponse, MethodError> {
         // Validate state
         let account_id = request.account_id.document_id();
@@ -53,8 +53,8 @@ impl JMAP {
             .await?;
 
         let valid_mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        let can_add_mailbox_ids = if acl_token.is_shared(account_id) {
-            self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+        let can_add_mailbox_ids = if access_token.is_shared(account_id) {
+            self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::AddItems)
                 .await?
                 .into()
         } else {
@@ -112,7 +112,7 @@ impl JMAP {
             }
 
             // Fetch raw message to import
-            let raw_message = match self.blob_download(&email.blob_id, acl_token).await? {
+            let raw_message = match self.blob_download(&email.blob_id, access_token).await? {
                 Some(raw_message) => raw_message,
                 None => {
                     response.not_created.append(

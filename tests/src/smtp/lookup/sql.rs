@@ -41,7 +41,7 @@ use smtp::{
 
 const CONFIG: &str = r#"
 [directory."sql"]
-protocol = "sql"
+type = "sql"
 address = "sqlite::memory:"
 
 [directory."sql".pool]

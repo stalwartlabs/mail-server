@@ -32,7 +32,7 @@ use jmap_proto::{
 use store::ahash::AHashSet;
 use utils::{listener::ServerInstance, map::vec_map::VecMap, UnwrapFailure};
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Session {
@@ -167,34 +167,36 @@ impl JMAP {
     pub async fn handle_session_resource(
         &self,
         instance: Arc<ServerInstance>,
-        acl_token: Arc<AclToken>,
+        access_token: Arc<AccessToken>,
     ) -> Result<Session, RequestError> {
         let mut session = Session::new(&instance.data, &self.config.capabilities);
-        session.set_state(acl_token.state());
-        let account_name = self
-            .get_account_login(acl_token.primary_id())
-            .await
-            .unwrap_or_else(|| Id::from(acl_token.primary_id()).to_string());
+        session.set_state(access_token.state());
         session.set_primary_account(
-            acl_token.primary_id().into(),
-            account_name.to_string(),
-            account_name,
+            access_token.primary_id().into(),
+            access_token.name.clone(),
+            access_token
+                .description
+                .clone()
+                .unwrap_or_else(|| access_token.name.clone()),
             None,
         );
 
         // Add secondary accounts
-        for id in acl_token.secondary_ids() {
-            let is_personal = !acl_token.is_member(*id);
+        for id in access_token.secondary_ids() {
+            let is_personal = !access_token.is_member(*id);
             let is_readonly = is_personal
                 && self
-                    .shared_documents(&acl_token, *id, Collection::Mailbox, Acl::AddItems)
+                    .shared_documents(&access_token, *id, Collection::Mailbox, Acl::AddItems)
                     .await
                     .map_or(true, |ids| ids.is_empty());
 
             session.add_account(
                 (*id).into(),
-                self.get_account_login(*id)
+                self.directory
+                    .principal_by_id(*id)
                     .await
+                    .unwrap_or_default()
+                    .map(|p| p.name)
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,

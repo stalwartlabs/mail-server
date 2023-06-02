@@ -31,7 +31,7 @@ use jmap_proto::{
 use store::{write::now, BitmapKey, ValueKey};
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AclToken, services::state, JMAP};
+use crate::{auth::AccessToken, services::state, JMAP};
 
 use super::{EncryptionKeys, PushSubscription, UpdateSubscription};
 
@@ -39,7 +39,7 @@ impl JMAP {
     pub async fn push_subscription_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties = request.unwrap_properties(&[
@@ -49,7 +49,7 @@ impl JMAP {
             Property::Expires,
             Property::Types,
         ]);
-        let account_id = acl_token.primary_id();
+        let account_id = access_token.primary_id();
         let push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)
             .await?

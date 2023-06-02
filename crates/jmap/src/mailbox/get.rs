@@ -30,7 +30,7 @@ use jmap_proto::{
 use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap};
 
 use crate::{
-    auth::{acl::EffectiveAcl, AclToken},
+    auth::{acl::EffectiveAcl, AccessToken},
     JMAP,
 };
 
@@ -38,7 +38,7 @@ impl JMAP {
     pub async fn mailbox_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties = request.unwrap_properties(&[
@@ -56,9 +56,9 @@ impl JMAP {
         ]);
         let account_id = request.account_id.document_id();
         let mut mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        if acl_token.is_shared(account_id) {
+        if access_token.is_shared(account_id) {
             mailbox_ids &= self
-                .shared_documents(acl_token, account_id, Collection::Mailbox, Acl::Read)
+                .shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
                 .await?;
         }
         let message_ids = self.get_document_ids(account_id, Collection::Email).await?;
@@ -179,8 +179,8 @@ impl JMAP {
                         .await? as u64,
                     ),
                     Property::MyRights => {
-                        if acl_token.is_shared(account_id) {
-                            let acl = values.effective_acl(acl_token);
+                        if access_token.is_shared(account_id) {
+                            let acl = values.effective_acl(access_token);
                             Object::with_capacity(9)
                                 .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
                                 .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
@@ -220,7 +220,8 @@ impl JMAP {
                         .remove(property)
                         .map(|parent_id| match parent_id {
                             Value::List(values)
-                                if values.contains(&Value::Id(acl_token.primary_id().into())) =>
+                                if values
+                                    .contains(&Value::Id(access_token.primary_id().into())) =>
                             {
                                 Value::Bool(true)
                             }
@@ -235,7 +236,7 @@ impl JMAP {
                                 .and_then(|v| v.as_list())
                                 .map(|v| &v[..])
                                 .unwrap_or_else(|| &[]),
-                            acl_token,
+                            access_token,
                             account_id,
                         )
                         .await

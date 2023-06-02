@@ -12,7 +12,7 @@ use tokio_rustls::TlsAcceptor;
 
 const CONFIG: &str = r#"
 [directory."sql"]
-protocol = "sql"
+type = "sql"
 address = "sqlite::memory:"
 
 [directory."sql".pool]
@@ -42,7 +42,7 @@ type = "type"
 domains = "SELECT name FROM domains WHERE name = ?"
 
 [directory."ldap"]
-protocol = "ldap"
+type = "ldap"
 address = "ldap://localhost:3893"
 base-dn = "dc=example,dc=org"
 
@@ -77,7 +77,7 @@ email-alias = "givenName"
 quota = "diskQuota"
 
 [directory."imap"]
-protocol = "imap"
+type = "imap"
 address = "127.0.0.1"
 port = 9198
 
@@ -89,7 +89,7 @@ implicit = true
 allow-invalid-certs = true
 
 [directory."smtp"]
-protocol = "lmtp"
+type = "lmtp"
 address = "127.0.0.1"
 port = 9199
 
@@ -109,7 +109,7 @@ entries = 500
 ttl = {positive = '10s', negative = '5s'}
 
 [directory."local"]
-protocol = "memory"
+type = "memory"
 
 [[directory."local".users]]
 name = "john"

@@ -32,7 +32,7 @@ use mail_parser::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::{
     body::{ToBodyPart, TruncateBody},
@@ -44,7 +44,7 @@ impl JMAP {
     pub async fn email_parse(
         &self,
         request: ParseEmailRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<ParseEmailResponse, MethodError> {
         if request.blob_ids.len() > self.config.mail_parse_max_items {
             return Err(MethodError::RequestTooLarge);
@@ -101,7 +101,7 @@ impl JMAP {
 
         for blob_id in request.blob_ids {
             // Fetch raw message to parse
-            let raw_message = match self.blob_download(&blob_id, acl_token).await? {
+            let raw_message = match self.blob_download(&blob_id, access_token).await? {
                 Some(raw_message) => raw_message,
                 None => {
                     response.not_found.push(blob_id);

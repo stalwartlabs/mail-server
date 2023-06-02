@@ -27,7 +27,6 @@ use jmap_proto::{
     types::{
         acl::Acl,
         collection::Collection,
-        id::Id,
         property::Property,
         value::{MaybePatchValue, Value},
     },
@@ -39,15 +38,15 @@ use store::{
 };
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
-use crate::{JMAP, SUPERUSER_ID};
+use crate::JMAP;
 
-use super::AclToken;
+use super::AccessToken;
 
 impl JMAP {
-    pub async fn update_acl_token(&self, mut acl_token: AclToken) -> Option<AclToken> {
-        for &grant_account_id in [acl_token.primary_id]
+    pub async fn update_access_token(&self, mut access_token: AccessToken) -> Option<AccessToken> {
+        for &grant_account_id in [access_token.primary_id]
             .iter()
-            .chain(acl_token.member_of.clone().iter())
+            .chain(access_token.member_of.clone().iter())
         {
             let from_key = AclKey {
                 grant_account_id,
@@ -64,14 +63,14 @@ impl JMAP {
             match self
                 .store
                 .iterate(
-                    acl_token,
+                    access_token,
                     from_key,
                     to_key,
                     false,
                     true,
-                    |acl_token, key, value| {
+                    |access_token, key, value| {
                         let acl_key = AclKey::deserialize(key)?;
-                        if acl_token.is_member(acl_key.to_account_id) {
+                        if access_token.is_member(acl_key.to_account_id) {
                             return Ok(true);
                         }
 
@@ -94,14 +93,14 @@ impl JMAP {
                         }
 
                         if !collections.is_empty() {
-                            if let Some((_, sharing)) = acl_token
+                            if let Some((_, sharing)) = access_token
                                 .access_to
                                 .iter_mut()
                                 .find(|(account_id, _)| *account_id == acl_key.to_account_id)
                             {
                                 sharing.union(&collections);
                             } else {
-                                acl_token
+                                access_token
                                     .access_to
                                     .push((acl_key.to_account_id, collections));
                             }
@@ -112,8 +111,8 @@ impl JMAP {
                 )
                 .await
             {
-                Ok(acl_token_) => {
-                    acl_token = acl_token_;
+                Ok(access_token_) => {
+                    access_token = access_token_;
                 }
                 Err(err) => {
                     tracing::error!(
@@ -125,12 +124,12 @@ impl JMAP {
                 }
             }
         }
-        acl_token.into()
+        access_token.into()
     }
 
     pub async fn shared_documents(
         &self,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         to_account_id: u32,
         to_collection: Collection,
         check_acls: impl Into<Bitmap<Acl>>,
@@ -138,9 +137,9 @@ impl JMAP {
         let check_acls = check_acls.into();
         let mut document_ids = RoaringBitmap::new();
         let to_collection = u8::from(to_collection);
-        for &grant_account_id in [acl_token.primary_id]
+        for &grant_account_id in [access_token.primary_id]
             .iter()
-            .chain(acl_token.member_of.clone().iter())
+            .chain(access_token.member_of.clone().iter())
         {
             let from_key = AclKey {
                 grant_account_id,
@@ -193,13 +192,13 @@ impl JMAP {
 
     pub async fn shared_messages(
         &self,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         to_account_id: u32,
         check_acls: impl Into<Bitmap<Acl>>,
     ) -> Result<RoaringBitmap, MethodError> {
         let check_acls = check_acls.into();
         let shared_mailboxes = self
-            .shared_documents(acl_token, to_account_id, Collection::Mailbox, check_acls)
+            .shared_documents(access_token, to_account_id, Collection::Mailbox, check_acls)
             .await?;
         if shared_mailboxes.is_empty() {
             return Ok(shared_mailboxes);
@@ -224,7 +223,7 @@ impl JMAP {
 
     pub async fn owned_or_shared_documents(
         &self,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         account_id: u32,
         collection: Collection,
         check_acls: impl Into<Bitmap<Acl>>,
@@ -234,9 +233,9 @@ impl JMAP {
             .get_document_ids(account_id, collection)
             .await?
             .unwrap_or_default();
-        if !document_ids.is_empty() && !acl_token.is_member(account_id) {
+        if !document_ids.is_empty() && !access_token.is_member(account_id) {
             document_ids &= self
-                .shared_documents(acl_token, account_id, collection, check_acls)
+                .shared_documents(access_token, account_id, collection, check_acls)
                 .await?;
         }
         Ok(document_ids)
@@ -244,7 +243,7 @@ impl JMAP {
 
     pub async fn owned_or_shared_messages(
         &self,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         account_id: u32,
         check_acls: impl Into<Bitmap<Acl>>,
     ) -> Result<RoaringBitmap, MethodError> {
@@ -253,9 +252,9 @@ impl JMAP {
             .get_document_ids(account_id, Collection::Email)
             .await?
             .unwrap_or_default();
-        if !document_ids.is_empty() && !acl_token.is_member(account_id) {
+        if !document_ids.is_empty() && !access_token.is_member(account_id) {
             document_ids &= self
-                .shared_messages(acl_token, account_id, check_acls)
+                .shared_messages(access_token, account_id, check_acls)
                 .await?;
         }
         Ok(document_ids)
@@ -263,7 +262,7 @@ impl JMAP {
 
     pub async fn has_access_to_document(
         &self,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         to_account_id: u32,
         to_collection: impl Into<u8>,
         to_document_id: u32,
@@ -271,9 +270,9 @@ impl JMAP {
     ) -> Result<bool, MethodError> {
         let to_collection = to_collection.into();
         let check_acls = check_acls.into();
-        for &grant_account_id in [acl_token.primary_id]
+        for &grant_account_id in [access_token.primary_id]
             .iter()
-            .chain(acl_token.member_of.clone().iter())
+            .chain(access_token.member_of.clone().iter())
         {
             match self
                 .store
@@ -399,10 +398,15 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn acl_get(&self, value: &[Value], acl_token: &AclToken, account_id: u32) -> Value {
-        if acl_token.is_member(account_id)
+    pub async fn acl_get(
+        &self,
+        value: &[Value],
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> Value {
+        if access_token.is_member(account_id)
             || value.chunks_exact(2).any(|item| {
-                acl_token.is_member(
+                access_token.is_member(
                     item.first()
                         .and_then(|v| v.as_id().map(|id| id.document_id()))
                         .unwrap_or(u32::MAX),
@@ -415,7 +419,19 @@ impl JMAP {
                 if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl_bits))) =
                     (item.first(), item.last())
                 {
-                    if let Some(account_name) = self.get_account_login(id.document_id()).await {
+                    if let Some(account_name) = self
+                        .directory
+                        .principal_by_id(id.document_id())
+                        .await
+                        .unwrap_or_default()
+                        .and_then(|p| {
+                            if p.has_name() {
+                                Some(p.name().to_string())
+                            } else {
+                                None
+                            }
+                        })
+                    {
                         acl_obj.append(
                             Property::_T(account_name),
                             Bitmap::<Acl>::from(*acl_bits)
@@ -438,7 +454,7 @@ impl JMAP {
         current: &Option<HashedValue<Object<Value>>>,
     ) {
         if let Value::List(acl_changes) = changes.get(&Property::Acl) {
-            let mut acl_tokens = self.acl_tokens.lock();
+            let mut access_tokens = self.access_tokens.lock();
             if let Some(Value::List(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))
@@ -453,7 +469,7 @@ impl JMAP {
                     }
                     if invalidate {
                         if let Some(Value::Id(id)) = current_item.first() {
-                            acl_tokens.remove(&id.document_id());
+                            access_tokens.remove(&id.document_id());
                         }
                     }
                 }
@@ -468,14 +484,14 @@ impl JMAP {
                     }
                     if invalidate {
                         if let Some(Value::Id(id)) = change_item.first() {
-                            acl_tokens.remove(&id.document_id());
+                            access_tokens.remove(&id.document_id());
                         }
                     }
                 }
             } else {
                 for value in acl_changes {
                     if let Value::Id(id) = value {
-                        acl_tokens.remove(&id.document_id());
+                        access_tokens.remove(&id.document_id());
                     }
                 }
             }
@@ -485,12 +501,20 @@ impl JMAP {
     async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
         for item in &mut acl_set {
             if let Value::Text(account_name) = item {
-                if let Some(account_id) = self.get_account_id(account_name).await {
-                    *item = Value::Id(account_id.into());
-                } else {
-                    return Err(SetError::invalid_properties()
-                        .with_property(Property::Acl)
-                        .with_description(format!("Account {account_name} does not exist.")));
+                match self.directory.principal_by_name(account_name).await {
+                    Ok(Some(principal)) if principal.has_id() => {
+                        *item = Value::Id(principal.id().into());
+                    }
+                    Ok(None) => {
+                        return Err(SetError::invalid_properties()
+                            .with_property(Property::Acl)
+                            .with_description(format!("Account {account_name} does not exist.")));
+                    }
+                    _ => {
+                        return Err(SetError::forbidden()
+                            .with_property(Property::Acl)
+                            .with_description("Temporary server failure during lookup"));
+                    }
                 }
             }
         }
@@ -499,76 +523,19 @@ impl JMAP {
     }
 }
 
-impl AclToken {
-    pub fn primary_id(&self) -> u32 {
-        self.primary_id
-    }
-
-    pub fn secondary_ids(&self) -> impl Iterator<Item = &u32> {
-        self.member_of
-            .iter()
-            .chain(self.access_to.iter().map(|(id, _)| id))
-    }
-
-    pub fn is_member(&self, account_id: u32) -> bool {
-        self.primary_id == account_id
-            || self.member_of.contains(&account_id)
-            || self.primary_id == SUPERUSER_ID
-            || self.member_of.contains(&SUPERUSER_ID)
-    }
-
-    pub fn is_shared(&self, account_id: u32) -> bool {
-        !self.is_member(account_id) && self.access_to.iter().any(|(id, _)| *id == account_id)
-    }
-
-    pub fn has_access(&self, to_account_id: u32, to_collection: impl Into<Collection>) -> bool {
-        let to_collection = to_collection.into();
-        self.is_member(to_account_id)
-            || self.access_to.iter().any(|(id, collections)| {
-                *id == to_account_id && collections.contains(to_collection)
-            })
-    }
-
-    pub fn assert_has_access(
-        &self,
-        to_account_id: Id,
-        to_collection: Collection,
-    ) -> Result<&Self, MethodError> {
-        if self.has_access(to_account_id.document_id(), to_collection) {
-            Ok(self)
-        } else {
-            Err(MethodError::Forbidden(format!(
-                "You do not have access to account {}",
-                to_account_id
-            )))
-        }
-    }
-
-    pub fn assert_is_member(&self, account_id: Id) -> Result<&Self, MethodError> {
-        if self.is_member(account_id.document_id()) {
-            Ok(self)
-        } else {
-            Err(MethodError::Forbidden(format!(
-                "You are not an owner of account {}",
-                account_id
-            )))
-        }
-    }
-}
-
 pub trait EffectiveAcl {
-    fn effective_acl(&self, acl_token: &AclToken) -> Bitmap<Acl>;
+    fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl>;
 }
 
 impl EffectiveAcl for Object<Value> {
-    fn effective_acl(&self, acl_token: &AclToken) -> Bitmap<Acl> {
+    fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl> {
         let mut acl = Bitmap::<Acl>::new();
         if let Some(Value::List(permissions)) = self.properties.get(&Property::Acl) {
             for item in permissions.chunks(2) {
                 if let (Some(Value::Id(account_id)), Some(Value::UnsignedInt(acl_bits))) =
                     (item.first(), item.last())
                 {
-                    if acl_token.is_member(account_id.document_id()) {
+                    if access_token.is_member(account_id.document_id()) {
                         acl.union(&Bitmap::from(*acl_bits));
                     }
                 }

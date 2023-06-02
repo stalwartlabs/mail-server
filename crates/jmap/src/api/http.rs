@@ -50,7 +50,7 @@ use crate::{
     blob::{DownloadResponse, UploadResponse},
     services::state,
     websocket::upgrade::upgrade_websocket_connection,
-    JMAP, SUPERUSER_ID,
+    JMAP,
 };
 
 use super::{
@@ -69,7 +69,8 @@ pub async fn parse_jmap_request(
     match path.next().unwrap_or("") {
         "jmap" => {
             // Authenticate request
-            let (_in_flight, acl_token) = match jmap.authenticate_headers(&req, remote_ip).await {
+            let (_in_flight, access_token) = match jmap.authenticate_headers(&req, remote_ip).await
+            {
                 Ok(Some(session)) => session,
                 Ok(None) => return RequestError::unauthorized().into_http_response(),
                 Err(err) => return err.into_http_response(),
@@ -89,7 +90,7 @@ pub async fn parse_jmap_request(
                         Ok(request) => {
                             //let _ = println!("<- {}", String::from_utf8_lossy(&bytes));
 
-                            match jmap.handle_request(request, acl_token, &instance).await {
+                            match jmap.handle_request(request, access_token, &instance).await {
                                 Ok(response) => response.into_http_response(),
                                 Err(err) => err.into_http_response(),
                             }
@@ -103,7 +104,7 @@ pub async fn parse_jmap_request(
                         path.next().and_then(BlobId::from_base32),
                         path.next(),
                     ) {
-                        return match jmap.blob_download(&blob_id, &acl_token).await {
+                        return match jmap.blob_download(&blob_id, &access_token).await {
                             Ok(Some(blob)) => DownloadResponse {
                                 filename: name.to_string(),
                                 content_type: req
@@ -136,7 +137,7 @@ pub async fn parse_jmap_request(
                                             .and_then(|h| h.to_str().ok())
                                             .unwrap_or("application/octet-stream"),
                                         &bytes,
-                                        acl_token,
+                                        access_token,
                                     )
                                     .await
                                 {
@@ -149,10 +150,10 @@ pub async fn parse_jmap_request(
                     }
                 }
                 ("eventsource", &Method::GET) => {
-                    return jmap.handle_event_source(req, acl_token).await
+                    return jmap.handle_event_source(req, access_token).await
                 }
                 ("ws", &Method::GET) => {
-                    return upgrade_websocket_connection(jmap, req, acl_token, instance.clone())
+                    return upgrade_websocket_connection(jmap, req, access_token, instance.clone())
                         .await;
                 }
                 _ => (),
@@ -161,14 +162,14 @@ pub async fn parse_jmap_request(
         ".well-known" => match (path.next().unwrap_or(""), req.method()) {
             ("jmap", &Method::GET) => {
                 // Authenticate request
-                let (_in_flight, acl_token) = match jmap.authenticate_headers(&req, remote_ip).await
-                {
-                    Ok(Some(session)) => session,
-                    Ok(None) => return RequestError::unauthorized().into_http_response(),
-                    Err(err) => return err.into_http_response(),
-                };
+                let (_in_flight, access_token) =
+                    match jmap.authenticate_headers(&req, remote_ip).await {
+                        Ok(Some(session)) => session,
+                        Ok(None) => return RequestError::unauthorized().into_http_response(),
+                        Err(err) => return err.into_http_response(),
+                    };
 
-                return match jmap.handle_session_resource(instance, acl_token).await {
+                return match jmap.handle_session_resource(instance, access_token).await {
                     Ok(session) => session.into_http_response(),
                     Err(err) => err.into_http_response(),
                 };
@@ -232,7 +233,7 @@ pub async fn parse_jmap_request(
         "admin" => {
             // Make sure the user is a superuser
             match jmap.authenticate_headers(&req, remote_ip).await {
-                Ok(Some((_, acl_token))) if acl_token.primary_id() == SUPERUSER_ID => (),
+                Ok(Some((_, access_token))) if access_token.is_super_user() => (),
                 Ok(_) => return RequestError::unauthorized().into_http_response(),
                 Err(err) => return err.into_http_response(),
             }
@@ -455,16 +456,14 @@ impl HtmlResponse {
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> HttpResponse {
-        //let delete = "";
-        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        //let _ = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for Session {
     fn into_http_response(self) -> HttpResponse {
-        //let delete = "";
-        //println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        //let _ = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }

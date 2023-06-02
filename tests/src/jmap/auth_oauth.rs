@@ -36,13 +36,14 @@ use reqwest::{header, redirect::Policy};
 use serde::de::DeserializeOwned;
 use store::ahash::AHashMap;
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, test_account_create};
+use crate::{directory::sql::create_test_user_with_email, jmap::mailbox::destroy_all_mailboxes};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running OAuth tests...");
 
     // Create test account
-    let john_id = test_account_create(&server, "jdoe@example.com", "12345", "John Doe")
+    let directory = server.directory.as_ref();
+    let john_id = create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
         .await
         .to_string();
 

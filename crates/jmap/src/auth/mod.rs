@@ -31,29 +31,40 @@ use aes_gcm_siv::{
     AeadInPlace, Aes256GcmSiv, KeyInit, Nonce,
 };
 
-use jmap_proto::types::collection::Collection;
+use directory::Principal;
+use jmap_proto::{
+    error::method::MethodError,
+    types::{collection::Collection, id::Id},
+};
 use store::blake3;
 use utils::map::bitmap::Bitmap;
 
-pub mod account;
+use crate::SUPERUSER_ID;
+
 pub mod acl;
 pub mod authenticate;
 pub mod oauth;
 pub mod rate_limit;
 
 #[derive(Debug, Clone)]
-pub struct AclToken {
+pub struct AccessToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,
     pub access_to: Vec<(u32, Bitmap<Collection>)>,
+    pub name: String,
+    pub description: Option<String>,
+    pub quota: u32,
 }
 
-impl AclToken {
-    pub fn new(primary_id: u32) -> Self {
+impl AccessToken {
+    pub fn new(principal: Principal) -> Self {
         Self {
-            primary_id,
+            primary_id: principal.id,
             member_of: Vec::new(),
             access_to: Vec::new(),
+            name: principal.name,
+            description: principal.description,
+            quota: principal.quota,
         }
     }
 
@@ -71,6 +82,65 @@ impl AclToken {
         self.member_of.hash(&mut s);
         self.access_to.hash(&mut s);
         s.finish() as u32
+    }
+
+    pub fn primary_id(&self) -> u32 {
+        self.primary_id
+    }
+
+    pub fn secondary_ids(&self) -> impl Iterator<Item = &u32> {
+        self.member_of
+            .iter()
+            .chain(self.access_to.iter().map(|(id, _)| id))
+    }
+
+    pub fn is_member(&self, account_id: u32) -> bool {
+        self.primary_id == account_id
+            || self.member_of.contains(&account_id)
+            || self.primary_id == SUPERUSER_ID
+            || self.member_of.contains(&SUPERUSER_ID)
+    }
+
+    pub fn is_super_user(&self) -> bool {
+        self.primary_id == SUPERUSER_ID || self.member_of.contains(&SUPERUSER_ID)
+    }
+
+    pub fn is_shared(&self, account_id: u32) -> bool {
+        !self.is_member(account_id) && self.access_to.iter().any(|(id, _)| *id == account_id)
+    }
+
+    pub fn has_access(&self, to_account_id: u32, to_collection: impl Into<Collection>) -> bool {
+        let to_collection = to_collection.into();
+        self.is_member(to_account_id)
+            || self.access_to.iter().any(|(id, collections)| {
+                *id == to_account_id && collections.contains(to_collection)
+            })
+    }
+
+    pub fn assert_has_access(
+        &self,
+        to_account_id: Id,
+        to_collection: Collection,
+    ) -> Result<&Self, MethodError> {
+        if self.has_access(to_account_id.document_id(), to_collection) {
+            Ok(self)
+        } else {
+            Err(MethodError::Forbidden(format!(
+                "You do not have access to account {}",
+                to_account_id
+            )))
+        }
+    }
+
+    pub fn assert_is_member(&self, account_id: Id) -> Result<&Self, MethodError> {
+        if self.is_member(account_id.document_id()) {
+            Ok(self)
+        } else {
+            Err(MethodError::Forbidden(format!(
+                "You are not an owner of account {}",
+                account_id
+            )))
+        }
     }
 }
 

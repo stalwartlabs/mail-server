@@ -29,18 +29,18 @@ use jmap_proto::{
     method::validate::{ValidateSieveScriptRequest, ValidateSieveScriptResponse},
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn sieve_script_validate(
         &self,
         request: ValidateSieveScriptRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<ValidateSieveScriptResponse, MethodError> {
         Ok(ValidateSieveScriptResponse {
             account_id: request.account_id,
             error: match self
-                .blob_download(&request.blob_id, acl_token)
+                .blob_download(&request.blob_id, access_token)
                 .await?
                 .map(|bytes| self.sieve_compiler.compile(&bytes))
             {

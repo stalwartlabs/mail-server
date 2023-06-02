@@ -37,7 +37,7 @@ use utils::config::Config;
 
 const CONFIG: &str = r#"
 [directory."sql"]
-protocol = "sql"
+type = "sql"
 address = "sqlite://%PATH%/test.db?mode=rwc"
 
 [directory."sql".pool]
@@ -46,7 +46,7 @@ min-connections = 0
 idle-timeout = "5m"
 
 [directory."local"]
-protocol = "memory"
+type = "memory"
 
 [directory."local".lookup]
 invalid-ehlos = ["spammer.org", "spammer.net"]

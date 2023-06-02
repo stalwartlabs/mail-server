@@ -1,4 +1,4 @@
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 
 use crate::Principal;
 
@@ -11,6 +11,7 @@ pub struct MemoryDirectory {
     names: AHashMap<String, u32>,
     emails_to_ids: AHashMap<String, Vec<EmailType<u32>>>,
     ids_to_email: AHashMap<u32, Vec<EmailType<String>>>,
+    domains: AHashSet<String>,
 }
 
 enum EmailType<T> {

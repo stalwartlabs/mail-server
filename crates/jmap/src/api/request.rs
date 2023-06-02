@@ -35,17 +35,17 @@ use jmap_proto::{
 };
 use utils::listener::ServerInstance;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn handle_request(
         &self,
         request: Request,
-        acl_token: Arc<AclToken>,
+        access_token: Arc<AccessToken>,
         instance: &Arc<ServerInstance>,
     ) -> Result<Response, RequestError> {
         let mut response = Response::new(
-            acl_token.state(),
+            access_token.state(),
             request.created_ids.unwrap_or_default(),
             request.method_calls.len(),
         );
@@ -63,7 +63,7 @@ impl JMAP {
 
                 // Add response
                 match self
-                    .handle_method_call(call.method, &acl_token, &mut next_call, instance)
+                    .handle_method_call(call.method, &access_token, &mut next_call, instance)
                     .await
                 {
                     Ok(mut method_response) => {
@@ -122,149 +122,149 @@ impl JMAP {
     async fn handle_method_call(
         &self,
         method: RequestMethod,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
         instance: &Arc<ServerInstance>,
     ) -> Result<ResponseMethod, MethodError> {
         Ok(match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
-                    acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                    access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                    self.email_get(req.with_arguments(arguments), acl_token)
+                    self.email_get(req.with_arguments(arguments), access_token)
                         .await?
                         .into()
                 }
                 get::RequestArguments::Mailbox => {
-                    acl_token.assert_has_access(req.account_id, Collection::Mailbox)?;
+                    access_token.assert_has_access(req.account_id, Collection::Mailbox)?;
 
-                    self.mailbox_get(req, acl_token).await?.into()
+                    self.mailbox_get(req, access_token).await?.into()
                 }
                 get::RequestArguments::Thread => {
-                    acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                    access_token.assert_has_access(req.account_id, Collection::Email)?;
 
                     self.thread_get(req).await?.into()
                 }
                 get::RequestArguments::Identity => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.identity_get(req).await?.into()
                 }
                 get::RequestArguments::EmailSubmission => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.email_submission_get(req).await?.into()
                 }
                 get::RequestArguments::PushSubscription => {
-                    self.push_subscription_get(req, acl_token).await?.into()
+                    self.push_subscription_get(req, access_token).await?.into()
                 }
                 get::RequestArguments::SieveScript => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.sieve_script_get(req).await?.into()
                 }
                 get::RequestArguments::VacationResponse => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.vacation_response_get(req).await?.into()
                 }
             },
             RequestMethod::Query(mut req) => match req.take_arguments() {
                 query::RequestArguments::Email(arguments) => {
-                    acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                    access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                    self.email_query(req.with_arguments(arguments), acl_token)
+                    self.email_query(req.with_arguments(arguments), access_token)
                         .await?
                         .into()
                 }
                 query::RequestArguments::Mailbox(arguments) => {
-                    acl_token.assert_has_access(req.account_id, Collection::Mailbox)?;
+                    access_token.assert_has_access(req.account_id, Collection::Mailbox)?;
 
-                    self.mailbox_query(req.with_arguments(arguments), acl_token)
+                    self.mailbox_query(req.with_arguments(arguments), access_token)
                         .await?
                         .into()
                 }
                 query::RequestArguments::EmailSubmission => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.email_submission_query(req).await?.into()
                 }
                 query::RequestArguments::SieveScript => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.sieve_script_query(req).await?.into()
                 }
             },
             RequestMethod::Set(mut req) => match req.take_arguments() {
                 set::RequestArguments::Email => {
-                    acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                    access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                    self.email_set(req, acl_token).await?.into()
+                    self.email_set(req, access_token).await?.into()
                 }
                 set::RequestArguments::Mailbox(arguments) => {
-                    acl_token.assert_has_access(req.account_id, Collection::Mailbox)?;
+                    access_token.assert_has_access(req.account_id, Collection::Mailbox)?;
 
-                    self.mailbox_set(req.with_arguments(arguments), acl_token)
+                    self.mailbox_set(req.with_arguments(arguments), access_token)
                         .await?
                         .into()
                 }
                 set::RequestArguments::Identity => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.identity_set(req).await?.into()
                 }
                 set::RequestArguments::EmailSubmission(arguments) => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.email_submission_set(req.with_arguments(arguments), instance, next_call)
                         .await?
                         .into()
                 }
                 set::RequestArguments::PushSubscription => {
-                    self.push_subscription_set(req, acl_token).await?.into()
+                    self.push_subscription_set(req, access_token).await?.into()
                 }
                 set::RequestArguments::SieveScript(arguments) => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
-                    self.sieve_script_set(req.with_arguments(arguments), acl_token)
+                    self.sieve_script_set(req.with_arguments(arguments), access_token)
                         .await?
                         .into()
                 }
                 set::RequestArguments::VacationResponse => {
-                    acl_token.assert_is_member(req.account_id)?;
+                    access_token.assert_is_member(req.account_id)?;
 
                     self.vacation_response_set(req).await?.into()
                 }
             },
-            RequestMethod::Changes(req) => self.changes(req, acl_token).await?.into(),
+            RequestMethod::Changes(req) => self.changes(req, access_token).await?.into(),
             RequestMethod::Copy(req) => {
-                acl_token
+                access_token
                     .assert_has_access(req.account_id, Collection::Email)?
                     .assert_has_access(req.from_account_id, Collection::Email)?;
 
-                self.email_copy(req, acl_token, next_call).await?.into()
+                self.email_copy(req, access_token, next_call).await?.into()
             }
-            RequestMethod::CopyBlob(req) => self.blob_copy(req, acl_token).await?.into(),
+            RequestMethod::CopyBlob(req) => self.blob_copy(req, access_token).await?.into(),
             RequestMethod::ImportEmail(req) => {
-                acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                self.email_import(req, acl_token).await?.into()
+                self.email_import(req, access_token).await?.into()
             }
             RequestMethod::ParseEmail(req) => {
-                acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                self.email_parse(req, acl_token).await?.into()
+                self.email_parse(req, access_token).await?.into()
             }
-            RequestMethod::QueryChanges(req) => self.query_changes(req, acl_token).await?.into(),
+            RequestMethod::QueryChanges(req) => self.query_changes(req, access_token).await?.into(),
             RequestMethod::SearchSnippet(req) => {
-                acl_token.assert_has_access(req.account_id, Collection::Email)?;
+                access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                self.email_search_snippet(req, acl_token).await?.into()
+                self.email_search_snippet(req, access_token).await?.into()
             }
             RequestMethod::ValidateScript(req) => {
-                acl_token.assert_is_member(req.account_id)?;
+                access_token.assert_is_member(req.account_id)?;
 
-                self.sieve_script_validate(req, acl_token).await?.into()
+                self.sieve_script_validate(req, access_token).await?.into()
             }
             RequestMethod::Echo(req) => req.into(),
             RequestMethod::Error(error) => return Err(error),

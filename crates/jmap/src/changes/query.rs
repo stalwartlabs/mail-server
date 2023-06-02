@@ -30,13 +30,13 @@ use jmap_proto::{
     },
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn query_changes(
         &self,
         request: QueryChangesRequest,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<QueryChangesResponse, MethodError> {
         // Query changes
         let changes = self
@@ -54,7 +54,7 @@ impl JMAP {
                         _ => return Err(MethodError::UnknownMethod("Unknown method".to_string())),
                     },
                 },
-                acl_token,
+                access_token,
             )
             .await?;
         let calculate_total = request.calculate_total.unwrap_or(false);
@@ -87,11 +87,11 @@ impl JMAP {
                     .map_or(false, |sort| sort.iter().any(|s| !s.is_immutable()));
             let results = match request.arguments {
                 query::RequestArguments::Email(arguments) => {
-                    self.email_query(query.with_arguments(arguments), acl_token)
+                    self.email_query(query.with_arguments(arguments), access_token)
                         .await?
                 }
                 query::RequestArguments::Mailbox(arguments) => {
-                    self.mailbox_query(query.with_arguments(arguments), acl_token)
+                    self.mailbox_query(query.with_arguments(arguments), access_token)
                         .await?
                 }
                 query::RequestArguments::EmailSubmission => {

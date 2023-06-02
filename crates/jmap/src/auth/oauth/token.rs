@@ -181,9 +181,15 @@ impl JMAP {
         with_refresh_token: bool,
     ) -> Result<TokenResponse, &'static str> {
         let password_hash = self
-            .get_account_secret(account_id)
+            .directory
+            .principal_by_id(account_id)
             .await
-            .ok_or("Account no longer exists")?;
+            .map_err(|_| "Temporary lookup error")?
+            .ok_or("Account no longer exists")?
+            .secrets
+            .into_iter()
+            .next()
+            .ok_or("Failed to obtain password hash")?;
 
         Ok(TokenResponse::Granted {
             access_token: self.encode_access_token(
@@ -293,9 +299,15 @@ impl JMAP {
 
         // Optain password hash
         let password_hash = self
-            .get_account_secret(account_id)
+            .directory
+            .principal_by_id(account_id)
             .await
-            .ok_or("Account no longer exists")?;
+            .map_err(|_| "Temporary lookup error")?
+            .ok_or("Account no longer exists")?
+            .secrets
+            .into_iter()
+            .next()
+            .ok_or("Failed to obtain password hash")?;
 
         // Build context
         let key = self.config.oauth_key.clone();

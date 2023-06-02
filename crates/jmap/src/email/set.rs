@@ -60,7 +60,7 @@ use store::{
     BlobKind, Serialize, ValueKey,
 };
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
@@ -71,7 +71,7 @@ impl JMAP {
     pub async fn email_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<SetResponse, MethodError> {
         // Prepare response
         let account_id = request.account_id.document_id();
@@ -81,17 +81,22 @@ impl JMAP {
 
         // Obtain mailboxIds
         let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) = if acl_token
+        let (can_add_mailbox_ids, can_delete_mailbox_ids, can_modify_message_ids) = if access_token
             .is_shared(account_id)
         {
             (
-                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+                self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::AddItems)
                     .await?
                     .into(),
-                self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::RemoveItems)
-                    .await?
-                    .into(),
-                self.shared_messages(acl_token, account_id, Acl::ModifyItems)
+                self.shared_documents(
+                    access_token,
+                    account_id,
+                    Collection::Mailbox,
+                    Acl::RemoveItems,
+                )
+                .await?
+                .into(),
+                self.shared_messages(access_token, account_id, Acl::ModifyItems)
                     .await?
                     .into(),
             )
@@ -544,7 +549,7 @@ impl JMAP {
                                     headers,
                                     contents: if !is_multipart {
                                         if let Some(blob_id) = blob_id {
-                                            match self.blob_download(&blob_id, acl_token).await? {
+                                            match self.blob_download(&blob_id, access_token).await? {
                                                 Some(contents) => {
                                                     BodyPart::Binary(contents.into())
                                                 }
@@ -957,8 +962,8 @@ impl JMAP {
                 .get_document_ids(account_id, Collection::Email)
                 .await?
                 .unwrap_or_default();
-            let can_destroy_message_ids = if acl_token.is_shared(account_id) {
-                self.shared_messages(acl_token, account_id, Acl::RemoveItems)
+            let can_destroy_message_ids = if access_token.is_shared(account_id) {
+                self.shared_messages(access_token, account_id, Acl::RemoveItems)
                     .await?
                     .into()
             } else {

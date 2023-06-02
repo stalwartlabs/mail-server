@@ -54,7 +54,7 @@ use store::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AclToken, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
@@ -65,7 +65,7 @@ impl JMAP {
     pub async fn email_copy(
         &self,
         request: CopyRequest<RequestArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
     ) -> Result<CopyResponse, MethodError> {
         let account_id = request.account_id.document_id();
@@ -90,11 +90,11 @@ impl JMAP {
         };
 
         let from_message_ids = self
-            .owned_or_shared_messages(acl_token, from_account_id, Acl::ReadItems)
+            .owned_or_shared_messages(access_token, from_account_id, Acl::ReadItems)
             .await?;
         let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
-        let can_add_mailbox_ids = if acl_token.is_shared(account_id) {
-            self.shared_documents(acl_token, account_id, Collection::Mailbox, Acl::AddItems)
+        let can_add_mailbox_ids = if access_token.is_shared(account_id) {
+            self.shared_documents(access_token, account_id, Collection::Mailbox, Acl::AddItems)
                 .await?
                 .into()
         } else {

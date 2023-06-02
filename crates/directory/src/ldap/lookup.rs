@@ -21,7 +21,7 @@ impl Directory for LdapDirectory {
             .await
         {
             Ok(Some(principal)) => {
-                if principal.verify_secret(secret) {
+                if principal.verify_secret(secret).await {
                     Ok(Some(principal))
                 } else {
                     Ok(None)
@@ -253,9 +253,6 @@ impl Directory for LdapDirectory {
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        if self.domains.contains(domain) {
-            return Ok(true);
-        }
         self.pool
             .get()
             .await?

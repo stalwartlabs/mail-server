@@ -132,7 +132,7 @@ impl JMAP {
 
         // Authenticate user
         if let (Some(email), Some(password)) = (params.get("email"), params.get("password")) {
-            if let Some(acl_token) = self.authenticate_with_token(email, password).await {
+            if let Some(access_token) = self.authenticate_plain(email, password).await {
                 // Generate client code
                 let client_code = thread_rng()
                     .sample_iter(Alphanumeric)
@@ -145,7 +145,7 @@ impl JMAP {
                     client_code.clone(),
                     Arc::new(OAuthCode {
                         status: STATUS_AUTHORIZED.into(),
-                        account_id: acl_token.primary_id().into(),
+                        account_id: access_token.primary_id().into(),
                         client_id: code_req
                             .get("client_id")
                             .map(|s| s.as_str())

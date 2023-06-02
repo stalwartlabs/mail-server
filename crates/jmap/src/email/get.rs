@@ -32,7 +32,7 @@ use jmap_proto::{
 };
 use mail_parser::Message;
 
-use crate::{auth::AclToken, email::headers::HeaderToValue, JMAP};
+use crate::{auth::AccessToken, email::headers::HeaderToValue, JMAP};
 
 use super::body::{ToBodyPart, TruncateBody};
 
@@ -40,7 +40,7 @@ impl JMAP {
     pub async fn email_get(
         &self,
         mut request: GetRequest<GetArguments>,
-        acl_token: &AclToken,
+        access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request.unwrap_ids(self.config.get_max_objects)?;
         let properties = request.unwrap_properties(&[
@@ -90,7 +90,7 @@ impl JMAP {
 
         let account_id = request.account_id.document_id();
         let message_ids = self
-            .owned_or_shared_messages(acl_token, account_id, Acl::ReadItems)
+            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
             .await?;
         let ids = if let Some(ids) = ids {
             ids

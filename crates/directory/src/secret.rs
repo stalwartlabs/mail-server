@@ -9,25 +9,39 @@ use sha1::Digest;
 use sha1::Sha1;
 use sha2::Sha256;
 use sha2::Sha512;
+use tokio::sync::oneshot;
 
 use crate::Principal;
 
 impl Principal {
-    pub fn verify_secret(&self, secret: &str) -> bool {
-        self.secrets.iter().any(|s| verify_secret_hash(s, secret))
+    pub async fn verify_secret(&self, secret: &str) -> bool {
+        for hashed_secret in &self.secrets {
+            if verify_secret_hash(hashed_secret, secret).await {
+                return true;
+            }
+        }
+        false
     }
 }
 
-fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
+async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
     if hashed_secret.starts_with('$') {
         if hashed_secret.starts_with("$argon2")
             || hashed_secret.starts_with("$pbkdf2")
             || hashed_secret.starts_with("$scrypt")
         {
-            match PasswordHash::new(hashed_secret) {
-                Ok(hash) => hash
-                    .verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], secret)
-                    .is_ok(),
+            let (tx, rx) = oneshot::channel();
+            let secret = secret.to_string();
+            let hashed_secret = hashed_secret.to_string();
+
+            tokio::task::spawn_blocking(move || match PasswordHash::new(&hashed_secret) {
+                Ok(hash) => {
+                    tx.send(
+                        hash.verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
+                            .is_ok(),
+                    )
+                    .ok();
+                }
                 Err(_) => {
                     tracing::warn!(
                         context = "directory",
@@ -35,6 +49,14 @@ fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                         hash = hashed_secret,
                         "Invalid password hash"
                     );
+                    tx.send(false).ok();
+                }
+            });
+
+            match rx.await {
+                Ok(result) => result,
+                Err(_) => {
+                    tracing::warn!(context = "directory", event = "error", "Thread join error");
                     false
                 }
             }
