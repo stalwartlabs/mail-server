@@ -22,6 +22,7 @@
 */
 
 pub mod assign_id;
+pub mod blob;
 pub mod query;
 
 use std::{io::Read, sync::Arc};
@@ -39,7 +40,8 @@ pub async fn store_tests() {
     let temp_dir = TempDir::new("store_tests", insert);
     let config_file = format!(
         concat!(
-            "store.blob.path = \"{}\"\n",
+            "store.blob.type = \"local\"\n",
+            "store.blob.local.path = \"{}\"\n",
             "store.db.path = \"{}/sqlite.db\"\n"
         ),
         temp_dir.path.display(),
@@ -53,7 +55,7 @@ pub async fn store_tests() {
     if insert {
         db.destroy().await;
     }
-    //assign_id::test(db).await;
+    assign_id::test(db.clone()).await;
     query::test(db, insert).await;
     temp_dir.delete();
 }

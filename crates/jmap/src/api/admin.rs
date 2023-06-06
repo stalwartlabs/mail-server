@@ -42,6 +42,12 @@ impl JMAP {
                 document_id: 0,
             })
             .await?;
+        self.store
+            .bulk_delete_blob(&store::BlobKind::LinkedMaildir {
+                account_id,
+                document_id: 0,
+            })
+            .await?;
 
         // Delete mailboxes
         let mut batch = BatchBuilder::new();

@@ -127,7 +127,12 @@ future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
 
 [store]
 db.path = "{TMP}/sqlite.db"
-blob.path = "{TMP}"
+
+[store.blob]
+type = "local"
+
+[store.blob.local]
+path = "{TMP}"
 
 [certificate.default]
 cert = "file://{CERT}"

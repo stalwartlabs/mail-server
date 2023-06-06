@@ -74,7 +74,7 @@ impl JMAP {
         }
     }
 
-    pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> Result<bool, MethodError> {
+    pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> Result<(), MethodError> {
         self.store.put_blob(kind, data).await.map_err(|err| {
             tracing::error!(
                     event = "error",

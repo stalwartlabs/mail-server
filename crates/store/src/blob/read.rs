@@ -30,7 +30,7 @@ use tokio::{
 
 use crate::{BlobKind, Store};
 
-use super::{get_path, BlobStore};
+use super::{get_local_path, get_s3_path, BlobStore};
 
 impl Store {
     pub async fn get_blob(
@@ -40,7 +40,7 @@ impl Store {
     ) -> crate::Result<Option<Vec<u8>>> {
         match &self.blob {
             BlobStore::Local(base_path) => {
-                let blob_path = get_path(base_path, kind)?;
+                let blob_path = get_local_path(base_path, kind);
                 let blob_size = match fs::metadata(&blob_path).await {
                     Ok(m) => m.len(),
                     Err(_) => return Ok(None),
@@ -70,7 +70,32 @@ impl Store {
                     buf
                 }))
             }
-            BlobStore::Remote(_) => todo!(),
+            BlobStore::Remote(bucket) => {
+                let path = get_s3_path(kind);
+                let response = if range.start != 0 || range.end != u32::MAX {
+                    bucket
+                        .get_object_range(
+                            path,
+                            range.start as u64,
+                            Some(range.end.saturating_sub(1) as u64),
+                        )
+                        .await
+                } else {
+                    bucket.get_object(path).await
+                };
+                match response {
+                    Ok(response) if (200..300).contains(&response.status_code()) => {
+                        Ok(Some(response.to_vec()))
+                    }
+                    Ok(response) if response.status_code() == 404 => Ok(None),
+                    Ok(response) => Err(crate::Error::InternalError(format!(
+                        "S3 error code {}: {}",
+                        response.status_code(),
+                        String::from_utf8_lossy(response.as_slice())
+                    ))),
+                    Err(err) => Err(err.into()),
+                }
+            }
         }
     }
 }
