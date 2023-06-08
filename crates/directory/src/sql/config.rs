@@ -3,7 +3,7 @@ use std::sync::Arc;
 use sqlx::any::{install_default_drivers, AnyPoolOptions};
 use utils::config::{utils::AsKey, Config};
 
-use crate::{cache::CachedDirectory, Directory};
+use crate::{cache::CachedDirectory, Directory, DirectoryOptions};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -93,6 +93,14 @@ impl SqlDirectory {
                 .to_string(),
         };
 
-        CachedDirectory::try_from_config(config, &prefix, SqlDirectory { pool, mappings })
+        CachedDirectory::try_from_config(
+            config,
+            &prefix,
+            SqlDirectory {
+                pool,
+                mappings,
+                opt: DirectoryOptions::from_config(config, prefix.as_str())?,
+            },
+        )
     }
 }

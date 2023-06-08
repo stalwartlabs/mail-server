@@ -53,6 +53,11 @@ async fn sql_directory() {
     link_test_address(handle.as_ref(), "jane", "info@example.org", "list").await;
     link_test_address(handle.as_ref(), "bill", "info@example.org", "list").await;
 
+    // Add catch-all user
+    create_test_user(handle.as_ref(), "robert", "abcde", "Robert Foobar").await;
+    link_test_address(handle.as_ref(), "robert", "robert@catchall.org", "primary").await;
+    link_test_address(handle.as_ref(), "robert", "@catchall.org", "alias").await;
+
     // Test authentication
     assert_eq!(
         handle
@@ -177,6 +182,22 @@ async fn sql_directory() {
         handle.ids_by_email("info@example.org").await.unwrap(),
         vec![2, 3, 4]
     );
+    assert_eq!(
+        handle.ids_by_email("jane+alias@example.org").await.unwrap(),
+        vec![3]
+    );
+    assert_eq!(
+        handle.ids_by_email("info+alias@example.org").await.unwrap(),
+        vec![2, 3, 4]
+    );
+    assert_eq!(
+        handle.ids_by_email("unknown@example.org").await.unwrap(),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        handle.ids_by_email("anything@catchall.org").await.unwrap(),
+        vec![7]
+    );
 
     // Domain validation
     assert!(handle.is_local_domain("example.org").await.unwrap());
@@ -185,6 +206,9 @@ async fn sql_directory() {
     // RCPT TO
     assert!(handle.rcpt("jane@example.org").await.unwrap());
     assert!(handle.rcpt("info@example.org").await.unwrap());
+    assert!(handle.rcpt("jane+alias@example.org").await.unwrap());
+    assert!(handle.rcpt("info+alias@example.org").await.unwrap());
+    assert!(handle.rcpt("random_user@catchall.org").await.unwrap());
     assert!(!handle.rcpt("invalid@example.org").await.unwrap());
 
     // VRFY
@@ -195,6 +219,10 @@ async fn sql_directory() {
     assert_eq!(
         handle.vrfy("john").await.unwrap(),
         vec!["john@example.org".to_string()]
+    );
+    assert_eq!(
+        handle.vrfy("jane+alias@example").await.unwrap(),
+        vec!["jane@example.org".to_string()]
     );
     assert_eq!(handle.vrfy("info").await.unwrap(), Vec::<String>::new());
     assert_eq!(handle.vrfy("invalid").await.unwrap(), Vec::<String>::new());

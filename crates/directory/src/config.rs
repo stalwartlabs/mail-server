@@ -11,7 +11,7 @@ use ahash::{AHashMap, AHashSet};
 
 use crate::{
     imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, DirectoryConfig, Lookup,
+    sql::SqlDirectory, DirectoryConfig, DirectoryOptions, Lookup,
 };
 
 pub trait ConfigDirectory {
@@ -111,6 +111,16 @@ impl ConfigDirectory for Config {
             }
         }
         Ok(list)
+    }
+}
+
+impl DirectoryOptions {
+    pub fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
+        let key = key.as_key();
+        Ok(DirectoryOptions {
+            catch_all: config.property_or_static((&key, "options.catch-all"), "false")?,
+            subaddressing: config.property_or_static((&key, "options.subaddressing"), "true")?,
+        })
     }
 }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use utils::config::{utils::AsKey, Config};
 
-use crate::{config::ConfigDirectory, Directory, Principal, Type};
+use crate::{config::ConfigDirectory, Directory, DirectoryOptions, Principal, Type};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -54,19 +54,26 @@ impl MemoryDirectory {
                         EmailType::Primary(id)
                     });
 
+                if let Some((_, domain)) = email.rsplit_once('@') {
+                    directory.domains.insert(domain.to_lowercase());
+                }
+
                 emails.push(if pos > 0 {
-                    EmailType::Alias(email.to_string())
+                    EmailType::Alias(email.to_lowercase())
                 } else {
-                    EmailType::Primary(email.to_string())
+                    EmailType::Primary(email.to_lowercase())
                 });
             }
             for (_, email) in config.values((prefix.as_str(), "users", lookup_id, "email-list")) {
                 directory
                     .emails_to_ids
-                    .entry(email.to_string())
+                    .entry(email.to_lowercase())
                     .or_default()
                     .push(EmailType::List(id));
-                emails.push(EmailType::List(email.to_string()));
+                if let Some((_, domain)) = email.rsplit_once('@') {
+                    directory.domains.insert(domain.to_lowercase());
+                }
+                emails.push(EmailType::List(email.to_lowercase()));
             }
             directory.ids_to_email.insert(id, emails);
         }
@@ -95,7 +102,10 @@ impl MemoryDirectory {
             });
         }
 
-        directory.domains = config.parse_lookup_list((&prefix, "lookup.domains"))?;
+        directory
+            .domains
+            .extend(config.parse_lookup_list((&prefix, "lookup.domains"))?);
+        directory.opt = DirectoryOptions::from_config(config, prefix)?;
 
         Ok(Arc::new(directory))
     }

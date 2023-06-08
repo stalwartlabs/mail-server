@@ -148,8 +148,20 @@ async fn ldap_directory() {
         vec![3],
     );
     compare_sorted(
+        handle.ids_by_email("jane+alias@example.org").await.unwrap(),
+        vec![3],
+    );
+    compare_sorted(
         handle.ids_by_email("info@example.org").await.unwrap(),
         vec![2, 3, 4],
+    );
+    compare_sorted(
+        handle.ids_by_email("info+alias@example.org").await.unwrap(),
+        vec![2, 3, 4],
+    );
+    compare_sorted(
+        handle.ids_by_email("unknown@example.org").await.unwrap(),
+        Vec::<u32>::new(),
     );
 
     // Domain validation
@@ -159,6 +171,9 @@ async fn ldap_directory() {
     // RCPT TO
     assert!(handle.rcpt("jane@example.org").await.unwrap());
     assert!(handle.rcpt("info@example.org").await.unwrap());
+    assert!(handle.rcpt("jane+alias@example.org").await.unwrap());
+    assert!(handle.rcpt("info+alias@example.org").await.unwrap());
+    assert!(handle.rcpt("random_user@catchall.org").await.unwrap());
     assert!(!handle.rcpt("invalid@example.org").await.unwrap());
 
     // VRFY
@@ -169,6 +184,10 @@ async fn ldap_directory() {
     compare_sorted(
         handle.vrfy("john").await.unwrap(),
         vec!["john@example.org".to_string()],
+    );
+    compare_sorted(
+        handle.vrfy("jane+alias@example").await.unwrap(),
+        vec!["jane@example.org".to_string()],
     );
     compare_sorted(handle.vrfy("info").await.unwrap(), Vec::<String>::new());
     compare_sorted(handle.vrfy("invalid").await.unwrap(), Vec::<String>::new());

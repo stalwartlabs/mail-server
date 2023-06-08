@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use bb8::RunError;
@@ -143,6 +143,12 @@ impl Debug for Lookup {
     }
 }
 
+#[derive(Debug, Default)]
+struct DirectoryOptions {
+    catch_all: bool,
+    subaddressing: bool,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct DirectoryConfig {
     pub directories: AHashMap<String, Arc<dyn Directory>>,
@@ -255,4 +261,25 @@ impl DirectoryError {
         );
         DirectoryError::TimedOut
     }
+}
+
+#[inline(always)]
+fn unwrap_subaddress(address: &str, allow_subaddessing: bool) -> Cow<'_, str> {
+    if allow_subaddessing {
+        if let Some((local_part, domain_part)) = address.rsplit_once('@') {
+            if let Some((local_part, _)) = local_part.split_once('+') {
+                return format!("{}@{}", local_part, domain_part).into();
+            }
+        }
+    }
+
+    address.into()
+}
+
+#[inline(always)]
+fn to_catch_all_address(address: &str) -> String {
+    address
+        .rsplit_once('@')
+        .map(|(_, domain_part)| format!("@{}", domain_part))
+        .unwrap_or_else(|| address.into())
 }

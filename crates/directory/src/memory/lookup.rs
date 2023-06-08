@@ -1,6 +1,6 @@
 use mail_send::Credentials;
 
-use crate::{Directory, DirectoryError, Principal};
+use crate::{to_catch_all_address, unwrap_subaddress, Directory, DirectoryError, Principal};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -66,7 +66,14 @@ impl Directory for MemoryDirectory {
     async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
         Ok(self
             .emails_to_ids
-            .get(address)
+            .get(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            .or_else(|| {
+                if self.opt.catch_all {
+                    self.emails_to_ids.get(&to_catch_all_address(address))
+                } else {
+                    None
+                }
+            })
             .map(|ids| {
                 ids.iter()
                     .map(|t| match t {
@@ -78,13 +85,19 @@ impl Directory for MemoryDirectory {
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        Ok(self.emails_to_ids.get(address).is_some())
+        Ok(self
+            .emails_to_ids
+            .contains_key(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            || (self.opt.catch_all && self.domains.contains(&to_catch_all_address(address))))
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
+        let address = unwrap_subaddress(address, self.opt.subaddressing);
         for (key, value) in &self.emails_to_ids {
-            if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
+            if key.contains(address.as_ref())
+                && value.iter().any(|t| matches!(t, EmailType::Primary(_)))
+            {
                 result.push(key.clone())
             }
         }
@@ -93,8 +106,9 @@ impl Directory for MemoryDirectory {
 
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
+        let address = unwrap_subaddress(address, self.opt.subaddressing);
         for (key, value) in &self.emails_to_ids {
-            if key == address {
+            if key == address.as_ref() {
                 for item in value {
                     if let EmailType::List(id) = item {
                         for addr in self.ids_to_email.get(id).unwrap() {
@@ -114,13 +128,6 @@ impl Directory for MemoryDirectory {
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        Ok(if !self.domains.contains(domain) {
-            let domain = format!("@{domain}");
-            self.emails_to_ids
-                .keys()
-                .any(|email| email.ends_with(&domain))
-        } else {
-            true
-        })
+        Ok(self.domains.contains(domain))
     }
 }

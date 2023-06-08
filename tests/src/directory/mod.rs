@@ -15,6 +15,10 @@ const CONFIG: &str = r#"
 type = "sql"
 address = "sqlite::memory:"
 
+[directory."sql".options]
+catch-all = true
+subaddressing = true
+
 [directory."sql".pool]
 max-connections = 1
 
@@ -49,6 +53,10 @@ base-dn = "dc=example,dc=org"
 [directory."ldap".bind]
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
+
+[directory."ldap".options]
+catch-all = true
+subaddressing = true
 
 [directory."ldap".filter]
 login = "(&(objectClass=posixAccount)(accountStatus=active)(cn=?))"
@@ -110,6 +118,10 @@ ttl = {positive = '10s', negative = '5s'}
 
 [directory."local"]
 type = "memory"
+
+[directory."local".options]
+catch-all = true
+subaddressing = true
 
 [[directory."local".users]]
 name = "john"

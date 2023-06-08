@@ -1,7 +1,7 @@
-use ldap3::{Scope, SearchEntry};
+use ldap3::{ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{Directory, Principal, Type};
+use crate::{to_catch_all_address, unwrap_subaddress, Directory, Principal, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -109,53 +109,86 @@ impl Directory for LdapDirectory {
         Ok(emails)
     }
 
-    async fn ids_by_email(&self, email: &str) -> crate::Result<Vec<u32>> {
-        let (rs, _res) = self
+    async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
+        let ids = self
             .pool
             .get()
             .await?
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_email.build(email),
+                &self
+                    .mappings
+                    .filter_email
+                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
                 &self.mappings.attr_id,
             )
             .await?
-            .success()?;
+            .success()
+            .map(|(rs, _res)| self.extract_ids(rs))?;
 
-        let mut ids = Vec::new();
-        for entry in rs {
-            let entry = SearchEntry::construct(entry);
-            'outer: for attr in &self.mappings.attr_id {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for id in values {
-                        if let Ok(id) = id.parse() {
-                            ids.push(id);
-                            break 'outer;
-                        }
-                    }
-                }
-            }
+        if ids.is_empty() && self.opt.catch_all {
+            self.pool
+                .get()
+                .await?
+                .search(
+                    &self.mappings.base_dn,
+                    Scope::Subtree,
+                    &self
+                        .mappings
+                        .filter_email
+                        .build(&to_catch_all_address(address)),
+                    &self.mappings.attr_id,
+                )
+                .await?
+                .success()
+                .map(|(rs, _res)| self.extract_ids(rs))
+                .map_err(|e| e.into())
+        } else {
+            Ok(ids)
         }
-
-        Ok(ids)
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        self.pool
+        match self
+            .pool
             .get()
             .await?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_email.build(address),
+                &self
+                    .mappings
+                    .filter_email
+                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?
             .next()
             .await
-            .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
+        {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) if self.opt.catch_all => self
+                .pool
+                .get()
+                .await?
+                .streaming_search(
+                    &self.mappings.base_dn,
+                    Scope::Subtree,
+                    &self
+                        .mappings
+                        .filter_email
+                        .build(&to_catch_all_address(address)),
+                    &self.mappings.attr_email_address,
+                )
+                .await?
+                .next()
+                .await
+                .map(|entry| entry.is_some())
+                .map_err(|e| e.into()),
+            Ok(None) => Ok(false),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
@@ -166,7 +199,10 @@ impl Directory for LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_verify.build(address),
+                &self
+                    .mappings
+                    .filter_verify
+                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?;
@@ -196,7 +232,10 @@ impl Directory for LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_expand.build(address),
+                &self
+                    .mappings
+                    .filter_expand
+                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?;
@@ -288,6 +327,24 @@ impl LdapDirectory {
             self.mappings
                 .entry_to_principal(SearchEntry::construct(entry))
         }))
+    }
+
+    fn extract_ids(&self, rs: Vec<ResultEntry>) -> Vec<u32> {
+        let mut ids = Vec::with_capacity(rs.len());
+        for entry in rs {
+            let entry = SearchEntry::construct(entry);
+            'outer: for attr in &self.mappings.attr_id {
+                if let Some(values) = entry.attrs.get(attr) {
+                    for id in values {
+                        if let Ok(id) = id.parse() {
+                            ids.push(id);
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+        ids
     }
 }
 

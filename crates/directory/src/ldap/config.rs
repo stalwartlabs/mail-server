@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ldap3::LdapConnSettings;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{cache::CachedDirectory, config::build_pool, Directory};
+use crate::{cache::CachedDirectory, config::build_pool, Directory, DirectoryOptions};
 
 use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
 
@@ -105,6 +105,7 @@ impl LdapDirectory {
             LdapDirectory {
                 mappings,
                 pool: build_pool(config, &prefix, manager)?,
+                opt: DirectoryOptions::from_config(config, prefix.as_str())?,
             },
         )
     }

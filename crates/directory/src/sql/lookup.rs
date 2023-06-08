@@ -1,7 +1,7 @@
 use mail_send::Credentials;
 use sqlx::{any::AnyRow, Column, Row};
 
-use crate::{Directory, Principal, Type};
+use crate::{to_catch_all_address, unwrap_subaddress, Directory, Principal, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -74,26 +74,46 @@ impl Directory for SqlDirectory {
     }
 
     async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
-        sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
-            .bind(address)
+        match sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
+            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
             .fetch_all(&self.pool)
             .await
-            .map(|ids| ids.into_iter().map(|id| id as u32).collect())
-            .map_err(Into::into)
+        {
+            Ok(ids) if !ids.is_empty() => Ok(ids.into_iter().map(|id| id as u32).collect()),
+            Ok(_) if self.opt.catch_all => {
+                sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
+                    .bind(to_catch_all_address(address))
+                    .fetch_all(&self.pool)
+                    .await
+                    .map(|ids| ids.into_iter().map(|id| id as u32).collect())
+                    .map_err(Into::into)
+            }
+            Ok(_) => Ok(vec![]),
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        sqlx::query(&self.mappings.query_recipients)
-            .bind(address)
+        match sqlx::query(&self.mappings.query_recipients)
+            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
             .fetch_optional(&self.pool)
             .await
-            .map(|id| id.is_some())
-            .map_err(Into::into)
+        {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) if self.opt.catch_all => sqlx::query(&self.mappings.query_recipients)
+                .bind(to_catch_all_address(address))
+                .fetch_optional(&self.pool)
+                .await
+                .map(|id| id.is_some())
+                .map_err(Into::into),
+            Ok(None) => Ok(false),
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         sqlx::query_scalar::<_, String>(&self.mappings.query_verify)
-            .bind(address)
+            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
             .fetch_all(&self.pool)
             .await
             .map_err(Into::into)
@@ -101,7 +121,7 @@ impl Directory for SqlDirectory {
 
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         sqlx::query_scalar::<_, String>(&self.mappings.query_expand)
-            .bind(address)
+            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
             .fetch_all(&self.pool)
             .await
             .map_err(Into::into)

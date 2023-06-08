@@ -1,11 +1,14 @@
 use sqlx::{Any, Pool};
 
+use crate::DirectoryOptions;
+
 pub mod config;
 pub mod lookup;
 
 pub struct SqlDirectory {
     pool: Pool<Any>,
     mappings: SqlMappings,
+    opt: DirectoryOptions,
 }
 
 #[derive(Debug)]

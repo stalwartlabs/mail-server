@@ -1,6 +1,6 @@
 use ahash::{AHashMap, AHashSet};
 
-use crate::Principal;
+use crate::{DirectoryOptions, Principal};
 
 pub mod config;
 pub mod lookup;
@@ -12,6 +12,7 @@ pub struct MemoryDirectory {
     emails_to_ids: AHashMap<String, Vec<EmailType<u32>>>,
     ids_to_email: AHashMap<u32, Vec<EmailType<String>>>,
     domains: AHashSet<String>,
+    opt: DirectoryOptions,
 }
 
 enum EmailType<T> {
