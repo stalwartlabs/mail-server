@@ -412,7 +412,14 @@ impl JMAP {
         }
 
         // Deliver messages
-        let mut has_temp_errors = false;
+        let account_quota = match self.directory.principal_by_id(account_id).await {
+            Ok(Some(p)) => p.quota as i64,
+            Ok(None) => 0,
+            Err(_) => {
+                return Err(IngestError::Temporary);
+            }
+        };
+        let mut last_temp_error = None;
         let mut has_delivered = false;
         for (message_id, sieve_message) in messages.into_iter().enumerate() {
             if !sieve_message.file_into.is_empty() {
@@ -432,22 +439,24 @@ impl JMAP {
 
                 // Deliver message
                 match self
-                    .email_ingest(
-                        IngestEmail::new(&sieve_message.raw_message, message),
+                    .email_ingest(IngestEmail {
+                        raw_message: &sieve_message.raw_message,
+                        message: message.into(),
                         account_id,
-                        sieve_message.file_into,
-                        sieve_message.flags,
-                        None,
-                        true,
-                    )
+                        account_quota,
+                        mailbox_ids: sieve_message.file_into,
+                        keywords: sieve_message.flags,
+                        received_at: None,
+                        skip_duplicates: true,
+                    })
                     .await
                 {
                     Ok(ingested_message_) => {
                         has_delivered = true;
                         ingested_message = ingested_message_;
                     }
-                    Err(_) => {
-                        has_temp_errors = true;
+                    Err(err) => {
+                        last_temp_error = err.into();
                     }
                 }
             }
@@ -474,11 +483,11 @@ impl JMAP {
                 code: [5, 7, 1],
                 reason: reject_reason,
             })
-        } else if has_delivered || !has_temp_errors {
+        } else if has_delivered || last_temp_error.is_none() {
             Ok(ingested_message)
         } else {
             // There were problems during delivery
-            Err(IngestError::Temporary)
+            Err(last_temp_error.unwrap())
         }
     }
 }

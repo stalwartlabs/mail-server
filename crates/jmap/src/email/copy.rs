@@ -103,6 +103,9 @@ impl JMAP {
         let on_success_delete = request.on_success_destroy_original.unwrap_or(false);
         let mut destroy_ids = Vec::new();
 
+        // Obtain quota
+        let account_quota = self.get_quota(access_token, account_id).await?;
+
         'create: for (id, create) in request.create {
             let id = id.unwrap();
             let from_message_id = id.document_id();
@@ -242,6 +245,16 @@ impl JMAP {
                 );
                 continue;
             };
+
+            // Check quota
+            if account_quota > 0
+                && metadata.get(&Property::Size).as_uint().unwrap_or_default() as i64
+                    + self.get_used_quota(account_id).await?
+                    > account_quota
+            {
+                response.not_created.append(id, SetError::over_quota());
+                continue;
+            }
 
             // Set receivedAt
             if let Some(received_at) = received_at {

@@ -50,6 +50,7 @@ use mail_builder::{
     mime::{BodyPart, MimePart},
     MessageBuilder,
 };
+use mail_parser::Message;
 use store::{
     ahash::AHashSet,
     fts::term_index::TokenIndex,
@@ -60,11 +61,12 @@ use store::{
     BlobKind, Serialize, ValueKey,
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{auth::AccessToken, IngestError, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
     index::EmailIndexBuilder,
+    ingest::IngestEmail,
 };
 
 impl JMAP {
@@ -105,6 +107,9 @@ impl JMAP {
         };
 
         let will_destroy = request.unwrap_destroy();
+
+        // Obtain quota
+        let account_quota = self.get_quota(access_token, account_id).await?;
 
         // Process creates
         'create: for (id, mut object) in request.unwrap_create() {
@@ -722,20 +727,31 @@ impl JMAP {
             builder.write_to(&mut raw_message).unwrap_or_default();
 
             // Ingest message
-            response.created.insert(
-                id,
-                self.email_ingest(
-                    (&raw_message).into(),
+            match self
+                .email_ingest(IngestEmail {
+                    raw_message: &raw_message,
+                    message: Message::parse(&raw_message),
                     account_id,
-                    mailboxes,
+                    account_quota,
+                    mailbox_ids: mailboxes,
                     keywords,
                     received_at,
-                    false,
-                )
+                    skip_duplicates: false,
+                })
                 .await
-                .map_err(|_| MethodError::ServerPartialFail)?
-                .into(),
-            );
+            {
+                Ok(message) => {
+                    response.created.insert(id, message.into());
+                }
+                Err(IngestError::OverQuota) => {
+                    response.not_created.append(
+                        id,
+                        SetError::new(SetErrorType::OverQuota)
+                            .with_description("You have exceeded your disk quota."),
+                    );
+                }
+                Err(_) => return Err(MethodError::ServerPartialFail),
+            }
         }
 
         // Process updates

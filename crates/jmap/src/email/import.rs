@@ -36,9 +36,12 @@ use jmap_proto::{
         type_state::TypeState,
     },
 };
+use mail_parser::Message;
 use utils::map::vec_map::VecMap;
 
 use crate::{auth::AccessToken, IngestError, JMAP};
+
+use super::ingest::IngestEmail;
 
 impl JMAP {
     pub async fn email_import(
@@ -60,6 +63,9 @@ impl JMAP {
         } else {
             None
         };
+
+        // Obtain quota
+        let account_quota = self.get_quota(access_token, account_id).await?;
 
         let mut response = ImportEmailResponse {
             account_id: request.account_id,
@@ -126,14 +132,16 @@ impl JMAP {
 
             // Import message
             match self
-                .email_ingest(
-                    (&raw_message).into(),
+                .email_ingest(IngestEmail {
+                    raw_message: &raw_message,
+                    message: Message::parse(&raw_message),
                     account_id,
+                    account_quota,
                     mailbox_ids,
-                    email.keywords,
-                    email.received_at.map(|r| r.into()),
-                    false,
-                )
+                    keywords: email.keywords,
+                    received_at: email.received_at.map(|r| r.into()),
+                    skip_duplicates: false,
+                })
                 .await
             {
                 Ok(email) => {
@@ -143,6 +151,13 @@ impl JMAP {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::InvalidEmail).with_description(reason),
+                    );
+                }
+                Err(IngestError::OverQuota) => {
+                    response.not_created.append(
+                        id,
+                        SetError::new(SetErrorType::OverQuota)
+                            .with_description("You have exceeded your disk quota."),
                     );
                 }
                 Err(IngestError::Temporary) => {

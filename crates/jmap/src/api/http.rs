@@ -38,7 +38,6 @@ use jmap_proto::{
     types::{blob::BlobId, id::Id},
 };
 use serde_json::Value;
-use store::BlobKind;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -80,6 +79,7 @@ pub async fn parse_jmap_request(
                 ("", &Method::POST) => {
                     return match fetch_body(&mut req, jmap.config.request_max_size)
                         .await
+                        .ok_or_else(|| RequestError::limit(RequestLimitError::SizeRequest))
                         .and_then(|bytes| {
                             Request::parse(
                                 &bytes,
@@ -128,7 +128,7 @@ pub async fn parse_jmap_request(
                     if let Some(account_id) = path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
                     {
                         return match fetch_body(&mut req, jmap.config.upload_max_size).await {
-                            Ok(bytes) => {
+                            Some(bytes) => {
                                 match jmap
                                     .blob_upload(
                                         account_id,
@@ -145,7 +145,8 @@ pub async fn parse_jmap_request(
                                     Err(err) => err.into_http_response(),
                                 }
                             }
-                            Err(err) => err.into_http_response(),
+                            None => RequestError::limit(RequestLimitError::SizeUpload)
+                                .into_http_response(),
                         };
                     }
                 }
@@ -266,30 +267,7 @@ pub async fn parse_jmap_request(
                     };
                 }
                 ("blob", "purge", &Method::GET) => {
-                    let mut date = [u16::MAX; 3];
-                    for part in date.iter_mut() {
-                        if let Some(item) = path.next().and_then(|s| s.parse::<u16>().ok()) {
-                            *part = item;
-                        } else {
-                            return RequestError::blank(
-                                StatusCode::BAD_REQUEST.as_u16(),
-                                "Invalid parameters",
-                                "Expected YYYY/MM/DD date",
-                            )
-                            .into_http_response();
-                        }
-                    }
-                    return match jmap
-                        .store
-                        .bulk_delete_blob(&BlobKind::Temporary {
-                            creation_year: date[0],
-                            creation_month: date[1] as u8,
-                            creation_day: date[2] as u8,
-                            account_id: 0,
-                            seq: 0,
-                        })
-                        .await
-                    {
+                    return match jmap.store.purge_tmp_blobs(jmap.config.upload_tmp_ttl).await {
                         Ok(_) => {
                             JsonResponse::new(Value::String("success".into())).into_http_response()
                         }
@@ -396,18 +374,18 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     }
 }
 
-pub async fn fetch_body(req: &mut HttpRequest, max_size: usize) -> Result<Vec<u8>, RequestError> {
+pub async fn fetch_body(req: &mut HttpRequest, max_size: usize) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(1024);
     while let Some(Ok(frame)) = req.frame().await {
         if let Some(data) = frame.data_ref() {
             if bytes.len() + data.len() <= max_size {
                 bytes.extend_from_slice(data);
             } else {
-                return Err(RequestError::limit(RequestLimitError::Size));
+                return None;
             }
         }
     }
-    Ok(bytes)
+    bytes.into()
 }
 
 pub trait ToHttpResponse {

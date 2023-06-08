@@ -24,8 +24,7 @@
 use std::{sync::Arc, time::Duration};
 
 use chrono::{Datelike, TimeZone};
-use jmap_proto::types::date::UTCDate;
-use store::{write::now, BlobKind};
+use store::write::now;
 use tokio::sync::mpsc;
 use utils::{config::Config, failed, UnwrapFailure};
 
@@ -108,23 +107,9 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                             }
                         }
                         TASK_PURGE_BLOBS => {
-                            let ts = UTCDate::from_timestamp((now - 86400) as i64);
-                            tracing::info!(
-                                "Purging temporary blobs for {}/{}/{}.",
-                                ts.day,
-                                ts.month,
-                                ts.year
-                            );
-                            if let Err(err) = core
-                                .store
-                                .bulk_delete_blob(&BlobKind::Temporary {
-                                    creation_year: ts.year,
-                                    creation_month: ts.month,
-                                    creation_day: ts.day,
-                                    account_id: 0,
-                                    seq: 0,
-                                })
-                                .await
+                            tracing::info!("Purging temporary blobs.",);
+                            if let Err(err) =
+                                core.store.purge_tmp_blobs(core.config.upload_tmp_ttl).await
                             {
                                 tracing::error!("Error while purging bitmaps: {}", err);
                             }

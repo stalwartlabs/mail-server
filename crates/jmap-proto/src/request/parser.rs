@@ -72,7 +72,7 @@ impl Request {
                 Err(RequestError::not_request("Invalid JMAP request"))
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::Size))
+            Err(RequestError::limit(RequestLimitError::SizeRequest))
         }
     }
 

@@ -97,7 +97,7 @@ impl JMAP {
                     }
                     Property::BlobId => {
                         if let Some(Value::UnsignedInt(blob_size)) =
-                            push.properties.remove(&Property::BlobId)
+                            push.properties.remove(&Property::Size)
                         {
                             result.append(
                                 Property::BlobId,
@@ -214,7 +214,7 @@ impl JMAP {
         // Obtain the sieve script length
         let script_offset = script_object
             .properties
-            .get(&Property::BlobId)
+            .get(&Property::Size)
             .and_then(|value| value.as_uint())
             .ok_or_else(|| {
                 tracing::warn!(

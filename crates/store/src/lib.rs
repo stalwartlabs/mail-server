@@ -164,9 +164,7 @@ pub enum BlobKind {
     },
     Temporary {
         account_id: u32,
-        creation_year: u16,
-        creation_month: u8,
-        creation_day: u8,
+        timestamp: u64,
         seq: u32,
     },
 }
@@ -229,6 +227,7 @@ pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
+pub const SUBSPACE_QUOTAS: u8 = b'q';
 
 #[cfg(not(feature = "backend"))]
 impl Store {

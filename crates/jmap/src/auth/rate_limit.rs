@@ -107,7 +107,7 @@ impl JMAP {
             } else if access_token.is_super_user() {
                 Ok(InFlight::default())
             } else {
-                Err(RequestError::limit(RequestLimitError::Concurrent))
+                Err(RequestError::limit(RequestLimitError::ConcurrentRequest))
             }
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
@@ -140,7 +140,7 @@ impl JMAP {
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
         } else {
-            Err(RequestError::limit(RequestLimitError::Concurrent))
+            Err(RequestError::limit(RequestLimitError::ConcurrentUpload))
         }
     }
 

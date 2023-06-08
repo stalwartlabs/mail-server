@@ -1,4 +1,4 @@
-use store::{BlobKind, Store};
+use store::{write::now, BlobKind, Store};
 use utils::config::Config;
 
 use crate::store::TempDir;
@@ -34,7 +34,7 @@ path = "{TMP}"
 const DATA: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce erat nisl, dignissim a porttitor id, varius nec arcu. Sed mauris.";
 
 #[tokio::test]
-pub async fn blob_s3_test() {
+pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
     test_blob(
         Store::open(
@@ -60,6 +60,12 @@ pub async fn blob_s3_test() {
 }
 
 async fn test_blob(store: Store) {
+    // Obtain temp quota
+    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 100).await.unwrap();
+    assert_eq!(quota_items, 0);
+    assert_eq!(quota_bytes, 0);
+    store.purge_tmp_blobs(0).await.unwrap();
+
     // Store and fetch
     let kind = BlobKind::LinkedMaildir {
         account_id: 0,
@@ -104,32 +110,25 @@ async fn test_blob(store: Store) {
     }
 
     // Copy partial
-    let tmp_kind = BlobKind::Temporary {
-        account_id: 1,
-        creation_year: 2020,
-        creation_month: 12,
-        creation_day: 31,
-        seq: 0,
-    };
-    let tmp_kind2 = BlobKind::Temporary {
-        account_id: 1,
-        creation_year: 2021,
-        creation_month: 1,
-        creation_day: 1,
-        seq: 0,
-    };
-    assert!(store
-        .copy_blob(&src_kind, &tmp_kind, (0..11).into())
-        .await
-        .unwrap());
-    assert!(store
-        .copy_blob(&src_kind, &tmp_kind2, (0..11).into())
-        .await
-        .unwrap());
+    let now = now();
+    let mut tmp_kinds = Vec::new();
+    for i in 1..=3 {
+        let tmp_kind = BlobKind::Temporary {
+            account_id: 2,
+            timestamp: now - (i * 5),
+            seq: 0,
+        };
+        assert!(store
+            .copy_blob(&src_kind, &tmp_kind, (0..11).into())
+            .await
+            .unwrap());
+        tmp_kinds.push(tmp_kind);
+    }
+
     assert_eq!(
         String::from_utf8(
             store
-                .get_blob(&tmp_kind, 0..u32::MAX)
+                .get_blob(&tmp_kinds[0], 0..u32::MAX)
                 .await
                 .unwrap()
                 .unwrap()
@@ -138,15 +137,17 @@ async fn test_blob(store: Store) {
         std::str::from_utf8(&DATA[0..11]).unwrap()
     );
 
+    // Obtain temp quota
+    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 100).await.unwrap();
+    assert_eq!(quota_items, 3);
+    assert_eq!(quota_bytes, 33);
+    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 12).await.unwrap();
+    assert_eq!(quota_items, 2);
+    assert_eq!(quota_bytes, 22);
+
     // Delete range
-    store
-        .bulk_delete_blob(&BlobKind::LinkedMaildir {
-            account_id: 1,
-            document_id: 0,
-        })
-        .await
-        .unwrap();
-    store.bulk_delete_blob(&tmp_kind).await.unwrap();
+    store.delete_account_blobs(1).await.unwrap();
+    store.purge_tmp_blobs(7).await.unwrap();
 
     // Make sure the blobs are deleted
     for id in 0..4 {
@@ -162,11 +163,13 @@ async fn test_blob(store: Store) {
             .unwrap()
             .is_none());
     }
-    assert!(store
-        .get_blob(&tmp_kind, 0..u32::MAX)
-        .await
-        .unwrap()
-        .is_none());
+    for i in [1, 2] {
+        assert!(store
+            .get_blob(&tmp_kinds[i], 0..u32::MAX)
+            .await
+            .unwrap()
+            .is_none());
+    }
 
     // Make sure other blobs were not deleted
     assert!(store
@@ -175,23 +178,26 @@ async fn test_blob(store: Store) {
         .unwrap()
         .is_some());
     assert!(store
-        .get_blob(&tmp_kind2, 0..u32::MAX)
+        .get_blob(&tmp_kinds[0], 0..u32::MAX)
         .await
         .unwrap()
         .is_some());
 
     // Copying a non-existing blob should fail
-    assert!(!store.copy_blob(&tmp_kind, &src_kind, None).await.unwrap());
+    assert!(!store
+        .copy_blob(&tmp_kinds[1], &src_kind, None)
+        .await
+        .unwrap());
 
     // Copy blob between buckets
     assert!(store
-        .copy_blob(&src_kind, &tmp_kind, (10..20).into())
+        .copy_blob(&src_kind, &tmp_kinds[0], (10..20).into())
         .await
         .unwrap());
     assert_eq!(
         String::from_utf8(
             store
-                .get_blob(&tmp_kind, 0..u32::MAX)
+                .get_blob(&tmp_kinds[0], 0..u32::MAX)
                 .await
                 .unwrap()
                 .unwrap()
@@ -201,7 +207,7 @@ async fn test_blob(store: Store) {
     );
 
     // Delete blobs
-    for blob_kind in [src_kind, tmp_kind, tmp_kind2] {
+    for blob_kind in [src_kind, tmp_kinds[0]] {
         assert!(store.delete_blob(&blob_kind).await.unwrap());
         assert!(store
             .get_blob(&blob_kind, 0..u32::MAX)

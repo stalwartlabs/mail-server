@@ -104,6 +104,7 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             .most_frequent_language()
             .unwrap_or(self.default_language);
         let mut term_index = TermIndexBuilder::new();
+        let mut ops = AHashSet::new();
 
         for (part_id, part) in self.parts.iter().enumerate() {
             let language = if part.language != Language::Unknown {
@@ -111,13 +112,17 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             } else {
                 default_language
             };
-            let mut unique_words = AHashSet::new();
             let mut terms = Vec::new();
 
             for token in Stemmer::new(&part.text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
-                unique_words.insert((token.word.to_string(), HASH_EXACT));
+                ops.insert(Operation::hash(&token.word, HASH_EXACT, part.field, true));
                 if let Some(stemmed_word) = &token.stemmed_word {
-                    unique_words.insert((stemmed_word.to_string(), HASH_STEMMED));
+                    ops.insert(Operation::hash(
+                        stemmed_word,
+                        HASH_STEMMED,
+                        part.field,
+                        true,
+                    ));
                 }
                 terms.push(term_index.add_stemmed_token(token));
             }
@@ -125,20 +130,12 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
             if !terms.is_empty() {
                 term_index.add_terms(part.field, part_id as u32, terms);
             }
-
-            for (word, family) in unique_words {
-                batch
-                    .ops
-                    .push(Operation::hash(&word, family, part.field, true));
-            }
         }
 
         for (field, tokens) in self.tokens {
             let mut terms = Vec::with_capacity(tokens.len());
             for token in tokens {
-                batch
-                    .ops
-                    .push(Operation::hash(&token, HASH_EXACT, field, true));
+                ops.insert(Operation::hash(&token, HASH_EXACT, field, true));
                 terms.push(term_index.add_token(Token {
                     word: token.into(),
                     offset: 0,
@@ -146,6 +143,10 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
                 }));
             }
             term_index.add_terms(field, 0, terms);
+        }
+
+        for op in ops {
+            batch.ops.push(op);
         }
 
         batch.ops.push(Operation::Value {
@@ -158,11 +159,12 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
 
 impl TokenIndex {
     fn build_index(self, batch: &mut BatchBuilder, set: bool) {
+        let mut ops = AHashSet::with_capacity(self.tokens.len() * 2);
         for term in self.terms {
             for (term_ids, is_exact) in [(term.exact_terms, true), (term.stemmed_terms, false)] {
                 for term_id in term_ids {
                     if let Some(word) = self.tokens.get(term_id as usize) {
-                        batch.ops.push(Operation::hash(
+                        ops.insert(Operation::hash(
                             word,
                             if is_exact { HASH_EXACT } else { HASH_STEMMED },
                             term.field_id,
@@ -171,6 +173,9 @@ impl TokenIndex {
                     }
                 }
             }
+        }
+        for op in ops {
+            batch.ops.push(op);
         }
     }
 }

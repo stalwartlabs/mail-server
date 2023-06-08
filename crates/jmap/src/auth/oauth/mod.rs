@@ -223,7 +223,7 @@ pub async fn parse_form_data(
             .and_then(|val| val.parse::<mime::Mime>().ok()),
         fetch_body(req, 2048).await,
     ) {
-        (Some(content_type), Ok(body)) => {
+        (Some(content_type), Some(body)) => {
             let mut fields = HashMap::new();
             if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
                 for mut field in form_data::FormData::new(&body[..], boundary.as_str()).flatten() {

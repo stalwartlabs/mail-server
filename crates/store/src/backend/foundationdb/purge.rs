@@ -29,7 +29,7 @@ use futures::StreamExt;
 
 use crate::{
     write::key::KeySerializer, Store, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES,
+    SUBSPACE_QUOTAS, SUBSPACE_VALUES,
 };
 
 use super::bitmap::DenseBitmap;
@@ -114,6 +114,18 @@ impl Store {
             if let Err(err) = trx.commit().await {
                 return Err(FdbError::from(err).into());
             }
+        }
+
+        // Delete quota key
+        let trx = self.db.create_trx()?;
+        trx.clear(
+            &KeySerializer::new(5)
+                .write(SUBSPACE_QUOTAS)
+                .write(account_id)
+                .finalize(),
+        );
+        if let Err(err) = trx.commit().await {
+            return Err(FdbError::from(err).into());
         }
 
         Ok(())

@@ -26,11 +26,15 @@ use std::{borrow::Cow, fmt::Display};
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub enum RequestLimitError {
     #[serde(rename(serialize = "maxSizeRequest"))]
-    Size,
+    SizeRequest,
+    #[serde(rename(serialize = "maxSizeUpload"))]
+    SizeUpload,
     #[serde(rename(serialize = "maxCallsInRequest"))]
     CallsIn,
     #[serde(rename(serialize = "maxConcurrentRequests"))]
-    Concurrent,
+    ConcurrentRequest,
+    #[serde(rename(serialize = "maxConcurrentUpload"))]
+    ConcurrentUpload,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -112,6 +116,17 @@ impl RequestError {
         )
     }
 
+    pub fn over_blob_quota(max_files: usize, max_bytes: usize) -> Self {
+        RequestError::blank(
+            403,
+            "Quota exceeded",
+            format!(
+                "You have exceeded the blob upload quota of {} files or {} bytes.",
+                max_files, max_bytes
+            ),
+        )
+    }
+
     pub fn too_many_requests() -> Self {
         RequestError::blank(
             429,
@@ -134,17 +149,25 @@ impl RequestError {
             status: 400,
             title: None,
             detail: match limit_type {
-                RequestLimitError::Size => concat!(
+                RequestLimitError::SizeRequest => concat!(
                     "The request is larger than the server ",
+                    "is willing to process."
+                ),
+                RequestLimitError::SizeUpload => concat!(
+                    "The uploaded file is larger than the server ",
                     "is willing to process."
                 ),
                 RequestLimitError::CallsIn => concat!(
                     "The request exceeds the maximum number ",
                     "of calls in a single request."
                 ),
-                RequestLimitError::Concurrent => concat!(
+                RequestLimitError::ConcurrentRequest => concat!(
                     "The request exceeds the maximum number ",
                     "of concurrent requests."
+                ),
+                RequestLimitError::ConcurrentUpload => concat!(
+                    "The request exceeds the maximum number ",
+                    "of concurrent uploads."
                 ),
             }
             .into(),

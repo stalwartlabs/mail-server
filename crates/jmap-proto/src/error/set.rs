@@ -182,6 +182,10 @@ impl SetError {
         Self::new(SetErrorType::NotFound)
     }
 
+    pub fn over_quota() -> Self {
+        Self::new(SetErrorType::OverQuota).with_description("Account quota exceeded.")
+    }
+
     pub fn already_exists() -> Self {
         Self::new(SetErrorType::AlreadyExists)
     }

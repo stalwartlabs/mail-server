@@ -29,7 +29,7 @@ pub struct HashedValue<T: Deserialize> {
     pub inner: T,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum AssertValue {
     U32(u32),
     U64(u64),

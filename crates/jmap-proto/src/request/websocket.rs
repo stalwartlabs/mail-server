@@ -194,7 +194,7 @@ impl WebSocketMessage {
                 _ => Err(RequestError::not_request("Invalid WebSocket JMAP request").into()),
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::Size).into())
+            Err(RequestError::limit(RequestLimitError::SizeRequest).into())
         }
     }
 }

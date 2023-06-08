@@ -58,6 +58,7 @@ pub enum IndexAs {
     LongInteger,
     HasProperty,
     Acl,
+    Quota,
     #[default]
     None,
 }
@@ -433,6 +434,14 @@ fn merge_batch(
                         _ => {}
                     }
                 }
+                IndexAs::Quota => {
+                    if let Some(current_value) = current_value.try_cast_uint() {
+                        batch.quota(-(current_value as i64));
+                    }
+                    if let Some(value) = value.try_cast_uint() {
+                        batch.quota(value as i64);
+                    }
+                }
                 IndexAs::None => (),
             }
         }
@@ -558,6 +567,11 @@ fn build_batch(
                         });
                     }
                 }
+            }
+            (Value::UnsignedInt(bytes), IndexAs::Quota) => {
+                batch.ops.push(Operation::UpdateQuota {
+                    bytes: if set { *bytes as i64 } else { -(*bytes as i64) },
+                });
             }
             (value, IndexAs::HasProperty) if value != &Value::Null => {
                 batch.ops.push(Operation::Bitmap {

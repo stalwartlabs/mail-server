@@ -81,6 +81,8 @@ impl Store {
                 ))?
                 .execute([&from_key, &to_key])?;
             }
+            conn.prepare_cached("DELETE FROM q WHERE k = ?")?
+                .execute([account_id as i64])?;
 
             Ok(())
         })

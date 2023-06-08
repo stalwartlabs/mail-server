@@ -57,22 +57,36 @@ pub struct IngestedEmail {
 pub struct IngestEmail<'x> {
     pub raw_message: &'x [u8],
     pub message: Option<Message<'x>>,
+    pub account_id: u32,
+    pub account_quota: i64,
+    pub mailbox_ids: Vec<u32>,
+    pub keywords: Vec<Keyword>,
+    pub received_at: Option<u64>,
+    pub skip_duplicates: bool,
 }
 
 impl JMAP {
     #[allow(clippy::blocks_in_if_conditions)]
     pub async fn email_ingest(
         &self,
-        ingest_email: IngestEmail<'_>,
-        account_id: u32,
-        mailbox_ids: Vec<u32>,
-        keywords: Vec<Keyword>,
-        received_at: Option<u64>,
-        skip_duplicates: bool,
+        params: IngestEmail<'_>,
     ) -> Result<IngestedEmail, IngestError> {
+        // Check quota
+        let raw_message_len = params.raw_message.len() as i64;
+        if params.account_quota > 0
+            && raw_message_len
+                + self
+                    .get_used_quota(params.account_id)
+                    .await
+                    .map_err(|_| IngestError::Temporary)?
+                > params.account_quota
+        {
+            return Err(IngestError::OverQuota);
+        }
+
         // Parse message
-        let raw_message = ingest_email.raw_message;
-        let message = ingest_email.message.ok_or_else(|| IngestError::Permanent {
+        let raw_message = params.raw_message;
+        let message = params.message.ok_or_else(|| IngestError::Permanent {
             code: [5, 5, 0],
             reason: "Failed to parse e-mail message.".to_string(),
         })?;
@@ -118,12 +132,12 @@ impl JMAP {
         }
 
         // Check for duplicates
-        if skip_duplicates
+        if params.skip_duplicates
             && !references.is_empty()
             && !self
                 .store
                 .filter(
-                    account_id,
+                    params.account_id,
                     Collection::Email,
                     references
                         .iter()
@@ -151,7 +165,7 @@ impl JMAP {
         }
 
         let thread_id = if !references.is_empty() {
-            self.find_or_merge_thread(account_id, subject, &references)
+            self.find_or_merge_thread(params.account_id, subject, &references)
                 .await?
         } else {
             None
@@ -160,7 +174,7 @@ impl JMAP {
         // Obtain a documentId and changeId
         let document_id = self
             .store
-            .assign_document_id(account_id, Collection::Email)
+            .assign_document_id(params.account_id, Collection::Email)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -172,7 +186,7 @@ impl JMAP {
             })?;
         let change_id = self
             .store
-            .assign_change_id(account_id)
+            .assign_change_id(params.account_id)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -184,7 +198,7 @@ impl JMAP {
             })?;
 
         // Store blob
-        let blob_id = BlobId::maildir(account_id, document_id);
+        let blob_id = BlobId::maildir(params.account_id, document_id);
         self.store
             .put_blob(&blob_id.kind, raw_message)
             .await
@@ -199,7 +213,7 @@ impl JMAP {
 
         // Prepare batch
         let mut batch = BatchBuilder::new();
-        batch.with_account_id(account_id);
+        batch.with_account_id(params.account_id);
 
         // Build change log
         let mut changes = ChangeLogBuilder::with_change_id(change_id);
@@ -209,7 +223,7 @@ impl JMAP {
         } else {
             let thread_id = self
                 .store
-                .assign_document_id(account_id, Collection::Thread)
+                .assign_document_id(params.account_id, Collection::Thread)
                 .await
                 .map_err(|err| {
                     tracing::error!(
@@ -227,7 +241,7 @@ impl JMAP {
         };
         let id = Id::from_parts(thread_id, document_id);
         changes.log_insert(Collection::Email, id);
-        for mailbox_id in &mailbox_ids {
+        for mailbox_id in &params.mailbox_ids {
             changes.log_child_update(Collection::Mailbox, *mailbox_id);
         }
 
@@ -237,9 +251,9 @@ impl JMAP {
             .create_document(document_id)
             .index_message(
                 message,
-                keywords,
-                mailbox_ids,
-                received_at.unwrap_or_else(now),
+                params.keywords,
+                params.mailbox_ids,
+                params.received_at.unwrap_or_else(now),
                 self.config.default_language,
             )
             .map_err(|err| {
@@ -265,7 +279,7 @@ impl JMAP {
             id,
             change_id,
             blob_id,
-            size: raw_message.len(),
+            size: raw_message_len as usize,
         })
     }
 
@@ -430,33 +444,6 @@ impl JMAP {
                     return Err(IngestError::Temporary);
                 }
             }
-        }
-    }
-}
-
-impl<'x> From<&'x [u8]> for IngestEmail<'x> {
-    fn from(raw_message: &'x [u8]) -> Self {
-        IngestEmail {
-            raw_message,
-            message: Message::parse(raw_message),
-        }
-    }
-}
-
-impl<'x> From<&'x Vec<u8>> for IngestEmail<'x> {
-    fn from(raw_message: &'x Vec<u8>) -> Self {
-        IngestEmail {
-            raw_message,
-            message: Message::parse(raw_message),
-        }
-    }
-}
-
-impl<'x> IngestEmail<'x> {
-    pub fn new(raw_message: &'x [u8], message: Message<'x>) -> Self {
-        IngestEmail {
-            raw_message,
-            message: message.into(),
         }
     }
 }

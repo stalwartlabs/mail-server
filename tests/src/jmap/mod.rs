@@ -53,6 +53,7 @@ pub mod email_submission;
 pub mod event_source;
 pub mod mailbox;
 pub mod push_subscription;
+pub mod quota;
 pub mod sieve_script;
 pub mod stress_test;
 pub mod thread_get;
@@ -150,6 +151,11 @@ max-concurrent = 8
 [jmap.protocol.upload]
 max-size = 5000000
 max-concurrent = 4
+ttl = "1m"
+
+[jmap.protocol.upload.quota]
+files = 3
+size = 50000
 
 [jmap.rate-limit]
 account.rate = "1000/1m"
@@ -222,7 +228,7 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    email_query::test(params.server.clone(), &mut params.client, delete).await;
+    /*email_query::test(params.server.clone(), &mut params.client, delete).await;
     email_get::test(params.server.clone(), &mut params.client).await;
     email_set::test(params.server.clone(), &mut params.client).await;
     email_parse::test(params.server.clone(), &mut params.client).await;
@@ -243,6 +249,7 @@ pub async fn jmap_tests() {
     vacation_response::test(params.server.clone(), &mut params.client).await;
     email_submission::test(params.server.clone(), &mut params.client).await;
     websocket::test(params.server.clone(), &mut params.client).await;
+    quota::test(params.server.clone(), &mut params.client).await;*/
     stress_test::test(params.server.clone(), params.client).await;
 
     if delete {

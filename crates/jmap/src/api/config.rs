@@ -64,6 +64,15 @@ impl crate::Config {
             upload_max_concurrent: settings
                 .property("jmap.protocol.upload.max-concurrent")?
                 .unwrap_or(4),
+            upload_tmp_quota_size: settings
+                .property("jmap.protocol.upload.quota.size")?
+                .unwrap_or(50000000),
+            upload_tmp_quota_amount: settings
+                .property("jmap.protocol.upload.quota.files")?
+                .unwrap_or(50000000),
+            upload_tmp_ttl: settings
+                .property_or_static::<Duration>("jmap.protocol.upload.ttl", "1h")?
+                .as_secs(),
             mailbox_max_depth: settings.property("jmap.mailbox.max-depth")?.unwrap_or(10),
             mailbox_name_max_len: settings
                 .property("jmap.mailbox.max-name-length")?

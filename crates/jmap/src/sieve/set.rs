@@ -54,6 +54,7 @@ use crate::{auth::AccessToken, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,
+    account_quota: i64,
     access_token: &'x AccessToken,
     response: SetResponse,
 }
@@ -67,6 +68,7 @@ pub static SCHEMA: &[IndexProperty] = &[
         .max_size(255)
         .required(),
     IndexProperty::new(Property::IsActive).index_as(IndexAs::Integer),
+    IndexProperty::new(Property::Size).index_as(IndexAs::Quota),
 ];
 
 impl JMAP {
@@ -82,6 +84,7 @@ impl JMAP {
             .unwrap_or_default();
         let mut ctx = SetContext {
             account_id,
+            account_quota: self.get_quota(access_token, account_id).await?,
             access_token,
             response: self
                 .prepare_set_response(&request, Collection::SieveScript)
@@ -451,10 +454,18 @@ impl JMAP {
             }) {
                 // Check access
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
+                    // Check quota
+                    if ctx.account_quota > 0
+                        && bytes.len() as i64 + self.get_used_quota(ctx.account_id).await?
+                            > ctx.account_quota
+                    {
+                        return Ok(Err(SetError::over_quota()));
+                    }
+
                     // Compile script
                     match self.sieve_compiler.compile(&bytes) {
                         Ok(script) => {
-                            changes.set(Property::BlobId, Value::UnsignedInt(bytes.len() as u64));
+                            changes.set(Property::Size, Value::UnsignedInt(bytes.len() as u64));
                             bytes.extend(bincode::serialize(&script).unwrap_or_default());
                             bytes.into()
                         }

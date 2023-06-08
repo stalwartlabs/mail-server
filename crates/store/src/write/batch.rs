@@ -139,6 +139,11 @@ impl BatchBuilder {
         self
     }
 
+    pub fn quota(&mut self, bytes: i64) -> &mut Self {
+        self.ops.push(Operation::UpdateQuota { bytes });
+        self
+    }
+
     pub fn custom(&mut self, value: impl IntoOperations) -> &mut Self {
         value.build(self);
         self

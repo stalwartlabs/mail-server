@@ -35,19 +35,7 @@ use crate::{mailbox::set::SCHEMA, JMAP};
 impl JMAP {
     pub async fn delete_account(&self, account_id: u32) -> store::Result<()> {
         // Delete blobs
-        self.store
-            .bulk_delete_blob(&store::BlobKind::Linked {
-                account_id,
-                collection: Collection::Email.into(),
-                document_id: 0,
-            })
-            .await?;
-        self.store
-            .bulk_delete_blob(&store::BlobKind::LinkedMaildir {
-                account_id,
-                document_id: 0,
-            })
-            .await?;
+        self.store.delete_account_blobs(account_id).await?;
 
         // Delete mailboxes
         let mut batch = BatchBuilder::new();

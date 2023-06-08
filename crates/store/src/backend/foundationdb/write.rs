@@ -36,7 +36,8 @@ use crate::{
         key::{DeserializeBigEndian, KeySerializer},
         now, Batch, Operation,
     },
-    AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, SUBSPACE_VALUES,
+    AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, SUBSPACE_QUOTAS,
+    SUBSPACE_VALUES,
 };
 
 use super::bitmap::{next_available_index, DenseBitmap, BITS_PER_BLOCK};
@@ -203,6 +204,16 @@ impl Store {
                             return Err(crate::Error::AssertValueFailed);
                         }
                     }
+                    Operation::UpdateQuota { bytes } => {
+                        trx.atomic_op(
+                            &KeySerializer::new(5)
+                                .write(SUBSPACE_QUOTAS)
+                                .write(account_id)
+                                .finalize(),
+                            &bytes.to_le_bytes()[..],
+                            MutationType::Add,
+                        );
+                    }
                 }
             }
 
@@ -257,7 +268,7 @@ impl Store {
                                                 .entry(key.clone())
                                                 .or_default()
                                                 .insert(document_id),
-                                            "key {key:?} already contains document {document_id}"
+                                            "key {key:?} ({op:?}) already contains document {document_id}"
                                         );
                                     } else {
                                         assert!(
@@ -266,7 +277,7 @@ impl Store {
                                                 .get_mut(&key)
                                                 .unwrap()
                                                 .remove(&document_id),
-                                            "key {key:?} does not contain document {document_id}"
+                                            "key {key:?} ({op:?}) does not contain document {document_id}"
                                         );
                                     }
                                 }
@@ -476,5 +487,6 @@ impl Store {
         let trx = self.db.create_trx().unwrap();
         trx.clear_range(&[0u8], &[u8::MAX]);
         trx.commit().await.unwrap();
+        BITMAPS.lock().clear();
     }
 }

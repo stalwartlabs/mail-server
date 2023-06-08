@@ -37,7 +37,7 @@ use crate::{
     query::Operator,
     write::key::{DeserializeBigEndian, KeySerializer},
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
-    Store, SUBSPACE_INDEXES,
+    Store, SUBSPACE_INDEXES, SUBSPACE_QUOTAS,
 };
 
 use super::bitmap::DeserializeBlock;
@@ -353,6 +353,29 @@ impl ReadTransaction<'_> {
         Ok(None)
     }
 
+    pub async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+        if let Some(bytes) = self
+            .trx
+            .get(
+                &KeySerializer::new(5)
+                    .write(SUBSPACE_QUOTAS)
+                    .write(account_id)
+                    .finalize(),
+                true,
+            )
+            .await?
+        {
+            Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
+                crate::Error::InternalError(format!(
+                    "Invalid quota value for account {}",
+                    account_id
+                ))
+            })?))
+        } else {
+            Ok(0)
+        }
+    }
+
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
         if self.trx_age.elapsed() > Duration::from_millis(2000) {
             self.trx = self.db.create_trx()?;
@@ -432,6 +455,13 @@ impl Store {
                             key,
                             value
                         );
+                    }
+                    SUBSPACE_QUOTAS => {
+                        let v = i64::from_le_bytes(value[..].try_into().unwrap());
+                        if v != 0 {
+                            let k = u32::from_be_bytes(key[1..].try_into().unwrap());
+                            panic!("Table quotas is not empty: {k:?} = {v:?} (key {key:?})");
+                        }
                     }
                     SUBSPACE_LOGS => (),
 

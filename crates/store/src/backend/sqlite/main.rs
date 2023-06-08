@@ -102,6 +102,14 @@ impl Store {
         )?;
 
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS q (
+                    k INTEGER PRIMARY KEY,
+                    v INTEGER NOT NULL DEFAULT 0
+                )",
+            [],
+        )?;
+
+        conn.execute(
             &format!(
                 "CREATE TABLE IF NOT EXISTS {} (
                     z BLOB PRIMARY KEY,

@@ -35,7 +35,7 @@ use utils::codec::{
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
-use super::{collection::Collection, date::UTCDate};
+use super::collection::Collection;
 
 const B_LINKED: u8 = 0x10;
 const B_LINKED_MAILDIR: u8 = 0x20;
@@ -77,17 +77,11 @@ impl BlobId {
     }
 
     pub fn temporary(account_id: u32) -> Self {
-        let now_secs = now();
-        let now = UTCDate::from_timestamp(now_secs as i64);
-
         Self {
             kind: BlobKind::Temporary {
                 account_id,
-                creation_year: now.year,
-                creation_month: now.month,
-                creation_day: now.day,
-                seq: ((now_secs % 86400) as u32) << 15
-                    | rand::thread_rng().gen_range(0u32..=32767u32),
+                timestamp: now(),
+                seq: rand::thread_rng().gen_range(0u32..=u32::MAX),
             },
             section: None,
         }
@@ -151,9 +145,7 @@ impl BlobId {
                 },
                 B_TEMPORARY => BlobKind::Temporary {
                     account_id: it.next_leb128()?,
-                    creation_year: u16::from_be_bytes([*it.next()?.borrow(), *it.next()?.borrow()]),
-                    creation_month: *it.next()?.borrow(),
-                    creation_day: *it.next()?.borrow(),
+                    timestamp: it.next_leb128()?,
                     seq: it.next_leb128()?,
                 },
                 _ => return None,
@@ -198,16 +190,12 @@ impl BlobId {
             }
             BlobKind::Temporary {
                 account_id,
-                creation_year,
-                creation_month,
-                creation_day,
+                timestamp,
                 seq,
             } => {
                 let _ = writer.write(&[kind | B_TEMPORARY]);
                 let _ = writer.write_leb128(*account_id);
-                let _ = writer.write(&creation_year.to_be_bytes()[..]);
-                let _ = writer.write(&[*creation_month]);
-                let _ = writer.write(&[*creation_day]);
+                let _ = writer.write_leb128(*timestamp);
                 let _ = writer.write_leb128(*seq);
             }
         }

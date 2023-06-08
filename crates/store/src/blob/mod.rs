@@ -146,43 +146,12 @@ fn get_local_path(base_path: &BlobPaths, kind: &BlobKind) -> PathBuf {
         }
         BlobKind::Temporary {
             account_id,
-            creation_year,
-            creation_month,
-            creation_day,
+            timestamp,
             seq,
         } => {
             let mut path = base_path.path_temporary.to_path_buf();
-            path.push(creation_year.to_string());
-            path.push(creation_month.to_string());
-            path.push(creation_day.to_string());
-            path.push(format!("{:x}_{:x}", account_id, seq));
-            path
-        }
-    }
-}
-
-fn get_local_root_path(base_path: &BlobPaths, kind: &BlobKind) -> PathBuf {
-    match kind {
-        BlobKind::LinkedMaildir { account_id, .. } => {
-            let mut path = base_path.path_email.to_path_buf();
             path.push(format!("{:x}", account_id));
-            path
-        }
-        BlobKind::Linked { account_id, .. } => {
-            let mut path = base_path.path_other.to_path_buf();
-            path.push(format!("{:x}", account_id));
-            path
-        }
-        BlobKind::Temporary {
-            creation_year,
-            creation_month,
-            creation_day,
-            ..
-        } => {
-            let mut path = base_path.path_temporary.to_path_buf();
-            path.push(creation_year.to_string());
-            path.push(creation_month.to_string());
-            path.push(creation_day.to_string());
+            path.push(format!("{:x}_{:x}", timestamp, seq));
             path
         }
     }
@@ -201,33 +170,8 @@ fn get_s3_path(kind: &BlobKind) -> String {
         } => format!("/{:x}/{:x}/{:x}", account_id, collection, document_id),
         BlobKind::Temporary {
             account_id,
-            creation_year,
-            creation_month,
-            creation_day,
+            timestamp,
             seq,
-        } => format!(
-            "/tmp/{}/{}/{}/{:x}_{:x}",
-            creation_year, creation_month, creation_day, account_id, seq
-        ),
-    }
-}
-
-fn get_s3_root_path(kind: &BlobKind) -> String {
-    match kind {
-        BlobKind::LinkedMaildir { account_id, .. } => {
-            format!("/{:x}/", account_id)
-        }
-        BlobKind::Linked { account_id, .. } => {
-            format!("/{:x}/", account_id)
-        }
-        BlobKind::Temporary {
-            creation_year,
-            creation_month,
-            creation_day,
-            ..
-        } => format!(
-            "/tmp/{}/{}/{}/",
-            creation_year, creation_month, creation_day
-        ),
+        } => format!("/tmp/{:x}/{:x}_{:x}", account_id, timestamp, seq),
     }
 }

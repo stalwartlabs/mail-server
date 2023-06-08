@@ -97,6 +97,19 @@ impl Store {
         }
     }
 
+    pub async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+        #[cfg(not(feature = "is_sync"))]
+        {
+            self.read_transaction().await?.get_quota(account_id).await
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let trx = self.read_transaction()?;
+            self.spawn_worker(move || trx.get_quota(account_id)).await
+        }
+    }
+
     pub async fn get_bitmap<T: AsRef<[u8]> + Send + Sync + 'static>(
         &self,
         key: BitmapKey<T>,

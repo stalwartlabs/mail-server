@@ -88,7 +88,8 @@ impl IndexMessage for BatchBuilder {
 
         // Index size
         metadata.append(Property::Size, message.raw_message.len());
-        self.value(Property::Size, message.raw_message.len() as u32, F_INDEX);
+        self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
+            .quota(message.raw_message.len() as i64);
 
         // Index receivedAt
         metadata.append(
@@ -418,7 +419,13 @@ impl IntoOperations for EmailIndexBuilder {
         for (property, value) in self.inner.properties {
             match (&property, value) {
                 (Property::Size, Value::UnsignedInt(size)) => {
-                    batch.value(Property::Size, size as u32, F_INDEX | options);
+                    batch
+                        .value(Property::Size, size as u32, F_INDEX | options)
+                        .quota(if self.set {
+                            size as i64
+                        } else {
+                            -(size as i64)
+                        });
                 }
                 (Property::ReceivedAt | Property::SentAt, Value::Date(date)) => {
                     batch.value(property, date.timestamp() as u64, F_INDEX | options);

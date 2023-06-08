@@ -51,7 +51,7 @@ pub struct BatchBuilder {
     pub ops: Vec<Operation>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Operation {
     AccountId {
         account_id: u32,
@@ -86,6 +86,9 @@ pub enum Operation {
         field: u8,
         key: Vec<u8>,
         set: bool,
+    },
+    UpdateQuota {
+        bytes: i64,
     },
     Log {
         change_id: u64,

@@ -111,6 +111,10 @@ pub struct Config {
     pub upload_max_size: usize,
     pub upload_max_concurrent: usize,
 
+    pub upload_tmp_quota_size: usize,
+    pub upload_tmp_quota_amount: usize,
+    pub upload_tmp_ttl: u64,
+
     pub mailbox_max_depth: usize,
     pub mailbox_name_max_len: usize,
     pub mail_attachments_max_size: usize,
@@ -150,6 +154,7 @@ pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
 
 pub enum IngestError {
     Temporary,
+    OverQuota,
     Permanent { code: [u8; 3], reason: String },
 }
 
@@ -525,6 +530,43 @@ impl JMAP {
                 .await?,
             ),
         )
+    }
+
+    pub async fn get_quota(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> Result<i64, MethodError> {
+        Ok(if access_token.primary_id == account_id {
+            access_token.quota as i64
+        } else {
+            self.directory
+                .principal_by_id(account_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "get_quota",
+                        account_id = account_id,
+                        error = ?err,
+                        "Failed to obtain disk quota for account.");
+                    MethodError::ServerPartialFail
+                })?
+                .map(|p| p.quota as i64)
+                .unwrap_or_default()
+        })
+    }
+
+    pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
+        self.store.get_quota(account_id).await.map_err(|err| {
+            tracing::error!(
+                event = "error",
+                context = "get_used_quota",
+                account_id = account_id,
+                error = ?err,
+                "Failed to obtain used disk quota for account.");
+            MethodError::ServerPartialFail
+        })
     }
 
     pub async fn filter(

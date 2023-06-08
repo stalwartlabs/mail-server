@@ -33,6 +33,10 @@ use crate::{auth::AccessToken, JMAP};
 
 use super::UploadResponse;
 
+#[cfg(feature = "test_mode")]
+pub static DISABLE_UPLOAD_QUOTA: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
 impl JMAP {
     pub async fn blob_upload(
         &self,
@@ -50,6 +54,40 @@ impl JMAP {
             if data == b"sleep" {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+        }
+
+        // Enforce quota
+        let (total_files, total_bytes) = self
+            .store
+            .get_tmp_blob_usage(account_id.document_id(), self.config.upload_tmp_ttl)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                    context = "blob_store",
+                    account_id = account_id.document_id(),
+                    error = ?err,
+                    "Failed to obtain blob quota");
+                RequestError::internal_server_error()
+            })?;
+
+        if ((self.config.upload_tmp_quota_size > 0
+            && total_bytes + data.len() > self.config.upload_tmp_quota_size)
+            || (self.config.upload_tmp_quota_amount > 0
+                && total_files + 1 > self.config.upload_tmp_quota_amount))
+            && !access_token.is_super_user()
+        {
+            let err = Err(RequestError::over_blob_quota(
+                self.config.upload_tmp_quota_amount,
+                self.config.upload_tmp_quota_size,
+            ));
+
+            #[cfg(feature = "test_mode")]
+            if !DISABLE_UPLOAD_QUOTA.load(std::sync::atomic::Ordering::Relaxed) {
+                return err;
+            }
+
+            #[cfg(not(feature = "test_mode"))]
+            return err;
         }
 
         let blob_id = BlobId::temporary(account_id.document_id());

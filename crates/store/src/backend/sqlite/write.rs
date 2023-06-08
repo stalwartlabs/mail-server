@@ -245,6 +245,18 @@ impl Store {
                             return Err(crate::Error::AssertValueFailed);
                         }
                     }
+                    Operation::UpdateQuota { bytes } => {
+                        if *bytes >= 0 {
+                            trx.prepare_cached(concat!(
+                                "INSERT INTO q (k, v) VALUES (?, ?) ",
+                                "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                            ))?
+                            .execute(params![account_id, *bytes])?;
+                        } else {
+                            trx.prepare_cached("UPDATE q SET v = v + ? WHERE k = ?")?
+                                .execute(params![*bytes, account_id])?;
+                        }
+                    }
                 }
             }
 
@@ -271,7 +283,9 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        use crate::{SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES};
+        use crate::{
+            SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_QUOTAS, SUBSPACE_VALUES,
+        };
 
         let conn = self.conn_pool.get().unwrap();
         for table in [
@@ -279,6 +293,7 @@ impl Store {
             SUBSPACE_LOGS,
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
+            SUBSPACE_QUOTAS,
         ] {
             conn.execute(&format!("DROP TABLE {}", char::from(table)), [])
                 .unwrap();

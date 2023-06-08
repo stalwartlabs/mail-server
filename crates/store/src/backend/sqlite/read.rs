@@ -335,6 +335,19 @@ impl ReadTransaction<'_> {
     }
 
     #[maybe_async::maybe_async]
+    pub(crate) async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+        match self
+            .conn
+            .prepare_cached("SELECT v FROM q WHERE k = ?")?
+            .query_row([account_id as i64], |row| row.get::<_, i64>(0))
+        {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    #[maybe_async::maybe_async]
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
         Ok(())
     }
@@ -352,6 +365,7 @@ impl Store {
     #[cfg(feature = "test_mode")]
     pub async fn assert_is_empty(&self) {
         let conn = self.read_transaction().unwrap();
+        // Values
         let mut query = conn.conn.prepare_cached("SELECT k, v FROM v").unwrap();
         let mut rows = query.query([]).unwrap();
 
@@ -362,6 +376,7 @@ impl Store {
             panic!("Table values is not empty: {key:?} {value:?}");
         }
 
+        // Indexes
         let mut query = conn.conn.prepare_cached("SELECT k FROM i").unwrap();
         let mut rows = query.query([]).unwrap();
 
@@ -379,6 +394,7 @@ impl Store {
             );
         }
 
+        // Bitmaps
         self.purge_bitmaps().await.unwrap();
         let mut query = conn
             .conn
@@ -395,6 +411,21 @@ impl Store {
                 }
             }
             panic!("Table bitmaps failed to purge, found key: {key:?}");
+        }
+
+        // Quotas
+        let mut query = conn.conn.prepare_cached("SELECT k, v FROM q").unwrap();
+        let mut rows = query.query([]).unwrap();
+
+        while let Some(row) = rows.next().unwrap() {
+            let key = row.get::<_, i64>(0).unwrap();
+            let value = row.get::<_, i64>(1).unwrap();
+            if value != 0 {
+                panic!(
+                    "Table quota is not empty, account {}, quota: {}",
+                    key, value,
+                );
+            }
         }
 
         // Delete logs

@@ -393,7 +393,7 @@ impl JMAP {
         match self.sieve_compiler.compile(&script) {
             Ok(compiled_script) => {
                 // Update blob length
-                obj.set(Property::BlobId, Value::UnsignedInt(script.len() as u64));
+                obj.set(Property::Size, Value::UnsignedInt(script.len() as u64));
 
                 // Serialize script
                 script.extend(bincode::serialize(&compiled_script).unwrap_or_default());

@@ -22,10 +22,11 @@
 */
 
 use jmap_proto::types::{state::StateChange, type_state::TypeState};
+use mail_parser::Message;
 use store::ahash::AHashMap;
 use utils::ipc::{DeliveryResult, IngestMessage};
 
-use crate::{mailbox::INBOX_ID, IngestError, JMAP};
+use crate::{email::ingest::IngestEmail, mailbox::INBOX_ID, IngestError, JMAP};
 
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
@@ -67,14 +68,27 @@ impl JMAP {
                     .await
                 }
                 Ok(None) => {
-                    self.email_ingest(
-                        (&raw_message).into(),
-                        *uid,
-                        vec![INBOX_ID],
-                        vec![],
-                        None,
-                        true,
-                    )
+                    let account_quota = match self.directory.principal_by_id(*uid).await {
+                        Ok(Some(p)) => p.quota as i64,
+                        Ok(None) => 0,
+                        Err(_) => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Transient server failure.".into(),
+                            };
+                            continue;
+                        }
+                    };
+
+                    self.email_ingest(IngestEmail {
+                        raw_message: &raw_message,
+                        message: Message::parse(&raw_message),
+                        account_id: *uid,
+                        account_quota,
+                        mailbox_ids: vec![INBOX_ID],
+                        keywords: vec![],
+                        received_at: None,
+                        skip_duplicates: true,
+                    })
                     .await
                 }
                 Err(_) => {
@@ -100,6 +114,11 @@ impl JMAP {
                     }
                 }
                 Err(err) => match err {
+                    IngestError::OverQuota => {
+                        *status = DeliveryResult::TemporaryFailure {
+                            reason: "Mailbox over quota.".into(),
+                        }
+                    }
                     IngestError::Temporary => {
                         *status = DeliveryResult::TemporaryFailure {
                             reason: "Transient server failure.".into(),
