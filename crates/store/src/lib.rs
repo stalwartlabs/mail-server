@@ -346,6 +346,10 @@ impl ReadTransaction<'_> {
         unimplemented!("No backend selected")
     }
 
+    pub(crate) async fn get_quota(&self, _account_id: u32) -> crate::Result<i64> {
+        unimplemented!("No backend selected")
+    }
+
     pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
         unimplemented!("No backend selected")
     }

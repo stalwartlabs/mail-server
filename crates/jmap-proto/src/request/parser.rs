@@ -252,8 +252,101 @@ mod tests {
       }
     "#;
 
+    const TEST2: &str = r##"
+    {
+        "using": [
+          "urn:ietf:params:jmap:submission",
+          "urn:ietf:params:jmap:mail",
+          "urn:ietf:params:jmap:core"
+        ],
+        "methodCalls": [
+          [
+            "Email/set",
+            {
+              "accountId": "c",
+              "create": {
+                "c37ee58b-e224-4799-88e6-1d7484e3b782": {
+                  "mailboxIds": {
+                    "9": true
+                  },
+                  "subject": "test",
+                  "from": [
+                    {
+                      "name": "Foo",
+                      "email": "foo@bar.com"
+                    }
+                  ],
+                  "to": [
+                    {
+                      "name": null,
+                      "email": "bar@foo.com"
+                    }
+                  ],
+                  "cc": [],
+                  "bcc": [],
+                  "replyTo": [
+                    {
+                      "name": null,
+                      "email": "foo@bar.com"
+                    }
+                  ],
+                  "htmlBody": [
+                    {
+                      "partId": "c37ee58b-e224-4799-88e6-1d7484e3b782",
+                      "type": "text/html"
+                    }
+                  ],
+                  "bodyValues": {
+                    "c37ee58b-e224-4799-88e6-1d7484e3b782": {
+                      "value": "<p>test email<br></p>",
+                      "isEncodingProblem": false,
+                      "isTruncated": false
+                    }
+                  },
+                  "header:User-Agent:asText": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/113.0"
+                }
+              }
+            },
+            "c0"
+          ],
+          [
+            "EmailSubmission/set",
+            {
+              "accountId": "c",
+              "create": {
+                "c37ee58b-e224-4799-88e6-1d7484e3b782": {
+                  "identityId": "a",
+                  "emailId": "#c37ee58b-e224-4799-88e6-1d7484e3b782",
+                  "envelope": {
+                    "mailFrom": {
+                      "email": "foo@bar.com"
+                    },
+                    "rcptTo": [
+                      {
+                        "email": "bar@foo.com"
+                      }
+                    ]
+                  }
+                }
+              },
+              "onSuccessUpdateEmail": {
+                "#c37ee58b-e224-4799-88e6-1d7484e3b782": {
+                  "mailboxIds/d": true,
+                  "mailboxIds/9": null,
+                  "keywords/$seen": true,
+                  "keywords/$draft": null
+                }
+              }
+            },
+            "c1"
+          ]
+        ]
+      }
+    "##;
+
     #[test]
     fn parse_request() {
-        println!("{:?}", Request::parse(TEST.as_bytes(), 10, 1024));
+        println!("{:?}", Request::parse(TEST.as_bytes(), 10, 10240));
+        println!("{:?}", Request::parse(TEST2.as_bytes(), 10, 10240));
     }
 }

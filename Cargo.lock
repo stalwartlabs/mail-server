@@ -1861,6 +1861,7 @@ dependencies = [
  "serde",
  "serde_json",
  "store",
+ "tokio",
  "tracing",
  "utils",
 ]
