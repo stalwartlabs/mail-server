@@ -1705,6 +1705,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "imap"
+version = "0.1.0"
+
+[[package]]
+name = "imap_proto"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.3",
+ "chrono",
+ "mail-parser",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

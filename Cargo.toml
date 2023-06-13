@@ -34,6 +34,8 @@ foundationdb = ["store/foundation"]
 members = [
     "crates/jmap",
     "crates/jmap-proto",
+    "crates/imap",
+    "crates/imap-proto",
     "crates/smtp",
     "crates/store",
     "crates/directory",
