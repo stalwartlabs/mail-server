@@ -1707,6 +1707,18 @@ dependencies = [
 [[package]]
 name = "imap"
 version = "0.1.0"
+dependencies = [
+ "directory",
+ "imap_proto",
+ "jmap",
+ "parking_lot",
+ "rustls 0.21.1",
+ "rustls-pemfile",
+ "tokio",
+ "tokio-rustls 0.24.0",
+ "tracing",
+ "utils",
+]
 
 [[package]]
 name = "imap_proto"

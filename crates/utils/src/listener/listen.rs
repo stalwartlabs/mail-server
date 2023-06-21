@@ -23,8 +23,12 @@
 
 use std::sync::Arc;
 
-use tokio::{net::TcpListener, sync::watch};
-use tokio_rustls::TlsAcceptor;
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::watch,
+};
+use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use tracing::Span;
 
 use crate::{
     config::{Config, Listener, Server, ServerProtocol, Servers},
@@ -184,5 +188,36 @@ impl Listener {
             });
         }
         listener
+    }
+}
+
+impl ServerInstance {
+    pub async fn tls_accept(
+        &self,
+        stream: TcpStream,
+        span: &Span,
+    ) -> Result<TlsStream<TcpStream>, ()> {
+        match self.tls_acceptor.as_ref().unwrap().accept(stream).await {
+            Ok(stream) => {
+                tracing::info!(
+                    parent: span,
+                    context = "tls",
+                    event = "handshake",
+                    version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
+                    cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(rustls::cipher_suite::TLS13_AES_128_GCM_SHA256),
+                );
+                Ok(stream)
+            }
+            Err(err) => {
+                tracing::debug!(
+                    parent: span,
+                    context = "tls",
+                    event = "error",
+                    "Failed to accept TLS connection: {}",
+                    err
+                );
+                Err(())
+            }
+        }
     }
 }

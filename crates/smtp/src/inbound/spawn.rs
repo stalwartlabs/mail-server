@@ -85,35 +85,7 @@ impl Session<TcpStream> {
     pub async fn into_tls(self) -> Result<Session<TlsStream<TcpStream>>, ()> {
         let span = self.span;
         Ok(Session {
-            stream: match self
-                .instance
-                .tls_acceptor
-                .as_ref()
-                .unwrap()
-                .accept(self.stream)
-                .await
-            {
-                Ok(stream) => {
-                    tracing::info!(
-                        parent: &span,
-                        context = "tls",
-                        event = "handshake",
-                        version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
-                        cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(rustls::cipher_suite::TLS13_AES_128_GCM_SHA256),
-                    );
-                    stream
-                }
-                Err(err) => {
-                    tracing::debug!(
-                        parent: &span,
-                        context = "tls",
-                        event = "error",
-                        "Failed to accept TLS connection: {}",
-                        err
-                    );
-                    return Err(());
-                }
-            },
+            stream: self.instance.tls_accept(self.stream, &span).await?,
             state: self.state,
             data: self.data,
             instance: self.instance,

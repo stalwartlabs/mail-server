@@ -5,3 +5,13 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
+imap_proto = { path = "../imap-proto" }
+jmap = { path = "../jmap" }
+directory = { path = "../directory" }
+utils = { path = "../utils" }
+rustls = "0.21.0"
+rustls-pemfile = "1.0"
+tokio = { version = "1.23", features = ["full"] }
+tokio-rustls = { version = "0.24.0"}
+parking_lot = "0.12"
+tracing = "0.1"
