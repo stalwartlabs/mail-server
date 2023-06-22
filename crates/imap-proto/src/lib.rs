@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use jmap_proto::error::method::MethodError;
 use protocol::capability::Capability;
 
 pub mod parser;
@@ -191,8 +192,8 @@ impl StatusResponse {
         self
     }
 
-    pub fn with_tag(mut self, tag: String) -> Self {
-        self.tag = Some(tag);
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tag = Some(tag.into());
         self
     }
 
@@ -221,6 +222,12 @@ impl StatusResponse {
             message: message.into(),
             rtype: ResponseType::Bye,
         }
+    }
+}
+
+impl From<MethodError> for StatusResponse {
+    fn from(_: MethodError) -> Self {
+        StatusResponse::database_failure()
     }
 }
 

@@ -85,10 +85,7 @@ impl JMAP {
 
         let (items_sent, mut changelog) = match &request.since_state {
             State::Initial => {
-                let changelog = self
-                    .changes_(account_id, collection, Query::All)
-                    .await?
-                    .unwrap();
+                let changelog = self.changes_(account_id, collection, Query::All).await?;
                 if changelog.changes.is_empty() && changelog.from_change_id == 0 {
                     return Ok(response);
                 }
@@ -98,12 +95,7 @@ impl JMAP {
             State::Exact(change_id) => (
                 0,
                 self.changes_(account_id, collection, Query::Since(*change_id))
-                    .await?
-                    .ok_or_else(|| {
-                        MethodError::InvalidArguments(
-                            "The specified stateId does could not be found.".to_string(),
-                        )
-                    })?,
+                    .await?,
             ),
             State::Intermediate(intermediate_state) => {
                 let mut changelog = self
@@ -112,12 +104,7 @@ impl JMAP {
                         collection,
                         Query::RangeInclusive(intermediate_state.from_id, intermediate_state.to_id),
                     )
-                    .await?
-                    .ok_or_else(|| {
-                        MethodError::InvalidArguments(
-                            "The specified stateId does could not be found.".to_string(),
-                        )
-                    })?;
+                    .await?;
                 if intermediate_state.items_sent >= changelog.changes.len() {
                     (
                         0,
@@ -126,12 +113,7 @@ impl JMAP {
                             collection,
                             Query::Since(intermediate_state.to_id),
                         )
-                        .await?
-                        .ok_or_else(|| {
-                            MethodError::InvalidArguments(
-                                "The specified stateId does could not be found.".to_string(),
-                            )
-                        })?,
+                        .await?,
                     )
                 } else {
                     changelog.changes.drain(
@@ -189,12 +171,12 @@ impl JMAP {
         Ok(response)
     }
 
-    async fn changes_(
+    pub async fn changes_(
         &self,
         account_id: u32,
         collection: Collection,
         query: Query,
-    ) -> Result<Option<Changes>, MethodError> {
+    ) -> Result<Changes, MethodError> {
         self.store
             .changes(account_id, collection, query)
             .await

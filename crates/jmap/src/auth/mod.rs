@@ -101,12 +101,29 @@ impl AccessToken {
             || self.member_of.contains(&SUPERUSER_ID)
     }
 
+    pub fn is_primary_id(&self, account_id: u32) -> bool {
+        self.primary_id == account_id
+    }
+
     pub fn is_super_user(&self) -> bool {
         self.primary_id == SUPERUSER_ID || self.member_of.contains(&SUPERUSER_ID)
     }
 
     pub fn is_shared(&self, account_id: u32) -> bool {
         !self.is_member(account_id) && self.access_to.iter().any(|(id, _)| *id == account_id)
+    }
+
+    pub fn shared_accounts(&self, collection: impl Into<Collection>) -> impl Iterator<Item = &u32> {
+        let collection = collection.into();
+        self.member_of
+            .iter()
+            .chain(self.access_to.iter().filter_map(move |(id, cols)| {
+                if cols.contains(collection) {
+                    id.into()
+                } else {
+                    None
+                }
+            }))
     }
 
     pub fn has_access(&self, to_account_id: u32, to_collection: impl Into<Collection>) -> bool {

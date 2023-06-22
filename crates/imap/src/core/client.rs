@@ -32,7 +32,7 @@ use tokio::io::AsyncRead;
 use super::{SelectedMailbox, Session, SessionData, State};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn ingest(&mut self, bytes: &[u8]) -> Result<bool, ()> {
+    pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
         /*let tmp = "dd";
         for line in String::from_utf8_lossy(bytes).split("\r\n") {
             println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);

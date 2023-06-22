@@ -279,7 +279,7 @@ impl JMAP {
         }
     }
 
-    async fn mailbox_unread_tags(
+    pub async fn mailbox_unread_tags(
         &self,
         account_id: u32,
         document_id: u32,

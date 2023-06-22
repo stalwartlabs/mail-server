@@ -150,4 +150,47 @@ impl Store {
                 .await
         }
     }
+
+    pub async fn index_values<T: Sync + Send + 'static>(
+        &self,
+        mut acc: T,
+        account_id: u32,
+        collection: impl Into<u8>,
+        field: impl Into<u8>,
+        ascending: bool,
+        cb: impl Fn(&mut T, u32, &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
+    ) -> crate::Result<T> {
+        let collection = collection.into();
+        let field = field.into();
+        #[cfg(not(feature = "is_sync"))]
+        {
+            self.read_transaction()
+                .await?
+                .sort_index(
+                    account_id,
+                    collection,
+                    field,
+                    ascending,
+                    |value, document_id| cb(&mut acc, document_id, value).unwrap_or(false),
+                )
+                .await
+                .map(|_| acc)
+        }
+
+        #[cfg(feature = "is_sync")]
+        {
+            let trx = self.read_transaction()?;
+            self.spawn_worker(move || {
+                trx.sort_index(
+                    account_id,
+                    collection,
+                    field,
+                    ascending,
+                    |value, document_id| cb(&mut acc, document_id, value).unwrap_or(false),
+                )
+                .map(|_| acc)
+            })
+            .await
+        }
+    }
 }

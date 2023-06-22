@@ -109,7 +109,7 @@ pub fn spawn_writer(mut stream: Event) -> mpsc::Sender<Event> {
 }
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> Result<(), ()> {
+    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> crate::OpResult {
         /*let tmp = "dd";
         println!(
             "-> {:?}",

@@ -87,7 +87,7 @@ impl<T: AsyncRead> Session<T> {
 
 impl Session<TcpStream> {
     pub async fn new(
-        mut session: utils::listener::SessionData<TcpStream>,
+        mut session: SessionData<TcpStream>,
         manager: ImapSessionManager,
     ) -> Result<Session<TcpStream>, ()> {
         // Write plain text greeting
@@ -102,10 +102,7 @@ impl Session<TcpStream> {
         Ok(Session {
             receiver: Receiver::with_max_request_size(manager.imap.max_request_size),
             version: ProtocolVersion::Rev1,
-            state: State::NotAuthenticated {
-                auth_failures: 0,
-                remote_addr: RemoteAddress::IpAddress(session.remote_ip),
-            },
+            state: State::NotAuthenticated { auth_failures: 0 },
             writer: writer::spawn_writer(writer::Event::Stream(stream_tx)),
             is_tls: false,
             is_condstore: false,
@@ -114,7 +111,8 @@ impl Session<TcpStream> {
             jmap: manager.jmap,
             instance: session.instance,
             span: session.span,
-            in_flight: vec![session.in_flight],
+            in_flight: session.in_flight,
+            remote_addr: RemoteAddress::IpAddress(session.remote_ip),
             stream_rx,
         })
     }
@@ -162,6 +160,7 @@ impl Session<TcpStream> {
             writer: self.writer,
             span: self.span,
             in_flight: self.in_flight,
+            remote_addr: self.remote_addr,
             stream_rx,
         })
     }
@@ -191,10 +190,7 @@ impl Session<TlsStream<TcpStream>> {
         Ok(Session {
             receiver: Receiver::with_max_request_size(manager.imap.max_request_size),
             version: ProtocolVersion::Rev1,
-            state: State::NotAuthenticated {
-                auth_failures: 0,
-                remote_addr: RemoteAddress::IpAddress(session.remote_ip),
-            },
+            state: State::NotAuthenticated { auth_failures: 0 },
             writer: writer::spawn_writer(writer::Event::StreamTls(stream_tx)),
             is_tls: true,
             is_condstore: false,
@@ -203,7 +199,8 @@ impl Session<TlsStream<TcpStream>> {
             jmap: manager.jmap,
             instance: session.instance,
             span,
-            in_flight: vec![session.in_flight],
+            in_flight: session.in_flight,
+            remote_addr: RemoteAddress::IpAddress(session.remote_ip),
             stream_rx,
         })
     }

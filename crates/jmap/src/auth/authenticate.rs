@@ -50,20 +50,7 @@ impl JMAP {
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
             let session = if let Some(account_id) = self.sessions.get(&token) {
-                if let Some(access_token) = self.access_tokens.get(&account_id) {
-                    access_token.into()
-                } else {
-                    // Refresh ACL token
-                    self.get_access_token(account_id).await.map(|access_token| {
-                        let access_token = Arc::new(access_token);
-                        self.access_tokens.insert(
-                            account_id,
-                            access_token.clone(),
-                            Instant::now() + self.config.session_cache_ttl,
-                        );
-                        access_token
-                    })
-                }
+                self.get_cached_access_token(account_id).await
             } else {
                 let addr = self.build_remote_addr(req, remote_ip);
                 if mechanism.eq_ignore_ascii_case("basic") {
@@ -108,19 +95,11 @@ impl JMAP {
                     self.is_anonymous_allowed(addr)?;
                     None
                 }
-                .map(|session| {
-                    let session = Arc::new(session);
-                    self.sessions.insert(
-                        token,
-                        session.primary_id(),
-                        Instant::now() + self.config.session_cache_ttl,
-                    );
-                    self.access_tokens.insert(
-                        session.primary_id(),
-                        session.clone(),
-                        Instant::now() + self.config.session_cache_ttl,
-                    );
-                    session
+                .map(|access_token| {
+                    let access_token = Arc::new(access_token);
+                    self.cache_session(token, &access_token);
+                    self.cache_access_token(access_token.clone());
+                    access_token
                 })
             };
 
@@ -135,6 +114,35 @@ impl JMAP {
             self.is_anonymous_allowed(self.build_remote_addr(req, remote_ip))?;
 
             Ok(None)
+        }
+    }
+
+    pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
+        self.sessions.insert(
+            session_id,
+            access_token.primary_id(),
+            Instant::now() + self.config.session_cache_ttl,
+        );
+    }
+
+    pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
+        self.access_tokens.insert(
+            access_token.primary_id(),
+            access_token,
+            Instant::now() + self.config.session_cache_ttl,
+        );
+    }
+
+    pub async fn get_cached_access_token(&self, primary_id: u32) -> Option<Arc<AccessToken>> {
+        if let Some(access_token) = self.access_tokens.get(&primary_id) {
+            access_token.into()
+        } else {
+            // Refresh ACL token
+            self.get_access_token(primary_id).await.map(|access_token| {
+                let access_token = Arc::new(access_token);
+                self.cache_access_token(access_token.clone());
+                access_token
+            })
         }
     }
 

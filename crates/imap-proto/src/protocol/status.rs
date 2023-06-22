@@ -32,7 +32,7 @@ pub struct Arguments {
     pub items: Vec<Status>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Status {
     Messages,
     UidNext,

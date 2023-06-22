@@ -192,12 +192,7 @@ impl JMAP {
 
             session.add_account(
                 (*id).into(),
-                self.directory
-                    .principal_by_id(*id)
-                    .await
-                    .unwrap_or_default()
-                    .map(|p| p.name)
-                    .unwrap_or_else(|| Id::from(*id).to_string()),
+                self.get_account_name(*id).await,
                 is_personal,
                 is_readonly,
                 Some(&[Capability::Core, Capability::Mail, Capability::WebSocket]),
@@ -205,6 +200,15 @@ impl JMAP {
         }
 
         Ok(session)
+    }
+
+    pub async fn get_account_name(&self, account_id: u32) -> String {
+        self.directory
+            .principal_by_id(account_id)
+            .await
+            .unwrap_or_default()
+            .map(|p| p.name)
+            .unwrap_or_else(|| Id::from(account_id).to_string())
     }
 }
 

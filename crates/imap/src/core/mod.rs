@@ -1,14 +1,16 @@
 use std::{
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
+    collections::BTreeMap,
+    sync::{atomic::AtomicU32, Arc},
     time::Duration,
 };
 
-use imap_proto::{protocol::ProtocolVersion, receiver::Receiver, Command};
-use jmap::{
-    auth::{rate_limit::RemoteAddress, AccessToken},
-    JMAP,
+use ahash::AHashMap;
+use imap_proto::{
+    protocol::{list::Attribute, ProtocolVersion},
+    receiver::Receiver,
+    Command,
 };
+use jmap::{auth::rate_limit::RemoteAddress, JMAP};
 use tokio::{
     io::{AsyncRead, ReadHalf},
     sync::{mpsc, watch},
@@ -16,6 +18,7 @@ use tokio::{
 use utils::listener::{limiter::InFlight, ServerInstance};
 
 pub mod client;
+pub mod mailbox;
 pub mod session;
 pub mod writer;
 
@@ -55,14 +58,41 @@ pub struct Session<T: AsyncRead> {
     pub is_qresync: bool,
     pub writer: mpsc::Sender<writer::Event>,
     pub stream_rx: ReadHalf<T>,
-    pub in_flight: Vec<InFlight>,
+    pub in_flight: InFlight,
+    pub remote_addr: RemoteAddress,
     pub span: tracing::Span,
 }
 
 pub struct SessionData {
-    pub core: Arc<JMAP>,
+    pub account_id: u32,
+    pub jmap: Arc<JMAP>,
+    pub imap: Arc<IMAP>,
+    pub span: tracing::Span,
+    pub mailboxes: parking_lot::Mutex<Vec<Account>>,
     pub writer: mpsc::Sender<writer::Event>,
-    pub access_token: Arc<AccessToken>,
+    pub state: AtomicU32,
+}
+
+#[derive(Debug, Default)]
+pub struct Mailbox {
+    pub has_children: bool,
+    pub is_subscribed: bool,
+    pub special_use: Option<Attribute>,
+    pub total_messages: Option<u32>,
+    pub total_unseen: Option<u32>,
+    pub total_deleted: Option<u32>,
+    pub uid_validity: Option<u32>,
+    pub uid_next: Option<u32>,
+    pub size: Option<u32>,
+}
+
+#[derive(Debug)]
+pub struct Account {
+    pub account_id: u32,
+    pub prefix: Option<String>,
+    pub mailbox_names: BTreeMap<String, u32>,
+    pub mailbox_data: AHashMap<u32, Mailbox>,
+    pub state: Option<u64>,
 }
 
 pub struct SelectedMailbox {
@@ -89,6 +119,13 @@ pub struct MailboxData {
     pub last_state: u32,
 }
 
+#[derive(Debug, Default)]
+pub struct MailboxSync {
+    pub added: Vec<String>,
+    pub changed: Vec<String>,
+    pub deleted: Vec<String>,
+}
+
 pub enum SavedSearch {
     InFlight {
         rx: watch::Receiver<Arc<Vec<ImapId>>>,
@@ -107,7 +144,6 @@ pub struct ImapId {
 
 pub enum State {
     NotAuthenticated {
-        remote_addr: RemoteAddress,
         auth_failures: u32,
     },
     Authenticated {

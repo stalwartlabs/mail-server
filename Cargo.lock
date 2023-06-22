@@ -1708,12 +1708,17 @@ dependencies = [
 name = "imap"
 version = "0.1.0"
 dependencies = [
+ "ahash 0.8.3",
  "directory",
  "imap_proto",
  "jmap",
+ "jmap_proto",
+ "mail-parser",
+ "mail-send",
  "parking_lot",
  "rustls 0.21.1",
  "rustls-pemfile",
+ "store",
  "tokio",
  "tokio-rustls 0.24.0",
  "tracing",
@@ -1726,6 +1731,7 @@ version = "0.1.0"
 dependencies = [
  "ahash 0.8.3",
  "chrono",
+ "jmap_proto",
  "mail-parser",
 ]
 

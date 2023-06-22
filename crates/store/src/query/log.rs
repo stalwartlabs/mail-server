@@ -64,7 +64,7 @@ impl Store {
         account_id: u32,
         collection: impl Into<u8>,
         query: Query,
-    ) -> crate::Result<Option<Changes>> {
+    ) -> crate::Result<Changes> {
         let collection = collection.into();
         let (is_inclusive, from_change_id, to_change_id) = match query {
             Query::All => (true, 0, u64::MAX),
@@ -121,7 +121,7 @@ impl Store {
             };
         }
 
-        Ok(Some(changelog))
+        Ok(changelog)
     }
 }
 
