@@ -318,14 +318,14 @@ impl State {
         }
     }
 
-    pub fn mailbox_data(&self) -> (Arc<SessionData>, Arc<SelectedMailbox>) {
+    pub fn mailbox_state(&self) -> (Arc<SessionData>, Arc<SelectedMailbox>) {
         match self {
             State::Selected { data, mailbox, .. } => (data.clone(), mailbox.clone()),
             _ => unreachable!(),
         }
     }
 
-    pub fn session_mailbox_data(&self) -> (Arc<SessionData>, Option<Arc<SelectedMailbox>>) {
+    pub fn session_mailbox_state(&self) -> (Arc<SessionData>, Option<Arc<SelectedMailbox>>) {
         match self {
             State::Authenticated { data } => (data.clone(), None),
             State::Selected { data, mailbox, .. } => (data.clone(), mailbox.clone().into()),

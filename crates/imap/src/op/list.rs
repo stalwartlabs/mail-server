@@ -110,7 +110,8 @@ impl SessionData {
         };
 
         // Refresh mailboxes
-        if !self.try_synchronize_mailboxes(&tag).await {
+        if let Err(err) = self.synchronize_mailboxes(false).await {
+            self.write_bytes(err.with_tag(tag).into_bytes()).await;
             return;
         }
 
@@ -215,13 +216,13 @@ impl SessionData {
 
             for (mailbox_name, mailbox_id) in &account.mailbox_names {
                 if matches_pattern(&patterns, mailbox_name) {
-                    let mailbox = account.mailbox_data.get(mailbox_id).unwrap();
+                    let mailbox = account.mailbox_state.get(mailbox_id).unwrap();
                     let mut has_recursive_match = false;
                     if recursive_match {
                         let prefix = format!("{}/", mailbox_name);
                         for (mailbox_name, mailbox_id) in &account.mailbox_names {
                             if mailbox_name.starts_with(&prefix)
-                                && account.mailbox_data.get(mailbox_id).unwrap().is_subscribed
+                                && account.mailbox_state.get(mailbox_id).unwrap().is_subscribed
                             {
                                 has_recursive_match = true;
                                 break;

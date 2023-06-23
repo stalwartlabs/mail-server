@@ -30,9 +30,9 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use store::{roaring::RoaringBitmap};
-use tokio::io::AsyncRead;
+use store::roaring::RoaringBitmap;
 use store::Deserialize;
+use tokio::io::AsyncRead;
 
 use crate::core::{Mailbox, Session, SessionData};
 
@@ -44,7 +44,9 @@ impl<T: AsyncRead> Session<T> {
                 let data = self.state.session_data();
                 tokio::spawn(async move {
                     // Refresh mailboxes
-                    if !data.try_synchronize_mailboxes(&arguments.tag).await {
+                    if let Err(err) = data.synchronize_mailboxes(false).await {
+                        data.write_bytes(err.with_tag(arguments.tag).into_bytes())
+                            .await;
                         return;
                     }
 
@@ -81,7 +83,7 @@ impl SessionData {
     ) -> super::Result<StatusItem> {
         // Get mailbox id
         let mailbox = if let Some(mailbox) = self.get_mailbox_by_name(&mailbox_name) {
-            Arc::new(mailbox)
+            mailbox
         } else {
             return Err(
                 StatusResponse::no("Mailbox does not exist.").with_code(ResponseCode::NonExistent)
@@ -91,52 +93,55 @@ impl SessionData {
         // Make sure all requested fields are up to date
         let mut items_update = AHashSet::with_capacity(items.len());
         let mut items_response = Vec::with_capacity(items.len());
+        let mut do_synchronize = false;
 
         for account in self.mailboxes.lock().iter_mut() {
             if account.account_id == mailbox.account_id {
-                let mailbox_data = account
-                    .mailbox_data
+                let mailbox_state = account
+                    .mailbox_state
                     .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or_default())
                     .or_insert_with(Mailbox::default);
                 for item in items {
                     match item {
                         Status::Messages => {
-                            if let Some(value) = mailbox_data.total_messages {
+                            if let Some(value) = mailbox_state.total_messages {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::UidNext => {
-                            if let Some(value) = mailbox_data.uid_next {
+                            if let Some(value) = mailbox_state.uid_next {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
+                                do_synchronize = true;
                             }
                         }
                         Status::UidValidity => {
-                            if let Some(value) = mailbox_data.uid_validity {
+                            if let Some(value) = mailbox_state.uid_validity {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
+                                do_synchronize = true;
                             }
                         }
                         Status::Unseen => {
-                            if let Some(value) = mailbox_data.total_unseen {
+                            if let Some(value) = mailbox_state.total_unseen {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::Deleted => {
-                            if let Some(value) = mailbox_data.total_deleted {
+                            if let Some(value) = mailbox_state.total_deleted {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::Size => {
-                            if let Some(value) = mailbox_data.size {
+                            if let Some(value) = mailbox_state.size {
                                 items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.insert(*item);
@@ -145,7 +150,9 @@ impl SessionData {
                         Status::HighestModSeq => {
                             items_response.push((
                                 *item,
-                                StatusItemType::Number(account.state.unwrap_or_default() as u32),
+                                StatusItemType::Number(
+                                    account.state_email.map(|id| id + 1).unwrap_or(0) as u32,
+                                ),
                             ));
                         }
                         Status::MailboxId => {
@@ -172,6 +179,11 @@ impl SessionData {
         if !items_update.is_empty() {
             // Retrieve latest values
             let mut values_update = Vec::with_capacity(items_update.len());
+            let mailbox_state = if do_synchronize {
+                self.fetch_messages(&mailbox).await?.into()
+            } else {
+                None
+            };
 
             if let Some(mailbox_id) = mailbox.mailbox_id {
                 let mailbox_message_ids = self
@@ -194,8 +206,8 @@ impl SessionData {
                         Status::Messages => {
                             message_ids.as_ref().map(|v| v.len()).unwrap_or(0) as u32
                         }
-                        Status::UidNext => todo!(),
-                        Status::UidValidity => todo!(),
+                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next,
+                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity,
                         Status::Unseen => {
                             if let (Some(message_ids), Some(mailbox_message_ids), Some(mut seen)) = (
                                 &message_ids,
@@ -260,8 +272,8 @@ impl SessionData {
                 for item in items_update {
                     let result = match item {
                         Status::Messages => message_ids.len() as u32,
-                        Status::UidNext => todo!(),
-                        Status::UidValidity => todo!(),
+                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next,
+                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity,
                         Status::Unseen => self
                             .jmap
                             .get_tag(
@@ -308,19 +320,19 @@ impl SessionData {
             // Update cache
             for account in self.mailboxes.lock().iter_mut() {
                 if account.account_id == mailbox.account_id {
-                    let mailbox_data = account
-                        .mailbox_data
+                    let mailbox_state = account
+                        .mailbox_state
                         .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or_default())
                         .or_insert_with(Mailbox::default);
 
                     for (item, value) in values_update {
                         match item {
-                            Status::Messages => mailbox_data.total_messages = value.into(),
-                            Status::UidNext => mailbox_data.uid_next = value.into(),
-                            Status::UidValidity => mailbox_data.uid_validity = value.into(),
-                            Status::Unseen => mailbox_data.total_unseen = value.into(),
-                            Status::Deleted => mailbox_data.total_deleted = value.into(),
-                            Status::Size => mailbox_data.size = value.into(),
+                            Status::Messages => mailbox_state.total_messages = value.into(),
+                            Status::UidNext => mailbox_state.uid_next = value.into(),
+                            Status::UidValidity => mailbox_state.uid_validity = value.into(),
+                            Status::Unseen => mailbox_state.total_unseen = value.into(),
+                            Status::Deleted => mailbox_state.total_deleted = value.into(),
+                            Status::Size => mailbox_state.size = value.into(),
                             Status::HighestModSeq | Status::MailboxId | Status::Recent => {
                                 unreachable!()
                             }
@@ -362,12 +374,13 @@ impl SessionData {
                 },
             )
             .await
-            .map(|(_, size)| size )
+            .map(|(_, size)| size)
             .map_err(|err| {
-                tracing::warn!(parent: &self.span, 
+                tracing::warn!(parent: &self.span,
                                event = "error", 
-                               reason = ?err, 
+                               reason = ?err,
                                "Failed to calculate mailbox size");
-                StatusResponse::database_failure()})
+                StatusResponse::database_failure()
+            })
     }
 }

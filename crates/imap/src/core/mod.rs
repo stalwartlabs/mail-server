@@ -19,6 +19,7 @@ use utils::listener::{limiter::InFlight, ServerInstance};
 
 pub mod client;
 pub mod mailbox;
+pub mod message;
 pub mod session;
 pub mod writer;
 
@@ -91,13 +92,14 @@ pub struct Account {
     pub account_id: u32,
     pub prefix: Option<String>,
     pub mailbox_names: BTreeMap<String, u32>,
-    pub mailbox_data: AHashMap<u32, Mailbox>,
-    pub state: Option<u64>,
+    pub mailbox_state: AHashMap<u32, Mailbox>,
+    pub state_email: Option<u64>,
+    pub state_mailbox: Option<u64>,
 }
 
 pub struct SelectedMailbox {
     pub id: MailboxId,
-    pub state: parking_lot::Mutex<MailboxData>,
+    pub state: parking_lot::Mutex<MailboxState>,
     pub saved_search: parking_lot::Mutex<SavedSearch>,
     pub is_select: bool,
     pub is_condstore: bool,
@@ -110,13 +112,14 @@ pub struct MailboxId {
 }
 
 #[derive(Debug)]
-pub struct MailboxData {
+pub struct MailboxState {
     pub uid_next: u32,
     pub uid_validity: u32,
-    pub jmap_ids: Vec<u32>,
-    pub imap_uids: Vec<u32>,
+    pub id_to_imap: AHashMap<u32, ImapId>,
+    pub uid_to_id: AHashMap<u32, u32>,
+    pub uids: Vec<u32>,
     pub total_messages: usize,
-    pub last_state: u32,
+    pub last_state: Option<u64>,
 }
 
 #[derive(Debug, Default)]

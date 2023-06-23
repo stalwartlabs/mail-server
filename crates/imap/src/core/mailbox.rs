@@ -142,11 +142,17 @@ impl SessionData {
             account_id,
             prefix: mailbox_prefix,
             mailbox_names: BTreeMap::new(),
-            mailbox_data: AHashMap::with_capacity(mailboxes.len()),
-            state: self
+            mailbox_state: AHashMap::with_capacity(mailboxes.len()),
+            state_mailbox: self
                 .jmap
                 .store
                 .get_last_change_id(account_id, Collection::Mailbox)
+                .await
+                .map_err(|_| {})?,
+            state_email: self
+                .jmap
+                .store
+                .get_last_change_id(account_id, Collection::Email)
                 .await
                 .map_err(|_| {})?,
         };
@@ -170,7 +176,7 @@ impl SessionData {
                         .iter()
                         .any(|(_, child_parent_id, _)| child_parent_id == mailbox_id);
 
-                    account.mailbox_data.insert(
+                    account.mailbox_state.insert(
                         *mailbox_id,
                         Mailbox {
                             has_children,
@@ -249,7 +255,7 @@ impl SessionData {
     pub async fn synchronize_mailboxes(
         &self,
         return_changes: bool,
-    ) -> crate::Result<Option<MailboxSync>> {
+    ) -> crate::op::Result<Option<MailboxSync>> {
         let mut changes = if return_changes {
             MailboxSync::default().into()
         } else {
@@ -261,7 +267,7 @@ impl SessionData {
             .jmap
             .get_cached_access_token(self.account_id)
             .await
-            .ok_or(())?;
+            .ok_or(StatusResponse::no("Account not found"))?;
         let state = access_token.state();
 
         // Shared mailboxes might have changed
@@ -338,7 +344,7 @@ impl SessionData {
             .mailboxes
             .lock()
             .iter()
-            .map(|m| (m.account_id, m.state))
+            .map(|m| (m.account_id, m.state_mailbox))
             .collect::<Vec<_>>();
         for (account_id, last_state) in account_states {
             let changelog = self
@@ -348,8 +354,7 @@ impl SessionData {
                     Collection::Mailbox,
                     last_state.map(Query::Since).unwrap_or(Query::All),
                 )
-                .await
-                .map_err(|_| {})?;
+                .await?;
             if !changelog.changes.is_empty() {
                 let mut has_changes = false;
                 let mut has_child_changes = false;
@@ -365,16 +370,27 @@ impl SessionData {
 
                 if has_child_changes && !has_changes && changes.is_none() {
                     // Only child changes, no need to re-fetch mailboxes
+                    let state_email = self
+                        .jmap
+                        .store
+                        .get_last_change_id(account_id, Collection::Email)
+                        .await.map_err(
+                            |e| {
+                                tracing::warn!(parent: &self.span, "Failed to get last change id for email collection: {}", e);
+                                StatusResponse::database_failure()
+                            },
+                        )?;
                     for account in self.mailboxes.lock().iter_mut() {
                         if account.account_id == account_id {
-                            account.mailbox_data.values_mut().for_each(|v| {
+                            account.mailbox_state.values_mut().for_each(|v| {
                                 v.total_deleted = None;
                                 v.total_unseen = None;
                                 v.total_messages = None;
                                 v.size = None;
                                 v.uid_next = None;
                             });
-                            account.state = changelog.to_change_id.into();
+                            account.state_mailbox = changelog.to_change_id.into();
+                            account.state_email = state_email;
                             break;
                         }
                     }
@@ -421,8 +437,8 @@ impl SessionData {
 
                         // Add new mailboxes
                         for (mailbox_name, mailbox_id) in new_account.mailbox_names.iter() {
-                            if let Some(old_mailbox) = old_account.mailbox_data.get(mailbox_id) {
-                                if let Some(mailbox) = new_account.mailbox_data.get(mailbox_id) {
+                            if let Some(old_mailbox) = old_account.mailbox_state.get(mailbox_id) {
+                                if let Some(mailbox) = new_account.mailbox_state.get(mailbox_id) {
                                     if mailbox.total_messages.unwrap_or(0)
                                         != old_mailbox.total_messages.unwrap_or(0)
                                         || mailbox.total_unseen.unwrap_or(0)
@@ -438,7 +454,7 @@ impl SessionData {
 
                         // Add deleted mailboxes
                         for (mailbox_name, mailbox_id) in &old_account.mailbox_names {
-                            if !new_account.mailbox_data.contains_key(mailbox_id) {
+                            if !new_account.mailbox_state.contains_key(mailbox_id) {
                                 changes.deleted.push(mailbox_name.to_string());
                             }
                         }
@@ -471,25 +487,6 @@ impl SessionData {
         }
 
         Ok(changes)
-    }
-
-    pub async fn try_synchronize_mailboxes(&self, tag: &str) -> bool {
-        if self.synchronize_mailboxes(false).await.is_ok() {
-            true
-        } else {
-            tracing::warn!(parent: &self.span,
-                           event = "error",
-                           context = "synchronize_mailboxes",
-                           account_id = self.account_id,
-                           "Failed to synchronize mailboxes.");
-            self.write_bytes(
-                StatusResponse::database_failure()
-                    .with_tag(tag)
-                    .into_bytes(),
-            )
-            .await;
-            false
-        }
     }
 
     pub fn get_mailbox_by_name(&self, mailbox_name: &str) -> Option<MailboxId> {
