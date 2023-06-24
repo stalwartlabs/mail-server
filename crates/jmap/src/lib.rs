@@ -676,17 +676,18 @@ impl JMAP {
                         context = "write_batch",
                         error = ?err,
                         "Failed to write batch.");
+                    MethodError::ServerPartialFail
                 }
                 store::Error::AssertValueFailed => {
+                    // This should not occur, as we are not using assertions.
                     tracing::debug!(
                         event = "assert_failed",
                         context = "write_batch",
                         "Failed to assert value."
                     );
+                    MethodError::ServerUnavailable
                 }
             }
-
-            MethodError::ServerPartialFail
         })
     }
 }

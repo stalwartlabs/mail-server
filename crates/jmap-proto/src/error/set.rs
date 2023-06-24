@@ -31,10 +31,10 @@ pub struct SetError {
     pub type_: SetErrorType,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<Cow<'static, str>>,
+    pub description: Option<Cow<'static, str>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    properties: Option<Vec<InvalidProperty>>,
+    pub properties: Option<Vec<InvalidProperty>>,
 
     #[serde(rename = "existingId")]
     #[serde(skip_serializing_if = "Option::is_none")]

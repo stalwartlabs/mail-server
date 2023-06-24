@@ -191,15 +191,7 @@ impl SessionData {
                                 .unwrap_or(false),
                             special_use: mailbox.properties.get(&Property::Role).and_then(
                                 |parent_id| match parent_id {
-                                    Value::Text(role) => match role.as_str() {
-                                        "archive" => Some(Attribute::Archive),
-                                        "drafts" => Some(Attribute::Drafts),
-                                        "junk" => Some(Attribute::Junk),
-                                        "sent" => Some(Attribute::Sent),
-                                        "trash" => Some(Attribute::Trash),
-                                        "important" => Some(Attribute::Important),
-                                        _ => None,
-                                    },
+                                    Value::Text(role) => Attribute::try_from(role.as_str()).ok(),
                                     _ => None,
                                 },
                             ),

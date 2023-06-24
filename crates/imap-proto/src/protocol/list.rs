@@ -69,7 +69,7 @@ pub enum ReturnOption {
     SpecialUse,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Attribute {
     NoInferiors,
     NoSelect,
@@ -160,6 +160,22 @@ impl Attribute {
             Attribute::Trash => b"\\Trash",
             Attribute::Important => b"\\Important",
         });
+    }
+}
+
+impl TryFrom<&str> for Attribute {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "archive" => Ok(Attribute::Archive),
+            "drafts" => Ok(Attribute::Drafts),
+            "junk" => Ok(Attribute::Junk),
+            "sent" => Ok(Attribute::Sent),
+            "trash" => Ok(Attribute::Trash),
+            "important" => Ok(Attribute::Important),
+            _ => Err(()),
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use jmap_proto::error::method::MethodError;
+use jmap_proto::error::{method::MethodError, set::SetErrorType};
 use protocol::capability::Capability;
 
 pub mod parser;
@@ -228,6 +228,25 @@ impl StatusResponse {
 impl From<MethodError> for StatusResponse {
     fn from(_: MethodError) -> Self {
         StatusResponse::database_failure()
+    }
+}
+
+impl From<SetErrorType> for ResponseCode {
+    fn from(value: SetErrorType) -> Self {
+        match value {
+            SetErrorType::Forbidden => ResponseCode::NoPerm,
+            SetErrorType::OverQuota => ResponseCode::OverQuota,
+            SetErrorType::RateLimit | SetErrorType::TooLarge => ResponseCode::Limit,
+            SetErrorType::NotFound | SetErrorType::BlobNotFound => ResponseCode::NonExistent,
+            SetErrorType::MailboxHasChild | SetErrorType::MailboxHasEmail => {
+                ResponseCode::HasChildren
+            }
+            SetErrorType::ForbiddenFrom
+            | SetErrorType::ForbiddenMailFrom
+            | SetErrorType::ForbiddenToSend => ResponseCode::AuthorizationFailed,
+            SetErrorType::AlreadyExists => ResponseCode::AlreadyExists,
+            _ => ResponseCode::Cannot,
+        }
     }
 }
 

@@ -55,7 +55,7 @@ impl Request<Command> {
                 }
                 match tokens.next() {
                     Some(Token::Argument(value)) => {
-                        if value.eq_ignore_ascii_case(b"\\Archive") {
+                        Some(if value.eq_ignore_ascii_case(b"\\Archive") {
                             "archive"
                         } else if value.eq_ignore_ascii_case(b"\\Drafts") {
                             "drafts"
@@ -82,14 +82,14 @@ impl Request<Command> {
                                 ),
                             )
                                 .into());
-                        }
+                        })
                     }
                     _ => {
                         return Err((self.tag, "Invalid SPECIAL-USE attribute.").into());
                     }
                 }
             } else {
-                ""
+                None
             };
 
             Ok(create::Arguments {
@@ -121,7 +121,7 @@ mod tests {
                 create::Arguments {
                     tag: "A142".to_string(),
                     mailbox_name: "12345".to_string(),
-                    mailbox_role: "",
+                    mailbox_role: None,
                 },
             ),
             (
@@ -129,7 +129,7 @@ mod tests {
                 create::Arguments {
                     tag: "A142".to_string(),
                     mailbox_name: "my funky mailbox".to_string(),
-                    mailbox_role: "",
+                    mailbox_role: None,
                 },
             ),
             (
@@ -137,7 +137,7 @@ mod tests {
                 create::Arguments {
                     tag: "t1".to_string(),
                     mailbox_name: "Important Messages".to_string(),
-                    mailbox_role: "important",
+                    mailbox_role: Some("important"),
                 },
             ),
         ] {

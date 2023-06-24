@@ -8,9 +8,12 @@ use ahash::AHashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
     receiver::Receiver,
-    Command,
+    Command, ResponseCode, StatusResponse,
 };
-use jmap::{auth::rate_limit::RemoteAddress, JMAP};
+use jmap::{
+    auth::{rate_limit::RemoteAddress, AccessToken},
+    JMAP,
+};
 use tokio::{
     io::{AsyncRead, ReadHalf},
     sync::{mpsc, watch},
@@ -156,4 +159,16 @@ pub enum State {
         data: Arc<SessionData>,
         mailbox: Arc<SelectedMailbox>,
     },
+}
+
+impl SessionData {
+    pub async fn get_access_token(&self) -> crate::op::Result<Arc<AccessToken>> {
+        self.jmap
+            .get_cached_access_token(self.account_id)
+            .await
+            .ok_or_else(|| {
+                StatusResponse::no("Failed to obtain access token")
+                    .with_code(ResponseCode::ContactAdmin)
+            })
+    }
 }

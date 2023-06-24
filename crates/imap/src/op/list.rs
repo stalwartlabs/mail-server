@@ -243,7 +243,7 @@ impl SessionData {
                         }
                         if include_special_use {
                             if let Some(special_use) = &mailbox.special_use {
-                                attributes.push(special_use.clone());
+                                attributes.push(*special_use);
                             } else if filter_special_use {
                                 continue;
                             }
