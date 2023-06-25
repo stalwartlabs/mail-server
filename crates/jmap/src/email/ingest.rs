@@ -264,6 +264,7 @@ impl JMAP {
                     "Failed to index message.");
                 IngestError::Temporary
             })?
+            .value(Property::Cid, change_id, F_VALUE)
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
             .custom(changes);
         self.store.write(batch.build()).await.map_err(|err| {

@@ -20,3 +20,7 @@ tokio-rustls = { version = "0.24.0"}
 parking_lot = "0.12"
 tracing = "0.1"
 ahash = { version = "0.8" }
+md5 = "0.7.0"
+
+[features]
+test_mode = []

@@ -134,7 +134,7 @@ pub enum ResponseCode {
         ids: Vec<u32>,
     },
     HighestModseq {
-        modseq: u32,
+        modseq: u64,
     },
 
     // ObjectID
@@ -158,6 +158,14 @@ pub enum ResponseType {
     Bad,
     PreAuth,
     Bye,
+}
+
+impl ResponseCode {
+    pub fn highest_modseq(modseq: Option<u64>) -> Self {
+        ResponseCode::HighestModseq {
+            modseq: modseq.map(|id| id + 1).unwrap_or(0),
+        }
+    }
 }
 
 impl StatusResponse {

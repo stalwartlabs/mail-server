@@ -25,6 +25,7 @@ use std::{cmp::Ordering, fmt::Display};
 
 use ahash::AHashSet;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use jmap_proto::types::keyword::Keyword;
 
 use crate::{Command, ResponseCode, ResponseType, StatusResponse};
 
@@ -263,22 +264,44 @@ impl Flag {
             Flag::Keyword(keyword) => keyword.as_bytes(),
         });
     }
+}
 
-    pub fn to_jmap(&self) -> &str {
-        match self {
-            Flag::Seen => "$seen",
-            Flag::Draft => "$draft",
-            Flag::Flagged => "$flagged",
-            Flag::Answered => "$answered",
-            Flag::Recent => "$recent",
-            Flag::Important => "$important",
-            Flag::Phishing => "$phishing",
-            Flag::Junk => "$junk",
-            Flag::NotJunk => "$notjunk",
-            Flag::Deleted => "$deleted",
-            Flag::Forwarded => "$forwarded",
-            Flag::MDNSent => "$mdnsent",
-            Flag::Keyword(keyword) => keyword,
+impl From<Keyword> for Flag {
+    fn from(value: Keyword) -> Self {
+        match value {
+            Keyword::Seen => Flag::Seen,
+            Keyword::Draft => Flag::Draft,
+            Keyword::Flagged => Flag::Flagged,
+            Keyword::Answered => Flag::Answered,
+            Keyword::Recent => Flag::Recent,
+            Keyword::Important => Flag::Important,
+            Keyword::Phishing => Flag::Phishing,
+            Keyword::Junk => Flag::Junk,
+            Keyword::NotJunk => Flag::NotJunk,
+            Keyword::Deleted => Flag::Deleted,
+            Keyword::Forwarded => Flag::Forwarded,
+            Keyword::MdnSent => Flag::MDNSent,
+            Keyword::Other(value) => Flag::Keyword(value),
+        }
+    }
+}
+
+impl From<Flag> for Keyword {
+    fn from(value: Flag) -> Self {
+        match value {
+            Flag::Seen => Keyword::Seen,
+            Flag::Draft => Keyword::Draft,
+            Flag::Flagged => Keyword::Flagged,
+            Flag::Answered => Keyword::Answered,
+            Flag::Recent => Keyword::Recent,
+            Flag::Important => Keyword::Important,
+            Flag::Phishing => Keyword::Phishing,
+            Flag::Junk => Keyword::Junk,
+            Flag::NotJunk => Keyword::NotJunk,
+            Flag::Deleted => Keyword::Deleted,
+            Flag::Forwarded => Keyword::Forwarded,
+            Flag::MDNSent => Keyword::MdnSent,
+            Flag::Keyword(value) => Keyword::Other(value),
         }
     }
 }

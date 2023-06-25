@@ -118,9 +118,9 @@ pub struct MailboxId {
 pub struct MailboxState {
     pub uid_next: u32,
     pub uid_validity: u32,
+    pub uid_max: u32,
     pub id_to_imap: AHashMap<u32, ImapId>,
     pub uid_to_id: AHashMap<u32, u32>,
-    pub uids: Vec<u32>,
     pub total_messages: usize,
     pub last_state: Option<u64>,
 }

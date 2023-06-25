@@ -105,14 +105,14 @@ impl SessionData {
                     match item {
                         Status::Messages => {
                             if let Some(value) = mailbox_state.total_messages {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::UidNext => {
                             if let Some(value) = mailbox_state.uid_next {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                                 do_synchronize = true;
@@ -120,7 +120,7 @@ impl SessionData {
                         }
                         Status::UidValidity => {
                             if let Some(value) = mailbox_state.uid_validity {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                                 do_synchronize = true;
@@ -128,21 +128,21 @@ impl SessionData {
                         }
                         Status::Unseen => {
                             if let Some(value) = mailbox_state.total_unseen {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::Deleted => {
                             if let Some(value) = mailbox_state.total_deleted {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                             }
                         }
                         Status::Size => {
                             if let Some(value) = mailbox_state.size {
-                                items_response.push((*item, StatusItemType::Number(value)));
+                                items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.insert(*item);
                             }
@@ -151,7 +151,7 @@ impl SessionData {
                             items_response.push((
                                 *item,
                                 StatusItemType::Number(
-                                    account.state_email.map(|id| id + 1).unwrap_or(0) as u32,
+                                    account.state_email.map(|id| id + 1).unwrap_or(0),
                                 ),
                             ));
                         }
@@ -203,11 +203,9 @@ impl SessionData {
 
                 for item in items_update {
                     let result = match item {
-                        Status::Messages => {
-                            message_ids.as_ref().map(|v| v.len()).unwrap_or(0) as u32
-                        }
-                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next,
-                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity,
+                        Status::Messages => message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
+                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
+                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
                         Status::Unseen => {
                             if let (Some(message_ids), Some(mailbox_message_ids), Some(mut seen)) = (
                                 &message_ids,
@@ -223,7 +221,7 @@ impl SessionData {
                             ) {
                                 seen ^= message_ids;
                                 seen &= mailbox_message_ids.as_ref();
-                                seen.len() as u32
+                                seen.len()
                             } else {
                                 0
                             }
@@ -241,7 +239,7 @@ impl SessionData {
                                     .await?,
                             ) {
                                 deleted &= mailbox_message_ids.as_ref();
-                                deleted.len() as u32
+                                deleted.len()
                             } else {
                                 0
                             }
@@ -249,7 +247,7 @@ impl SessionData {
                         Status::Size => {
                             if let Some(mailbox_message_ids) = &mailbox_message_ids {
                                 self.calculate_mailbox_size(mailbox.account_id, mailbox_message_ids)
-                                    .await?
+                                    .await? as u64
                             } else {
                                 0
                             }
@@ -260,7 +258,7 @@ impl SessionData {
                     };
 
                     items_response.push((item, StatusItemType::Number(result)));
-                    values_update.push((item, result));
+                    values_update.push((item, result as u32));
                 }
             } else {
                 let message_ids = Arc::new(
@@ -271,9 +269,9 @@ impl SessionData {
                 );
                 for item in items_update {
                     let result = match item {
-                        Status::Messages => message_ids.len() as u32,
-                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next,
-                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity,
+                        Status::Messages => message_ids.len(),
+                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
+                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
                         Status::Unseen => self
                             .jmap
                             .get_tag(
@@ -287,7 +285,7 @@ impl SessionData {
                                 seen ^= message_ids.as_ref();
                                 seen.len()
                             })
-                            .unwrap_or(0) as u32,
+                            .unwrap_or(0),
                         Status::Deleted => self
                             .jmap
                             .get_tag(
@@ -298,11 +296,11 @@ impl SessionData {
                             )
                             .await?
                             .map(|v| v.len())
-                            .unwrap_or(0) as u32,
+                            .unwrap_or(0),
                         Status::Size => {
                             if !message_ids.is_empty() {
                                 self.calculate_mailbox_size(mailbox.account_id, &message_ids)
-                                    .await?
+                                    .await? as u64
                             } else {
                                 0
                             }
@@ -313,7 +311,7 @@ impl SessionData {
                     };
 
                     items_response.push((item, StatusItemType::Number(result)));
-                    values_update.push((item, result));
+                    values_update.push((item, result as u32));
                 }
             }
 

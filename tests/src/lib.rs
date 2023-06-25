@@ -26,6 +26,8 @@ use std::path::PathBuf;
 #[cfg(test)]
 pub mod directory;
 #[cfg(test)]
+pub mod imap;
+#[cfg(test)]
 pub mod jmap;
 #[cfg(test)]
 pub mod smtp;

@@ -876,6 +876,12 @@ impl JMAP {
 
                 // Update keywords property
                 keywords.update_batch(&mut batch, Property::Keywords);
+
+                // Update last change id
+                if changes.change_id == u64::MAX {
+                    changes.change_id = self.assign_change_id(account_id).await?;
+                }
+                batch.value(Property::Cid, changes.change_id, F_VALUE);
             }
 
             // Process mailboxes
@@ -1050,6 +1056,9 @@ impl JMAP {
             .with_account_id(account_id)
             .with_collection(Collection::Email)
             .delete_document(document_id);
+
+        // Remove last changeId
+        batch.value(Property::Cid, (), F_VALUE | F_CLEAR);
 
         // Remove mailboxes
         let mailboxes = if let Some(mailboxes) = self
@@ -1260,7 +1269,7 @@ impl JMAP {
     }
 }
 
-struct TagManager<
+pub struct TagManager<
     T: PartialEq + Clone + ToBitmaps + SerializeInto + Serialize + DeserializeFrom + Sync + Send,
 > {
     current: HashedValue<Vec<T>>,

@@ -4,7 +4,10 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet, AHasher, RandomState};
-use imap_proto::{protocol::Sequence, StatusResponse};
+use imap_proto::{
+    protocol::{expunge, select::Exists, Sequence},
+    StatusResponse,
+};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     roaring::RoaringBitmap,
@@ -189,7 +192,7 @@ impl SessionData {
                 let uid_map = uid_map.inner;
                 let mut id_to_imap = AHashMap::with_capacity(uid_map.items.len());
                 let mut uid_to_id = AHashMap::with_capacity(uid_map.items.len());
-                let mut uids = Vec::with_capacity(uid_map.items.len());
+                let mut uid_max = 0;
 
                 for (seqnum, item) in uid_map.items.into_iter().enumerate() {
                     id_to_imap.insert(
@@ -200,16 +203,16 @@ impl SessionData {
                         },
                     );
                     uid_to_id.insert(item.uid, item.id);
-                    uids.push(item.uid);
+                    uid_max = item.uid;
                 }
 
                 return Ok(MailboxState {
                     uid_next: uid_map.uid_next,
                     uid_validity: uid_map.uid_validity,
-                    total_messages: uids.len(),
+                    total_messages: id_to_imap.len(),
                     id_to_imap,
                     uid_to_id,
-                    uids,
+                    uid_max,
                     last_state,
                 });
             } else {
@@ -265,10 +268,70 @@ impl SessionData {
                     total_messages: uids.len(),
                     id_to_imap,
                     uid_to_id,
-                    uids,
+                    uid_max: uid_next.saturating_sub(1),
                     last_state,
                 });
             }
+        }
+    }
+
+    pub async fn synchronize_messages(
+        &self,
+        mailbox: &SelectedMailbox,
+        is_qresync: bool,
+    ) -> crate::op::Result<Option<u64>> {
+        // Obtain current modseq
+        let modseq = self.get_modseq(mailbox.id.account_id).await?;
+        if mailbox.state.lock().last_state == modseq {
+            return Ok(modseq);
+        }
+
+        // Synchronize messages
+        let new_state = self.fetch_messages(&mailbox.id).await?;
+
+        // Update UIDs
+        let mut buf = Vec::with_capacity(64);
+        let (new_message_count, deletions) = mailbox.update_mailbox_state(new_state, true);
+        if let Some(deletions) = deletions {
+            expunge::Response {
+                is_qresync,
+                ids: deletions
+                    .into_iter()
+                    .map(|id| if !is_qresync { id.seqnum } else { id.uid })
+                    .collect(),
+            }
+            .serialize_to(&mut buf);
+        }
+        if let Some(new_message_count) = new_message_count {
+            Exists {
+                total_messages: new_message_count,
+            }
+            .serialize(&mut buf);
+        }
+        if !buf.is_empty() {
+            self.write_bytes(buf).await;
+        }
+
+        Ok(modseq)
+    }
+
+    pub async fn get_modseq(&self, account_id: u32) -> crate::op::Result<Option<u64>> {
+        // Obtain current modseq
+        if let Ok(modseq) = self
+            .jmap
+            .store
+            .get_last_change_id(account_id, Collection::Email)
+            .await
+        {
+            Ok(modseq)
+        } else {
+            tracing::error!(parent: &self.span,
+                event = "error",
+                context = "store",
+                account_id = account_id,
+                collection = ?Collection::Email,
+                "Failed to obtain modseq");
+            Err(StatusResponse::database_failure())
         }
     }
 }
@@ -282,12 +345,12 @@ impl SelectedMailbox {
         if !sequence.is_saved_search() {
             let mut ids = AHashMap::new();
             let state = self.state.lock();
-            if state.uids.is_empty() {
+            if state.id_to_imap.is_empty() {
                 return Ok(ids);
             }
 
-            let max_uid = state.uids.last().copied().unwrap_or(0);
-            let max_seqnum = state.uids.len() as u32;
+            let max_uid = state.uid_max;
+            let max_seqnum = state.total_messages as u32;
 
             for (id, imap_id) in &state.id_to_imap {
                 let matched = if is_uid {
@@ -296,7 +359,7 @@ impl SelectedMailbox {
                     sequence.contains(imap_id.seqnum, max_seqnum)
                 };
                 if matched {
-                    ids.insert(id.clone(), *imap_id);
+                    ids.insert(*id, *imap_id);
                 }
             }
 
@@ -317,6 +380,35 @@ impl SelectedMailbox {
 
             Ok(ids)
         }
+    }
+
+    pub async fn sequence_expand_missing(&self, sequence: &Sequence, is_uid: bool) -> Vec<u32> {
+        let mut deleted_ids = Vec::new();
+        if !sequence.is_saved_search() {
+            let state = self.state.lock();
+            if is_uid {
+                for uid in sequence.expand(state.uid_max) {
+                    if !state.uid_to_id.contains_key(&uid) {
+                        deleted_ids.push(uid);
+                    }
+                }
+            } else {
+                for seqnum in sequence.expand(state.total_messages as u32) {
+                    if seqnum > state.total_messages as u32 {
+                        deleted_ids.push(seqnum);
+                    }
+                }
+            }
+        } else if let Some(saved_ids) = self.get_saved_search().await {
+            let state = self.state.lock();
+            for id in saved_ids.iter() {
+                if !state.uid_to_id.contains_key(&id.uid) {
+                    deleted_ids.push(if is_uid { id.uid } else { id.seqnum });
+                }
+            }
+        }
+        deleted_ids.sort_unstable();
+        deleted_ids
     }
 
     pub fn id_to_uid(&self, ids: &[u32]) -> Vec<ImapId> {

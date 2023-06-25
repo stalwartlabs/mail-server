@@ -140,7 +140,7 @@ pub enum DataItem<'x> {
         contents: Option<Cow<'x, str>>,
     },
     ModSeq {
-        modseq: u32,
+        modseq: u64,
     },
     EmailId {
         email_id: String,

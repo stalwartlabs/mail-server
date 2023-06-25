@@ -53,7 +53,7 @@ pub struct StatusItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusItemType {
-    Number(u32),
+    Number(u64),
     String(String),
 }
 
