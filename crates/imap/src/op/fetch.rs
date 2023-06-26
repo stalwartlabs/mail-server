@@ -600,7 +600,7 @@ impl SessionData {
     }
 }
 
-trait AsImapDataItem<'x> {
+pub trait AsImapDataItem<'x> {
     fn body_structure(&self, is_extended: bool) -> BodyPart;
     fn body_section<'z: 'x>(
         &'z self,

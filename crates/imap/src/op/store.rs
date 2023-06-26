@@ -350,7 +350,7 @@ impl SessionData {
                     }
                     Err(MethodError::ServerUnavailable) => {
                         response.rtype = ResponseType::No;
-                        response.message = "Some messaged could not be updated.".into();
+                        response.message = "Some messages could not be updated.".into();
                     }
                     Err(_) => {
                         return Err(StatusResponse::database_failure()

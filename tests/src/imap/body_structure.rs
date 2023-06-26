@@ -1,6 +1,10 @@
 use std::{fs, path::PathBuf};
 
-use imap_proto::protocol::fetch::Section;
+use imap::op::fetch::AsImapDataItem;
+use imap_proto::{
+    protocol::fetch::{BodyContents, DataItem, Section},
+    ResponseCode, StatusResponse,
+};
 use mail_parser::Message;
 
 #[test]
