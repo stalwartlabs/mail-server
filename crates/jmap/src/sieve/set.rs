@@ -249,7 +249,7 @@ impl JMAP {
 
         // Write changes
         if !changes.is_empty() {
-            ctx.response.new_state = self.commit_changes(account_id, changes).await?.into();
+            ctx.response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
         }
 
         // Activate / deactivate scripts

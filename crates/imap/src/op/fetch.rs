@@ -61,7 +61,7 @@ impl<T: AsyncRead> Session<T> {
         &mut self,
         request: Request<Command>,
         is_uid: bool,
-    ) -> Result<(), ()> {
+    ) -> crate::OpResult {
         match request.parse_fetch() {
             Ok(arguments) => {
                 let (data, mailbox) = self.state.select_data();
@@ -115,7 +115,7 @@ impl SessionData {
         let account_id = mailbox.id.account_id;
         let mut modseq = match {
             if is_uid {
-                self.synchronize_messages(&mailbox, is_qresync).await
+                self.synchronize_messages(&mailbox, is_qresync, true).await
             } else {
                 // Don't synchronize if we're not using UIDs as seqnums might change.
                 self.get_modseq(mailbox.id.account_id).await
@@ -208,24 +208,6 @@ impl SessionData {
             arguments.attributes.push_unique(Attribute::ModSeq);
         }
 
-        // Obtain shared messages
-        let access_token = match self.get_access_token().await {
-            Ok(access_token) => access_token,
-            Err(response) => return response.with_tag(arguments.tag),
-        };
-        let can_modify_ids = if access_token.is_shared(account_id) {
-            match self
-                .jmap
-                .shared_messages(&access_token, account_id, Acl::ModifyItems)
-                .await
-            {
-                Ok(document_ids) => document_ids.into(),
-                Err(_) => return StatusResponse::database_failure().with_tag(arguments.tag),
-            }
-        } else {
-            None
-        };
-
         // Build properties list
         let mut set_seen_flags = false;
         let mut needs_thread_id = false;
@@ -265,6 +247,20 @@ impl SessionData {
                 _ => (),
             }
         }
+
+        if set_seen_flags
+            && !self
+                .check_mailbox_acl(
+                    mailbox.id.account_id,
+                    mailbox.id.mailbox_id.unwrap_or_default(),
+                    Acl::ModifyItems,
+                )
+                .await
+                .unwrap_or(false)
+        {
+            set_seen_flags = false;
+        }
+
         if is_uid {
             arguments.attributes.push_unique(Attribute::Uid);
         }
@@ -348,9 +344,8 @@ impl SessionData {
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
-            let set_seen_flag = set_seen_flags
-                && !keywords.inner.iter().any(|k| k == &Keyword::Seen)
-                && can_modify_ids.as_ref().map_or(true, |ids| ids.contains(id));
+            let set_seen_flag =
+                set_seen_flags && !keywords.inner.iter().any(|k| k == &Keyword::Seen);
             let thread_id = if needs_thread_id || set_seen_flag {
                 if let Ok(Some(thread_id)) = self
                     .jmap
@@ -568,15 +563,13 @@ impl SessionData {
                 }
             }
             if !changelog.is_empty() {
-                let change_id = changelog.change_id;
-                if self
-                    .jmap
-                    .commit_changes(account_id, changelog)
-                    .await
-                    .is_err()
-                {
-                    return StatusResponse::database_failure().with_tag(arguments.tag);
-                }
+                // Write changes
+                let change_id = match self.jmap.commit_changes(account_id, changelog).await {
+                    Ok(change_id) => change_id,
+                    Err(_) => {
+                        return StatusResponse::database_failure().with_tag(arguments.tag);
+                    }
+                };
                 modseq = change_id.into();
                 self.jmap
                     .broadcast_state_change(

@@ -25,6 +25,9 @@ utils = { path = "crates/utils" }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+jemallocator = "0.5.0"
+
 [features]
 default = ["sqlite"]
 sqlite = ["store/sqlite"]

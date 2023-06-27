@@ -1,12 +1,21 @@
 use ::store::query::log::Query;
 use imap_proto::StatusResponse;
 
+pub mod append;
 pub mod authenticate;
+pub mod close;
+pub mod copy_move;
 pub mod create;
 pub mod delete;
+pub mod enable;
+pub mod expunge;
 pub mod fetch;
 pub mod list;
+pub mod login;
+pub mod logout;
+pub mod namespace;
 pub mod rename;
+pub mod select;
 pub mod status;
 pub mod store;
 pub mod subscribe;

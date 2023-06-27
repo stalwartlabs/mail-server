@@ -297,7 +297,7 @@ impl JMAP {
 
         // Write changes
         if !change_log.is_empty() {
-            response.new_state = self.commit_changes(account_id, change_log).await?.into();
+            response.new_state = Some(self.commit_changes(account_id, change_log).await?.into());
         }
 
         Ok(response)

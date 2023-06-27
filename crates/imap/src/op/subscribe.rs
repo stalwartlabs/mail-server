@@ -41,7 +41,7 @@ impl<T: AsyncRead> Session<T> {
         &mut self,
         request: Request<Command>,
         is_subscribe: bool,
-    ) -> Result<(), ()> {
+    ) -> crate::OpResult {
         match request.parse_subscribe(self.version) {
             Ok(arguments) => {
                 let data = self.state.session_data();

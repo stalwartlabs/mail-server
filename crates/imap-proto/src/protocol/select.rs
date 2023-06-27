@@ -51,7 +51,7 @@ pub struct Response {
     pub uid_next: u32,
     pub is_rev2: bool,
     pub closed_previous: bool,
-    pub highest_modseq: Option<u32>,
+    pub highest_modseq: Option<u64>,
     pub mailbox_id: String,
 }
 

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use jmap_proto::{error::method::MethodError, types::state::State};
+use jmap_proto::error::method::MethodError;
 use store::write::{log::ChangeLogBuilder, BatchBuilder};
 
 use crate::JMAP;
@@ -51,11 +51,11 @@ impl JMAP {
         &self,
         account_id: u32,
         mut changes: ChangeLogBuilder,
-    ) -> Result<State, MethodError> {
+    ) -> Result<u64, MethodError> {
         if changes.change_id == u64::MAX {
             changes.change_id = self.assign_change_id(account_id).await?;
         }
-        let state = State::from(changes.change_id);
+        let state = changes.change_id;
 
         let mut builder = BatchBuilder::new();
         builder.with_account_id(account_id).custom(changes);

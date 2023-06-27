@@ -41,7 +41,7 @@ use tokio::io::AsyncRead;
 use crate::core::{Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_rename(&mut self, request: Request<Command>) -> Result<(), ()> {
+    pub async fn handle_rename(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_rename(self.version) {
             Ok(arguments) => {
                 let data = self.state.session_data();
@@ -121,10 +121,14 @@ impl SessionData {
         };
 
         // Validate ACL
-        if params.access_token.is_shared(params.account_id)
+        let access_token = match self.get_access_token().await {
+            Ok(access_token) => access_token,
+            Err(response) => return response.with_tag(arguments.tag),
+        };
+        if access_token.is_shared(params.account_id)
             && !mailbox
                 .inner
-                .effective_acl(&params.access_token)
+                .effective_acl(&access_token)
                 .contains(Acl::Modify)
         {
             return StatusResponse::no("You are not allowed to rename this mailbox.")

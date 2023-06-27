@@ -47,7 +47,7 @@ pub enum InvalidProperty {
     Path(Vec<Property>),
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum SetErrorType {
     #[serde(rename = "forbidden")]
     Forbidden,

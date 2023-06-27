@@ -31,7 +31,7 @@ use tokio::io::AsyncRead;
 use crate::core::{Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> Result<(), ()> {
+    pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
         let mut arguments = Vec::with_capacity(requests.len());
 
         for request in requests {
@@ -82,10 +82,10 @@ impl SessionData {
             Ok(access_token) => access_token,
             Err(response) => return response.with_tag(arguments.tag),
         };
-        let mut changes = ChangeLogBuilder::new();
+        let mut changelog = ChangeLogBuilder::new();
         let did_remove_emails = match self
             .jmap
-            .mailbox_destroy(account_id, mailbox_id, &mut changes, &access_token, true)
+            .mailbox_destroy(account_id, mailbox_id, &mut changelog, &access_token, true)
             .await
         {
             Ok(Ok(did_remove_emails)) => did_remove_emails,
@@ -98,10 +98,12 @@ impl SessionData {
         };
 
         // Write changes
-        let change_id = changes.change_id;
-        if self.jmap.commit_changes(account_id, changes).await.is_err() {
-            return StatusResponse::database_failure().with_tag(arguments.tag);
-        }
+        let change_id = match self.jmap.commit_changes(account_id, changelog).await {
+            Ok(change_id) => change_id,
+            Err(_) => {
+                return StatusResponse::database_failure().with_tag(arguments.tag);
+            }
+        };
 
         // Broadcast changes
         self.jmap

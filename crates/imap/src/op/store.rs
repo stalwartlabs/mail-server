@@ -56,7 +56,7 @@ impl<T: AsyncRead> Session<T> {
         &mut self,
         request: Request<Command>,
         is_uid: bool,
-    ) -> Result<(), ()> {
+    ) -> crate::OpResult {
         match request.parse_store() {
             Ok(arguments) => {
                 let (data, mailbox) = self.state.select_data();
@@ -93,7 +93,7 @@ impl SessionData {
         let account_id = mailbox.id.account_id;
         if is_uid {
             // Don't synchronize if we're not using UIDs as seqnums might change.
-            self.synchronize_messages(&mailbox, is_qresync)
+            self.synchronize_messages(&mailbox, is_qresync, true)
                 .await
                 .map_err(|r| r.with_tag(&arguments.tag))?;
         }
@@ -116,23 +116,22 @@ impl SessionData {
             }
         };
 
-        // Obtain shared messages
-        let access_token = match self.get_access_token().await {
-            Ok(access_token) => access_token,
-            Err(response) => return Err(response.with_tag(arguments.tag)),
-        };
-        let can_modify_ids = if access_token.is_shared(account_id) {
-            match self
-                .jmap
-                .shared_messages(&access_token, account_id, Acl::ModifyItems)
-                .await
-            {
-                Ok(document_ids) => document_ids.into(),
-                Err(_) => return Err(StatusResponse::database_failure().with_tag(arguments.tag)),
-            }
-        } else {
-            None
-        };
+        // Verify that the user can modify messages in this mailbox.
+        if !self
+            .check_mailbox_acl(
+                mailbox.id.account_id,
+                mailbox.id.mailbox_id.unwrap_or_default(),
+                Acl::ModifyItems,
+            )
+            .await
+            .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+        {
+            return Err(StatusResponse::no(
+                "You do not have the required permissions to modify messages in this mailbox.",
+            )
+            .with_tag(arguments.tag)
+            .with_code(ResponseCode::NoPerm));
+        }
 
         // Filter out unchanged since ids
         let mut response_code = None;
@@ -207,16 +206,6 @@ impl SessionData {
         let mut changelog = ChangeLogBuilder::new();
         let mut changed_mailboxes = AHashSet::new();
         for (id, imap_id) in ids {
-            // Check ACLs
-            if can_modify_ids
-                .as_ref()
-                .map_or(false, |can_modify_ids| !can_modify_ids.contains(id))
-            {
-                response.rtype = ResponseType::No;
-                response.message = "Not enough permissions to modify one or more messages.".into();
-                continue;
-            }
-
             // Obtain current keywords
             let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
                 self.jmap
@@ -367,17 +356,13 @@ impl SessionData {
 
         // Write changes
         if !changelog.is_empty() {
-            let change_id = changelog.change_id;
-            if self
+            let change_id = self
                 .jmap
                 .commit_changes(account_id, changelog)
                 .await
-                .is_err()
-            {
-                return Err(
+                .map_err(|_| {
                     StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                );
-            }
+                })?;
             self.jmap
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)

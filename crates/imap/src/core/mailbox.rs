@@ -2,7 +2,11 @@ use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use ahash::AHashMap;
 use imap_proto::{protocol::list::Attribute, StatusResponse};
-use jmap::{auth::AccessToken, mailbox::INBOX_ID, SUPERUSER_ID};
+use jmap::{
+    auth::{acl::EffectiveAcl, AccessToken},
+    mailbox::INBOX_ID,
+    SUPERUSER_ID,
+};
 use jmap_proto::{
     object::Object,
     types::{acl::Acl, collection::Collection, property::Property, value::Value},
@@ -512,5 +516,26 @@ impl SessionData {
 
     pub fn is_all_mailbox(&self, mailbox_name: &str) -> bool {
         self.imap.name_all == mailbox_name
+    }
+
+    pub async fn check_mailbox_acl(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        item: Acl,
+    ) -> crate::op::Result<bool> {
+        let access_token = self.get_access_token().await?;
+        Ok(access_token.is_member(account_id)
+            || self
+                .jmap
+                .get_property::<Object<Value>>(
+                    account_id,
+                    Collection::Mailbox,
+                    document_id,
+                    Property::Value,
+                )
+                .await?
+                .map(|mailbox| mailbox.effective_acl(&access_token).contains(item))
+                .ok_or_else(|| StatusResponse::no("Mailbox no longer exists."))?)
     }
 }

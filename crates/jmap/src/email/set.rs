@@ -1024,7 +1024,7 @@ impl JMAP {
         // Update state
         if !changes.is_empty() || !response.created.is_empty() {
             let new_state = if !changes.is_empty() {
-                self.commit_changes(account_id, changes).await?
+                self.commit_changes(account_id, changes).await?.into()
             } else {
                 self.get_state(account_id, Collection::Email).await?
             };

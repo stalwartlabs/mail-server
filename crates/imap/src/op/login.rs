@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2023 Stalwart Labs Ltd.
+ * Copyright (c) 2020-2022, Stalwart Labs Ltd.
  *
- * This file is part of the Stalwart Mail Server.
+ * This file is part of the Stalwart IMAP Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,35 +21,27 @@
  * for more details.
 */
 
-use std::path::PathBuf;
+use imap_proto::{receiver::Request, Command};
 
-#[cfg(not(target_env = "msvc"))]
-use jemallocator::Jemalloc;
+use mail_send::Credentials;
+use tokio::io::AsyncRead;
 
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+use crate::core::Session;
 
-#[cfg(test)]
-pub mod directory;
-#[cfg(test)]
-pub mod imap;
-#[cfg(test)]
-pub mod jmap;
-#[cfg(test)]
-pub mod smtp;
-#[cfg(test)]
-pub mod store;
-
-pub fn add_test_certs(config: &str) -> String {
-    let mut cert_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    cert_path.push("resources");
-    let mut cert = cert_path.clone();
-    cert.push("tls_cert.pem");
-    let mut pk = cert_path.clone();
-    pk.push("tls_privatekey.pem");
-
-    config
-        .replace("{CERT}", cert.as_path().to_str().unwrap())
-        .replace("{PK}", pk.as_path().to_str().unwrap())
+impl<T: AsyncRead> Session<T> {
+    pub async fn handle_login(&mut self, request: Request<Command>) -> Result<(), ()> {
+        match request.parse_login() {
+            Ok(args) => {
+                self.authenticate(
+                    Credentials::Plain {
+                        username: args.username,
+                        secret: args.password,
+                    },
+                    args.tag,
+                )
+                .await
+            }
+            Err(response) => self.write_bytes(response.into_bytes()).await,
+        }
+    }
 }

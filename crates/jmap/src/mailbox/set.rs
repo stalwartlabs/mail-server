@@ -253,7 +253,7 @@ impl JMAP {
                 state_change
             }
             .into();
-            ctx.response.new_state = self.commit_changes(account_id, changes).await?.into();
+            ctx.response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
         }
 
         Ok(ctx.response)

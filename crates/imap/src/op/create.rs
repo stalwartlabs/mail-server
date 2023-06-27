@@ -21,22 +21,17 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    mailbox::set::SCHEMA,
-};
+use jmap::mailbox::set::SCHEMA;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::TypeState, value::Value,
+        type_state::TypeState,
     },
 };
 use store::{query::Filter, write::BatchBuilder};
@@ -45,7 +40,7 @@ use tokio::io::AsyncRead;
 use crate::core::{Account, Mailbox, Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> Result<(), ()> {
+    pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
         let mut arguments = Vec::with_capacity(requests.len());
 
         for request in requests {
@@ -340,37 +335,21 @@ impl SessionData {
         };
 
         // Validate ACLs
-        let access_token = self.get_access_token().await?;
-        if access_token.is_shared(account_id) {
-            if let Some(parent_mailbox_id) = parent_mailbox_id {
-                if let Ok(Some(fields)) = self
-                    .jmap
-                    .get_property::<Object<Value>>(
-                        account_id,
-                        Collection::Mailbox,
-                        parent_mailbox_id,
-                        Property::Value,
-                    )
-                    .await
-                {
-                    if !fields
-                        .effective_acl(&access_token)
-                        .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
-                    {
-                        return Err(StatusResponse::no(
-                            "You are not allowed to create sub mailboxes under this mailbox.",
-                        )
-                        .with_code(ResponseCode::NoPerm));
-                    }
-                } else {
-                    return Err(StatusResponse::no("Action failed, please try again."));
-                }
-            } else {
+        if let Some(parent_mailbox_id) = parent_mailbox_id {
+            if !self
+                .check_mailbox_acl(account_id, parent_mailbox_id, Acl::CreateChild)
+                .await?
+            {
                 return Err(StatusResponse::no(
-                    "You are not allowed to create root folders under shared folders.",
+                    "You are not allowed to create sub mailboxes under this mailbox.",
                 )
-                .with_code(ResponseCode::Cannot));
+                .with_code(ResponseCode::NoPerm));
             }
+        } else {
+            return Err(StatusResponse::no(
+                "You are not allowed to create root folders under shared folders.",
+            )
+            .with_code(ResponseCode::Cannot));
         }
 
         Ok(CreateParams {
@@ -402,7 +381,6 @@ impl SessionData {
                 None
             },
             is_rename: false,
-            access_token,
         })
     }
 }
@@ -415,6 +393,5 @@ pub struct CreateParams<'x> {
     pub parent_mailbox_id: Option<u32>,
     pub parent_mailbox_name: Option<String>,
     pub special_use: Option<Attribute>,
-    pub access_token: Arc<AccessToken>,
     pub is_rename: bool,
 }

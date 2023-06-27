@@ -38,7 +38,9 @@ use jmap_proto::{
         acl::Acl,
         blob::BlobId,
         collection::Collection,
+        date::UTCDate,
         id::Id,
+        keyword::Keyword,
         property::Property,
         state::{State, StateChange},
         type_state::TypeState,
@@ -218,170 +220,26 @@ impl JMAP {
                 }
             }
 
-            // Obtain term index and metadata
-            let (mut metadata, token_index) = if let (Some(metadata), Some(token_index)) = (
-                self.get_property::<Object<Value>>(
+            // Add response
+            match self
+                .copy_message(
                     from_account_id,
-                    Collection::Email,
                     from_message_id,
-                    Property::BodyStructure,
+                    account_id,
+                    account_quota,
+                    mailboxes,
+                    keywords,
+                    received_at,
                 )
-                .await?,
-                self.get_term_index::<RawValue<TokenIndex>>(
-                    from_account_id,
-                    Collection::Email,
-                    from_message_id,
-                )
-                .await?,
-            ) {
-                (metadata, token_index)
-            } else {
-                response.not_created.append(
-                    id,
-                    SetError::not_found().with_description(format!(
-                        "Item {} not found not found in account {}.",
-                        id, response.from_account_id
-                    )),
-                );
-                continue;
-            };
-
-            // Check quota
-            if account_quota > 0
-                && metadata.get(&Property::Size).as_uint().unwrap_or_default() as i64
-                    + self.get_used_quota(account_id).await?
-                    > account_quota
+                .await?
             {
-                response.not_created.append(id, SetError::over_quota());
-                continue;
-            }
-
-            // Set receivedAt
-            if let Some(received_at) = received_at {
-                metadata.set(Property::ReceivedAt, Value::Date(received_at));
-            }
-
-            // Obtain threadId
-            let mut references = vec![];
-            let mut subject = "";
-            for (property, value) in &metadata.properties {
-                match property {
-                    Property::MessageId
-                    | Property::InReplyTo
-                    | Property::References
-                    | Property::EmailIds => match value {
-                        Value::Text(text) => {
-                            references.push(text.as_str());
-                        }
-                        Value::List(list) => {
-                            references.extend(list.iter().filter_map(|v| v.as_string()));
-                        }
-                        _ => (),
-                    },
-                    Property::Subject => {
-                        if let Some(value) = value.as_string() {
-                            subject = thread_name(value).trim_text(MAX_SORT_FIELD_LENGTH);
-                        }
-                        if subject.is_empty() {
-                            subject = "!";
-                        }
-                    }
-                    _ => (),
+                Ok(email) => {
+                    response.created.append(id, email.into());
+                }
+                Err(err) => {
+                    response.not_created.append(id, err);
                 }
             }
-            let thread_id = if !references.is_empty() {
-                self.find_or_merge_thread(account_id, subject, &references)
-                    .await
-                    .map_err(|_| MethodError::ServerPartialFail)?
-            } else {
-                None
-            };
-
-            // Copy blob
-            let message_id = self
-                .assign_document_id(account_id, Collection::Email)
-                .await?;
-            let mut email = IngestedEmail {
-                blob_id: BlobId::new(BlobKind::LinkedMaildir {
-                    account_id,
-                    document_id: message_id,
-                }),
-                size: metadata.get(&Property::Size).as_uint().unwrap_or(0) as usize,
-                ..Default::default()
-            };
-            self.store
-                .copy_blob(
-                    &BlobKind::LinkedMaildir {
-                        account_id: from_account_id,
-                        document_id: from_message_id,
-                    },
-                    &email.blob_id.kind,
-                    None,
-                )
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                    event = "error",
-                    context = "email_copy",
-                    from_account_id = from_account_id,
-                    from_message_id = from_message_id,
-                    account_id = account_id,
-                    message_id = message_id,
-                    error = ?err,
-                    "Failed to copy blob.");
-                    MethodError::ServerPartialFail
-                })?;
-
-            // Prepare batch
-            let mut batch = BatchBuilder::new();
-            batch.with_account_id(account_id);
-
-            // Build change log
-            let mut changes = self.begin_changes(account_id).await?;
-            let thread_id = if let Some(thread_id) = thread_id {
-                changes.log_child_update(Collection::Thread, thread_id);
-                thread_id
-            } else {
-                let thread_id = self
-                    .assign_document_id(account_id, Collection::Thread)
-                    .await?;
-                batch
-                    .with_collection(Collection::Thread)
-                    .create_document(thread_id);
-                changes.log_insert(Collection::Thread, thread_id);
-                thread_id
-            };
-            email.id = Id::from_parts(thread_id, message_id);
-            email.change_id = changes.change_id;
-            changes.log_insert(Collection::Email, email.id);
-            for mailbox_id in &mailboxes {
-                changes.log_child_update(Collection::Mailbox, *mailbox_id);
-            }
-
-            // Build batch
-            batch
-                .with_collection(Collection::Email)
-                .create_document(message_id)
-                .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
-                .value(Property::MailboxIds, mailboxes, F_VALUE | F_BITMAP)
-                .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
-                .custom(EmailIndexBuilder::set(metadata))
-                .custom(token_index)
-                .custom(changes);
-            self.store.write(batch.build()).await.map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_copy",
-                    error = ?err,
-                    "Failed to write message to database.");
-                MethodError::ServerPartialFail
-            })?;
-
-            // Update state
-            response.new_state = email.change_id.into();
-
-            // Add response
-            response.created.append(id, email.into());
 
             // Add to destroy list
             if on_success_delete {
@@ -419,5 +277,173 @@ impl JMAP {
         }
 
         Ok(response)
+    }
+
+    pub async fn copy_message(
+        &self,
+        from_account_id: u32,
+        from_message_id: u32,
+        account_id: u32,
+        account_quota: i64,
+        mailboxes: Vec<u32>,
+        keywords: Vec<Keyword>,
+        received_at: Option<UTCDate>,
+    ) -> Result<Result<IngestedEmail, SetError>, MethodError> {
+        // Obtain term index and metadata
+        let (mut metadata, token_index) = if let (Some(metadata), Some(token_index)) = (
+            self.get_property::<Object<Value>>(
+                from_account_id,
+                Collection::Email,
+                from_message_id,
+                Property::BodyStructure,
+            )
+            .await?,
+            self.get_term_index::<RawValue<TokenIndex>>(
+                from_account_id,
+                Collection::Email,
+                from_message_id,
+            )
+            .await?,
+        ) {
+            (metadata, token_index)
+        } else {
+            return Ok(Err(SetError::not_found().with_description(format!(
+                "Message not found not found in account {}.",
+                Id::from(from_account_id)
+            ))));
+        };
+
+        // Check quota
+        if account_quota > 0
+            && metadata.get(&Property::Size).as_uint().unwrap_or_default() as i64
+                + self.get_used_quota(account_id).await?
+                > account_quota
+        {
+            return Ok(Err(SetError::over_quota()));
+        }
+
+        // Set receivedAt
+        if let Some(received_at) = received_at {
+            metadata.set(Property::ReceivedAt, Value::Date(received_at));
+        }
+
+        // Obtain threadId
+        let mut references = vec![];
+        let mut subject = "";
+        for (property, value) in &metadata.properties {
+            match property {
+                Property::MessageId
+                | Property::InReplyTo
+                | Property::References
+                | Property::EmailIds => match value {
+                    Value::Text(text) => {
+                        references.push(text.as_str());
+                    }
+                    Value::List(list) => {
+                        references.extend(list.iter().filter_map(|v| v.as_string()));
+                    }
+                    _ => (),
+                },
+                Property::Subject => {
+                    if let Some(value) = value.as_string() {
+                        subject = thread_name(value).trim_text(MAX_SORT_FIELD_LENGTH);
+                    }
+                    if subject.is_empty() {
+                        subject = "!";
+                    }
+                }
+                _ => (),
+            }
+        }
+        let thread_id = if !references.is_empty() {
+            self.find_or_merge_thread(account_id, subject, &references)
+                .await
+                .map_err(|_| MethodError::ServerPartialFail)?
+        } else {
+            None
+        };
+
+        // Copy blob
+        let message_id = self
+            .assign_document_id(account_id, Collection::Email)
+            .await?;
+        let mut email = IngestedEmail {
+            blob_id: BlobId::new(BlobKind::LinkedMaildir {
+                account_id,
+                document_id: message_id,
+            }),
+            size: metadata.get(&Property::Size).as_uint().unwrap_or(0) as usize,
+            ..Default::default()
+        };
+        self.store
+            .copy_blob(
+                &BlobKind::LinkedMaildir {
+                    account_id: from_account_id,
+                    document_id: from_message_id,
+                },
+                &email.blob_id.kind,
+                None,
+            )
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "email_copy",
+                    from_account_id = from_account_id,
+                    from_message_id = from_message_id,
+                    account_id = account_id,
+                    message_id = message_id,
+                    error = ?err,
+                    "Failed to copy blob.");
+                MethodError::ServerPartialFail
+            })?;
+
+        // Prepare batch
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(account_id);
+
+        // Build change log
+        let mut changes = self.begin_changes(account_id).await?;
+        let thread_id = if let Some(thread_id) = thread_id {
+            changes.log_child_update(Collection::Thread, thread_id);
+            thread_id
+        } else {
+            let thread_id = self
+                .assign_document_id(account_id, Collection::Thread)
+                .await?;
+            batch
+                .with_collection(Collection::Thread)
+                .create_document(thread_id);
+            changes.log_insert(Collection::Thread, thread_id);
+            thread_id
+        };
+        email.id = Id::from_parts(thread_id, message_id);
+        email.change_id = changes.change_id;
+        changes.log_insert(Collection::Email, email.id);
+        for mailbox_id in &mailboxes {
+            changes.log_child_update(Collection::Mailbox, *mailbox_id);
+        }
+
+        // Build batch
+        batch
+            .with_collection(Collection::Email)
+            .create_document(message_id)
+            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
+            .value(Property::MailboxIds, mailboxes, F_VALUE | F_BITMAP)
+            .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
+            .value(Property::Cid, changes.change_id, F_VALUE)
+            .custom(EmailIndexBuilder::set(metadata))
+            .custom(token_index);
+
+        self.store.write(batch.build()).await.map_err(|err| {
+            tracing::error!(
+                    event = "error",
+                    context = "email_copy",
+                    error = ?err,
+                    "Failed to write message to database.");
+            MethodError::ServerPartialFail
+        })?;
+
+        Ok(Ok(email))
     }
 }

@@ -279,6 +279,7 @@ impl SessionData {
         &self,
         mailbox: &SelectedMailbox,
         is_qresync: bool,
+        is_uid: bool,
     ) -> crate::op::Result<Option<u64>> {
         // Obtain current modseq
         let modseq = self.get_modseq(mailbox.id.account_id).await?;
@@ -297,7 +298,7 @@ impl SessionData {
                 is_qresync,
                 ids: deletions
                     .into_iter()
-                    .map(|id| if !is_qresync { id.seqnum } else { id.uid })
+                    .map(|id| if !is_uid { id.seqnum } else { id.uid })
                     .collect(),
             }
             .serialize_to(&mut buf);
