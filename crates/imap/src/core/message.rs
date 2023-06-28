@@ -1,7 +1,4 @@
-use std::{
-    hash::{BuildHasher, Hash, Hasher},
-    sync::Arc,
-};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use ahash::{AHashMap, AHashSet, AHasher, RandomState};
 use imap_proto::{
@@ -18,7 +15,7 @@ use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::core::ImapId;
 
-use super::{MailboxId, MailboxState, SavedSearch, SelectedMailbox, SessionData};
+use super::{MailboxId, MailboxState, SelectedMailbox, SessionData};
 
 struct UidMap {
     uid_next: u32,
@@ -481,21 +478,6 @@ impl SelectedMailbox {
         *state = mailbox_state;
 
         (mailbox_size, deletions)
-    }
-
-    pub async fn get_saved_search(&self) -> Option<Arc<Vec<ImapId>>> {
-        let mut rx = match &*self.saved_search.lock() {
-            SavedSearch::InFlight { rx } => rx.clone(),
-            SavedSearch::Results { items } => {
-                return Some(items.clone());
-            }
-            SavedSearch::None => {
-                return None;
-            }
-        };
-        rx.changed().await.ok();
-        let v = rx.borrow();
-        Some(v.clone())
     }
 }
 

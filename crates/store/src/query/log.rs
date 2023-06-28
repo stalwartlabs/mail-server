@@ -200,3 +200,23 @@ impl Changes {
         Some(())
     }
 }
+
+impl Change {
+    pub fn id(&self) -> u64 {
+        match self {
+            Change::Insert(id) => *id,
+            Change::Update(id) => *id,
+            Change::ChildUpdate(id) => *id,
+            Change::Delete(id) => *id,
+        }
+    }
+
+    pub fn unwrap_id(self) -> u64 {
+        match self {
+            Change::Insert(id) => id,
+            Change::Update(id) => id,
+            Change::ChildUpdate(id) => id,
+            Change::Delete(id) => id,
+        }
+    }
+}

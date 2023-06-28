@@ -60,7 +60,7 @@ pub struct Response {
     pub min: Option<u32>,
     pub max: Option<u32>,
     pub count: Option<u32>,
-    pub highest_modseq: Option<u32>,
+    pub highest_modseq: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

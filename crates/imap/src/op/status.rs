@@ -36,6 +36,8 @@ use tokio::io::AsyncRead;
 
 use crate::core::{Mailbox, Session, SessionData};
 
+use super::ToModSeq;
+
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_status(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_status(self.version) {
@@ -150,9 +152,7 @@ impl SessionData {
                         Status::HighestModSeq => {
                             items_response.push((
                                 *item,
-                                StatusItemType::Number(
-                                    account.state_email.map(|id| id + 1).unwrap_or(0),
-                                ),
+                                StatusItemType::Number(account.state_email.to_modseq()),
                             ));
                         }
                         Status::MailboxId => {

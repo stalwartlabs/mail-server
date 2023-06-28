@@ -28,6 +28,7 @@ impl IMAP {
                 .to_string(),
             timeout_auth: config.property_or_static("imap.timeout.authenticated", "30m")?,
             timeout_unauth: config.property_or_static("imap.timeout.anonymous", "1m")?,
+            timeout_idle: config.property_or_static("imap.timeout.idle", "30m")?,
             greeting_plain: StatusResponse::ok(SERVER_GREETING)
                 .with_code(ResponseCode::Capability {
                     capabilities: Capability::all_capabilities(false, false),

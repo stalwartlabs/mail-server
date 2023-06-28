@@ -10,18 +10,26 @@ pub mod delete;
 pub mod enable;
 pub mod expunge;
 pub mod fetch;
+pub mod idle;
 pub mod list;
 pub mod login;
 pub mod logout;
 pub mod namespace;
+pub mod noop;
 pub mod rename;
+pub mod search;
 pub mod select;
 pub mod status;
 pub mod store;
 pub mod subscribe;
+pub mod thread;
 
 trait FromModSeq {
     fn from_modseq(modseq: u64) -> Self;
+}
+
+trait ToModSeq {
+    fn to_modseq(&self) -> u64;
 }
 
 impl FromModSeq for Query {
@@ -31,6 +39,12 @@ impl FromModSeq for Query {
         } else {
             Query::All
         }
+    }
+}
+
+impl ToModSeq for Option<u64> {
+    fn to_modseq(&self) -> u64 {
+        self.map(|modseq| modseq + 1).unwrap_or(0)
     }
 }
 

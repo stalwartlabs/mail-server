@@ -45,6 +45,7 @@ pub struct IMAP {
 
     pub timeout_auth: Duration,
     pub timeout_unauth: Duration,
+    pub timeout_idle: Duration,
 
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,

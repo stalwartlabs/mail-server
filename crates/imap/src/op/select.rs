@@ -34,6 +34,8 @@ use tokio::io::AsyncRead;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};
 
+use super::ToModSeq;
+
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_select(&mut self, request: Request<Command>) -> crate::OpResult {
         let is_select = request.command == Command::Select;
@@ -60,7 +62,11 @@ impl<T: AsyncRead> Session<T> {
                             let uid_validity = state.uid_validity;
                             let uid_next = state.uid_next;
                             let total_messages = state.total_messages;
-                            let highest_modseq = state.last_state;
+                            let highest_modseq = if is_condstore {
+                                state.last_state.to_modseq().into()
+                            } else {
+                                None
+                            };
                             let mailbox = Arc::new(SelectedMailbox {
                                 id: mailbox,
                                 state: parking_lot::Mutex::new(state),
@@ -111,7 +117,7 @@ impl<T: AsyncRead> Session<T> {
                                 uid_next,
                                 closed_previous,
                                 is_rev2: self.version.is_rev2(),
-                                highest_modseq: highest_modseq.map(|id| id + 1),
+                                highest_modseq,
                                 mailbox_id: Id::from_parts(
                                     mailbox.id.account_id,
                                     mailbox.id.mailbox_id.unwrap_or(u32::MAX),
