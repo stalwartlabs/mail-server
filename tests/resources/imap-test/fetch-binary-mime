@@ -1,0 +1,104 @@
+capabilities: BINARY
+messages: all
+
+# This is the fetch-body-mime test, except with body[] changed to binary[].
+# The idea is to verify that binary[] works correctly when it doesn't actually
+# have to convert anything.
+
+ok fetch 1 (binary.peek[])
+* 1 fetch (binary[] {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+
+}}})
+
+ok fetch 1 (binary.size[])
+* 1 fetch (binary.size[] 602)
+
+ok fetch 1 (binary.size[1])
+* 1 fetch (binary.size[1] 7)
+
+ok fetch 1 (binary.peek[1])
+* 1 fetch (binary[1] {{{
+hello
+
+}}})
+
+ok fetch 1 (binary.peek[2])
+* 1 fetch (binary[2] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+}}})
+
+ok fetch 1 (binary.size[2])
+* 1 fetch (binary.size[2] 298)
+
+ok fetch 1 (binary.size[2.1])
+* 1 fetch (binary.size[2.1] 20)
+
+ok fetch 1 (binary.peek[2.1])
+* 1 fetch (binary[2.1] {{{
+<p>Hello world</p>
+
+}}})
+
+ok fetch 1 (binary.peek[2.2])
+* 1 fetch (binary[2.2] {{{
+Hello another world
+
+}}})
+
+ok fetch 1 (binary.size[2.2])
+* 1 fetch (binary.size[2.2] 21)

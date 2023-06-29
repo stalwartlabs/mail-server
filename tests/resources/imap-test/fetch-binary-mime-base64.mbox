@@ -1,0 +1,49 @@
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: base64
+
+
+aGVs
+bG8gd29y
+bGQ=
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: base64
+
+  aGVs    
+ bG8g  
+   d29y  	 
+    bGQ= 
+
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: base64
+
+aGVsbG8g
+dG8geW91IHRv
+bw==
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: base64
+
+aGVsbG8gdG8gZXZlcnlvbmUh
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: base64
+
+YWJjZGVmZw1oaWprbA0KbW5vCnBxcnN0dXZxeHl6
+
+--foo bar--
+Root MIME epilogue

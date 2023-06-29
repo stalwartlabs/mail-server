@@ -30,8 +30,8 @@ use std::{
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::{mail_auth::common::lru::DnsCache, Credentials};
-use utils::listener::limiter::InFlight;
+use mail_send::Credentials;
+use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
 use crate::JMAP;
 
@@ -49,7 +49,7 @@ impl JMAP {
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
-            let session = if let Some(account_id) = self.sessions.get(&token) {
+            let session = if let Some(account_id) = self.sessions.get_with_ttl(&token) {
                 self.get_cached_access_token(account_id).await
             } else {
                 let addr = self.build_remote_addr(req, remote_ip);
@@ -118,7 +118,7 @@ impl JMAP {
     }
 
     pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
-        self.sessions.insert(
+        self.sessions.insert_with_ttl(
             session_id,
             access_token.primary_id(),
             Instant::now() + self.config.session_cache_ttl,
@@ -126,7 +126,7 @@ impl JMAP {
     }
 
     pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.access_tokens.insert(
+        self.access_tokens.insert_with_ttl(
             access_token.primary_id(),
             access_token,
             Instant::now() + self.config.session_cache_ttl,
@@ -134,7 +134,7 @@ impl JMAP {
     }
 
     pub async fn get_cached_access_token(&self, primary_id: u32) -> Option<Arc<AccessToken>> {
-        if let Some(access_token) = self.access_tokens.get(&primary_id) {
+        if let Some(access_token) = self.access_tokens.get_with_ttl(&primary_id) {
             access_token.into()
         } else {
             // Refresh ACL token

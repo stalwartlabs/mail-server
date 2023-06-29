@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::hash_map::RandomState, sync::Arc, time::Duration};
 
 use ::sieve::{Compiler, Runtime};
 use api::session::BaseCapabilities;
@@ -30,6 +30,7 @@ use auth::{
     rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
     AccessToken,
 };
+use dashmap::DashMap;
 use directory::{Directory, DirectoryConfig};
 use jmap_proto::{
     error::method::MethodError,
@@ -39,7 +40,6 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
-use mail_send::mail_auth::common::lru::{DnsCache, LruCache};
 use services::{
     delivery::spawn_delivery_manager,
     housekeeper::{self, init_housekeeper, spawn_housekeeper},
@@ -55,7 +55,12 @@ use store::{
     BitmapKey, Deserialize, Serialize, Store, ValueKey,
 };
 use tokio::sync::mpsc;
-use utils::{config::Rate, ipc::DeliveryEvent, UnwrapFailure};
+use utils::{
+    config::Rate,
+    ipc::DeliveryEvent,
+    map::ttl_dashmap::{TtlDashMap, TtlMap},
+    UnwrapFailure,
+};
 
 pub mod api;
 pub mod auth;
@@ -80,13 +85,13 @@ pub struct JMAP {
     pub config: Config,
     pub directory: Arc<dyn Directory>,
 
-    pub sessions: LruCache<String, u32>,
-    pub access_tokens: LruCache<u32, Arc<AccessToken>>,
+    pub sessions: TtlDashMap<String, u32>,
+    pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
 
-    pub rate_limit_auth: LruCache<u32, Arc<Mutex<AuthenticatedLimiter>>>,
-    pub rate_limit_unauth: LruCache<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
+    pub rate_limit_auth: DashMap<u32, Arc<Mutex<AuthenticatedLimiter>>>,
+    pub rate_limit_unauth: DashMap<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
 
-    pub oauth_codes: LruCache<String, Arc<OAuthCode>>,
+    pub oauth_codes: TtlDashMap<String, Arc<OAuthCode>>,
 
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
@@ -168,6 +173,10 @@ impl JMAP {
         // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
+        let shard_amount = config
+            .property::<u64>("global.shared-map.shard")?
+            .unwrap_or(32)
+            .next_power_of_two() as usize;
 
         let jmap_server = Arc::new(JMAP {
             directory: directory_config
@@ -180,24 +189,31 @@ impl JMAP {
                 .clone(),
             store: Store::open(config).await.failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
-            sessions: LruCache::with_capacity(
+            sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
+                shard_amount,
             ),
-            access_tokens: LruCache::with_capacity(
+            access_tokens: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
+                shard_amount,
             ),
-            rate_limit_auth: LruCache::with_capacity(
+            rate_limit_auth: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
                     .property("jmap.rate-limit.account.size")?
                     .unwrap_or(1024),
+                RandomState::default(),
+                shard_amount,
             ),
-            rate_limit_unauth: LruCache::with_capacity(
+            rate_limit_unauth: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
                     .property("jmap.rate-limit.anonymous.size")?
                     .unwrap_or(2048),
+                RandomState::default(),
+                shard_amount,
             ),
-            oauth_codes: LruCache::with_capacity(
+            oauth_codes: TtlDashMap::with_capacity(
                 config.property("oauth.code.cache-size")?.unwrap_or(128),
+                shard_amount,
             ),
             state_tx,
             housekeeper_tx,

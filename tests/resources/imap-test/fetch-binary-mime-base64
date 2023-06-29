@@ -1,0 +1,67 @@
+capabilities: BINARY
+messages: all
+
+ok fetch 1 (binary.size[1] binary.size[5])
+* 1 fetch (binary.size[1] 11 binary.size[5] 30)
+
+ok fetch 1 (binary.peek[1] binary.peek[2] binary.peek[3] binary.peek[4] binary.peek[5])
+* 1 fetch (binary[1] {{{
+hello world
+}}} binary[2] {{{
+hello world
+}}} binary[3] {{{
+hello to you too
+}}} binary[4] {{{
+hello to everyone!
+}}} binary[5] ~{{{
+abcdefghijkl
+mno
+pqrstuvqxyz
+}}})
+
+ok fetch 1 (binary.size[1] binary.peek[1])
+* 1 fetch (binary.size[1] 11 binary[1] {{{
+hello world
+}}})
+
+ok fetch 1 (binary.size[3] binary.peek[2])
+* 1 fetch (binary.size[3] 16 binary[2] {{{
+hello world
+}}})
+
+ok fetch 1 (binary.size[2] binary.size[3] binary.size[4])
+* 1 fetch (binary.size[2] 11 binary.size[3] 16 binary.size[4] 18)
+
+ok fetch 1 (binary.peek[5]<0.7>)
+* 1 fetch (binary[5]<0> ~{{{
+abcdefg
+}}})
+
+ok fetch 1 (binary.peek[5]<0.8>)
+* 1 fetch (binary[5]<0> ~{{{
+abcdefg
+}}})
+
+ok fetch 1 (binary.peek[5]<0.10>)
+* 1 fetch (binary[5]<0> ~{{{
+abcdefghi
+}}})
+
+ok fetch 1 (binary.peek[5]<10.10>)
+* 1 fetch (binary[5]<10> ~{{{
+jkl
+mno
+p
+}}})
+
+ok fetch 1 (binary.peek[5]<5.10>)
+* 1 fetch (binary[5]<5> ~{{{
+fghijkl
+
+}}})
+
+ok fetch 1 (binary.peek[5]<15.100>)
+* 1 fetch (binary[5]<15> ~{{{
+mno
+pqrstuvqxyz
+}}})

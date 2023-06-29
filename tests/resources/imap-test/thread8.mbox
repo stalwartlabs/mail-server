@@ -1,0 +1,16 @@
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <a@b>
+
+body1
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <b@b>
+References: <a@b>
+
+body2
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <b@b>
+References: <a@b>
+
+body3

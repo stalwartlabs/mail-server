@@ -1716,6 +1716,7 @@ name = "imap"
 version = "0.1.0"
 dependencies = [
  "ahash 0.8.3",
+ "dashmap",
  "directory",
  "imap_proto",
  "jmap",
@@ -1860,6 +1861,7 @@ dependencies = [
  "base64 0.21.2",
  "bincode",
  "chrono",
+ "dashmap",
  "directory",
  "ece",
  "form-data",
@@ -2162,12 +2164,39 @@ name = "mail-server"
 version = "0.3.0"
 dependencies = [
  "directory",
+ "imap",
  "jemallocator",
  "jmap",
  "jmap_proto",
+ "managesieve",
  "smtp",
  "store",
  "tokio",
+ "tracing",
+ "utils",
+]
+
+[[package]]
+name = "managesieve"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.3",
+ "bincode",
+ "directory",
+ "imap",
+ "imap_proto",
+ "jmap",
+ "jmap_proto",
+ "mail-parser",
+ "mail-send",
+ "md5",
+ "parking_lot",
+ "rustls 0.21.2",
+ "rustls-pemfile",
+ "sieve-rs",
+ "store",
+ "tokio",
+ "tokio-rustls 0.24.1",
  "tracing",
  "utils",
 ]
@@ -4160,6 +4189,7 @@ dependencies = [
  "mail-auth",
  "mail-parser",
  "mail-send",
+ "managesieve",
  "num_cpus",
  "rayon",
  "reqwest",
@@ -4717,6 +4747,8 @@ checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 name = "utils"
 version = "0.1.0"
 dependencies = [
+ "ahash 0.8.3",
+ "dashmap",
  "mail-auth",
  "mail-send",
  "opentelemetry",

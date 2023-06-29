@@ -5,20 +5,28 @@ use std::{
 };
 
 use ahash::AHashMap;
+use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
     receiver::Receiver,
     Command, ResponseCode, StatusResponse,
 };
 use jmap::{
-    auth::{rate_limit::RemoteAddress, AccessToken},
+    auth::{
+        rate_limit::{AuthenticatedLimiter, RemoteAddress},
+        AccessToken,
+    },
     JMAP,
 };
+use parking_lot::Mutex;
 use tokio::{
     io::{AsyncRead, ReadHalf},
     sync::{mpsc, watch},
 };
-use utils::listener::{limiter::InFlight, ServerInstance};
+use utils::{
+    config::Rate,
+    listener::{limiter::InFlight, ServerInstance},
+};
 
 pub mod client;
 pub mod mailbox;
@@ -40,6 +48,7 @@ impl ImapSessionManager {
 
 pub struct IMAP {
     pub max_request_size: usize,
+    pub max_auth_failures: u32,
     pub name_shared: String,
     pub name_all: String,
 
@@ -49,6 +58,10 @@ pub struct IMAP {
 
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,
+
+    pub rate_limiter: DashMap<u32, Arc<Mutex<AuthenticatedLimiter>>>,
+    pub rate_requests: Rate,
+    pub rate_concurrent: u64,
 }
 
 pub struct Session<T: AsyncRead> {
@@ -76,6 +89,7 @@ pub struct SessionData {
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
     pub writer: mpsc::Sender<writer::Event>,
     pub state: AtomicU32,
+    pub in_flight: InFlight,
 }
 
 #[derive(Debug, Default)]

@@ -1,0 +1,81 @@
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: a
+
+1
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: C
+
+2
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: b
+
+3
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: _
+
+4
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: [foo] Fwd: [bar] Re: fw: b (fWd)  (fwd)
+
+55
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: b (a)
+
+66
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: Re: [FWD: c]
+
+77
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: [xyz]
+
+88
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+
+9
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: =?iso-8859-1?q?_?=
+
+10
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: Re: =?utf-8?q?b?=
+
+11
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: =?iso-8859-1?q?RE:_C?=
+
+12
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: =?us-ascii?b?UmU6IGM=?=
+
+13
+
+The subject is 'Re: c'.
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: Ad: Re: Ad: Re: Ad: x
+
+14
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+Subject: re: [fwd: [fwd: re: [fwd: babylon]]]
+
+15

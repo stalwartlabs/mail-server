@@ -26,12 +26,14 @@ use std::{sync::atomic, time::SystemTime};
 use hyper::StatusCode;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::mail_auth::common::lru::DnsCache;
 use store::{
     blake3,
     rand::{thread_rng, Rng},
 };
-use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
+use utils::{
+    codec::leb128::{Leb128Iterator, Leb128Vec},
+    map::ttl_dashmap::TtlMap,
+};
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
@@ -65,7 +67,7 @@ impl JMAP {
                 params.get("client_id"),
                 params.get("redirect_uri"),
             ) {
-                if let Some(oauth) = self.oauth_codes.get(code) {
+                if let Some(oauth) = self.oauth_codes.get_with_ttl(code) {
                     if client_id != &oauth.client_id
                         || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
                     {
@@ -102,7 +104,7 @@ impl JMAP {
             if let (Some(oauth), Some(client_id)) = (
                 params
                     .get("device_code")
-                    .and_then(|dc| self.oauth_codes.get(dc)),
+                    .and_then(|dc| self.oauth_codes.get_with_ttl(dc)),
                 params.get("client_id"),
             ) {
                 response = if &oauth.client_id != client_id {

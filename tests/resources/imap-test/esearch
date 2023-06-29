@@ -1,0 +1,76 @@
+capabilities: ESEARCH
+messages: all
+
+ok store 4 +flags \deleted
+ok expunge
+
+# SEARCH ALL
+
+ok search return (all) all
+* esearch (tag $tag) all 1:6
+ok search return () all
+* esearch (tag $tag) all 1:6
+ok search return (min) all
+* esearch (tag $tag) min 1
+ok search return (max) all
+* esearch (tag $tag) max 6
+ok search return (count) all
+* esearch (tag $tag) count 6
+
+# UID SEARCH ALL
+
+ok fetch 1:* UID
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+* 4 fetch (uid $uid4)
+* 5 fetch (uid $uid5)
+* 6 fetch (uid $uid6)
+
+ok uid search return (all) all
+* esearch (tag $tag) uid all $uid1:$uid3,$uid4:$uid6
+ok uid search return () all
+* esearch (tag $tag) uid all $uid1:$uid3,$uid4:$uid6
+ok uid search return (min) all
+* esearch (tag $tag) uid min $uid1
+ok uid search return (max) all
+* esearch (tag $tag) uid max $uid6
+ok uid search return (count) all
+* esearch (tag $tag) uid count 6
+
+# \Seen flag test
+
+ok store 2,4 +flags \seen
+
+ok uid search return (all) seen
+* esearch (tag $tag) uid all $uid2,$uid4
+ok uid search return () seen
+* esearch (tag $tag) uid all $uid2,$uid4
+ok uid search return (min) seen
+* esearch (tag $tag) uid min $uid2
+ok uid search return (max) seen
+* esearch (tag $tag) uid max $uid4
+ok uid search return (count) seen
+* esearch (tag $tag) uid count 2
+
+# nonexistent
+
+ok search return () 1000
+* esearch (tag $tag)
+ok search return (min) 1000
+* esearch (tag $tag)
+ok search return (max) 1000
+* esearch (tag $tag)
+ok search return (count) 1000
+* esearch (tag $tag) count 0
+
+# UID nonexistent
+
+ok uid search return () 1000
+* esearch (tag $tag) uid
+ok uid search return (min) 1000
+* esearch (tag $tag) uid
+ok uid search return (max) 1000
+* esearch (tag $tag) uid
+ok uid search return (count) 1000
+* esearch (tag $tag) uid count 0

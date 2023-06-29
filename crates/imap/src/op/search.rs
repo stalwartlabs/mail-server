@@ -52,7 +52,7 @@ impl<T: AsyncRead> Session<T> {
         request: Request<Command>,
         is_sort: bool,
         is_uid: bool,
-    ) -> Result<(), ()> {
+    ) -> crate::OpResult {
         match if !is_sort {
             request.parse_search(self.version)
         } else {

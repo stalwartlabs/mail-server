@@ -1,0 +1,75 @@
+# this test assumes that server stores INTERNALDATE timestamps in
+# EET/EEST timezones (or stores/fetches them using the same timezones as
+# they were APPENDed with)
+
+# 1) Timezone changes from EET +0200 -> EEST +0300
+# 1a) BEFORE
+ok search before 24-mar-2007
+* search
+ok search before 25-mar-2007
+* search 1
+ok search before 26-mar-2007
+* search 1 2 3 4 5 6
+ok search before 27-mar-2007
+* search 1 2 3 4 5 6 7
+
+# 1b) ON
+ok search on 23-mar-2007
+* search
+ok search on 24-mar-2007
+* search 1
+ok search on 25-mar-2007
+* search 2 3 4 5 6
+ok search on 26-mar-2007
+* search 7
+
+# 1c) SINCE
+ok search 1:7 since 24-mar-2007
+* search 1 2 3 4 5 6 7
+ok search 1:7 since 25-mar-2007
+* search 2 3 4 5 6 7
+ok search 1:7 since 26-mar-2007
+* search 7
+ok search 1:7 since 27-mar-2007
+* search
+
+# 2) Timezone changes from EEST +0300 -> EET +0200
+# 2a) BEFORE
+ok search 8:* before 27-oct-2007
+* search
+ok search 8:* before 28-oct-2007
+* search 8
+ok search 8:* before 29-oct-2007
+* search 8 9 10 11 12 13 14 15
+ok search 8:* before 30-oct-2007
+* search 8 9 10 11 12 13 14 15 16
+
+# 2b) ON
+ok search 8:* on 26-oct-2007
+* search
+ok search 8:* on 27-oct-2007
+* search 8
+ok search 8:* on 28-oct-2007
+* search 9 10 11 12 13 14 15
+ok search 8:* on 29-oct-2007
+* search 16
+
+# 2c) SINCE
+ok search 8:* since 27-oct-2007
+* search 8 9 10 11 12 13 14 15 16
+ok search 8:* since 28-oct-2007
+* search 9 10 11 12 13 14 15 16
+ok search 8:* since 29-oct-2007
+* search 16
+ok search 8:* since 30-oct-2007
+* search
+
+# 3) Try a couple of NOTs
+ok search 1:7 not before 26-mar-2007
+* search 7
+ok search 1:7 not on 25-mar-2007
+* search 1 7
+ok search 8:* not since 28-oct-2007
+* search 8
+ok search 8:* not on 28-oct-2007
+* search 8 16

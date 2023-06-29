@@ -1,0 +1,71 @@
+messages: all
+
+# full address searching
+ok search from user-from@domain.org
+* search 1 2 3 4 6 7
+ok search to user-to@domain.org
+* search 1 2 3 4
+ok search cc user-cc@domain.org
+* search 1 2 3 4 5
+ok search bcc user-bcc@domain.org
+* search 1 2 3 4
+
+# realname searching
+ok search from realfrom
+* search 2 4 6 7
+ok search to realto
+* search 2 4
+ok search cc realcc
+* search 2 4
+ok search bcc realbcc
+* search 2 4
+
+# existence searches
+ok search header from ""
+* search 1 2 3 4 5 6 7
+ok search header to ""
+* search 1 2 3 4 6 7
+ok search header cc ""
+* search 1 2 3 4 5
+ok search header bcc ""
+* search 1 2 3 4
+
+# substring address searches
+#ok search from ser-fro
+#* search 1 2 3 4 5 6 7
+#ok search to ser-t
+#* search 1 2 3 4
+#ok search cc ser-c
+#* search 1 2 3 4 5
+#ok search bcc ser-bc
+#* search 1 2 3 4
+
+# substring realname searches
+#ok search from ealfro
+#* search 2 4 6 7
+#ok search to ealt
+#* search 2 4
+#ok search cc ealc
+#* search 2 4
+#ok search bcc ealbc
+#* search 2 4
+
+# multiple addresses
+ok search from user-from1
+* search 5
+ok search from user-from2
+* search 5
+
+# groups
+ok search to groupname
+* search 6 7
+ok search to groupname2
+* search 6
+ok search to groupuser1
+* search 6
+ok search to groupuser2
+* search 6
+ok search to groupuser3
+* search 6
+ok search to groupuser4
+* search

@@ -1,0 +1,88 @@
+capabilities: urlauth urlauth=binary
+state: created
+
+ok select ${mailbox}
+ok append
+ok append
+
+ok fetch 1:2 uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+
+ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid1/;section=1;urlauth=user+$user" INTERNAL
+* GENURLAUTH $mail_url1
+ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid1/;section=1.1;urlauth=user+$user" INTERNAL
+* GENURLAUTH $mail_url1sub
+
+ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid2/;section=1;urlauth=user+$user" INTERNAL
+* GENURLAUTH $mail_url2
+ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid2/;section=1.1;urlauth=user+$user" INTERNAL
+* GENURLAUTH $mail_url2sub
+
+ok URLFETCH ($mail_url1 binary)
+* URLFETCH $mail_url1 (binary {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: binary
+
+hello world
+--sub1
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: binary
+
+hello world
+--sub1--
+Sub MIME epilogue
+
+}}})
+
+ok URLFETCH ($mail_url1sub binary)
+* URLFETCH $mail_url1sub (binary {{{
+hello world
+}}})
+
+ok URLFETCH ($mail_url1 bodypartstructure)
+* URLFETCH $mail_url1 (BODYPARTSTRUCTURE ("message" "rfc822" NIL NIL NIL "7bit" 437 ("Sun, 12 Aug 2012 12:34:56 +0300" "submsg" ((NIL NIL "sub" "domain.org")) ((NIL NIL "sub" "domain.org")) ((NIL NIL "sub" "domain.org")) NIL NIL NIL NIL NIL) (("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 22 3 NIL NIL NIL NIL)("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 47 5 NIL NIL NIL NIL) "alternative" ("boundary" "sub1") NIL NIL NIL) 26 NIL NIL NIL NIL))
+
+ok URLFETCH ($mail_url1sub bodypartstructure)
+* URLFETCH $mail_url1sub (BODYPARTSTRUCTURE ("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 22 3 NIL NIL NIL NIL))
+
+
+ok URLFETCH ($mail_url2 binary bodypartstructure)
+* URLFETCH $mail_url2 (BODYPARTSTRUCTURE ("message" "rfc822" NIL NIL NIL "7bit" 390 ("Sun, 12 Aug 2012 12:34:56 +0300" "submsg" ((NIL NIL "sub" "domain.org")) ((NIL NIL "sub" "domain.org")) ((NIL NIL "sub" "domain.org")) NIL NIL NIL NIL NIL) (("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 11 0 NIL NIL NIL NIL)("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 11 0 NIL NIL NIL NIL) "alternative" ("boundary" "sub1") NIL NIL NIL) 18 NIL NIL NIL NIL) binary {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: binary
+
+hello world
+--sub1
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: binary
+
+hello world
+--sub1--
+Sub MIME epilogue
+
+}}})
+
+ok URLFETCH ($mail_url1sub binary)
+* URLFETCH $mail_url1sub (binary {{{
+hello world
+}}})
+
+ok URLFETCH ($mail_url2sub binary bodypartstructure)
+* URLFETCH $mail_url2sub (BODYPARTSTRUCTURE ("text" "x-myown" ("charset" "us-ascii") NIL NIL "base64" 11 0 NIL NIL NIL NIL) BINARY {{{
+hello world
+}}})

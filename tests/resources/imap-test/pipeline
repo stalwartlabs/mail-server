@@ -1,0 +1,23 @@
+state: auth
+
+tag1 create ${mailbox}
+tag2 create ${mailbox}2
+tag3 create ${mailbox}3
+tag4 create ${mailbox}4
+tag1 ok
+tag2 ok
+tag3 ok
+tag4 ok
+
+tag1 status ${mailbox} (messages)
+tag2 status ${mailbox}2 (messages)
+tag3 status ${mailbox}3 (messages)
+tag4 status ${mailbox}4 (messages)
+* status ${mailbox} (messages 0)
+* status ${mailbox}2 (messages 0)
+* status ${mailbox}3 (messages 0)
+* status ${mailbox}4 (messages 0)
+tag1 ok
+tag2 ok
+tag3 ok
+tag4 ok

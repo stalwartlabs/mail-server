@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::{collections::hash_map::RandomState, sync::Arc};
 
 use crate::core::IMAP;
 
+use dashmap::DashMap;
 use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
 use utils::config::Config;
 
@@ -18,6 +19,7 @@ impl IMAP {
     pub async fn init(config: &Config) -> utils::config::Result<Arc<Self>> {
         Ok(Arc::new(IMAP {
             max_request_size: config.property_or_static("imap.request.max-size", "52428800")?,
+            max_auth_failures: config.property_or_static("imap.auth.max-failures", "3")?,
             name_shared: config
                 .value("imap.folders.name.shared")
                 .unwrap_or("Shared Folders")
@@ -39,6 +41,16 @@ impl IMAP {
                     capabilities: Capability::all_capabilities(false, true),
                 })
                 .into_bytes(),
+            rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
+                config.property("imap.rate-limit.size")?.unwrap_or(2048),
+                RandomState::default(),
+                config
+                    .property::<u64>("global.shared-map.shard")?
+                    .unwrap_or(32)
+                    .next_power_of_two() as usize,
+            ),
+            rate_requests: config.property_or_static("imap.rate-limit.rate", "1000/1m")?,
+            rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
         }))
     }
 }

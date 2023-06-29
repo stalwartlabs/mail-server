@@ -88,7 +88,9 @@ pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch
                 server.spawn(smtp_manager.clone(), shutdown_rx)
             }
             ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
-            ServerProtocol::Imap | ServerProtocol::Jmap => unreachable!(),
+            ServerProtocol::Imap | ServerProtocol::Jmap | ServerProtocol::ManageSieve => {
+                unreachable!()
+            }
         };
     })
 }

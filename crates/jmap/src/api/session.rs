@@ -74,7 +74,7 @@ struct Account {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(untagged)]
 #[allow(dead_code)]
-enum Capabilities {
+pub enum Capabilities {
     Core(CoreCapabilities),
     Mail(MailCapabilities),
     Submission(SubmissionCapabilities),
@@ -84,7 +84,7 @@ enum Capabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct CoreCapabilities {
+pub struct CoreCapabilities {
     #[serde(rename(serialize = "maxSizeUpload"))]
     max_size_upload: usize,
     #[serde(rename(serialize = "maxConcurrentUpload"))]
@@ -104,7 +104,7 @@ struct CoreCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct WebSocketCapabilities {
+pub struct WebSocketCapabilities {
     #[serde(rename(serialize = "url"))]
     url: String,
     #[serde(rename(serialize = "supportsPush"))]
@@ -112,27 +112,27 @@ struct WebSocketCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct SieveCapabilities {
+pub struct SieveCapabilities {
     #[serde(rename(serialize = "implementation"))]
-    implementation: &'static str,
+    pub implementation: &'static str,
     #[serde(rename(serialize = "maxSizeScriptName"))]
-    max_script_name: usize,
+    pub max_script_name: usize,
     #[serde(rename(serialize = "maxSizeScript"))]
-    max_script_size: usize,
+    pub max_script_size: usize,
     #[serde(rename(serialize = "maxNumberScripts"))]
-    max_scripts: usize,
+    pub max_scripts: usize,
     #[serde(rename(serialize = "maxNumberRedirects"))]
-    max_redirects: usize,
+    pub max_redirects: usize,
     #[serde(rename(serialize = "sieveExtensions"))]
-    extensions: Vec<String>,
+    pub extensions: Vec<String>,
     #[serde(rename(serialize = "notificationMethods"))]
-    notification_methods: Option<Vec<String>>,
+    pub notification_methods: Option<Vec<String>>,
     #[serde(rename(serialize = "externalLists"))]
-    ext_lists: Option<Vec<String>>,
+    pub ext_lists: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct MailCapabilities {
+pub struct MailCapabilities {
     #[serde(rename(serialize = "maxMailboxesPerEmail"))]
     max_mailboxes_per_email: Option<usize>,
     #[serde(rename(serialize = "maxMailboxDepth"))]
@@ -148,7 +148,7 @@ struct MailCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct SubmissionCapabilities {
+pub struct SubmissionCapabilities {
     #[serde(rename(serialize = "maxDelayedSend"))]
     max_delayed_send: usize,
     #[serde(rename(serialize = "submissionExtensions"))]
@@ -156,11 +156,11 @@ struct SubmissionCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct VacationResponseCapabilities {}
+pub struct VacationResponseCapabilities {}
 
 #[derive(Default)]
 pub struct BaseCapabilities {
-    capabilities: VecMap<Capability, Capabilities>,
+    pub capabilities: VecMap<Capability, Capabilities>,
 }
 
 impl JMAP {

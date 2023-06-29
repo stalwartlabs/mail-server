@@ -27,12 +27,11 @@ use std::{
 };
 
 use hyper::StatusCode;
-use mail_send::mail_auth::common::lru::DnsCache;
 use store::rand::{
     distributions::{Alphanumeric, Standard},
     thread_rng, Rng,
 };
-use utils::listener::ServerInstance;
+use utils::{listener::ServerInstance, map::ttl_dashmap::TtlMap};
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse, JsonResponse},
@@ -102,9 +101,9 @@ impl JMAP {
         });
         let expiry = Instant::now() + Duration::from_secs(self.config.oauth_expiry_user_code);
         self.oauth_codes
-            .insert(device_code.clone(), oauth_code.clone(), expiry);
+            .insert_with_ttl(device_code.clone(), oauth_code.clone(), expiry);
         self.oauth_codes
-            .insert(user_code.clone(), oauth_code, expiry);
+            .insert_with_ttl(user_code.clone(), oauth_code, expiry);
 
         // Build response
         JsonResponse::new(DeviceAuthResponse {
@@ -164,7 +163,7 @@ impl JMAP {
 
         let code = if let Some(oauth) = fields
             .get("code")
-            .and_then(|code| self.oauth_codes.get(code))
+            .and_then(|code| self.oauth_codes.get_with_ttl(code))
         {
             if (STATUS_PENDING..STATUS_PENDING + self.config.oauth_max_auth_attempts)
                 .contains(&oauth.status.load(atomic::Ordering::Relaxed))

@@ -1,0 +1,5 @@
+capabilities: THREAD=ORDEREDSUBJECT
+messages: all
+
+ok thread orderedsubject us-ascii all
+* THREAD (1)(2 (7)(12)(13))(3 (5)(11))(4)(6)(8)(9 10)(14)(15)

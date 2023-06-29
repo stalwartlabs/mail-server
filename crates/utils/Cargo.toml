@@ -20,6 +20,8 @@ tracing-opentelemetry = "0.18.0"
 opentelemetry = { version = "0.18.0", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.11.0", features = ["http-proto", "reqwest-client"] }
 opentelemetry-semantic-conventions = { version = "0.10.0" }
+dashmap = "5.4"
+ahash = { version = "0.8" }
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

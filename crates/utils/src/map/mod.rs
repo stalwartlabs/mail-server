@@ -22,4 +22,5 @@
 */
 
 pub mod bitmap;
+pub mod ttl_dashmap;
 pub mod vec_map;

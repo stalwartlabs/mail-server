@@ -159,7 +159,7 @@ impl<T: AsyncRead> Session<T> {
         }
     }
 
-    pub async fn handle_unselect(&mut self, request: Request<Command>) -> Result<(), ()> {
+    pub async fn handle_unselect(&mut self, request: Request<Command>) -> crate::OpResult {
         self.state = State::Authenticated {
             data: self.state.session_data(),
         };

@@ -1,0 +1,30 @@
+capabilities: MULTIAPPEND
+state: created
+
+ok append $mailbox {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Subject: mail1
+
+body1
+}}} {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Subject: mail2
+
+body2
+}}}
+
+ok select $mailbox
+
+ok fetch 1:* body.peek[header.fields (subject)]
+* 1 fetch (body[header.fields (subject)] {{{
+Subject: mail1
+
+
+}}})
+* 2 fetch (body[header.fields (subject)] {{{
+Subject: mail2
+
+
+}}})

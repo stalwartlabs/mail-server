@@ -52,6 +52,8 @@
 
 use std::fmt::Display;
 
+use jmap_proto::types::acl::Acl;
+
 use crate::utf7::utf7_encode;
 
 use super::quoted_string;
@@ -243,47 +245,23 @@ impl Display for Rights {
     }
 }
 
-/*
-pub trait AsImapRights {
-    fn as_imap_rights(&self) -> Vec<Rights>;
-}
-
-impl AsImapRights for MailboxRights {
-    fn as_imap_rights(&self) -> Vec<Rights> {
-        let mut rights = Vec::with_capacity(5);
-        if self.may_read_items() {
-            rights.push(Rights::Read);
-            rights.push(Rights::Lookup);
+impl From<Rights> for Acl {
+    fn from(value: Rights) -> Self {
+        match value {
+            Rights::Lookup => Acl::Read,
+            Rights::Read => Acl::ReadItems,
+            Rights::Seen => Acl::ModifyItems,
+            Rights::Write => Acl::ModifyItems,
+            Rights::Insert => Acl::AddItems,
+            Rights::Post => Acl::Submit,
+            Rights::CreateMailbox => Acl::CreateChild,
+            Rights::DeleteMailbox => Acl::Delete,
+            Rights::DeleteMessages => Acl::RemoveItems,
+            Rights::Expunge => Acl::RemoveItems,
+            Rights::Administer => Acl::Administer,
         }
-        if self.may_add_items() {
-            rights.push(Rights::Insert);
-        }
-        if self.may_remove_items() {
-            rights.push(Rights::DeleteMessages);
-            rights.push(Rights::Expunge);
-        }
-        if self.may_set_seen() {
-            rights.push(Rights::Seen);
-        }
-        if self.may_set_keywords() {
-            rights.push(Rights::Write);
-        }
-        if self.may_create_child() {
-            rights.push(Rights::CreateMailbox);
-        }
-        if self.may_rename() {
-            rights.push(Rights::DeleteMailbox);
-        }
-        if self.may_delete() {
-            rights.push(Rights::DeleteMailbox);
-        }
-        if self.may_submit() {
-            rights.push(Rights::Post);
-        }
-        rights
     }
 }
-*/
 
 #[cfg(test)]
 mod tests {

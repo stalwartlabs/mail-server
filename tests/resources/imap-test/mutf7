@@ -1,0 +1,12 @@
+state: auth
+
+# get the separator
+ok list "" ""
+* list () $sep $root
+
+ok create "$mailbox${sep}p&AOQA5A-"
+ok list "" "$mailbox${sep}p&AOQA5A-"
+* list () $sep "$mailbox${sep}p&AOQA5A-"
+
+ok status "$mailbox${sep}p&AOQA5A-" (messages)
+* status "$mailbox${sep}p&AOQA5A-" (messages 0)

@@ -1,0 +1,325 @@
+BODY (
+   (
+      "text" "html" (
+         "charset" "us-ascii"
+      ) NIL NIL "base64" 239 3
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 723 (
+         NIL "Exporting my book about coffee tables" (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) NIL NIL NIL NIL NIL
+      ) (
+         (
+            "text" "plain" (
+               "charset" "utf-16"
+            ) NIL NIL "quoted-printable" 228 3
+         ) (
+            "image" "gif" (
+               "name" "Book about ☕ tables.gif"
+            ) NIL NIL "Base64" 56
+         ) "mixed"
+      ) 0
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "html" (
+         "charset" "us-ascii"
+      ) NIL NIL "base64" 239 3 "07aab44e51c5f1833a5d19f2e1804c4b" NIL NIL NIL
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 723 (
+         NIL "Exporting my book about coffee tables" (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) (
+            (
+               "Cosmo Kramer" NIL "kramer" "kramerica.com"
+            )
+         ) NIL NIL NIL NIL NIL
+      ) (
+         (
+            "text" "plain" (
+               "charset" "utf-16"
+            ) NIL NIL "quoted-printable" 228 3 "3a942a99cdd8a099ae107d3867ec20fb" NIL NIL NIL
+         ) (
+            "image" "gif" (
+               "name" "Book about ☕ tables.gif"
+            ) NIL NIL "Base64" 56 "d40fa7f401e9dc2df56cbb740d65ff52" (
+               "attachment" (
+                  
+               )
+            ) NIL NIL
+         ) "mixed" (
+            "boundary" "giddyup"
+         ) NIL NIL NIL
+      ) 0 "cdb0382a03a15601fb1b3c7422521620" NIL NIL NIL
+   ) "mixed" (
+      "boundary" "festivus"
+   ) NIL NIL NIL
+)
+
+BODY[] {1457}
+From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
+To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
+    jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
+Date: Sat, 20 Nov 2021 14:22:01 -0800
+Subject: Why not both importing AND exporting? =?utf-8?b?4pi6?=
+Content-Type: multipart/mixed; boundary="festivus";
+
+--festivus
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+--festivus
+Content-Type: message/rfc822
+
+From: "Cosmo Kramer" <kramer@kramerica.com>
+Subject: Exporting my book about coffee tables
+Content-Type: multipart/mixed; boundary="giddyup";
+
+--giddyup
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+--giddyup
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--giddyup--
+--festivus--
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {349}
+From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
+To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
+    jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
+Date: Sat, 20 Nov 2021 14:22:01 -0800
+Subject: Why not both importing AND exporting? =?utf-8?b?4pi6?=
+Content-Type: multipart/mixed; boundary="festivus";
+
+
+----------------------------------
+BODY[TEXT] {1108}
+--festivus
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+--festivus
+Content-Type: message/rfc822
+
+From: "Cosmo Kramer" <kramer@kramerica.com>
+Subject: Exporting my book about coffee tables
+Content-Type: multipart/mixed; boundary="giddyup";
+
+--giddyup
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+--giddyup
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--giddyup--
+--festivus--
+
+----------------------------------
+BODY[MIME] {54}
+Content-Type: multipart/mixed; boundary="festivus";
+
+
+----------------------------------
+BODY[1] {239}
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+BINARY[1] {175}
+<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to focus just on the &ldquo;importing&rdquo;,</p><p>but then I thought, why not do both? &#x263A;</p></html>
+BINARY.SIZE[1] 175
+----------------------------------
+BODY[1.HEADER] {79}
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[1.TEXT] {239}
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+----------------------------------
+BODY[1.MIME] {80}
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[2] {723}
+From: "Cosmo Kramer" <kramer@kramerica.com>
+Subject: Exporting my book about coffee tables
+Content-Type: multipart/mixed; boundary="giddyup";
+
+--giddyup
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+--giddyup
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--giddyup--
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 723
+----------------------------------
+BODY[2.HEADER] {143}
+From: "Cosmo Kramer" <kramer@kramerica.com>
+Subject: Exporting my book about coffee tables
+Content-Type: multipart/mixed; boundary="giddyup";
+
+
+----------------------------------
+BODY[2.TEXT] {580}
+--giddyup
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+--giddyup
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--giddyup--
+----------------------------------
+BODY[2.MIME] {53}
+Content-Type: multipart/mixed; boundary="giddyup";
+
+
+----------------------------------
+BODY[2.1] {228}
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+BINARY[2.1] {101}
+ℌ𝔢𝔩𝔭 𝔪𝔢 𝔢𝔵𝔭𝔬𝔯𝔱 𝔪𝔶 𝔟𝔬𝔬𝔨 𝔭𝔩𝔢𝔞𝔰𝔢!
+BINARY.SIZE[2.1] 101
+----------------------------------
+BODY[2.1.HEADER] {88}
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+
+----------------------------------
+BODY[2.1.TEXT] {228}
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+----------------------------------
+BODY[2.1.MIME] {89}
+Content-Type: text/plain; charset="utf-16"
+Content-Transfer-Encoding: quoted-printable
+
+
+----------------------------------
+BODY[2.2] {56}
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+BINARY[2.2] {16}
+[binary content]
+BINARY.SIZE[2.2] 42
+----------------------------------
+BODY[2.2.HEADER] {175}
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+
+----------------------------------
+BODY[2.2.TEXT] {56}
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+----------------------------------
+BODY[2.2.MIME] {176}
+Content-Type: image/gif; name*1="about "; name*0="Book ";
+              name*2*=utf-8''%e2%98%95 tables.gif
+Content-Transfer-Encoding: Base64
+Content-Disposition: attachment
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {196}
+From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
+To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
+    jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+Vandelay <art@vandelay.co
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {286}
+From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
+To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
+    jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
+Date: Sat, 20 Nov 2021 14:22:01 -0800
+Content-Type: multipart/mixed; boundary="festivus";
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+Vandelay <art@vandelay.co
+----------------------------------

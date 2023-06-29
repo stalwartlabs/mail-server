@@ -71,6 +71,7 @@ pub enum ServerProtocol {
     Jmap,
     Imap,
     Http,
+    ManageSieve,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -87,6 +88,7 @@ impl Display for ServerProtocol {
             ServerProtocol::Jmap => write!(f, "jmap"),
             ServerProtocol::Imap => write!(f, "imap"),
             ServerProtocol::Http => write!(f, "http"),
+            ServerProtocol::ManageSieve => write!(f, "managesieve"),
         }
     }
 }

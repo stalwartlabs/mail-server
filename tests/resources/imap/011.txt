@@ -1,0 +1,30 @@
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/digest; boundary="foo"
+
+prologue
+
+--foo 
+
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+--foo 
+X-Mime: m2 header
+
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+--foo--
+
+epilogue

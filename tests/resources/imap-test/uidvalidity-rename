@@ -1,0 +1,19 @@
+connections: 2
+state: auth
+
+1 ok create ${mailbox}
+2 ok create ${mailbox}2
+
+1 ok append
+2 ok append
+
+1 ok status $mailbox (uidvalidity uidnext)
+* status $mailbox (uidvalidity $uidvalidity uidnext $uidnext)
+
+1 ok rename ${mailbox} ${mailbox}3
+2 ok rename ${mailbox}2 ${mailbox}
+
+#1 ok status $mailbox (uidvalidity uidnext)
+#! status $mailbox (uidvalidity $uidvalidity uidnext $uidnext)
+
+1 "" delete ${mailbox}3

@@ -1,0 +1,482 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 262 7
+   ) (
+      "text" "plain" (
+         "charset" "US-ASCII"
+      ) NIL NIL "7bit" 111 3
+   ) (
+      (
+         "text" "basic" (
+            "charset" "us-ascii"
+         ) NIL NIL "base64" 85 2
+      ) (
+         "text" "jpeg" (
+            "charset" "us-ascii"
+         ) NIL NIL "base64" 44 1
+      ) "parallel"
+   ) (
+      "text" "enriched" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 140 5
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 223 (
+         NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
+      ) (
+         "text" "plain" (
+            "charset" "ISO-8859-1"
+         ) NIL NIL "Quoted-printable" 48 1
+      ) 0
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 262 7 "1ba9f4410aca245ffe18870d1767eaf1" NIL NIL NIL
+   ) (
+      "text" "plain" (
+         "charset" "US-ASCII"
+      ) NIL NIL "7bit" 111 3 "457a84e4830817334703ecead7a71bdf" NIL NIL NIL
+   ) (
+      (
+         "text" "basic" (
+            "charset" "us-ascii"
+         ) NIL NIL "base64" 85 2 "c6e3404e683fdeb88e96dfed0abbddad" NIL NIL NIL
+      ) (
+         "text" "jpeg" (
+            "charset" "us-ascii"
+         ) NIL NIL "base64" 44 1 "88217c7613d6252c87ba0cd279f1e93c" NIL NIL NIL
+      ) "parallel" (
+         "boundary" "unique-boundary-2"
+      ) NIL NIL NIL
+   ) (
+      "text" "enriched" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 140 5 "4a5cd280a875e791bd6d767dcf60c43d" NIL NIL NIL
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 223 (
+         NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
+      ) (
+         "text" "plain" (
+            "charset" "ISO-8859-1"
+         ) NIL NIL "Quoted-printable" 48 1 "632b0aae19d3c55d420c0dc8cebaf049" NIL NIL NIL
+      ) 0 "40ceb8762dcb7270c37f1395e91aa893" NIL NIL NIL
+   ) "mixed" (
+      "boundary" "unique-boundary-1"
+   ) NIL NIL NIL
+)
+
+BODY[] {1854}
+MIME-Version: 1.0
+From: Nathaniel Borenstein <nsb@nsb.fv.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Fri, 07 Oct 1994 16:15:05 -0700 (PDT)
+Subject: A multipart example
+Content-Type: multipart/mixed;
+            boundary=unique-boundary-1
+
+This is the preamble area of a multipart message.
+Mail readers that understand multipart format
+should ignore this preamble.
+
+If you are reading this text, you might want to
+consider changing to a mail reader that understands
+how to properly display multipart messages.
+
+--unique-boundary-1
+
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+--unique-boundary-1
+Content-type: text/plain; charset=US-ASCII
+
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+--unique-boundary-1
+Content-Type: multipart/parallel; boundary=unique-boundary-2
+
+--unique-boundary-2
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+--unique-boundary-2
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+... base64-encoded image data goes here ...
+
+--unique-boundary-2--
+
+--unique-boundary-1
+Content-type: text/enriched
+
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+--unique-boundary-1
+Content-Type: message/rfc822
+
+From: (mailbox in US-ASCII)
+To: (address in US-ASCII)
+Subject: (subject in US-ASCII)
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+... Additional text in ISO-8859-1 goes here ...
+
+--unique-boundary-1--
+
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {239}
+MIME-Version: 1.0
+From: Nathaniel Borenstein <nsb@nsb.fv.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Fri, 07 Oct 1994 16:15:05 -0700 (PDT)
+Subject: A multipart example
+Content-Type: multipart/mixed;
+            boundary=unique-boundary-1
+
+
+----------------------------------
+BODY[TEXT] {1615}
+This is the preamble area of a multipart message.
+Mail readers that understand multipart format
+should ignore this preamble.
+
+If you are reading this text, you might want to
+consider changing to a mail reader that understands
+how to properly display multipart messages.
+
+--unique-boundary-1
+
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+--unique-boundary-1
+Content-type: text/plain; charset=US-ASCII
+
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+--unique-boundary-1
+Content-Type: multipart/parallel; boundary=unique-boundary-2
+
+--unique-boundary-2
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+--unique-boundary-2
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+... base64-encoded image data goes here ...
+
+--unique-boundary-2--
+
+--unique-boundary-1
+Content-type: text/enriched
+
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+--unique-boundary-1
+Content-Type: message/rfc822
+
+From: (mailbox in US-ASCII)
+To: (address in US-ASCII)
+Subject: (subject in US-ASCII)
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+... Additional text in ISO-8859-1 goes here ...
+
+--unique-boundary-1--
+
+
+----------------------------------
+BODY[MIME] {72}
+Content-Type: multipart/mixed;
+            boundary=unique-boundary-1
+
+
+----------------------------------
+BODY[1] {262}
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+BINARY[1] {262}
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+BINARY.SIZE[1] 262
+----------------------------------
+BODY[1.HEADER] {1}
+
+
+----------------------------------
+BODY[1.TEXT] {262}
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+----------------------------------
+BODY[1.MIME] {2}
+
+
+----------------------------------
+BODY[2] {111}
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+BINARY[2] {111}
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+BINARY.SIZE[2] 111
+----------------------------------
+BODY[2.HEADER] {44}
+Content-type: text/plain; charset=US-ASCII
+
+
+----------------------------------
+BODY[2.TEXT] {111}
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+----------------------------------
+BODY[2.MIME] {45}
+Content-Type: text/plain; charset=US-ASCII
+
+
+----------------------------------
+BODY[3] {314}
+--unique-boundary-2
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+--unique-boundary-2
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+... base64-encoded image data goes here ...
+
+--unique-boundary-2--
+
+BINARY.SIZE[3] 0
+----------------------------------
+BODY[3.HEADER] {62}
+Content-Type: multipart/parallel; boundary=unique-boundary-2
+
+
+----------------------------------
+BODY[3.TEXT] {314}
+--unique-boundary-2
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+--unique-boundary-2
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+... base64-encoded image data goes here ...
+
+--unique-boundary-2--
+
+----------------------------------
+BODY[3.MIME] {63}
+Content-Type: multipart/parallel; boundary=unique-boundary-2
+
+
+----------------------------------
+BODY[3.1] {85}
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+* NO [UNKNOWN-CTE] Failed to decode part 3.1 of message 0.
+
+BINARY.SIZE[3.1] 85
+----------------------------------
+BODY[3.1.HEADER] {61}
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[3.1.TEXT] {85}
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+----------------------------------
+BODY[3.1.MIME] {62}
+Content-Type: audio/basic
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[3.2] {44}
+... base64-encoded image data goes here ...
+
+* NO [UNKNOWN-CTE] Failed to decode part 3.2 of message 0.
+
+BINARY.SIZE[3.2] 44
+----------------------------------
+BODY[3.2.HEADER] {60}
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[3.2.TEXT] {44}
+... base64-encoded image data goes here ...
+
+----------------------------------
+BODY[3.2.MIME] {61}
+Content-Type: image/jpeg
+Content-Transfer-Encoding: base64
+
+
+----------------------------------
+BODY[4] {140}
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+BINARY[4] {140}
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+BINARY.SIZE[4] 140
+----------------------------------
+BODY[4.HEADER] {29}
+Content-type: text/enriched
+
+
+----------------------------------
+BODY[4.TEXT] {140}
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+----------------------------------
+BODY[4.MIME] {30}
+Content-Type: text/enriched
+
+
+----------------------------------
+BODY[5] {223}
+From: (mailbox in US-ASCII)
+To: (address in US-ASCII)
+Subject: (subject in US-ASCII)
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+... Additional text in ISO-8859-1 goes here ...
+
+BINARY[5] {16}
+[binary content]
+BINARY.SIZE[5] 223
+----------------------------------
+BODY[5.HEADER] {175}
+From: (mailbox in US-ASCII)
+To: (address in US-ASCII)
+Subject: (subject in US-ASCII)
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+
+----------------------------------
+BODY[5.TEXT] {48}
+... Additional text in ISO-8859-1 goes here ...
+
+----------------------------------
+BODY[5.MIME] {91}
+Content-Type: Text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: Quoted-printable
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {79}
+From: Nathaniel Borenstein <nsb@nsb.fv.com>
+To: Ned Freed <ned@innosoft.com>
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+aniel Borenstein <nsb@nsb
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {211}
+MIME-Version: 1.0
+From: Nathaniel Borenstein <nsb@nsb.fv.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Fri, 07 Oct 1994 16:15:05 -0700 (PDT)
+Content-Type: multipart/mixed;
+            boundary=unique-boundary-1
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+on: 1.0
+From: Nathaniel B
+----------------------------------

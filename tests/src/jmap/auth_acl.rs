@@ -655,7 +655,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     for id in [jane_id.id(), john_id.id()] {
         add_user_id_to_group_id(directory, id as u32, sales_id.id() as u32).await;
     }
-    server.access_tokens.lock().clear();
+    server.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
     jane_client.refresh_session().await.unwrap();
     bill_client.refresh_session().await.unwrap();
@@ -750,7 +750,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Remove John from the sales group
     remove_from_group(directory, john_id.id() as u32, sales_id.id() as u32).await;
-    server.sessions.lock().clear();
+    server.sessions.clear();
     assert_forbidden(
         john_client
             .set_default_account_id(&sales_id.to_string())

@@ -1,0 +1,184 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 48 1
+   ) (
+      "text" "enriched" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 69 2
+   ) (
+      "application" "x-whatever" NIL NIL NIL NIL 51
+   ) "alternative"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 48 1 "2229d79e5de40eae37c43fe934adbd24" NIL NIL NIL
+   ) (
+      "text" "enriched" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 69 2 "1aba0fd91c6544b8626008f78b83c3f9" NIL NIL NIL
+   ) (
+      "application" "x-whatever" NIL NIL NIL NIL 51 "7f7ef645554f637854b8acdd853aa612" NIL NIL NIL
+   ) "alternative" (
+      "boundary" "boundary42"
+   ) NIL NIL NIL
+)
+
+BODY[] {565}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Mon, 22 Mar 1993 09:41:09 -0800 (PST)
+Subject: Formatted text mail
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary=boundary42
+
+--boundary42
+Content-Type: text/plain; charset=us-ascii
+
+... plain text version of message goes here ...
+
+--boundary42
+Content-Type: text/enriched
+
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+--boundary42
+Content-Type: application/x-whatever
+
+... fanciest version of same message goes here ...
+
+--boundary42--
+
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {228}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Mon, 22 Mar 1993 09:41:09 -0800 (PST)
+Subject: Formatted text mail
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary=boundary42
+
+
+----------------------------------
+BODY[TEXT] {337}
+--boundary42
+Content-Type: text/plain; charset=us-ascii
+
+... plain text version of message goes here ...
+
+--boundary42
+Content-Type: text/enriched
+
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+--boundary42
+Content-Type: application/x-whatever
+
+... fanciest version of same message goes here ...
+
+--boundary42--
+
+
+----------------------------------
+BODY[MIME] {59}
+Content-Type: multipart/alternative; boundary=boundary42
+
+
+----------------------------------
+BODY[1] {48}
+... plain text version of message goes here ...
+
+BINARY[1] {48}
+... plain text version of message goes here ...
+
+BINARY.SIZE[1] 48
+----------------------------------
+BODY[1.HEADER] {44}
+Content-Type: text/plain; charset=us-ascii
+
+
+----------------------------------
+BODY[1.TEXT] {48}
+... plain text version of message goes here ...
+
+----------------------------------
+BODY[1.MIME] {45}
+Content-Type: text/plain; charset=us-ascii
+
+
+----------------------------------
+BODY[2] {69}
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+BINARY[2] {69}
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+BINARY.SIZE[2] 69
+----------------------------------
+BODY[2.HEADER] {29}
+Content-Type: text/enriched
+
+
+----------------------------------
+BODY[2.TEXT] {69}
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+----------------------------------
+BODY[2.MIME] {30}
+Content-Type: text/enriched
+
+
+----------------------------------
+BODY[3] {51}
+... fanciest version of same message goes here ...
+
+BINARY[3] {16}
+[binary content]
+BINARY.SIZE[3] 51
+----------------------------------
+BODY[3.HEADER] {38}
+Content-Type: application/x-whatever
+
+
+----------------------------------
+BODY[3.TEXT] {51}
+... fanciest version of same message goes here ...
+
+----------------------------------
+BODY[3.MIME] {39}
+Content-Type: application/x-whatever
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {81}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+aniel Borenstein <nsb@bel
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {200}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Mon, 22 Mar 1993 09:41:09 -0800 (PST)
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary=boundary42
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+aniel Borenstein <nsb@bel
+----------------------------------

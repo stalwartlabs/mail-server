@@ -1,0 +1,27 @@
+capabilities: urlauth
+connections: 2
+user 2: $user2
+
+1 ok fetch 1:2 (uid body[])
+* 1 fetch (uid $uid1 body[] $body1)
+* 2 fetch (uid $uid2 body[] $body2)
+
+1 ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid1;urlauth=authuser" INTERNAL
+* GENURLAUTH $mail_url1
+
+1 ok GENURLAUTH "imap://$username@$domain/$mailbox_url/;uid=$uid2;urlauth=authuser" INTERNAL
+* GENURLAUTH $mail_url2
+
+2 ok URLFETCH $mail_url1
+* URLFETCH $mail_url1 $body1
+
+2 ok URLFETCH $mail_url2
+* URLFETCH $mail_url2 $body2
+
+1 ok resetkey $mailbox
+
+2 ok URLFETCH $mail_url1
+* URLFETCH $mail_url1 NIL
+
+2 ok URLFETCH $mail_url2
+* URLFETCH $mail_url2 NIL

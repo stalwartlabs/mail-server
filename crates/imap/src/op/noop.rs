@@ -28,13 +28,9 @@ use tokio::io::AsyncRead;
 use crate::core::{Session, State};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_noop(
-        &mut self,
-        request: Request<Command>,
-        is_check: bool,
-    ) -> Result<(), ()> {
+    pub async fn handle_noop(&mut self, request: Request<Command>) -> crate::OpResult {
         match &self.state {
-            State::Authenticated { data } => {
+            State::Authenticated { data, .. } => {
                 data.write_changes(&None, true, false, self.is_qresync, self.version.is_rev2())
                     .await;
             }
@@ -52,13 +48,9 @@ impl<T: AsyncRead> Session<T> {
         }
 
         self.write_bytes(
-            StatusResponse::completed(if !is_check {
-                Command::Noop
-            } else {
-                Command::Check
-            })
-            .with_tag(request.tag)
-            .into_bytes(),
+            StatusResponse::completed(request.command)
+                .with_tag(request.tag)
+                .into_bytes(),
         )
         .await
     }

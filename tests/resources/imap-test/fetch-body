@@ -1,0 +1,122 @@
+messages: all
+
+# header and body fetches
+ok fetch 1 rfc822.header
+* 1 fetch (rfc822.header $hdr1)
+ok fetch 1 body.peek[header]
+* 1 fetch (body[header] $hdr1)
+
+ok fetch 1 (flags body.peek[text])
+* 1 fetch (flags () body[text] {{{
+body1
+
+
+}}})
+ok fetch 1 rfc822.text
+* 1 fetch (rfc822.text {{{
+body1
+
+
+}}})
+* 1 fetch (flags (\seen))
+
+ok fetch 2 (flags body.peek[])
+* 2 fetch (flags () body[] $full2)
+ok fetch 2 rfc822
+* 2 fetch (rfc822 $full2)
+* 2 fetch (flags (\seen))
+
+ok fetch 3 (body[])
+* 3 fetch (body[] $full3)
+* 3 fetch (flags (\seen))
+ok fetch 4 (body[header])
+* 4 fetch (body[header] $hdr4)
+* 4 fetch (flags (\seen))
+
+# partial fetches
+ok fetch 2 body.peek[text]<0.3>
+* 2 fetch (body[text]<0> "bod")
+ok fetch 2 body.peek[text]<3.3>
+* 2 fetch (body[text]<3> "y22")
+
+ok fetch 3 body.peek[text]<0.1>
+* 3 fetch (body[text]<0> "b")
+ok fetch 3 body.peek[text]<5.1>
+* 3 fetch (body[text]<5> "3")
+ok fetch 3 body.peek[text]<5.2>
+* 3 fetch (body[text]<5> ~{{{
+3
+}}})
+ok fetch 3 body.peek[text]<5.3>
+* 3 fetch (body[text]<5> ~{{{
+3
+
+}}})
+ok fetch 3 body.peek[text]<6.1>
+* 3 fetch (body[text]<6> ~{{{
+
+}}})
+ok fetch 3 body.peek[text]<6.2>
+* 3 fetch (body[text]<6> ~{{{
+
+
+}}})
+ok fetch 3 body.peek[text]<7.1>
+* 3 fetch (body[text]<7> ~{{{
+
+
+}}})
+
+# header fields
+ok fetch 1 body.peek[header.fields (from)]
+* 1 fetch (body[header.fields (from)] {{{
+From: User1 <user1@domain.org>
+
+
+}}})
+
+ok fetch 1 (body.peek[header.fields (from)])
+* 1 fetch (body[header.fields (from)] {{{
+From: User1 <user1@domain.org>
+
+
+}}})
+
+ok fetch 1 (body.peek[header.fields (from from)])
+* 1 fetch (body[header.fields (from from)] {{{
+From: User1 <user1@domain.org>
+
+
+}}})
+
+ok fetch 1 body.peek[header.fields (from subject)]
+* 1 fetch (body[header.fields (from subject)] {{{
+From: User1 <user1@domain.org>
+Subject: s1
+
+
+}}})
+
+ok fetch 1 body.peek[header.fields.not (date)]
+! 1 fetch (body[header.fields.not (date)] {{{
+From: User1 <user1@domain.org>
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Subject: s1
+
+
+}}})
+
+ok fetch 1 body.peek[header.fields.not (date date)]
+! 1 fetch (body[header.fields.not (date date)] {{{
+From: User1 <user1@domain.org>
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Subject: s1
+
+
+}}})
+
+ok fetch 1 body.peek[header.fields (xyz)]
+* 1 fetch (body[header.fields (xyz)] {{{
+
+
+}}})

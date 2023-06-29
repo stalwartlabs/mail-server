@@ -1,0 +1,43 @@
+connections: 3
+state: created
+
+1 ok select $mailbox
+2 ok select $mailbox
+
+# Two connections have mailbox SELECTed, one doesn't.
+# The \recent flags can be given to either one of the SELECTed connections,
+# but never for the 3rd. We rely on mailbox state tracking to catch duplicate
+# \recent flags (which is why there are two FETCH FLAGS commands).
+
+1 ok append $mailbox (\seen \flagged)
+* 1 exists 
+2 ok noop
+* 1 exists
+3 ok status $mailbox (messages unseen recent)
+* status $mailbox (messages 1 unseen 0 recent 0)
+1 ok fetch 1 (uid flags)
+* 1 fetch (uid $uid1 flags (\seen \flagged))
+2 ok fetch 1 (uid flags)
+* 1 fetch (uid $uid1 flags (\seen \flagged))
+
+2 ok append
+* 2 exists
+1 ok noop
+* 2 exists
+3 ok status $mailbox (messages unseen recent)
+* status $mailbox (messages 2 unseen 1 recent 0)
+1 ok fetch 2 (uid flags)
+2 ok fetch 2 (uid flags)
+
+3 ok append
+3 ok status $mailbox (messages unseen)
+* status $mailbox (messages 3 unseen 2)
+2 ok noop
+* 3 exists
+1 ok noop
+* 3 exists
+1 ok fetch 3 (uid flags)
+2 ok fetch 3 (uid flags)
+
+1 append ${mailbox}nonexistent
+no [trycreate]

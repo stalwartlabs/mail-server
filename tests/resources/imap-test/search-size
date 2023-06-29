@@ -1,0 +1,22 @@
+messages: all
+
+# get the middle size. don't trust precalculated values in case server
+# modifies the message while APPENDing it. Messages 3 and 4 have different
+# RFC822.SIZE, but with servers that store linefeeds as LFs they have the
+# same file size. This test catches if they search using file size.
+ok fetch 1:4 rfc822.size
+* 3 fetch (rfc822.size $size)
+
+ok search smaller $size
+* search 1 2
+ok search larger $size
+* search 4
+ok search not smaller $size
+* search 3 4
+ok search not larger $size
+* search 1 2 3
+
+ok search not smaller $size not larger $size
+* search 3
+ok search or smaller $size larger $size
+* search 1 2 4

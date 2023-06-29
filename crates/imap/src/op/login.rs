@@ -29,7 +29,7 @@ use tokio::io::AsyncRead;
 use crate::core::Session;
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_login(&mut self, request: Request<Command>) -> Result<(), ()> {
+    pub async fn handle_login(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_login() {
             Ok(args) => {
                 self.authenticate(

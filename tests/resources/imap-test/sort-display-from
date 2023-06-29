@@ -1,0 +1,8 @@
+capabilities: SORT=DISPLAY
+messages: all
+
+ok sort (displayfrom) us-ascii all
+* sort 2 3 4 1 5
+
+ok sort (reverse displayfrom) us-ascii all
+* sort 5 1 4 3 2

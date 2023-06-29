@@ -1,0 +1,293 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 45 1
+   ) (
+      (
+         "message" NIL NIL NIL NIL NIL 100 (
+            "Fri, 26 Mar 1993 09:13:32 +0000" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 22 1
+         ) 0
+      ) (
+         "message" NIL NIL NIL NIL NIL 125 (
+            "Fri, 26 Mar 1993 15:07:13 +0000" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 31 1
+         ) 0
+      ) "digest"
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 45 1 "f7f7e917e54763330bc648984459b38e" NIL NIL NIL
+   ) (
+      (
+         "message" NIL NIL NIL NIL NIL 100 (
+            "Fri, 26 Mar 1993 09:13:32 +0000" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 22 1 "1ec4e1f0175dc661a12854b33879ce9b" NIL NIL NIL
+         ) 0 "ef1527984c599523c90fb184a8fdfd61" NIL NIL NIL
+      ) (
+         "message" NIL NIL NIL NIL NIL 125 (
+            "Fri, 26 Mar 1993 15:07:13 +0000" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 31 1 "7a0001277b1197e7029ad48b54919b62" NIL NIL NIL
+         ) 0 "9609bccef55fba1208046885cdcc9db8" NIL NIL NIL
+      ) "digest" (
+         "boundary" "---- next message ----"
+      ) NIL NIL NIL
+   ) "mixed" (
+      "boundary" "---- main boundary ----"
+   ) NIL NIL NIL
+)
+
+BODY[] {728}
+From: Moderator-Address
+To: Recipient-List
+Date: Mon, 22 Mar 1994 13:34:51 +0000
+Subject: Internet Digest, volume 42
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+            boundary="---- main boundary ----"
+
+------ main boundary ----
+
+...Introductory text or table of contents...
+
+------ main boundary ----
+Content-Type: multipart/digest;
+            boundary="---- next message ----"
+
+------ next message ----
+
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+------ next message ----
+
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+------ next message ------
+
+------ main boundary ------
+
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {214}
+From: Moderator-Address
+To: Recipient-List
+Date: Mon, 22 Mar 1994 13:34:51 +0000
+Subject: Internet Digest, volume 42
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+            boundary="---- main boundary ----"
+
+
+----------------------------------
+BODY[TEXT] {514}
+------ main boundary ----
+
+...Introductory text or table of contents...
+
+------ main boundary ----
+Content-Type: multipart/digest;
+            boundary="---- next message ----"
+
+------ next message ----
+
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+------ next message ----
+
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+------ next message ------
+
+------ main boundary ------
+
+
+----------------------------------
+BODY[MIME] {80}
+Content-Type: multipart/mixed;
+            boundary="---- main boundary ----"
+
+
+----------------------------------
+BODY[1] {45}
+...Introductory text or table of contents...
+
+BINARY[1] {45}
+...Introductory text or table of contents...
+
+BINARY.SIZE[1] 45
+----------------------------------
+BODY[1.HEADER] {1}
+
+
+----------------------------------
+BODY[1.TEXT] {45}
+...Introductory text or table of contents...
+
+----------------------------------
+BODY[1.MIME] {2}
+
+
+----------------------------------
+BODY[2] {306}
+------ next message ----
+
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+------ next message ----
+
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+------ next message ------
+
+BINARY.SIZE[2] 0
+----------------------------------
+BODY[2.HEADER] {79}
+Content-Type: multipart/digest;
+            boundary="---- next message ----"
+
+
+----------------------------------
+BODY[2.TEXT] {306}
+------ next message ----
+
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+------ next message ----
+
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+------ next message ------
+
+----------------------------------
+BODY[2.MIME] {80}
+Content-Type: multipart/digest;
+            boundary="---- next message ----"
+
+
+----------------------------------
+BODY[2.1] {100}
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+BINARY[2.1] {16}
+[binary content]
+BINARY.SIZE[2.1] 100
+----------------------------------
+BODY[2.1.HEADER] {78}
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+
+----------------------------------
+BODY[2.1.TEXT] {22}
+...body goes here ...
+
+----------------------------------
+BODY[2.1.MIME] {2}
+
+
+----------------------------------
+BODY[2.2] {125}
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+BINARY[2.2] {16}
+[binary content]
+BINARY.SIZE[2.2] 125
+----------------------------------
+BODY[2.2.HEADER] {94}
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+
+----------------------------------
+BODY[2.2.TEXT] {31}
+... another body goes here ...
+
+----------------------------------
+BODY[2.2.MIME] {2}
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {45}
+From: Moderator-Address
+To: Recipient-List
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+rator-Address
+To: Recipie
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {179}
+From: Moderator-Address
+To: Recipient-List
+Date: Mon, 22 Mar 1994 13:34:51 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+            boundary="---- main boundary ----"
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+rator-Address
+To: Recipie
+----------------------------------

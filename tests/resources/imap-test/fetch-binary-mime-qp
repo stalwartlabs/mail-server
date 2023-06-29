@@ -1,0 +1,54 @@
+capabilities: BINARY
+messages: all
+
+ok fetch 1 (binary.size[1])
+* 1 fetch (binary.size[1] 65)
+
+ok fetch 1 (binary.peek[1])
+* 1 fetch (binary[1] {{{
+hello
+bar
+foo	bar
+foo	 	b
+foo bar
+foo b
+foo
+bar
+foo_bar
+
+}}})
+
+ok fetch 1 (binary.peek[1]<0.10>)
+* 1 fetch (binary[1]<0> {{{
+hello
+bar
+}}})
+
+ok fetch 1 (binary.peek[1]<10.10>)
+* 1 fetch (binary[1]<10> ~{{{
+
+foo	bar
+}}})
+
+ok fetch 1 (binary.peek[1]<20.10>)
+* 1 fetch (binary[1]<20> ~{{{
+
+foo	 	b
+
+}}})
+
+ok fetch 1 (binary.peek[1]<15.10>)
+* 1 fetch (binary[1]<15> ~{{{
+	bar
+foo	
+}}})
+
+ok fetch 1 (binary.peek[1]<40.100>)
+* 1 fetch (binary[1]<40> {{{
+oo b
+foo
+bar
+foo_bar
+
+}}})
+

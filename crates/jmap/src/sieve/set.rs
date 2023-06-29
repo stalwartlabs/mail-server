@@ -247,11 +247,6 @@ impl JMAP {
             }
         }
 
-        // Write changes
-        if !changes.is_empty() {
-            ctx.response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
-        }
-
         // Activate / deactivate scripts
         if ctx.response.not_created.is_empty()
             && ctx.response.not_updated.is_empty()
@@ -283,7 +278,13 @@ impl JMAP {
                 if let Some(obj) = ctx.response.get_object_by_id(Id::from(document_id)) {
                     obj.append(Property::IsActive, Value::Bool(is_active));
                 }
+                changes.log_update(Collection::SieveScript, document_id);
             }
+        }
+
+        // Write changes
+        if !changes.is_empty() {
+            ctx.response.new_state = Some(self.commit_changes(account_id, changes).await?.into());
         }
 
         Ok(ctx.response)

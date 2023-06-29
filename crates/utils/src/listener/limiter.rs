@@ -95,6 +95,10 @@ impl RateLimiter {
         self.last_refill = Instant::now();
         self.tokens = self.max_requests;
     }
+
+    pub fn is_active(&self) -> bool {
+        self.tokens < self.max_requests || self.last_refill.elapsed() < self.max_interval
+    }
 }
 
 impl ConcurrencyLimiter {
@@ -119,5 +123,9 @@ impl ConcurrencyLimiter {
 
     pub fn check_is_allowed(&self) -> bool {
         self.concurrent.load(Ordering::Relaxed) < self.max_concurrent
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.concurrent.load(Ordering::Relaxed) > 0
     }
 }

@@ -1,0 +1,95 @@
+state: auth
+capabilities: LIST-EXTENDED
+
+# get the separator
+ok list "" ""
+* list () $sep ""
+
+ok create $mailbox${sep}
+ok create $mailbox${sep}test1
+ok create $mailbox${sep}test2${sep}
+ok create $mailbox${sep}test2${sep}test1
+ok create $mailbox${sep}test3
+ok create $mailbox${sep}test4${sep}test5
+ok create $mailbox${sep}test4${sep}test52
+ok create $mailbox${sep}test6
+ok create $mailbox${sep}test7${sep}test7
+ok create $mailbox${sep}test8${sep}test8
+ok create $mailbox${sep}test8${sep}test9
+
+ok subscribe $mailbox${sep}test1
+ok subscribe $mailbox${sep}test2${sep}test1
+ok subscribe $mailbox${sep}test6
+ok subscribe $mailbox${sep}test7${sep}test7
+ok subscribe $mailbox${sep}test8${sep}test8
+ok subscribe $mailbox${sep}test8${sep}test9
+
+ok delete $mailbox${sep}test6
+
+# "" isn't a special case with LIST-EXTENDED
+#ok list () "" ""
+#! list () $sep ""
+#ok list "" ("")
+#! list () $sep ""
+#ok list "" "" return ()
+#! list () $sep ""
+
+# test multiple patterns
+ok list "" ($mailbox${sep}*2 $mailbox${sep}test3)
+! list () $sep $mailbox${sep}test1
+* list () $sep $mailbox${sep}test2
+! list () $sep $mailbox${sep}test2${sep}test1
+* list () $sep $mailbox${sep}test3
+! list () $sep $mailbox${sep}test4
+! list () $sep $mailbox${sep}test4${sep}test5
+* list () $sep $mailbox${sep}test4${sep}test52
+! list () $sep $mailbox${sep}test6
+
+# test errors
+bad list (imaptest) "" ""
+bad list (recursivematch) "" ""
+bad list (recursivematch remote) "" ""
+bad list "" "" return (imaptest)
+
+ok list (remote) "" %
+
+ok list (subscribed) "" $mailbox${sep}*
+* list (\subscribed) $sep $mailbox${sep}test1
+* list (\subscribed) $sep $mailbox${sep}test2${sep}test1
+#* list ($!unordered $!ban=\noselect \subscribed \nonexistent) $sep $mailbox${sep}test6
+* list (\subscribed) $sep $mailbox${sep}test7${sep}test7
+* list (\subscribed) $sep $mailbox${sep}test8${sep}test9
+
+ok list (subscribed recursivematch) "" $mailbox${sep}test2% return (children)
+* list (\haschildren) $sep $mailbox${sep}test2 (childinfo (subscribed))
+! list (\subscribed) $sep $mailbox${sep}test2
+! list (\subscribed) $sep $mailbox${sep}test2${sep}test1
+
+# don't test for \hasnochildren, because it may be \noinferiors instead
+ok list "" $mailbox${sep}% return (children subscribed)
+* list ($!unordered $!ban=\haschildren \subscribed) $sep $mailbox${sep}test1
+* list ($!unordered $!ban=\subscribed \haschildren) $sep $mailbox${sep}test2
+* list ($!unordered $!ban=\subscribed $!ban=\haschildren) $sep $mailbox${sep}test3
+* list ($!unordered $!ban=\subscribed \haschildren) $sep $mailbox${sep}test4
+* list ($!unordered $!ban=\subscribed \haschildren) $sep $mailbox${sep}test7
+* list ($!unordered $!ban=\subscribed \haschildren) $sep $mailbox${sep}test8
+
+ok list (subscribed recursivematch) "" $mailbox*test7
+! list () $sep $mailbox${sep}test7
+* list (\subscribed) $sep $mailbox${sep}test7${sep}test7
+
+ok list (subscribed recursivematch) "" $mailbox*test8
+* list ($!unordered $!ban=\subscribed) $sep $mailbox${sep}test8 (childinfo ("subscribed"))
+* list (\subscribed) $sep $mailbox${sep}test8${sep}test8
+
+ok list (subscribed recursivematch) "" ($mailbox${sep}test2)
+* list () $sep $mailbox${sep}test2 (childinfo ("subscribed"))
+! list () $sep $mailbox${sep}test2${sep}test1
+
+ok list (subscribed recursivematch) "" ($mailbox${sep}test2 $mailbox${sep}test2${sep}test1)
+* list () $sep $mailbox${sep}test2 (childinfo ("subscribed"))
+* list (\subscribed) $sep $mailbox${sep}test2${sep}test1
+
+ok list "" ($mailbox${sep}test7 $mailbox${sep}test7${sep}test7)
+#This isn't really an error, although it's non-optimal: ! list (\nonexistent) $sep $mailbox${sep}test7
+* list () $sep $mailbox${sep}test7${sep}test7

@@ -42,7 +42,7 @@ pub enum Event {
     Upgrade(oneshot::Sender<WriteHalf<TcpStream>>),
 }
 
-pub fn spawn_writer(mut stream: Event) -> mpsc::Sender<Event> {
+pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Event> {
     let (tx, mut rx) = mpsc::channel::<Event>(IPC_CHANNEL_BUFFER);
     tokio::spawn(async move {
         'outer: loop {
@@ -51,6 +51,12 @@ pub fn spawn_writer(mut stream: Event) -> mpsc::Sender<Event> {
                     while let Some(event) = rx.recv().await {
                         match event {
                             Event::Bytes(bytes) => {
+                                tracing::trace!(
+                                    parent: &span,
+                                    event = "write",
+                                    data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+                                    size = bytes.len()
+                                );
                                 /*let tmp = "dd";
                                 println!(
                                     "<- {:?}",

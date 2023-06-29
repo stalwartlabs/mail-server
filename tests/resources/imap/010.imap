@@ -1,0 +1,126 @@
+BODY (
+   "message" "rfc822" NIL NIL NIL NIL 88 (
+      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) NIL NIL NIL NIL NIL
+   ) (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 12 1
+   ) 0
+)
+
+BODYSTRUCTURE (
+   "message" "rfc822" NIL NIL NIL NIL 88 (
+      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) (
+         (
+            NIL NIL "sub" "domain.org"
+         )
+      ) NIL NIL NIL NIL NIL
+   ) (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 12 1 "f0ef7081e1539ac00ef5b761b4fb01b3" NIL NIL NIL
+   ) 0 "dfea5a78f321b331e6d7983a1f9cc6b7" NIL NIL NIL
+)
+
+BODY[] {196}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 88
+----------------------------------
+BODY[HEADER] {108}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+
+----------------------------------
+BODY[TEXT] {88}
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+----------------------------------
+BODY[MIME] {31}
+Content-Type: message/rfc822
+
+
+----------------------------------
+BODY[1] {88}
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+----------------------------------
+BODY[1.HEADER] {76}
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+
+----------------------------------
+BODY[1.TEXT] {12}
+Hello world
+
+----------------------------------
+BODY[1.MIME] {2}
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {24}
+From: user@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {14}
+@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {109}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+MIME-Version: 1.0
+Content-Type: message/rfc822
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+@domain.org
+Date: Sat, 24
+----------------------------------

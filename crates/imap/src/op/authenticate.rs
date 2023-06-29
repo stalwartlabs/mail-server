@@ -139,24 +139,43 @@ impl<T: AsyncRead> Session<T> {
         };
 
         if let Some(access_token) = access_token {
-            // Cache access token
-            let access_token = Arc::new(access_token);
-            self.jmap.cache_access_token(access_token.clone());
+            // Enforce concurrency limits
+            let in_flight = self
+                .imap
+                .get_authenticated_limiter(access_token.primary_id())
+                .lock()
+                .concurrent_requests
+                .is_allowed();
+            if let Some(in_flight) = in_flight {
+                // Cache access token
+                let access_token = Arc::new(access_token);
+                self.jmap.cache_access_token(access_token.clone());
 
-            // Create session
-            self.state = State::Authenticated {
-                data: Arc::new(SessionData::new(self, &access_token).await?),
-            };
-            self.write_bytes(
-                StatusResponse::ok("Authentication successful")
-                    .with_code(ResponseCode::Capability {
-                        capabilities: Capability::all_capabilities(true, self.is_tls),
-                    })
-                    .with_tag(tag)
-                    .into_bytes(),
-            )
-            .await?;
-            Ok(())
+                // Create session
+                self.state = State::Authenticated {
+                    data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
+                };
+                self.write_bytes(
+                    StatusResponse::ok("Authentication successful")
+                        .with_code(ResponseCode::Capability {
+                            capabilities: Capability::all_capabilities(true, self.is_tls),
+                        })
+                        .with_tag(tag)
+                        .into_bytes(),
+                )
+                .await?;
+                Ok(())
+            } else {
+                self.write_bytes(
+                    StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
+                )
+                .await?;
+                tracing::debug!(parent: &self.span,
+                    event = "disconnect",
+                    "Too many concurrent connections, disconnecting.",
+                );
+                return Err(());
+            }
         } else {
             self.write_bytes(
                 StatusResponse::no("Authentication failed")
@@ -167,7 +186,7 @@ impl<T: AsyncRead> Session<T> {
             .await?;
 
             let auth_failures = self.state.auth_failures();
-            if auth_failures < 3 {
+            if auth_failures < self.imap.max_auth_failures {
                 self.state = State::NotAuthenticated {
                     auth_failures: auth_failures + 1,
                 };

@@ -17,6 +17,7 @@ jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
+managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }

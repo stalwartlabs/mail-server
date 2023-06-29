@@ -1,0 +1,20 @@
+capabilities: notify qresync
+
+ok create ${mailbox}2
+ok append ${mailbox}2
+
+#
+# Check that initial STATUS notifications are sent when needed
+#
+
+ok notify set status (mailboxes ${mailbox}2 (MessageExpunge))
+* status ${mailbox}2 (messages 1)
+
+ok notify set status (mailboxes ${mailbox}2 (MessageNew))
+* status ${mailbox}2 (messages 1 uidnext $uidnext uidvalidity $uidvalidity)
+
+ok notify set status (mailboxes ${mailbox}2 (FlagChange))
+* status ${mailbox}2 (uidvalidity $uidvalidity highestmodseq $hmodseq)
+
+ok notify set (mailboxes ${mailbox}2 (MessageNew MessageExpunge FlagChange))
+! status ${mailbox}2 ()

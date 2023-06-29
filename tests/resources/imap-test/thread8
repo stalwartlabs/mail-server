@@ -1,0 +1,20 @@
+capabilities: THREAD=REFERENCES
+state: created
+
+ok append
+ok append
+ok select $mailbox
+
+ok thread references us-ascii all
+* thread (1 2)
+
+ok store 2 +flags \deleted
+ok expunge
+
+ok thread references us-ascii all
+* thread (1)
+
+ok append
+
+ok thread references us-ascii all
+* thread (1 2)

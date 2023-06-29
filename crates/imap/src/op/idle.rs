@@ -45,7 +45,7 @@ use crate::core::{SelectedMailbox, Session, SessionData, State};
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> crate::OpResult {
         let (data, mailbox, types) = match &self.state {
-            State::Authenticated { data } => {
+            State::Authenticated { data, .. } => {
                 (data.clone(), None, Bitmap::from_iter([TypeState::Mailbox]))
             }
             State::Selected { data, mailbox, .. } => (

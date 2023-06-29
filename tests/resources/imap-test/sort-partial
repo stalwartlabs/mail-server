@@ -1,0 +1,19 @@
+capabilities: CONTEXT=SORT
+messages: all
+
+ok sort return (partial 1:1) (arrival) us-ascii all
+* esearch (tag $tag) partial (1:1 1)
+ok sort return (partial 2:4) (arrival) us-ascii all
+* esearch (tag $tag) partial (2:4 2:4)
+ok sort return (partial 4:2) (arrival) us-ascii all
+* esearch (tag $tag) partial (2:4 2:4)
+ok sort return (partial 2:4) (reverse arrival) us-ascii all
+* esearch (tag $tag) partial (2:4 3:4,2)
+ok sort return (partial 1:6) (arrival) us-ascii all
+* esearch (tag $tag) partial (1:6 1:5)
+ok sort return (partial 1:6) (reverse arrival) us-ascii all
+* esearch (tag $tag) partial (1:6 5,3:4,2,1)
+
+bad sort return (partial 1) (arrival) us-ascii all
+bad sort return (partial 1:*) (arrival) us-ascii all
+bad sort return (partial *:1) (arrival) us-ascii all

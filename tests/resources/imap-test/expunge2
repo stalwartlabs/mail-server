@@ -1,0 +1,44 @@
+connections: 2
+messages: 6
+
+1 ok fetch 2,4 uid
+* 2 fetch (uid $uid2)
+* 4 fetch (uid $uid4)
+
+# UID FETCH
+1 ok store 1,3 +flags \deleted
+1 ok expunge
+* $1 expunge
+* $3 expunge
+
+2 ok uid fetch $uid2,$uid4 uid
+* $2 fetch (uid $uid2)
+* $4 fetch (uid $uid4)
+2 ok noop
+
+# UID STORE
+1 ok store 1 +flags \deleted
+1 ok expunge
+* 1 expunge
+
+2 ok uid store $uid4 flags \seen
+* $2 fetch (uid $uid4 flags (\seen))
+2 ok noop
+
+# Make sure CHECK works just as well as NOOP
+1 ok store 1 +flags \deleted
+1 ok expunge
+* 1 expunge
+2 ok check
+* 1 expunge
+
+# Make sure FETCH, STORE and SEARCH don't trigger EXPUNGE
+1 ok store 1 +flags \deleted
+1 ok expunge
+
+2 ok fetch 2 flags
+! $1 expunge
+2 ok store 2 flags (\seen)
+! $1 expunge
+2 ok search all
+! $1 expunge

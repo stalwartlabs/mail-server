@@ -1,0 +1,36 @@
+From: Moderator-Address
+To: Recipient-List
+Date: Mon, 22 Mar 1994 13:34:51 +0000
+Subject: Internet Digest, volume 42
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+            boundary="---- main boundary ----"
+
+------ main boundary ----
+
+...Introductory text or table of contents...
+
+------ main boundary ----
+Content-Type: multipart/digest;
+            boundary="---- next message ----"
+
+------ next message ----
+
+From: someone-else
+Date: Fri, 26 Mar 1993 11:13:32 +0200
+Subject: my opinion
+
+...body goes here ...
+
+------ next message ----
+
+From: someone-else-again
+Date: Fri, 26 Mar 1993 10:07:13 -0500
+Subject: my different opinion
+
+... another body goes here ...
+
+------ next message ------
+
+------ main boundary ------
+

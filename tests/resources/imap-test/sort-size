@@ -1,0 +1,11 @@
+capabilities: SORT
+messages: all
+
+ok sort (size) us-ascii all
+* sort 1 8 2 6 3 5 4 7
+
+ok sort (reverse size) us-ascii all
+* sort 7 4 5 3 6 2 8 1
+
+ok sort (size reverse arrival) us-ascii all
+* sort 8 1 6 2 5 3 7 4

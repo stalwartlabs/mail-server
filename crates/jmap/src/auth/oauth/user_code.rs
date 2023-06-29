@@ -31,9 +31,9 @@ use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, header, StatusCode};
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::mail_auth::common::lru::DnsCache;
 use std::fmt::Write;
 use store::rand::{distributions::Alphanumeric, thread_rng, Rng};
+use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
@@ -141,7 +141,7 @@ impl JMAP {
                     .collect::<String>();
 
                 // Add client code
-                self.oauth_codes.insert(
+                self.oauth_codes.insert_with_ttl(
                     client_code.clone(),
                     Arc::new(OAuthCode {
                         status: STATUS_AUTHORIZED.into(),

@@ -1,0 +1,38 @@
+capabilities: ESEARCH CONDSTORE
+messages: 4
+
+# ENABLE is valid only in authenticated state. we could do enable+select
+# manually here also, but lets just make sure that switching it on via
+# condstore-enabling command works as well (since that is valid)
+ok fetch 1 modseq
+* ok [highestmodseq $highestmodseq]
+
+ok store 1 +flags \seen
+* 1 fetch (modseq ($modseq1))
+ok store 3 +flags \seen
+* 3 fetch (modseq ($modseq3))
+ok store 2 +flags \seen
+* 2 fetch (modseq ($modseq2))
+ok store 4 +flags \seen
+* 4 fetch (modseq ($modseq4))
+
+ok search return (min) 1:3 modseq "/flags/\\seen" all $highestmodseq
+* esearch (tag $tag) min 1 modseq $modseq4
+
+ok search return (max) 1:3 modseq "/flags/\\seen" all $highestmodseq
+* esearch (tag $tag) max 3 modseq $modseq4
+
+ok search return () 1:3 modseq "/flags/\\seen" all $highestmodseq
+* esearch (tag $tag) all 1:3 modseq $modseq4
+
+ok search return (min max) 2:3 modseq "/flags/\\seen" all $highestmodseq
+* esearch (tag $tag) min 2 max 3 modseq $modseq4
+
+ok search return (all) 2:4 modseq "/flags/\\seen" all $modseq3
+* esearch (tag $tag) all 2,4 modseq $modseq4
+
+ok search return (all) 2:4 modseq "/flags/\\seen" all $modseq2
+* esearch (tag $tag) all 4 modseq $modseq4
+
+ok search return (all) 2:4 modseq "/flags/\\seen" all $modseq4
+* esearch (tag $tag) modseq $modseq4

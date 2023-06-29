@@ -1,0 +1,48 @@
+connections: 2
+state: created
+
+1 ok select ${mailbox}
+1 ok append
+1 ok append
+1 ok append
+1 ok append
+1 ok append
+# make sure the server sees the appended messages
+1 ok check
+
+2 "" delete ${mailbox}2
+2 ok create ${mailbox}2
+2 ok select ${mailbox}2
+
+1 ok store 1 flags (\seen)
+1 ok store 2 flags (\answered \flagged)
+1 ok store 5 flags (\flagged $$keyword1 $$keyword2)
+
+1 ok fetch 1:5 (internaldate)
+* 1 fetch (internaldate $date1)
+* 2 fetch (internaldate $date2)
+* 4 fetch (internaldate $date4)
+* 5 fetch (internaldate $date5)
+1 ok copy 1:2,4 ${mailbox}2
+
+2 ok noop
+* 3 exists
+#* 3 recent
+
+2 ok fetch 1:3 (flags internaldate)
+* 3 fetch (flags (\seen) internaldate $date1)
+* 2 fetch (flags (\answered \flagged) internaldate $date2)
+* 1 fetch (flags () internaldate $date4)
+
+# keywords aren't required to be created on COPY, so help the server here
+2 ok store 3 +flags ($$keyword1 $$keyword2)
+
+1 ok copy 5 ${mailbox}2
+2 ok noop
+* 4 exists
+
+2 ok fetch 4 (flags internaldate)
+* 4 fetch (flags (\flagged $$keyword1 $$keyword2) internaldate $date5)
+
+2 ok close
+2 "" delete ${mailbox}2

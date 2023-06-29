@@ -1,0 +1,54 @@
+capabilities: CONTEXT=SEARCH
+messages: all
+
+ok search return (partial 1:1) all
+* esearch (tag $tag) partial (1:1 1)
+ok search return (partial 2:4) all
+* esearch (tag $tag) partial (2:4 2:4)
+ok search return (partial 4:2) all
+* esearch (tag $tag) partial (2:4 2:4)
+ok search return (partial 1:6) all
+* esearch (tag $tag) partial (1:6 1:5)
+ok search return (partial 6:6) all
+* esearch (tag $tag) partial (6:6 nil)
+
+ok search return (partial 1:3) 1:2,4:5
+* esearch (tag $tag) partial (1:3 1:2,4)
+ok search return (partial 2:3) 1:2,4:5
+* esearch (tag $tag) partial (2:3 2,4)
+ok search return (partial 2:4) 1:2,4:5
+* esearch (tag $tag) partial (2:4 2,4:5)
+ok search return (partial 2:10) 1:2,4:5
+* esearch (tag $tag) partial (2:10 2,4:5)
+
+# UID partials
+
+ok fetch 1 uid
+* 1 fetch (uid $uid1)
+ok fetch 2 uid
+* 2 fetch (uid $uid2)
+ok fetch 3 uid
+* 3 fetch (uid $uid3)
+ok fetch 5 uid
+* 5 fetch (uid $uid5)
+
+ok uid search return (partial 1:1) all
+* esearch (tag $tag) uid partial (1:1 $uid1)
+
+ok uid search return (partial 2:2) all
+* esearch (tag $tag) uid partial (2:2 $uid2)
+
+ok store 2 +flags \deleted
+ok expunge
+
+ok uid search return (partial 2:2) all
+* esearch (tag $tag) uid partial (2:2 $uid3)
+
+ok uid search return (partial 5:10) all
+* esearch (tag $tag) uid partial (5:10 nil)
+
+# broken results
+
+bad search return (partial 1) all
+bad search return (partial 1:*) all
+bad search return (partial *:1) all

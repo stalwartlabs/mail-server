@@ -1,0 +1,157 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 79 1
+   ) (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 76 2
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 79 1 "b35878dedb7cd0aa6934f90df9d517b0" NIL NIL NIL
+   ) (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 76 2 "d3905bfd2a53ad0a4438d01bf271677a" NIL NIL NIL
+   ) "mixed" (
+      "boundary" "simple boundary"
+   ) NIL NIL NIL
+)
+
+BODY[] {691}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Sun, 21 Mar 1993 23:56:48 -0800 (PST)
+Subject: Sample message
+MIME-Version: 1.0
+Content-type: multipart/mixed; boundary="simple boundary"
+
+This is the preamble.  It is to be ignored, though it
+is a handy place for composition agents to include an
+explanatory note to non-MIME conformant readers.
+
+--simple boundary
+
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+--simple boundary
+Content-type: text/plain; charset=us-ascii
+
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+--simple boundary--
+
+This is the epilogue.  It is also to be ignored.
+
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {224}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Sun, 21 Mar 1993 23:56:48 -0800 (PST)
+Subject: Sample message
+MIME-Version: 1.0
+Content-type: multipart/mixed; boundary="simple boundary"
+
+
+----------------------------------
+BODY[TEXT] {467}
+This is the preamble.  It is to be ignored, though it
+is a handy place for composition agents to include an
+explanatory note to non-MIME conformant readers.
+
+--simple boundary
+
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+--simple boundary
+Content-type: text/plain; charset=us-ascii
+
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+--simple boundary--
+
+This is the epilogue.  It is also to be ignored.
+
+
+----------------------------------
+BODY[MIME] {60}
+Content-Type: multipart/mixed; boundary="simple boundary"
+
+
+----------------------------------
+BODY[1] {79}
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+BINARY[1] {79}
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+BINARY.SIZE[1] 79
+----------------------------------
+BODY[1.HEADER] {1}
+
+
+----------------------------------
+BODY[1.TEXT] {79}
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+----------------------------------
+BODY[1.MIME] {2}
+
+
+----------------------------------
+BODY[2] {76}
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+BINARY[2] {76}
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+BINARY.SIZE[2] 76
+----------------------------------
+BODY[2.HEADER] {44}
+Content-type: text/plain; charset=us-ascii
+
+
+----------------------------------
+BODY[2.TEXT] {76}
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+----------------------------------
+BODY[2.MIME] {45}
+Content-Type: text/plain; charset=us-ascii
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {81}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+aniel Borenstein <nsb@bel
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {201}
+From: Nathaniel Borenstein <nsb@bellcore.com>
+To: Ned Freed <ned@innosoft.com>
+Date: Sun, 21 Mar 1993 23:56:48 -0800 (PST)
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="simple boundary"
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+aniel Borenstein <nsb@bel
+----------------------------------

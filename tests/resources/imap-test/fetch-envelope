@@ -1,0 +1,10 @@
+messages: all
+
+# date, subject, from, sender, reply-to, to, cc, bcc, in-reply-to, message-id
+ok fetch 1:* envelope
+* 1 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" "subject header" (("From Real" NIL "fromuser" "fromdomain.org")) (("Sender Real" NIL "senderuser" "senderdomain.org")) (("ReplyTo Real" NIL "replytouser" "replytodomain.org")) (("To Real" NIL "touser" "todomain.org")) (("Cc Real" NIL "ccuser" "ccdomain.org")) (("Bcc Real" NIL "bccuser" "bccdomain.org")) "<reply@to.id>" "<msg@id>"))
+* 2 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" NIL ((NIL NIL "user" "domain")) ((NIL NIL "user" "domain")) ((NIL NIL "user" "domain")) NIL NIL NIL NIL NIL))
+* 3 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" NIL ((NIL NIL "user" "domain")) ((NIL NIL "user" "domain")) ((NIL NIL "user" "domain")) NIL NIL NIL NIL NIL))
+* 4 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" NIL (("Real Name" NIL "user" "domain")) (("Real Name" NIL "user" "domain")) (("Real Name" NIL "user" "domain")) ((NIL NIL "group" NIL)(NIL NIL "g1" "d1.org")(NIL NIL "g2" "d2.org")(NIL NIL NIL NIL)(NIL NIL "group2" NIL)(NIL NIL "g3" "d3.org")(NIL NIL NIL NIL)) ((NIL NIL "group" NIL)(NIL NIL NIL NIL)(NIL NIL "group2" NIL)(NIL NIL NIL NIL)) NIL NIL NIL))
+* 5 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" NIL (("Real Name" NIL "user" "domain")) (("Real Name" NIL "user" "domain")) (("Real Name" NIL "user" "domain")) NIL NIL NIL NIL NIL))
+* 6 FETCH (ENVELOPE ("Thu, 15 Feb 2007 01:02:03 +0200" NIL ((NIL "@route" "user" "domain")) ((NIL "@route" "user" "domain")) ((NIL "@route" "user" "domain")) NIL NIL NIL NIL NIL))

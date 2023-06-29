@@ -1,0 +1,29 @@
+From user@domain  Fri Feb 22 17:06:23 2008
+Message-ID: <1@b>
+
+body
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <2@b>
+In-Reply-To: <1@b>
+
+body
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <3@b>
+In-Reply-To: <1@b>
+
+body
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <4@b>
+In-Reply-To: <2@b>
+
+body
+
+From user@domain  Fri Feb 22 15:06:23 2008
+Message-Id: <5@b>
+In-Reply-To: <2@b>
+
+body
+

@@ -1,0 +1,49 @@
+connections: 2
+state: auth
+
+# get the separator
+1 ok list "" ""
+* list () $sep $root
+
+1 "" unsubscribe $mailbox${sep}test
+1 "" unsubscribe $mailbox${sep}test2
+1 "" unsubscribe $mailbox${sep}test2${sep}test
+1 "" unsubscribe $mailbox${sep}test3${sep}test3
+
+1 ok create $mailbox${sep}
+1 ok create $mailbox${sep}test
+1 ok create $mailbox${sep}test2${sep}
+1 ok create $mailbox${sep}test3${sep}
+1 ok create $mailbox${sep}test2${sep}test
+1 ok create $mailbox${sep}test3${sep}test3
+# create the test2 mailbox only if server supports inferior mailboxes
+1 "" create $mailbox${sep}test2
+
+1 ok subscribe $mailbox${sep}test
+1 ok subscribe $mailbox${sep}test2${sep}test
+1 ok subscribe $mailbox${sep}test3${sep}test3
+
+2 ok lsub "" $mailbox${sep}%
+* lsub () $sep $mailbox${sep}test
+#* lsub (\noselect) $sep $mailbox${sep}test2
+#* lsub (\noselect) $sep $mailbox${sep}test3
+! lsub (\noselect) $sep $mailbox${sep}test2${sep}test
+! lsub (\noselect) $sep $mailbox${sep}test3${sep}test3
+
+2 ok lsub "" *test
+* lsub () $sep $mailbox${sep}test
+* lsub () $sep $mailbox${sep}test2${sep}test
+! lsub () $sep $mailbox${sep}test3${sep}test3
+
+1 ok unsubscribe $mailbox${sep}test
+2 ok lsub "" $mailbox${sep}%
+! lsub () $sep $mailbox${sep}test
+
+1 ok unsubscribe $mailbox${sep}test2${sep}test
+2 ok lsub "" $mailbox${sep}*
+! lsub () $sep $mailbox${sep}test
+* lsub () $sep $mailbox${sep}test3${sep}test3
+
+1 ok unsubscribe $mailbox${sep}test3${sep}test3
+2 ok lsub "" $mailbox${sep}%
+! lsub () $sep $mailbox${sep}test3

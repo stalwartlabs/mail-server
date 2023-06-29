@@ -1,0 +1,95 @@
+messages: 5
+
+ok store 1 flags ($$hello)
+ok store 2 flags (\seen \flagged)
+ok store 3 flags (\answered $$hello)
+ok store 4 flags (\flagged \draft)
+ok store 5 flags (\deleted \answered)
+
+ok search answered
+* search 3 5
+ok search unanswered
+* search 1 2 4
+
+ok search deleted
+* search 5
+ok search undeleted
+* search 1 2 3 4
+
+ok search draft
+* search 4
+ok search undraft
+* search 1 2 3 5
+
+ok search flagged
+* search 2 4
+ok search unflagged
+* search 1 3 5
+
+ok search seen
+* search 2
+ok search unseen
+* search 1 3 4 5
+
+ok search keyword $$hello
+* search 1 3
+ok search unkeyword $$hello
+* search 2 4 5
+
+#ok search new
+#* search 1 3 4 5
+
+#ok search old
+#* search
+
+#ok search recent
+#* search 1 2 3 4 5
+
+ok store 1:* flags (\seen)
+ok store 2 +flags (\flagged)
+ok search seen flagged
+* search 2
+ok search seen not flagged
+* search 1 3 4 5
+ok search not seen flagged
+* search
+ok search not seen not flagged
+* search
+
+ok store 1:* flags (\deleted)
+ok store 2 +flags (\flagged)
+ok search deleted flagged
+* search 2
+ok search deleted not flagged
+* search 1 3 4 5
+ok search not deleted flagged
+* search
+ok search not deleted not flagged
+* search
+
+ok store 1:* flags (\seen \deleted)
+ok store 2 +flags (\flagged)
+ok search seen flagged
+* search 2
+ok search seen not flagged
+* search 1 3 4 5
+ok search not seen flagged
+* search
+ok search not seen not flagged
+* search
+ok search seen deleted flagged
+* search 2
+ok search seen deleted not flagged
+* search 1 3 4 5
+ok search not seen deleted flagged
+* search
+ok search not seen deleted not flagged
+* search
+ok search seen not deleted flagged
+* search
+ok search seen not deleted not flagged
+* search
+ok search not seen not deleted flagged
+* search
+ok search not seen not deleted not flagged
+* search

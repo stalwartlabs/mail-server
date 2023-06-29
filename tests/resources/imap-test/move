@@ -1,0 +1,47 @@
+capabilities: MOVE
+state: created
+
+# - assumes COPYUID is sent untagged before expunges.
+# - assumes MOVE to mailbox itself changes message UID
+
+ok append
+ok append
+ok append
+ok create ${mailbox}2
+
+ok select ${mailbox}2
+* 0 exists
+* ok [uidvalidity $uidvalidity_dest]
+* ok [uidnext $uidnext_dest1]
+
+# MOVE:
+ok select $mailbox
+
+ok fetch 1:* uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+
+ok move 1 ${mailbox}2
+* ok [copyuid $uidvalidity_dest $uid1 $uidnext_dest1]
+* 1 expunge
+
+# UID MOVE:
+ok select ${mailbox}2
+* 1 exists
+* ok [uidvalidity $uidvalidity_dest]
+* ok [uidnext $uidnext_dest2]
+
+ok select $mailbox
+* ok [uidvalidity $uidvalidity]
+* ok [uidnext $uidnext1]
+
+ok uid move $uid2 ${mailbox}2
+* ok [copyuid $uidvalidity_dest $uid2 $uidnext_dest2]
+* 1 expunge
+
+# MOVE to same mailbox:
+#ok move 1 $mailbox
+#* ok [copyuid $uidvalidity $uid3 $uidnext1]
+#* 1 expunge
+#* 1 exists

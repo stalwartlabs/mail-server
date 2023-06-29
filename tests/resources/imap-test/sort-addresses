@@ -1,0 +1,23 @@
+capabilities: SORT
+messages: all
+
+ok sort (from) us-ascii all
+* sort 3 2 1
+ok sort (to) us-ascii all
+* sort 3 1 2
+ok sort (cc) us-ascii all
+* sort 3 1 2
+
+ok sort (reverse from) us-ascii all
+* sort 1 2 3
+ok sort (reverse to) us-ascii all
+* sort 1 2 3
+ok sort (reverse cc) us-ascii all
+* sort 1 2 3
+
+ok sort (from reverse arrival) us-ascii all
+* sort 3 2 1
+ok sort (to reverse arrival) us-ascii all
+* sort 3 2 1
+ok sort (cc reverse arrival) us-ascii all
+* sort 3 2 1

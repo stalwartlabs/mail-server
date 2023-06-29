@@ -1,0 +1,14 @@
+state: nonauth
+connections: 2
+
+1 ok noop
+! bye
+2 ok noop
+! bye
+
+1 ok logout
+* bye
+
+2 ok noop
+2 ok logout
+* bye

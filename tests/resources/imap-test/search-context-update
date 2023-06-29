@@ -1,0 +1,35 @@
+capabilities: CONTEXT=SEARCH
+state: created
+
+ok append
+ok append
+ok append
+ok append
+ok append
+
+ok select $mailbox
+
+ok search return (update) body body seen
+* esearch (tag $searchtag)
+
+ok store 1,2,4 +flags \seen
+* esearch (tag $searchtag) addto ($pos 1:2,4)
+
+ok store 1,2 -flags \seen
+* esearch (tag $searchtag) removefrom ($pos2 1:2)
+
+ok store 3:5 +flags \deleted
+ok expunge
+* esearch (tag $searchtag) removefrom ($pos3 $4)
+* $3 expunge
+* $4 expunge
+* $5 expunge
+
+ok append $mailbox (\seen)
+* 3 exists
+* esearch (tag $searchtag) addto ($pos4 3)
+
+ok cancelupdate "$searchtag"
+
+ok store 1 +flags \seen
+! esearch (tag $searchtag) addto ($pos5 1)

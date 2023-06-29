@@ -1,0 +1,50 @@
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user-from@domain.org
+To: user-to@domain.org
+Cc: user-cc@domain.org
+Bcc: user-bcc@domain.org
+
+body
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: RealFrom <user-from@domain.org>
+To: RealTo <user-to@domain.org>
+Cc: RealCc <user-cc@domain.org>
+Bcc: RealBcc <user-bcc@domain.org>
+
+body2
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: <user-from (comment)@ (comment) domain.org>
+To: <user-to@domain.org>
+Cc: <user-cc@domain.org>
+Bcc: <user-bcc@domain.org>
+
+body3
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user-from@domain.org (RealFrom)
+To: user-to@domain.org (RealTo)
+Cc: user-cc@domain.org (RealCc)
+Bcc: user-bcc@domain.org (RealBcc)
+
+body4
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user-from1@domain.org, user-from2@domain.org
+Cc: user-cc@domain.org
+
+body5
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: RealFrom <user-from@domain.org>
+To: groupname: groupuser1@domain.org, groupuser2@domain.org;,
+  groupname2: groupuser3@domain.org;
+
+body6
+
+From user@domain  Fri Feb 22 17:06:23 2008
+From: RealFrom <user-from@domain.org>
+To: groupname:;
+
+body7

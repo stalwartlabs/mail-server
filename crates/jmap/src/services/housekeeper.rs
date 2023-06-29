@@ -26,7 +26,7 @@ use std::{sync::Arc, time::Duration};
 use chrono::{Datelike, TimeZone};
 use store::write::now;
 use tokio::sync::mpsc;
-use utils::{config::Config, failed, UnwrapFailure};
+use utils::{config::Config, failed, map::ttl_dashmap::TtlMap, UnwrapFailure};
 
 use crate::JMAP;
 
@@ -35,6 +35,7 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     PurgeDb,
     PurgeBlobs,
+    PurgeCache,
     Exit,
 }
 
@@ -45,6 +46,7 @@ enum SimpleCron {
 
 const TASK_PURGE_DB: usize = 0;
 const TASK_PURGE_BLOBS: usize = 1;
+const TASK_PURGE_CACHE: usize = 2;
 
 pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
     let purge_db_at = SimpleCron::parse(
@@ -57,12 +59,21 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
             .value("jmap.house-keeper.purge-blobs")
             .unwrap_or("30 3 *"),
     );
+    let purge_cache = SimpleCron::parse(
+        settings
+            .value("jmap.house-keeper.purge-cache")
+            .unwrap_or("15 * *"),
+    );
 
     tokio::spawn(async move {
         tracing::debug!("Housekeeper task started.");
         loop {
-            let time_to_next = [purge_db_at.time_to_next(), purge_blobs_at.time_to_next()];
-            let mut tasks_to_run = [false, false];
+            let time_to_next = [
+                purge_db_at.time_to_next(),
+                purge_blobs_at.time_to_next(),
+                purge_cache.time_to_next(),
+            ];
+            let mut tasks_to_run = [false, false, false];
             let start_time = now();
 
             match tokio::time::timeout(time_to_next.iter().min().copied().unwrap(), rx.recv()).await
@@ -70,6 +81,7 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                 Ok(Some(event)) => match event {
                     Event::PurgeDb => tasks_to_run[TASK_PURGE_DB] = true,
                     Event::PurgeBlobs => tasks_to_run[TASK_PURGE_BLOBS] = true,
+                    Event::PurgeCache => tasks_to_run[TASK_PURGE_CACHE] = true,
                     Event::Exit => {
                         tracing::debug!("Housekeeper task exiting.");
                         return;
@@ -113,6 +125,16 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                             {
                                 tracing::error!("Error while purging bitmaps: {}", err);
                             }
+                        }
+                        TASK_PURGE_CACHE => {
+                            tracing::info!("Purging session cache.");
+                            core.sessions.cleanup();
+                            core.access_tokens.cleanup();
+                            core.oauth_codes.cleanup();
+                            core.rate_limit_auth
+                                .retain(|_, limiter| limiter.lock().is_active());
+                            core.rate_limit_unauth
+                                .retain(|_, limiter| limiter.lock().is_active());
                         }
                         _ => unreachable!(),
                     }

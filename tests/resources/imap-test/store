@@ -1,0 +1,33 @@
+connections: 2
+messages: 4
+
+# simple tests
+1 ok store 1:3 flags (\seen)
+* 1 fetch (flags (\seen))
+* 2 fetch (flags (\seen))
+* 3 fetch (flags (\seen))
+
+2 ok check
+* 1 fetch (flags (\seen))
+* 2 fetch (flags (\seen))
+* 3 fetch (flags (\seen))
+
+1 ok store 4 -flags \seen
+1 ok store 3 flags (\draft)
+* 3 fetch (flags (\draft))
+
+# keywords
+1 ok store 2,4 +flags ($$hello $$world)
+* 2 fetch (flags (\seen $$hello $$world))
+* 4 fetch (flags ($$hello $$world))
+
+# check that two sessions don't overwrite each others' changes
+1 ok store 1 +flags (\answered)
+2 ok store 1 -flags (\seen)
+1 ok check
+2 ok check
+
+1 ok fetch 1 flags
+* 1 fetch (flags (\answered))
+2 ok fetch 1 flags
+* 1 fetch (flags (\answered))

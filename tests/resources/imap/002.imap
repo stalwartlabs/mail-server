@@ -1,0 +1,510 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 61 5
+   ) (
+      "message" "rfc822" NIL NIL NIL "7bit" 1979 (
+         "Thu, 13 Aug 1998 07:42:41 +0000" "Map of Argentina with Description" (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "A1 Gore (The Enforcer)" NIL "vice-president" "whitehouse.gov"
+            )
+         ) NIL NIL NIL "<199804130742.RAA20366@mai1host.whitehouse.gov>"
+      ) (
+         (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 355 12
+         ) (
+            "image" "gif" (
+               "name" "map_of_Argentina.gif"
+            ) NIL NIL "base64" 389
+         ) "mixed"
+      ) 0
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 61 5 "63aa55d7eacd3e7d4af551d3d7f8fe46" NIL NIL NIL
+   ) (
+      "message" "rfc822" NIL NIL NIL "7bit" 1979 (
+         "Thu, 13 Aug 1998 07:42:41 +0000" "Map of Argentina with Description" (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "Bill Clinton" NIL "president" "whitehouse.gov"
+            )
+         ) (
+            (
+               "A1 Gore (The Enforcer)" NIL "vice-president" "whitehouse.gov"
+            )
+         ) NIL NIL NIL "<199804130742.RAA20366@mai1host.whitehouse.gov>"
+      ) (
+         (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 355 12 "47027313db254547987c7eb4be377593" NIL NIL NIL
+         ) (
+            "image" "gif" (
+               "name" "map_of_Argentina.gif"
+            ) NIL NIL "base64" 389 "5359a63540c1a8eae06a27e8760e1501" (
+               "inline" (
+                  "fi1ename" "map_of_Argentina.gif"
+               )
+            ) NIL NIL
+         ) "mixed" (
+            "boundary" "DC8------------DC8638F443D87A7F0726DEF7"
+         ) NIL NIL NIL
+      ) 0 "1522079b4114146b37ea1af171484a1a" (
+         "inline" (
+            
+         )
+      ) NIL NIL
+   ) "mixed" (
+      "boundary" "D7F------------D7FD5A0B8AB9C65CCDBFA872"
+   ) NIL NIL NIL
+)
+
+BODY[] {2652}
+From:  Al Gore <vice-president@whitehouse.gov>
+To:  White House Transportation Coordinator
+     <transport@whitehouse.gov>
+Subject: [Fwd: Map of Argentina with Description]
+Content-Type: multipart/mixed;
+              boundary="D7F------------D7FD5A0B8AB9C65CCDBFA872"
+
+This is a multi-part message in MIME format.
+--D7F------------D7FD5A0B8AB9C65CCDBFA872
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+--D7F------------D7FD5A0B8AB9C65CCDBFA872
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+Content-Disposition: inline
+
+Return-Path: <president@whitehouse.gov>
+Received: from mailhost.whitehouse.gov ([192.168.51.200])
+        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453
+        for <vice-president@heartbeat.whitehouse.gov>;
+        Mon, 13 Aug 1998 l8:14:23 +1000
+Received: from the_big_box.whitehouse.gov ([192.168.51.50])
+        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366
+        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000
+Date: Mon, 13 Aug 1998 17:42:41 +1000
+Message-Id: <199804130742.RAA20366@mai1host.whitehouse.gov>
+From: Bill Clinton <president@whitehouse.gov>
+To: A1 (The Enforcer) Gore <vice-president@whitehouse.gov>
+Subject:  Map of Argentina with Description
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+              boundary="DC8------------DC8638F443D87A7F0726DEF7"
+
+This is a multi-part message in MIME format.
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+--DC8------------DC8638F443D87A7F0726DEF7--
+
+--D7F------------D7FD5A0B8AB9C65CCDBFA872--
+
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {270}
+From:  Al Gore <vice-president@whitehouse.gov>
+To:  White House Transportation Coordinator
+     <transport@whitehouse.gov>
+Subject: [Fwd: Map of Argentina with Description]
+Content-Type: multipart/mixed;
+              boundary="D7F------------D7FD5A0B8AB9C65CCDBFA872"
+
+
+----------------------------------
+BODY[TEXT] {2382}
+This is a multi-part message in MIME format.
+--D7F------------D7FD5A0B8AB9C65CCDBFA872
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+--D7F------------D7FD5A0B8AB9C65CCDBFA872
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+Content-Disposition: inline
+
+Return-Path: <president@whitehouse.gov>
+Received: from mailhost.whitehouse.gov ([192.168.51.200])
+        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453
+        for <vice-president@heartbeat.whitehouse.gov>;
+        Mon, 13 Aug 1998 l8:14:23 +1000
+Received: from the_big_box.whitehouse.gov ([192.168.51.50])
+        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366
+        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000
+Date: Mon, 13 Aug 1998 17:42:41 +1000
+Message-Id: <199804130742.RAA20366@mai1host.whitehouse.gov>
+From: Bill Clinton <president@whitehouse.gov>
+To: A1 (The Enforcer) Gore <vice-president@whitehouse.gov>
+Subject:  Map of Argentina with Description
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+              boundary="DC8------------DC8638F443D87A7F0726DEF7"
+
+This is a multi-part message in MIME format.
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+--DC8------------DC8638F443D87A7F0726DEF7--
+
+--D7F------------D7FD5A0B8AB9C65CCDBFA872--
+
+
+----------------------------------
+BODY[MIME] {98}
+Content-Type: multipart/mixed;
+              boundary="D7F------------D7FD5A0B8AB9C65CCDBFA872"
+
+
+----------------------------------
+BODY[1] {61}
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+BINARY[1] {61}
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+BINARY.SIZE[1] 61
+----------------------------------
+BODY[1.HEADER] {76}
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[1.TEXT] {61}
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+----------------------------------
+BODY[1.MIME] {77}
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2] {1979}
+Return-Path: <president@whitehouse.gov>
+Received: from mailhost.whitehouse.gov ([192.168.51.200])
+        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453
+        for <vice-president@heartbeat.whitehouse.gov>;
+        Mon, 13 Aug 1998 l8:14:23 +1000
+Received: from the_big_box.whitehouse.gov ([192.168.51.50])
+        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366
+        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000
+Date: Mon, 13 Aug 1998 17:42:41 +1000
+Message-Id: <199804130742.RAA20366@mai1host.whitehouse.gov>
+From: Bill Clinton <president@whitehouse.gov>
+To: A1 (The Enforcer) Gore <vice-president@whitehouse.gov>
+Subject:  Map of Argentina with Description
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+              boundary="DC8------------DC8638F443D87A7F0726DEF7"
+
+This is a multi-part message in MIME format.
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+--DC8------------DC8638F443D87A7F0726DEF7--
+
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 1979
+----------------------------------
+BODY[2.HEADER] {835}
+Return-Path: <president@whitehouse.gov>
+Received: from mailhost.whitehouse.gov ([192.168.51.200])
+        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453
+        for <vice-president@heartbeat.whitehouse.gov>;
+        Mon, 13 Aug 1998 l8:14:23 +1000
+Received: from the_big_box.whitehouse.gov ([192.168.51.50])
+        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366
+        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000
+Date: Mon, 13 Aug 1998 17:42:41 +1000
+Message-Id: <199804130742.RAA20366@mai1host.whitehouse.gov>
+From: Bill Clinton <president@whitehouse.gov>
+To: A1 (The Enforcer) Gore <vice-president@whitehouse.gov>
+Subject:  Map of Argentina with Description
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+              boundary="DC8------------DC8638F443D87A7F0726DEF7"
+
+
+----------------------------------
+BODY[2.TEXT] {1144}
+This is a multi-part message in MIME format.
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+--DC8------------DC8638F443D87A7F0726DEF7
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+--DC8------------DC8638F443D87A7F0726DEF7--
+
+----------------------------------
+BODY[2.MIME] {98}
+Content-Type: multipart/mixed;
+              boundary="DC8------------DC8638F443D87A7F0726DEF7"
+
+
+----------------------------------
+BODY[2.1] {355}
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+BINARY[2.1] {355}
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+BINARY.SIZE[2.1] 355
+----------------------------------
+BODY[2.1.HEADER] {76}
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2.1.TEXT] {355}
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+----------------------------------
+BODY[2.1.MIME] {77}
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2.2] {389}
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+BINARY[2.2] {16}
+[binary content]
+BINARY.SIZE[2.2] 288
+----------------------------------
+BODY[2.2.HEADER] {149}
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+
+----------------------------------
+BODY[2.2.TEXT] {389}
+R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
+wEmjBCLrnQnhYCgM1wh+pkgqqeC9XrutmBm7hAK3tP31gFcAiFKVQrGFR6kscnonTe7FAAad
+GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
+BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
+U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
+7itICBxISKDBgwgTKjyYAAA7
+----------------------------------
+BODY[2.2.MIME] {150}
+Content-Type: image/gif; name="map_of_Argentina.gif"
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; fi1ename="map_of_Argentina.gif"
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {125}
+From:  Al Gore <vice-president@whitehouse.gov>
+To:  White House Transportation Coordinator
+     <transport@whitehouse.gov>
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {25}
+Gore <vice-president@whit
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {221}
+From:  Al Gore <vice-president@whitehouse.gov>
+To:  White House Transportation Coordinator
+     <transport@whitehouse.gov>
+Content-Type: multipart/mixed;
+              boundary="D7F------------D7FD5A0B8AB9C65CCDBFA872"
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+Gore <vice-president@whit
+----------------------------------

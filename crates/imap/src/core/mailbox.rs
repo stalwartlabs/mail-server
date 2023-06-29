@@ -14,6 +14,7 @@ use jmap_proto::{
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use tokio::io::AsyncRead;
+use utils::listener::limiter::InFlight;
 
 use super::{Account, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
@@ -21,6 +22,7 @@ impl SessionData {
     pub async fn new<T: AsyncRead>(
         session: &Session<T>,
         access_token: &AccessToken,
+        in_flight: InFlight,
     ) -> crate::Result<Self> {
         let mut session = SessionData {
             writer: session.writer.clone(),
@@ -30,6 +32,7 @@ impl SessionData {
             span: session.span.clone(),
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
+            in_flight,
         };
 
         // Fetch mailboxes for the main account

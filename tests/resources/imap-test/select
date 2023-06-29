@@ -1,0 +1,33 @@
+state: created
+
+ok append
+ok append
+
+# first open read-only so recent flags don't get lost
+examine $mailbox
+* 2 exists
+#* 2 recent
+#* ok [unseen 1]
+* ok [uidvalidity $uidvalidity]
+* ok [uidnext $uidnext]
+ok [read-only]
+
+ok close
+
+# check that STATUS replies with the same values
+ok status $mailbox (messages uidnext uidvalidity unseen)
+* status $mailbox (messages 2 uidnext $uidnext uidvalidity $uidvalidity unseen 2)
+
+# then try read-write
+select $mailbox
+* 2 exists
+#* 2 recent
+#* ok [unseen 1]
+* ok [uidvalidity $uidvalidity]
+* ok [uidnext $uidnext]
+ok [read-write]
+
+ok close
+
+#ok status $mailbox (recent)
+#* status $mailbox (recent 0)

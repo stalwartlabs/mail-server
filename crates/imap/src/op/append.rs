@@ -35,7 +35,7 @@ use tokio::io::AsyncRead;
 use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
-    pub async fn handle_append(&mut self, request: Request<Command>) -> Result<(), ()> {
+    pub async fn handle_append(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_append() {
             Ok(arguments) => {
                 let (data, selected_mailbox) = self.state.session_mailbox_state();

@@ -1,0 +1,193 @@
+messages: all
+
+ok fetch 1 (body.peek[])
+* 1 fetch (body[] {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+
+}}})
+
+ok fetch 1 (body.peek[text])
+* 1 fetch (body[text] {{{
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+
+}}})
+
+ok fetch 1 (body.peek[1])
+* 1 fetch (body[1] {{{
+hello
+
+}}})
+
+ok fetch 1 (body.peek[1.mime])
+* 1 fetch (body[1.mime] {{{
+Content-Type: text/x-myown; charset=us-ascii
+
+
+}}})
+
+ok fetch 1 (body.peek[2])
+* 1 fetch (body[2] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+}}})
+
+ok fetch 1 (body.peek[2.mime])
+* 1 fetch (body[2.mime] {{{
+Content-Type: message/rfc822
+
+
+}}})
+
+ok fetch 1 (body.peek[2.header])
+* 1 fetch (body[2.header] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+
+}}})
+
+ok fetch 1 (body.peek[2.header.fields (from subject X-foo)])
+* 1 fetch (body[2.header.fields (from subject X-foo)] {{{
+From: sub@domain.org
+Subject: submsg
+
+
+}}})
+
+ok fetch 1 (body.peek[2.header.fields.not (from subject X-foo)])
+* 1 fetch (body[2.header.fields.not (from subject X-foo)] {{{
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Content-Type: multipart/alternative; boundary="sub1"
+
+
+}}})
+
+ok fetch 1 (body.peek[2.text])
+* 1 fetch (body[2.text] {{{
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+}}})
+
+ok fetch 1 (body.peek[2.1.mime])
+* 1 fetch (body[2.1.mime] {{{
+Content-Type: text/html
+
+
+}}})
+
+ok fetch 1 (body.peek[2.1])
+* 1 fetch (body[2.1] {{{
+<p>Hello world</p>
+
+}}})
+
+ok fetch 1 (body.peek[2.2.mime])
+* 1 fetch (body[2.2.mime] {{{
+Content-Type: text/plain
+
+
+}}})
+
+ok fetch 1 (body.peek[2.2])
+* 1 fetch (body[2.2] {{{
+Hello another world
+
+}}})
+

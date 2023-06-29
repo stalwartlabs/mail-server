@@ -1,0 +1,39 @@
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: foo bar <a@b.c>
+
+1
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: b@c.d
+
+2
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: d
+
+3
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: =?iso-8859-1?q?foo_aar?= <e@f.g>
+
+4
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: =?iso-8859-1?q?foo_car?= <f@g.h>
+
+5
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: a: xx@xx.org, yy@yy.org;
+
+6
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: z: aa@aa.org, bb@bb.org;
+
+7
+
+From user@domain  Fri Feb 22 23:00:00 2008 +0200
+To: empty:;
+
+8

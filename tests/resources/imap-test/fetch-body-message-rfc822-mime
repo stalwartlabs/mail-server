@@ -1,0 +1,191 @@
+messages: all
+
+ok fetch 1 (body.peek[])
+* 1 fetch (body[] {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/digest; boundary="foo"
+
+prologue
+
+--foo 
+
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+--foo 
+X-Mime: m2 header
+
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+--foo--
+
+epilogue
+
+}}})
+
+ok fetch 1 (body.peek[text])
+* 1 fetch (body[text] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/digest; boundary="foo"
+
+prologue
+
+--foo 
+
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+--foo 
+X-Mime: m2 header
+
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+--foo--
+
+epilogue
+
+}}})
+
+ok fetch 1 (body.peek[1])
+* 1 fetch (body[1] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/digest; boundary="foo"
+
+prologue
+
+--foo 
+
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+--foo 
+X-Mime: m2 header
+
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+--foo--
+
+epilogue
+
+}}})
+
+ok fetch 1 (body.peek[1.header])
+* 1 fetch (body[1.header] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/digest; boundary="foo"
+
+
+}}})
+
+ok fetch 1 (body.peek[1.text])
+* 1 fetch (body[1.text] {{{
+prologue
+
+--foo 
+
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+--foo 
+X-Mime: m2 header
+
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+--foo--
+
+epilogue
+
+}}})
+
+ok fetch 1 (body.peek[1.1])
+* 1 fetch (body[1.1] {{{
+From: m1@example.com
+Subject: m1
+
+m1 body
+
+}}})
+
+ok fetch 1 (body.peek[1.1.MIME])
+* 1 fetch (body[1.1.MIME] {{{
+
+
+}}})
+
+ok fetch 1 (body.peek[1.1.HEADER])
+* 1 fetch (body[1.1.HEADER] {{{
+From: m1@example.com
+Subject: m1
+
+
+}}})
+
+ok fetch 1 (body.peek[1.1.TEXT])
+* 1 fetch (body[1.1.TEXT] {{{
+m1 body
+
+}}})
+
+ok fetch 1 (body.peek[1.2])
+* 1 fetch (body[1.2] {{{
+From: m2@example.com
+Subject: m2
+
+m2 body
+
+}}})
+
+ok fetch 1 (body.peek[1.2.MIME])
+* 1 fetch (body[1.2.MIME] {{{
+X-Mime: m2 header
+
+
+}}})
+
+ok fetch 1 (body.peek[1.2.HEADER])
+* 1 fetch (body[1.2.HEADER] {{{
+From: m2@example.com
+Subject: m2
+
+
+}}})
+
+ok fetch 1 (body.peek[1.2.TEXT])
+* 1 fetch (body[1.2.TEXT] {{{
+m2 body
+
+}}})
+

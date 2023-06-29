@@ -1,0 +1,23 @@
+capabilities: UIDPLUS
+state: created
+
+ok select ${mailbox}
+ok append
+
+"" delete ${mailbox}2
+ok create ${mailbox}2
+
+append ${mailbox}2
+ok [appenduid $uidvalidity $uid]
+
+copy 1 ${mailbox}2
+ok [copyuid $uidvalidity $srcuid $uid2]
+
+ok select ${mailbox}2
+* ok [uidvalidity $uidvalidity]
+ok fetch 1:2 uid
+* 1 fetch (uid $uid)
+* 2 fetch (uid $uid2)
+
+ok close
+"" delete ${mailbox}2

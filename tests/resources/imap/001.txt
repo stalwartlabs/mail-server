@@ -1,0 +1,41 @@
+From: Whomever
+To: Someone
+Date: Whenever
+Subject: whatever
+MIME-Version: 1.0
+Message-ID: <id1@host.com>
+Content-Type: multipart/alternative; boundary=42
+Content-ID: <id001@guppylake.bellcore.com>
+
+--42
+Content-Type: message/external-body; name="BodyFormats.ps";
+            site="thumper.bellcore.com"; mode="image";
+            access-type=ANON-FTP; directory="pub";
+            expiration="Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
+
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
+
+--42
+Content-Type: message/external-body; access-type=local-file;
+            name="/u/nsb/writing/rfcs/RFC-MIME.ps";
+            site="thumper.bellcore.com";
+            expiration="Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
+
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
+
+--42
+Content-Type: message/external-body;
+            access-type=mail-server
+            server="listserv@bogus.bitnet";
+            expiration="Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
+
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
+
+get RFC-MIME.DOC
+
+--42--
+
+

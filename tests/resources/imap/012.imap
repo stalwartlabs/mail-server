@@ -1,0 +1,304 @@
+BODY (
+   (
+      "text" "x-myown" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 6 1
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 280 (
+         "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) NIL NIL NIL NIL NIL
+      ) (
+         (
+            "text" "html" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 19 1
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 20 1
+         ) "alternative"
+      ) 0
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "x-myown" (
+         "charset" "us-ascii"
+      ) NIL NIL "7bit" 6 1 "b1946ac92492d2347c6235b4d2611184" NIL NIL NIL
+   ) (
+      "message" "rfc822" NIL NIL NIL NIL 280 (
+         "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) (
+            (
+               NIL NIL "sub" "domain.org"
+            )
+         ) NIL NIL NIL NIL NIL
+      ) (
+         (
+            "text" "html" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 19 1 "35c5b687e359e8ce7be1f1ecafd9b475" NIL NIL NIL
+         ) (
+            "text" "plain" (
+               "charset" "us-ascii"
+            ) NIL NIL "7bit" 20 1 "deeff770fadb17c664d431b97bcd05c5" NIL NIL NIL
+         ) "alternative" (
+            "boundary" "sub1"
+         ) NIL NIL NIL
+      ) 0 "735ed696bc05fdf6840de404781d5d77" NIL NIL NIL
+   ) "mixed" (
+      "boundary" "foo bar"
+   ) NIL NIL NIL
+)
+
+BODY[] {565}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {130}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[TEXT] {435}
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+
+----------------------------------
+BODY[MIME] {53}
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[1] {6}
+hello
+
+BINARY[1] {6}
+hello
+
+BINARY.SIZE[1] 6
+----------------------------------
+BODY[1.HEADER] {46}
+Content-Type: text/x-myown; charset=us-ascii
+
+
+----------------------------------
+BODY[1.TEXT] {6}
+hello
+
+----------------------------------
+BODY[1.MIME] {47}
+Content-Type: text/x-myown; charset=us-ascii
+
+
+----------------------------------
+BODY[2] {280}
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 280
+----------------------------------
+BODY[2.HEADER] {129}
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+
+----------------------------------
+BODY[2.TEXT] {151}
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+----------------------------------
+BODY[2.MIME] {55}
+Content-Type: multipart/alternative; boundary="sub1"
+
+
+----------------------------------
+BODY[2.1] {19}
+<p>Hello world</p>
+
+BINARY[2.1] {19}
+<p>Hello world</p>
+
+BINARY.SIZE[2.1] 19
+----------------------------------
+BODY[2.1.HEADER] {25}
+Content-Type: text/html
+
+
+----------------------------------
+BODY[2.1.TEXT] {19}
+<p>Hello world</p>
+
+----------------------------------
+BODY[2.1.MIME] {26}
+Content-Type: text/html
+
+
+----------------------------------
+BODY[2.2] {20}
+Hello another world
+
+BINARY[2.2] {20}
+Hello another world
+
+BINARY.SIZE[2.2] 20
+----------------------------------
+BODY[2.2.HEADER] {26}
+Content-Type: text/plain
+
+
+----------------------------------
+BODY[2.2.TEXT] {20}
+Hello another world
+
+----------------------------------
+BODY[2.2.MIME] {27}
+Content-Type: text/plain
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {24}
+From: user@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {14}
+@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {131}
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+@domain.org
+Date: Sat, 24
+----------------------------------

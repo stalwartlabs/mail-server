@@ -25,11 +25,14 @@ use std::{iter::Peekable, sync::Arc, vec::IntoIter};
 
 use imap_proto::{
     receiver::{self, Request},
-    Command, StatusResponse,
+    Command, ResponseCode, StatusResponse,
 };
+use jmap::auth::rate_limit::AuthenticatedLimiter;
+use parking_lot::Mutex;
 use tokio::io::AsyncRead;
+use utils::listener::limiter::{ConcurrencyLimiter, RateLimiter};
 
-use super::{SelectedMailbox, Session, SessionData, State};
+use super::{SelectedMailbox, Session, SessionData, State, IMAP};
 
 impl<T: AsyncRead> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
@@ -37,6 +40,11 @@ impl<T: AsyncRead> Session<T> {
         for line in String::from_utf8_lossy(bytes).split("\r\n") {
             println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
         }*/
+
+        tracing::trace!(parent: &self.span,
+            event = "read",
+            data =  std::str::from_utf8(bytes).unwrap_or("[invalid UTF8]"),
+            size = bytes.len());
 
         let mut bytes = bytes.iter();
         let mut requests = Vec::with_capacity(2);
@@ -70,112 +78,121 @@ impl<T: AsyncRead> Session<T> {
         while let Some(request) = requests.next() {
             match request.command {
                 Command::List | Command::Lsub => {
-                    //self.handle_list(request).await?;
+                    self.handle_list(request).await?;
                 }
                 Command::Select | Command::Examine => {
-                    //self.handle_select(request).await?;
+                    self.handle_select(request).await?;
                 }
                 Command::Create => {
-                    //self.handle_create(group_requests(&mut requests, vec![request])).await?;
+                    self.handle_create(group_requests(&mut requests, vec![request]))
+                        .await?;
                 }
                 Command::Delete => {
-                    //self.handle_delete(group_requests(&mut requests, vec![request])).await?;
+                    self.handle_delete(group_requests(&mut requests, vec![request]))
+                        .await?;
                 }
                 Command::Rename => {
-                    //self.handle_rename(request).await?;
+                    self.handle_rename(request).await?;
                 }
                 Command::Status => {
-                    //self.handle_status(request).await?;
+                    self.handle_status(request).await?;
                 }
                 Command::Append => {
-                    //self.handle_append(request).await?;
+                    self.handle_append(request).await?;
                 }
                 Command::Close => {
-                    //self.handle_close(request).await?;
+                    self.handle_close(request).await?;
                 }
                 Command::Unselect => {
-                    //self.handle_unselect(request).await?;
+                    self.handle_unselect(request).await?;
                 }
                 Command::Expunge(is_uid) => {
-                    //self.handle_expunge(request, is_uid).await?;
+                    self.handle_expunge(request, is_uid).await?;
                 }
                 Command::Search(is_uid) => {
-                    //self.handle_search(request, false, is_uid).await?;
+                    self.handle_search(request, false, is_uid).await?;
                 }
                 Command::Fetch(is_uid) => {
-                    //self.handle_fetch(request, is_uid).await?;
+                    self.handle_fetch(request, is_uid).await?;
                 }
                 Command::Store(is_uid) => {
-                    //self.handle_store(request, is_uid).await?;
+                    self.handle_store(request, is_uid).await?;
                 }
                 Command::Copy(is_uid) => {
-                    //self.handle_copy_move(request, false, is_uid).await?;
+                    self.handle_copy_move(request, false, is_uid).await?;
                 }
                 Command::Move(is_uid) => {
-                    //self.handle_copy_move(request, true, is_uid).await?;
+                    self.handle_copy_move(request, true, is_uid).await?;
                 }
                 Command::Sort(is_uid) => {
-                    //self.handle_search(request, true, is_uid).await?;
+                    self.handle_search(request, true, is_uid).await?;
                 }
                 Command::Thread(is_uid) => {
-                    //self.handle_thread(request, is_uid).await?;
+                    self.handle_thread(request, is_uid).await?;
                 }
                 Command::Idle => {
-                    //self.handle_idle(request).await?;
+                    self.handle_idle(request).await?;
                 }
                 Command::Subscribe => {
-                    //self.handle_subscribe(request, true).await?;
+                    self.handle_subscribe(request, true).await?;
                 }
                 Command::Unsubscribe => {
-                    //self.handle_subscribe(request, false).await?;
+                    self.handle_subscribe(request, false).await?;
                 }
                 Command::Namespace => {
-                    //self.handle_namespace(request).await?;
+                    self.handle_namespace(request).await?;
                 }
                 Command::Authenticate => {
-                    //self.handle_authenticate(request).await?;
+                    self.handle_authenticate(request).await?;
                 }
                 Command::Login => {
-                    //self.handle_login(request).await?;
+                    self.handle_login(request).await?;
                 }
                 Command::Capability => {
-                    //self.handle_capability(request).await?;
+                    self.handle_capability(request).await?;
                 }
                 Command::Enable => {
-                    //self.handle_enable(request).await?;
+                    self.handle_enable(request).await?;
                 }
                 Command::StartTls => {
-                    //return self.handle_starttls(request).await;
+                    return self
+                        .write_bytes(
+                            StatusResponse::ok("Begin TLS negotiation now")
+                                .with_tag(request.tag)
+                                .into_bytes(),
+                        )
+                        .await
+                        .map(|_| true);
                 }
                 Command::Noop => {
-                    //self.handle_noop(request, false).await?;
+                    self.handle_noop(request).await?;
                 }
                 Command::Check => {
-                    //self.handle_noop(request, true).await?;
+                    self.handle_noop(request).await?;
                 }
                 Command::Logout => {
-                    //self.handle_logout(request).await?;
+                    self.handle_logout(request).await?;
                 }
                 Command::SetAcl => {
-                    //self.handle_set_acl(request).await?;
+                    self.handle_set_acl(request).await?;
                 }
                 Command::DeleteAcl => {
-                    //self.handle_delete_acl(request).await?;
+                    self.handle_set_acl(request).await?;
                 }
                 Command::GetAcl => {
-                    //self.handle_get_acl(request).await?;
+                    self.handle_get_acl(request).await?;
                 }
                 Command::ListRights => {
-                    //self.handle_list_rights(request).await?;
+                    self.handle_list_rights(request).await?;
                 }
                 Command::MyRights => {
-                    //self.handle_my_rights(request).await?;
+                    self.handle_my_rights(request).await?;
                 }
                 Command::Unauthenticate => {
-                    //self.handle_unauthenticate(request).await?;
+                    self.handle_unauthenticate(request).await?;
                 }
                 Command::Id => {
-                    //self.handle_id(request).await?;
+                    self.handle_id(request).await?;
                 }
             }
         }
@@ -211,6 +228,21 @@ trait IsAllowed: Sized {
 
 impl IsAllowed for Request<Command> {
     fn is_allowed(self, state: &State, is_tls: bool) -> Result<Self, StatusResponse> {
+        // Rate limit request
+        if let State::Authenticated { data } | State::Selected { data, .. } = state {
+            if !data
+                .imap
+                .get_authenticated_limiter(data.account_id)
+                .lock()
+                .request_limiter
+                .is_allowed()
+            {
+                return Err(StatusResponse::no("Too many requests")
+                    .with_tag(self.tag)
+                    .with_code(ResponseCode::Limit));
+            }
+        }
+
         match &self.command {
             Command::Capability | Command::Noop | Command::Logout | Command::Id => Ok(self),
             Command::StartTls => {
@@ -346,5 +378,25 @@ impl State {
 
     pub fn is_mailbox_selected(&self) -> bool {
         matches!(self, State::Selected { .. })
+    }
+}
+
+impl IMAP {
+    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<Mutex<AuthenticatedLimiter>> {
+        self.rate_limiter
+            .get(&account_id)
+            .map(|limiter| limiter.clone())
+            .unwrap_or_else(|| {
+                let limiter = Arc::new(Mutex::new(AuthenticatedLimiter {
+                    request_limiter: RateLimiter::new(
+                        self.rate_requests.requests,
+                        self.rate_requests.period,
+                    ),
+                    concurrent_requests: ConcurrencyLimiter::new(self.rate_concurrent),
+                    concurrent_uploads: ConcurrencyLimiter::new(self.rate_concurrent),
+                }));
+                self.rate_limiter.insert(account_id, limiter.clone());
+                limiter
+            })
     }
 }

@@ -1,0 +1,73 @@
+messages: all
+
+# 1) Timezone changes from EET +0200 -> EEST +0300
+# 1a) SENTBEFORE
+ok search sentbefore 24-mar-2007
+* search
+ok search sentbefore 25-mar-2007
+* search 1
+ok search sentbefore 26-mar-2007
+* search 1 2 3 4 5 6
+ok search sentbefore 27-mar-2007
+* search 1 2 3 4 5 6 7
+
+# 1b) SENTON
+ok search senton 23-mar-2007
+* search
+ok search senton 24-mar-2007
+* search 1
+ok search senton 25-mar-2007
+* search 2 3 4 5 6
+ok search senton 26-mar-2007
+* search 7
+
+# 1c) SENTSINCE
+ok search 1:7 sentsince 24-mar-2007
+* search 1 2 3 4 5 6 7
+ok search 1:7 sentsince 25-mar-2007
+* search 2 3 4 5 6 7
+ok search 1:7 sentsince 26-mar-2007
+* search 7
+ok search 1:7 sentsince 27-mar-2007
+* search
+
+# 2) Timezone changes from EEST +0300 -> EET +0200
+# 2a) SENTBEFORE
+ok search 8:* sentbefore 27-oct-2007
+* search
+ok search 8:* sentbefore 28-oct-2007
+* search 8
+ok search 8:* sentbefore 29-oct-2007
+* search 8 9 10 11 12 13 14 15
+ok search 8:* sentbefore 30-oct-2007
+* search 8 9 10 11 12 13 14 15 16
+
+# 2b) SENTON
+ok search 8:* senton 26-oct-2007
+* search
+ok search 8:* senton 27-oct-2007
+* search 8
+ok search 8:* senton 28-oct-2007
+* search 9 10 11 12 13 14 15
+ok search 8:* senton 29-oct-2007
+* search 16
+
+# 2c) SENTSINCE
+ok search 8:* sentsince 27-oct-2007
+* search 8 9 10 11 12 13 14 15 16
+ok search 8:* sentsince 28-oct-2007
+* search 9 10 11 12 13 14 15 16
+ok search 8:* sentsince 29-oct-2007
+* search 16
+ok search 8:* sentsince 30-oct-2007
+* search
+
+# 3) Try a couple of NOTs
+ok search 1:7 not sentbefore 26-mar-2007
+* search 7
+ok search 1:7 not senton 25-mar-2007
+* search 1 7
+ok search 8:* not sentsince 28-oct-2007
+* search 8
+ok search 8:* not senton 28-oct-2007
+* search 8 16

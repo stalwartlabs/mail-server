@@ -42,16 +42,16 @@ use crate::core::{SelectedMailbox, Session, SessionData};
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_thread(
         &mut self,
-        mut request: Request<Command>,
+        request: Request<Command>,
         is_uid: bool,
-    ) -> Result<(), ()> {
+    ) -> crate::OpResult {
         let command = request.command;
-        let tag = std::mem::take(&mut request.tag);
         match request.parse_thread() {
-            Ok(arguments) => {
+            Ok(mut arguments) => {
                 let (data, mailbox) = self.state.mailbox_state();
 
                 tokio::spawn(async move {
+                    let tag = std::mem::take(&mut arguments.tag);
                     let bytes = match data.thread(arguments, mailbox, is_uid).await {
                         Ok(response) => StatusResponse::completed(command)
                             .with_tag(tag)

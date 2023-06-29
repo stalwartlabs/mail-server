@@ -1,0 +1,21 @@
+From user@domain  Fri Feb 22 00:06:23 2008
+From: user2@domain2.org
+To: foo bar <user2@domain2.org>
+Cc: user2@domain2.org (foo bar)
+
+1
+
+From user@domain  Fri Feb 22 01:06:23 2008
+From: user2@domain1.org
+To: user2@domain1.org
+Cc: user2: blah@domain1.org;
+
+2
+
+From user@domain  Fri Feb 22 02:06:23 2008
+From: user1@domain1.org
+To: user1@domain1.org
+Cc: user1@domain1.org
+
+3
+

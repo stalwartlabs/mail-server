@@ -287,7 +287,7 @@ impl Config {
                     .value_or_default(("server.listener", id, "url"), "server.url")
                     .failed(&format!("No 'url' directive found for listener {id:?}"))
                     .to_string(),
-                ServerProtocol::Imap | ServerProtocol::Http => self
+                ServerProtocol::Imap | ServerProtocol::Http | ServerProtocol::ManageSieve => self
                     .value_or_default(("server.listener", id, "url"), "server.url")
                     .unwrap_or_default()
                     .to_string(),
@@ -318,6 +318,8 @@ impl ParseValue for ServerProtocol {
             Ok(Self::Imap)
         } else if value.eq_ignore_ascii_case("http") {
             Ok(Self::Http)
+        } else if value.eq_ignore_ascii_case("managesieve") {
+            Ok(Self::ManageSieve)
         } else {
             Err(format!(
                 "Invalid server protocol type {:?} for property {:?}.",

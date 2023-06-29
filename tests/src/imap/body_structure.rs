@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use imap::op::fetch::AsImapDataItem;
 use imap_proto::{
@@ -7,13 +7,11 @@ use imap_proto::{
 };
 use mail_parser::Message;
 
+use super::resources_dir;
+
 #[test]
 fn body_structure() {
-    let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    test_dir.push("resources");
-    test_dir.push("imap");
-    test_dir.push("messages");
-    for file_name in fs::read_dir(&test_dir).unwrap() {
+    for file_name in fs::read_dir(&resources_dir()).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
         if file_name.extension().map_or(true, |e| e != "txt") {
             continue;

@@ -1,8 +1,10 @@
 use ::store::query::log::Query;
 use imap_proto::StatusResponse;
 
+pub mod acl;
 pub mod append;
 pub mod authenticate;
+pub mod capability;
 pub mod close;
 pub mod copy_move;
 pub mod create;

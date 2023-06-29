@@ -24,7 +24,9 @@
 use std::time::Duration;
 
 use directory::config::ConfigDirectory;
+use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use managesieve::core::ManageSieveSessionManager;
 use smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
 use utils::{
@@ -54,6 +56,7 @@ async fn main() -> std::io::Result<()> {
         "Starting Stalwart Mail Server v{}...",
         env!("CARGO_PKG_VERSION")
     );
+    let todo = "fix logging";
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -61,6 +64,9 @@ async fn main() -> std::io::Result<()> {
         .await
         .failed("Invalid configuration file");
     let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
+        .await
+        .failed("Invalid configuration file");
+    let imap = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");
 
@@ -76,7 +82,14 @@ async fn main() -> std::io::Result<()> {
             ServerProtocol::Jmap => {
                 server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
             }
-            ServerProtocol::Imap => unimplemented!("IMAP is not implemented yet"),
+            ServerProtocol::Imap => server.spawn(
+                ImapSessionManager::new(jmap.clone(), imap.clone()),
+                shutdown_rx,
+            ),
+            ServerProtocol::ManageSieve => server.spawn(
+                ManageSieveSessionManager::new(jmap.clone(), imap.clone()),
+                shutdown_rx,
+            ),
         };
     });
 

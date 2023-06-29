@@ -1,0 +1,103 @@
+messages: all
+
+ok fetch 1 (body.peek[])
+* 1 fetch (body[] {{{
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: user2@domain.org
+Date: Fri, 23 Mar 2007 11:22:33 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[text])
+* 1 fetch (body[text] {{{
+From: user2@domain.org
+Date: Fri, 23 Mar 2007 11:22:33 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[1])
+* 1 fetch (body[1] {{{
+From: user2@domain.org
+Date: Fri, 23 Mar 2007 11:22:33 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[1.1])
+* 1 fetch (body[1.1] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[1.header])
+* 1 fetch (body[1.header] {{{
+From: user2@domain.org
+Date: Fri, 23 Mar 2007 11:22:33 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+
+}}})
+
+ok fetch 1 (body.peek[1.text])
+* 1 fetch (body[1.text] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[1.1.1])
+* 1 fetch (body[1.1.1] {{{
+Hello world
+
+}}})
+
+ok fetch 1 (body.peek[1.1.header])
+* 1 fetch (body[1.1.header] {{{
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+
+}}})
+
+ok fetch 1 (body.peek[1.1.text])
+* 1 fetch (body[1.1.text] {{{
+Hello world
+
+}}})
+

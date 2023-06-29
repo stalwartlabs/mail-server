@@ -1,0 +1,54 @@
+messages: 3
+
+ok status $mailbox (uidnext)
+* status $mailbox (uidnext $uidnext)
+
+ok fetch 1:3 uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+
+ok fetch 3:1 uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+
+ok fetch 1,* uid
+* 1 fetch (uid $uid1)
+* 3 fetch (uid $uid3)
+
+ok fetch * uid
+* 3 fetch (uid $uid3)
+
+ok fetch *:1 uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+
+ok uid fetch $uidnext:* uid
+* 3 fetch (uid $uid3)
+
+# break seq=uid map
+ok store 2 flags \deleted
+ok expunge
+* 2 expunge
+
+ok uid fetch $uidnext:* uid
+* 2 fetch (uid $uid3)
+ok uid fetch 1:* uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid3)
+ok uid fetch $uid2 uid
+! 1 fetch (uid $uid1)
+! 2 fetch (uid $uid3)
+ok uid fetch $uid1,* uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid3)
+
+# test macros
+ok fetch 1 full
+* 1 fetch (flags () internaldate $intdate1 rfc822.size $size1 envelope ($!unordered) body ($!unordered))
+ok fetch 1 all
+* 1 fetch (flags () internaldate $intdate1 rfc822.size $size1 envelope ($!unordered))
+ok fetch 1 fast
+* 1 fetch (flags () internaldate $intdate1 rfc822.size $size1)

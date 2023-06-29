@@ -1,0 +1,13 @@
+connections: 2
+state: created
+
+1 ok append
+1 ok status $mailbox (uidvalidity uidnext)
+* status $mailbox (uidvalidity $uidvalidity uidnext $uidnext)
+1 ok delete $mailbox
+
+2 ok create $mailbox
+2 ok append $mailbox
+
+#1 ok status $mailbox (uidvalidity uidnext)
+#! status $mailbox (uidvalidity $uidvalidity uidnext $uidnext)

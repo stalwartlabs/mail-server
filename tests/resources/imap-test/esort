@@ -1,0 +1,11 @@
+capabilities: ESORT
+messages: 5
+
+ok sort return (min) (arrival) us-ascii 1:5
+* esearch (tag $tag) min 1
+ok sort return (max) (arrival) us-ascii 1:5
+* esearch (tag $tag) max 5
+ok sort return (all) (arrival) us-ascii 1:5
+* esearch (tag $tag) all 1:5
+ok sort return (count) (arrival) us-ascii 1:5
+* esearch (tag $tag) count 5

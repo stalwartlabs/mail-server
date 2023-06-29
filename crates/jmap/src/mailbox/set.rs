@@ -186,9 +186,10 @@ impl JMAP {
                             .update_document(document_id)
                             .custom(builder);
                         if !batch.is_empty() {
-                            changes.log_update(Collection::Mailbox, document_id);
                             match self.store.write(batch.build()).await {
-                                Ok(_) => (),
+                                Ok(_) => {
+                                    changes.log_update(Collection::Mailbox, document_id);
+                                }
                                 Err(store::Error::AssertValueFailed) => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",

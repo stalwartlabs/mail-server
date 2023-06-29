@@ -1,0 +1,31 @@
+capabilities: CONTEXT=SEARCH
+messages: 6
+
+ok store 1 +flags \deleted
+ok expunge
+
+ok fetch 1:5 uid
+* 1 fetch (uid $uid1)
+* 2 fetch (uid $uid2)
+* 3 fetch (uid $uid3)
+* 4 fetch (uid $uid4)
+* 5 fetch (uid $uid5)
+
+ok store 1,2 +flags \seen
+
+ok uid search return (update all) or seen subject s33
+* esearch (tag $searchtag) uid all $uid1:$uid2
+
+ok store 3:5 +flags \seen
+* esearch (tag $searchtag) uid addto ($pos $uid3:$uid5)
+
+ok store 1:5 -flags \seen
+* esearch (tag $searchtag) uid removefrom ($pos2 $uid1,$uid3:$uid5)
+
+ok uid store $uid3,$uid4 +flags \seen
+* esearch (tag $searchtag) uid addto ($pos3 $uid3:$uid4)
+
+ok store 3 +flags \deleted
+ok expunge
+* 3 expunge
+* esearch (tag $searchtag) uid removefrom ($pos4 $uid3)

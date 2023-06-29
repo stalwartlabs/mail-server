@@ -53,8 +53,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     .await;
 
     // Reset rate limiters
-    server.rate_limit_auth.lock().clear();
-    server.rate_limit_unauth.lock().clear();
+    server.rate_limit_auth.clear();
+    server.rate_limit_unauth.clear();
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(

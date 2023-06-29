@@ -454,7 +454,7 @@ impl JMAP {
         current: &Option<HashedValue<Object<Value>>>,
     ) {
         if let Value::List(acl_changes) = changes.get(&Property::Acl) {
-            let mut access_tokens = self.access_tokens.lock();
+            let access_tokens = &self.access_tokens;
             if let Some(Value::List(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))

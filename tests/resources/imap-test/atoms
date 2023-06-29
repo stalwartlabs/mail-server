@@ -1,0 +1,13 @@
+state: auth
+
+# Don't confuse with ~{literal8}
+ok list "" ~foo
+no select ~foo
+
+# atom-specials   = "(" / ")" / "{" / SP / CTL / list-wildcards /
+#                   quoted-specials / resp-specials
+# quoted-specials = DQUOTE / "\"
+# resp-specials   = "]"
+# list-wildcards  = "%" / "*"
+no select !#$$&'+,-.0123456789:;<=>?@^_`|[}
+ok list "" !#$$&'+,-.0123456789:;<=>?@^_`|[}%*

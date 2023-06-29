@@ -1,0 +1,328 @@
+BODY (
+   (
+      "text" "plain" (
+         "charset" "utf-8"
+      ) NIL NIL "7bit" 54 0
+   ) (
+      "message" "rfc822" NIL NIL NIL "base64" 1179 (
+         "Tue, 14 Dec 2021 10:48:25 +0000" "HTML test" (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "email@example.com" NIL "email" "example.com"
+            )
+         ) NIL NIL NIL "<random-message-id@example.com>"
+      ) (
+         (
+            "text" "plain" (
+               "charset" "utf-8" "format" "flowed"
+            ) NIL NIL "7bit" 30 0
+         ) (
+            "text" "html" (
+               "charset" "utf-8"
+            ) NIL NIL "7bit" 173 8
+         ) "alternative"
+      ) 0
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "plain" (
+         "charset" "utf-8"
+      ) NIL NIL "7bit" 54 0 "e377afc895a2c4c0d17b378f355de59e" NIL NIL NIL
+   ) (
+      "message" "rfc822" NIL NIL NIL "base64" 1179 (
+         "Tue, 14 Dec 2021 10:48:25 +0000" "HTML test" (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "Name" NIL "email" "example.com"
+            )
+         ) (
+            (
+               "email@example.com" NIL "email" "example.com"
+            )
+         ) NIL NIL NIL "<random-message-id@example.com>"
+      ) (
+         (
+            "text" "plain" (
+               "charset" "utf-8" "format" "flowed"
+            ) NIL NIL "7bit" 30 0 "6891396510cbadf4e2cfe31aee5bd25f" NIL NIL NIL
+         ) (
+            "text" "html" (
+               "charset" "utf-8"
+            ) NIL NIL "7bit" 173 8 "1a04bd2ec90f44a42792eacdc14fe8ea" NIL NIL NIL
+         ) "alternative" (
+            "boundary" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+         ) NIL "en-US" NIL
+      ) 0 "eb1ac6e049a544c2bda1b7787e03db50" (
+         "attachment" (
+            "filename" "attached_email.eml"
+         )
+      ) NIL NIL
+   ) "mixed" (
+      "boundary" "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+   ) NIL NIL NIL
+)
+
+BODY[] {1649}
+Content-Type: multipart/mixed;
+ boundary=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+This is a message with a base64 encoded attached email
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Content-Disposition: attachment; filename="attached_email.eml"
+Content-Type: message/rfc822
+Content-Transfer-Encoding: base64
+
+VG86ICJlbWFpbEBleGFtcGxlLmNvbSIgPGVtYWlsQGV4YW1wbGUuY29tPg0KRnJvbTogTmFtZSA8
+ZW1haWxAZXhhbXBsZS5jb20+DQpTdWJqZWN0OiBIVE1MIHRlc3QNCk1lc3NhZ2UtSUQ6IDxyYW5k
+b20tbWVzc2FnZS1pZEBleGFtcGxlLmNvbT4NCkRhdGU6IFR1ZSwgMTQgRGVjIDIwMjEgMTE6NDg6
+MjUgKzAxMDANCk1JTUUtVmVyc2lvbjogMS4wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9hbHRl
+cm5hdGl2ZTsNCiBib3VuZGFyeT0iYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYSINCkNvbnRlbnQtTGFuZ3VhZ2U6IGVuLVVTDQoNClRoaXMgaXMgYSBtdWx0aS1wYXJ0IG1l
+c3NhZ2UgaW4gTUlNRSBmb3JtYXQuDQotLWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWENCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD11dGYtODsgZm9ybWF0
+PWZsb3dlZA0KQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogN2JpdA0KDQpUaGlzIGlzIGFuICpI
+VE1MKiB0ZXN0IG1lc3NhZ2UNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYQ0KQ29udGVudC1UeXBlOiB0ZXh0L2h0bWw7IGNoYXJzZXQ9dXRmLTgNCkNvbnRlbnQtVHJh
+bnNmZXItRW5jb2Rpbmc6IDdiaXQNCg0KPGh0bWw+DQogIDxoZWFkPg0KICAgIDxtZXRhIGh0dHAt
+ZXF1aXY9ImNvbnRlbnQtdHlwZSIgY29udGVudD0idGV4dC9odG1sOyBjaGFyc2V0PVVURi04Ij4N
+CiAgPC9oZWFkPg0KICA8Ym9keT4NCiAgICBUaGlzIGlzIGFuIDxiPkhUTUw8L2I+IHRlc3QgbWVz
+c2FnZQ0KICA8L2JvZHk+DQo8L2h0bWw+DQoNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWFhYWFhYS0tDQo=
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb--
+
+BINARY.SIZE[] 0
+----------------------------------
+BODY[HEADER] {83}
+Content-Type: multipart/mixed;
+ boundary=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+
+----------------------------------
+BODY[TEXT] {1566}
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+This is a message with a base64 encoded attached email
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Content-Disposition: attachment; filename="attached_email.eml"
+Content-Type: message/rfc822
+Content-Transfer-Encoding: base64
+
+VG86ICJlbWFpbEBleGFtcGxlLmNvbSIgPGVtYWlsQGV4YW1wbGUuY29tPg0KRnJvbTogTmFtZSA8
+ZW1haWxAZXhhbXBsZS5jb20+DQpTdWJqZWN0OiBIVE1MIHRlc3QNCk1lc3NhZ2UtSUQ6IDxyYW5k
+b20tbWVzc2FnZS1pZEBleGFtcGxlLmNvbT4NCkRhdGU6IFR1ZSwgMTQgRGVjIDIwMjEgMTE6NDg6
+MjUgKzAxMDANCk1JTUUtVmVyc2lvbjogMS4wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9hbHRl
+cm5hdGl2ZTsNCiBib3VuZGFyeT0iYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYSINCkNvbnRlbnQtTGFuZ3VhZ2U6IGVuLVVTDQoNClRoaXMgaXMgYSBtdWx0aS1wYXJ0IG1l
+c3NhZ2UgaW4gTUlNRSBmb3JtYXQuDQotLWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWENCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD11dGYtODsgZm9ybWF0
+PWZsb3dlZA0KQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogN2JpdA0KDQpUaGlzIGlzIGFuICpI
+VE1MKiB0ZXN0IG1lc3NhZ2UNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYQ0KQ29udGVudC1UeXBlOiB0ZXh0L2h0bWw7IGNoYXJzZXQ9dXRmLTgNCkNvbnRlbnQtVHJh
+bnNmZXItRW5jb2Rpbmc6IDdiaXQNCg0KPGh0bWw+DQogIDxoZWFkPg0KICAgIDxtZXRhIGh0dHAt
+ZXF1aXY9ImNvbnRlbnQtdHlwZSIgY29udGVudD0idGV4dC9odG1sOyBjaGFyc2V0PVVURi04Ij4N
+CiAgPC9oZWFkPg0KICA8Ym9keT4NCiAgICBUaGlzIGlzIGFuIDxiPkhUTUw8L2I+IHRlc3QgbWVz
+c2FnZQ0KICA8L2JvZHk+DQo8L2h0bWw+DQoNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWFhYWFhYS0tDQo=
+--bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb--
+
+----------------------------------
+BODY[MIME] {84}
+Content-Type: multipart/mixed;
+ boundary=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+
+----------------------------------
+BODY[1] {54}
+This is a message with a base64 encoded attached email
+BINARY[1] {54}
+This is a message with a base64 encoded attached email
+BINARY.SIZE[1] 54
+----------------------------------
+BODY[1.HEADER] {73}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[1.TEXT] {54}
+This is a message with a base64 encoded attached email
+----------------------------------
+BODY[1.MIME] {74}
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2] {1179}
+VG86ICJlbWFpbEBleGFtcGxlLmNvbSIgPGVtYWlsQGV4YW1wbGUuY29tPg0KRnJvbTogTmFtZSA8
+ZW1haWxAZXhhbXBsZS5jb20+DQpTdWJqZWN0OiBIVE1MIHRlc3QNCk1lc3NhZ2UtSUQ6IDxyYW5k
+b20tbWVzc2FnZS1pZEBleGFtcGxlLmNvbT4NCkRhdGU6IFR1ZSwgMTQgRGVjIDIwMjEgMTE6NDg6
+MjUgKzAxMDANCk1JTUUtVmVyc2lvbjogMS4wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9hbHRl
+cm5hdGl2ZTsNCiBib3VuZGFyeT0iYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYSINCkNvbnRlbnQtTGFuZ3VhZ2U6IGVuLVVTDQoNClRoaXMgaXMgYSBtdWx0aS1wYXJ0IG1l
+c3NhZ2UgaW4gTUlNRSBmb3JtYXQuDQotLWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWENCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD11dGYtODsgZm9ybWF0
+PWZsb3dlZA0KQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogN2JpdA0KDQpUaGlzIGlzIGFuICpI
+VE1MKiB0ZXN0IG1lc3NhZ2UNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYQ0KQ29udGVudC1UeXBlOiB0ZXh0L2h0bWw7IGNoYXJzZXQ9dXRmLTgNCkNvbnRlbnQtVHJh
+bnNmZXItRW5jb2Rpbmc6IDdiaXQNCg0KPGh0bWw+DQogIDxoZWFkPg0KICAgIDxtZXRhIGh0dHAt
+ZXF1aXY9ImNvbnRlbnQtdHlwZSIgY29udGVudD0idGV4dC9odG1sOyBjaGFyc2V0PVVURi04Ij4N
+CiAgPC9oZWFkPg0KICA8Ym9keT4NCiAgICBUaGlzIGlzIGFuIDxiPkhUTUw8L2I+IHRlc3QgbWVz
+c2FnZQ0KICA8L2JvZHk+DQo8L2h0bWw+DQoNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
+YWFhYWFhYWFhYWFhYS0tDQo=
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 872
+----------------------------------
+BODY[2.HEADER] {319}
+To: "email@example.com" <email@example.com>
+From: Name <email@example.com>
+Subject: HTML test
+Message-ID: <random-message-id@example.com>
+Date: Tue, 14 Dec 2021 11:48:25 +0100
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+Content-Language: en-US
+
+
+----------------------------------
+BODY[2.TEXT] {553}
+This is a multi-part message in MIME format.
+--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+
+This is an *HTML* test message
+--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    This is an <b>HTML</b> test message
+  </body>
+</html>
+
+--aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--
+
+----------------------------------
+BODY[2.MIME] {119}
+Content-Type: multipart/alternative;
+ boundary="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+Content-Language: en-US
+
+
+----------------------------------
+BODY[2.1] {30}
+This is an *HTML* test message
+BINARY[2.1] {30}
+This is an *HTML* test message
+BINARY.SIZE[2.1] 30
+----------------------------------
+BODY[2.1.HEADER] {91}
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2.1.TEXT] {30}
+This is an *HTML* test message
+----------------------------------
+BODY[2.1.MIME] {91}
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2.2] {173}
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    This is an <b>HTML</b> test message
+  </body>
+</html>
+
+BINARY[2.2] {173}
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    This is an <b>HTML</b> test message
+  </body>
+</html>
+
+BINARY.SIZE[2.2] 173
+----------------------------------
+BODY[2.2.HEADER] {75}
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[2.2.TEXT] {173}
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    This is an <b>HTML</b> test message
+  </body>
+</html>
+
+----------------------------------
+BODY[2.2.MIME] {75}
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {2}
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {0}
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {84}
+Content-Type: multipart/mixed;
+ boundary=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+pe: multipart/mixed;
+ bou
+----------------------------------
