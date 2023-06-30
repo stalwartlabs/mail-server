@@ -71,12 +71,13 @@ max-connections = 81920
 bind = ["127.0.0.1:9992"]
 protocol = "imap"
 max-connections = 81920
-tls.implict = true
+tls.implicit = true
 
 [server.listener.sieve]
 bind = ["127.0.0.1:4190"]
 protocol = "managesieve"
 max-connections = 81920
+tls.implicit = true
 
 [server.socket]
 reuse-addr = true
@@ -305,6 +306,13 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
 
 #[tokio::test]
 pub async fn imap_tests() {
+    /*tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+
     // Prepare settings
     let delete = true;
     let handle = init_imap_tests(delete).await;
@@ -569,7 +577,7 @@ impl AssertResult for Vec<String> {
         for line in &self {
             if let Some((_, code)) = line.split_once("[COPYUID ") {
                 if let Some((code, _)) = code.split_once(']') {
-                    if let Some((_, uid)) = code.split_once(' ') {
+                    if let Some((_, uid)) = code.rsplit_once(' ') {
                         return uid.to_string();
                     }
                 }

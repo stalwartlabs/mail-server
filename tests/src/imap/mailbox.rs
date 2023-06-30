@@ -70,12 +70,17 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
     imap.send("CREATE \"All Mail/Untitled\"").await;
     imap.assert_read(Type::Tagged, ResponseType::No).await;
 
+    // Special use folders that already exist should not be allowed
+    imap.send("CREATE \"Second trash\" (USE (\\Trash))").await;
+    imap.assert_read(Type::Tagged, ResponseType::No).await;
+
     // Enable IMAP4rev2
     imap.send("ENABLE IMAP4rev2").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
 
     // Create missing parent folders
-    imap.send("CREATE \"/Vegetable/Broccoli\"").await;
+    imap.send("CREATE \"/Vegetable/Broccoli\" (USE (\\Important))")
+        .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("[MAILBOXID (");
@@ -100,7 +105,7 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
                     ("Fruit/Apple", ["HasChildren", ""]),
                     ("Fruit/Apple/Green", ["HasNoChildren", ""]),
                     ("Vegetable", ["HasChildren", ""]),
-                    ("Vegetable/Broccoli", ["HasNoChildren", ""]),
+                    ("Vegetable/Broccoli", ["HasNoChildren", "\\Important"]),
                     ("Tofu", ["HasNoChildren", ""]),
                 ],
                 true,

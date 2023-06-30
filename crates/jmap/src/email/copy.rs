@@ -433,7 +433,8 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
             .custom(EmailIndexBuilder::set(metadata))
-            .custom(token_index);
+            .custom(token_index)
+            .custom(changes);
 
         self.store.write(batch.build()).await.map_err(|err| {
             tracing::error!(

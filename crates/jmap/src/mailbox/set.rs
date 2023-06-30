@@ -775,7 +775,7 @@ impl JMAP {
                     Object::with_capacity(3)
                         .with_property(Property::Name, name)
                         .with_property(Property::Role, role)
-                        .with_property(Property::ParentId, 0u32),
+                        .with_property(Property::ParentId, Value::Id(0u64.into())),
                 ),
             );
             mailbox_ids.insert(mailbox_id);

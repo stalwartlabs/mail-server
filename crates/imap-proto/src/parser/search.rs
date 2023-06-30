@@ -310,25 +310,19 @@ pub fn parse_filters(
                         )));
                     }
                 } else if value.eq_ignore_ascii_case(b"EMAILID") {
-                    let argument = tokens
-                        .next()
-                        .ok_or_else(|| Cow::from("Expected an EMAILID value."))?
-                        .unwrap_string()?;
-                    if let Some((_, email_id)) = argument.split_once('-') {
-                        filters.push(Filter::EmailId(email_id.to_string()));
-                    } else {
-                        return Err(Cow::from("Malformed EMAILID value."));
-                    }
+                    filters.push(Filter::EmailId(
+                        tokens
+                            .next()
+                            .ok_or_else(|| Cow::from("Expected an EMAILID value."))?
+                            .unwrap_string()?,
+                    ));
                 } else if value.eq_ignore_ascii_case(b"THREADID") {
-                    let argument = tokens
-                        .next()
-                        .ok_or_else(|| Cow::from("Expected an THREADID value."))?
-                        .unwrap_string()?;
-                    if let Some((_, thread_id)) = argument.split_once('-') {
-                        filters.push(Filter::ThreadId(thread_id.to_string()));
-                    } else {
-                        return Err(Cow::from("Malformed THREADID value."));
-                    }
+                    filters.push(Filter::ThreadId(
+                        tokens
+                            .next()
+                            .ok_or_else(|| Cow::from("Expected an THREADID value."))?
+                            .unwrap_string()?,
+                    ));
                 } else if value.eq_ignore_ascii_case(b"OR") {
                     if filters_stack.len() > 10 {
                         return Err(Cow::from("Too many nested filters"));

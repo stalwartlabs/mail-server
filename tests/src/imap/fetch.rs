@@ -41,7 +41,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("FLAGS (flag_009)")
+        .assert_contains("FLAGS (Flag_009)")
         .assert_contains("RFC822.SIZE 1457")
         .assert_contains("UID 10")
         .assert_contains("INTERNALDATE")
@@ -104,7 +104,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     imap.send("UID FETCH 10 (FLAGS)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("FLAGS (flag_009)");
+        .assert_contains("FLAGS (Flag_009)");
 
     // Switch to SELECT mode
     imap.send("SELECT INBOX").await;
@@ -123,7 +123,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     imap.send("UID FETCH 10 (FLAGS)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("FLAGS (flag_009)");
+        .assert_contains("FLAGS (Flag_009)");
 
     // Fetching a body section should set the \Seen flag
     imap.send("UID FETCH 10 (BODY[1.TEXT])").await;

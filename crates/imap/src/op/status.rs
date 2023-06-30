@@ -23,8 +23,8 @@
 
 use std::sync::Arc;
 
-use ahash::AHashSet;
 use imap_proto::{
+    parser::PushUnique,
     protocol::status::{Status, StatusItem, StatusItemType},
     receiver::Request,
     Command, ResponseCode, StatusResponse,
@@ -93,7 +93,7 @@ impl SessionData {
         };
 
         // Make sure all requested fields are up to date
-        let mut items_update = AHashSet::with_capacity(items.len());
+        let mut items_update = Vec::with_capacity(items.len());
         let mut items_response = Vec::with_capacity(items.len());
         let mut do_synchronize = false;
 
@@ -101,7 +101,7 @@ impl SessionData {
             if account.account_id == mailbox.account_id {
                 let mailbox_state = account
                     .mailbox_state
-                    .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or_default())
+                    .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or(u32::MAX))
                     .or_insert_with(Mailbox::default);
                 for item in items {
                     match item {
@@ -109,14 +109,14 @@ impl SessionData {
                             if let Some(value) = mailbox_state.total_messages {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                             }
                         }
                         Status::UidNext => {
                             if let Some(value) = mailbox_state.uid_next {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                                 do_synchronize = true;
                             }
                         }
@@ -124,7 +124,7 @@ impl SessionData {
                             if let Some(value) = mailbox_state.uid_validity {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                                 do_synchronize = true;
                             }
                         }
@@ -132,21 +132,21 @@ impl SessionData {
                             if let Some(value) = mailbox_state.total_unseen {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                             }
                         }
                         Status::Deleted => {
                             if let Some(value) = mailbox_state.total_deleted {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                             }
                         }
                         Status::Size => {
                             if let Some(value) = mailbox_state.size {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
-                                items_update.insert(*item);
+                                items_update.push_unique(*item);
                             }
                         }
                         Status::HighestModSeq => {
@@ -203,25 +203,31 @@ impl SessionData {
 
                 for item in items_update {
                     let result = match item {
-                        Status::Messages => message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
+                        Status::Messages => {
+                            mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0)
+                        }
                         Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
                         Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
                         Status::Unseen => {
-                            if let (Some(message_ids), Some(mailbox_message_ids), Some(mut seen)) = (
-                                &message_ids,
-                                &mailbox_message_ids,
-                                self.jmap
+                            if let (Some(message_ids), Some(mailbox_message_ids)) =
+                                (&message_ids, &mailbox_message_ids)
+                            {
+                                if let Some(mut seen) = self
+                                    .jmap
                                     .get_tag(
                                         mailbox.account_id,
                                         Collection::Email,
                                         Property::Keywords,
                                         Keyword::Seen,
                                     )
-                                    .await?,
-                            ) {
-                                seen ^= message_ids;
-                                seen &= mailbox_message_ids.as_ref();
-                                seen.len()
+                                    .await?
+                                {
+                                    seen ^= message_ids;
+                                    seen &= mailbox_message_ids.as_ref();
+                                    seen.len()
+                                } else {
+                                    mailbox_message_ids.len()
+                                }
                             } else {
                                 0
                             }
@@ -285,7 +291,7 @@ impl SessionData {
                                 seen ^= message_ids.as_ref();
                                 seen.len()
                             })
-                            .unwrap_or(0),
+                            .unwrap_or_else(|| message_ids.len()),
                         Status::Deleted => self
                             .jmap
                             .get_tag(
@@ -320,7 +326,7 @@ impl SessionData {
                 if account.account_id == mailbox.account_id {
                     let mailbox_state = account
                         .mailbox_state
-                        .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or_default())
+                        .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or(u32::MAX))
                         .or_insert_with(Mailbox::default);
 
                     for (item, value) in values_update {

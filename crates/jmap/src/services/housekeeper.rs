@@ -23,7 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use chrono::{Datelike, TimeZone};
+use chrono::{Datelike, TimeZone, Timelike};
 use store::write::now;
 use tokio::sync::mpsc;
 use utils::{config::Config, failed, map::ttl_dashmap::TtlMap, UnwrapFailure};
@@ -42,6 +42,7 @@ pub enum Event {
 enum SimpleCron {
     EveryDay { hour: u32, minute: u32 },
     EveryWeek { day: u32, hour: u32, minute: u32 },
+    EveryHour { minute: u32 },
 }
 
 const TASK_PURGE_DB: usize = 0;
@@ -155,20 +156,24 @@ impl SimpleCron {
 
         for (pos, value) in value.split(' ').enumerate() {
             if pos == 0 {
-                minute = value.parse::<u32>().failed("parse minute.");
+                minute = value.parse::<u32>().failed("parse cron minute");
                 if !(0..=59).contains(&minute) {
                     failed(&format!("parse minute, invalid value: {}", minute));
                 }
             } else if pos == 1 {
-                hour = value.parse::<u32>().failed("parse hour.");
-                if !(0..=23).contains(&hour) {
-                    failed(&format!("parse hour, invalid value: {}", hour));
+                if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
+                    return SimpleCron::EveryHour { minute };
+                } else {
+                    hour = value.parse::<u32>().failed("parse cron hour");
+                    if !(0..=23).contains(&hour) {
+                        failed(&format!("parse hour, invalid value: {}", hour));
+                    }
                 }
             } else if pos == 2 {
-                if value.as_bytes().first().failed("parse weekday") == &b'*' {
+                if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
                     return SimpleCron::EveryDay { hour, minute };
                 } else {
-                    let day = value.parse::<u32>().failed("parse weekday.");
+                    let day = value.parse::<u32>().failed("parse cron weekday");
                     if !(1..=7).contains(&hour) {
                         failed(&format!(
                             "parse weekday, invalid value: {}, range is 1 (Monday) to 7 (Sunday).",
@@ -205,6 +210,16 @@ impl SimpleCron {
                     next + chrono::Duration::days(
                         (7 - now.weekday().number_from_monday() + *day).into(),
                     )
+                } else {
+                    next
+                }
+            }
+            SimpleCron::EveryHour { minute } => {
+                let next = chrono::Local
+                    .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
+                    .unwrap();
+                if next < now {
+                    next + chrono::Duration::hours(1)
                 } else {
                     next
                 }

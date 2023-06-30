@@ -493,7 +493,7 @@ impl SessionData {
                             .get_property::<u64>(account_id, Collection::Email, id, Property::Cid)
                             .await
                         {
-                            items.push(DataItem::ModSeq { modseq });
+                            items.push(DataItem::ModSeq { modseq: modseq + 1 });
                         }
                     }
                     Attribute::EmailId => {

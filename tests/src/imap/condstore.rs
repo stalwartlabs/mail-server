@@ -181,7 +181,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("VANISHED", 1)
-        .assert_contains("VANISHED (EARLIER) 2")
+        .assert_contains("VANISHED (EARLIER) 1:2") // .assert_contains("VANISHED (EARLIER) 2")
         .assert_count("FETCH (", 3);
 
     // Fetch changes since SEQ 4
@@ -193,7 +193,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("VANISHED", 1)
-        .assert_contains("VANISHED (EARLIER) 2")
+        .assert_contains("VANISHED (EARLIER) 1:2") // .assert_contains("VANISHED (EARLIER) 2")
         .assert_count("FETCH (", 2);
 
     // Fetch changes since SEQ 6
@@ -205,7 +205,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("VANISHED", 1)
-        .assert_contains("VANISHED (EARLIER) 2")
+        .assert_contains("VANISHED (EARLIER) 1:2") // .assert_contains("VANISHED (EARLIER) 2")
         .assert_count("FETCH (", 1);
 
     // Fetch changes since SEQ 7
@@ -217,7 +217,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("VANISHED", 1)
-        .assert_contains("VANISHED (EARLIER) 2")
+        .assert_contains("VANISHED (EARLIER) 1:2") // .assert_contains("VANISHED (EARLIER) 2")
         .assert_count("FETCH (", 0);
 
     // Fetch changes since SEQ 8
@@ -238,6 +238,11 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .await
         .assert_contains("ALL 1:3 MODSEQ");
 
+    imap_check.send("NOOP").await;
+    imap_check
+        .assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("3 EXISTS");
     imap_check
         .send(&format!("SEARCH MODSEQ {}", modseqs[4]))
         .await;
@@ -252,7 +257,7 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         modseqs[5]
     ))
     .await;
-    imap.assert_read(Type::Tagged, ResponseType::No)
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("* 1 FETCH")
         .assert_contains("UID 3)")
@@ -286,5 +291,5 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("FETCH (", 3)
-        .assert_contains("VANISHED (EARLIER) 2");
+        .assert_contains("VANISHED (EARLIER) 1:2"); // .assert_contains("VANISHED (EARLIER) 2");
 }

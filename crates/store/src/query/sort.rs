@@ -109,6 +109,7 @@ impl ReadTransaction<'_> {
 
             Ok(sorted_results)
         } else {
+            //TODO improve this algorithm, avoid re-sorting in memory.
             let mut sorted_ids = AHashMap::with_capacity(paginate.limit);
 
             for (pos, comparator) in comparators.into_iter().take(4).enumerate() {
@@ -152,9 +153,7 @@ impl ReadTransaction<'_> {
                             for document_id in results {
                                 sorted_ids.entry(document_id).or_insert([0u32; 4])[pos] = idx;
                             }
-                        }
-
-                        if !has_grouped_ids {
+                        } else if !has_grouped_ids {
                             // If we are sorting by multiple fields and we don't have grouped ids, we can
                             // stop here
                             break;

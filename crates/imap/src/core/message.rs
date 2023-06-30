@@ -17,6 +17,7 @@ use crate::core::ImapId;
 
 use super::{MailboxId, MailboxState, SelectedMailbox, SessionData};
 
+#[derive(Debug)]
 struct UidMap {
     uid_next: u32,
     uid_validity: u32,
@@ -24,6 +25,7 @@ struct UidMap {
     items: Vec<Uid>,
 }
 
+#[derive(Debug)]
 struct Uid {
     uid: u32,
     id: u32,
@@ -165,8 +167,8 @@ impl SessionData {
                         .with_account_id(mailbox.account_id)
                         .with_collection(Collection::Mailbox)
                         .update_document(mailbox.mailbox_id.unwrap_or(u32::MAX))
-                        .assert_value(Property::EmailId, &uid_map)
-                        .value(Property::EmailId, &uid_map.inner, F_VALUE);
+                        .assert_value(Property::EmailIds, &uid_map)
+                        .value(Property::EmailIds, &uid_map.inner, F_VALUE);
 
                     match self.jmap.store.write(batch.build()).await {
                         Ok(_) => (),
@@ -213,33 +215,24 @@ impl SessionData {
                     last_state,
                 });
             } else {
-                let uid_next = id_list.len() as u32;
+                let uid_next = (id_list.len() + 1) as u32;
                 let uid_validity = now() as u32 ^ mailbox.mailbox_id.unwrap_or(0);
-                let mut id_to_imap = AHashMap::with_capacity(uid_next as usize);
-                let mut uid_to_id = AHashMap::with_capacity(uid_next as usize);
-                let mut uids = Vec::with_capacity(uid_next as usize);
+                let mut id_to_imap = AHashMap::with_capacity(id_list.len());
+                let mut uid_to_id = AHashMap::with_capacity(id_list.len());
+                let mut uids = Vec::with_capacity(id_list.len());
                 let mut uid_map = UidMap {
                     uid_next,
                     uid_validity,
                     hash: id_list_hash,
-                    items: Vec::with_capacity(uid_next as usize),
+                    items: Vec::with_capacity(id_list.len()),
                 };
 
                 for (uid, (id, received)) in id_list.into_iter().enumerate() {
-                    id_to_imap.insert(
-                        id,
-                        ImapId {
-                            uid: uid as u32,
-                            seqnum: (uid + 1) as u32,
-                        },
-                    );
-                    uid_to_id.insert(uid as u32, id);
-                    uids.push(uid as u32);
-                    uid_map.items.push(Uid {
-                        uid: uid as u32,
-                        id,
-                        received,
-                    });
+                    let uid = (uid + 1) as u32;
+                    id_to_imap.insert(id, ImapId { uid, seqnum: uid });
+                    uid_to_id.insert(uid, id);
+                    uids.push(uid);
+                    uid_map.items.push(Uid { uid, id, received });
                 }
 
                 // Store uid map
@@ -248,7 +241,7 @@ impl SessionData {
                     .with_account_id(mailbox.account_id)
                     .with_collection(Collection::Mailbox)
                     .update_document(mailbox.mailbox_id.unwrap_or(u32::MAX))
-                    .value(Property::EmailId, &uid_map, F_VALUE);
+                    .value(Property::EmailIds, &uid_map, F_VALUE);
                 self.jmap.store.write(batch.build()).await.map_err(|err| {
                     tracing::error!(event = "error",
                     context = "store",
@@ -291,14 +284,18 @@ impl SessionData {
         let mut buf = Vec::with_capacity(64);
         let (new_message_count, deletions) = mailbox.update_mailbox_state(new_state, true);
         if let Some(deletions) = deletions {
-            expunge::Response {
-                is_qresync,
-                ids: deletions
-                    .into_iter()
-                    .map(|id| if !is_uid { id.seqnum } else { id.uid })
-                    .collect(),
-            }
-            .serialize_to(&mut buf);
+            let mut ids = deletions
+                .into_iter()
+                .map(|id| {
+                    if is_uid || is_qresync {
+                        id.uid
+                    } else {
+                        id.seqnum
+                    }
+                })
+                .collect::<Vec<u32>>();
+            ids.sort_unstable();
+            expunge::Response { is_qresync, ids }.serialize_to(&mut buf);
         }
         if let Some(new_message_count) = new_message_count {
             Exists {
@@ -489,9 +486,9 @@ impl Serialize for &UidMap {
         buf.extend_from_slice(self.uid_validity.to_le_bytes().as_ref());
         buf.extend_from_slice(self.hash.to_le_bytes().as_ref());
 
-        let mut last_uid = u32::MAX;
+        let mut last_uid = 0;
         for item in &self.items {
-            if last_uid.wrapping_add(1) != item.uid {
+            if last_uid + 1 != item.uid {
                 buf.push(0);
                 buf.push_leb128(item.uid);
             }
@@ -525,7 +522,7 @@ impl UidMap {
             hash: u64::from_le_bytes(buf_u64),
             items: Vec::with_capacity(items_len),
         };
-        let mut next_uid: u32 = 0;
+        let mut next_uid: u32 = 1;
         for _ in 0..items_len {
             let mut id: u32 = bytes.next_leb128()?;
             if id == 0 {

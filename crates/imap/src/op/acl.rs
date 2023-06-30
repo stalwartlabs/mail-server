@@ -329,7 +329,9 @@ impl<T: AsyncRead> Session<T> {
                                     if op == ModRightsOp::Add {
                                         bitmap.union(&rights);
                                     } else {
-                                        bitmap.intersection(&rights);
+                                        for right in rights {
+                                            bitmap.remove(right);
+                                        }
                                     }
                                     if !bitmap.is_empty() {
                                         *current = bitmap.into();

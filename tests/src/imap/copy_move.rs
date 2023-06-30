@@ -26,6 +26,14 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+    // Check status
+    imap.send("LIST \"\" % RETURN (STATUS (UIDNEXT MESSAGES UNSEEN SIZE))")
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("\"INBOX\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193)")
+        .assert_contains("\"All Mail\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193)");
+
     // Select INBOX
     imap.send("SELECT INBOX").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;

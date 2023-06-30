@@ -141,6 +141,9 @@ pub enum ResponseCode {
     MailboxId {
         mailbox_id: String,
     },
+
+    // USEATTR
+    UseAttr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

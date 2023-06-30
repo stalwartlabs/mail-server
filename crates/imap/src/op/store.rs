@@ -243,7 +243,7 @@ impl SessionData {
                 }
                 Operation::Clear => {
                     for keyword in &set_keywords {
-                        keywords.update(keyword.clone(), true);
+                        keywords.update(keyword.clone(), false);
                     }
                 }
             }
@@ -305,15 +305,14 @@ impl SessionData {
                         changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
 
                         // Add item to response
+                        let modseq = changelog.change_id + 1;
                         if !arguments.is_silent {
                             let mut data_items = vec![DataItem::Flags { flags }];
                             if is_uid {
                                 data_items.push(DataItem::Uid { uid: imap_id.uid });
                             }
                             if is_condstore {
-                                data_items.push(DataItem::ModSeq {
-                                    modseq: changelog.change_id,
-                                });
+                                data_items.push(DataItem::ModSeq { modseq });
                             }
                             items.items.push(FetchItem {
                                 id: imap_id.seqnum,
@@ -324,15 +323,11 @@ impl SessionData {
                                 id: imap_id.seqnum,
                                 items: if is_uid {
                                     vec![
-                                        DataItem::ModSeq {
-                                            modseq: changelog.change_id,
-                                        },
+                                        DataItem::ModSeq { modseq },
                                         DataItem::Uid { uid: imap_id.uid },
                                     ]
                                 } else {
-                                    vec![DataItem::ModSeq {
-                                        modseq: changelog.change_id,
-                                    }]
+                                    vec![DataItem::ModSeq { modseq }]
                                 },
                             });
                         }

@@ -31,7 +31,7 @@ use jmap_proto::{
     error::method::MethodError,
     object::{index::ObjectIndexBuilder, Object},
     types::{
-        acl::Acl, collection::Collection, property::Property, state::StateChange,
+        acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
         type_state::TypeState, value::Value,
     },
 };
@@ -167,7 +167,7 @@ impl SessionData {
                 ObjectIndexBuilder::new(SCHEMA).with_changes(
                     Object::with_capacity(2)
                         .with_property(Property::Name, path_item)
-                        .with_property(Property::ParentId, parent_id),
+                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id))),
                 ),
             );
             changes.log_insert(Collection::Mailbox, mailbox_id);
@@ -180,7 +180,7 @@ impl SessionData {
                 .with_changes(
                     Object::with_capacity(2)
                         .with_property(Property::Name, new_mailbox_name)
-                        .with_property(Property::ParentId, parent_id),
+                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id))),
                 ),
         );
         changes.log_update(Collection::Mailbox, mailbox_id);

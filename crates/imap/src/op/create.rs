@@ -31,7 +31,7 @@ use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::TypeState,
+        type_state::TypeState, value::Value,
     },
 };
 use store::{query::Filter, write::BatchBuilder};
@@ -110,7 +110,7 @@ impl SessionData {
             };
             let mut mailbox = Object::with_capacity(3)
                 .with_property(Property::Name, path_item)
-                .with_property(Property::ParentId, parent_id);
+                .with_property(Property::ParentId, Value::Id(Id::from(parent_id)));
             if pos == params.path.len() - 1 {
                 if let Some(mailbox_role) = arguments.mailbox_role {
                     mailbox.set(Property::Role, mailbox_role);
@@ -345,7 +345,9 @@ impl SessionData {
                 )
                 .with_code(ResponseCode::NoPerm));
             }
-        } else {
+        } else if self.account_id != account_id
+            && !self.get_access_token().await?.is_member(account_id)
+        {
             return Err(StatusResponse::no(
                 "You are not allowed to create root folders under shared folders.",
             )
@@ -374,7 +376,8 @@ impl SessionData {
                 {
                     return Err(StatusResponse::no(format!(
                         "A mailbox with role '{mailbox_role}' already exists.",
-                    )));
+                    ))
+                    .with_code(ResponseCode::UseAttr));
                 }
                 Attribute::try_from(mailbox_role).ok()
             } else {

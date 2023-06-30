@@ -24,10 +24,13 @@
 use std::time::Duration;
 
 use imap_proto::ResponseType;
+use mail_send::smtp::tls::build_tls_connector;
+use rustls::ServerName;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
 };
+use tokio_rustls::client::TlsStream;
 
 use super::AssertResult;
 
@@ -153,14 +156,21 @@ pub async fn test() {
 }
 
 pub struct SieveConnection {
-    reader: Lines<BufReader<ReadHalf<TcpStream>>>,
-    writer: WriteHalf<TcpStream>,
+    reader: Lines<BufReader<ReadHalf<TlsStream<TcpStream>>>>,
+    writer: WriteHalf<TlsStream<TcpStream>>,
 }
 
 impl SieveConnection {
     pub async fn connect() -> Self {
-        let (reader, writer) =
-            tokio::io::split(TcpStream::connect("127.0.0.1:4190").await.unwrap());
+        let (reader, writer) = tokio::io::split(
+            build_tls_connector(true)
+                .connect(
+                    ServerName::try_from("imap.example.org").unwrap(),
+                    TcpStream::connect("127.0.0.1:4190").await.unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
         SieveConnection {
             reader: BufReader::new(reader).lines(),
             writer,

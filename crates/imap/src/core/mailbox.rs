@@ -181,7 +181,7 @@ impl SessionData {
                     }
                     let has_children = mailboxes
                         .iter()
-                        .any(|(_, child_parent_id, _)| child_parent_id == mailbox_id);
+                        .any(|(_, child_parent_id, _)| *child_parent_id == *mailbox_id + 1);
 
                     account.mailbox_state.insert(
                         *mailbox_id,
@@ -232,7 +232,7 @@ impl SessionData {
 
                     if has_children && iter_stack.len() < 100 {
                         iter_stack.push((iter, parent_id, path));
-                        parent_id = *mailbox_id;
+                        parent_id = *mailbox_id + 1;
                         path = mailbox_path;
                         iter = mailboxes.iter();
                     }

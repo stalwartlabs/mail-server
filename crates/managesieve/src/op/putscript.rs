@@ -46,6 +46,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .ok_or_else(|| StatusResponse::no("Expected script as a parameter."))?
             .unwrap_bytes();
+        let script_len = script.len() as u64;
 
         // Check quota
         let access_token = self.state.access_token();
@@ -113,7 +114,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                     Object::with_capacity(3)
                         .with_property(Property::Name, name)
                         .with_property(Property::IsActive, Value::Bool(false))
-                        .with_property(Property::Size, Value::UnsignedInt(script.len() as u64)),
+                        .with_property(Property::Size, Value::UnsignedInt(script_len)),
                 ),
             )
             .custom(changelog);

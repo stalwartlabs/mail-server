@@ -7,12 +7,14 @@ use tokio::{
 use tokio_rustls::server::TlsStream;
 use utils::listener::SessionManager;
 
+use crate::SERVER_GREETING;
+
 use super::{IsTls, ManageSieveSessionManager, Session, State};
 
 impl SessionManager for ManageSieveSessionManager {
     fn spawn(&self, session: utils::listener::SessionData<TcpStream>) {
         // Create session
-        let session = Session {
+        let mut session = Session {
             jmap: self.jmap.clone(),
             imap: self.imap.clone(),
             instance: session.instance,
@@ -27,10 +29,20 @@ impl SessionManager for ManageSieveSessionManager {
 
         tokio::spawn(async move {
             if session.instance.is_tls_implicit {
-                if let Ok(session) = session.into_tls().await {
-                    session.handle_conn().await;
+                if let Ok(mut session) = session.into_tls().await {
+                    if session
+                        .write(&session.handle_capability(SERVER_GREETING).await.unwrap())
+                        .await
+                        .is_ok()
+                    {
+                        session.handle_conn().await;
+                    }
                 }
-            } else {
+            } else if session
+                .write(&session.handle_capability(SERVER_GREETING).await.unwrap())
+                .await
+                .is_ok()
+            {
                 session.handle_conn().await;
             }
         });

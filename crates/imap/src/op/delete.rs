@@ -90,7 +90,7 @@ impl SessionData {
         {
             Ok(Ok(did_remove_emails)) => did_remove_emails,
             Ok(Err(err)) => {
-                return StatusResponse::no(err.description.unwrap())
+                return StatusResponse::no(err.description.unwrap_or("Delete failed".into()))
                     .with_code(err.type_.into())
                     .with_tag(arguments.tag)
             }
@@ -120,10 +120,6 @@ impl SessionData {
         // Update mailbox cache
         for account in self.mailboxes.lock().iter_mut() {
             if account.account_id == account_id {
-                account.state_mailbox = change_id.into();
-                if did_remove_emails {
-                    account.state_email = change_id.into();
-                }
                 account.mailbox_names.remove(&arguments.mailbox_name);
                 account.mailbox_state.remove(&mailbox_id);
                 break;

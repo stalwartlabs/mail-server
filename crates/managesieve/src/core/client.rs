@@ -58,7 +58,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 Command::Authenticate => self.handle_authenticate(request).await,
                 Command::StartTls => {
                     self.write(b"OK Begin TLS negotiation now\r\n").await?;
-                    return Ok(true);
+                    return Ok(false);
                 }
                 Command::Logout => self.handle_logout().await,
                 Command::Noop => self.handle_noop(request).await,
@@ -82,7 +82,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 .await?;
         }
 
-        Ok(false)
+        Ok(true)
     }
 }
 

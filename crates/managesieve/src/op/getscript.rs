@@ -53,7 +53,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .ok_or_else(|| {
                 StatusResponse::no("Script not found").with_code(ResponseCode::NonExistent)
             })?
-            .remove(&Property::BlobId)
+            .remove(&Property::Size)
             .try_unwrap_uint()
             .ok_or_else(|| {
                 StatusResponse::no("Filed to retrieve blob size").with_code(ResponseCode::TryLater)
@@ -72,6 +72,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .ok_or_else(|| {
                 StatusResponse::no("Script blob not found").with_code(ResponseCode::NonExistent)
             })?;
+        debug_assert_eq!(script.len() as u32, script_size);
 
         let mut response = Vec::with_capacity(script.len() + 30);
         response.push(b'{');

@@ -383,6 +383,7 @@ impl ResponseCode {
                 buf.extend_from_slice(modseq.to_string().as_bytes());
                 return;
             }
+            ResponseCode::UseAttr => b"USEATTR",
         });
     }
 }

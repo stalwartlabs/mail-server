@@ -266,6 +266,7 @@ impl SessionData {
                                 Collection::Mailbox,
                                 src_mailbox.id.mailbox_id.unwrap(),
                             );
+                            did_move = true;
                         }
                         copied_ids.push((imap_id, id));
                     }

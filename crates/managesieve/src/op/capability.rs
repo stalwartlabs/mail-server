@@ -27,7 +27,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::core::{IsTls, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
-    pub async fn handle_capability(&mut self, message: &'static str) -> super::OpResult {
+    pub async fn handle_capability(&self, message: &'static str) -> super::OpResult {
         let mut response = Vec::with_capacity(128);
         response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve v");
         response.extend_from_slice(env!("CARGO_PKG_VERSION").as_bytes());

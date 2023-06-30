@@ -98,7 +98,7 @@ impl Request<Command> {
                 tag: self.tag,
             })
         } else {
-            Err(self.into_error("Too many arguments."))
+            Err(self.into_error("Missing arguments."))
         }
     }
 }

@@ -1,6 +1,12 @@
 pub mod core;
 pub mod op;
 
+static SERVER_GREETING: &str = concat!(
+    "Stalwart ManageSieve v",
+    env!("CARGO_PKG_VERSION"),
+    " at your service."
+);
+
 #[cfg(test)]
 mod tests {
     use imap_proto::receiver::{Error, Receiver, Request, State, Token};
