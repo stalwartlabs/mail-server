@@ -1,0 +1,198 @@
+[server]
+hostname = "test.example.org"
+
+[server.listener.jmap]
+bind = ["127.0.0.1:9990"]
+url = "https://127.0.0.1:8899"
+protocol = "jmap"
+max-connections = 8192
+
+[server.listener.imap]
+bind = ["127.0.0.1:9991"]
+protocol = "imap"
+max-connections = 8192
+
+[server.listener.imaptls]
+bind = ["127.0.0.1:9992"]
+protocol = "imap"
+max-connections = 8192
+tls.implicit = true
+
+[server.listener.sieve]
+bind = ["127.0.0.1:9993"]
+protocol = "managesieve"
+max-connections = 8192
+tls.implicit = true
+
+[server.listener.smtps]
+bind = ['127.0.0.1:9994']
+greeting = 'Test SMTP instance'
+protocol = 'smtp'
+tls.implicit = true
+
+[server.listener.smtp]
+bind = ['127.0.0.1:9995']
+greeting = 'Test SMTP instance'
+protocol = 'smtp'
+tls.implicit = false
+
+[server.socket]
+reuse-addr = true
+
+[server.tls]
+enable = true
+implicit = false
+certificate = "default"
+
+[global.tracing]
+method = "stdout"
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = [ { if = "authenticated-as", ne = "", then = true }, 
+          { else = false } ]
+directory = "local"
+
+[session.rcpt.errors]
+total = 5
+wait = "1ms"
+
+[queue]
+path = "/tmp/stalwart-test"
+hash = 64
+
+[report]
+path = "/tmp/stalwart-test"
+hash = 64
+
+[resolver]
+type = "system"
+
+[queue.outbound]
+next-hop = [ { if = "rcpt-domain", in-list = "local/domains", then = "local" }, 
+             { else = false } ]
+
+[remote."mock-smtp"]
+address = "localhost"
+port = 9999
+protocol = "smtp"
+
+[remote."mock-smtp".tls]
+implicit = false
+allow-invalid-certs = true
+
+[session.extensions]
+future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
+                   { else = false } ]
+
+[store]
+db.path = "/tmp/stalwart-test/sqlite.db"
+
+[store.blob]
+type = "local"
+
+[store.blob.local]
+path = "/tmp/stalwart-test"
+
+[certificate.default]
+cert = "file://./tests/resources/tls_cert.pem"
+private-key = "file://./tests/resources/tls_privatekey.pem"
+
+[jmap]
+directory = "local"
+
+[jmap.protocol]
+set.max-objects = 100000
+
+[jmap.protocol.request]
+max-concurrent = 8
+
+[jmap.protocol.upload]
+max-size = 5000000
+max-concurrent = 4
+ttl = "1m"
+
+[jmap.protocol.upload.quota]
+files = 3
+size = 50000
+
+[jmap.rate-limit]
+account.rate = "1000/1m"
+authentication.rate = "100/2s"
+anonymous.rate = "100/1m"
+
+[jmap.event-source]
+throttle = "500ms"
+
+[jmap.web-sockets]
+throttle = "500ms"
+
+[jmap.push]
+throttle = "500ms"
+attempts.interval = "500ms"
+
+[directory."local"]
+type = "memory"
+
+[directory."local".options]
+catch-all = true
+subaddressing = true
+
+[directory."local".lookup]
+domains = ["example.org"]
+
+[[directory."local".users]]
+name = "admin"
+description = "Superadmin"
+secret = "donotuse"
+
+[[directory."local".users]]
+name = "john"
+description = "John Doe"
+secret = "12345"
+email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
+email-list = ["info@example.org"]
+member-of = ["sales"]
+
+[[directory."local".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "abcde"
+email = "jane@example.org"
+email-list = ["info@example.org"]
+member-of = ["sales", "support"]
+
+[[directory."local".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
+quota = 500000
+email = "bill@example.org"
+email-list = ["info@example.org"]
+
+[[directory."local".groups]]
+name = "sales"
+description = "Sales Team"
+
+[[directory."local".groups]]
+name = "support"
+description = "Support Team"
+
+[oauth]
+key = "parerga_und_paralipomena"
+max-auth-attempts = 1
+
+[oauth.expiry]
+user-code = "1s"
+token = "1s"
+refresh-token = "3s"
+refresh-token-renew = "2s"
+
+[imap.auth]
+allow-plain-text = true
+
+[imap.rate-limit]
+rate = "10000/1s"
+concurrent = 9000

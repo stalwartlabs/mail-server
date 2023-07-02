@@ -208,20 +208,13 @@ pub fn quoted_timestamp(buf: &mut Vec<u8>, timestamp: i64) {
     buf.push(b'"');
 }
 
-pub fn quoted_rfc2822(buf: &mut Vec<u8>, timestamp: i64) {
+pub fn quoted_rfc2822(buf: &mut Vec<u8>, timestamp: &mail_parser::DateTime) {
     buf.push(b'"');
-    buf.extend_from_slice(
-        DateTime::<Utc>::from_utc(
-            NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap_or_default(),
-            Utc,
-        )
-        .to_rfc2822()
-        .as_bytes(),
-    );
+    buf.extend_from_slice(timestamp.to_rfc822().as_bytes());
     buf.push(b'"');
 }
 
-pub fn quoted_rfc2822_or_nil(buf: &mut Vec<u8>, timestamp: Option<i64>) {
+pub fn quoted_rfc2822_or_nil(buf: &mut Vec<u8>, timestamp: &Option<mail_parser::DateTime>) {
     if let Some(timestamp) = timestamp {
         quoted_rfc2822(buf, timestamp);
     } else {

@@ -164,6 +164,18 @@ mod tests {
                     }],
                 },
             ),
+            (
+                "A003 APPEND \"hi\" \"20-Nov-2022 23:59:59 +0300\" ~{1+}\r\na\r\n",
+                append::Arguments {
+                    tag: "A003".to_string(),
+                    mailbox_name: "hi".to_string(),
+                    messages: vec![Message {
+                        message: vec![b'a'],
+                        flags: vec![],
+                        received_at: Some(1668977999),
+                    }],
+                },
+            ),
         ] {
             assert_eq!(
                 receiver

@@ -630,8 +630,8 @@ impl IntoIndex for &u64 {
 impl IntoIndex for &u32 {
     fn into_index(self, index_as: IndexAs) -> Vec<u8> {
         match index_as {
-            IndexAs::Integer => self.serialize(),
-            _ => unreachable!(),
+            IndexAs::Integer | IndexAs::IntegerList => self.serialize(),
+            _ => unreachable!("index as {index_as:?} not supported for u32"),
         }
     }
 }
@@ -641,7 +641,7 @@ impl IntoIndex for &Id {
         match index_as {
             IndexAs::Integer => self.document_id().serialize(),
             IndexAs::LongInteger => self.id().serialize(),
-            _ => unreachable!(),
+            _ => unreachable!("index as {index_as:?} not supported for Id"),
         }
     }
 }

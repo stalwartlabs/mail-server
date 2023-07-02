@@ -36,10 +36,9 @@ use super::{SelectedMailbox, Session, SessionData, State, IMAP};
 
 impl<T: AsyncRead> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
-        /*let tmp = "dd";
         for line in String::from_utf8_lossy(bytes).split("\r\n") {
-            println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
-        }*/
+            let c = println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
+        }
 
         tracing::trace!(parent: &self.span,
             event = "read",
@@ -52,7 +51,7 @@ impl<T: AsyncRead> Session<T> {
 
         loop {
             match self.receiver.parse(&mut bytes) {
-                Ok(request) => match request.is_allowed(&self.state, self.is_tls) {
+                Ok(request) => match self.is_allowed(request) {
                     Ok(request) => {
                         requests.push(request);
                     }
@@ -222,12 +221,9 @@ pub fn group_requests(
     grouped_requests
 }
 
-trait IsAllowed: Sized {
-    fn is_allowed(self, state: &State, is_tls: bool) -> Result<Self, StatusResponse>;
-}
-
-impl IsAllowed for Request<Command> {
-    fn is_allowed(self, state: &State, is_tls: bool) -> Result<Self, StatusResponse> {
+impl<T: AsyncRead> Session<T> {
+    fn is_allowed(&self, request: Request<Command>) -> Result<Request<Command>, StatusResponse> {
+        let state = &self.state;
         // Rate limit request
         if let State::Authenticated { data } | State::Selected { data, .. } = state {
             if !data
@@ -238,39 +234,39 @@ impl IsAllowed for Request<Command> {
                 .is_allowed()
             {
                 return Err(StatusResponse::no("Too many requests")
-                    .with_tag(self.tag)
+                    .with_tag(request.tag)
                     .with_code(ResponseCode::Limit));
             }
         }
 
-        match &self.command {
-            Command::Capability | Command::Noop | Command::Logout | Command::Id => Ok(self),
+        match &request.command {
+            Command::Capability | Command::Noop | Command::Logout | Command::Id => Ok(request),
             Command::StartTls => {
-                if !is_tls {
-                    Ok(self)
+                if !self.is_tls {
+                    Ok(request)
                 } else {
-                    Err(StatusResponse::no("Already in TLS mode.").with_tag(self.tag))
+                    Err(StatusResponse::no("Already in TLS mode.").with_tag(request.tag))
                 }
             }
             Command::Authenticate => {
                 if let State::NotAuthenticated { .. } = state {
-                    Ok(self)
+                    Ok(request)
                 } else {
-                    Err(StatusResponse::no("Already authenticated.").with_tag(self.tag))
+                    Err(StatusResponse::no("Already authenticated.").with_tag(request.tag))
                 }
             }
             Command::Login => {
                 if let State::NotAuthenticated { .. } = state {
-                    if is_tls {
-                        Ok(self)
+                    if self.is_tls || self.imap.allow_plain_auth {
+                        Ok(request)
                     } else {
                         Err(
                             StatusResponse::no("LOGIN is disabled on the clear-text port.")
-                                .with_tag(self.tag),
+                                .with_tag(request.tag),
                         )
                     }
                 } else {
-                    Err(StatusResponse::no("Already authenticated.").with_tag(self.tag))
+                    Err(StatusResponse::no("Already authenticated.").with_tag(request.tag))
                 }
             }
             Command::Enable
@@ -294,9 +290,9 @@ impl IsAllowed for Request<Command> {
             | Command::MyRights
             | Command::Unauthenticate => {
                 if let State::Authenticated { .. } | State::Selected { .. } = state {
-                    Ok(self)
+                    Ok(request)
                 } else {
-                    Err(StatusResponse::no("Not authenticated.").with_tag(self.tag))
+                    Err(StatusResponse::no("Not authenticated.").with_tag(request.tag))
                 }
             }
             Command::Close
@@ -313,21 +309,21 @@ impl IsAllowed for Request<Command> {
                 State::Selected { mailbox, .. } => {
                     if mailbox.is_select
                         || !matches!(
-                            self.command,
+                            request.command,
                             Command::Store(_) | Command::Expunge(_) | Command::Move(_),
                         )
                     {
-                        Ok(self)
+                        Ok(request)
                     } else {
                         Err(StatusResponse::no("Not permitted in EXAMINE state.")
-                            .with_tag(self.tag))
+                            .with_tag(request.tag))
                     }
                 }
                 State::Authenticated { .. } => {
-                    Err(StatusResponse::bad("No mailbox is selected.").with_tag(self.tag))
+                    Err(StatusResponse::bad("No mailbox is selected.").with_tag(request.tag))
                 }
                 State::NotAuthenticated { .. } => {
-                    Err(StatusResponse::no("Not authenticated.").with_tag(self.tag))
+                    Err(StatusResponse::no("Not authenticated.").with_tag(request.tag))
                 }
             },
         }

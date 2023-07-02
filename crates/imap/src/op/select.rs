@@ -63,7 +63,7 @@ impl<T: AsyncRead> Session<T> {
                             let uid_next = state.uid_next;
                             let total_messages = state.total_messages;
                             let highest_modseq = if is_condstore {
-                                state.last_state.to_modseq().into()
+                                state.modseq.to_modseq().into()
                             } else {
                                 None
                             };

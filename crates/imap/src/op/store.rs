@@ -61,13 +61,9 @@ impl<T: AsyncRead> Session<T> {
             Ok(arguments) => {
                 let (data, mailbox) = self.state.select_data();
                 let is_condstore = self.is_condstore || mailbox.is_condstore;
-                let is_qresync = self.is_qresync;
 
                 tokio::spawn(async move {
-                    let bytes = match data
-                        .store(arguments, mailbox, is_uid, is_condstore, is_qresync)
-                        .await
-                    {
+                    let bytes = match data.store(arguments, mailbox, is_uid, is_condstore).await {
                         Ok(response) => response,
                         Err(response) => response.into_bytes(),
                     };
@@ -87,16 +83,12 @@ impl SessionData {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_condstore: bool,
-        is_qresync: bool,
     ) -> Result<Vec<u8>, StatusResponse> {
         // Resync messages if needed
         let account_id = mailbox.id.account_id;
-        if is_uid {
-            // Don't synchronize if we're not using UIDs as seqnums might change.
-            self.synchronize_messages(&mailbox, is_qresync, true)
-                .await
-                .map_err(|r| r.with_tag(&arguments.tag))?;
-        }
+        self.synchronize_messages(&mailbox)
+            .await
+            .map_err(|r| r.with_tag(&arguments.tag))?;
 
         // Convert IMAP ids to JMAP ids.
         let mut ids = match mailbox

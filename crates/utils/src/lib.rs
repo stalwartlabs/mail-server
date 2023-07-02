@@ -114,7 +114,7 @@ pub fn enable_tracing(config: &Config) -> config::Result<Option<WorkerGuard>> {
         "stdout" => {
             tracing::subscriber::set_global_default(
                 tracing_subscriber::FmtSubscriber::builder()
-                    .with_env_filter(env_filter)
+                    //.with_env_filter(env_filter)
                     .finish(),
             )
             .failed("Failed to set subscriber");

@@ -49,7 +49,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         .assert_contains("EMAILID (")
         .assert_contains("but then I thought, why not do both?")
         .assert_contains(concat!(
-            "ENVELOPE (\"Sat, 20 Nov 2021 22:22:01 +0000\" ",
+            "ENVELOPE (\"Sat, 20 Nov 2021 14:22:01 -0800\" ",
             "\"Why not both importing AND exporting? ☺\" ",
             "((\"Art Vandelay (Vandelay Industries)\" NIL \"art\" \"vandelay.com\")) ",
             "((\"Art Vandelay (Vandelay Industries)\" NIL \"art\" \"vandelay.com\")) ",

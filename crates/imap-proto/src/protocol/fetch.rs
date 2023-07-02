@@ -23,6 +23,8 @@
 
 use std::borrow::Cow;
 
+use mail_parser::DateTime;
+
 use super::{
     literal_string, quoted_rfc2822_or_nil, quoted_string, quoted_string_or_nil, quoted_timestamp,
     Flag, ImapResponse, Sequence,
@@ -176,7 +178,7 @@ pub enum BodyContents<'x> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Envelope<'x> {
-    pub date: Option<i64>,
+    pub date: Option<DateTime>,
     pub subject: Option<Cow<'x, str>>,
     pub from: Vec<Address<'x>>,
     pub sender: Vec<Address<'x>>,
@@ -648,7 +650,7 @@ impl Section {
 impl<'x> Envelope<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
         buf.push(b'(');
-        quoted_rfc2822_or_nil(buf, self.date);
+        quoted_rfc2822_or_nil(buf, &self.date);
         buf.push(b' ');
         quoted_string_or_nil(buf, self.subject.as_deref());
         self.serialize_addresses(buf, &self.from);
@@ -914,6 +916,8 @@ impl<'x> ImapResponse for Response<'x> {
 #[cfg(test)]
 mod tests {
 
+    use mail_parser::DateTime;
+
     use crate::protocol::{Flag, ImapResponse};
 
     use super::{
@@ -927,7 +931,7 @@ mod tests {
             (
                 super::DataItem::Envelope {
                     envelope: Envelope {
-                        date: 837570205.into(),
+                        date: DateTime::from_timestamp(837570205).into(),
                         subject: Some("IMAP4rev2 WG mtg summary and minutes".into()),
                         from: vec![Address::Single(EmailAddress {
                             name: Some("Terry Gray".into()),
@@ -975,7 +979,7 @@ mod tests {
             (
                 super::DataItem::Envelope {
                     envelope: Envelope {
-                        date: 837570205.into(),
+                        date: DateTime::from_timestamp(837570205).into(),
                         subject: Some("Group test".into()),
                         from: vec![Address::Single(EmailAddress {
                             name: Some("Bill Foobar".into()),
@@ -1049,7 +1053,7 @@ mod tests {
                             body_size_octets: 9323,
                         },
                         envelope: Box::new(Envelope {
-                            date: 837570205.into(),
+                            date: DateTime::from_timestamp(837570205).into(),
                             subject: Some("Hello world!".into()),
                             from: vec![Address::Single(EmailAddress {
                                 name: Some("Terry Gray".into()),

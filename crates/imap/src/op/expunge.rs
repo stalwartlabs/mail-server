@@ -109,7 +109,7 @@ impl<T: AsyncRead> Session<T> {
 
         // Synchronize messages
         match data
-            .synchronize_messages(&mailbox, self.is_qresync, is_uid)
+            .write_mailbox_changes(&mailbox, self.is_qresync, is_uid)
             .await
         {
             Ok(_) => {

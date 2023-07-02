@@ -79,6 +79,11 @@ impl SessionData {
             .query(arguments.filter, &mailbox, &None, is_uid)
             .await?;
 
+        // Synchronize mailbox
+        if !result_set.results.is_empty() {
+            self.synchronize_messages(&mailbox).await?;
+        }
+
         // Obtain threadIds for matching messages
         let thread_ids = self
             .jmap
@@ -111,13 +116,13 @@ impl SessionData {
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let state = mailbox.state.lock();
         for (document_id, thread_id) in result_set.results.into_iter().zip(thread_ids) {
-            if let (Some(thread_id), Some(imap_id)) =
-                (thread_id, state.id_to_imap.get(&document_id))
+            if let (Some(thread_id), Some((imap_id, _))) =
+                (thread_id, state.map_result_id(document_id, is_uid))
             {
                 threads
                     .entry(thread_id)
                     .or_insert_with(|| Vec::new())
-                    .push(if is_uid { imap_id.uid } else { imap_id.seqnum });
+                    .push(imap_id);
             }
         }
 

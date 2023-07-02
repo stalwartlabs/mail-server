@@ -51,6 +51,7 @@ impl IMAP {
             ),
             rate_requests: config.property_or_static("imap.rate-limit.rate", "1000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
+            allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
         }))
     }
 }

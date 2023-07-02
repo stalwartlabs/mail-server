@@ -26,6 +26,13 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnection) {
+    // Create third connection for testing
+    let mut other_conn = ImapConnection::connect(b"_z ").await;
+    other_conn
+        .send("AUTHENTICATE PLAIN {32+}\r\nAGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0")
+        .await;
+    other_conn.assert_read(Type::Tagged, ResponseType::Ok).await;
+
     // List folders
     imap.send("LIST \"\" \"*\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
@@ -48,6 +55,12 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("CREATE \"Fruit/Apple/Green\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+
+    // Select folder from another connection
+    other_conn.send("SELECT \"Tofu\"").await;
+    other_conn.assert_read(Type::Tagged, ResponseType::Ok).await;
+
+    // Make sure folders are visible
     for imap in [&mut imap, &mut imap_check] {
         imap.send("LIST \"\" \"*\"").await;
         imap.assert_read(Type::Tagged, ResponseType::Ok)

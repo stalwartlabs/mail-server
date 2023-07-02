@@ -1208,7 +1208,7 @@ impl JMAP {
             event = "error",
             context = "email_delete",
             error = ?err,
-            "Failed to deserialize term index.");
+            "Failed to deserialize token index while deleting email.");
                 MethodError::ServerPartialFail
             })?
         {

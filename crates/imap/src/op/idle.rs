@@ -212,13 +212,13 @@ impl SessionData {
             // Synchronize emails
             if let Some(mailbox) = mailbox {
                 // Obtain changes since last sync
-                let last_state = mailbox.state.lock().last_state;
+                let modseq = mailbox.state.lock().modseq;
                 match self
-                    .synchronize_messages(mailbox, is_qresync, is_qresync)
+                    .write_mailbox_changes(mailbox, is_qresync, is_qresync)
                     .await
                 {
                     Ok(new_state) => {
-                        if new_state == last_state {
+                        if new_state == modseq {
                             return;
                         }
                     }
@@ -234,7 +234,7 @@ impl SessionData {
                     .changes_(
                         mailbox.id.account_id,
                         Collection::Email,
-                        last_state.map(Query::Since).unwrap_or(Query::All),
+                        modseq.map(Query::Since).unwrap_or(Query::All),
                     )
                     .await
                 {

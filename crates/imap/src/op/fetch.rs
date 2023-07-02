@@ -113,14 +113,7 @@ impl SessionData {
 
         // Resync messages if needed
         let account_id = mailbox.id.account_id;
-        let mut modseq = match {
-            if is_uid {
-                self.synchronize_messages(&mailbox, is_qresync, true).await
-            } else {
-                // Don't synchronize if we're not using UIDs as seqnums might change.
-                self.get_modseq(mailbox.id.account_id).await
-            }
-        } {
+        let mut modseq = match self.synchronize_messages(&mailbox).await {
             Ok(modseq) => modseq,
             Err(response) => return response.with_tag(arguments.tag),
         };
@@ -1022,7 +1015,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
     fn envelope(&self) -> Envelope {
         Envelope {
-            date: self.date().map(|dt| dt.to_timestamp()),
+            date: self.date().map(|d| d.clone()),
             subject: self.subject().map(|s| s.into()),
             from: self
                 .header_values(RfcHeader::From)

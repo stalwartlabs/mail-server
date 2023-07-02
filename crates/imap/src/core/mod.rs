@@ -51,6 +51,7 @@ pub struct IMAP {
     pub max_auth_failures: u32,
     pub name_shared: String,
     pub name_all: String,
+    pub allow_plain_auth: bool,
 
     pub timeout_auth: Duration,
     pub timeout_unauth: Duration,
@@ -137,7 +138,14 @@ pub struct MailboxState {
     pub id_to_imap: AHashMap<u32, ImapId>,
     pub uid_to_id: AHashMap<u32, u32>,
     pub total_messages: usize,
-    pub last_state: Option<u64>,
+    pub modseq: Option<u64>,
+    pub next_state: Option<Box<NextMailboxState>>,
+}
+
+#[derive(Debug)]
+pub struct NextMailboxState {
+    pub next_state: MailboxState,
+    pub deletions: Vec<ImapId>,
 }
 
 #[derive(Debug, Default)]

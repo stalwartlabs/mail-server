@@ -1742,6 +1742,7 @@ dependencies = [
  "chrono",
  "jmap_proto",
  "mail-parser",
+ "tokio",
 ]
 
 [[package]]

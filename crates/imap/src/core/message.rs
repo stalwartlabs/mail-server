@@ -15,7 +15,7 @@ use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::core::ImapId;
 
-use super::{MailboxId, MailboxState, SelectedMailbox, SessionData};
+use super::{MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
 
 #[derive(Debug)]
 struct UidMap {
@@ -55,7 +55,7 @@ impl SessionData {
                 .await?;
 
             // Obtain current state
-            let last_state = self
+            let modseq = self
                 .jmap
                 .store
                 .get_last_change_id(mailbox.account_id, Collection::Email)
@@ -212,7 +212,8 @@ impl SessionData {
                     id_to_imap,
                     uid_to_id,
                     uid_max,
-                    last_state,
+                    modseq,
+                    next_state: None,
                 });
             } else {
                 let uid_next = (id_list.len() + 1) as u32;
@@ -259,7 +260,8 @@ impl SessionData {
                     id_to_imap,
                     uid_to_id,
                     uid_max: uid_next.saturating_sub(1),
-                    last_state,
+                    modseq,
+                    next_state: None,
                 });
             }
         }
@@ -268,40 +270,85 @@ impl SessionData {
     pub async fn synchronize_messages(
         &self,
         mailbox: &SelectedMailbox,
-        is_qresync: bool,
-        is_uid: bool,
     ) -> crate::op::Result<Option<u64>> {
         // Obtain current modseq
         let modseq = self.get_modseq(mailbox.id.account_id).await?;
-        if mailbox.state.lock().last_state == modseq {
-            return Ok(modseq);
-        }
+        if mailbox.state.lock().modseq != modseq {
+            // Synchronize messages
+            let new_state = self.fetch_messages(&mailbox.id).await?;
+            let mut current_state = mailbox.state.lock();
 
-        // Synchronize messages
-        let new_state = self.fetch_messages(&mailbox.id).await?;
+            // Add missing uids
+            let mut deletions = current_state
+                .next_state
+                .take()
+                .map(|state| state.deletions)
+                .unwrap_or_default();
+            let mut uid_to_id = std::mem::take(&mut current_state.uid_to_id);
+            for imap_id in current_state.id_to_imap.values_mut() {
+                if imap_id.uid != u32::MAX && !new_state.uid_to_id.contains_key(&imap_id.uid) {
+                    // Add to deletions
+                    deletions.push(*imap_id);
 
-        // Update UIDs
-        let mut buf = Vec::with_capacity(64);
-        let (new_message_count, deletions) = mailbox.update_mailbox_state(new_state, true);
-        if let Some(deletions) = deletions {
-            let mut ids = deletions
-                .into_iter()
-                .map(|id| {
-                    if is_uid || is_qresync {
-                        id.uid
-                    } else {
-                        id.seqnum
-                    }
-                })
-                .collect::<Vec<u32>>();
-            ids.sort_unstable();
-            expunge::Response { is_qresync, ids }.serialize_to(&mut buf);
-        }
-        if let Some(new_message_count) = new_message_count {
-            Exists {
-                total_messages: new_message_count,
+                    // Invalidate entries
+                    uid_to_id.insert(imap_id.uid, u32::MAX);
+                    imap_id.uid = u32::MAX;
+                }
             }
-            .serialize(&mut buf);
+            current_state.uid_to_id = uid_to_id;
+
+            // Update state
+            current_state.modseq = new_state.modseq;
+            current_state.next_state = Some(Box::new(NextMailboxState {
+                next_state: new_state,
+                deletions,
+            }));
+        }
+
+        Ok(modseq)
+    }
+
+    pub async fn write_mailbox_changes(
+        &self,
+        mailbox: &SelectedMailbox,
+        is_qresync: bool,
+        is_uid: bool,
+    ) -> crate::op::Result<Option<u64>> {
+        // Resync mailbox
+        let modseq = self.synchronize_messages(mailbox).await?;
+        let mut buf = Vec::new();
+        {
+            let mut current_state = mailbox.state.lock();
+            if let Some(next_state) = current_state.next_state.take() {
+                if !next_state.deletions.is_empty() {
+                    let mut ids = next_state
+                        .deletions
+                        .into_iter()
+                        .map(|id| {
+                            if is_uid || is_qresync {
+                                id.uid
+                            } else {
+                                id.seqnum
+                            }
+                        })
+                        .collect::<Vec<u32>>();
+                    ids.sort_unstable();
+                    expunge::Response { is_qresync, ids }.serialize_to(&mut buf);
+                }
+                if !buf.is_empty()
+                    || next_state
+                        .next_state
+                        .uid_max
+                        .saturating_sub(current_state.uid_max)
+                        > 0
+                {
+                    Exists {
+                        total_messages: next_state.next_state.total_messages,
+                    }
+                    .serialize(&mut buf);
+                }
+                *current_state = next_state.next_state;
+            }
         }
         if !buf.is_empty() {
             self.write_bytes(buf).await;
@@ -344,17 +391,19 @@ impl SelectedMailbox {
                 return Ok(ids);
             }
 
-            let max_uid = state.uid_max;
-            let max_seqnum = state.total_messages as u32;
-
-            for (id, imap_id) in &state.id_to_imap {
-                let matched = if is_uid {
-                    sequence.contains(imap_id.uid, max_uid)
-                } else {
-                    sequence.contains(imap_id.seqnum, max_seqnum)
-                };
-                if matched {
-                    ids.insert(*id, *imap_id);
+            if is_uid {
+                for (id, imap_id) in &state.id_to_imap {
+                    if imap_id.uid != u32::MAX && sequence.contains(imap_id.uid, state.uid_max) {
+                        ids.insert(*id, *imap_id);
+                    }
+                }
+            } else {
+                for (id, imap_id) in &state.id_to_imap {
+                    if imap_id.uid != u32::MAX
+                        && sequence.contains(imap_id.seqnum, state.total_messages as u32)
+                    {
+                        ids.insert(*id, *imap_id);
+                    }
                 }
             }
 
@@ -369,7 +418,9 @@ impl SelectedMailbox {
 
             for imap_id in saved_ids.iter() {
                 if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
-                    ids.insert(*id, *imap_id);
+                    if *id != u32::MAX {
+                        ids.insert(*id, *imap_id);
+                    }
                 }
             }
 
@@ -383,7 +434,7 @@ impl SelectedMailbox {
             let state = self.state.lock();
             if is_uid {
                 for uid in sequence.expand(state.uid_max) {
-                    if !state.uid_to_id.contains_key(&uid) {
+                    if state.uid_to_id.get(&uid).map_or(true, |id| *id == u32::MAX) {
                         deleted_ids.push(uid);
                     }
                 }
@@ -397,84 +448,17 @@ impl SelectedMailbox {
         } else if let Some(saved_ids) = self.get_saved_search().await {
             let state = self.state.lock();
             for id in saved_ids.iter() {
-                if !state.uid_to_id.contains_key(&id.uid) {
+                if state
+                    .uid_to_id
+                    .get(&id.uid)
+                    .map_or(true, |id| *id == u32::MAX)
+                {
                     deleted_ids.push(if is_uid { id.uid } else { id.seqnum });
                 }
             }
         }
         deleted_ids.sort_unstable();
         deleted_ids
-    }
-
-    pub fn id_to_uid(&self, ids: &[u32]) -> Vec<ImapId> {
-        let mut imap_ids = Vec::with_capacity(ids.len());
-        let state = self.state.lock();
-
-        for id in ids {
-            if let Some(imap_id) = state.id_to_imap.get(id) {
-                imap_ids.push(*imap_id);
-            }
-        }
-
-        imap_ids
-    }
-
-    pub fn uid_to_id(&self, imap_ids: &[ImapId]) -> Vec<u32> {
-        let mut ids = Vec::with_capacity(imap_ids.len());
-        let state = self.state.lock();
-
-        for imap_id in imap_ids {
-            if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
-                ids.push(*id);
-            }
-        }
-
-        ids
-    }
-
-    pub fn is_in_sync(&self, ids: &[u32]) -> bool {
-        let state = self.state.lock();
-
-        for id in ids {
-            if !state.id_to_imap.contains_key(id) {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn update_mailbox_state(
-        &self,
-        mailbox_state: MailboxState,
-        return_deleted: bool,
-    ) -> (Option<usize>, Option<Vec<ImapId>>) {
-        let mut state = self.state.lock();
-        let mailbox_size = if mailbox_state.total_messages != state.total_messages {
-            mailbox_state.total_messages.into()
-        } else {
-            None
-        };
-        let deletions = if return_deleted {
-            let mut deletions = Vec::new();
-
-            for (id, imap_id) in &state.id_to_imap {
-                if !mailbox_state.id_to_imap.contains_key(id) {
-                    deletions.push(*imap_id);
-                }
-            }
-
-            if !deletions.is_empty() {
-                Some(deletions)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        *state = mailbox_state;
-
-        (mailbox_size, deletions)
     }
 }
 

@@ -42,7 +42,7 @@ use store::{
 };
 use tokio::{io::AsyncRead, sync::watch};
 
-use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
+use crate::core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData};
 
 use super::{FromModSeq, ToModSeq};
 
@@ -71,7 +71,6 @@ impl<T: AsyncRead> Session<T> {
                     } else {
                         (None, None)
                     };
-                let is_qresync = self.is_qresync;
 
                 tokio::spawn(async move {
                     let tag = std::mem::take(&mut arguments.tag);
@@ -81,7 +80,6 @@ impl<T: AsyncRead> Session<T> {
                             mailbox.clone(),
                             results_tx,
                             prev_saved_search.clone(),
-                            is_qresync,
                             is_uid,
                         )
                         .await
@@ -122,7 +120,6 @@ impl SessionData {
         mailbox: Arc<SelectedMailbox>,
         results_tx: Option<watch::Sender<Arc<Vec<ImapId>>>>,
         prev_saved_search: Option<Option<Arc<Vec<ImapId>>>>,
-        is_qresync: bool,
         is_uid: bool,
     ) -> Result<search::Response, StatusResponse> {
         // Run query
@@ -131,22 +128,14 @@ impl SessionData {
             .await?;
 
         // Obtain modseq
-        let mut highest_modseq = None;
-        if is_uid {
-            let modseq = self
-                .synchronize_messages(&mailbox, is_qresync, true)
-                .await?;
-            if include_highest_modseq {
-                highest_modseq = modseq.to_modseq().into();
-            }
-        } else if include_highest_modseq {
-            // Don't synchronize if we're not using UIDs as seqnums might change.
-            highest_modseq = self
-                .get_modseq(mailbox.id.account_id)
+        let highest_modseq = if include_highest_modseq {
+            self.synchronize_messages(&mailbox)
                 .await?
                 .to_modseq()
-                .into();
-        }
+                .into()
+        } else {
+            None
+        };
 
         // Sort and map ids
         let mut min: Option<(u32, ImapId)> = None;
@@ -294,9 +283,12 @@ impl SessionData {
                         (&sequence, &prev_saved_search)
                     {
                         if let Some(prev_saved_search) = prev_saved_search {
+                            let state = mailbox.state.lock();
                             for imap_id in prev_saved_search.iter() {
-                                if let Some(id) = mailbox.state.lock().uid_to_id.get(&imap_id.uid) {
-                                    set.insert(*id);
+                                if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
+                                    if *id != u32::MAX {
+                                        set.insert(*id);
+                                    }
                                 }
                             }
                         } else {
@@ -690,31 +682,30 @@ impl SelectedMailbox {
     ) {
         let state = self.state.lock();
         let find_min_or_max = find_min || find_max;
-        for id in ids {
-            if let Some(imap_id) = state.id_to_imap.get(&(id as u32)) {
-                let id = if is_uid { imap_id.uid } else { imap_id.seqnum };
+        for document_id in ids {
+            if let Some((id, imap_id)) = state.map_result_id(document_id, is_uid) {
                 if find_min_or_max {
                     if find_min {
                         if let Some((prev_min, _)) = min {
                             if id < *prev_min {
-                                *min = Some((id, *imap_id));
+                                *min = Some((id, imap_id));
                             }
                         } else {
-                            *min = Some((id, *imap_id));
+                            *min = Some((id, imap_id));
                         }
                     }
                     if find_max {
                         if let Some((prev_max, _)) = max {
                             if id > *prev_max {
-                                *max = Some((id, *imap_id));
+                                *max = Some((id, imap_id));
                             }
                         } else {
-                            *max = Some((id, *imap_id));
+                            *max = Some((id, imap_id));
                         }
                     }
                 } else {
                     imap_ids.push(id);
-                    saved_results.as_mut().map(|r| r.push(*imap_id));
+                    saved_results.as_mut().map(|r| r.push(imap_id));
                 }
                 *total += 1;
             }
@@ -724,6 +715,27 @@ impl SelectedMailbox {
                 imap_ids.push(*id);
                 saved_results.as_mut().map(|r| r.push(*imap_id));
             }
+        }
+    }
+}
+
+impl MailboxState {
+    pub fn map_result_id(&self, document_id: u32, is_uid: bool) -> Option<(u32, ImapId)> {
+        if let Some(imap_id) = self.id_to_imap.get(&document_id) {
+            if imap_id.uid != u32::MAX {
+                return Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id));
+            }
+        }
+
+        if is_uid {
+            self.next_state.as_ref().and_then(|s| {
+                s.next_state
+                    .id_to_imap
+                    .get(&document_id)
+                    .map(|imap_id| (imap_id.uid, *imap_id))
+            })
+        } else {
+            None
         }
     }
 }

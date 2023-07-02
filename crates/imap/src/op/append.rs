@@ -182,7 +182,7 @@ impl SessionData {
         if !created_ids.is_empty() {
             let (uids, uid_validity) = match selected_mailbox {
                 Some(selected_mailbox) if selected_mailbox.id == mailbox => {
-                    self.synchronize_messages(&selected_mailbox, is_qresync, true)
+                    self.write_mailbox_changes(&selected_mailbox, is_qresync, is_qresync)
                         .await
                         .map_err(|r| r.with_tag(&arguments.tag))?;
                     let mailbox = selected_mailbox.state.lock();

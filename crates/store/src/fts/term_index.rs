@@ -703,63 +703,71 @@ impl Deserialize for TokenIndex {
 
 impl TokenIndex {
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let (num_tokens, mut pos) = bytes.read_leb128::<u32>()?;
-        let mut tokens = Vec::with_capacity(num_tokens as usize);
-        for _ in 0..num_tokens {
-            let nil_pos = bytes.get(pos..)?.iter().position(|b| b == &0)?;
-            tokens.push(String::from_utf8(bytes.get(pos..pos + nil_pos)?.to_vec()).ok()?);
-            pos += nil_pos + 1;
-        }
-
-        let mut terms = Vec::new();
-        while pos < bytes.len() {
-            let item_len =
-                u32::from_le_bytes(bytes.get(pos..pos + LENGTH_SIZE)?.try_into().ok()?) as usize;
-            pos += LENGTH_SIZE;
-
-            let mut field_terms = Terms {
-                field_id: *bytes.get(pos)?,
-                exact_terms: AHashSet::default(),
-                stemmed_terms: AHashSet::default(),
-            };
-            pos += 1;
-
-            let bytes_read = bytes.get(pos..)?.skip_leb128()?;
-            pos += bytes_read;
-
-            let (terms_len, bytes_read) = bytes.get(pos..)?.read_leb128::<usize>()?;
-            pos += bytes_read;
-
-            let mut term_pos = 0;
-            let mut byte_pos = pos;
-
-            while term_pos < terms_len {
-                let (bytes_read, chunk) = TermIndex::uncompress_chunk(
-                    bytes.get(byte_pos..)?,
-                    (terms_len - term_pos) * 2,
-                    None,
-                )
-                .ok()?;
-
-                byte_pos += bytes_read;
-
-                for encoded_term in chunk.chunks_exact(2) {
-                    let term_id = encoded_term[0];
-                    let term_id_stemmed = encoded_term[1];
-
-                    field_terms.exact_terms.insert(term_id);
-                    if term_id != term_id_stemmed {
-                        field_terms.stemmed_terms.insert(term_id_stemmed);
-                    }
-                    term_pos += 1;
-                }
+        if !bytes.is_empty() {
+            let (num_tokens, mut pos) = bytes.read_leb128::<u32>()?;
+            let mut tokens = Vec::with_capacity(num_tokens as usize);
+            for _ in 0..num_tokens {
+                let nil_pos = bytes.get(pos..)?.iter().position(|b| b == &0)?;
+                tokens.push(String::from_utf8(bytes.get(pos..pos + nil_pos)?.to_vec()).ok()?);
+                pos += nil_pos + 1;
             }
 
-            terms.push(field_terms);
-            pos += item_len;
-        }
+            let mut terms = Vec::new();
+            while pos < bytes.len() {
+                let item_len =
+                    u32::from_le_bytes(bytes.get(pos..pos + LENGTH_SIZE)?.try_into().ok()?)
+                        as usize;
+                pos += LENGTH_SIZE;
 
-        Some(TokenIndex { tokens, terms })
+                let mut field_terms = Terms {
+                    field_id: *bytes.get(pos)?,
+                    exact_terms: AHashSet::default(),
+                    stemmed_terms: AHashSet::default(),
+                };
+                pos += 1;
+
+                let bytes_read = bytes.get(pos..)?.skip_leb128()?;
+                pos += bytes_read;
+
+                let (terms_len, bytes_read) = bytes.get(pos..)?.read_leb128::<usize>()?;
+                pos += bytes_read;
+
+                let mut term_pos = 0;
+                let mut byte_pos = pos;
+
+                while term_pos < terms_len {
+                    let (bytes_read, chunk) = TermIndex::uncompress_chunk(
+                        bytes.get(byte_pos..)?,
+                        (terms_len - term_pos) * 2,
+                        None,
+                    )
+                    .ok()?;
+
+                    byte_pos += bytes_read;
+
+                    for encoded_term in chunk.chunks_exact(2) {
+                        let term_id = encoded_term[0];
+                        let term_id_stemmed = encoded_term[1];
+
+                        field_terms.exact_terms.insert(term_id);
+                        if term_id != term_id_stemmed {
+                            field_terms.stemmed_terms.insert(term_id_stemmed);
+                        }
+                        term_pos += 1;
+                    }
+                }
+
+                terms.push(field_terms);
+                pos += item_len;
+            }
+
+            Some(TokenIndex { tokens, terms })
+        } else {
+            Some(TokenIndex {
+                tokens: Vec::new(),
+                terms: Vec::new(),
+            })
+        }
     }
 }
 

@@ -234,8 +234,14 @@ impl<T: CommandParser> Receiver<T> {
                         self.push_argument(false)?;
                         self.state = State::ArgumentQuoted { escaped: false };
                     }
-                    b'{' if last_ch.is_ascii_whitespace() => {
-                        self.push_argument(false)?;
+                    b'{' if last_ch.is_ascii_whitespace()
+                        || (last_ch == b'~' && self.buf.len() == 1) =>
+                    {
+                        if last_ch != b'~' {
+                            self.push_argument(false)?;
+                        } else {
+                            self.buf.clear();
+                        }
                         self.state = State::Literal { non_sync: false };
                     }
                     b'(' => {
