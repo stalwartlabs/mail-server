@@ -1,0 +1,37 @@
+[package]
+name = "mail-server"
+description = "Stalwart Mail Server"
+authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
+repository = "https://github.com/stalwartlabs/jmap-server"
+homepage = "https://stalw.art"
+keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
+categories = ["email"]
+license = "AGPL-3.0-only"
+version = "0.3.0"
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "stalwart-mail"
+path = "src/main.rs"
+
+[dependencies]
+store = { path = "../store" }
+jmap = { path = "../jmap" }
+jmap_proto = { path = "../jmap-proto" }
+smtp = { path = "../smtp", features = ["local_delivery"] }
+imap = { path = "../imap" }
+managesieve = { path = "../managesieve" }
+directory = { path = "../directory" }
+utils = { path = "../utils" }
+tokio = { version = "1.23", features = ["full"] }
+tracing = "0.1"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+jemallocator = "0.5.0"
+
+[features]
+default = ["sqlite"]
+sqlite = ["store/sqlite"]
+foundationdb = ["store/foundation"]
+

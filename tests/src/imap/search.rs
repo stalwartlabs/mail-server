@@ -134,5 +134,5 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("COUNT 10 ALL 6,4:5,1,10,3,7:8,2,9");
+        .assert_contains("COUNT 10 ALL 6,4:5,1,10,9,3,7:8,2");
 }

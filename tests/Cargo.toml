@@ -9,7 +9,7 @@ default = ["sqlite"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 
-[dev-dependencies]
+[dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
 directory = { path = "../crates/directory" }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }

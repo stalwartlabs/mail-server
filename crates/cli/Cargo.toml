@@ -1,0 +1,29 @@
+[package]
+name = "stalwart-cli"
+description = "Stalwart Mail Server CLI"
+authors = ["Stalwart Labs Ltd. <hello@stalw.art>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/stalwartlabs/cli"
+homepage = "https://github.com/stalwartlabs/cli"
+version = "0.3.0"
+edition = "2021"
+readme = "README.md"
+resolver = "2"
+
+[dependencies]
+jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["async"] } 
+mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"]}
+tokio = { version = "1.23", features = ["full"] }
+num_cpus = "1.13.1"
+clap = { version = "4.1.6", features = ["derive"] }
+prettytable-rs = "0.10.0"
+rpassword = "7.0"
+indicatif = "0.17.0"
+console = { version = "0.15", default-features = false, features = ["ansi-parsing"] }
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+csv = "1.1"
+form_urlencoded = "1.1.0"
+human-size = "0.4.2"
+futures = "0.3.28"

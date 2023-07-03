@@ -1,42 +1,7 @@
-[package]
-name = "mail-server"
-description = "Stalwart Mail Server"
-authors = [ "Stalwart Labs Ltd. <hello@stalw.art>"]
-repository = "https://github.com/stalwartlabs/jmap-server"
-homepage = "https://stalw.art"
-keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
-categories = ["email"]
-license = "AGPL-3.0-only"
-version = "0.3.0"
-edition = "2021"
-resolver = "2"
-
-[[bin]]
-name = "stalwart-mail"
-path = "crates/main/src/main.rs"
-
-[dependencies]
-store = { path = "crates/store" }
-jmap = { path = "crates/jmap" }
-jmap_proto = { path = "crates/jmap-proto" }
-smtp = { path = "crates/smtp", features = ["local_delivery"] }
-imap = { path = "crates/imap" }
-managesieve = { path = "crates/managesieve" }
-directory = { path = "crates/directory" }
-utils = { path = "crates/utils" }
-tokio = { version = "1.23", features = ["full"] }
-tracing = "0.1"
-
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-jemallocator = "0.5.0"
-
-[features]
-default = ["sqlite"]
-sqlite = ["store/sqlite"]
-foundationdb = ["store/foundation"]
-
 [workspace]
+resolver = "2"
 members = [
+    "crates/main",
     "crates/jmap",
     "crates/jmap-proto",
     "crates/imap",
@@ -47,5 +12,49 @@ members = [
     "crates/directory",
     "crates/utils",
     "crates/maybe-async",
+    "crates/cli",
     "tests",
 ]
+
+[profile.dev]
+opt-level = 0
+debug = 1
+codegen-units = 4
+lto = false
+incremental = true
+panic = 'unwind'
+debug-assertions = true
+overflow-checks = false
+rpath = false
+
+[profile.release]
+opt-level = 3
+debug = false
+codegen-units = 1
+lto = true
+incremental = false
+panic = 'unwind'
+debug-assertions = false
+overflow-checks = false
+rpath = false
+#strip = true
+
+[profile.test]
+opt-level = 0
+debug = 1
+#codegen-units = 16
+lto = false
+incremental = true
+debug-assertions = true
+overflow-checks = true
+rpath = false
+
+[profile.bench]
+opt-level = 3
+debug = false
+codegen-units = 1
+lto = true
+incremental = false
+debug-assertions = false
+overflow-checks = false
+rpath = false
