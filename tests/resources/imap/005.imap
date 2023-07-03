@@ -51,7 +51,9 @@ It DOES end with a linebreak.
 This is the epilogue.  It is also to be ignored.
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 691
 ----------------------------------
 BODY[HEADER] {224}
 From: Nathaniel Borenstein <nsb@bellcore.com>
@@ -109,6 +111,10 @@ BODY[1.MIME] {2}
 
 
 ----------------------------------
+BODY[1.1] {79}
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+----------------------------------
 BODY[2] {76}
 This is explicitly typed plain US-ASCII text.
 It DOES end with a linebreak.
@@ -132,6 +138,11 @@ It DOES end with a linebreak.
 BODY[2.MIME] {45}
 Content-Type: text/plain; charset=us-ascii
 
+
+----------------------------------
+BODY[2.1] {76}
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {81}

@@ -2,4 +2,4 @@ capabilities: THREAD=REFERENCES
 messages: all
 
 ok thread references us-ascii all
-* THREAD ((1)(2))
+* THREAD (1 2)

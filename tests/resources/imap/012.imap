@@ -5,7 +5,7 @@ BODY (
       ) NIL NIL "7bit" 6 1
    ) (
       "message" "rfc822" NIL NIL NIL NIL 280 (
-         "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+         "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
             (
                NIL NIL "sub" "domain.org"
             )
@@ -39,7 +39,7 @@ BODYSTRUCTURE (
       ) NIL NIL "7bit" 6 1 "b1946ac92492d2347c6235b4d2611184" NIL NIL NIL
    ) (
       "message" "rfc822" NIL NIL NIL NIL 280 (
-         "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+         "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
             (
                NIL NIL "sub" "domain.org"
             )
@@ -109,7 +109,9 @@ Sub MIME epilogue
 --foo bar--
 Root MIME epilogue
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 565
 ----------------------------------
 BODY[HEADER] {130}
 From: user@domain.org
@@ -182,6 +184,10 @@ Content-Type: text/x-myown; charset=us-ascii
 
 
 ----------------------------------
+BODY[1.1] {6}
+hello
+
+----------------------------------
 BODY[2] {280}
 From: sub@domain.org
 Date: Sun, 12 Aug 2012 12:34:56 +0300
@@ -230,8 +236,8 @@ Hello another world
 Sub MIME epilogue
 
 ----------------------------------
-BODY[2.MIME] {55}
-Content-Type: multipart/alternative; boundary="sub1"
+BODY[2.MIME] {31}
+Content-Type: message/rfc822
 
 
 ----------------------------------
@@ -257,6 +263,10 @@ Content-Type: text/html
 
 
 ----------------------------------
+BODY[2.1.1] {19}
+<p>Hello world</p>
+
+----------------------------------
 BODY[2.2] {20}
 Hello another world
 
@@ -277,6 +287,10 @@ Hello another world
 BODY[2.2.MIME] {27}
 Content-Type: text/plain
 
+
+----------------------------------
+BODY[2.2.1] {20}
+Hello another world
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}

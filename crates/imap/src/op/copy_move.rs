@@ -428,7 +428,7 @@ impl SessionData {
 
         // Resynchronize source mailbox on a successful move
         if did_move {
-            self.write_mailbox_changes(&src_mailbox, is_qresync, is_uid)
+            self.write_mailbox_changes(&src_mailbox, is_qresync)
                 .await
                 .map_err(|r| r.with_tag(&arguments.tag))?;
         }

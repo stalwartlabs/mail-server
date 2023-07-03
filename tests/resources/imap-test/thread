@@ -2,10 +2,10 @@ capabilities: THREAD=REFERENCES
 messages: all
 
 ok thread references us-ascii all
-* thread (3 2)(1)
+* thread (1 2 3)
 
 ok store 1 +flags \deleted
 ok expunge
 
 ok thread references us-ascii all
-* thread (2 1)
+* thread (1 2)

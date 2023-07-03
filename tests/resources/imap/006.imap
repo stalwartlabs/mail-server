@@ -57,7 +57,9 @@ Content-Disposition: inline
 --boundary-string--
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 617
 ----------------------------------
 BODY[HEADER] {149}
 From: sender@example.com
@@ -122,6 +124,11 @@ Content-Disposition: inline
 
 
 ----------------------------------
+BODY[1.1] {87}
+Plain text email goes here!
+This is the fallback if email client does not support HTML
+
+----------------------------------
 BODY[2] {93}
 <h1>This is the HTML Section!</h1>
 <p>This is what displays in most modern email clients</p>
@@ -149,6 +156,11 @@ Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 Content-Disposition: inline
 
+
+----------------------------------
+BODY[2.1] {93}
+<h1>This is the HTML Section!</h1>
+<p>This is what displays in most modern email clients</p>
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {53}

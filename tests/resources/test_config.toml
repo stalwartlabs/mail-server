@@ -159,7 +159,7 @@ member-of = ["sales"]
 [[directory."local".users]]
 name = "jane"
 description = "Jane Doe"
-secret = "abcde"
+secret = "12345"
 email = "jane@example.org"
 email-list = ["info@example.org"]
 member-of = ["sales", "support"]
@@ -167,7 +167,7 @@ member-of = ["sales", "support"]
 [[directory."local".users]]
 name = "bill"
 description = "Bill Foobar"
-secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
+secret = "12345"
 quota = 500000
 email = "bill@example.org"
 email-list = ["info@example.org"]

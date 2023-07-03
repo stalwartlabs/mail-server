@@ -19,6 +19,7 @@ Date: Fri, 22 Feb 2008 02:00:00 +0200
 44
 
 From user@domain  Fri Feb 22 01:30:23 2008 +0200
+Date: Fri, 22 Feb 2008 01:30:23 +0200
 Subject: foo
 
 55555
@@ -29,6 +30,7 @@ Date: Fri, 22 Feb 2008 02:00:00 +0200
 6666
 
 From user@domain  Fri Feb 22 01:00:00 2008 +0200
+Date: Fri, 22 Feb 2008 01:00:00 +0200
 Subject: foo bar foo bar foo bar fooo
 
 777

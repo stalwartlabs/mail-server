@@ -1,6 +1,6 @@
 BODY (
    "message" "rfc822" NIL NIL NIL NIL 271 (
-      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+      "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
          (
             NIL NIL "sub" "domain.org"
          )
@@ -60,7 +60,7 @@ BODY (
 
 BODYSTRUCTURE (
    "message" "rfc822" NIL NIL NIL NIL 271 (
-      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+      "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
          (
             NIL NIL "sub" "domain.org"
          )
@@ -253,8 +253,8 @@ m2 body
 
 --foo--
 ----------------------------------
-BODY[1.MIME] {49}
-Content-Type: multipart/digest; boundary="foo"
+BODY[1.MIME] {31}
+Content-Type: message/rfc822
 
 
 ----------------------------------
@@ -279,6 +279,10 @@ BODY[1.1.MIME] {2}
 
 
 ----------------------------------
+BODY[1.1.1] {8}
+m1 body
+
+----------------------------------
 BODY[1.2] {42}
 From: m2@example.com
 Subject: m2
@@ -298,6 +302,10 @@ m2 body
 ----------------------------------
 BODY[1.2.MIME] {2}
 
+
+----------------------------------
+BODY[1.2.1] {8}
+m2 body
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}

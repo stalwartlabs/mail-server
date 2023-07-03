@@ -123,9 +123,6 @@ impl JMAP {
                         _ => "",
                     })
                     .trim_text(MAX_SORT_FIELD_LENGTH);
-                    if subject.is_empty() {
-                        subject = "!";
-                    }
                 }
                 _ => (),
             }
@@ -295,7 +292,14 @@ impl JMAP {
         loop {
             // Find messages with matching references
             let mut filters = Vec::with_capacity(references.len() + 3);
-            filters.push(Filter::eq(Property::Subject, thread_name));
+            filters.push(Filter::eq(
+                Property::Subject,
+                if !thread_name.is_empty() {
+                    thread_name
+                } else {
+                    "!"
+                },
+            ));
             filters.push(Filter::Or);
             for reference in references {
                 filters.push(Filter::eq(Property::MessageId, *reference));

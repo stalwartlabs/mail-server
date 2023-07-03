@@ -815,24 +815,32 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         }
 
         let mut message = self;
-        let sections_single = sections.len() == 1;
-        let mut sections_iter = sections.iter().peekable();
+        let mut sections_iter = sections.iter().enumerate().peekable();
 
-        while let Some(section) = sections_iter.next() {
+        while let Some((section_num, section)) = sections_iter.next() {
             match section {
                 Section::Part { num } => {
                     part = if let Some(sub_part_ids) = part.sub_parts() {
                         sub_part_ids
                             .get((*num).saturating_sub(1) as usize)
                             .and_then(|pos| message.parts.get(*pos))
-                    } else if *num == 1 && (sections_single || part.is_message()) {
+                    } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message())
+                    {
                         Some(part)
                     } else {
                         None
                     }?;
 
-                    if let (PartType::Message(nested_message), Some(_)) =
-                        (&part.body, sections_iter.peek())
+                    if let (
+                        PartType::Message(nested_message),
+                        Some((
+                            _,
+                            Section::Part { .. }
+                            | Section::Header
+                            | Section::HeaderFields { .. }
+                            | Section::Text,
+                        )),
+                    ) = (&part.body, sections_iter.peek())
                     {
                         message = nested_message;
                         part = message.root_part();
@@ -888,7 +896,9 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     let mut headers =
                         Vec::with_capacity(part.offset_body.saturating_sub(part.offset_header));
                     for header in &part.headers {
-                        if header.name.is_mime_header() {
+                        if header.name.is_mime_header()
+                            || header.name.as_str().starts_with("Content-")
+                        {
                             headers.extend_from_slice(header.name.as_str().as_bytes());
                             headers.extend_from_slice(b":");
                             headers.extend_from_slice(
@@ -937,18 +947,24 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
     ) -> Result<Option<BodyContents>, ()> {
         let mut message = self;
         let mut part = self.root_part();
-        let mut sections_iter = sections.iter().peekable();
+        let mut sections_iter = sections.iter().enumerate().peekable();
 
-        while let Some(section) = sections_iter.next() {
-            part = if let Some(part) = part
-                .sub_parts()
-                .and_then(|p| p.get((*section).saturating_sub(1) as usize))
-                .and_then(|p| message.parts.get(*p))
-            {
+        while let Some((section_num, num)) = sections_iter.next() {
+            part = if let Some(sub_part_ids) = part.sub_parts() {
+                if let Some(part) = sub_part_ids
+                    .get((*num).saturating_sub(1) as usize)
+                    .and_then(|pos| message.parts.get(*pos))
+                {
+                    part
+                } else {
+                    return Ok(None);
+                }
+            } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
                 part
             } else {
                 return Ok(None);
             };
+
             if let (PartType::Message(nested_message), Some(_)) = (&part.body, sections_iter.peek())
             {
                 message = nested_message;
@@ -973,13 +989,23 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                                 message.root_part().raw_header_offset()
                                     ..message.root_part().raw_end_offset(),
                             )
-                            .unwrap_or(&b""[..]),
+                            .unwrap_or_default(),
                         partial,
                     )
                     .into(),
                 )
                 .into(),
-                PartType::Multipart(_) => None,
+                PartType::Multipart(_) => BodyContents::Bytes(
+                    get_partial_bytes(
+                        message
+                            .raw_message
+                            .get(part.raw_header_offset()..part.raw_end_offset())
+                            .unwrap_or_default(),
+                        partial,
+                    )
+                    .into(),
+                )
+                .into(),
             })
         } else {
             Err(())
@@ -989,14 +1015,19 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
     fn binary_size(&self, sections: &[u32]) -> Option<usize> {
         let mut message = self;
         let mut part = self.root_part();
-        let mut sections_iter = sections.iter().peekable();
+        let mut sections_iter = sections.iter().enumerate().peekable();
 
-        while let Some(section) = sections_iter.next() {
-            part = message.parts.get(
-                *part
-                    .sub_parts()?
-                    .get((*section).saturating_sub(1) as usize)?,
-            )?;
+        while let Some((section_num, num)) = sections_iter.next() {
+            part = if let Some(sub_part_ids) = part.sub_parts() {
+                sub_part_ids
+                    .get((*num).saturating_sub(1) as usize)
+                    .and_then(|pos| message.parts.get(*pos))
+            } else if *num == 1 && (section_num == sections.len() - 1 || part.is_message()) {
+                Some(part)
+            } else {
+                None
+            }?;
+
             if let (PartType::Message(nested_message), Some(_)) = (&part.body, sections_iter.peek())
             {
                 message = nested_message;
@@ -1008,7 +1039,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
             PartType::Text(text) | PartType::Html(text) => text.len(),
             PartType::Binary(bytes) | PartType::InlineBinary(bytes) => bytes.len(),
             PartType::Message(message) => message.root_part().raw_len(),
-            PartType::Multipart(_) => 0,
+            PartType::Multipart(_) => part.raw_len(),
         }
         .into()
     }

@@ -19,7 +19,7 @@ Subject: m1
 m1 body
 
 --foo 
-X-Mime: m2 header
+Content-Custom: m2 header
 
 From: m2@example.com
 Subject: m2
@@ -28,4 +28,3 @@ m2 body
 
 --foo--
 
-epilogue

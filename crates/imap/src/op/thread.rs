@@ -126,10 +126,13 @@ impl SessionData {
             }
         }
 
+        let mut threads = threads
+            .into_iter()
+            .map(|(_, messages)| messages)
+            .collect::<Vec<_>>();
+        threads.sort_unstable();
+
         // Build response
-        Ok(Response {
-            is_uid,
-            threads: threads.into_iter().map(|(_, messages)| messages).collect(),
-        })
+        Ok(Response { is_uid, threads })
     }
 }

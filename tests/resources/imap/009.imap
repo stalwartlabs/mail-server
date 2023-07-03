@@ -115,7 +115,9 @@ R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
 --giddyup--
 --festivus--
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 1457
 ----------------------------------
 BODY[HEADER] {349}
 From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
@@ -194,6 +196,12 @@ Content-Transfer-Encoding: base64
 
 
 ----------------------------------
+BODY[1.1] {239}
+PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
+HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
+cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
+gJiN4MjYzQTs8L3A+PC9odG1sPg==
+----------------------------------
 BODY[2] {723}
 From: "Cosmo Kramer" <kramer@kramerica.com>
 Subject: Exporting my book about coffee tables
@@ -244,8 +252,8 @@ Content-Disposition: attachment
 R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
 --giddyup--
 ----------------------------------
-BODY[2.MIME] {53}
-Content-Type: multipart/mixed; boundary="giddyup";
+BODY[2.MIME] {31}
+Content-Type: message/rfc822
 
 
 ----------------------------------
@@ -276,6 +284,12 @@ Content-Transfer-Encoding: quoted-printable
 
 
 ----------------------------------
+BODY[2.1.1] {228}
+=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
+=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
+=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
+=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+----------------------------------
 BODY[2.2] {56}
 R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
 BINARY[2.2] {16}
@@ -300,6 +314,9 @@ Content-Transfer-Encoding: Base64
 Content-Disposition: attachment
 
 
+----------------------------------
+BODY[2.2.1] {56}
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {196}
 From: Art Vandelay <art@vandelay.com> (Vandelay Industries)

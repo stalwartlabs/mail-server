@@ -5,7 +5,7 @@ BODY (
       ) NIL NIL "7bit" 54 0
    ) (
       "message" "rfc822" NIL NIL NIL "base64" 1179 (
-         "Tue, 14 Dec 2021 10:48:25 +0000" "HTML test" (
+         "Tue, 14 Dec 2021 11:48:25 +0100" "HTML test" (
             (
                "Name" NIL "email" "example.com"
             )
@@ -43,7 +43,7 @@ BODYSTRUCTURE (
       ) NIL NIL "7bit" 54 0 "e377afc895a2c4c0d17b378f355de59e" NIL NIL NIL
    ) (
       "message" "rfc822" NIL NIL NIL "base64" 1179 (
-         "Tue, 14 Dec 2021 10:48:25 +0000" "HTML test" (
+         "Tue, 14 Dec 2021 11:48:25 +0100" "HTML test" (
             (
                "Name" NIL "email" "example.com"
             )
@@ -114,7 +114,9 @@ c2FnZQ0KICA8L2JvZHk+DQo8L2h0bWw+DQoNCi0tYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh
 YWFhYWFhYWFhYWFhYS0tDQo=
 --bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb--
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 1649
 ----------------------------------
 BODY[HEADER] {83}
 Content-Type: multipart/mixed;
@@ -179,6 +181,9 @@ Content-Transfer-Encoding: 7bit
 
 
 ----------------------------------
+BODY[1.1] {54}
+This is a message with a base64 encoded attached email
+----------------------------------
 BODY[2] {1179}
 VG86ICJlbWFpbEBleGFtcGxlLmNvbSIgPGVtYWlsQGV4YW1wbGUuY29tPg0KRnJvbTogTmFtZSA8
 ZW1haWxAZXhhbXBsZS5jb20+DQpTdWJqZWN0OiBIVE1MIHRlc3QNCk1lc3NhZ2UtSUQ6IDxyYW5k
@@ -236,10 +241,10 @@ Content-Transfer-Encoding: 7bit
 --aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--
 
 ----------------------------------
-BODY[2.MIME] {119}
-Content-Type: multipart/alternative;
- boundary="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-Content-Language: en-US
+BODY[2.MIME] {128}
+Content-Disposition: attachment; filename="attached_email.eml"
+Content-Type: message/rfc822
+Content-Transfer-Encoding: base64
 
 
 ----------------------------------
@@ -263,6 +268,9 @@ Content-Type: text/plain; charset=utf-8; format=flowed
 Content-Transfer-Encoding: 7bit
 
 
+----------------------------------
+BODY[2.1.1] {30}
+This is an *HTML* test message
 ----------------------------------
 BODY[2.2] {173}
 <html>
@@ -307,6 +315,17 @@ BODY[2.2.MIME] {75}
 Content-Type: text/html; charset=utf-8
 Content-Transfer-Encoding: 7bit
 
+
+----------------------------------
+BODY[2.2.1] {173}
+<html>
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  </head>
+  <body>
+    This is an <b>HTML</b> test message
+  </body>
+</html>
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {2}

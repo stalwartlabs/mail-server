@@ -286,9 +286,7 @@ impl SessionData {
                             let state = mailbox.state.lock();
                             for imap_id in prev_saved_search.iter() {
                                 if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
-                                    if *id != u32::MAX {
-                                        set.insert(*id);
-                                    }
+                                    set.insert(*id);
                                 }
                             }
                         } else {
@@ -425,7 +423,7 @@ impl SessionData {
                 }
                 search::Filter::On(date) => {
                     filters.push(query::Filter::And);
-                    filters.push(query::Filter::gt(Property::ReceivedAt, date as u64));
+                    filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
                     filters.push(query::Filter::lt(
                         Property::ReceivedAt,
                         (date + 86400) as u64,
@@ -443,15 +441,15 @@ impl SessionData {
                 }
                 search::Filter::SentOn(date) => {
                     filters.push(query::Filter::And);
-                    filters.push(query::Filter::gt(Property::SentAt, date as u64));
+                    filters.push(query::Filter::ge(Property::SentAt, date as u64));
                     filters.push(query::Filter::lt(Property::SentAt, (date + 86400) as u64));
                     filters.push(query::Filter::End);
                 }
                 search::Filter::SentSince(date) => {
-                    filters.push(query::Filter::gt(Property::SentAt, date as u64));
+                    filters.push(query::Filter::ge(Property::SentAt, date as u64));
                 }
                 search::Filter::Since(date) => {
-                    filters.push(query::Filter::gt(Property::ReceivedAt, date as u64));
+                    filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
                 }
                 search::Filter::Smaller(size) => {
                     filters.push(query::Filter::lt(Property::Size, size));
@@ -722,12 +720,8 @@ impl SelectedMailbox {
 impl MailboxState {
     pub fn map_result_id(&self, document_id: u32, is_uid: bool) -> Option<(u32, ImapId)> {
         if let Some(imap_id) = self.id_to_imap.get(&document_id) {
-            if imap_id.uid != u32::MAX {
-                return Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id));
-            }
-        }
-
-        if is_uid {
+            Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id))
+        } else if is_uid {
             self.next_state.as_ref().and_then(|s| {
                 s.next_state
                     .id_to_imap

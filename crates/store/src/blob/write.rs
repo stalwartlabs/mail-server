@@ -264,7 +264,7 @@ impl Store {
                                     item.file_name().to_str().and_then(parse_timestamp)
                                 {
                                     if now.saturating_sub(timestamp) > ttl {
-                                        fs::remove_file(item.path()).await?;
+                                        let _ = fs::remove_file(item.path()).await;
                                     } else {
                                         total_bytes += metadata.len() as usize;
                                         total_files += 1;

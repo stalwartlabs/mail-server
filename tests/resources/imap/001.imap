@@ -75,7 +75,9 @@ get RFC-MIME.DOC
 
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 1109
 ----------------------------------
 BODY[HEADER] {198}
 From: Whomever
@@ -159,6 +161,11 @@ Content-Type: message/external-body; name="BodyFormats.ps";
 
 
 ----------------------------------
+BODY[1.1] {79}
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
+
+----------------------------------
 BODY[2] {79}
 Content-type: application/postscript
 Content-ID: <id42@guppylake.bellcore.com>
@@ -186,6 +193,11 @@ Content-Type: message/external-body; access-type=local-file;
             site="thumper.bellcore.com";
             expiration="Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
 
+
+----------------------------------
+BODY[2.1] {79}
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
 
 ----------------------------------
 BODY[3] {97}
@@ -219,6 +231,13 @@ Content-Type: message/external-body;
             server="listserv@bogus.bitnet";
             expiration="Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
 
+
+----------------------------------
+BODY[3.1] {97}
+Content-type: application/postscript
+Content-ID: <id42@guppylake.bellcore.com>
+
+get RFC-MIME.DOC
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {29}

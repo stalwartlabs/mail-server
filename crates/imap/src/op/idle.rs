@@ -213,10 +213,7 @@ impl SessionData {
             if let Some(mailbox) = mailbox {
                 // Obtain changes since last sync
                 let modseq = mailbox.state.lock().modseq;
-                match self
-                    .write_mailbox_changes(mailbox, is_qresync, is_qresync)
-                    .await
-                {
+                match self.write_mailbox_changes(mailbox, is_qresync).await {
                     Ok(new_state) => {
                         if new_state == modseq {
                             return;

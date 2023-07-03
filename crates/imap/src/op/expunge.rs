@@ -78,9 +78,9 @@ impl<T: AsyncRead> Session<T> {
         }
 
         // Parse sequence to operate on
-        let sequence = if let Some(Token::Argument(value)) = request.tokens.into_iter().next() {
-            match parse_sequence_set(&value) {
-                Ok(sequence) => match mailbox.sequence_to_ids(&sequence, is_uid).await {
+        let sequence = match request.tokens.into_iter().next() {
+            Some(Token::Argument(value)) if is_uid => match parse_sequence_set(&value) {
+                Ok(sequence) => match mailbox.sequence_to_ids(&sequence, true).await {
                     Ok(sequence) => Some(sequence),
                     Err(response) => {
                         return self
@@ -93,9 +93,8 @@ impl<T: AsyncRead> Session<T> {
                         .write_bytes(StatusResponse::bad(err).with_tag(request.tag).into_bytes())
                         .await;
                 }
-            }
-        } else {
-            None
+            },
+            _ => None,
         };
 
         if let Err(response) = data.expunge(mailbox.clone(), sequence).await {
@@ -108,10 +107,7 @@ impl<T: AsyncRead> Session<T> {
         *mailbox.saved_search.lock() = SavedSearch::None;
 
         // Synchronize messages
-        match data
-            .write_mailbox_changes(&mailbox, self.is_qresync, is_uid)
-            .await
-        {
+        match data.write_mailbox_changes(&mailbox, self.is_qresync).await {
             Ok(_) => {
                 self.write_bytes(
                     StatusResponse::completed(Command::Expunge(is_uid))

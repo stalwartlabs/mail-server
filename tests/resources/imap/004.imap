@@ -6,7 +6,7 @@ BODY (
    ) (
       (
          "message" NIL NIL NIL NIL NIL 100 (
-            "Fri, 26 Mar 1993 09:13:32 +0000" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -14,7 +14,7 @@ BODY (
          ) 0
       ) (
          "message" NIL NIL NIL NIL NIL 125 (
-            "Fri, 26 Mar 1993 15:07:13 +0000" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -32,7 +32,7 @@ BODYSTRUCTURE (
    ) (
       (
          "message" NIL NIL NIL NIL NIL 100 (
-            "Fri, 26 Mar 1993 09:13:32 +0000" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -40,7 +40,7 @@ BODYSTRUCTURE (
          ) 0 "ef1527984c599523c90fb184a8fdfd61" NIL NIL NIL
       ) (
          "message" NIL NIL NIL NIL NIL 125 (
-            "Fri, 26 Mar 1993 15:07:13 +0000" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -92,7 +92,9 @@ Subject: my different opinion
 ------ main boundary ------
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 728
 ----------------------------------
 BODY[HEADER] {214}
 From: Moderator-Address
@@ -162,6 +164,10 @@ BODY[1.MIME] {2}
 
 
 ----------------------------------
+BODY[1.1] {45}
+...Introductory text or table of contents...
+
+----------------------------------
 BODY[2] {306}
 ------ next message ----
 
@@ -181,7 +187,9 @@ Subject: my different opinion
 
 ------ next message ------
 
-BINARY.SIZE[2] 0
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 385
 ----------------------------------
 BODY[2.HEADER] {79}
 Content-Type: multipart/digest;
@@ -241,6 +249,10 @@ BODY[2.1.MIME] {2}
 
 
 ----------------------------------
+BODY[2.1.1] {22}
+...body goes here ...
+
+----------------------------------
 BODY[2.2] {125}
 From: someone-else-again
 Date: Fri, 26 Mar 1993 10:07:13 -0500
@@ -265,6 +277,10 @@ BODY[2.2.TEXT] {31}
 ----------------------------------
 BODY[2.2.MIME] {2}
 
+
+----------------------------------
+BODY[2.2.1] {31}
+... another body goes here ...
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {45}

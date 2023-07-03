@@ -203,7 +203,9 @@ K
 --1--
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 871
 ----------------------------------
 BODY[HEADER] {82}
 Subject: RFC 8621 Section 4.1.4 test
@@ -310,6 +312,9 @@ Content-Disposition: inline
 
 
 ----------------------------------
+BODY[1.1] {1}
+A
+----------------------------------
 BODY[2] {608}
 --2
 Content-Type: multipart/alternative; boundary="3"
@@ -366,7 +371,9 @@ Subject: J
 J
 --2--
 
-BINARY.SIZE[2] 0
+BINARY[2] {16}
+[binary content]
+BINARY.SIZE[2] 653
 ----------------------------------
 BODY[2.HEADER] {45}
 Content-Type: multipart/mixed; boundary="2"
@@ -471,7 +478,9 @@ F
 
 --3-- 
 
-BINARY.SIZE[2.1] 0
+BINARY[2.1] {16}
+[binary content]
+BINARY.SIZE[2.1] 437
 ----------------------------------
 BODY[2.1.HEADER] {51}
 Content-Type: multipart/alternative; boundary="3"
@@ -538,7 +547,9 @@ Content-Disposition: inline
 D
 --4--
 
-BINARY.SIZE[2.1.1] 0
+BINARY[2.1.1] {16}
+[binary content]
+BINARY.SIZE[2.1.1] 235
 ----------------------------------
 BODY[2.1.1.HEADER] {45}
 Content-Type: multipart/mixed; boundary="4"
@@ -590,6 +601,9 @@ Content-Disposition: inline
 
 
 ----------------------------------
+BODY[2.1.1.1.1] {1}
+B
+----------------------------------
 BODY[2.1.1.2] {1}
 C
 BINARY[2.1.1.2] {16}
@@ -610,6 +624,9 @@ Content-Type: image/jpeg
 Content-Disposition: inline
 
 
+----------------------------------
+BODY[2.1.1.2.1] {1}
+C
 ----------------------------------
 BODY[2.1.1.3] {1}
 D
@@ -632,6 +649,9 @@ Content-Disposition: inline
 
 
 ----------------------------------
+BODY[2.1.1.3.1] {1}
+D
+----------------------------------
 BODY[2.1.2] {86}
 --5
 Content-Type: text/html
@@ -643,7 +663,9 @@ Content-Type: image/jpeg
 F
 --5--  
 
-BINARY.SIZE[2.1.2] 0
+BINARY[2.1.2] {16}
+[binary content]
+BINARY.SIZE[2.1.2] 133
 ----------------------------------
 BODY[2.1.2.HEADER] {47}
 Content-Type: multipart/related; boundary="5"
@@ -686,6 +708,9 @@ Content-Type: text/html
 
 
 ----------------------------------
+BODY[2.1.2.1.1] {14}
+<html>E</html>
+----------------------------------
 BODY[2.1.2.2] {1}
 F
 BINARY[2.1.2.2] {16}
@@ -704,6 +729,9 @@ BODY[2.1.2.2.MIME] {27}
 Content-Type: image/jpeg
 
 
+----------------------------------
+BODY[2.1.2.2.1] {1}
+F
 ----------------------------------
 BODY[2.2] {1}
 G
@@ -726,6 +754,9 @@ Content-Disposition: attachment
 
 
 ----------------------------------
+BODY[2.2.1] {1}
+G
+----------------------------------
 BODY[2.3] {1}
 H
 BINARY[2.3] {16}
@@ -745,6 +776,9 @@ Content-Type: application/x-excel
 
 
 ----------------------------------
+BODY[2.3.1] {1}
+H
+----------------------------------
 BODY[2.4] {13}
 Subject: J
 
@@ -761,9 +795,13 @@ Subject: J
 BODY[2.4.TEXT] {1}
 J
 ----------------------------------
-BODY[2.4.MIME] {2}
+BODY[2.4.MIME] {31}
+Content-Type: message/rfc822
 
 
+----------------------------------
+BODY[2.4.1] {1}
+J
 ----------------------------------
 BODY[3] {1}
 K
@@ -785,6 +823,9 @@ Content-Type: text/plain
 Content-Disposition: inline
 
 
+----------------------------------
+BODY[3.1] {1}
+K
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {2}
 

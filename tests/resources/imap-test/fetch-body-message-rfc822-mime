@@ -22,7 +22,7 @@ Subject: m1
 m1 body
 
 --foo 
-X-Mime: m2 header
+Content-Custom: m2 header
 
 From: m2@example.com
 Subject: m2
@@ -31,7 +31,6 @@ m2 body
 
 --foo--
 
-epilogue
 
 }}})
 
@@ -52,7 +51,7 @@ Subject: m1
 m1 body
 
 --foo 
-X-Mime: m2 header
+Content-Custom: m2 header
 
 From: m2@example.com
 Subject: m2
@@ -61,7 +60,6 @@ m2 body
 
 --foo--
 
-epilogue
 
 }}})
 
@@ -82,7 +80,7 @@ Subject: m1
 m1 body
 
 --foo 
-X-Mime: m2 header
+Content-Custom: m2 header
 
 From: m2@example.com
 Subject: m2
@@ -91,7 +89,6 @@ m2 body
 
 --foo--
 
-epilogue
 
 }}})
 
@@ -117,7 +114,7 @@ Subject: m1
 m1 body
 
 --foo 
-X-Mime: m2 header
+Content-Custom: m2 header
 
 From: m2@example.com
 Subject: m2
@@ -125,9 +122,6 @@ Subject: m2
 m2 body
 
 --foo--
-
-epilogue
-
 }}})
 
 ok fetch 1 (body.peek[1.1])
@@ -170,7 +164,7 @@ m2 body
 
 ok fetch 1 (body.peek[1.2.MIME])
 * 1 fetch (body[1.2.MIME] {{{
-X-Mime: m2 header
+Content-Custom: m2 header
 
 
 }}})

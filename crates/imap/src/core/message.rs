@@ -284,18 +284,19 @@ impl SessionData {
                 .take()
                 .map(|state| state.deletions)
                 .unwrap_or_default();
-            let mut uid_to_id = std::mem::take(&mut current_state.uid_to_id);
-            for imap_id in current_state.id_to_imap.values_mut() {
-                if imap_id.uid != u32::MAX && !new_state.uid_to_id.contains_key(&imap_id.uid) {
+            let mut id_to_imap = AHashMap::with_capacity(current_state.id_to_imap.len());
+            for (id, imap_id) in std::mem::take(&mut current_state.id_to_imap) {
+                if !new_state.uid_to_id.contains_key(&imap_id.uid) {
                     // Add to deletions
-                    deletions.push(*imap_id);
+                    deletions.push(imap_id);
 
                     // Invalidate entries
-                    uid_to_id.insert(imap_id.uid, u32::MAX);
-                    imap_id.uid = u32::MAX;
+                    current_state.uid_to_id.remove(&imap_id.uid);
+                } else {
+                    id_to_imap.insert(id, imap_id);
                 }
             }
-            current_state.uid_to_id = uid_to_id;
+            current_state.id_to_imap = id_to_imap;
 
             // Update state
             current_state.modseq = new_state.modseq;
@@ -312,7 +313,6 @@ impl SessionData {
         &self,
         mailbox: &SelectedMailbox,
         is_qresync: bool,
-        is_uid: bool,
     ) -> crate::op::Result<Option<u64>> {
         // Resync mailbox
         let modseq = self.synchronize_messages(mailbox).await?;
@@ -324,13 +324,7 @@ impl SessionData {
                     let mut ids = next_state
                         .deletions
                         .into_iter()
-                        .map(|id| {
-                            if is_uid || is_qresync {
-                                id.uid
-                            } else {
-                                id.seqnum
-                            }
-                        })
+                        .map(|id| if is_qresync { id.uid } else { id.seqnum })
                         .collect::<Vec<u32>>();
                     ids.sort_unstable();
                     expunge::Response { is_qresync, ids }.serialize_to(&mut buf);
@@ -393,15 +387,13 @@ impl SelectedMailbox {
 
             if is_uid {
                 for (id, imap_id) in &state.id_to_imap {
-                    if imap_id.uid != u32::MAX && sequence.contains(imap_id.uid, state.uid_max) {
+                    if sequence.contains(imap_id.uid, state.uid_max) {
                         ids.insert(*id, *imap_id);
                     }
                 }
             } else {
                 for (id, imap_id) in &state.id_to_imap {
-                    if imap_id.uid != u32::MAX
-                        && sequence.contains(imap_id.seqnum, state.total_messages as u32)
-                    {
+                    if sequence.contains(imap_id.seqnum, state.total_messages as u32) {
                         ids.insert(*id, *imap_id);
                     }
                 }
@@ -418,9 +410,7 @@ impl SelectedMailbox {
 
             for imap_id in saved_ids.iter() {
                 if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
-                    if *id != u32::MAX {
-                        ids.insert(*id, *imap_id);
-                    }
+                    ids.insert(*id, *imap_id);
                 }
             }
 
@@ -434,7 +424,7 @@ impl SelectedMailbox {
             let state = self.state.lock();
             if is_uid {
                 for uid in sequence.expand(state.uid_max) {
-                    if state.uid_to_id.get(&uid).map_or(true, |id| *id == u32::MAX) {
+                    if !state.uid_to_id.contains_key(&uid) {
                         deleted_ids.push(uid);
                     }
                 }
@@ -448,11 +438,7 @@ impl SelectedMailbox {
         } else if let Some(saved_ids) = self.get_saved_search().await {
             let state = self.state.lock();
             for id in saved_ids.iter() {
-                if state
-                    .uid_to_id
-                    .get(&id.uid)
-                    .map_or(true, |id| *id == u32::MAX)
-                {
+                if !state.uid_to_id.contains_key(&id.uid) {
                     deleted_ids.push(if is_uid { id.uid } else { id.seqnum });
                 }
             }

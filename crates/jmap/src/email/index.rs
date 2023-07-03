@@ -299,6 +299,11 @@ impl IndexMessage for BatchBuilder {
                 }
             }
 
+            // Add subject to index if missing
+            if !seen_headers[RfcHeader::Subject as usize] {
+                self.value(Property::Subject, "!", F_INDEX);
+            }
+
             match part.body {
                 PartType::Text(text) => {
                     if part_id == preview_part_id {
@@ -416,6 +421,7 @@ impl IntoOperations for EmailIndexBuilder {
         };
 
         // Remove properties from index
+        let mut has_subject = false;
         for (property, value) in self.inner.properties {
             match (&property, value) {
                 (Property::Size, Value::UnsignedInt(size)) => {
@@ -476,12 +482,17 @@ impl IntoOperations for EmailIndexBuilder {
                         },
                         F_INDEX | options,
                     );
+                    has_subject = true;
                 }
                 (Property::HasAttachment, Value::Bool(true)) => {
                     batch.bitmap(Property::HasAttachment, (), options);
                 }
                 _ => {}
             }
+        }
+
+        if !has_subject {
+            batch.value(Property::Subject, "!", F_INDEX | options);
         }
     }
 }

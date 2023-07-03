@@ -145,7 +145,9 @@ Content-Transfer-Encoding: Quoted-printable
 --unique-boundary-1--
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 1854
 ----------------------------------
 BODY[HEADER] {239}
 MIME-Version: 1.0
@@ -270,6 +272,16 @@ BODY[1.MIME] {2}
 
 
 ----------------------------------
+BODY[1.1] {262}
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+----------------------------------
 BODY[2] {111}
 This could have been part of the previous part, but
 illustrates explicit versus implicit typing of body
@@ -298,6 +310,12 @@ Content-Type: text/plain; charset=US-ASCII
 
 
 ----------------------------------
+BODY[2.1] {111}
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+----------------------------------
 BODY[3] {314}
 --unique-boundary-2
 Content-Type: audio/basic
@@ -314,7 +332,9 @@ Content-Transfer-Encoding: base64
 
 --unique-boundary-2--
 
-BINARY.SIZE[3] 0
+BINARY[3] {16}
+[binary content]
+BINARY.SIZE[3] 376
 ----------------------------------
 BODY[3.HEADER] {62}
 Content-Type: multipart/parallel; boundary=unique-boundary-2
@@ -368,6 +388,11 @@ Content-Transfer-Encoding: base64
 
 
 ----------------------------------
+BODY[3.1.1] {85}
+... base64-encoded 8000 Hz single-channel
+    mu-law-format audio data goes here ...
+
+----------------------------------
 BODY[3.2] {44}
 ... base64-encoded image data goes here ...
 
@@ -389,6 +414,10 @@ BODY[3.2.MIME] {61}
 Content-Type: image/jpeg
 Content-Transfer-Encoding: base64
 
+
+----------------------------------
+BODY[3.2.1] {44}
+... base64-encoded image data goes here ...
 
 ----------------------------------
 BODY[4] {140}
@@ -425,6 +454,14 @@ Content-Type: text/enriched
 
 
 ----------------------------------
+BODY[4.1] {140}
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+----------------------------------
 BODY[5] {223}
 From: (mailbox in US-ASCII)
 To: (address in US-ASCII)
@@ -451,10 +488,13 @@ BODY[5.TEXT] {48}
 ... Additional text in ISO-8859-1 goes here ...
 
 ----------------------------------
-BODY[5.MIME] {91}
-Content-Type: Text/plain; charset=ISO-8859-1
-Content-Transfer-Encoding: Quoted-printable
+BODY[5.MIME] {31}
+Content-Type: message/rfc822
 
+
+----------------------------------
+BODY[5.1] {48}
+... Additional text in ISO-8859-1 goes here ...
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {79}

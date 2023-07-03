@@ -30,9 +30,9 @@ state: created
 #* 3 recent
 
 2 ok fetch 1:3 (flags internaldate)
-* 3 fetch (flags (\seen) internaldate $date1)
-* 2 fetch (flags (\answered \flagged) internaldate $date2)
-* 1 fetch (flags () internaldate $date4)
+? 1 fetch (flags (\seen) internaldate $date1)
+? 2 fetch (flags (\answered \flagged) internaldate $date2)
+? 3 fetch (flags () internaldate $date4)
 
 # keywords aren't required to be created on COPY, so help the server here
 2 ok store 3 +flags ($$keyword1 $$keyword2)

@@ -348,9 +348,6 @@ impl JMAP {
                     if let Some(value) = value.as_string() {
                         subject = thread_name(value).trim_text(MAX_SORT_FIELD_LENGTH);
                     }
-                    if subject.is_empty() {
-                        subject = "!";
-                    }
                 }
                 _ => (),
             }

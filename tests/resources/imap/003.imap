@@ -55,7 +55,9 @@ Content-Type: application/x-whatever
 --boundary42--
 
 
-BINARY.SIZE[] 0
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 565
 ----------------------------------
 BODY[HEADER] {228}
 From: Nathaniel Borenstein <nsb@bellcore.com>
@@ -115,6 +117,10 @@ Content-Type: text/plain; charset=us-ascii
 
 
 ----------------------------------
+BODY[1.1] {48}
+... plain text version of message goes here ...
+
+----------------------------------
 BODY[2] {69}
 ... RFC 1896 text/enriched version of same message
     goes here ...
@@ -140,6 +146,11 @@ Content-Type: text/enriched
 
 
 ----------------------------------
+BODY[2.1] {69}
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+----------------------------------
 BODY[3] {51}
 ... fanciest version of same message goes here ...
 
@@ -159,6 +170,10 @@ BODY[3.TEXT] {51}
 BODY[3.MIME] {39}
 Content-Type: application/x-whatever
 
+
+----------------------------------
+BODY[3.1] {51}
+... fanciest version of same message goes here ...
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {81}

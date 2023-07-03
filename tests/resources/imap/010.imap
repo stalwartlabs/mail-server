@@ -1,6 +1,6 @@
 BODY (
    "message" "rfc822" NIL NIL NIL NIL 88 (
-      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+      "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
          (
             NIL NIL "sub" "domain.org"
          )
@@ -22,7 +22,7 @@ BODY (
 
 BODYSTRUCTURE (
    "message" "rfc822" NIL NIL NIL NIL 88 (
-      "Sun, 12 Aug 2012 09:34:56 +0000" "submsg" (
+      "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
          (
             NIL NIL "sub" "domain.org"
          )
@@ -98,8 +98,13 @@ BODY[1.TEXT] {12}
 Hello world
 
 ----------------------------------
-BODY[1.MIME] {2}
+BODY[1.MIME] {31}
+Content-Type: message/rfc822
 
+
+----------------------------------
+BODY[1.1] {12}
+Hello world
 
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}
