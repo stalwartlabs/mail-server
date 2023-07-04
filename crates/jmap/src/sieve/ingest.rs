@@ -55,6 +55,7 @@ impl JMAP {
         envelope_from: &str,
         envelope_to: &str,
         account_id: u32,
+        account_name: &str,
         mut active_script: ActiveScript,
     ) -> Result<IngestedEmail, IngestError> {
         // Parse message
@@ -79,7 +80,7 @@ impl JMAP {
         // Obtain mail from address
         let mail_from = if let Some(email) = self
             .directory
-            .emails_by_id(account_id)
+            .emails_by_name(account_name)
             .await
             .unwrap_or_default()
             .into_iter()
@@ -93,10 +94,17 @@ impl JMAP {
         // Set account address
         instance.set_user_address(&mail_from);
 
-        // Set account name
-        if let Ok(Some(p)) = self.directory.principal_by_id(account_id).await {
-            instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-        }
+        // Set account name and obtain quota
+        let account_quota = match self.directory.principal(account_name).await {
+            Ok(Some(p)) => {
+                instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
+                p.quota as i64
+            }
+            Ok(None) => 0,
+            Err(_) => {
+                return Err(IngestError::Temporary);
+            }
+        };
 
         // Set envelope
         instance.set_envelope(Envelope::From, envelope_from);
@@ -412,13 +420,6 @@ impl JMAP {
         }
 
         // Deliver messages
-        let account_quota = match self.directory.principal_by_id(account_id).await {
-            Ok(Some(p)) => p.quota as i64,
-            Ok(None) => 0,
-            Err(_) => {
-                return Err(IngestError::Temporary);
-            }
-        };
         let mut last_temp_error = None;
         let mut has_delivered = false;
         for (message_id, sieve_message) in messages.into_iter().enumerate() {

@@ -14,24 +14,16 @@ impl Directory for SmtpDirectory {
         self.pool.get().await?.authenticate(credentials).await
     }
 
-    async fn principal_by_name(&self, _name: &str) -> crate::Result<Option<Principal>> {
-        Err(DirectoryError::unsupported("smtp", "principal_by_name"))
+    async fn principal(&self, _name: &str) -> crate::Result<Option<Principal>> {
+        Err(DirectoryError::unsupported("smtp", "principal"))
     }
 
-    async fn principal_by_id(&self, _id: u32) -> crate::Result<Option<Principal>> {
-        Err(DirectoryError::unsupported("smtp", "principal_by_id"))
+    async fn emails_by_name(&self, _: &str) -> crate::Result<Vec<String>> {
+        Err(DirectoryError::unsupported("smtp", "emails_by_name"))
     }
 
-    async fn member_of(&self, _principal: &Principal) -> crate::Result<Vec<u32>> {
-        Err(DirectoryError::unsupported("smtp", "member_of"))
-    }
-
-    async fn emails_by_id(&self, _id: u32) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("smtp", "emails_by_id"))
-    }
-
-    async fn ids_by_email(&self, _address: &str) -> crate::Result<Vec<u32>> {
-        Err(DirectoryError::unsupported("smtp", "ids_by_email"))
+    async fn names_by_email(&self, _address: &str) -> crate::Result<Vec<String>> {
+        Err(DirectoryError::unsupported("smtp", "names_by_email"))
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {

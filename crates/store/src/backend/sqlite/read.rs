@@ -373,7 +373,9 @@ impl Store {
             let key = row.get_ref(0).unwrap().as_bytes().unwrap();
             let value = row.get_ref(1).unwrap().as_bytes().unwrap();
 
-            panic!("Table values is not empty: {key:?} {value:?}");
+            if &key[0..4] != u32::MAX.to_be_bytes() {
+                panic!("Table values is not empty: {key:?} {value:?}");
+            }
         }
 
         // Indexes
@@ -384,14 +386,14 @@ impl Store {
             let key = row.get_ref(0).unwrap().as_bytes().unwrap();
 
             panic!(
-                "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
-                u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                key[4],
-                u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
-                key[5],
-                String::from_utf8_lossy(&key[6..key.len()-4]),
-                key
-            );
+                    "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
+                    u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                    key[4],
+                    u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
+                    key[5],
+                    String::from_utf8_lossy(&key[6..key.len()-4]),
+                    key
+                );
         }
 
         // Bitmaps
@@ -404,13 +406,15 @@ impl Store {
 
         while let Some(row) = rows.next().unwrap() {
             let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-            for bit_pos in 1..=16 {
-                let bit_value = row.get::<_, i64>(bit_pos).unwrap() as u64;
-                if bit_value != 0 {
-                    panic!("Table bitmaps is not empty: {key:?} {bit_pos} {bit_value}");
+            if &key[0..4] != u32::MAX.to_be_bytes() {
+                for bit_pos in 1..=16 {
+                    let bit_value = row.get::<_, i64>(bit_pos).unwrap() as u64;
+                    if bit_value != 0 {
+                        panic!("Table bitmaps is not empty: {key:?} {bit_pos} {bit_value}");
+                    }
                 }
+                panic!("Table bitmaps failed to purge, found key: {key:?}");
             }
-            panic!("Table bitmaps failed to purge, found key: {key:?}");
         }
 
         // Quotas

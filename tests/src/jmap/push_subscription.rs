@@ -80,8 +80,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Create test account
     let directory = server.directory.as_ref();
-    let account_id =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
     admin_client.set_default_account_id(account_id);
     let client = test_account_login("jdoe@example.com", "12345").await;
 

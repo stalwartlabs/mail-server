@@ -1,5 +1,4 @@
 use directory::{Directory, Principal, Type};
-use jmap_proto::types::id::Id;
 use mail_send::Credentials;
 
 use crate::directory::parse_config;
@@ -69,11 +68,11 @@ async fn sql_directory() {
             .unwrap()
             .unwrap(),
         Principal {
-            id: 2,
             name: "john".to_string(),
             description: "John Doe".to_string().into(),
             secrets: vec!["12345".to_string()],
             typ: Type::Individual,
+            member_of: vec!["sales".to_string()],
             ..Default::default()
         }
     );
@@ -87,7 +86,6 @@ async fn sql_directory() {
             .unwrap()
             .unwrap(),
         Principal {
-            id: 4,
             name: "bill".to_string(),
             description: "Bill Foobar".to_string().into(),
             secrets: vec![
@@ -107,35 +105,23 @@ async fn sql_directory() {
         .unwrap()
         .is_none());
 
-    // Get by id
-    assert_eq!(
-        handle.principal_by_id(2).await.unwrap().unwrap(),
-        Principal {
-            id: 2,
-            name: "john".to_string(),
-            description: "John Doe".to_string().into(),
-            typ: Type::Individual,
-            ..Default::default()
-        }
-    );
-
     // Get user by name
     assert_eq!(
-        handle.principal_by_name("jane").await.unwrap().unwrap(),
+        handle.principal("jane").await.unwrap().unwrap(),
         Principal {
-            id: 3,
             name: "jane".to_string(),
             description: "Jane Doe".to_string().into(),
             typ: Type::Individual,
+            secrets: vec!["abcde".to_string()],
+            member_of: vec!["sales".to_string(), "support".to_string()],
             ..Default::default()
         }
     );
 
     // Get group by name
     assert_eq!(
-        handle.principal_by_name("sales").await.unwrap().unwrap(),
+        handle.principal("sales").await.unwrap().unwrap(),
         Principal {
-            id: 5,
             name: "sales".to_string(),
             description: "Sales Team".to_string().into(),
             typ: Type::Group,
@@ -143,25 +129,9 @@ async fn sql_directory() {
         }
     );
 
-    // Member of
-    assert_eq!(
-        handle
-            .member_of(&handle.principal_by_name("john").await.unwrap().unwrap())
-            .await
-            .unwrap(),
-        vec![5]
-    );
-    assert_eq!(
-        handle
-            .member_of(&handle.principal_by_name("jane").await.unwrap().unwrap())
-            .await
-            .unwrap(),
-        vec![5, 6]
-    );
-
     // Emails by id
     assert_eq!(
-        handle.emails_by_id(2).await.unwrap(),
+        handle.emails_by_name("john").await.unwrap(),
         vec![
             "john@example.org".to_string(),
             "jdoe@example.org".to_string(),
@@ -169,34 +139,43 @@ async fn sql_directory() {
         ]
     );
     assert_eq!(
-        handle.emails_by_id(4).await.unwrap(),
+        handle.emails_by_name("bill").await.unwrap(),
         vec!["bill@example.org".to_string(),]
     );
 
     // Ids by email
     assert_eq!(
-        handle.ids_by_email("jane@example.org").await.unwrap(),
-        vec![3]
+        handle.names_by_email("jane@example.org").await.unwrap(),
+        vec!["jane".to_string()]
     );
     assert_eq!(
-        handle.ids_by_email("info@example.org").await.unwrap(),
-        vec![2, 3, 4]
+        handle.names_by_email("info@example.org").await.unwrap(),
+        vec!["bill".to_string(), "jane".to_string(), "john".to_string()]
     );
     assert_eq!(
-        handle.ids_by_email("jane+alias@example.org").await.unwrap(),
-        vec![3]
+        handle
+            .names_by_email("jane+alias@example.org")
+            .await
+            .unwrap(),
+        vec!["jane".to_string()]
     );
     assert_eq!(
-        handle.ids_by_email("info+alias@example.org").await.unwrap(),
-        vec![2, 3, 4]
+        handle
+            .names_by_email("info+alias@example.org")
+            .await
+            .unwrap(),
+        vec!["bill".to_string(), "jane".to_string(), "john".to_string()]
     );
     assert_eq!(
-        handle.ids_by_email("unknown@example.org").await.unwrap(),
-        Vec::<u32>::new()
+        handle.names_by_email("unknown@example.org").await.unwrap(),
+        Vec::<String>::new()
     );
     assert_eq!(
-        handle.ids_by_email("anything@catchall.org").await.unwrap(),
-        vec![7]
+        handle
+            .names_by_email("anything@catchall.org")
+            .await
+            .unwrap(),
+        vec!["robert".to_string()]
     );
 
     // Domain validation
@@ -245,16 +224,16 @@ async fn sql_directory() {
 pub async fn create_test_directory(handle: &dyn Directory) {
     // Create tables
     for query in [
-        "CREATE TABLE accounts (name TEXT, id INTEGER PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)",
-        "CREATE TABLE group_members (uid INTEGER, gid INTEGER, PRIMARY KEY (uid, gid))",
-        "CREATE TABLE emails (id INTEGER NOT NULL, address TEXT NOT NULL, type TEXT, PRIMARY KEY (id, address))",
+        "CREATE TABLE accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)",
+        "CREATE TABLE group_members (name TEXT NOT NULL, member_of TEXT NOT NULL, PRIMARY KEY (name, member_of))",
+        "CREATE TABLE emails (name TEXT NOT NULL, address TEXT NOT NULL, type TEXT, PRIMARY KEY (name, address))",
         "INSERT INTO accounts (name, secret, type) VALUES ('admin', 'secret', 'individual')", 
     ] {
         handle.query(query, &[]).await.unwrap_or_else(|_| panic!("failed for {query}"));
     }
 }
 
-pub async fn create_test_user(handle: &dyn Directory, login: &str, secret: &str, name: &str) -> Id {
+pub async fn create_test_user(handle: &dyn Directory, login: &str, secret: &str, name: &str) {
     handle
         .query(
             "INSERT OR IGNORE INTO accounts (name, secret, description, type, active) VALUES (?, ?, ?, 'individual', true)",
@@ -262,8 +241,6 @@ pub async fn create_test_user(handle: &dyn Directory, login: &str, secret: &str,
         )
         .await
         .unwrap();
-
-    Id::from(get_principal_id(handle, login).await)
 }
 
 pub async fn create_test_user_with_email(
@@ -271,13 +248,12 @@ pub async fn create_test_user_with_email(
     login: &str,
     secret: &str,
     name: &str,
-) -> Id {
-    let id = create_test_user(handle, login, secret, name).await;
+) {
+    create_test_user(handle, login, secret, name).await;
     link_test_address(handle, login, login, "primary").await;
-    id
 }
 
-pub async fn create_test_group(handle: &dyn Directory, login: &str, name: &str) -> Id {
+pub async fn create_test_group(handle: &dyn Directory, login: &str, name: &str) {
     handle
         .query(
             "INSERT OR IGNORE INTO accounts (name, description, type, active) VALUES (?, ?, 'group', true)",
@@ -285,96 +261,59 @@ pub async fn create_test_group(handle: &dyn Directory, login: &str, name: &str) 
         )
         .await
         .unwrap();
-
-    Id::from(get_principal_id(handle, login).await)
 }
 
-pub async fn create_test_group_with_email(handle: &dyn Directory, login: &str, name: &str) -> Id {
-    let id = create_test_group(handle, login, name).await;
+pub async fn create_test_group_with_email(handle: &dyn Directory, login: &str, name: &str) {
+    create_test_group(handle, login, name).await;
     link_test_address(handle, login, login, "primary").await;
-    id
 }
 
 pub async fn link_test_address(handle: &dyn Directory, login: &str, address: &str, typ: &str) {
-    let id = get_principal_id(handle, login).await;
     handle
         .query(
-            &format!(
-                "INSERT OR IGNORE INTO emails (id, address, type) VALUES ({}, ?, ?)",
-                id,
-            ),
-            &[address, typ],
+            &format!("INSERT OR IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)",),
+            &[login, address, typ],
         )
         .await
         .unwrap();
 }
 
 pub async fn set_test_quota(handle: &dyn Directory, login: &str, quota: u32) {
-    let id = get_principal_id(handle, login).await;
     handle
         .query(
-            &format!("UPDATE accounts SET quota = {} where id = {}", quota, id,),
-            &[],
+            &format!("UPDATE accounts SET quota = {} where name = ?", quota,),
+            &[login],
         )
         .await
         .unwrap();
 }
 
 pub async fn add_to_group(handle: &dyn Directory, login: &str, group: &str) {
-    let group = handle.principal_by_name(group).await.unwrap().unwrap();
-    let gid = group.id;
-    assert_ne!(gid, u32::MAX, "{group:?}");
-
-    add_to_group_id(handle, login, gid).await;
-}
-
-pub async fn add_to_group_id(handle: &dyn Directory, login: &str, gid: u32) {
-    let user = handle.principal_by_name(login).await.unwrap().unwrap();
-    let uid = user.id;
-    assert_ne!(uid, u32::MAX, "{user:?}");
-    assert_ne!(uid, gid, "{user:?}");
-    add_user_id_to_group_id(handle, uid, gid).await;
-}
-
-pub async fn add_user_id_to_group_id(handle: &dyn Directory, uid: u32, gid: u32) {
     handle
         .query(
-            &format!(
-                "INSERT INTO group_members (uid, gid) VALUES ({}, {})",
-                uid, gid
-            ),
-            &[],
+            "INSERT INTO group_members (name, member_of) VALUES (?, ?)",
+            &[login, group],
         )
         .await
         .unwrap();
 }
 
-pub async fn remove_from_group(handle: &dyn Directory, uid: u32, gid: u32) {
+pub async fn remove_from_group(handle: &dyn Directory, login: &str, group: &str) {
     handle
         .query(
-            &format!(
-                "DELETE FROM group_members WHERE uid = {} AND gid = {}",
-                uid, gid
-            ),
-            &[],
+            "DELETE FROM group_members WHERE name = ? AND member_of = ?",
+            &[login, group],
         )
         .await
         .unwrap();
 }
 
 pub async fn remove_test_alias(handle: &dyn Directory, login: &str, alias: &str) {
-    let id = get_principal_id(handle, login).await;
     handle
         .query(
-            &format!("DELETE FROM emails WHERE id = {} AND address = ?", id),
-            &[alias],
+            "DELETE FROM emails WHERE name = ? AND address = ?",
+            &[login, alias],
         )
         .await
         .unwrap();
-}
-
-async fn get_principal_id(handle: &dyn Directory, name: &str) -> u32 {
-    let p = handle.principal_by_name(name).await.unwrap().unwrap();
-    assert_ne!(p.id, u32::MAX, "{name} {p:#?}");
-    p.id
 }

@@ -53,7 +53,7 @@ use utils::{config::ServerProtocol, UnwrapFailure};
 use crate::{
     add_test_certs,
     directory::sql::{
-        add_to_group_id, create_test_directory, create_test_user, create_test_user_with_email,
+        add_to_group, create_test_directory, create_test_user, create_test_user_with_email,
     },
     store::TempDir,
 };
@@ -182,21 +182,18 @@ address = "sqlite::memory:"
 max-connections = 1
 
 [directory."sql".query]
-login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
-name = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ?"
-id = "SELECT id, name, type, secret, description, quota FROM accounts WHERE id = ?"
-members = "SELECT gid FROM group_members WHERE uid = ?"
-recipients = "SELECT id FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
 [directory."sql".columns]
 name = "name"
 description = "description"
 secret = "secret"
-id = "id"
 email = "address"
 quota = "quota"
 type = "type"
@@ -269,7 +266,7 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     // Create tables and test accounts
     create_test_directory(jmap.directory.as_ref()).await;
     create_test_user(jmap.directory.as_ref(), "admin", "secret", "Superuser").await;
-    add_to_group_id(jmap.directory.as_ref(), "admin", 0).await;
+    add_to_group(jmap.directory.as_ref(), "admin", "superuser").await;
     create_test_user_with_email(
         jmap.directory.as_ref(),
         "jdoe@example.com",

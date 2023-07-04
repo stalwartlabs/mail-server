@@ -37,7 +37,8 @@ pub enum Collection {
     EmailSubmission = 4,
     SieveScript = 5,
     PushSubscription = 6,
-    None = 7,
+    Principal = 7,
+    None = 8,
 }
 
 impl From<u8> for Collection {
@@ -50,6 +51,7 @@ impl From<u8> for Collection {
             4 => Collection::EmailSubmission,
             5 => Collection::SieveScript,
             6 => Collection::PushSubscription,
+            7 => Collection::Principal,
             _ => Collection::None,
         }
     }
@@ -65,6 +67,7 @@ impl From<u64> for Collection {
             4 => Collection::EmailSubmission,
             5 => Collection::SieveScript,
             6 => Collection::PushSubscription,
+            7 => Collection::Principal,
             _ => Collection::None,
         }
     }
@@ -107,6 +110,7 @@ impl Display for Collection {
             Collection::Identity => write!(f, "identity"),
             Collection::EmailSubmission => write!(f, "emailSubmission"),
             Collection::SieveScript => write!(f, "sieveScript"),
+            Collection::Principal => write!(f, "principal"),
             Collection::None => write!(f, ""),
         }
     }

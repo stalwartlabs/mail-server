@@ -25,7 +25,7 @@ use crate::BM_DOCUMENT_IDS;
 
 use super::{
     assert::ToAssertValue, Batch, BatchBuilder, BitmapFamily, HasFlag, IntoOperations, Operation,
-    Serialize, ToBitmaps, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    Serialize, ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -81,10 +81,13 @@ impl BatchBuilder {
         self
     }
 
-    pub fn assert_value(&mut self, field: impl Into<u8>, value: impl ToAssertValue) -> &mut Self {
+    pub fn assert_value(
+        &mut self,
+        class: impl Into<ValueClass>,
+        value: impl ToAssertValue,
+    ) -> &mut Self {
         self.ops.push(Operation::AssertValue {
-            field: field.into(),
-            family: 0,
+            class: class.into(),
             assert_value: value.to_assert_value(),
         });
         self
@@ -115,8 +118,7 @@ impl BatchBuilder {
 
         if options.has_flag(F_VALUE) {
             self.ops.push(Operation::Value {
-                field,
-                family: 0,
+                class: ValueClass::Property { field, family: 0 },
                 set: if is_set { Some(value) } else { None },
             });
         }
@@ -141,6 +143,11 @@ impl BatchBuilder {
 
     pub fn quota(&mut self, bytes: i64) -> &mut Self {
         self.ops.push(Operation::UpdateQuota { bytes });
+        self
+    }
+
+    pub fn op(&mut self, op: Operation) -> &mut Self {
+        self.ops.push(op);
         self
     }
 

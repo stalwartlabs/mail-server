@@ -31,16 +31,8 @@ impl SqlDirectory {
             .map_err(|err| format!("Failed to create connection pool for {address:?}: {err}"))?;
 
         let mappings = SqlMappings {
-            query_login: config
-                .value((&prefix, "query.login"))
-                .unwrap_or_default()
-                .to_string(),
             query_name: config
                 .value((&prefix, "query.name"))
-                .unwrap_or_default()
-                .to_string(),
-            query_id: config
-                .value((&prefix, "query.id"))
                 .unwrap_or_default()
                 .to_string(),
             query_members: config
@@ -77,10 +69,6 @@ impl SqlDirectory {
                 .to_string(),
             column_secret: config
                 .value((&prefix, "columns.secret"))
-                .unwrap_or_default()
-                .to_string(),
-            column_id: config
-                .value((&prefix, "columns.id"))
                 .unwrap_or_default()
                 .to_string(),
             column_quota: config

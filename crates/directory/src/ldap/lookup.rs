@@ -17,7 +17,7 @@ impl Directory for LdapDirectory {
             Credentials::XOauth2 { username, secret } => (username, secret),
         };
         match self
-            .find_principal(&self.mappings.filter_login.build(username))
+            .find_principal(&self.mappings.filter_name.build(username))
             .await
         {
             Ok(Some(principal)) => {
@@ -31,54 +31,12 @@ impl Directory for LdapDirectory {
         }
     }
 
-    async fn principal_by_name(&self, name: &str) -> crate::Result<Option<Principal>> {
+    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
         self.find_principal(&self.mappings.filter_name.build(name))
             .await
     }
 
-    async fn principal_by_id(&self, id: u32) -> crate::Result<Option<Principal>> {
-        self.find_principal(&self.mappings.filter_id.build(&id.to_string()))
-            .await
-    }
-
-    async fn member_of(&self, principal: &Principal) -> crate::Result<Vec<u32>> {
-        if principal.member_of.is_empty() {
-            return Ok(Vec::new());
-        }
-        let mut conn = self.pool.get().await?;
-        let mut ids = Vec::with_capacity(principal.member_of.len());
-        for group in &principal.member_of {
-            let (rs, _res) = if group.contains('=') {
-                conn.search(group, Scope::Base, "objectClass=*", &self.mappings.attr_id)
-                    .await?
-                    .success()?
-            } else {
-                conn.search(
-                    &self.mappings.base_dn,
-                    Scope::Subtree,
-                    &self.mappings.filter_name.build(group),
-                    &self.mappings.attr_id,
-                )
-                .await?
-                .success()?
-            };
-            for entry in rs {
-                for (attr, value) in SearchEntry::construct(entry).attrs {
-                    if self.mappings.attr_id.contains(&attr) {
-                        if let Some(id) = value.first() {
-                            if let Ok(id) = id.parse() {
-                                ids.push(id);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(ids)
-    }
-
-    async fn emails_by_id(&self, id: u32) -> crate::Result<Vec<String>> {
+    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
         let (rs, _res) = self
             .pool
             .get()
@@ -86,7 +44,7 @@ impl Directory for LdapDirectory {
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_id.build(&id.to_string()),
+                &self.mappings.filter_name.build(name),
                 &self.mappings.attrs_email,
             )
             .await?
@@ -109,8 +67,8 @@ impl Directory for LdapDirectory {
         Ok(emails)
     }
 
-    async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
-        let ids = self
+    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
+        let names = self
             .pool
             .get()
             .await?
@@ -121,13 +79,13 @@ impl Directory for LdapDirectory {
                     .mappings
                     .filter_email
                     .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
-                &self.mappings.attr_id,
+                &self.mappings.attr_name,
             )
             .await?
             .success()
-            .map(|(rs, _res)| self.extract_ids(rs))?;
+            .map(|(rs, _res)| self.extract_names(rs))?;
 
-        if ids.is_empty() && self.opt.catch_all {
+        if names.is_empty() && self.opt.catch_all {
             self.pool
                 .get()
                 .await?
@@ -138,14 +96,14 @@ impl Directory for LdapDirectory {
                         .mappings
                         .filter_email
                         .build(&to_catch_all_address(address)),
-                    &self.mappings.attr_id,
+                    &self.mappings.attr_name,
                 )
                 .await?
                 .success()
-                .map(|(rs, _res)| self.extract_ids(rs))
+                .map(|(rs, _res)| self.extract_names(rs))
                 .map_err(|e| e.into())
         } else {
-            Ok(ids)
+            Ok(names)
         }
     }
 
@@ -323,45 +281,72 @@ impl LdapDirectory {
             )
             .await?
             .success()?;
-        Ok(rs.into_iter().next().map(|entry| {
+
+        if let Some(mut principal) = rs.into_iter().next().map(|entry| {
             self.mappings
                 .entry_to_principal(SearchEntry::construct(entry))
-        }))
+        }) {
+            // Map groups
+            if !principal.member_of.is_empty() {
+                let mut conn = self.pool.get().await?;
+                let mut names = Vec::with_capacity(principal.member_of.len());
+                for group in principal.member_of {
+                    if group.contains('=') {
+                        let (rs, _res) = conn
+                            .search(
+                                &group,
+                                Scope::Base,
+                                "objectClass=*",
+                                &self.mappings.attr_name,
+                            )
+                            .await?
+                            .success()?;
+                        for entry in rs {
+                            'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
+                                if self.mappings.attr_name.contains(&attr) {
+                                    if let Some(name) = value.first() {
+                                        if !name.is_empty() {
+                                            names.push(name.to_string());
+                                            break 'outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        names.push(group);
+                    }
+                }
+                principal.member_of = names;
+            }
+            Ok(Some(principal))
+        } else {
+            Ok(None)
+        }
     }
 
-    fn extract_ids(&self, rs: Vec<ResultEntry>) -> Vec<u32> {
-        let mut ids = Vec::with_capacity(rs.len());
+    fn extract_names(&self, rs: Vec<ResultEntry>) -> Vec<String> {
+        let mut names = Vec::with_capacity(rs.len());
         for entry in rs {
             let entry = SearchEntry::construct(entry);
-            'outer: for attr in &self.mappings.attr_id {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for id in values {
-                        if let Ok(id) = id.parse() {
-                            ids.push(id);
-                            break 'outer;
-                        }
+            'outer: for attr in &self.mappings.attr_name {
+                if let Some(value) = entry.attrs.get(attr).and_then(|v| v.first()) {
+                    if !value.is_empty() {
+                        names.push(value.to_string());
+                        break 'outer;
                     }
                 }
             }
         }
-        ids
+        names
     }
 }
 
 impl LdapMappings {
     pub fn entry_to_principal(&self, entry: SearchEntry) -> Principal {
-        let mut principal = Principal {
-            id: u32::MAX,
-            ..Default::default()
-        };
+        let mut principal = Principal::default();
         for (attr, value) in entry.attrs {
-            if let Some(idx) = self.attr_id.iter().position(|a| a == &attr) {
-                if principal.id == u32::MAX || idx == 0 {
-                    if let Ok(id) = value.into_iter().next().unwrap_or_default().parse() {
-                        principal.id = id;
-                    }
-                }
-            } else if self.attr_name.contains(&attr) {
+            if self.attr_name.contains(&attr) {
                 principal.name = value.into_iter().next().unwrap_or_default();
             } else if self.attr_secret.contains(&attr) {
                 principal.secrets.extend(value);

@@ -25,8 +25,8 @@ use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    AclKey, BitmapKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey, Serialize,
-    ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    AclKey, BitmapKey, CustomValueKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey,
+    Serialize, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 pub struct KeySerializer {
@@ -247,6 +247,24 @@ impl Serialize for &ValueKey {
     }
 }
 
+impl Serialize for &CustomValueKey {
+    fn serialize(self) -> Vec<u8> {
+        {
+            #[cfg(feature = "key_subspace")]
+            {
+                KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
+                    .write(crate::SUBSPACE_VALUES)
+            }
+            #[cfg(not(feature = "key_subspace"))]
+            {
+                KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
+            }
+        }
+        .write(&self.value[..])
+        .finalize()
+    }
+}
+
 impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
     fn serialize(self) -> Vec<u8> {
         let key = self.key.as_ref();
@@ -342,6 +360,12 @@ impl Key for ValueKey {
     }
 }
 
+impl Key for CustomValueKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
+    }
+}
+
 impl Key for AclKey {
     fn subspace(&self) -> u8 {
         SUBSPACE_VALUES
@@ -361,6 +385,12 @@ impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BitmapKey<T> {
 }
 
 impl Serialize for ValueKey {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
+    }
+}
+
+impl Serialize for CustomValueKey {
     fn serialize(self) -> Vec<u8> {
         (&self).serialize()
     }

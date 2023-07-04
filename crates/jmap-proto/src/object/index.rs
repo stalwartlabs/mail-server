@@ -147,8 +147,7 @@ impl IntoOperations for ObjectIndexBuilder {
                 // Insertion
                 build_batch(batch, self.index, &changes, true);
                 batch.ops.push(Operation::Value {
-                    field: Property::Value.into(),
-                    family: 0,
+                    class: Property::Value.into(),
                     set: changes.serialize().into(),
                 });
             }
@@ -162,8 +161,7 @@ impl IntoOperations for ObjectIndexBuilder {
                 batch.assert_value(Property::Value, &current);
                 build_batch(batch, self.index, &current.inner, false);
                 batch.ops.push(Operation::Value {
-                    field: Property::Value.into(),
-                    family: 0,
+                    class: Property::Value.into(),
                     set: None,
                 });
             }
@@ -370,10 +368,7 @@ fn merge_batch(
                             for item in current_value.chunks_exact(2) {
                                 if let Some(Value::Id(id)) = item.first() {
                                     if !value.contains(&Value::Id(*id)) {
-                                        batch.ops.push(Operation::Acl {
-                                            grant_account_id: id.document_id(),
-                                            set: None,
-                                        });
+                                        batch.ops.push(Operation::acl(id.document_id(), None));
                                     }
                                 }
                             }
@@ -399,10 +394,10 @@ fn merge_batch(
                                         }
                                     }
                                     if add_item {
-                                        batch.ops.push(Operation::Acl {
-                                            grant_account_id: id.document_id(),
-                                            set: acl.serialize().into(),
-                                        });
+                                        batch.ops.push(Operation::acl(
+                                            id.document_id(),
+                                            acl.serialize().into(),
+                                        ));
                                     }
                                 }
                             }
@@ -413,10 +408,10 @@ fn merge_batch(
                                 if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
                                     (item.first(), item.last())
                                 {
-                                    batch.ops.push(Operation::Acl {
-                                        grant_account_id: id.document_id(),
-                                        set: acl.serialize().into(),
-                                    });
+                                    batch.ops.push(Operation::acl(
+                                        id.document_id(),
+                                        acl.serialize().into(),
+                                    ));
                                 }
                             }
                         }
@@ -424,10 +419,7 @@ fn merge_batch(
                             // Remove all ACLs
                             for item in current_values.chunks_exact(2) {
                                 if let Some(Value::Id(id)) = item.first() {
-                                    batch.ops.push(Operation::Acl {
-                                        grant_account_id: id.document_id(),
-                                        set: None,
-                                    });
+                                    batch.ops.push(Operation::acl(id.document_id(), None));
                                 }
                             }
                         }
@@ -455,8 +447,7 @@ fn merge_batch(
 
     if has_changes {
         batch.ops.push(Operation::Value {
-            field: Property::Value.into(),
-            family: 0,
+            class: Property::Value.into(),
             set: current.serialize().into(),
         });
     }
@@ -561,10 +552,10 @@ fn build_batch(
                     if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
                         (item.first(), item.last())
                     {
-                        batch.ops.push(Operation::Acl {
-                            grant_account_id: id.document_id(),
-                            set: if set { acl.serialize().into() } else { None },
-                        });
+                        batch.ops.push(Operation::acl(
+                            id.document_id(),
+                            if set { acl.serialize().into() } else { None },
+                        ));
                     }
                 }
             }

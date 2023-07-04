@@ -63,17 +63,11 @@ pub enum Operation {
         document_id: u32,
     },
     AssertValue {
-        field: u8,
-        family: u8,
+        class: ValueClass,
         assert_value: AssertValue,
     },
     Value {
-        field: u8,
-        family: u8,
-        set: Option<Vec<u8>>,
-    },
-    Acl {
-        grant_account_id: u32,
+        class: ValueClass,
         set: Option<Vec<u8>>,
     },
     Index {
@@ -95,6 +89,13 @@ pub enum Operation {
         collection: u8,
         set: Vec<u8>,
     },
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum ValueClass {
+    Property { field: u8, family: u8 },
+    Acl { grant_account_id: u32 },
+    Custom { bytes: Vec<u8> },
 }
 
 impl Serialize for u32 {
@@ -362,6 +363,15 @@ impl ToBitmaps for () {
 
 pub trait IntoOperations {
     fn build(self, batch: &mut BatchBuilder);
+}
+
+impl Operation {
+    pub fn acl(grant_account_id: u32, set: Option<Vec<u8>>) -> Self {
+        Operation::Value {
+            class: ValueClass::Acl { grant_account_id },
+            set,
+        }
+    }
 }
 
 #[inline(always)]

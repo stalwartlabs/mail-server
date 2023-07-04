@@ -36,10 +36,8 @@ impl LdapDirectory {
 
         let mut mappings = LdapMappings {
             base_dn: config.value_require((&prefix, "base-dn"))?.to_string(),
-            filter_login: LdapFilter::from_config(config, (&prefix, "filter.login"))?,
             filter_name: LdapFilter::from_config(config, (&prefix, "filter.name"))?,
             filter_email: LdapFilter::from_config(config, (&prefix, "filter.email"))?,
-            filter_id: LdapFilter::from_config(config, (&prefix, "filter.id"))?,
             filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify"))?,
             filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand"))?,
             filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains"))?,
@@ -65,10 +63,6 @@ impl LdapDirectory {
                 .values((&prefix, "attributes.groups"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
-            attr_id: config
-                .values((&prefix, "attributes.id"))
-                .map(|(_, v)| v.to_string())
-                .collect(),
             attr_email_address: config
                 .values((&prefix, "attributes.email"))
                 .map(|(_, v)| v.to_string())
@@ -85,7 +79,6 @@ impl LdapDirectory {
         };
 
         for attr in [
-            &mappings.attr_id,
             &mappings.attr_name,
             &mappings.attr_description,
             &mappings.attr_secret,

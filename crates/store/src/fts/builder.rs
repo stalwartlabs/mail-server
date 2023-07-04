@@ -28,7 +28,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     query::RawValue,
-    write::{BatchBuilder, IntoOperations, Operation},
+    write::{BatchBuilder, IntoOperations, Operation, ValueClass},
     Serialize, HASH_EXACT, HASH_STEMMED,
 };
 
@@ -150,8 +150,10 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
         }
 
         batch.ops.push(Operation::Value {
-            field: u8::MAX,
-            family: u8::MAX,
+            class: ValueClass::Property {
+                field: u8::MAX,
+                family: u8::MAX,
+            },
             set: term_index.serialize().into(),
         });
     }
@@ -184,8 +186,10 @@ impl IntoOperations for TokenIndex {
     fn build(self, batch: &mut BatchBuilder) {
         self.build_index(batch, false);
         batch.ops.push(Operation::Value {
-            field: u8::MAX,
-            family: u8::MAX,
+            class: ValueClass::Property {
+                field: u8::MAX,
+                family: u8::MAX,
+            },
             set: None,
         });
     }
@@ -195,8 +199,10 @@ impl IntoOperations for RawValue<TokenIndex> {
     fn build(self, batch: &mut BatchBuilder) {
         self.inner.build_index(batch, true);
         batch.ops.push(Operation::Value {
-            field: u8::MAX,
-            family: u8::MAX,
+            class: ValueClass::Property {
+                field: u8::MAX,
+                family: u8::MAX,
+            },
             set: self.raw.into(),
         });
     }

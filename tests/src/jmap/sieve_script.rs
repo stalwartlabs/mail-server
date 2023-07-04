@@ -36,6 +36,7 @@ use jmap_client::{
     sieve::query::{Comparator, Filter},
     Error,
 };
+use jmap_proto::types::id::Id;
 
 use crate::{
     directory::sql::create_test_user_with_email,
@@ -51,10 +52,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Create test account
     let directory = server.directory.as_ref();
-    let account_id =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
-            .await
-            .to_string();
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     client.set_default_account_id(&account_id);
 
     // Validate scripts

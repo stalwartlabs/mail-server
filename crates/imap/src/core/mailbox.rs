@@ -9,7 +9,7 @@ use jmap::{
 };
 use jmap_proto::{
     object::Object,
-    types::{acl::Acl, collection::Collection, property::Property, value::Value},
+    types::{acl::Acl, collection::Collection, id::Id, property::Property, value::Value},
 };
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
@@ -50,7 +50,12 @@ impl SessionData {
                         format!(
                             "{}/{}",
                             session.imap.name_shared,
-                            session.jmap.get_account_name(account_id).await
+                            session
+                                .jmap
+                                .get_account_name(account_id)
+                                .await
+                                .unwrap_or_default()
+                                .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
                         .into(),
                         access_token,
@@ -318,7 +323,11 @@ impl SessionData {
                 let prefix = format!(
                     "{}/{}",
                     self.imap.name_shared,
-                    self.jmap.get_account_name(account_id).await
+                    self.jmap
+                        .get_account_name(account_id)
+                        .await
+                        .unwrap_or_default()
+                        .unwrap_or_else(|| Id::from(account_id).to_string())
                 );
                 match self
                     .fetch_account_mailboxes(account_id, prefix.into(), &access_token)
@@ -399,7 +408,11 @@ impl SessionData {
                         format!(
                             "{}/{}",
                             self.imap.name_shared,
-                            self.jmap.get_account_name(account_id).await
+                            self.jmap
+                                .get_account_name(account_id)
+                                .await
+                                .unwrap_or_default()
+                                .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
                         .into()
                     } else {

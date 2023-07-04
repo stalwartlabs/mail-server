@@ -137,6 +137,10 @@ impl crate::Config {
             web_socket_timeout: settings.property_or_static("jmap.web-socket.timeout", "10m")?,
             web_socket_heartbeat: settings.property_or_static("jmap.web-socket.heartbeat", "1m")?,
             push_max_total: settings.property_or_static("jmap.push.max-total", "100")?,
+            superusers_group_name: settings
+                .value("jmap.superusers-group")
+                .unwrap_or("superusers")
+                .to_string(),
         };
         config.add_capabilites(settings);
         Ok(config)

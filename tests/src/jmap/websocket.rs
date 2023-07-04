@@ -35,6 +35,7 @@ use jmap_client::{
     },
     TypeState,
 };
+use jmap_proto::types::id::Id;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -47,10 +48,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Authenticate all accounts
     let directory = server.directory.as_ref();
-    let account_id =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
-            .await
-            .to_string();
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut ws_stream = client.connect_ws().await.unwrap();

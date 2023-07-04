@@ -434,14 +434,14 @@ impl HtmlResponse {
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> HttpResponse {
-        //let _ = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        //let c = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for Session {
     fn into_http_response(self) -> HttpResponse {
-        //let _ = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        //let c = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }

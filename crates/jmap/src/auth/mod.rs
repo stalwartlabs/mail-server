@@ -57,9 +57,9 @@ pub struct AccessToken {
 }
 
 impl AccessToken {
-    pub fn new(principal: Principal) -> Self {
+    pub fn new(principal: Principal, primary_id: u32) -> Self {
         Self {
-            primary_id: principal.id,
+            primary_id,
             member_of: Vec::new(),
             access_to: Vec::new(),
             name: principal.name,
@@ -97,7 +97,6 @@ impl AccessToken {
     pub fn is_member(&self, account_id: u32) -> bool {
         self.primary_id == account_id
             || self.member_of.contains(&account_id)
-            || self.primary_id == SUPERUSER_ID
             || self.member_of.contains(&SUPERUSER_ID)
     }
 
@@ -106,7 +105,7 @@ impl AccessToken {
     }
 
     pub fn is_super_user(&self) -> bool {
-        self.primary_id == SUPERUSER_ID || self.member_of.contains(&SUPERUSER_ID)
+        self.member_of.contains(&SUPERUSER_ID)
     }
 
     pub fn is_shared(&self, account_id: u32) -> bool {

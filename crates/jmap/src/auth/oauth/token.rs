@@ -182,9 +182,14 @@ impl JMAP {
         client_id: &str,
         with_refresh_token: bool,
     ) -> Result<TokenResponse, &'static str> {
+        let account_name = self
+            .get_account_name(account_id)
+            .await
+            .map_err(|_| "Temporary lookup error")?
+            .ok_or("Account no longer exists")?;
         let password_hash = self
             .directory
-            .principal_by_id(account_id)
+            .principal(&account_name)
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?
@@ -300,9 +305,14 @@ impl JMAP {
         }
 
         // Optain password hash
+        let account_name = self
+            .get_account_name(account_id)
+            .await
+            .map_err(|_| "Temporary lookup error")?
+            .ok_or("Account no longer exists")?;
         let password_hash = self
             .directory
-            .principal_by_id(account_id)
+            .principal(&account_name)
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?

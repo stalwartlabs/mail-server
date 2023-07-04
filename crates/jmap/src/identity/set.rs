@@ -34,12 +34,13 @@ use jmap_proto::{
 };
 use store::write::{log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE};
 
-use crate::JMAP;
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn identity_set(
         &self,
         mut request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
     ) -> Result<SetResponse, MethodError> {
         let account_id = request.account_id.document_id();
         let mut identity_ids = self
@@ -72,9 +73,15 @@ impl JMAP {
 
             // Validate email address
             if let Value::Text(email) = identity.get(&Property::Email) {
+                let account_name = if access_token.primary_id == account_id {
+                    access_token.name.clone()
+                } else {
+                    self.get_account_name(account_id).await?.unwrap_or_default()
+                };
+
                 if !self
                     .directory
-                    .emails_by_id(account_id)
+                    .emails_by_name(&account_name)
                     .await
                     .unwrap_or_default()
                     .contains(email)

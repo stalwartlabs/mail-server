@@ -48,19 +48,21 @@ address = "sqlite::memory:"
 max-connections = 1
 
 [directory."sql".query]
-login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
-recipients = "SELECT id FROM emails WHERE address = ?"
-name = "SELECT id, name, type, description, quota FROM accounts WHERE name = ?"
-emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
 [directory."sql".columns]
 name = "name"
+description = "description"
 secret = "secret"
-id = "id"
 email = "address"
+quota = "quota"
+type = "type"
 
 [directory."sql".lookup]
 domains = "SELECT name FROM domains WHERE name = ? LIMIT 1"

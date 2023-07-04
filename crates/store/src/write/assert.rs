@@ -34,6 +34,7 @@ pub enum AssertValue {
     U32(u32),
     U64(u64),
     Hash(u64),
+    None,
 }
 
 impl<T: Deserialize + Default> HashedValue<T> {
@@ -44,6 +45,12 @@ impl<T: Deserialize + Default> HashedValue<T> {
 
 pub trait ToAssertValue {
     fn to_assert_value(&self) -> AssertValue;
+}
+
+impl ToAssertValue for () {
+    fn to_assert_value(&self) -> AssertValue {
+        AssertValue::None
+    }
 }
 
 impl ToAssertValue for u64 {
@@ -80,7 +87,12 @@ impl AssertValue {
                 bytes.len() == std::mem::size_of::<u64>() && u64::deserialize(bytes).unwrap() == *v
             }
             AssertValue::Hash(v) => xxhash_rust::xxh3::xxh3_64(bytes) == *v,
+            AssertValue::None => false,
         }
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, AssertValue::None)
     }
 }
 

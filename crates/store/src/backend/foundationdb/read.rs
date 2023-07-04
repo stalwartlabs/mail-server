@@ -434,11 +434,11 @@ impl Store {
                         );
                     }
                     SUBSPACE_VALUES => {
-                        // Ignore lastId counter
-                        if key.len() == 4
+                        // Ignore lastId counter and ID mappings
+                        if (key.len() == 4
                             && value.len() == 8
                             && u32::deserialize(key).is_ok()
-                            && u64::deserialize(value).is_ok()
+                            && u64::deserialize(value).is_ok()) || &key[0..4] == u32::MAX.to_be_bytes() {
                         {
                             continue;
                         }
@@ -446,15 +446,17 @@ impl Store {
                         panic!("Table values is not empty: {key:?} {value:?}");
                     }
                     SUBSPACE_BITMAPS => {
-                        panic!(
-                            "Table bitmaps is not empty, account {}, collection {}, family {}, field {}, key {:?}: {:?}",
-                            u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                            key[4],
-                            key[5],
-                            key[6],
-                            key,
-                            value
-                        );
+                        if &key[0..4] != u32::MAX.to_be_bytes() {
+                            panic!(
+                                "Table bitmaps is not empty, account {}, collection {}, family {}, field {}, key {:?}: {:?}",
+                                u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                                key[4],
+                                key[5],
+                                key[6],
+                                key,
+                                value
+                            );
+                        }
                     }
                     SUBSPACE_QUOTAS => {
                         let v = i64::from_le_bytes(value[..].try_into().unwrap());

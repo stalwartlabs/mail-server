@@ -750,7 +750,12 @@ impl JMAP {
             .get_document_ids(account_id, Collection::Mailbox)
             .await?
             .unwrap_or_default();
-        if !mailbox_ids.is_empty() || account_id == SUPERUSER_ID {
+        if !mailbox_ids.is_empty() {
+            return Ok(mailbox_ids);
+        }
+
+        #[cfg(feature = "test_mode")]
+        if mailbox_ids.is_empty() && account_id == SUPERUSER_ID {
             return Ok(mailbox_ids);
         }
 

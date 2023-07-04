@@ -28,12 +28,19 @@ use std::{
 };
 
 use hyper::header;
-use jmap_proto::error::request::RequestError;
+use jmap_proto::{
+    error::{method::MethodError, request::RequestError},
+    types::collection::Collection,
+};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
+use store::{
+    write::{key::KeySerializer, BatchBuilder, Operation, ValueClass},
+    CustomValueKey, Serialize,
+};
 use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
-use crate::JMAP;
+use crate::{JMAP, SUPERUSER_ID};
 
 use super::{rate_limit::RemoteAddress, AccessToken};
 
@@ -146,6 +153,119 @@ impl JMAP {
         }
     }
 
+    pub async fn get_account_id(&self, name: &str) -> Result<u32, MethodError> {
+        let mut try_count = 0;
+
+        loop {
+            // Try to obtain ID
+            match self
+                .store
+                .get_value::<u32>(CustomValueKey {
+                    value: KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
+                        .write(u32::MAX)
+                        .write(0u8)
+                        .write(name)
+                        .finalize(),
+                })
+                .await
+            {
+                Ok(Some(id)) => return Ok(id),
+                Ok(None) => {}
+                Err(err) => {
+                    tracing::error!(event = "error",
+                            context = "store",
+                            account_name = name,
+                            error = ?err,
+                            "Failed to retrieve account id");
+                    return Err(MethodError::ServerPartialFail);
+                }
+            }
+
+            // Assign new ID
+            let account_id = self
+                .assign_document_id(u32::MAX, Collection::Principal)
+                .await?;
+
+            // Serialize key
+            let key = KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
+                .write(u32::MAX)
+                .write(0u8)
+                .write(name)
+                .finalize();
+
+            // Write account ID
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(u32::MAX)
+                .with_collection(Collection::Principal)
+                .create_document(account_id)
+                .assert_value(ValueClass::Custom { bytes: key.clone() }, ())
+                .op(Operation::Value {
+                    class: ValueClass::Custom { bytes: key },
+                    set: account_id.serialize().into(),
+                })
+                .op(Operation::Value {
+                    class: ValueClass::Custom {
+                        bytes: KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
+                            .write(u32::MAX)
+                            .write(1u8)
+                            .write(account_id)
+                            .finalize(),
+                    },
+                    set: name.serialize().into(),
+                });
+
+            match self.store.write(batch.build()).await {
+                Ok(_) => {
+                    return Ok(account_id);
+                }
+                Err(store::Error::AssertValueFailed) if try_count < 3 => {
+                    try_count += 1;
+                    continue;
+                }
+                Err(err) => {
+                    tracing::error!(event = "error",
+                                        context = "store",
+                                        error = ?err,
+                                        "Failed to generate account id");
+                    return Err(MethodError::ServerPartialFail);
+                }
+            }
+        }
+    }
+
+    pub async fn map_member_of(&self, names: Vec<String>) -> Result<Vec<u32>, MethodError> {
+        let mut ids = Vec::with_capacity(names.len());
+        for name in names {
+            if !name.eq_ignore_ascii_case(&self.config.superusers_group_name) {
+                ids.push(self.get_account_id(&name).await?);
+            } else {
+                ids.push(SUPERUSER_ID);
+            }
+        }
+        Ok(ids)
+    }
+
+    pub async fn get_account_name(&self, account_id: u32) -> Result<Option<String>, MethodError> {
+        self.store
+            .get_value::<String>(CustomValueKey {
+                value: KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
+                    .write(u32::MAX)
+                    .write(1u8)
+                    .write(account_id)
+                    .finalize(),
+            })
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                        context = "store",
+                        account_id = account_id,
+                        error = ?err,
+                        "Failed to retrieve account name");
+                MethodError::ServerPartialFail
+            })
+    }
+
     pub fn build_remote_addr(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
@@ -174,42 +294,42 @@ impl JMAP {
             })
             .await
             .ok()??;
-        if !principal.has_id() {
-            tracing::warn!(
-                context = "authenticate_plain",
-                username = username,
-                "Principal has no ID."
-            );
-            return None;
-        } else if !principal.has_name() {
+        if !principal.has_name() {
             principal.name = username.to_string();
         }
         // Obtain groups
-        let member_of = self
-            .directory
-            .member_of(&principal)
+        if let (Ok(account_id), Ok(member_of)) = (
+            self.get_account_id(&principal.name).await,
+            self.map_member_of(std::mem::take(&mut principal.member_of))
+                .await,
+        ) {
+            // Create access token
+            self.update_access_token(
+                AccessToken::new(principal, account_id).with_member_of(member_of),
+            )
             .await
-            .unwrap_or_default();
-
-        // Create access token
-        self.update_access_token(AccessToken::new(principal).with_member_of(member_of))
-            .await
+        } else {
+            None
+        }
     }
 
-    pub async fn get_access_token(&self, id: u32) -> Option<AccessToken> {
-        let mut principal = self.directory.principal_by_id(id).await.ok()??;
-        if !principal.has_id() {
-            principal.id = id;
-        }
-        // Obtain groups
-        let member_of = self
-            .directory
-            .member_of(&principal)
-            .await
-            .unwrap_or_default();
+    pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
+        let name = self.get_account_name(account_id).await.ok()??;
+        let mut principal = self.directory.principal(&name).await.ok()??;
 
-        // Create access token
-        self.update_access_token(AccessToken::new(principal).with_member_of(member_of))
+        // Obtain groups
+        if let (Ok(account_id), Ok(member_of)) = (
+            self.get_account_id(&principal.name).await,
+            self.map_member_of(std::mem::take(&mut principal.member_of))
+                .await,
+        ) {
+            // Create access token
+            self.update_access_token(
+                AccessToken::new(principal, account_id).with_member_of(member_of),
+            )
             .await
+        } else {
+            None
+        }
     }
 }

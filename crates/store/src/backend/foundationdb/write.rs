@@ -194,12 +194,18 @@ impl Store {
                             field: *field,
                         }
                         .serialize();
-                        if trx
-                            .get(&key, false)
-                            .await
-                            .unwrap_or_default()
-                            .map_or(true, |bytes| !assert_value.matches(bytes.as_ref()))
-                        {
+
+                        let matches = if let Ok(bytes) = trx.get(&key, false).await {
+                            if let Some(bytes) = bytes {
+                                assert_value.matches(bytes.as_ref())
+                            } else {
+                                assert_value.is_none();
+                            }
+                        } else {
+                            false
+                        };
+
+                        if !matches {
                             trx.cancel();
                             return Err(crate::Error::AssertValueFailed);
                         }

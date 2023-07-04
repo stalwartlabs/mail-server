@@ -17,75 +17,54 @@ impl Directory for SqlDirectory {
             Credentials::XOauth2 { username, secret } => (username, secret),
         };
 
-        if let Some(row) = sqlx::query(&self.mappings.query_login)
-            .bind(username)
-            .fetch_optional(&self.pool)
-            .await?
-        {
-            match self.mappings.row_to_principal(row) {
-                Ok(principal) if principal.verify_secret(secret).await => Ok(Some(principal)),
-                Ok(_) => Ok(None),
-                Err(err) => Err(err),
-            }
-        } else {
-            Ok(None)
+        match self.principal(&username).await {
+            Ok(Some(principal)) if principal.verify_secret(secret).await => Ok(Some(principal)),
+            Ok(_) => Ok(None),
+            Err(err) => Err(err),
         }
     }
 
-    async fn principal_by_name(&self, name: &str) -> crate::Result<Option<Principal>> {
+    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
         if let Some(row) = sqlx::query(&self.mappings.query_name)
             .bind(name)
             .fetch_optional(&self.pool)
             .await?
         {
-            self.mappings.row_to_principal(row).map(Some)
+            // Map row to principal
+            let mut principal = self.mappings.row_to_principal(row)?;
+
+            // Obtain members
+            principal.member_of = sqlx::query_scalar::<_, String>(&self.mappings.query_members)
+                .bind(name)
+                .fetch_all(&self.pool)
+                .await?;
+
+            Ok(Some(principal))
         } else {
             Ok(None)
         }
     }
 
-    async fn principal_by_id(&self, id: u32) -> crate::Result<Option<Principal>> {
-        if let Some(row) = sqlx::query(&self.mappings.query_id)
-            .bind(id as i64)
-            .fetch_optional(&self.pool)
-            .await?
-        {
-            self.mappings.row_to_principal(row).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn member_of(&self, principal: &Principal) -> crate::Result<Vec<u32>> {
-        sqlx::query_scalar::<_, i64>(&self.mappings.query_members)
-            .bind(principal.id as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map(|ids| ids.into_iter().map(|id| id as u32).collect())
-            .map_err(Into::into)
-    }
-
-    async fn emails_by_id(&self, id: u32) -> crate::Result<Vec<String>> {
+    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
         sqlx::query_scalar::<_, String>(&self.mappings.query_emails)
-            .bind(id as i64)
+            .bind(name)
             .fetch_all(&self.pool)
             .await
             .map_err(Into::into)
     }
 
-    async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
-        match sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
+    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
+        match sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
             .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
             .fetch_all(&self.pool)
             .await
         {
-            Ok(ids) if !ids.is_empty() => Ok(ids.into_iter().map(|id| id as u32).collect()),
+            Ok(ids) if !ids.is_empty() => Ok(ids),
             Ok(_) if self.opt.catch_all => {
-                sqlx::query_scalar::<_, i64>(&self.mappings.query_recipients)
+                sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
                     .bind(to_catch_all_address(address))
                     .fetch_all(&self.pool)
                     .await
-                    .map(|ids| ids.into_iter().map(|id| id as u32).collect())
                     .map_err(Into::into)
             }
             Ok(_) => Ok(vec![]),
@@ -151,17 +130,12 @@ impl Directory for SqlDirectory {
 
 impl SqlMappings {
     pub fn row_to_principal(&self, row: AnyRow) -> crate::Result<Principal> {
-        let mut principal = Principal {
-            id: u32::MAX,
-            ..Default::default()
-        };
+        let mut principal = Principal::default();
         for col in row.columns() {
             let idx = col.ordinal();
             let name = col.name();
 
-            if name.eq_ignore_ascii_case(&self.column_id) {
-                principal.id = row.try_get::<i64, _>(idx)? as u32;
-            } else if name.eq_ignore_ascii_case(&self.column_name) {
+            if name.eq_ignore_ascii_case(&self.column_name) {
                 principal.name = row.try_get::<String, _>(idx)?;
             } else if name.eq_ignore_ascii_case(&self.column_secret) {
                 if let Ok(secret) = row.try_get::<String, _>(idx) {

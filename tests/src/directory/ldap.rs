@@ -29,12 +29,11 @@ async fn ldap_directory() {
             .unwrap()
             .unwrap(),
         Principal {
-            id: 2,
             name: "john".to_string(),
             description: "John Doe".to_string().into(),
             secrets: vec!["12345".to_string()],
             typ: Type::Individual,
-            member_of: vec!["ou=sales,ou=groups,dc=example,dc=org".to_string()],
+            member_of: vec!["sales".to_string()],
             ..Default::default()
         }
     );
@@ -48,7 +47,6 @@ async fn ldap_directory() {
             .unwrap()
             .unwrap(),
         Principal {
-            id: 4,
             name: "bill".to_string(),
             description: "Bill Foobar".to_string().into(),
             secrets: vec![
@@ -68,44 +66,25 @@ async fn ldap_directory() {
         .unwrap()
         .is_none());
 
-    // Get by id
-    assert_eq!(
-        handle.principal_by_id(2).await.unwrap().unwrap(),
-        Principal {
-            id: 2,
-            name: "john".to_string(),
-            description: "John Doe".to_string().into(),
-            typ: Type::Individual,
-            secrets: vec!["12345".to_string()],
-            member_of: vec!["ou=sales,ou=groups,dc=example,dc=org".to_string()],
-            ..Default::default()
-        }
-    );
-
     // Get user by name
-    let mut principal = handle.principal_by_name("jane").await.unwrap().unwrap();
+    let mut principal = handle.principal("jane").await.unwrap().unwrap();
     principal.member_of.sort_unstable();
     assert_eq!(
         principal,
         Principal {
-            id: 3,
             name: "jane".to_string(),
             description: "Jane Doe".to_string().into(),
             typ: Type::Individual,
             secrets: vec!["abcde".to_string()],
-            member_of: vec![
-                "ou=sales,ou=groups,dc=example,dc=org".to_string(),
-                "support".to_string()
-            ],
+            member_of: vec!["sales".to_string(), "support".to_string()],
             ..Default::default()
         }
     );
 
     // Get group by name
     assert_eq!(
-        handle.principal_by_name("sales").await.unwrap().unwrap(),
+        handle.principal("sales").await.unwrap().unwrap(),
         Principal {
-            id: 5,
             name: "sales".to_string(),
             description: "sales".to_string().into(),
             typ: Type::Group,
@@ -113,55 +92,52 @@ async fn ldap_directory() {
         }
     );
 
-    // Member of
-    compare_sorted(
-        handle
-            .member_of(&handle.principal_by_name("john").await.unwrap().unwrap())
-            .await
-            .unwrap(),
-        vec![5],
-    );
-    compare_sorted(
-        handle
-            .member_of(&handle.principal_by_name("jane").await.unwrap().unwrap())
-            .await
-            .unwrap(),
-        vec![5, 6],
-    );
-
     // Emails by id
     compare_sorted(
-        handle.emails_by_id(2).await.unwrap(),
+        handle.emails_by_name("john").await.unwrap(),
         vec![
             "john@example.org".to_string(),
             "john.doe@example.org".to_string(),
         ],
     );
     compare_sorted(
-        handle.emails_by_id(4).await.unwrap(),
+        handle.emails_by_name("bill").await.unwrap(),
         vec!["bill@example.org".to_string()],
     );
 
     // Ids by email
     compare_sorted(
-        handle.ids_by_email("jane@example.org").await.unwrap(),
-        vec![3],
+        handle.names_by_email("jane@example.org").await.unwrap(),
+        vec!["jane".to_string()],
     );
     compare_sorted(
-        handle.ids_by_email("jane+alias@example.org").await.unwrap(),
-        vec![3],
+        handle
+            .names_by_email("jane+alias@example.org")
+            .await
+            .unwrap(),
+        vec!["jane".to_string()],
     );
     compare_sorted(
-        handle.ids_by_email("info@example.org").await.unwrap(),
-        vec![2, 3, 4],
+        handle.names_by_email("info@example.org").await.unwrap(),
+        vec!["john".to_string(), "jane".to_string(), "bill".to_string()],
     );
     compare_sorted(
-        handle.ids_by_email("info+alias@example.org").await.unwrap(),
-        vec![2, 3, 4],
+        handle
+            .names_by_email("info+alias@example.org")
+            .await
+            .unwrap(),
+        vec!["john".to_string(), "jane".to_string(), "bill".to_string()],
     );
     compare_sorted(
-        handle.ids_by_email("unknown@example.org").await.unwrap(),
-        Vec::<u32>::new(),
+        handle.names_by_email("unknown@example.org").await.unwrap(),
+        Vec::<String>::new(),
+    );
+    assert_eq!(
+        handle
+            .names_by_email("anything@catchall.org")
+            .await
+            .unwrap(),
+        vec!["robert".to_string()]
     );
 
     // Domain validation

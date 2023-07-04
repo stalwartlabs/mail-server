@@ -56,7 +56,7 @@ use store::{
     fts::term_index::TokenIndex,
     write::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
-        ToBitmaps, F_BITMAP, F_CLEAR, F_VALUE,
+        ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     BlobKind, Serialize, ValueKey,
 };
@@ -1362,7 +1362,13 @@ impl<
         let property = u8::from(property);
 
         batch
-            .assert_value(property, &self.current)
+            .assert_value(
+                ValueClass::Property {
+                    field: property,
+                    family: 0,
+                },
+                &self.current,
+            )
             .value(property, self.current.inner, F_VALUE);
         for added in self.added {
             batch.value(property, added, F_BITMAP);

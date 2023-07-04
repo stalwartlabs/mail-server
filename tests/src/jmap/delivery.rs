@@ -41,18 +41,15 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Create a domain name and a test account
     let directory = server.directory.as_ref();
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    create_test_user_with_email(directory, "jane@example.com", "abcdef", "Jane Smith").await;
+    create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
     let account_id_1 =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe")
-            .await
-            .to_string();
+        Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     let account_id_2 =
-        create_test_user_with_email(directory, "jane@example.com", "abcdef", "Jane Smith")
-            .await
-            .to_string();
+        Id::from(server.get_account_id("jane@example.com").await.unwrap()).to_string();
     let account_id_3 =
-        create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar")
-            .await
-            .to_string();
+        Id::from(server.get_account_id("bill@example.com").await.unwrap()).to_string();
     link_test_address(
         directory,
         "jdoe@example.com",

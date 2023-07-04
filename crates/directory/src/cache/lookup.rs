@@ -13,24 +13,16 @@ impl<T: Directory> Directory for CachedDirectory<T> {
         self.inner.authenticate(credentials).await
     }
 
-    async fn principal_by_name(&self, name: &str) -> crate::Result<Option<Principal>> {
-        self.inner.principal_by_name(name).await
+    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
+        self.inner.principal(name).await
     }
 
-    async fn principal_by_id(&self, id: u32) -> crate::Result<Option<Principal>> {
-        self.inner.principal_by_id(id).await
+    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
+        self.inner.emails_by_name(name).await
     }
 
-    async fn member_of(&self, _principal: &Principal) -> crate::Result<Vec<u32>> {
-        self.inner.member_of(_principal).await
-    }
-
-    async fn emails_by_id(&self, id: u32) -> crate::Result<Vec<String>> {
-        self.inner.emails_by_id(id).await
-    }
-
-    async fn ids_by_email(&self, address: &str) -> crate::Result<Vec<u32>> {
-        self.inner.ids_by_email(address).await
+    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
+        self.inner.names_by_email(address).await
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {

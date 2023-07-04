@@ -150,6 +150,7 @@ pub struct Config {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
 
+    pub superusers_group_name: String,
     pub capabilities: BaseCapabilities,
 }
 
@@ -557,7 +558,7 @@ impl JMAP {
             access_token.quota as i64
         } else {
             self.directory
-                .principal_by_id(account_id)
+                .principal(&access_token.name)
                 .await
                 .map_err(|err| {
                     tracing::error!(

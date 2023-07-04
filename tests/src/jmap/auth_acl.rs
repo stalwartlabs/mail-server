@@ -43,8 +43,7 @@ use store::ahash::AHashMap;
 
 use crate::{
     directory::sql::{
-        add_user_id_to_group_id, create_test_group_with_email, create_test_user_with_email,
-        remove_from_group,
+        add_to_group, create_test_group_with_email, create_test_user_with_email, remove_from_group,
     },
     jmap::{mailbox::destroy_all_mailboxes, test_account_login},
 };
@@ -57,15 +56,30 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
     let directory = server.directory.as_ref();
-    let john_id =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
-    let jane_id =
-        create_test_user_with_email(directory, "jane.smith@example.com", "abcde", "Jane Smith")
-            .await;
-    let bill_id =
-        create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
-    let sales_id =
-        create_test_group_with_email(directory, "sales@example.com", "Sales Group").await;
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    create_test_user_with_email(directory, "jane.smith@example.com", "abcde", "Jane Smith").await;
+    create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
+    create_test_group_with_email(directory, "sales@example.com", "Sales Group").await;
+    let john_id: Id = server
+        .get_account_id("jdoe@example.com")
+        .await
+        .unwrap()
+        .into();
+    let jane_id: Id = server
+        .get_account_id("jane.smith@example.com")
+        .await
+        .unwrap()
+        .into();
+    let bill_id: Id = server
+        .get_account_id("bill@example.com")
+        .await
+        .unwrap()
+        .into();
+    let sales_id: Id = server
+        .get_account_id("sales@example.com")
+        .await
+        .unwrap()
+        .into();
 
     // Authenticate all accounts
     let mut john_client = test_account_login("jdoe@example.com", "12345").await;
@@ -652,8 +666,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     );
 
     // Add John and Jane to the Sales group
-    for id in [jane_id.id(), john_id.id()] {
-        add_user_id_to_group_id(directory, id as u32, sales_id.id() as u32).await;
+    for name in ["jdoe@example.com", "jane.smith@example.com"] {
+        add_to_group(directory, name, "sales@example.com").await;
     }
     server.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
@@ -749,7 +763,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     );
 
     // Remove John from the sales group
-    remove_from_group(directory, john_id.id() as u32, sales_id.id() as u32).await;
+    remove_from_group(directory, "jdoe@example.com", "sales@example.com").await;
     server.sessions.clear();
     assert_forbidden(
         john_client

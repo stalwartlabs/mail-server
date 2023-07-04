@@ -16,10 +16,8 @@ pub struct LdapDirectory {
 #[derive(Debug, Default)]
 pub struct LdapMappings {
     base_dn: String,
-    filter_login: LdapFilter,
     filter_name: LdapFilter,
     filter_email: LdapFilter,
-    filter_id: LdapFilter,
     filter_verify: LdapFilter,
     filter_expand: LdapFilter,
     filter_domains: LdapFilter,
@@ -29,7 +27,6 @@ pub struct LdapMappings {
     attr_description: Vec<String>,
     attr_secret: Vec<String>,
     attr_groups: Vec<String>,
-    attr_id: Vec<String>,
     attr_email_address: Vec<String>,
     attr_quota: Vec<String>,
     attrs_principal: Vec<String>,

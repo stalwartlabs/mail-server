@@ -74,17 +74,9 @@ impl<T: AsyncRead> Session<T> {
                                     {
                                         if let Some(account_name) = data
                                             .jmap
-                                            .directory
-                                            .principal_by_id(id.document_id())
+                                            .get_account_name(id.document_id())
                                             .await
                                             .unwrap_or_default()
-                                            .and_then(|p| {
-                                                if p.has_name() {
-                                                    Some(p.name().to_string())
-                                                } else {
-                                                    None
-                                                }
-                                            })
                                         {
                                             let mut rights = Vec::new();
 
@@ -254,11 +246,22 @@ impl<T: AsyncRead> Session<T> {
                     let (acl_account_id, id) = match data
                         .jmap
                         .directory
-                        .principal_by_name(arguments.identifier.as_ref().unwrap())
+                        .principal(arguments.identifier.as_ref().unwrap())
                         .await
                     {
-                        Ok(Some(principal)) if principal.has_id() => {
-                            (principal.id(), Value::Id(Id::from(principal.id())))
+                        Ok(Some(principal)) => {
+                            match data.jmap.get_account_id(&principal.name()).await {
+                                Ok(account_id) => (account_id, Value::Id(Id::from(account_id))),
+                                Err(_) => {
+                                    data.write_bytes(
+                                        StatusResponse::database_failure()
+                                            .with_tag(arguments.tag)
+                                            .into_bytes(),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                            }
                         }
                         Ok(None) => {
                             data.write_bytes(

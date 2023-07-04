@@ -136,6 +136,11 @@ pub struct ValueKey {
     pub field: u8,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CustomValueKey {
+    pub value: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AclKey {
     pub grant_account_id: u32,

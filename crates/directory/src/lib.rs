@@ -17,7 +17,6 @@ pub mod sql;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Principal {
-    pub id: u32,
     pub name: String,
     pub secrets: Vec<String>,
     pub typ: Type,
@@ -49,11 +48,9 @@ pub enum DirectoryError {
 #[async_trait::async_trait]
 pub trait Directory: Sync + Send {
     async fn authenticate(&self, credentials: &Credentials<String>) -> Result<Option<Principal>>;
-    async fn principal_by_name(&self, name: &str) -> Result<Option<Principal>>;
-    async fn principal_by_id(&self, id: u32) -> Result<Option<Principal>>;
-    async fn member_of(&self, principal: &Principal) -> Result<Vec<u32>>;
-    async fn emails_by_id(&self, id: u32) -> Result<Vec<String>>;
-    async fn ids_by_email(&self, email: &str) -> Result<Vec<u32>>;
+    async fn principal(&self, name: &str) -> Result<Option<Principal>>;
+    async fn emails_by_name(&self, name: &str) -> Result<Vec<String>>;
+    async fn names_by_email(&self, email: &str) -> Result<Vec<String>>;
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
@@ -103,14 +100,6 @@ impl PartialEq for Lookup {
 impl Eq for Lookup {}
 
 impl Principal {
-    pub fn id(&self) -> u32 {
-        self.id
-    }
-
-    pub fn has_id(&self) -> bool {
-        self.id != u32::MAX
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }

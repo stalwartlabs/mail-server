@@ -23,21 +23,18 @@ subaddressing = true
 max-connections = 1
 
 [directory."sql".query]
-login = "SELECT id, name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true AND type = 'individual'"
-name = "SELECT id, name, type, description, quota FROM accounts WHERE name = ?"
-id = "SELECT id, name, type, description, quota FROM accounts WHERE id = ?"
-members = "SELECT gid FROM group_members WHERE uid = ?"
-recipients = "SELECT id FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE id = ? AND type != 'list' ORDER BY type DESC, address ASC"
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.id = l.id WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
 [directory."sql".columns]
 name = "name"
 description = "description"
 secret = "secret"
-id = "id"
 email = "address"
 quota = "quota"
 type = "type"
@@ -59,10 +56,8 @@ catch-all = true
 subaddressing = true
 
 [directory."ldap".filter]
-login = "(&(objectClass=posixAccount)(accountStatus=active)(cn=?))"
-name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(cn=?))"
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
 email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(givenName=?)(sn=?)))"
-id = "(|(&(objectClass=posixAccount)(uidNumber=?))(&(objectClass=posixGroup)(gidNumber=?)))"
 verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(givenName=*?*)))"
 expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
 domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(givenName=*@?)(sn=*@?)))"
@@ -75,11 +70,10 @@ group = "posixGroup"
 # 'sn' and 'givenName' are used to search for aliases/lists.
 
 [directory."ldap".attributes]
-name = "cn"
+name = "uid"
 description = ["principalName", "description"]
 secret = "userPassword"
 groups = ["memberOf", "otherGroups"]
-id = ["uidNumber", "gidNumber"]
 email = "mail"
 email-alias = "givenName"
 quota = "diskQuota"

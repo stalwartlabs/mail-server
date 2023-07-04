@@ -420,17 +420,9 @@ impl JMAP {
                     (item.first(), item.last())
                 {
                     if let Some(account_name) = self
-                        .directory
-                        .principal_by_id(id.document_id())
+                        .get_account_name(id.document_id())
                         .await
                         .unwrap_or_default()
-                        .and_then(|p| {
-                            if p.has_name() {
-                                Some(p.name().to_string())
-                            } else {
-                                None
-                            }
-                        })
                     {
                         acl_obj.append(
                             Property::_T(account_name),
@@ -501,9 +493,18 @@ impl JMAP {
     async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
         for item in &mut acl_set {
             if let Value::Text(account_name) = item {
-                match self.directory.principal_by_name(account_name).await {
-                    Ok(Some(principal)) if principal.has_id() => {
-                        *item = Value::Id(principal.id().into());
+                match self.directory.principal(account_name).await {
+                    Ok(Some(_)) => {
+                        *item = Value::Id(
+                            self.get_account_id(account_name)
+                                .await
+                                .map_err(|_| {
+                                    SetError::forbidden()
+                                        .with_property(Property::Acl)
+                                        .with_description("Temporary server failure during lookup")
+                                })?
+                                .into(),
+                        );
                     }
                     Ok(None) => {
                         return Err(SetError::invalid_properties()

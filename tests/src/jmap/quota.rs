@@ -16,11 +16,10 @@ use crate::{
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running quota tests...");
     let directory = server.directory.as_ref();
-    let other_account_id =
-        create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
-    let account_id =
-        create_test_user_with_email(directory, "robert@example.com", "aabbcc", "Robert Foobar")
-            .await;
+    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    create_test_user_with_email(directory, "robert@example.com", "aabbcc", "Robert Foobar").await;
+    let other_account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
+    let account_id = Id::from(server.get_account_id("robert@example.com").await.unwrap());
     set_test_quota(directory, "robert@example.com", 1024).await;
     add_to_group(directory, "robert@example.com", "jdoe@example.com").await;
 

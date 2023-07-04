@@ -24,7 +24,7 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{Batch, Operation},
+    write::{Batch, Operation, ValueClass},
     AclKey, BitmapKey, IndexKey, Key, LogKey, Serialize, Store, ValueKey,
 };
 
@@ -120,15 +120,25 @@ impl Store {
                         bitmap_value_set = (1u64 << (index as u64 & 63)) as i64;
                         bitmap_value_clear = (!(1u64 << (index as u64 & 63))) as i64;
                     }
-                    Operation::Value { family, field, set } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            family: *family,
-                            field: *field,
-                        }
-                        .serialize();
+                    Operation::Value { class, set } => {
+                        let key = match class {
+                            ValueClass::Property { field, family } => ValueKey {
+                                account_id,
+                                collection,
+                                document_id,
+                                family: *family,
+                                field: *field,
+                            }
+                            .serialize(),
+                            ValueClass::Acl { grant_account_id } => AclKey {
+                                grant_account_id: *grant_account_id,
+                                to_account_id: account_id,
+                                to_collection: collection,
+                                to_document_id: document_id,
+                            }
+                            .serialize(),
+                            ValueClass::Custom { bytes } => bytes.to_vec(),
+                        };
 
                         if let Some(value) = set {
                             trx.prepare_cached("INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)")?
@@ -186,26 +196,7 @@ impl Store {
                                 .execute(params![bitmap_value_clear, &key])?;
                         };
                     }
-                    Operation::Acl {
-                        grant_account_id,
-                        set,
-                    } => {
-                        let key = AclKey {
-                            grant_account_id: *grant_account_id,
-                            to_account_id: account_id,
-                            to_collection: collection,
-                            to_document_id: document_id,
-                        }
-                        .serialize();
 
-                        if let Some(value) = set {
-                            trx.prepare_cached("INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)")?
-                                .execute([&key, value])?;
-                        } else {
-                            trx.prepare_cached("DELETE FROM v WHERE k = ?")?
-                                .execute([&key])?;
-                        }
-                    }
                     Operation::Log {
                         collection,
                         change_id,
@@ -222,25 +213,34 @@ impl Store {
                             .execute([&key, set])?;
                     }
                     Operation::AssertValue {
-                        field,
-                        family,
+                        class,
                         assert_value,
                     } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            family: *family,
-                            field: *field,
-                        }
-                        .serialize();
+                        let key = match class {
+                            ValueClass::Property { field, family } => ValueKey {
+                                account_id,
+                                collection,
+                                document_id,
+                                family: *family,
+                                field: *field,
+                            }
+                            .serialize(),
+                            ValueClass::Acl { grant_account_id } => AclKey {
+                                grant_account_id: *grant_account_id,
+                                to_account_id: account_id,
+                                to_collection: collection,
+                                to_document_id: document_id,
+                            }
+                            .serialize(),
+                            ValueClass::Custom { bytes } => bytes.to_vec(),
+                        };
                         let matches = trx
                             .prepare_cached("SELECT v FROM v WHERE k = ?")?
                             .query_row([&key], |row| {
                                 Ok(assert_value.matches(row.get_ref(0)?.as_bytes()?))
                             })
                             .optional()?
-                            .unwrap_or(false);
+                            .unwrap_or_else(|| assert_value.is_none());
                         if !matches {
                             return Err(crate::Error::AssertValueFailed);
                         }
