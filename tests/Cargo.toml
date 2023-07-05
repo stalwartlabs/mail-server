@@ -46,7 +46,7 @@ base64 = "0.21"
 dashmap = "5.4"
 ahash = { version = "0.8" }
 serial_test = "2.0.0"
-sqlx = { version = "0.7.0-alpha.3", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
+sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
 num_cpus = "1.15.0"
 async-trait = "0.1.68"
 chrono = "0.4"

@@ -237,7 +237,7 @@ impl JMAP {
     pub async fn map_member_of(&self, names: Vec<String>) -> Result<Vec<u32>, MethodError> {
         let mut ids = Vec::with_capacity(names.len());
         for name in names {
-            if !name.eq_ignore_ascii_case(&self.config.superusers_group_name) {
+            if !name.eq_ignore_ascii_case(&self.config.principal_superusers) {
                 ids.push(self.get_account_id(&name).await?);
             } else {
                 ids.push(SUPERUSER_ID);

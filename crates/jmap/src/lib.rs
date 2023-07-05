@@ -69,6 +69,7 @@ pub mod changes;
 pub mod email;
 pub mod identity;
 pub mod mailbox;
+pub mod principal;
 pub mod push;
 pub mod services;
 pub mod sieve;
@@ -150,7 +151,9 @@ pub struct Config {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
 
-    pub superusers_group_name: String,
+    pub principal_superusers: String,
+    pub principal_allow_lookups: bool,
+
     pub capabilities: BaseCapabilities,
 }
 

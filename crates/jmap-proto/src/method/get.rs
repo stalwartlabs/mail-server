@@ -51,6 +51,7 @@ pub enum RequestArguments {
     PushSubscription,
     SieveScript,
     VacationResponse,
+    Principal,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -83,6 +84,7 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 MethodObject::PushSubscription => RequestArguments::PushSubscription,
                 MethodObject::SieveScript => RequestArguments::SieveScript,
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
+                MethodObject::Principal => RequestArguments::Principal,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/get",

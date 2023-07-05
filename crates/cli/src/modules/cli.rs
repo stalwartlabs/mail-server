@@ -41,9 +41,13 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Import accounts and domains
+    /// Import JMAP accounts and Maildir/mbox mailboxes
     #[clap(subcommand)]
     Import(ImportCommands),
+
+    /// Export JMAP accounts
+    #[clap(subcommand)]
+    Export(ExportCommands),
 
     /// Manage SMTP message queue
     #[clap(subcommand)]
@@ -62,14 +66,42 @@ pub enum ImportCommands {
         #[clap(short, long)]
         format: MailboxFormat,
 
-        /// Number of threads to use for message import, defaults to the number of CPUs.
+        /// Number of messages to import concurrently, defaults to the number of CPUs.
         #[clap(short, long)]
-        num_threads: Option<usize>,
+        num_concurrent: Option<usize>,
 
-        /// Account id to import messages into
-        account_id: String,
+        /// Account name or email to import messages into
+        account: String,
 
         /// Path to the mailbox to import, or '-' for stdin (stdin only supported for mbox)
+        path: String,
+    },
+    /// Import a JMAP account
+    Account {
+        /// Number of concurrent requests, defaults to the number of CPUs.
+        #[clap(short, long)]
+        num_concurrent: Option<usize>,
+
+        /// Account name or email to import messages into
+        account: String,
+
+        /// Path to the exported account directory
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ExportCommands {
+    /// Export a JMAP account
+    Account {
+        /// Number of concurrent blob downloads to perform, defaults to the number of CPUs.
+        #[clap(short, long)]
+        num_concurrent: Option<usize>,
+
+        /// Account name or email to import messages into
+        account: String,
+
+        /// Path to export the account to
         path: String,
     },
 }

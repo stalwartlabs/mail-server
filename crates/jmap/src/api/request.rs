@@ -168,6 +168,15 @@ impl JMAP {
 
                     self.vacation_response_get(req).await?.into()
                 }
+                get::RequestArguments::Principal => {
+                    if self.config.principal_allow_lookups || access_token.is_super_user() {
+                        self.principal_get(req).await?.into()
+                    } else {
+                        return Err(MethodError::Forbidden(
+                            "Principal lookups are disabled".to_string(),
+                        ));
+                    }
+                }
             },
             RequestMethod::Query(mut req) => match req.take_arguments() {
                 query::RequestArguments::Email(arguments) => {
@@ -193,6 +202,15 @@ impl JMAP {
                     access_token.assert_is_member(req.account_id)?;
 
                     self.sieve_script_query(req).await?.into()
+                }
+                query::RequestArguments::Principal => {
+                    if self.config.principal_allow_lookups || access_token.is_super_user() {
+                        self.principal_query(req).await?.into()
+                    } else {
+                        return Err(MethodError::Forbidden(
+                            "Principal lookups are disabled".to_string(),
+                        ));
+                    }
                 }
             },
             RequestMethod::Set(mut req) => match req.take_arguments() {

@@ -132,6 +132,18 @@ impl Debug for Lookup {
     }
 }
 
+impl Type {
+    pub fn to_jmap(&self) -> &'static str {
+        match self {
+            Self::Individual => "individual",
+            Self::Group => "group",
+            Self::Resource => "resource",
+            Self::Location => "location",
+            Self::Other => "other",
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct DirectoryOptions {
     catch_all: bool,

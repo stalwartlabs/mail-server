@@ -42,7 +42,7 @@ pub struct Report {
     pub size: usize,
 }
 
-pub fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) {
+pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) {
     match command {
         ReportCommands::List {
             domain,
@@ -59,7 +59,7 @@ pub fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) 
                 query.append_pair("type", format.id());
             }
 
-            let ids = smtp_manage_request::<Vec<String>>(&query.finish(), &credentials);
+            let ids = smtp_manage_request::<Vec<String>>(&query.finish(), &credentials).await;
             let ids_len = ids.len();
             let page_size = page_size.map(|p| std::cmp::max(p, 1)).unwrap_or(20);
             let pages_total = (ids_len as f64 / page_size as f64).ceil() as usize;
@@ -76,6 +76,7 @@ pub fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) 
                     &format!("{url}/report/status?ids={}", chunk.join(",")),
                     &credentials,
                 )
+                .await
                 .into_iter()
                 .zip(chunk)
                 {
@@ -112,6 +113,7 @@ pub fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) 
                 &format!("{url}/report/status?ids={}", ids.join(",")),
                 &credentials,
             )
+            .await
             .into_iter()
             .zip(&ids)
             {
@@ -165,6 +167,7 @@ pub fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) 
                 &format!("{url}/report/cancel?ids={}", ids.join(",")),
                 &credentials,
             )
+            .await
             .into_iter()
             .zip(ids)
             {

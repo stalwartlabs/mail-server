@@ -23,9 +23,16 @@
 
 use std::{collections::HashMap, fmt::Display, io::Read};
 
-use jmap_client::principal::Property;
+use jmap_client::{
+    client::Client,
+    principal::{
+        query::{self},
+        Property,
+    },
+};
 
 pub mod cli;
+pub mod export;
 pub mod import;
 pub mod queue;
 pub mod report;
@@ -104,35 +111,74 @@ pub fn read_file(path: &str) -> Vec<u8> {
     }
 }
 
-pub fn get(url: &str) -> HashMap<String, serde_json::Value> {
+pub async fn get(url: &str) -> HashMap<String, serde_json::Value> {
     serde_json::from_slice(
-        &reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(true)
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
             .get(url)
             .send()
+            .await
             .unwrap_result("send OAuth GET request")
             .bytes()
+            .await
             .unwrap_result("fetch bytes"),
     )
     .unwrap_result("deserialize OAuth GET response")
 }
 
-pub fn post(url: &str, params: &HashMap<String, String>) -> HashMap<String, serde_json::Value> {
+pub async fn post(
+    url: &str,
+    params: &HashMap<String, String>,
+) -> HashMap<String, serde_json::Value> {
     serde_json::from_slice(
-        &reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(true)
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
             .post(url)
             .form(params)
             .send()
+            .await
             .unwrap_result("send OAuth POST request")
             .bytes()
+            .await
             .unwrap_result("fetch bytes"),
     )
     .unwrap_result("deserialize OAuth POST response")
+}
+
+pub async fn name_to_id(client: &Client, name: &str) -> String {
+    let filter = if name.contains('@') {
+        query::Filter::email(name)
+    } else {
+        query::Filter::name(name)
+    };
+    let mut response = client
+        .principal_query(filter.into(), None::<Vec<_>>)
+        .await
+        .unwrap_result("query principals");
+    match response.ids().len() {
+        1 => response.take_ids().pop().unwrap(),
+        0 => {
+            eprintln!("Error: No principal found with name '{}'.", name);
+            std::process::exit(1);
+        }
+        _ => {
+            eprintln!("Error: Multiple principals found with name '{}'.", name);
+            std::process::exit(1);
+        }
+    }
+}
+
+pub fn is_localhost(url: &str) -> bool {
+    url.split_once("://")
+        .map(|(_, url)| url.split_once('/').map_or(url, |(host, _)| host))
+        .map_or(false, |host| {
+            let host = host.rsplit_once(':').map_or(host, |(host, _)| host);
+            host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+        })
 }
 
 pub trait OAuthResponse {

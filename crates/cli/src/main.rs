@@ -31,9 +31,10 @@ use console::style;
 use jmap_client::client::{Client, Credentials};
 use modules::{
     cli::{Cli, Commands},
+    export::cmd_export,
     get,
     import::cmd_import,
-    post,
+    is_localhost, post,
     queue::cmd_queue,
     report::cmd_report,
 };
@@ -56,7 +57,7 @@ async fn main() -> std::io::Result<()> {
         if !credentials.is_empty() {
             parse_credentials(&credentials)
         } else {
-            oauth(&args.url)
+            oauth(&args.url).await
         }
     } else {
         parse_credentials(&rpassword::prompt_password("\nEnter SMTP admin credentials: ").unwrap())
@@ -65,6 +66,7 @@ async fn main() -> std::io::Result<()> {
     if is_jmap {
         let client = Client::new()
             .credentials(credentials)
+            .accept_invalid_certs(is_localhost(&args.url))
             .connect(&args.url)
             .await
             .unwrap_or_else(|err| {
@@ -74,12 +76,13 @@ async fn main() -> std::io::Result<()> {
 
         match args.command {
             Commands::Import(command) => cmd_import(client, command).await,
+            Commands::Export(command) => cmd_export(client, command).await,
             Commands::Queue(_) | Commands::Report(_) => unreachable!(),
         }
     } else {
         match args.command {
-            Commands::Queue(command) => cmd_queue(&args.url, credentials, command),
-            Commands::Report(command) => cmd_report(&args.url, credentials, command),
+            Commands::Queue(command) => cmd_queue(&args.url, credentials, command).await,
+            Commands::Report(command) => cmd_report(&args.url, credentials, command).await,
             _ => unreachable!(),
         }
     }
@@ -95,11 +98,11 @@ fn parse_credentials(credentials: &str) -> Credentials {
     }
 }
 
-fn oauth(url: &str) -> Credentials {
-    let metadata = get(&format!("{}/.well-known/oauth-authorization-server", url));
+async fn oauth(url: &str) -> Credentials {
+    let metadata = get(&format!("{}/.well-known/oauth-authorization-server", url)).await;
     let token_endpoint = metadata.property("token_endpoint");
     let mut params = HashMap::from_iter([("client_id".to_string(), "Stalwart_CLI".to_string())]);
-    let response = post(metadata.property("device_authorization_endpoint"), &params);
+    let response = post(metadata.property("device_authorization_endpoint"), &params).await;
 
     params.insert(
         "grant_type".to_string(),
@@ -119,7 +122,7 @@ fn oauth(url: &str) -> Credentials {
     std::io::stdout().flush().unwrap();
     std::io::stdin().lock().lines().next();
 
-    let mut response = post(token_endpoint, &params);
+    let mut response = post(token_endpoint, &params).await;
     if let Some(serde_json::Value::String(access_token)) = response.remove("access_token") {
         Credentials::Bearer(access_token)
     } else {

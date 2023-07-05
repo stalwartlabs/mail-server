@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use super::{cli::QueueCommands, UnwrapResult};
+use super::{cli::QueueCommands, is_localhost, UnwrapResult};
 use console::Term;
 use human_size::{Byte, SpecificSize};
 use jmap_client::client::Credentials;
@@ -76,7 +76,7 @@ pub enum Status {
     PermanentFailure(String),
 }
 
-pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
+pub async fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
     match command {
         QueueCommands::List {
             sender,
@@ -86,7 +86,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
             page_size,
         } => {
             let stdout = Term::buffered_stdout();
-            let ids = query_messages(url, &credentials, &sender, &rcpt, &before, &after);
+            let ids = query_messages(url, &credentials, &sender, &rcpt, &before, &after).await;
             let ids_len = ids.len();
             let page_size = page_size.map(|p| std::cmp::max(p, 1)).unwrap_or(20);
             let pages_total = (ids_len as f64 / page_size as f64).ceil() as usize;
@@ -103,6 +103,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
                     &build_query(url, "/queue/status?ids=", chunk),
                     &credentials,
                 )
+                .await
                 .into_iter()
                 .zip(chunk)
                 {
@@ -174,6 +175,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
                 &build_query(url, "/queue/status?ids=", &parse_ids(&ids)),
                 &credentials,
             )
+            .await
             .into_iter()
             .zip(&ids)
             {
@@ -294,7 +296,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
             let (parsed_ids, ids) = if ids.is_empty() {
                 if sender.is_some() || domain.is_some() || before.is_some() || after.is_some() {
                     let parsed_ids =
-                        query_messages(url, &credentials, &sender, &domain, &before, &after);
+                        query_messages(url, &credentials, &sender, &domain, &before, &after).await;
                     let ids = parsed_ids.iter().map(|id| format!("{id:X}")).collect();
                     (parsed_ids, ids)
                 } else {
@@ -322,6 +324,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
             let mut success_count = 0;
             let mut failed_list = vec![];
             for (success, id) in smtp_manage_request::<Vec<bool>>(&query.finish(), &credentials)
+                .await
                 .into_iter()
                 .zip(ids)
             {
@@ -347,7 +350,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
             let (parsed_ids, ids) = if ids.is_empty() {
                 if sender.is_some() || rcpt.is_some() || before.is_some() || after.is_some() {
                     let parsed_ids =
-                        query_messages(url, &credentials, &sender, &rcpt, &before, &after);
+                        query_messages(url, &credentials, &sender, &rcpt, &before, &after).await;
                     let ids = parsed_ids.iter().map(|id| format!("{id:X}")).collect();
                     (parsed_ids, ids)
                 } else {
@@ -372,6 +375,7 @@ pub fn cmd_queue(url: &str, credentials: Credentials, command: QueueCommands) {
             let mut success_count = 0;
             let mut failed_list = vec![];
             for (success, id) in smtp_manage_request::<Vec<bool>>(&query.finish(), &credentials)
+                .await
                 .into_iter()
                 .zip(ids)
             {
@@ -400,10 +404,10 @@ pub enum Response<T> {
     Error { error: String, details: String },
 }
 
-pub fn smtp_manage_request<T: DeserializeOwned>(url: &str, credentials: &Credentials) -> T {
+pub async fn smtp_manage_request<T: DeserializeOwned>(url: &str, credentials: &Credentials) -> T {
     match serde_json::from_slice::<Response<T>>(
-        &reqwest::blocking::Client::builder()
-            .danger_accept_invalid_certs(url.starts_with("https://127.0.0.1"))
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
             .get(url)
@@ -415,8 +419,10 @@ pub fn smtp_manage_request<T: DeserializeOwned>(url: &str, credentials: &Credent
                 },
             )
             .send()
+            .await
             .unwrap_result("send GET request")
             .bytes()
+            .await
             .unwrap_result("fetch bytes"),
     )
     .unwrap_result("deserialize response")
@@ -429,7 +435,7 @@ pub fn smtp_manage_request<T: DeserializeOwned>(url: &str, credentials: &Credent
     }
 }
 
-fn query_messages(
+async fn query_messages(
     url: &str,
     credentials: &Credentials,
     from: &Option<String>,
@@ -452,7 +458,7 @@ fn query_messages(
         query.append_pair("after", &after.to_rfc3339());
     }
 
-    smtp_manage_request::<Vec<u64>>(&query.finish(), credentials)
+    smtp_manage_request::<Vec<u64>>(&query.finish(), credentials).await
 }
 
 fn deserialize_maybe_datetime<'de, D>(deserializer: D) -> Result<Option<DateTime>, D::Error>

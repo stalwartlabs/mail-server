@@ -158,6 +158,7 @@ pub enum RequestArguments {
     Mailbox(mailbox::QueryArguments),
     EmailSubmission,
     SieveScript,
+    Principal,
 }
 
 impl JsonObjectParser for QueryRequest<RequestArguments> {
@@ -171,6 +172,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 MethodObject::Mailbox => RequestArguments::Mailbox(Default::default()),
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
                 MethodObject::SieveScript => RequestArguments::SieveScript,
+                MethodObject::Principal => RequestArguments::Principal,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/query",

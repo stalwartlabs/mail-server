@@ -74,6 +74,9 @@ impl JMAP {
                     Property::SendAt,
                     after.timestamp() as u64,
                 )),
+                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
+                    filters.push(cond.into());
+                }
                 other => return Err(MethodError::UnsupportedFilter(other.to_string())),
             }
         }

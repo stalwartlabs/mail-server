@@ -53,6 +53,9 @@ impl JMAP {
                 Filter::IsActive(is_active) => {
                     filters.push(query::Filter::eq(Property::IsActive, is_active as u32))
                 }
+                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
+                    filters.push(cond.into());
+                }
                 other => return Err(MethodError::UnsupportedFilter(other.to_string())),
             }
         }
