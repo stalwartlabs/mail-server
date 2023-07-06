@@ -49,6 +49,10 @@ pub enum Commands {
     #[clap(subcommand)]
     Export(ExportCommands),
 
+    /// Manage JMAP database
+    #[clap(subcommand)]
+    Database(DatabaseCommands),
+
     /// Manage SMTP message queue
     #[clap(subcommand)]
     Queue(QueueCommands),
@@ -104,6 +108,26 @@ pub enum ExportCommands {
         /// Path to export the account to
         path: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum DatabaseCommands {
+    /// Delete a JMAP account
+    Delete {
+        /// Account name to delete
+        account: String,
+    },
+    /// Rename a JMAP account
+    Rename {
+        /// Account name to rename
+        account: String,
+
+        /// New account name
+        new_account: String,
+    },
+
+    /// Purge expired blobs
+    Purge {},
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

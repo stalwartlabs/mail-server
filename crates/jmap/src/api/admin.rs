@@ -26,20 +26,34 @@ use jmap_proto::{
     types::{collection::Collection, property::Property, value::Value},
 };
 use store::{
-    write::{assert::HashedValue, BatchBuilder},
-    BitmapKey, ValueKey,
+    write::{assert::HashedValue, BatchBuilder, Operation, ValueClass},
+    BitmapKey, Serialize, ValueKey,
 };
 
-use crate::{mailbox::set::SCHEMA, JMAP};
+use crate::{auth::authenticate::AccountKey, mailbox::set::SCHEMA, JMAP};
 
 impl JMAP {
-    pub async fn delete_account(&self, account_id: u32) -> store::Result<()> {
+    pub async fn delete_account(&self, account_name: &str, account_id: u32) -> store::Result<()> {
         // Delete blobs
         self.store.delete_account_blobs(account_id).await?;
 
         // Delete mailboxes
         let mut batch = BatchBuilder::new();
         batch
+            .with_account_id(u32::MAX)
+            .with_collection(Collection::Principal)
+            .op(Operation::Value {
+                class: ValueClass::Custom {
+                    bytes: AccountKey::name_to_id(account_name),
+                },
+                set: None,
+            })
+            .op(Operation::Value {
+                class: ValueClass::Custom {
+                    bytes: AccountKey::id_to_name(account_id),
+                },
+                set: None,
+            })
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
         for mailbox_id in self
@@ -71,6 +85,42 @@ impl JMAP {
         // Delete account
         self.store.purge_account(account_id).await?;
 
+        Ok(())
+    }
+
+    pub async fn rename_account(
+        &self,
+        new_account_name: &str,
+        account_name: &str,
+        account_id: u32,
+    ) -> store::Result<()> {
+        // Delete blobs
+        self.store.delete_account_blobs(account_id).await?;
+
+        // Delete mailboxes
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(u32::MAX)
+            .with_collection(Collection::Principal)
+            .op(Operation::Value {
+                class: ValueClass::Custom {
+                    bytes: AccountKey::name_to_id(account_name),
+                },
+                set: None,
+            })
+            .op(Operation::Value {
+                class: ValueClass::Custom {
+                    bytes: AccountKey::name_to_id(new_account_name),
+                },
+                set: account_id.serialize().into(),
+            })
+            .op(Operation::Value {
+                class: ValueClass::Custom {
+                    bytes: AccountKey::id_to_name(account_id),
+                },
+                set: new_account_name.serialize().into(),
+            });
+        self.store.write(batch.build()).await?;
         Ok(())
     }
 }

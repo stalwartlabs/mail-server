@@ -51,7 +51,7 @@ use store::{
 
 use crate::{
     auth::{acl::EffectiveAcl, AccessToken},
-    JMAP, SUPERUSER_ID,
+    JMAP,
 };
 
 use super::{INBOX_ID, TRASH_ID};
@@ -755,7 +755,7 @@ impl JMAP {
         }
 
         #[cfg(feature = "test_mode")]
-        if mailbox_ids.is_empty() && account_id == SUPERUSER_ID {
+        if mailbox_ids.is_empty() && account_id == crate::SUPERUSER_ID {
             return Ok(mailbox_ids);
         }
 

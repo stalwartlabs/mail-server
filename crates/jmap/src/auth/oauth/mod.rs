@@ -23,13 +23,11 @@
 
 use std::{collections::HashMap, sync::atomic::AtomicU32};
 
+use http_body_util::BodyExt;
 use hyper::{header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::api::{
-    http::{fetch_body, ToHttpResponse},
-    HtmlResponse, HttpRequest, HttpResponse,
-};
+use crate::api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse};
 
 pub mod device_auth;
 pub mod token;
@@ -221,7 +219,7 @@ pub async fn parse_form_data(
             .get(CONTENT_TYPE)
             .and_then(|h| h.to_str().ok())
             .and_then(|val| val.parse::<mime::Mime>().ok()),
-        fetch_body(req, 2048).await,
+        fetch_body(req).await,
     ) {
         (Some(content_type), Some(body)) => {
             let mut fields = HashMap::new();
@@ -244,4 +242,18 @@ pub async fn parse_form_data(
         )
         .into_http_response()),
     }
+}
+
+pub async fn fetch_body(req: &mut HttpRequest) -> Option<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(1024);
+    while let Some(Ok(frame)) = req.frame().await {
+        if let Some(data) = frame.data_ref() {
+            if bytes.len() + data.len() <= 2048 {
+                bytes.extend_from_slice(data);
+            } else {
+                return None;
+            }
+        }
+    }
+    bytes.into()
 }

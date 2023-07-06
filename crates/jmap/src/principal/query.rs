@@ -53,15 +53,14 @@ impl JMAP {
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {
                         let account_id = self.get_account_id(&principal.name).await?;
-                        if is_set {
+                        if is_set || result_set.results.contains(account_id) {
                             result_set.results =
                                 RoaringBitmap::from_sorted_iter([account_id]).unwrap();
-                        } else if result_set.results.contains(account_id) {
-                            result_set.results.remove(account_id);
                         } else {
                             result_set.results = RoaringBitmap::new();
                         }
                     } else {
+                        result_set.results = RoaringBitmap::new();
                     }
                     is_set = false;
                 }
@@ -77,6 +76,7 @@ impl JMAP {
                     }
                     if is_set {
                         result_set.results = ids;
+                        is_set = false;
                     } else {
                         result_set.results &= ids;
                     }

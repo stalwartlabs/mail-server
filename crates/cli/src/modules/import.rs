@@ -460,7 +460,7 @@ async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, Strin
         if !matches!(mailbox.role(), Role::None) {
             if let Some(existing_mailbox) = existing_mailboxes
                 .iter()
-                .find(|m| m.role() != mailbox.role())
+                .find(|m| m.role() == mailbox.role())
             {
                 id_mappings.insert(
                     id.to_string(),
@@ -484,6 +484,7 @@ async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, Strin
         }
     }
     let mut total_imported = 0;
+    let mut total_existing = 0;
     if !id_missing.is_empty() {
         let mut request = client.build();
         let set_request = request.set_mailbox();
@@ -492,6 +493,7 @@ async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, Strin
             // Skip if mailbox already exists
             let id = mailbox.id().unwrap_result("obtain mailbox id").to_string();
             if id_mappings.contains_key(&id) {
+                total_existing += 1;
                 continue;
             }
             let create_request = set_request
@@ -533,9 +535,16 @@ async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, Strin
             );
             total_imported += 1;
         }
+    } else {
+        total_existing = mailboxes.len();
     }
 
-    eprintln!("Successfully imported {} mailboxes.", total_imported);
+    eprintln!(
+        "Successfully processed {} mailboxes ({} imported, {} already exist).",
+        total_existing + total_imported,
+        total_imported,
+        total_existing
+    );
 
     id_mappings
 }
@@ -564,19 +573,19 @@ async fn import_emails(
     .await;
     let existing_ids = existing_emails
         .iter()
-        .filter_map(|email| email.message_id())
+        .map(|email| (email.message_id(), email.received_at()))
         .collect::<HashSet<_>>();
     let mut futures = FuturesUnordered::new();
     let total_imported = Arc::new(AtomicUsize::from(0));
+    let mut total_existing = 0;
     let mut path = PathBuf::from(path);
     path.push("blobs");
 
     for email in emails {
         // Skip messages that already exist in the server
-        if let Some(message_ids) = email.message_id() {
-            if existing_ids.contains(message_ids) {
-                continue;
-            }
+        if existing_ids.contains(&(email.message_id(), email.received_at())) {
+            total_existing += 1;
+            continue;
         }
 
         // Spawn import tasks
@@ -668,8 +677,10 @@ async fn import_emails(
 
     // Done
     eprintln!(
-        "Successfully imported {} messages.",
-        total_imported.load(Ordering::Relaxed)
+        "Successfully processed {} emails ({} imported, {} already exist).",
+        total_imported.load(Ordering::Relaxed) + total_existing,
+        total_imported.load(Ordering::Relaxed),
+        total_existing
     );
 }
 
@@ -694,11 +705,13 @@ async fn import_sieve_scripts(client: &Client, path: &Path, num_concurrent: usiz
     // Spawn tasks
     let mut futures = FuturesUnordered::new();
     let total_imported = Arc::new(AtomicUsize::from(0));
+    let mut total_existing = 0;
 
     'outer: for script in scripts {
         // Skip scripts that already exist
         for existing_script in &existing_scripts {
             if existing_script.name() == script.name() {
+                total_existing += 1;
                 continue 'outer;
             }
         }
@@ -770,8 +783,10 @@ async fn import_sieve_scripts(client: &Client, path: &Path, num_concurrent: usiz
 
     // Done
     eprintln!(
-        "Successfully imported {} sieve script.",
-        total_imported.load(Ordering::Relaxed)
+        "Successfully processed {} sieve scripts ({} imported, {} already exist).",
+        total_imported.load(Ordering::Relaxed) + total_existing,
+        total_imported.load(Ordering::Relaxed),
+        total_existing
     );
 }
 
@@ -785,12 +800,14 @@ async fn import_identities(client: &Client, path: &Path) {
     let mut request = client.build();
     let set_request = request.set_identity();
     let mut create_ids = Vec::new();
+    let mut total_existing = 0;
 
     'outer: for identity in &identities {
         for existing_identity in &existing_identities {
             if identity.name() == existing_identity.name()
                 && identity.email() == existing_identity.email()
             {
+                total_existing += 1;
                 continue 'outer;
             }
         }
@@ -798,22 +815,21 @@ async fn import_identities(client: &Client, path: &Path) {
         if let (Some(id), Some(name), Some(email)) =
             (identity.id(), identity.name(), identity.email())
         {
-            if name == "vacation" {
-                continue;
-            }
-            create_ids.push(id);
-            let create_request = set_request.create_with_id(id).name(name).email(email);
-            if let Some(reply_to) = identity.reply_to() {
-                create_request.reply_to(reply_to.iter().cloned().into());
-            }
-            if let Some(bcc) = identity.bcc() {
-                create_request.bcc(bcc.iter().cloned().into());
-            }
-            if let Some(html_signature) = identity.html_signature() {
-                create_request.html_signature(html_signature);
-            }
-            if let Some(text_signature) = identity.text_signature() {
-                create_request.text_signature(text_signature);
+            if name != "vacation" {
+                create_ids.push(id);
+                let create_request = set_request.create_with_id(id).name(name).email(email);
+                if let Some(reply_to) = identity.reply_to() {
+                    create_request.reply_to(reply_to.iter().cloned().into());
+                }
+                if let Some(bcc) = identity.bcc() {
+                    create_request.bcc(bcc.iter().cloned().into());
+                }
+                if let Some(html_signature) = identity.html_signature() {
+                    create_request.html_signature(html_signature);
+                }
+                if let Some(text_signature) = identity.text_signature() {
+                    create_request.text_signature(text_signature);
+                }
             }
         } else {
             eprintln!("Skipping identity with no id, name, and/or email.");
@@ -821,23 +837,31 @@ async fn import_identities(client: &Client, path: &Path) {
         }
     }
 
-    match request.send_set_identity().await {
-        Ok(mut response) => {
-            let mut total_imported = 0;
-            for id in create_ids {
-                if let Err(err) = response.created(&id) {
-                    eprintln!("Failed to import identity {id}: {err}");
-                } else {
-                    total_imported += 1;
+    let mut total_imported = 0;
+    if !create_ids.is_empty() {
+        match request.send_set_identity().await {
+            Ok(mut response) => {
+                for id in create_ids {
+                    if let Err(err) = response.created(&id) {
+                        eprintln!("Failed to import identity {id}: {err}");
+                    } else {
+                        total_imported += 1;
+                    }
                 }
             }
-
-            eprintln!("Successfully imported {} identities.", total_imported);
-        }
-        Err(err) => {
-            eprintln!("Failed to import identities: {err}");
+            Err(err) => {
+                eprintln!("Failed to import identities: {err}");
+                return;
+            }
         }
     }
+
+    eprintln!(
+        "Successfully processed {} identities ({} imported, {} already exist).",
+        total_imported + total_existing,
+        total_imported,
+        total_existing
+    );
 }
 
 async fn import_vacation_responses(client: &Client, path: &Path) {
@@ -849,6 +873,7 @@ async fn import_vacation_responses(client: &Client, path: &Path) {
     }
     let existing_vacation_responses = fetch_vacation_responses(client).await;
     if !existing_vacation_responses.is_empty() {
+        eprintln!("Successfully processed 1 vacation response (0 imported, 1 already exist).",);
         return;
     }
 
@@ -881,7 +906,9 @@ async fn import_vacation_responses(client: &Client, path: &Path) {
             if let Err(err) = response.created(&create_id) {
                 eprintln!("Failed to import vacation response: {err}");
             } else {
-                eprintln!("Successfully imported 1 vacation response.");
+                eprintln!(
+                    "Successfully processed 1 vacation response (1 imported, 0 already exist).",
+                );
             }
         }
         Err(err) => {
@@ -906,15 +933,17 @@ fn build_mailbox_tree(
     'outer: loop {
         while let Some(mailbox) = mailboxes_iter.next() {
             if parent_id == mailbox.parent_id() {
+                let name = mailbox.name().unwrap_result("obtain mailbox name");
                 if parents.contains(&mailbox.id()) {
                     stack.push((path.clone(), parent_id, mailboxes_iter));
                     parent_id = mailbox.id();
-                    path.push(mailbox.name().unwrap_result("obtain mailbox name"));
+                    path.push(name);
+                    results.insert(path.clone(), mailbox);
                     mailboxes_iter = mailboxes.iter();
                     continue 'outer;
                 } else {
                     let mut path = path.clone();
-                    path.push(mailbox.name().unwrap_result("obtain mailbox name"));
+                    path.push(name);
                     results.insert(path, mailbox);
                 }
             }
@@ -927,6 +956,7 @@ fn build_mailbox_tree(
             break;
         }
     }
+    debug_assert_eq!(results.len(), mailboxes.len());
 
     results
 }

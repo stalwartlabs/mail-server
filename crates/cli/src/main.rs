@@ -31,6 +31,7 @@ use console::style;
 use jmap_client::client::{Client, Credentials};
 use modules::{
     cli::{Cli, Commands},
+    database::cmd_database,
     export::cmd_export,
     get,
     import::cmd_import,
@@ -64,19 +65,14 @@ async fn main() -> std::io::Result<()> {
     };
 
     if is_jmap {
-        let client = Client::new()
-            .credentials(credentials)
-            .accept_invalid_certs(is_localhost(&args.url))
-            .connect(&args.url)
-            .await
-            .unwrap_or_else(|err| {
-                eprintln!("Failed to connect to JMAP server {}: {}.", args.url, err);
-                std::process::exit(1);
-            });
-
         match args.command {
-            Commands::Import(command) => cmd_import(client, command).await,
-            Commands::Export(command) => cmd_export(client, command).await,
+            Commands::Import(command) => {
+                cmd_import(build_client(&args.url, credentials).await, command).await
+            }
+            Commands::Export(command) => {
+                cmd_export(build_client(&args.url, credentials).await, command).await
+            }
+            Commands::Database(command) => cmd_database(&args.url, credentials, command).await,
             Commands::Queue(_) | Commands::Report(_) => unreachable!(),
         }
     } else {
@@ -88,6 +84,18 @@ async fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+async fn build_client(url: &str, credentials: Credentials) -> Client {
+    Client::new()
+        .credentials(credentials)
+        .accept_invalid_certs(is_localhost(url))
+        .connect(url)
+        .await
+        .unwrap_or_else(|err| {
+            eprintln!("Failed to connect to JMAP server {}: {}.", url, err);
+            std::process::exit(1);
+        })
 }
 
 fn parse_credentials(credentials: &str) -> Credentials {

@@ -45,7 +45,7 @@ use tokio::{
 use utils::listener::{ServerInstance, SessionData, SessionManager};
 
 use crate::{
-    auth::oauth::OAuthMetadata,
+    auth::{oauth::OAuthMetadata, AccessToken},
     blob::{DownloadResponse, UploadResponse},
     services::state,
     websocket::upgrade::upgrade_websocket_connection,
@@ -77,7 +77,7 @@ pub async fn parse_jmap_request(
 
             match (path.next().unwrap_or(""), req.method()) {
                 ("", &Method::POST) => {
-                    return match fetch_body(&mut req, jmap.config.request_max_size)
+                    return match fetch_body(&mut req, jmap.config.request_max_size, &access_token)
                         .await
                         .ok_or_else(|| RequestError::limit(RequestLimitError::SizeRequest))
                         .and_then(|bytes| {
@@ -127,7 +127,13 @@ pub async fn parse_jmap_request(
                 ("upload", &Method::POST) => {
                     if let Some(account_id) = path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
                     {
-                        return match fetch_body(&mut req, jmap.config.upload_max_size).await {
+                        return match fetch_body(
+                            &mut req,
+                            jmap.config.upload_max_size,
+                            &access_token,
+                        )
+                        .await
+                        {
                             Some(bytes) => {
                                 match jmap
                                     .blob_upload(
@@ -245,23 +251,77 @@ pub async fn parse_jmap_request(
                 req.method(),
             ) {
                 ("account", "delete", &Method::GET) => {
-                    return if let Some(account_id) = path.next().and_then(|s| s.parse::<u32>().ok())
-                    {
-                        match jmap.delete_account(account_id).await {
-                            Ok(_) => JsonResponse::new(Value::String("success".into()))
+                    return if let Some(account_name) = path.next() {
+                        if let Ok(Some(account_id)) = jmap.try_get_account_id(account_name).await {
+                            match jmap.delete_account(account_name, account_id).await {
+                                Ok(_) => JsonResponse::new(Value::String("success".into()))
+                                    .into_http_response(),
+                                Err(err) => RequestError::blank(
+                                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                                    "Account deletion failed",
+                                    err.to_string(),
+                                )
                                 .into_http_response(),
-                            Err(err) => RequestError::blank(
-                                StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                                "Account deletion failed",
-                                err.to_string(),
+                            }
+                        } else {
+                            RequestError::blank(
+                                StatusCode::NOT_FOUND.as_u16(),
+                                "Not found",
+                                "Account not found.",
                             )
-                            .into_http_response(),
+                            .into_http_response()
                         }
                     } else {
                         RequestError::blank(
                             StatusCode::BAD_REQUEST.as_u16(),
                             "Invalid parameters",
-                            "Expected account id",
+                            "Expected account name",
+                        )
+                        .into_http_response()
+                    };
+                }
+                ("account", "rename", &Method::GET) => {
+                    return if let (Some(account_name), Some(new_account_name)) =
+                        (path.next(), path.next())
+                    {
+                        match (
+                            jmap.try_get_account_id(account_name).await,
+                            jmap.try_get_account_id(new_account_name).await,
+                        ) {
+                            (Ok(Some(account_id)), Ok(None)) => {
+                                match jmap
+                                    .rename_account(new_account_name, account_name, account_id)
+                                    .await
+                                {
+                                    Ok(_) => JsonResponse::new(Value::String("success".into()))
+                                        .into_http_response(),
+                                    Err(err) => RequestError::blank(
+                                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                                        "Account rename failed",
+                                        err.to_string(),
+                                    )
+                                    .into_http_response(),
+                                }
+                            }
+                            (Ok(None), _) => RequestError::blank(
+                                StatusCode::NOT_FOUND.as_u16(),
+                                "Not found",
+                                "Account not found.",
+                            )
+                            .into_http_response(),
+                            (_, Ok(Some(_))) => RequestError::blank(
+                                StatusCode::BAD_REQUEST.as_u16(),
+                                "Invalid parameters",
+                                "New account name already exists.",
+                            )
+                            .into_http_response(),
+                            _ => RequestError::internal_server_error().into_http_response(),
+                        }
+                    } else {
+                        RequestError::blank(
+                            StatusCode::BAD_REQUEST.as_u16(),
+                            "Invalid parameters",
+                            "Expected old and new account names",
                         )
                         .into_http_response()
                     };
@@ -374,11 +434,16 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     }
 }
 
-pub async fn fetch_body(req: &mut HttpRequest, max_size: usize) -> Option<Vec<u8>> {
+pub async fn fetch_body(
+    req: &mut HttpRequest,
+    max_size: usize,
+    access_token: &AccessToken,
+) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(1024);
     while let Some(Ok(frame)) = req.frame().await {
         if let Some(data) = frame.data_ref() {
-            if bytes.len() + data.len() <= max_size {
+            if bytes.len() + data.len() <= max_size || max_size == 0 || access_token.is_super_user()
+            {
                 bytes.extend_from_slice(data);
             } else {
                 return None;

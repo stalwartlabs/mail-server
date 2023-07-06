@@ -21,10 +21,12 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use chrono::{Datelike, TimeZone, Timelike};
-use store::write::now;
 use tokio::sync::mpsc;
 use utils::{config::Config, failed, map::ttl_dashmap::TtlMap, UnwrapFailure};
 
@@ -75,7 +77,7 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                 purge_cache.time_to_next(),
             ];
             let mut tasks_to_run = [false, false, false];
-            let start_time = now();
+            let start_time = Instant::now();
 
             match tokio::time::timeout(time_to_next.iter().min().copied().unwrap(), rx.recv()).await
             {
@@ -96,9 +98,9 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
             }
 
             // Check which tasks are due for execution
-            let now = now();
+            let now = Instant::now();
             for (pos, time_to_next) in time_to_next.into_iter().enumerate() {
-                if start_time + time_to_next.as_secs() <= now {
+                if start_time + time_to_next <= now {
                     tasks_to_run[pos] = true;
                 }
             }

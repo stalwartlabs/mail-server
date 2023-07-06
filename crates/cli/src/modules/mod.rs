@@ -32,6 +32,7 @@ use jmap_client::{
 };
 
 pub mod cli;
+pub mod database;
 pub mod export;
 pub mod import;
 pub mod queue;

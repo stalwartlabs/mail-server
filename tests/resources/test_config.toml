@@ -3,7 +3,7 @@ hostname = "test.example.org"
 
 [server.listener.jmap]
 bind = ["127.0.0.1:9990"]
-url = "https://127.0.0.1:8899"
+url = "https://127.0.0.1:9990"
 protocol = "jmap"
 max-connections = 8192
 
@@ -97,8 +97,8 @@ type = "local"
 path = "/tmp/stalwart-test"
 
 [certificate.default]
-cert = "file://./tests/resources/tls_cert.pem"
-private-key = "file://./tests/resources/tls_privatekey.pem"
+cert = "file://../../tests/resources/tls_cert.pem"
+private-key = "file://../../tests/resources/tls_privatekey.pem"
 
 [jmap]
 directory = "local"
@@ -146,7 +146,8 @@ domains = ["example.org"]
 [[directory."local".users]]
 name = "admin"
 description = "Superadmin"
-secret = "donotuse"
+secret = "secret"
+member-of = ["superusers"]
 
 [[directory."local".users]]
 name = "john"
@@ -179,6 +180,10 @@ description = "Sales Team"
 [[directory."local".groups]]
 name = "support"
 description = "Support Team"
+
+[[directory."local".groups]]
+name = "superusers"
+description = "Superusers"
 
 [oauth]
 key = "parerga_und_paralipomena"

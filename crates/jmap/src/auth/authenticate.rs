@@ -153,32 +153,29 @@ impl JMAP {
         }
     }
 
+    pub async fn try_get_account_id(&self, name: &str) -> Result<Option<u32>, MethodError> {
+        self.store
+            .get_value::<u32>(CustomValueKey {
+                value: AccountKey::name_to_id(name),
+            })
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+            context = "store",
+            account_name = name,
+            error = ?err,
+            "Failed to retrieve account id");
+                MethodError::ServerPartialFail
+            })
+    }
+
     pub async fn get_account_id(&self, name: &str) -> Result<u32, MethodError> {
         let mut try_count = 0;
 
         loop {
             // Try to obtain ID
-            match self
-                .store
-                .get_value::<u32>(CustomValueKey {
-                    value: KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
-                        .write(u32::MAX)
-                        .write(0u8)
-                        .write(name)
-                        .finalize(),
-                })
-                .await
-            {
-                Ok(Some(id)) => return Ok(id),
-                Ok(None) => {}
-                Err(err) => {
-                    tracing::error!(event = "error",
-                            context = "store",
-                            account_name = name,
-                            error = ?err,
-                            "Failed to retrieve account id");
-                    return Err(MethodError::ServerPartialFail);
-                }
+            if let Some(account_id) = self.try_get_account_id(name).await? {
+                return Ok(account_id);
             }
 
             // Assign new ID
@@ -187,11 +184,7 @@ impl JMAP {
                 .await?;
 
             // Serialize key
-            let key = KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
-                .write(u32::MAX)
-                .write(0u8)
-                .write(name)
-                .finalize();
+            let key = AccountKey::name_to_id(name);
 
             // Write account ID
             let mut batch = BatchBuilder::new();
@@ -206,11 +199,7 @@ impl JMAP {
                 })
                 .op(Operation::Value {
                     class: ValueClass::Custom {
-                        bytes: KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
-                            .write(u32::MAX)
-                            .write(1u8)
-                            .write(account_id)
-                            .finalize(),
+                        bytes: AccountKey::id_to_name(account_id),
                     },
                     set: name.serialize().into(),
                 });
@@ -249,11 +238,7 @@ impl JMAP {
     pub async fn get_account_name(&self, account_id: u32) -> Result<Option<String>, MethodError> {
         self.store
             .get_value::<String>(CustomValueKey {
-                value: KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
-                    .write(u32::MAX)
-                    .write(1u8)
-                    .write(account_id)
-                    .finalize(),
+                value: AccountKey::id_to_name(account_id),
             })
             .await
             .map_err(|err| {
@@ -331,5 +316,24 @@ impl JMAP {
         } else {
             None
         }
+    }
+}
+
+pub struct AccountKey();
+
+impl AccountKey {
+    pub fn name_to_id(name: &str) -> Vec<u8> {
+        KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
+            .write(u32::MAX)
+            .write(0u8)
+            .write(name)
+            .finalize()
+    }
+    pub fn id_to_name(id: u32) -> Vec<u8> {
+        KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
+            .write(u32::MAX)
+            .write(1u8)
+            .write(id)
+            .finalize()
     }
 }

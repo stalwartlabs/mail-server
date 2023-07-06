@@ -108,7 +108,7 @@ impl ReadTransaction<'_> {
             }
 
             Ok(sorted_results)
-        } else {
+        } else if comparators.len() > 1 {
             //TODO improve this algorithm, avoid re-sorting in memory.
             let mut sorted_ids = AHashMap::with_capacity(paginate.limit);
 
@@ -208,6 +208,33 @@ impl ReadTransaction<'_> {
                 }
             }
 
+            Ok(paginate.build())
+        } else {
+            let mut seen_prefixes = AHashSet::new();
+            for document_id in result_set.results {
+                // Obtain document prefixId
+                let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
+                    if let Some(prefix_id) = self
+                        .get_value(prefix_key.with_document_id(document_id))
+                        .await?
+                    {
+                        if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
+                            continue;
+                        }
+                        prefix_id
+                    } else {
+                        // Document no longer exists?
+                        continue;
+                    }
+                } else {
+                    0
+                };
+
+                // Add document to results
+                if !paginate.add(prefix_id, document_id) {
+                    break;
+                }
+            }
             Ok(paginate.build())
         }
     }
