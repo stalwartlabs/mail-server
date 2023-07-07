@@ -279,6 +279,7 @@ impl JMAP {
         Ok(response)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn copy_message(
         &self,
         from_account_id: u32,

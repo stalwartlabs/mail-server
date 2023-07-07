@@ -414,12 +414,13 @@ impl Store {
             true,
         );
 
+        let mut delete_keys = Vec::new();
         while let Some(values) = iter.next().await {
             for value in values.unwrap() {
-                let key = value.key();
+                let key_ = value.key();
                 let value = value.value();
-                let subspace = key[0];
-                let key = &key[1..];
+                let subspace = key_[0];
+                let key = &key_[1..];
 
                 match subspace {
                     SUBSPACE_INDEXES => {
@@ -435,19 +436,23 @@ impl Store {
                     }
                     SUBSPACE_VALUES => {
                         // Ignore lastId counter and ID mappings
-                        if (key.len() == 4
+                        if key[0..4] == u32::MAX.to_be_bytes() {
+                            continue;
+                        } else if key.len() == 4
                             && value.len() == 8
                             && u32::deserialize(key).is_ok()
-                            && u64::deserialize(value).is_ok())
-                            || &key[0..4] == u32::MAX.to_be_bytes()
+                            && u64::deserialize(value).is_ok()
                         {
+                            if u32::deserialize(key).unwrap() != u32::MAX {
+                                delete_keys.push(key.to_vec());
+                            }
                             continue;
                         }
 
                         panic!("Table values is not empty: {key:?} {value:?}");
                     }
                     SUBSPACE_BITMAPS => {
-                        if &key[0..4] != u32::MAX.to_be_bytes() {
+                        if key[0..4] != u32::MAX.to_be_bytes() {
                             panic!(
                                 "Table bitmaps is not empty, account {}, collection {}, family {}, field {}, key {:?}: {:?}",
                                 u32::from_be_bytes(key[0..4].try_into().unwrap()),
@@ -466,7 +471,9 @@ impl Store {
                             panic!("Table quotas is not empty: {k:?} = {v:?} (key {key:?})");
                         }
                     }
-                    SUBSPACE_LOGS => (),
+                    SUBSPACE_LOGS => {
+                        delete_keys.push(key.to_vec());
+                    }
 
                     _ => panic!("Invalid key found in database: {key:?} for subspace {subspace}"),
                 }
@@ -474,7 +481,13 @@ impl Store {
         }
 
         // Empty database
-        self.destroy().await;
+        let trx = self.db.create_trx().unwrap();
+        for key in delete_keys {
+            trx.clear(&key);
+        }
+        trx.commit().await.unwrap();
+
+        //self.destroy().await;
         crate::backend::foundationdb::write::BITMAPS.lock().clear();
     }
 }

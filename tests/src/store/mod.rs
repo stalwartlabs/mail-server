@@ -56,6 +56,7 @@ pub async fn store_tests() {
     if insert {
         db.destroy().await;
     }
+    #[cfg(feature = "foundationdb")]
     assign_id::test(db.clone()).await;
     query::test(db, insert).await;
     temp_dir.delete();

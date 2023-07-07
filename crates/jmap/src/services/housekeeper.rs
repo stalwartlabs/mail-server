@@ -42,9 +42,9 @@ pub enum Event {
 }
 
 enum SimpleCron {
-    EveryDay { hour: u32, minute: u32 },
-    EveryWeek { day: u32, hour: u32, minute: u32 },
-    EveryHour { minute: u32 },
+    Day { hour: u32, minute: u32 },
+    Week { day: u32, hour: u32, minute: u32 },
+    Hour { minute: u32 },
 }
 
 const TASK_PURGE_DB: usize = 0;
@@ -164,7 +164,7 @@ impl SimpleCron {
                 }
             } else if pos == 1 {
                 if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
-                    return SimpleCron::EveryHour { minute };
+                    return SimpleCron::Hour { minute };
                 } else {
                     hour = value.parse::<u32>().failed("parse cron hour");
                     if !(0..=23).contains(&hour) {
@@ -173,7 +173,7 @@ impl SimpleCron {
                 }
             } else if pos == 2 {
                 if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
-                    return SimpleCron::EveryDay { hour, minute };
+                    return SimpleCron::Day { hour, minute };
                 } else {
                     let day = value.parse::<u32>().failed("parse cron weekday");
                     if !(1..=7).contains(&hour) {
@@ -183,7 +183,7 @@ impl SimpleCron {
                         ));
                     }
 
-                    return SimpleCron::EveryWeek { day, hour, minute };
+                    return SimpleCron::Week { day, hour, minute };
                 }
             }
         }
@@ -194,7 +194,7 @@ impl SimpleCron {
     pub fn time_to_next(&self) -> Duration {
         let now = chrono::Local::now();
         let next = match self {
-            SimpleCron::EveryDay { hour, minute } => {
+            SimpleCron::Day { hour, minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .unwrap();
@@ -204,7 +204,7 @@ impl SimpleCron {
                     next
                 }
             }
-            SimpleCron::EveryWeek { day, hour, minute } => {
+            SimpleCron::Week { day, hour, minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .unwrap();
@@ -216,7 +216,7 @@ impl SimpleCron {
                     next
                 }
             }
-            SimpleCron::EveryHour { minute } => {
+            SimpleCron::Hour { minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
                     .unwrap();

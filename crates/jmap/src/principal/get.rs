@@ -105,7 +105,7 @@ impl JMAP {
                         .map_err(|_| MethodError::ServerPartialFail)?
                         .into_iter()
                         .next()
-                        .map(|email| Value::Text(email))
+                        .map(Value::Text)
                         .unwrap_or(Value::Null),
                     _ => Value::Null,
                 };
