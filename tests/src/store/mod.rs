@@ -21,6 +21,7 @@
  * for more details.
 */
 
+#[cfg(feature = "foundationdb")]
 pub mod assign_id;
 pub mod blob;
 pub mod query;

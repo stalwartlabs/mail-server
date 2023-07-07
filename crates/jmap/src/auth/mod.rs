@@ -46,7 +46,7 @@ pub mod authenticate;
 pub mod oauth;
 pub mod rate_limit;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AccessToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,

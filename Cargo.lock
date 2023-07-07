@@ -1881,7 +1881,7 @@ dependencies = [
 
 [[package]]
 name = "imap"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -2056,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "aes-gcm-siv",

@@ -34,7 +34,7 @@ use rand::Rng;
 use crate::{
     write::{
         key::{DeserializeBigEndian, KeySerializer},
-        now, Batch, Operation,
+        now, Batch, Operation, ValueClass,
     },
     AclKey, BitmapKey, Deserialize, IndexKey, LogKey, Serialize, Store, ValueKey, SUBSPACE_QUOTAS,
     SUBSPACE_VALUES,
@@ -94,15 +94,30 @@ impl Store {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::Value { family, field, set } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            family: *family,
-                            field: *field,
-                        }
-                        .serialize();
+                    Operation::Value { class, set } => {
+                        let key = match class {
+                            ValueClass::Property { field, family } => ValueKey {
+                                account_id,
+                                collection,
+                                document_id,
+                                family: *family,
+                                field: *field,
+                            }
+                            .serialize(),
+                            ValueClass::Acl { grant_account_id } => AclKey {
+                                grant_account_id: *grant_account_id,
+                                to_account_id: account_id,
+                                to_collection: collection,
+                                to_document_id: document_id,
+                            }
+                            .serialize(),
+                            ValueClass::Custom { bytes } => {
+                                let mut key = Vec::with_capacity(1 + bytes.len());
+                                key.push(SUBSPACE_VALUES);
+                                key.extend_from_slice(bytes);
+                                key
+                            }
+                        };
                         if let Some(value) = set {
                             trx.set(&key, value);
                         } else {
@@ -151,23 +166,6 @@ impl Store {
                             .set(document_id);
                         }
                     }
-                    Operation::Acl {
-                        grant_account_id,
-                        set,
-                    } => {
-                        let key = AclKey {
-                            grant_account_id: *grant_account_id,
-                            to_account_id: account_id,
-                            to_collection: collection,
-                            to_document_id: document_id,
-                        }
-                        .serialize();
-                        if let Some(value) = set {
-                            trx.set(&key, value);
-                        } else {
-                            trx.clear(&key);
-                        }
-                    }
                     Operation::Log {
                         collection,
                         change_id,
@@ -182,24 +180,38 @@ impl Store {
                         trx.set(&key, set);
                     }
                     Operation::AssertValue {
-                        field,
-                        family,
+                        class,
                         assert_value,
                     } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            family: *family,
-                            field: *field,
-                        }
-                        .serialize();
+                        let key = match class {
+                            ValueClass::Property { field, family } => ValueKey {
+                                account_id,
+                                collection,
+                                document_id,
+                                family: *family,
+                                field: *field,
+                            }
+                            .serialize(),
+                            ValueClass::Acl { grant_account_id } => AclKey {
+                                grant_account_id: *grant_account_id,
+                                to_account_id: account_id,
+                                to_collection: collection,
+                                to_document_id: document_id,
+                            }
+                            .serialize(),
+                            ValueClass::Custom { bytes } => {
+                                let mut key = Vec::with_capacity(1 + bytes.len());
+                                key.push(SUBSPACE_VALUES);
+                                key.extend_from_slice(bytes);
+                                key
+                            }
+                        };
 
                         let matches = if let Ok(bytes) = trx.get(&key, false).await {
                             if let Some(bytes) = bytes {
                                 assert_value.matches(bytes.as_ref())
                             } else {
-                                assert_value.is_none();
+                                assert_value.is_none()
                             }
                         } else {
                             false
@@ -315,7 +327,6 @@ impl Store {
         let collection = collection.into();
 
         loop {
-            //let mut assign_source = 0;
             // First try to reuse an expired assigned id
             let begin = IndexKey {
                 account_id,
@@ -375,10 +386,8 @@ impl Store {
                 // Obtain a random id from the expired ids
                 if expired_ids.len() > 1 {
                     document_id = expired_ids[rand::thread_rng().gen_range(0..expired_ids.len())];
-                    //assign_source = 1;
                 } else {
                     document_id = expired_ids[0];
-                    //assign_source = 2;
                 }
             } else {
                 // Find the next available id
@@ -420,8 +429,6 @@ impl Store {
                 for document_id_ in 0..BITS_PER_BLOCK {
                     if !reserved_ids.contains(&document_id_) {
                         document_id = document_id_;
-                        //assign_source = 4;
-
                         break;
                     }
                 }
@@ -441,8 +448,6 @@ impl Store {
 
             match trx.commit().await {
                 Ok(_) => {
-                    //println!("assigned id: {document_id} {assign_source}");
-
                     return Ok(document_id);
                 }
                 Err(err) => {

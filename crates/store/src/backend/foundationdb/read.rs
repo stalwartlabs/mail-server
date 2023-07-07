@@ -438,7 +438,8 @@ impl Store {
                         if (key.len() == 4
                             && value.len() == 8
                             && u32::deserialize(key).is_ok()
-                            && u64::deserialize(value).is_ok()) || &key[0..4] == u32::MAX.to_be_bytes() {
+                            && u64::deserialize(value).is_ok())
+                            || &key[0..4] == u32::MAX.to_be_bytes()
                         {
                             continue;
                         }
