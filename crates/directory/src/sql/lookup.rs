@@ -17,7 +17,7 @@ impl Directory for SqlDirectory {
             Credentials::XOauth2 { username, secret } => (username, secret),
         };
 
-        match self.principal(&username).await {
+        match self.principal(username).await {
             Ok(Some(principal)) if principal.verify_secret(secret).await => Ok(Some(principal)),
             Ok(_) => Ok(None),
             Err(err) => Err(err),

@@ -127,10 +127,6 @@ async fn lookup_sql() {
         .parse_if::<Option<String>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
-    config.lookup_domains = r"'sql/domains'"
-        .parse_if::<Option<String>>(&ctx)
-        .map_if_block(&ctx.directory.lookups, "", "")
-        .unwrap();
     config.relay = IfBlock::new(false);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 

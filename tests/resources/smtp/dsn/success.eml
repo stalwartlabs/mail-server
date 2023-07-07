@@ -7,7 +7,7 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 
 --mime_boundary
-Content-Type: text/plain
+Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Your message has been successfully delivered to the following recipients:
@@ -16,7 +16,7 @@ Your message has been successfully delivered to the following recipients:
 
 
 --mime_boundary
-Content-Type: message/delivery-status
+Content-Type: message/delivery-status; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Reporting-MTA: dns;mx.example.org
@@ -29,7 +29,7 @@ Remote-MTA: dns;mx2.example.org
 
 
 --mime_boundary
-Content-Type: message/rfc822
+Content-Type: message/rfc822; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Disclose-recipients: prohibited

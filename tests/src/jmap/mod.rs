@@ -158,9 +158,9 @@ files = 3
 size = 50000
 
 [jmap.rate-limit]
-account.rate = "1000/1m"
-authentication.rate = "100/2s"
-anonymous.rate = "100/1m"
+account = "1000/1m"
+authentication = "100/2s"
+anonymous = "100/1m"
 
 [jmap.event-source]
 throttle = "500ms"
@@ -205,7 +205,7 @@ remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
-max-auth-attempts = 1
+oauth.auth.max-attempts = 1
 
 [oauth.expiry]
 user-code = "1s"

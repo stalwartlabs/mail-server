@@ -224,6 +224,9 @@ m2 body
 
 epilogue
 
+BINARY[1] {16}
+[binary content]
+BINARY.SIZE[1] 260
 ----------------------------------
 BODY[1.HEADER] {123}
 From: sub@domain.org
@@ -264,6 +267,9 @@ Subject: m1
 
 m1 body
 
+BINARY[1.1] {16}
+[binary content]
+BINARY.SIZE[1.1] 42
 ----------------------------------
 BODY[1.1.HEADER] {34}
 From: m1@example.com
@@ -282,6 +288,10 @@ BODY[1.1.MIME] {2}
 BODY[1.1.1] {8}
 m1 body
 
+BINARY[1.1.1] {8}
+m1 body
+
+BINARY.SIZE[1.1.1] 8
 ----------------------------------
 BODY[1.2] {42}
 From: m2@example.com
@@ -289,6 +299,9 @@ Subject: m2
 
 m2 body
 
+BINARY[1.2] {16}
+[binary content]
+BINARY.SIZE[1.2] 42
 ----------------------------------
 BODY[1.2.HEADER] {34}
 From: m2@example.com
@@ -307,6 +320,10 @@ BODY[1.2.MIME] {2}
 BODY[1.2.1] {8}
 m2 body
 
+BINARY[1.2.1] {8}
+m2 body
+
+BINARY.SIZE[1.2.1] 8
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}
 From: user@domain.org

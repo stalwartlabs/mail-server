@@ -121,7 +121,7 @@ impl SessionData {
             {
                 threads
                     .entry(thread_id)
-                    .or_insert_with(|| Vec::new())
+                    .or_insert_with(Vec::new)
                     .push(imap_id);
             }
         }

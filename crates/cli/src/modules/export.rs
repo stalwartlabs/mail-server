@@ -62,7 +62,7 @@ pub async fn cmd_export(mut client: Client, command: ExportCommands) {
                 });
             }
             let client = Arc::new(client);
-            let num_concurrent = num_concurrent.unwrap_or_else(|| num_cpus::get());
+            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
             let mut futures = FuturesUnordered::new();
             eprintln!("Exporting {} blobs...", blobs.len());
             for blob_id in blobs {
@@ -93,7 +93,7 @@ pub async fn cmd_export(mut client: Client, command: ExportCommands) {
             }
 
             // Wait for remaining futures
-            while let Some(_) = futures.next().await {}
+            while futures.next().await.is_some() {}
         }
     }
 }

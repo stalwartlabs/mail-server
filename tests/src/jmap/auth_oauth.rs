@@ -21,7 +21,10 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use bytes::Bytes;
 use jmap::{
@@ -216,6 +219,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_client_auth("jdoe@example.com", "12345", &device_response, "successful").await;
 
     // Obtain token
+    let time_first_token = Instant::now();
     let (token, refresh_token, _) =
         unwrap_token_response(post(&metadata.token_endpoint, &token_params).await);
     let refresh_token = refresh_token.unwrap();
@@ -268,9 +272,16 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         ("grant_type".to_string(), "refresh_token".to_string()),
         ("refresh_token".to_string(), refresh_token),
     ]);
+    let time_before_post: Instant = Instant::now();
     let (token, new_refresh_token, _) =
         unwrap_token_response(post(&metadata.token_endpoint, &refresh_params).await);
-    assert_eq!(new_refresh_token, None);
+    assert_eq!(
+        new_refresh_token,
+        None,
+        "Refreshed token in {:?}, since start {:?}",
+        time_before_post.elapsed(),
+        time_first_token.elapsed()
+    );
 
     // Wait 1 second and make sure the access token expired
     tokio::time::sleep(Duration::from_secs(1)).await;

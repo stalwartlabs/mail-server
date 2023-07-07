@@ -20,7 +20,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         loop {
             match self.receiver.parse(&mut bytes) {
                 Ok(request) => {
-                    match request.is_allowed(&self.imap, &self.state, self.stream.is_tls()) {
+                    match request.validate_request(&self.imap, &self.state, self.stream.is_tls()) {
                         Ok(request) => {
                             requests.push(request);
                         }
@@ -154,12 +154,22 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
     }
 }
 
-trait IsAllowed: Sized {
-    fn is_allowed(self, imap: &IMAP, state: &State, is_tls: bool) -> Result<Self, StatusResponse>;
+trait ValidateRequest: Sized {
+    fn validate_request(
+        self,
+        imap: &IMAP,
+        state: &State,
+        is_tls: bool,
+    ) -> Result<Self, StatusResponse>;
 }
 
-impl IsAllowed for Request<Command> {
-    fn is_allowed(self, imap: &IMAP, state: &State, is_tls: bool) -> Result<Self, StatusResponse> {
+impl ValidateRequest for Request<Command> {
+    fn validate_request(
+        self,
+        imap: &IMAP,
+        state: &State,
+        is_tls: bool,
+    ) -> Result<Self, StatusResponse> {
         match &self.command {
             Command::Capability | Command::Logout | Command::Noop => Ok(self),
             Command::Authenticate => {

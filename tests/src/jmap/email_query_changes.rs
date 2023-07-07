@@ -43,7 +43,6 @@ use crate::jmap::{
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email QueryChanges tests...");
-    server.store.destroy().await;
     let mailbox1_id = client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("JMAP Changes 1", None::<String>, Role::None)

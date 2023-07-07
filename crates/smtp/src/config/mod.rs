@@ -234,7 +234,6 @@ pub struct Mail {
 pub struct Rcpt {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub relay: IfBlock<bool>,
-    pub lookup_domains: IfBlock<Option<Arc<Lookup>>>,
     pub directory: IfBlock<Option<Arc<dyn Directory>>>,
 
     // Errors

@@ -44,7 +44,6 @@ impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
         let mechanism =
             Mechanism::parse(&tokens.next().unwrap().unwrap_bytes()).map_err(StatusResponse::no)?;
         let mut params: Vec<String> = tokens
-            .into_iter()
             .filter_map(|token| token.unwrap_string().ok())
             .collect();
 

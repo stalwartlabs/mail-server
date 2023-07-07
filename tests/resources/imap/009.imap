@@ -201,6 +201,9 @@ PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
 HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
 cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
 gJiN4MjYzQTs8L3A+PC9odG1sPg==
+BINARY[1.1] {175}
+<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to focus just on the &ldquo;importing&rdquo;,</p><p>but then I thought, why not do both? &#x263A;</p></html>
+BINARY.SIZE[1.1] 175
 ----------------------------------
 BODY[2] {723}
 From: "Cosmo Kramer" <kramer@kramerica.com>
@@ -289,6 +292,9 @@ BODY[2.1.1] {228}
 =DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
 =005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
 =DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
+BINARY[2.1.1] {101}
+ℌ𝔢𝔩𝔭 𝔪𝔢 𝔢𝔵𝔭𝔬𝔯𝔱 𝔪𝔶 𝔟𝔬𝔬𝔨 𝔭𝔩𝔢𝔞𝔰𝔢!
+BINARY.SIZE[2.1.1] 101
 ----------------------------------
 BODY[2.2] {56}
 R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
@@ -317,6 +323,9 @@ Content-Disposition: attachment
 ----------------------------------
 BODY[2.2.1] {56}
 R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+BINARY[2.2.1] {16}
+[binary content]
+BINARY.SIZE[2.2.1] 42
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {196}
 From: Art Vandelay <art@vandelay.com> (Vandelay Industries)

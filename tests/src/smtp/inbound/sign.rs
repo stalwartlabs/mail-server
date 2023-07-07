@@ -152,9 +152,6 @@ async fn sign_and_seal() {
 
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.lookup_domains = IfBlock::new(Some(
-        directory.lookups.get("local/domains").unwrap().clone(),
-    ));
     config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
 
     let mut config = &mut core.session.config;

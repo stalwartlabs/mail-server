@@ -174,7 +174,7 @@ impl<T: AsyncRead> Session<T> {
                     event = "disconnect",
                     "Too many concurrent connections, disconnecting.",
                 );
-                return Err(());
+                Err(())
             }
         } else {
             self.write_bytes(

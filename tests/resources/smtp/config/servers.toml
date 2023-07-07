@@ -1,14 +1,15 @@
 [server]
 hostname = "mx.example.org"
 greeting = "Stalwart SMTP - hi there!"
-protocol = "smtp"
 
 [server.listener."smtp"]
 bind = ["127.0.0.1:9925"]
+protocol = "smtp"
 tls.implicit = false
 
 [server.listener."smtps"]
 bind = ["127.0.0.1:9465", "127.0.0.1:9466"]
+protocol = "smtp"
 max-connections = 1024
 tls.implicit = true
 tls.ciphers = ["TLS13_CHACHA20_POLY1305_SHA256", "TLS13_AES_256_GCM_SHA384"]
@@ -16,6 +17,7 @@ socket.ttl = 4096
 
 [server.listener."submission"]
 greeting = "Stalwart SMTP submission at your service"
+protocol = "smtp"
 hostname = "submit.example.org"
 bind = "127.0.0.1:9991"
 #tls.sni = [{subject = "submit.example.org", certificate = "other"},

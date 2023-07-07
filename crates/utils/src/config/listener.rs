@@ -266,9 +266,7 @@ impl Config {
             return Err(format!("No 'bind' directive found for listener id {id:?}"));
         }
 
-        let protocol = self
-            .property_or_default(("server.listener", id, "protocol"), "server.protocol")?
-            .unwrap_or(ServerProtocol::Smtp);
+        let protocol = self.property_require(("server.listener", id, "protocol"))?;
 
         Ok(Server {
             id: id.to_string(),

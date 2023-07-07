@@ -195,7 +195,7 @@ impl DeliveryAttempt {
         if has_success {
             if is_mixed {
                 txt.push_str(
-                    "    ----- Delivery to the following addresses was succesful -----\r\n",
+                    "    ----- Delivery to the following addresses was successful -----\r\n",
                 );
             }
 

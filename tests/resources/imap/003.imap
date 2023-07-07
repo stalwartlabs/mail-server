@@ -120,6 +120,10 @@ Content-Type: text/plain; charset=us-ascii
 BODY[1.1] {48}
 ... plain text version of message goes here ...
 
+BINARY[1.1] {48}
+... plain text version of message goes here ...
+
+BINARY.SIZE[1.1] 48
 ----------------------------------
 BODY[2] {69}
 ... RFC 1896 text/enriched version of same message
@@ -150,6 +154,11 @@ BODY[2.1] {69}
 ... RFC 1896 text/enriched version of same message
     goes here ...
 
+BINARY[2.1] {69}
+... RFC 1896 text/enriched version of same message
+    goes here ...
+
+BINARY.SIZE[2.1] 69
 ----------------------------------
 BODY[3] {51}
 ... fanciest version of same message goes here ...
@@ -175,6 +184,9 @@ Content-Type: application/x-whatever
 BODY[3.1] {51}
 ... fanciest version of same message goes here ...
 
+BINARY[3.1] {16}
+[binary content]
+BINARY.SIZE[3.1] 51
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {81}
 From: Nathaniel Borenstein <nsb@bellcore.com>

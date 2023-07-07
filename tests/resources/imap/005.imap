@@ -114,6 +114,10 @@ BODY[1.MIME] {2}
 BODY[1.1] {79}
 This is implicitly typed plain US-ASCII text.
 It does NOT end with a linebreak.
+BINARY[1.1] {79}
+This is implicitly typed plain US-ASCII text.
+It does NOT end with a linebreak.
+BINARY.SIZE[1.1] 79
 ----------------------------------
 BODY[2] {76}
 This is explicitly typed plain US-ASCII text.
@@ -144,6 +148,11 @@ BODY[2.1] {76}
 This is explicitly typed plain US-ASCII text.
 It DOES end with a linebreak.
 
+BINARY[2.1] {76}
+This is explicitly typed plain US-ASCII text.
+It DOES end with a linebreak.
+
+BINARY.SIZE[2.1] 76
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {81}
 From: Nathaniel Borenstein <nsb@bellcore.com>

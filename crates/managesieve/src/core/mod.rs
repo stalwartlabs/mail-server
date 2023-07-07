@@ -59,7 +59,7 @@ impl ManageSieveSessionManager {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Command {
     Authenticate,
     StartTls,
@@ -73,6 +73,7 @@ pub enum Command {
     DeleteScript,
     RenameScript,
     CheckScript,
+    #[default]
     Noop,
     Unauthenticate,
 }
@@ -116,12 +117,6 @@ impl CommandParser for Command {
 
     fn tokenize_brackets(&self) -> bool {
         false
-    }
-}
-
-impl Default for Command {
-    fn default() -> Self {
-        Command::Noop
     }
 }
 

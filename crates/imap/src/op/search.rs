@@ -214,7 +214,7 @@ impl SessionData {
 
         // Save results
         if let (Some(results_tx), Some(saved_results)) = (results_tx, saved_results) {
-            let saved_results = Arc::new(saved_results.clone());
+            let saved_results = Arc::new(saved_results);
             *mailbox.saved_search.lock() = SavedSearch::Results {
                 items: saved_results.clone(),
             };
@@ -666,6 +666,7 @@ impl SelectedMailbox {
         Some(v.clone())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn map_search_results(
         &self,
         ids: impl Iterator<Item = u32>,
@@ -703,7 +704,9 @@ impl SelectedMailbox {
                     }
                 } else {
                     imap_ids.push(id);
-                    saved_results.as_mut().map(|r| r.push(imap_id));
+                    if let Some(r) = saved_results.as_mut() {
+                        r.push(imap_id)
+                    }
                 }
                 *total += 1;
             }
@@ -711,7 +714,9 @@ impl SelectedMailbox {
         if find_min || find_max {
             for (id, imap_id) in [min, max].into_iter().flatten() {
                 imap_ids.push(*id);
-                saved_results.as_mut().map(|r| r.push(*imap_id));
+                if let Some(r) = saved_results.as_mut() {
+                    r.push(*imap_id)
+                }
             }
         }
     }

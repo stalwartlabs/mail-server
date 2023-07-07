@@ -41,10 +41,10 @@ const SERVER: &str = "
 [server]
 hostname = 'mx.example.org'
 greeting = 'Test SMTP instance'
-protocol = 'smtp'
 
 [server.listener.smtp-debug]
 bind = ['127.0.0.1:9925']
+protocol = 'smtp'
 
 [server.listener.lmtp-debug]
 bind = ['127.0.0.1:9924']

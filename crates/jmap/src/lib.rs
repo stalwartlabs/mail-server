@@ -203,20 +203,20 @@ impl JMAP {
             ),
             rate_limit_auth: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
-                    .property("jmap.rate-limit.account.size")?
+                    .property("jmap.rate-limit.cache.size")?
                     .unwrap_or(1024),
                 RandomState::default(),
                 shard_amount,
             ),
             rate_limit_unauth: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
-                    .property("jmap.rate-limit.anonymous.size")?
-                    .unwrap_or(2048),
+                    .property("jmap.rate-limit.cache.size")?
+                    .unwrap_or(1024),
                 RandomState::default(),
                 shard_amount,
             ),
             oauth_codes: TtlDashMap::with_capacity(
-                config.property("oauth.code.cache-size")?.unwrap_or(128),
+                config.property("oauth.cache.size")?.unwrap_or(128),
                 shard_amount,
             ),
             state_tx,
@@ -230,12 +230,12 @@ impl JMAP {
                 )
                 .with_max_string_size(
                     config
-                        .property("jmap.sieve.limits.string-size")?
+                        .property("jmap.sieve.limits.string-length")?
                         .unwrap_or(4096),
                 )
                 .with_max_variable_name_size(
                     config
-                        .property("jmap.sieve.limits.variable-name-size")?
+                        .property("jmap.sieve.limits.variable-name-length")?
                         .unwrap_or(32),
                 )
                 .with_max_nested_blocks(
@@ -275,7 +275,7 @@ impl JMAP {
                         .property("jmap.sieve.limits.nested-includes")?
                         .unwrap_or(3),
                 )
-                .with_cpu_limit(config.property("jmap.sieve.cpu-limit")?.unwrap_or(5000))
+                .with_cpu_limit(config.property("jmap.sieve.limits.cpu")?.unwrap_or(5000))
                 .with_max_variable_size(
                     config
                         .property("jmap.sieve.limits.variable-size")?

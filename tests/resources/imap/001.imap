@@ -165,6 +165,9 @@ BODY[1.1] {79}
 Content-type: application/postscript
 Content-ID: <id42@guppylake.bellcore.com>
 
+BINARY[1.1] {16}
+[binary content]
+BINARY.SIZE[1.1] 79
 ----------------------------------
 BODY[2] {79}
 Content-type: application/postscript
@@ -199,6 +202,9 @@ BODY[2.1] {79}
 Content-type: application/postscript
 Content-ID: <id42@guppylake.bellcore.com>
 
+BINARY[2.1] {16}
+[binary content]
+BINARY.SIZE[2.1] 79
 ----------------------------------
 BODY[3] {97}
 Content-type: application/postscript
@@ -239,6 +245,9 @@ Content-ID: <id42@guppylake.bellcore.com>
 
 get RFC-MIME.DOC
 
+BINARY[3.1] {16}
+[binary content]
+BINARY.SIZE[3.1] 97
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {29}
 From: Whomever

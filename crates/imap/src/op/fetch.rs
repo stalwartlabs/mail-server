@@ -586,6 +586,7 @@ impl SessionData {
     }
 }
 
+#[allow(clippy::result_unit_err)]
 pub trait AsImapDataItem<'x> {
     fn body_structure(&self, is_extended: bool) -> BodyPart;
     fn body_section<'z: 'x>(
@@ -1046,7 +1047,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
     fn envelope(&self) -> Envelope {
         Envelope {
-            date: self.date().map(|d| d.clone()),
+            date: self.date().cloned(),
             subject: self.subject().map(|s| s.into()),
             from: self
                 .header_values(RfcHeader::From)

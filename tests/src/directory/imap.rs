@@ -82,7 +82,7 @@ async fn imap_directory() {
             item_clone,
             expected.append(n),
         ));
-        let fix = "true";
+        // FOX: This is a workaround for a bb8 bug, see: https://github.com/djc/bb8/issues/167
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     for (result, item, expected_result) in requests {

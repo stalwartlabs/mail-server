@@ -140,7 +140,6 @@ impl<T: AsyncRead> Session<T> {
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
-                            return;
                         }
                     }
                 });
@@ -250,7 +249,7 @@ impl<T: AsyncRead> Session<T> {
                         .await
                     {
                         Ok(Some(principal)) => {
-                            match data.jmap.get_account_id(&principal.name()).await {
+                            match data.jmap.get_account_id(principal.name()).await {
                                 Ok(account_id) => (account_id, Value::Id(Id::from(account_id))),
                                 Err(_) => {
                                     data.write_bytes(

@@ -1,0 +1,53 @@
+[server]
+hostname = "__HOST__"
+max-connections = 8192
+
+[server.run-as]
+user = "__RUN_AS_USER__"
+group = "__RUN_AS_GROUP__"
+
+[server.tls]
+enable = true
+implicit = false
+timeout = "1m"
+certificate = "default"
+#sni = [{subject = "", certificate = ""}]
+#protocols = ["TLSv1.2", TLSv1.3"]
+#ciphers = []
+ignore-client-order = true
+
+[server.socket]
+reuse-addr = true
+#reuse-port = true
+backlog = 1024
+#ttl = 3600
+#send-buffer-size = 65535
+#recv-buffer-size = 65535
+#linger = 1
+#tos = 1
+
+[global]
+shared-map = {shard = 32, capacity = 10}
+#thread-pool = 8
+
+#[global.tracing]
+#method = "stdout"
+#level = "trace"
+
+#[global.tracing]
+#method = "open-telemetry"
+#transport = "http"
+#endpoint = "https://127.0.0.1/otel"
+#headers = ["Authorization: <place_auth_here>"]
+#level = "debug"
+
+[global.tracing]
+method = "log"
+path = "__PATH__/logs"
+prefix = "smtp.log"
+rotate = "daily"
+level = "info"
+
+[certificate."default"]
+cert = "file://__PATH__/etc/certs/tls.crt"
+private-key = "file://__PATH__/etc/private/tls.key"

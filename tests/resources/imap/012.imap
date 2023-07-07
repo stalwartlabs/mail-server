@@ -187,6 +187,10 @@ Content-Type: text/x-myown; charset=us-ascii
 BODY[1.1] {6}
 hello
 
+BINARY[1.1] {6}
+hello
+
+BINARY.SIZE[1.1] 6
 ----------------------------------
 BODY[2] {280}
 From: sub@domain.org
@@ -266,6 +270,10 @@ Content-Type: text/html
 BODY[2.1.1] {19}
 <p>Hello world</p>
 
+BINARY[2.1.1] {19}
+<p>Hello world</p>
+
+BINARY.SIZE[2.1.1] 19
 ----------------------------------
 BODY[2.2] {20}
 Hello another world
@@ -292,6 +300,10 @@ Content-Type: text/plain
 BODY[2.2.1] {20}
 Hello another world
 
+BINARY[2.2.1] {20}
+Hello another world
+
+BINARY.SIZE[2.2.1] 20
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}
 From: user@domain.org

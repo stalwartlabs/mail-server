@@ -37,7 +37,6 @@ use store::{
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Changes tests...");
 
-    server.store.destroy().await;
     client.set_default_account_id(Id::new(1));
     let mut states = vec![State::Initial];
 
@@ -316,6 +315,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_eq!(created, vec![2, 3, 11, 12]);
     assert_eq!(changes.updated(), Vec::<String>::new());
     assert_eq!(changes.destroyed(), Vec::<String>::new());
+    server.store.assert_is_empty().await;
 }
 
 #[derive(Debug, Clone, Copy)]

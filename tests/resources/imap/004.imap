@@ -167,6 +167,10 @@ BODY[1.MIME] {2}
 BODY[1.1] {45}
 ...Introductory text or table of contents...
 
+BINARY[1.1] {45}
+...Introductory text or table of contents...
+
+BINARY.SIZE[1.1] 45
 ----------------------------------
 BODY[2] {306}
 ------ next message ----
@@ -252,6 +256,10 @@ BODY[2.1.MIME] {2}
 BODY[2.1.1] {22}
 ...body goes here ...
 
+BINARY[2.1.1] {22}
+...body goes here ...
+
+BINARY.SIZE[2.1.1] 22
 ----------------------------------
 BODY[2.2] {125}
 From: someone-else-again
@@ -282,6 +290,10 @@ BODY[2.2.MIME] {2}
 BODY[2.2.1] {31}
 ... another body goes here ...
 
+BINARY[2.2.1] {31}
+... another body goes here ...
+
+BINARY.SIZE[2.2.1] 31
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {45}
 From: Moderator-Address

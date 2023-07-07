@@ -60,7 +60,7 @@ impl JMAP {
         // Deliver to each recipient
         for (name, (status, rcpt)) in &mut deliver_names {
             // Obtain account id
-            let uid = match self.get_account_id(&name).await {
+            let uid = match self.get_account_id(name).await {
                 Ok(uid) => uid,
                 Err(_) => {
                     *status = DeliveryResult::TemporaryFailure {
@@ -84,7 +84,7 @@ impl JMAP {
                     .await
                 }
                 Ok(None) => {
-                    let account_quota = match self.directory.principal(&name).await {
+                    let account_quota = match self.directory.principal(name).await {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
                         Err(_) => {

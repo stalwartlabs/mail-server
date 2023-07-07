@@ -271,7 +271,7 @@ pub async fn cmd_import(mut client: Client, command: ImportCommands) {
             let client = Arc::new(client);
             let total_imported = Arc::new(AtomicUsize::from(0));
             let m = MultiProgress::new();
-            let num_concurrent = num_concurrent.unwrap_or_else(|| num_cpus::get());
+            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
             let spinner_style =
                 ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
                     .unwrap()
@@ -307,7 +307,7 @@ pub async fn cmd_import(mut client: Client, command: ImportCommands) {
                     "Inbox".to_string()
                 });
 
-                while let Some(result) = mailbox.next() {
+                for result in mailbox.by_ref() {
                     match result {
                         Ok(message) => {
                             message_num += 1;
@@ -385,7 +385,7 @@ pub async fn cmd_import(mut client: Client, command: ImportCommands) {
                 }
 
                 // Wait for remaining futures
-                while let Some(_) = futures.next().await {}
+                while futures.next().await.is_some() {}
             }
 
             // Done
@@ -417,7 +417,7 @@ pub async fn cmd_import(mut client: Client, command: ImportCommands) {
                 eprintln!("Path '{}' does not exist.", path.display());
                 return;
             }
-            let num_concurrent = num_concurrent.unwrap_or_else(|| num_cpus::get());
+            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
 
             // Import objects
             import_emails(
@@ -673,7 +673,7 @@ async fn import_emails(
     }
 
     // Wait for remaining futures
-    while let Some(_) = futures.next().await {}
+    while futures.next().await.is_some() {}
 
     // Done
     eprintln!(
@@ -779,7 +779,7 @@ async fn import_sieve_scripts(client: &Client, path: &Path, num_concurrent: usiz
     }
 
     // Wait for remaining futures
-    while let Some(_) = futures.next().await {}
+    while futures.next().await.is_some() {}
 
     // Done
     eprintln!(
@@ -842,7 +842,7 @@ async fn import_identities(client: &Client, path: &Path) {
         match request.send_set_identity().await {
             Ok(mut response) => {
                 for id in create_ids {
-                    if let Err(err) = response.created(&id) {
+                    if let Err(err) = response.created(id) {
                         eprintln!("Failed to import identity {id}: {err}");
                     } else {
                         total_imported += 1;
@@ -963,7 +963,7 @@ fn build_mailbox_tree(
 
 async fn read_json<T: DeserializeOwned>(path: &Path, filename: &str) -> Vec<T> {
     let mut path = PathBuf::from(path);
-    path.push(&filename);
+    path.push(filename);
     if path.exists() {
         let mut file = File::open(path).await.unwrap_result("open file");
         let mut contents = String::new();

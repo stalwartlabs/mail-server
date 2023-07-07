@@ -37,7 +37,7 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     PurgeDb,
     PurgeBlobs,
-    PurgeCache,
+    PurgeSessions,
     Exit,
 }
 
@@ -49,22 +49,19 @@ enum SimpleCron {
 
 const TASK_PURGE_DB: usize = 0;
 const TASK_PURGE_BLOBS: usize = 1;
-const TASK_PURGE_CACHE: usize = 2;
+const TASK_PURGE_SESSIONS: usize = 2;
 
 pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
-    let purge_db_at = SimpleCron::parse(
-        settings
-            .value("jmap.house-keeper.purge-db")
-            .unwrap_or("0 3 *"),
-    );
+    let purge_db_at =
+        SimpleCron::parse(settings.value("jmap.purge.schedule.db").unwrap_or("0 3 *"));
     let purge_blobs_at = SimpleCron::parse(
         settings
-            .value("jmap.house-keeper.purge-blobs")
+            .value("jmap.purge.schedule.blobs")
             .unwrap_or("30 3 *"),
     );
     let purge_cache = SimpleCron::parse(
         settings
-            .value("jmap.house-keeper.purge-cache")
+            .value("jmap.purge.schedule.sessions")
             .unwrap_or("15 * *"),
     );
 
@@ -84,7 +81,7 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                 Ok(Some(event)) => match event {
                     Event::PurgeDb => tasks_to_run[TASK_PURGE_DB] = true,
                     Event::PurgeBlobs => tasks_to_run[TASK_PURGE_BLOBS] = true,
-                    Event::PurgeCache => tasks_to_run[TASK_PURGE_CACHE] = true,
+                    Event::PurgeSessions => tasks_to_run[TASK_PURGE_SESSIONS] = true,
                     Event::Exit => {
                         tracing::debug!("Housekeeper task exiting.");
                         return;
@@ -129,7 +126,7 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                                 tracing::error!("Error while purging bitmaps: {}", err);
                             }
                         }
-                        TASK_PURGE_CACHE => {
+                        TASK_PURGE_SESSIONS => {
                             tracing::info!("Purging session cache.");
                             core.sessions.cleanup();
                             core.access_tokens.cleanup();

@@ -1,71 +1,20 @@
-[server]
-hostname = "__HOST__"
-#greeting = "Stalwart SMTP at your service"
-protocol = "smtp"
-
-[server.run-as]
-user = "stalwart-smtp"
-group = "stalwart-smtp"
-
 [server.listener."smtp"]
 bind = ["0.0.0.0:25"]
-max-connections = 8192
+greeting = "Stalwart SMTP at your service"
+protocol = "smtp"
 
 [server.listener."submission"]
 bind = ["0.0.0.0:587"]
-max-connections = 8192
+protocol = "smtp"
 
 [server.listener."submissions"]
 bind = ["0.0.0.0:465"]
-max-connections = 8192
+protocol = "smtp"
 tls.implicit = true
-
 
 [server.listener."management"]
 bind = ["127.0.0.1:8686"]
 protocol = "http"
-
-[server.tls]
-enable = true
-implicit = false
-timeout = "1m"
-certificate = "default"
-#sni = [{subject = "", certificate = ""}]
-#protocols = ["TLSv1.2", TLSv1.3"]
-#ciphers = []
-ignore-client-order = true
-
-[server.socket]
-reuse-addr = true
-#reuse-port = true
-backlog = 1024
-#ttl = 3600
-#send-buffer-size = 65535
-#recv-buffer-size = 65535
-#linger = 1
-#tos = 1
-
-[global]
-shared-map = {shard = 32, capacity = 10}
-#thread-pool = 8
-
-#[global.tracing]
-#method = "stdout"
-#level = "trace"
-
-#[global.tracing]
-#method = "open-telemetry"
-#transport = "http"
-#endpoint = "https://127.0.0.1/otel"
-#headers = ["Authorization: <place_auth_here>"]
-#level = "debug"
-
-[global.tracing]
-method = "log"
-path = "/usr/local/stalwart-smtp/logs"
-prefix = "smtp.log"
-rotate = "daily"
-level = "info"
 
 [session]
 timeout = "5m"
@@ -88,6 +37,10 @@ requiretls = true
 no-soliciting = ""
 dsn = [ { if = "authenticated-as", ne = "", then = true},
         { else = false } ]
+expn = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
+vrfy = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
 future-release = [ { if = "authenticated-as", ne = "", then = "7d"},
                    { else = false } ]
 deliver-by = [ { if = "authenticated-as", ne = "", then = "15d"},
@@ -98,7 +51,7 @@ mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
 [session.auth]
 mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
                { else = [] } ]
-directory = [ { if = "listener", ne = "smtp", then = "remote/imap" }, 
+directory = [ { if = "listener", ne = "smtp", then = "local" }, 
            { else = false } ]
 require = [ { if = "listener", ne = "smtp", then = true},
             { else = false } ]
@@ -115,9 +68,8 @@ wait = "5s"
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
 max-recipients = 25
-directory = [ { if = "authenticated-as", ne = "", then = "remote/lmtp" }, 
+directory = [ { if = "authenticated-as", ne = "", then = "local" }, 
          { else = false } ]
-domains = "list/domains"
 
 [session.rcpt.cache]
 entries = 1000
@@ -166,6 +118,7 @@ rate = "25/1h"
 [auth.dnsbl]
 verify = [ { if = "listener", eq = "smtp", then = ["ip", "iprev", "ehlo", "return-path", "from"] }, 
            { else = [] } ]
+
 [auth.dnsbl.lookup]
 ip = ["zen.spamhaus.org", "bl.spamcop.net", "b.barracudacentral.org"]
 domain = ["dbl.spamhaus.org"]
@@ -194,7 +147,7 @@ verify = [ { if = "listener", eq = "smtp", then = "relaxed" },
            { else = "disable" } ]
 
 [queue]
-path = "/usr/local/stalwart-smtp/queue"
+path = "__PATH__/queue"
 hash = 64
 
 [queue.schedule]
@@ -204,7 +157,7 @@ expire = "5d"
 
 [queue.outbound]
 #hostname = "__HOST__"
-next-hop = [ { if = "rcpt-domain", in-list = "list/domains", then = "lmtp" }, 
+next-hop = [ { if = "rcpt-domain", in-list = "local/domains", then = "lmtp" }, 
              { else = false } ]
 ip-strategy = "ipv4-then-ipv6"
 
@@ -260,14 +213,14 @@ tlsa = 1024
 mta-sts = 1024
 
 [report]
-path = "/usr/local/stalwart-smtp/reports"
+path = "__PATH__/reports"
 hash = 64
 #submitter = "mx.domain.org"
 
 [report.analysis]
 addresses = ["dmarc@*", "abuse@*"]
 forward = true
-#store = "/usr/local/stalwart-smtp/incoming"
+#store = "__PATH__/incoming"
 
 [report.dsn]
 from-name = "Mail Delivery Subsystem"
@@ -314,8 +267,8 @@ max-size = 26214400 # 25 mb
 sign = ["rsa"]
 
 [signature."rsa"]
-#public-key = "file:///usr/local/stalwart-smtp/etc/certs/dkim.crt"
-private-key = "file:///usr/local/stalwart-smtp/etc/private/dkim.key"
+#public-key = "file://__PATH__/etc/certs/dkim.crt"
+private-key = "file://__PATH__/etc/private/dkim.key"
 domain = "__DOMAIN__"
 selector = "stalwart_smtp"
 headers = ["From", "To", "Date", "Subject", "Message-ID"]
@@ -334,11 +287,6 @@ port = __LMTP_PORT__
 protocol = "lmtp"
 concurrency = 10
 timeout = "1m"
-lookup = true
-
-[remote."lmtp".cache]
-entries = 1000
-ttl = {positive = "1d", negative = "1h"}
 
 [remote."lmtp".tls]
 implicit = false
@@ -348,28 +296,8 @@ allow-invalid-certs = true
 #username = ""
 #secret = ""
 
-[remote."lmtp".limits]
-errors = 3
-requests = 50
-
-[remote."imap"]
-address = "localhost"
-port = 143
-protocol = "imap"
-concurrency = 10
-timeout = "1m"
-lookup = true
-
-[remote."imap".cache]
-entries = 1000
-ttl = {positive = "1d", negative = "1h"}
-
-[remote."imap".tls]
-implicit = false
-allow-invalid-certs = true
-
 [database."sql"]
-#address = "sqlite:///usr/local/stalwart-smtp/etc/sqlite.db?mode=rwc"
+#address = "sqlite://__PATH__/etc/sqlite.db?mode=rwc"
 address = "postgres://postgres:password@localhost/test"
 max-connections = 10
 min-connections = 0
@@ -409,14 +337,14 @@ duplicate-expiry = "7d"
 connect = '''
     require ["variables", "extlists", "reject"];
 
-    if string :list "${env.remote_ip}" "list/blocked-ips" {
+    if string :list "${env.remote_ip}" "local/blocked-ips" {
         reject "Your IP '${env.remote_ip}' is not welcomed here.";
     }
 '''
 ehlo = '''
     require ["variables", "extlists", "reject"];
 
-    if string :list "${env.helo_domain}" "list/blocked-domains" {
+    if string :list "${env.helo_domain}" "local/blocked-domains" {
         reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
     }
 '''
@@ -457,13 +385,3 @@ data = '''
 [management]
 directory = "local"
 
-[list]
-domains = ["__DOMAIN__"]
-admin = ["admin:__ADMIN_PASS__"]
-#blocked-ips = ["10.0.0.1"]
-#blocked-domains = ["mail.spammer.com"]
-#users = "file:///usr/local/stalwart-smtp/etc/users.txt"
-
-[certificate."default"]
-cert = "file:///usr/local/stalwart-smtp/etc/certs/tls.crt"
-private-key = "file:///usr/local/stalwart-smtp/etc/private/tls.key"

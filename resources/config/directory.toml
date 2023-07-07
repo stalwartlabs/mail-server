@@ -1,0 +1,139 @@
+[directory."sql"]
+type = "sql"
+address = "sqlite::memory:"
+
+[directory."sql".options]
+catch-all = true
+subaddressing = true
+
+[directory."sql".pool]
+max-connections = 10
+
+[directory."sql".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[directory."sql".columns]
+name = "name"
+description = "description"
+secret = "secret"
+email = "address"
+quota = "quota"
+type = "type"
+
+[directory."ldap"]
+type = "ldap"
+address = "ldap://localhost:3893"
+base-dn = "dc=example,dc=org"
+
+[directory."ldap".bind]
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
+secret = "mysecret"
+
+[directory."ldap".options]
+catch-all = true
+subaddressing = true
+
+[directory."ldap".filter]
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(mailAlias=?)))"
+verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(mailAlias=*?*)))"
+expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
+domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(mailAlias=*@?)))"
+
+[directory."ldap".object-classes]
+user = "posixAccount"
+group = "posixGroup"
+
+[directory."ldap".attributes]
+name = "uid"
+description = ["principalName", "description"]
+secret = "userPassword"
+groups = ["memberOf", "otherGroups"]
+email = "mail"
+email-alias = "mailAlias"
+quota = "diskQuota"
+
+[directory."imap"]
+type = "imap"
+address = "127.0.0.1"
+port = 9198
+
+[directory."imap".pool]
+max-connections = 5
+
+[directory."imap".tls]
+implicit = true
+allow-invalid-certs = true
+
+[directory."imap".lookup]
+domains = ["example.org"]
+
+[directory."smtp"]
+type = "lmtp"
+address = "127.0.0.1"
+port = 9199
+
+[directory."smtp".limits]
+auth-errors = 3
+rcpt = 5
+
+[directory."smtp".pool]
+max-connections = 5
+
+[directory."smtp".tls]
+implicit = true
+allow-invalid-certs = true
+
+[directory."smtp".cache]
+entries = 500
+ttl = {positive = '10s', negative = '5s'}
+
+[directory."smtp".lookup]
+domains = ["example.org"]
+
+[directory."memory"]
+type = "memory"
+
+[directory."memory".options]
+catch-all = true
+subaddressing = true
+
+[[directory."memory".users]]
+name = "admin"
+description = "Superuser"
+secret = "changeme"
+email = ["admin@example.org"]
+member-of = ["superusers"]
+
+[[directory."memory".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "abcde"
+email = ["jane@example.org", "jane.doe@example.org"]
+email-list = ["info@example.org"]
+member-of = ["sales", "support"]
+
+[[directory."memory".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
+quota = 500000
+email = "bill@example.org"
+email-list = ["info@example.org"]
+
+[[directory."memory".groups]]
+name = "sales"
+description = "Sales Team"
+
+[[directory."memory".groups]]
+name = "support"
+description = "Support Team"
+
+[directory."memory".lookup]
+domains = ["example.org"]

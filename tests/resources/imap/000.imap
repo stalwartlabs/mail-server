@@ -281,6 +281,16 @@ given and this is text in the US-ASCII character set.
 It could have been done with explicit typing as in the
 next part.]
 
+BINARY[1.1] {262}
+... Some text appears here ...
+
+[Note that the blank between the boundary and the start
+of the text in this part means no header fields were
+given and this is text in the US-ASCII character set.
+It could have been done with explicit typing as in the
+next part.]
+
+BINARY.SIZE[1.1] 262
 ----------------------------------
 BODY[2] {111}
 This could have been part of the previous part, but
@@ -315,6 +325,12 @@ This could have been part of the previous part, but
 illustrates explicit versus implicit typing of body
 parts.
 
+BINARY[2.1] {111}
+This could have been part of the previous part, but
+illustrates explicit versus implicit typing of body
+parts.
+
+BINARY.SIZE[2.1] 111
 ----------------------------------
 BODY[3] {314}
 --unique-boundary-2
@@ -392,6 +408,9 @@ BODY[3.1.1] {85}
 ... base64-encoded 8000 Hz single-channel
     mu-law-format audio data goes here ...
 
+* NO [UNKNOWN-CTE] Failed to decode part 3.1.1 of message 0.
+
+BINARY.SIZE[3.1.1] 85
 ----------------------------------
 BODY[3.2] {44}
 ... base64-encoded image data goes here ...
@@ -419,6 +438,9 @@ Content-Transfer-Encoding: base64
 BODY[3.2.1] {44}
 ... base64-encoded image data goes here ...
 
+* NO [UNKNOWN-CTE] Failed to decode part 3.2.1 of message 0.
+
+BINARY.SIZE[3.2.1] 44
 ----------------------------------
 BODY[4] {140}
 This is <bold><italic>enriched.</italic></bold>
@@ -461,6 +483,14 @@ This is <bold><italic>enriched.</italic></bold>
 Isn't it
 <bigger><bigger>cool?</bigger></bigger>
 
+BINARY[4.1] {140}
+This is <bold><italic>enriched.</italic></bold>
+<smaller>as defined in RFC 1896</smaller>
+
+Isn't it
+<bigger><bigger>cool?</bigger></bigger>
+
+BINARY.SIZE[4.1] 140
 ----------------------------------
 BODY[5] {223}
 From: (mailbox in US-ASCII)
@@ -496,6 +526,10 @@ Content-Type: message/rfc822
 BODY[5.1] {48}
 ... Additional text in ISO-8859-1 goes here ...
 
+BINARY[5.1] {48}
+... Additional text in ISO-8859-1 goes here ...
+
+BINARY.SIZE[5.1] 48
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {79}
 From: Nathaniel Borenstein <nsb@nsb.fv.com>

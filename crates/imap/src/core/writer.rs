@@ -118,10 +118,10 @@ impl<T: AsyncRead> Session<T> {
     pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> crate::OpResult {
         let bytes = bytes.into();
 
-        let c = println!(
+        /*let c = println!(
             "-> {:?}",
             String::from_utf8_lossy(&bytes[..std::cmp::min(bytes.len(), 100)])
-        );
+        );*/
 
         if let Err(err) = self.writer.send(Event::Bytes(bytes)).await {
             debug!("Failed to send bytes: {}", err);
@@ -135,10 +135,10 @@ impl<T: AsyncRead> Session<T> {
 impl SessionData {
     pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> bool {
         let bytes = bytes.into();
-        let c = println!(
+        /*let c = println!(
             "-> {:?}",
             String::from_utf8_lossy(&bytes[..std::cmp::min(bytes.len(), 100)])
-        );
+        );*/
 
         if let Err(err) = self.writer.send(Event::Bytes(bytes)).await {
             debug!("Failed to send bytes: {}", err);

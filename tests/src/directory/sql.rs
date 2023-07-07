@@ -271,7 +271,7 @@ pub async fn create_test_group_with_email(handle: &dyn Directory, login: &str, n
 pub async fn link_test_address(handle: &dyn Directory, login: &str, address: &str, typ: &str) {
     handle
         .query(
-            &format!("INSERT OR IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)",),
+            "INSERT OR IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)",
             &[login, address, typ],
         )
         .await

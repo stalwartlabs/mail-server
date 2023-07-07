@@ -7,12 +7,12 @@ Content-Type: multipart/report; report-type="delivery-status";
 
 
 --mime_boundary
-Content-Type: text/plain
+Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Your message has been partially delivered:
 
-    ----- Delivery to the following addresses was succesful -----
+    ----- Delivery to the following addresses was successful -----
 <jane@example.org> (delivered to 'mx2.example.org' with code 250 (2.1.5) 'Message accepted for delivery')
 
     ----- There was a temporary problem delivering to these addresses -----
@@ -23,7 +23,7 @@ Your message has been partially delivered:
 
 
 --mime_boundary
-Content-Type: message/delivery-status
+Content-Type: message/delivery-status; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Reporting-MTA: dns;mx.example.org
@@ -49,7 +49,7 @@ Will-Retry-Until: <date goes here>
 
 
 --mime_boundary
-Content-Type: message/rfc822
+Content-Type: message/rfc822; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 Disclose-recipients: prohibited

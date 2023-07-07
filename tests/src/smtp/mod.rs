@@ -220,7 +220,6 @@ impl TestConfig for SessionConfig {
             rcpt: Rcpt {
                 script: IfBlock::new(None),
                 relay: IfBlock::new(false),
-                lookup_domains: IfBlock::new(None),
                 directory: IfBlock::new(None),
                 errors_max: IfBlock::new(3),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),

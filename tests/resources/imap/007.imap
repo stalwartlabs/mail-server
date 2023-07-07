@@ -314,6 +314,9 @@ Content-Disposition: inline
 ----------------------------------
 BODY[1.1] {1}
 A
+BINARY[1.1] {1}
+A
+BINARY.SIZE[1.1] 1
 ----------------------------------
 BODY[2] {608}
 --2
@@ -603,6 +606,9 @@ Content-Disposition: inline
 ----------------------------------
 BODY[2.1.1.1.1] {1}
 B
+BINARY[2.1.1.1.1] {1}
+B
+BINARY.SIZE[2.1.1.1.1] 1
 ----------------------------------
 BODY[2.1.1.2] {1}
 C
@@ -627,6 +633,9 @@ Content-Disposition: inline
 ----------------------------------
 BODY[2.1.1.2.1] {1}
 C
+BINARY[2.1.1.2.1] {16}
+[binary content]
+BINARY.SIZE[2.1.1.2.1] 1
 ----------------------------------
 BODY[2.1.1.3] {1}
 D
@@ -651,6 +660,9 @@ Content-Disposition: inline
 ----------------------------------
 BODY[2.1.1.3.1] {1}
 D
+BINARY[2.1.1.3.1] {1}
+D
+BINARY.SIZE[2.1.1.3.1] 1
 ----------------------------------
 BODY[2.1.2] {86}
 --5
@@ -710,6 +722,9 @@ Content-Type: text/html
 ----------------------------------
 BODY[2.1.2.1.1] {14}
 <html>E</html>
+BINARY[2.1.2.1.1] {14}
+<html>E</html>
+BINARY.SIZE[2.1.2.1.1] 14
 ----------------------------------
 BODY[2.1.2.2] {1}
 F
@@ -732,6 +747,9 @@ Content-Type: image/jpeg
 ----------------------------------
 BODY[2.1.2.2.1] {1}
 F
+BINARY[2.1.2.2.1] {16}
+[binary content]
+BINARY.SIZE[2.1.2.2.1] 1
 ----------------------------------
 BODY[2.2] {1}
 G
@@ -756,6 +774,9 @@ Content-Disposition: attachment
 ----------------------------------
 BODY[2.2.1] {1}
 G
+BINARY[2.2.1] {16}
+[binary content]
+BINARY.SIZE[2.2.1] 1
 ----------------------------------
 BODY[2.3] {1}
 H
@@ -778,6 +799,9 @@ Content-Type: application/x-excel
 ----------------------------------
 BODY[2.3.1] {1}
 H
+BINARY[2.3.1] {16}
+[binary content]
+BINARY.SIZE[2.3.1] 1
 ----------------------------------
 BODY[2.4] {13}
 Subject: J
@@ -802,6 +826,9 @@ Content-Type: message/rfc822
 ----------------------------------
 BODY[2.4.1] {1}
 J
+BINARY[2.4.1] {1}
+J
+BINARY.SIZE[2.4.1] 1
 ----------------------------------
 BODY[3] {1}
 K
@@ -826,6 +853,9 @@ Content-Disposition: inline
 ----------------------------------
 BODY[3.1] {1}
 K
+BINARY[3.1] {1}
+K
+BINARY.SIZE[3.1] 1
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {2}
 

@@ -49,7 +49,7 @@ impl IMAP {
                     .unwrap_or(32)
                     .next_power_of_two() as usize,
             ),
-            rate_requests: config.property_or_static("imap.rate-limit.rate", "1000/1m")?,
+            rate_requests: config.property_or_static("imap.rate-limit", "1000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
         }))

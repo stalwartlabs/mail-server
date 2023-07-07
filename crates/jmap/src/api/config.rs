@@ -69,7 +69,7 @@ impl crate::Config {
                 .unwrap_or(50000000),
             upload_tmp_quota_amount: settings
                 .property("jmap.protocol.upload.quota.files")?
-                .unwrap_or(50000000),
+                .unwrap_or(1000),
             upload_tmp_ttl: settings
                 .property_or_static::<Duration>("jmap.protocol.upload.ttl", "1h")?
                 .as_secs(),
@@ -85,23 +85,22 @@ impl crate::Config {
                 .unwrap_or(75000000),
             mail_parse_max_items: settings
                 .property("jmap.email.parse.max-items")?
-                .unwrap_or(50000000),
+                .unwrap_or(10),
             sieve_max_script_name: settings
-                .property("jmap.sieve.max-name-length")?
+                .property("jmap.sieve.limits.name-length")?
                 .unwrap_or(512),
             sieve_max_scripts: settings
-                .property("jmap.protocol.max-scripts")?
+                .property("jmap.sieve.limits.max-scripts")?
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
             session_cache_ttl: settings
                 .property("jmap.session.cache.ttl")?
                 .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: settings
-                .property_or_static("jmap.rate-limit.account.rate", "1000/1m")?,
+                .property_or_static("jmap.rate-limit.account", "1000/1m")?,
             rate_authenticate_req: settings
-                .property_or_static("jmap.rate-limit.authentication.rate", "10/1m")?,
-            rate_anonymous: settings
-                .property_or_static("jmap.rate-limit.anonymous.rate", "100/1m")?,
+                .property_or_static("jmap.rate-limit.authentication", "10/1m")?,
+            rate_anonymous: settings.property_or_static("jmap.rate-limit.anonymous", "100/1m")?,
             rate_use_forwarded: settings
                 .property("jmap.rate-limit.use-forwarded")?
                 .unwrap_or(false),
@@ -130,7 +129,7 @@ impl crate::Config {
             oauth_expiry_refresh_token_renew: settings
                 .property_or_static::<Duration>("oauth.expiry.refresh-token-renew", "4d")?
                 .as_secs(),
-            oauth_max_auth_attempts: settings.property_or_static("oauth.max-auth-attempts", "3")?,
+            oauth_max_auth_attempts: settings.property_or_static("oauth.auth.max-attempts", "3")?,
             event_source_throttle: settings
                 .property_or_static("jmap.event-source.throttle", "1s")?,
             web_socket_throttle: settings.property_or_static("jmap.web-socket.throttle", "1s")?,

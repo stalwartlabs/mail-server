@@ -312,18 +312,6 @@ impl ConfigSession for Config {
             relay: self
                 .parse_if_block("session.rcpt.relay", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(false)),
-            lookup_domains: self
-                .parse_if_block::<Option<String>>(
-                    "session.rcpt.directory.domains",
-                    ctx,
-                    &available_keys,
-                )?
-                .unwrap_or_default()
-                .map_if_block(
-                    &ctx.directory.lookups,
-                    "session.rcpt.directory.domains",
-                    "lookup list",
-                )?,
             directory: self
                 .parse_if_block::<Option<String>>("session.rcpt.directory", ctx, &available_keys)?
                 .unwrap_or_default()

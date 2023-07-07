@@ -187,8 +187,16 @@ async fn compare_dsn(message: Box<Message>, test: &str) {
     let dsn = remove_ids(bytes);
     let dsn_expected = fs::read_to_string(&path).unwrap();
 
-    //fs::write(&path, dsn.as_bytes()).unwrap();
-    assert_eq!(dsn, dsn_expected, "Failed for {}", path.display());
+    if dsn != dsn_expected {
+        let mut failed = PathBuf::from(&path);
+        failed.set_extension("failed");
+        fs::write(&failed, dsn.as_bytes()).unwrap();
+        panic!(
+            "Failed for {}, ouput saved to {}",
+            path.display(),
+            failed.display()
+        );
+    }
 }
 
 fn remove_ids(message: Vec<u8>) -> String {

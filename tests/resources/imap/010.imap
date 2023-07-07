@@ -86,6 +86,9 @@ Subject: submsg
 
 Hello world
 
+BINARY[1] {16}
+[binary content]
+BINARY.SIZE[1] 88
 ----------------------------------
 BODY[1.HEADER] {76}
 From: sub@domain.org
@@ -106,6 +109,10 @@ Content-Type: message/rfc822
 BODY[1.1] {12}
 Hello world
 
+BINARY[1.1] {12}
+Hello world
+
+BINARY.SIZE[1.1] 12
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {24}
 From: user@domain.org

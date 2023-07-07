@@ -293,6 +293,14 @@ Fire up Air Force One!  We're going South!
 
 Thanks,
 Al
+BINARY[1.1] {61}
+Fred,
+
+Fire up Air Force One!  We're going South!
+
+Thanks,
+Al
+BINARY.SIZE[1.1] 61
 ----------------------------------
 BODY[2] {1979}
 Return-Path: <president@whitehouse.gov>
@@ -478,6 +486,21 @@ Argentina.  Try this for a much better map:
 Then again, shouldn't the CIA have something like that?
 
 Bill
+BINARY[2.1.1] {355}
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill
+BINARY.SIZE[2.1.1] 355
 ----------------------------------
 BODY[2.2] {389}
 R01GOD1hJQA1AKIAAP/////78P/omn19fQAAAAAAAAAAAAAAACwAAAAAJQA1AAAD7Qi63P5w
@@ -519,6 +542,9 @@ GugmRu3CmiBt57fsVq3Y0VFKnpYdxPC6M7Ze4crnnHum4oN6LFJ1bn5NXTN7OF5fQkN5WYow
 BEN2dkGQGWJtSzqGTICJgnQuTJN/WJsojad9qXMuhIWdjXKjY4tenjo6tjVssk2gaWq3uGNX
 U6ZGxseyk8SasGw3J9GRzdTQky1iHNvcPNNI4TLeKdfMvy0vMqLrItvuxfDW8ubjueDtJufz
 7itICBxISKDBgwgTKjyYAAA7
+BINARY[2.2.1] {16}
+[binary content]
+BINARY.SIZE[2.2.1] 288
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {125}
 From:  Al Gore <vice-president@whitehouse.gov>

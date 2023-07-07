@@ -82,12 +82,14 @@ pub fn failed(message: &str) -> ! {
     std::process::exit(1);
 }
 
-pub fn enable_tracing(config: &Config) -> config::Result<Option<WorkerGuard>> {
+pub fn enable_tracing(config: &Config, message: &str) -> config::Result<Option<WorkerGuard>> {
     let level = config.value("global.tracing.level").unwrap_or("info");
     let env_filter = EnvFilter::builder()
-        .parse(format!("stalwart_smtp={}", level))
+        .parse(format!(
+            "smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"
+        ))
         .failed("Failed to log level");
-    match config.value("global.tracing.method").unwrap_or_default() {
+    let result = match config.value("global.tracing.method").unwrap_or_default() {
         "log" => {
             let path = config.value_require("global.tracing.path")?;
             let prefix = config.value_require("global.tracing.prefix")?;
@@ -114,7 +116,7 @@ pub fn enable_tracing(config: &Config) -> config::Result<Option<WorkerGuard>> {
         "stdout" => {
             tracing::subscriber::set_global_default(
                 tracing_subscriber::FmtSubscriber::builder()
-                    //.with_env_filter(env_filter)
+                    .with_env_filter(env_filter)
                     .finish(),
             )
             .failed("Failed to set subscriber");
@@ -178,10 +180,14 @@ pub fn enable_tracing(config: &Config) -> config::Result<Option<WorkerGuard>> {
             Ok(None)
         }
         _ => Ok(None),
-    }
+    };
+
+    tracing::info!(message);
+
+    result
 }
 
-pub async fn wait_for_shutdown() {
+pub async fn wait_for_shutdown(message: &str) {
     #[cfg(not(target_env = "msvc"))]
     {
         use tokio::signal::unix::{signal, SignalKind};
@@ -204,4 +210,6 @@ pub async fn wait_for_shutdown() {
             }
         }
     }
+
+    tracing::info!(message);
 }

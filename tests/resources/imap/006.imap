@@ -128,6 +128,11 @@ BODY[1.1] {87}
 Plain text email goes here!
 This is the fallback if email client does not support HTML
 
+BINARY[1.1] {87}
+Plain text email goes here!
+This is the fallback if email client does not support HTML
+
+BINARY.SIZE[1.1] 87
 ----------------------------------
 BODY[2] {93}
 <h1>This is the HTML Section!</h1>
@@ -162,6 +167,11 @@ BODY[2.1] {93}
 <h1>This is the HTML Section!</h1>
 <p>This is what displays in most modern email clients</p>
 
+BINARY[2.1] {93}
+<h1>This is the HTML Section!</h1>
+<p>This is what displays in most modern email clients</p>
+
+BINARY.SIZE[2.1] 93
 ----------------------------------
 BODY[HEADER.FIELDS (FROM TO)] {53}
 From: sender@example.com

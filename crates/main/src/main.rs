@@ -51,12 +51,14 @@ async fn main() -> std::io::Result<()> {
     servers.bind(&config);
 
     // Enable tracing
-    let _tracer = enable_tracing(&config).failed("Failed to enable tracing");
-    tracing::info!(
-        "Starting Stalwart Mail Server v{}...",
-        env!("CARGO_PKG_VERSION")
-    );
-    let todo = "fix logging";
+    let _tracer = enable_tracing(
+        &config,
+        &format!(
+            "Starting Stalwart Mail Server v{}...",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .failed("Failed to enable tracing");
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -94,11 +96,11 @@ async fn main() -> std::io::Result<()> {
     });
 
     // Wait for shutdown signal
-    wait_for_shutdown().await;
-    tracing::info!(
+    wait_for_shutdown(&format!(
         "Shutting down Stalwart Mail Server v{}...",
         env!("CARGO_PKG_VERSION")
-    );
+    ))
+    .await;
 
     // Stop services
     let _ = shutdown_tx.send(true);

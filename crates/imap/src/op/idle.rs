@@ -91,7 +91,7 @@ impl<T: AsyncRead> Session<T> {
                     match result {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
-                                if (&buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
+                                if (buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
                                     tracing::debug!(parent: &self.span, event = "stop", context = "idle", "Stopping IDLE.");
                                     return self.write_bytes(StatusResponse::completed(Command::Idle)
                                                                     .with_tag(request.tag)
