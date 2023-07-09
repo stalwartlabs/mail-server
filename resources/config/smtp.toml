@@ -1,3 +1,7 @@
+#############################################
+# SMTP server configuration
+#############################################
+
 [server.listener."smtp"]
 bind = ["0.0.0.0:25"]
 greeting = "Stalwart SMTP at your service"
@@ -51,7 +55,7 @@ mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
 [session.auth]
 mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
                { else = [] } ]
-directory = [ { if = "listener", ne = "smtp", then = "local" }, 
+directory = [ { if = "listener", ne = "smtp", then = "__SMTP_DIRECTORY__" }, 
            { else = false } ]
 require = [ { if = "listener", ne = "smtp", then = true},
             { else = false } ]
@@ -68,7 +72,7 @@ wait = "5s"
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
 max-recipients = 25
-directory = [ { if = "authenticated-as", ne = "", then = "local" }, 
+directory = [ { if = "authenticated-as", ne = "", then = "__SMTP_DIRECTORY__" }, 
          { else = false } ]
 
 [session.rcpt.cache]
@@ -157,7 +161,7 @@ expire = "5d"
 
 [queue.outbound]
 #hostname = "__HOST__"
-next-hop = [ { if = "rcpt-domain", in-list = "local/domains", then = "lmtp" }, 
+next-hop = [ { if = "rcpt-domain", in-list = "__SMTP_DIRECTORY__/domains", then = "__NEXT_HOP__" }, 
              { else = false } ]
 ip-strategy = "ipv4-then-ipv6"
 
@@ -267,10 +271,10 @@ max-size = 26214400 # 25 mb
 sign = ["rsa"]
 
 [signature."rsa"]
-#public-key = "file://__PATH__/etc/certs/dkim.crt"
-private-key = "file://__PATH__/etc/private/dkim.key"
+#public-key = "file://__PATH__/etc/dkim/__DOMAIN__.cert"
+private-key = "file://__PATH__/etc/dkim/__DOMAIN__.key"
 domain = "__DOMAIN__"
-selector = "stalwart_smtp"
+selector = "stalwart"
 headers = ["From", "To", "Date", "Subject", "Message-ID"]
 algorithm = "rsa-sha256"
 canonicalization = "relaxed/relaxed"
@@ -282,8 +286,8 @@ set-body-length = false
 report = true
 
 [remote."lmtp"]
-address = "__LMTP_HOST__"
-port = __LMTP_PORT__
+address = "127.0.0.1"
+port = 11200
 protocol = "lmtp"
 concurrency = 10
 timeout = "1m"
@@ -296,32 +300,13 @@ allow-invalid-certs = true
 #username = ""
 #secret = ""
 
-[database."sql"]
-#address = "sqlite://__PATH__/etc/sqlite.db?mode=rwc"
-address = "postgres://postgres:password@localhost/test"
-max-connections = 10
-min-connections = 0
-idle-timeout = "5m"
-
-[database."sql".lookup]
-auth = "SELECT secret FROM users WHERE email=?"
-rcpt = "SELECT EXISTS(SELECT 1 FROM users WHERE email=? LIMIT 1)"
-vrfy = "SELECT email FROM users WHERE email LIKE '%' || ? || '%' LIMIT 5"
-expn = "SELECT member FROM mailing_lists WHERE id = ?"
-domains = "SELECT EXISTS(SELECT 1 FROM domains WHERE name=? LIMIT 1)"
-
-[database."sql".cache]
-enable = ["rcpt", "domains"]
-entries = 1000
-ttl = {positive = "1d", negative = "1h"}
-
 [sieve]
 from-name = "Automated Message"
 from-addr = "no-reply@__DOMAIN__"
 return-path = ""
 #hostname = "__HOST__"
 sign = ["rsa"]
-use-directory = "sql"
+use-directory = "__SMTP_DIRECTORY__"
 
 [sieve.limits]
 redirects = 3
@@ -337,14 +322,14 @@ duplicate-expiry = "7d"
 connect = '''
     require ["variables", "extlists", "reject"];
 
-    if string :list "${env.remote_ip}" "local/blocked-ips" {
+    if string :list "${env.remote_ip}" "__SMTP_DIRECTORY__/blocked-ips" {
         reject "Your IP '${env.remote_ip}' is not welcomed here.";
     }
 '''
 ehlo = '''
     require ["variables", "extlists", "reject"];
 
-    if string :list "${env.helo_domain}" "local/blocked-domains" {
+    if string :list "${env.helo_domain}" "__SMTP_DIRECTORY__/blocked-domains" {
         reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
     }
 '''
@@ -383,5 +368,4 @@ data = '''
 '''
 
 [management]
-directory = "local"
-
+directory = "__DIRECTORY__"

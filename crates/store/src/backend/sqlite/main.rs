@@ -39,7 +39,7 @@ impl Store {
     pub async fn open(config: &Config) -> crate::Result<Self> {
         let db = Self {
             conn_pool: Pool::builder()
-                .max_size(config.property_or_static("store.db.connection-pool.size", "10")?)
+                .max_size(config.property_or_static("store.db.pool.max-connections", "10")?)
                 .build(
                     SqliteConnectionManager::file(
                         config
@@ -58,7 +58,7 @@ impl Store {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>("store.db.worker-pool.size")?
+                        .property::<usize>("store.db.pool.workers")?
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )
@@ -67,7 +67,7 @@ impl Store {
                     crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
                 })?,
             id_assigner: Arc::new(Mutex::new(LruCache::new(
-                config.property_or_static("store.db.id-cache.size", "1000")?,
+                config.property_or_static("store.db.cache.size", "1000")?,
             ))),
             blob: BlobStore::new(config).await?,
         };

@@ -33,6 +33,7 @@ pub enum Type {
     Location,
     #[default]
     Other,
+    Superuser,
 }
 
 #[derive(Debug)]
@@ -135,7 +136,7 @@ impl Debug for Lookup {
 impl Type {
     pub fn to_jmap(&self) -> &'static str {
         match self {
-            Self::Individual => "individual",
+            Self::Individual | Self::Superuser => "individual",
             Self::Group => "group",
             Self::Resource => "resource",
             Self::Location => "location",
@@ -148,6 +149,7 @@ impl Type {
 struct DirectoryOptions {
     catch_all: bool,
     subaddressing: bool,
+    superuser_group: String,
 }
 
 #[derive(Default, Clone, Debug)]

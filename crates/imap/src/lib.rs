@@ -42,14 +42,16 @@ impl IMAP {
                 })
                 .into_bytes(),
             rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("imap.rate-limit.size")?.unwrap_or(2048),
+                config
+                    .property("imap.rate-limit.cache.size")?
+                    .unwrap_or(2048),
                 RandomState::default(),
                 config
                     .property::<u64>("global.shared-map.shard")?
                     .unwrap_or(32)
                     .next_power_of_two() as usize,
             ),
-            rate_requests: config.property_or_static("imap.rate-limit", "1000/1m")?,
+            rate_requests: config.property_or_static("imap.rate-limit.requests", "2000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
         }))

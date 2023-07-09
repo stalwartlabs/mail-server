@@ -78,7 +78,6 @@ pub mod thread;
 pub mod vacation;
 pub mod websocket;
 
-pub const SUPERUSER_ID: u32 = 0;
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct JMAP {
@@ -151,7 +150,6 @@ pub struct Config {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
 
-    pub principal_superusers: String,
     pub principal_allow_lookups: bool,
 
     pub capabilities: BaseCapabilities,

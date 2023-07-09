@@ -1,9 +1,13 @@
+#############################################
+# IMAP server configuration
+#############################################
+
 [server.listener."imap"]
 bind = ["0.0.0.0:143"]
 protocol = "imap"
 
 [server.listener."imaptls"]
-bind = ["0.0.0.0:9993"]
+bind = ["0.0.0.0:993"]
 protocol = "imap"
 tls.implicit = true
 

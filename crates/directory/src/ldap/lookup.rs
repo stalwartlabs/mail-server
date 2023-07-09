@@ -304,17 +304,25 @@ impl LdapDirectory {
                         for entry in rs {
                             'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
                                 if self.mappings.attr_name.contains(&attr) {
-                                    if let Some(name) = value.first() {
-                                        if !name.is_empty() {
-                                            names.push(name.to_string());
+                                    if let Some(group) = value.first() {
+                                        if !group.is_empty() {
+                                            if !group
+                                                .eq_ignore_ascii_case(&self.opt.superuser_group)
+                                            {
+                                                names.push(group.to_string());
+                                            } else {
+                                                principal.typ = Type::Superuser;
+                                            }
                                             break 'outer;
                                         }
                                     }
                                 }
                             }
                         }
-                    } else {
+                    } else if !group.eq_ignore_ascii_case(&self.opt.superuser_group) {
                         names.push(group);
+                    } else {
+                        principal.typ = Type::Superuser;
                     }
                 }
                 principal.member_of = names;

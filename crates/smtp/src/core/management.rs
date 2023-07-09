@@ -23,6 +23,7 @@
 
 use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Instant};
 
+use directory::Type;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
@@ -256,8 +257,15 @@ impl SMTP {
                         .authenticate(&Credentials::Plain { username, secret })
                         .await
                     {
-                        Ok(Some(_)) => {
+                        Ok(Some(principal)) if principal.typ == Type::Superuser => {
                             is_authenticated = true;
+                        }
+                        Ok(Some(_)) => {
+                            tracing::debug!(
+                                context = "management",
+                                event = "auth-error",
+                                "Insufficient privileges."
+                            );
                         }
                         Ok(None) => {
                             tracing::debug!(

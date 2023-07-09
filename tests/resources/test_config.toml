@@ -182,10 +182,6 @@ description = "Sales Team"
 name = "support"
 description = "Support Team"
 
-[[directory."local".groups]]
-name = "superusers"
-description = "Superusers"
-
 [oauth]
 key = "parerga_und_paralipomena"
 oauth.auth.max-attempts = 1

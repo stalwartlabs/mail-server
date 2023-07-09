@@ -50,10 +50,14 @@ const DIRECTORY: &str = r#"
 [directory."local"]
 type = "memory"
 
+[directory."local".options]
+superuser-group = "superusers"
+
 [[directory."local".users]]
 name = "admin"
 description = "Superuser"
 secret = "secret"
+member-of = ["superusers"]
 
 "#;
 

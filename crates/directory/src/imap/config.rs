@@ -21,7 +21,7 @@ impl ImapDirectory {
         let address = config.value_require((&prefix, "address"))?;
         let tls_implicit: bool = config.property_or_static((&prefix, "tls.implicit"), "false")?;
         let port: u16 = config
-            .property_or_static((&prefix, "port"), if tls_implicit { "443" } else { "143" })?;
+            .property_or_static((&prefix, "port"), if tls_implicit { "993" } else { "143" })?;
 
         let manager = ImapConnectionManager {
             addr: format!("{address}:{port}"),

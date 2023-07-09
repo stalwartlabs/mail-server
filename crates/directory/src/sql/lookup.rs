@@ -39,6 +39,16 @@ impl Directory for SqlDirectory {
                 .fetch_all(&self.pool)
                 .await?;
 
+            // Check whether the user is a superuser
+            if let Some(idx) = principal
+                .member_of
+                .iter()
+                .position(|group| group.eq_ignore_ascii_case(&self.opt.superuser_group))
+            {
+                principal.member_of.swap_remove(idx);
+                principal.typ = Type::Superuser;
+            }
+
             Ok(Some(principal))
         } else {
             Ok(None)

@@ -1,13 +1,24 @@
+#############################################
+# Directory configuration
+#############################################
+
 [directory."sql"]
 type = "sql"
-address = "sqlite::memory:"
+address = "sqlite://__PATH__/data/accounts.sqlite3?mode=rwc"
 
 [directory."sql".options]
 catch-all = true
 subaddressing = true
+superuser-group = "superusers"
 
 [directory."sql".pool]
 max-connections = 10
+min-connections = 0
+#idle-timeout = "10m"
+
+[directory."sql".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
 
 [directory."sql".query]
 name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
@@ -35,9 +46,21 @@ base-dn = "dc=example,dc=org"
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
 
+[directory."ldap".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
+
 [directory."ldap".options]
 catch-all = true
 subaddressing = true
+superuser-group = "superusers"
+
+[directory."ldap".pool]
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
 
 [directory."ldap".filter]
 name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
@@ -62,40 +85,52 @@ quota = "diskQuota"
 [directory."imap"]
 type = "imap"
 address = "127.0.0.1"
-port = 9198
+port = 993
 
 [directory."imap".pool]
-max-connections = 5
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
 
 [directory."imap".tls]
 implicit = true
 allow-invalid-certs = true
 
-[directory."imap".lookup]
-domains = ["example.org"]
+[directory."imap".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
 
-[directory."smtp"]
+[directory."imap".lookup]
+domains = ["__DOMAIN__"]
+
+[directory."lmtp"]
 type = "lmtp"
 address = "127.0.0.1"
-port = 9199
+port = 11200
 
-[directory."smtp".limits]
+[directory."lmtp".limits]
 auth-errors = 3
 rcpt = 5
 
-[directory."smtp".pool]
-max-connections = 5
+[directory."lmtp".pool]
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
 
-[directory."smtp".tls]
-implicit = true
+[directory."lmtp".tls]
+implicit = false
 allow-invalid-certs = true
 
-[directory."smtp".cache]
+[directory."lmtp".cache]
 entries = 500
-ttl = {positive = '10s', negative = '5s'}
+ttl = {positive = '1h', negative = '10m'}
 
-[directory."smtp".lookup]
-domains = ["example.org"]
+[directory."lmtp".lookup]
+domains = ["__DOMAIN__"]
 
 [directory."memory"]
 type = "memory"
@@ -103,29 +138,30 @@ type = "memory"
 [directory."memory".options]
 catch-all = true
 subaddressing = true
+superuser-group = "superusers"
 
 [[directory."memory".users]]
 name = "admin"
 description = "Superuser"
 secret = "changeme"
-email = ["admin@example.org"]
+email = ["postmaster@__DOMAIN__"]
 member-of = ["superusers"]
 
 [[directory."memory".users]]
 name = "jane"
 description = "Jane Doe"
 secret = "abcde"
-email = ["jane@example.org", "jane.doe@example.org"]
-email-list = ["info@example.org"]
+email = ["jane@__DOMAIN__", "jane.doe@__DOMAIN__"]
+email-list = ["info@__DOMAIN__"]
 member-of = ["sales", "support"]
 
 [[directory."memory".users]]
 name = "bill"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
-quota = 500000
-email = "bill@example.org"
-email-list = ["info@example.org"]
+quota = 50000000
+email = ["bill@__DOMAIN__", "bill.foobar@__DOMAIN__"]
+email-list = ["info@__DOMAIN__"]
 
 [[directory."memory".groups]]
 name = "sales"
@@ -136,4 +172,4 @@ name = "support"
 description = "Support Team"
 
 [directory."memory".lookup]
-domains = ["example.org"]
+domains = ["__DOMAIN__"]

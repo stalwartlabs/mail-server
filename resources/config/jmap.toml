@@ -1,16 +1,27 @@
+#############################################
+# JMAP server configuration
+#############################################
+
 [server.listener."jmap"]
-bind = ["0.0.0.0:__BIND_PORT__"]
-url = "https://127.0.0.1:__BIND_PORT__"
+bind = ["0.0.0.0:8080"]
+url = "https://__HOST__:8080"
 protocol = "jmap"
 
 [store.db]
-path = "__PATH__/db"
+path = "__PATH__/data/index.sqlite3"
+
+[store.db.pool]
+max-connections = 10
+#workers = 8
+
+[store.db.cache]
+size = 1000
 
 [store.blob]
-type = "local"
+type = "__BLOB_STORE__"
 
 [store.blob.local]
-path = "__PATH__/blobs"
+path = "__PATH__/data/blobs"
 
 [store.blob.s3]
 bucket = "stalwart"
@@ -23,7 +34,7 @@ secret-key = "minioadmin"
 timeout = "30s"
 
 [jmap]
-directory = "sql"
+directory = "__DIRECTORY__"
 
 [jmap.session.cache]
 ttl = "1h"
@@ -73,6 +84,9 @@ max-size = 75000000
 
 [jmap.email.parse]
 max-items = 10
+
+[jmap.principal]
+allow-lookups = true
 
 [jmap.sieve]
 disable-capabilities = []

@@ -31,15 +31,13 @@ use aes_gcm_siv::{
     AeadInPlace, Aes256GcmSiv, KeyInit, Nonce,
 };
 
-use directory::Principal;
+use directory::{Principal, Type};
 use jmap_proto::{
     error::method::MethodError,
     types::{collection::Collection, id::Id},
 };
 use store::blake3;
 use utils::map::bitmap::Bitmap;
-
-use crate::SUPERUSER_ID;
 
 pub mod acl;
 pub mod authenticate;
@@ -54,6 +52,7 @@ pub struct AccessToken {
     pub name: String,
     pub description: Option<String>,
     pub quota: u32,
+    pub is_superuser: bool,
 }
 
 impl AccessToken {
@@ -65,6 +64,7 @@ impl AccessToken {
             name: principal.name,
             description: principal.description,
             quota: principal.quota,
+            is_superuser: principal.typ == Type::Superuser,
         }
     }
 
@@ -95,9 +95,7 @@ impl AccessToken {
     }
 
     pub fn is_member(&self, account_id: u32) -> bool {
-        self.primary_id == account_id
-            || self.member_of.contains(&account_id)
-            || self.member_of.contains(&SUPERUSER_ID)
+        self.primary_id == account_id || self.member_of.contains(&account_id) || self.is_superuser
     }
 
     pub fn is_primary_id(&self, account_id: u32) -> bool {
@@ -105,7 +103,7 @@ impl AccessToken {
     }
 
     pub fn is_super_user(&self) -> bool {
-        self.member_of.contains(&SUPERUSER_ID)
+        self.is_superuser
     }
 
     pub fn is_shared(&self, account_id: u32) -> bool {

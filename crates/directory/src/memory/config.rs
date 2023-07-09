@@ -12,12 +12,26 @@ impl MemoryDirectory {
         prefix: impl AsKey,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
-        let mut directory = MemoryDirectory::default();
+        let mut directory = MemoryDirectory {
+            opt: DirectoryOptions::from_config(config, prefix.clone())?,
+            ..Default::default()
+        };
 
         for lookup_id in config.sub_keys((prefix.as_str(), "users")) {
             let name = config
                 .value_require((prefix.as_str(), "users", lookup_id, "name"))?
                 .to_string();
+            let mut typ = Type::Individual;
+            let mut member_of = Vec::new();
+
+            for (_, group) in config.values((prefix.as_str(), "users", lookup_id, "member-of")) {
+                if !group.eq_ignore_ascii_case(&directory.opt.superuser_group) {
+                    member_of.push(group.to_string());
+                } else {
+                    typ = Type::Superuser;
+                }
+            }
+
             directory.principals.insert(
                 name.clone(),
                 Principal {
@@ -26,17 +40,14 @@ impl MemoryDirectory {
                         .values((prefix.as_str(), "users", lookup_id, "secret"))
                         .map(|(_, v)| v.to_string())
                         .collect(),
-                    typ: Type::Individual,
+                    typ,
                     description: config
                         .value((prefix.as_str(), "users", lookup_id, "description"))
                         .map(|v| v.to_string()),
                     quota: config
                         .property((prefix.as_str(), "users", lookup_id, "quota"))?
                         .unwrap_or(0),
-                    member_of: config
-                        .values((prefix.as_str(), "users", lookup_id, "member-of"))
-                        .map(|(_, v)| v.to_string())
-                        .collect(),
+                    member_of,
                 },
             );
             let mut emails = Vec::new();
@@ -105,7 +116,6 @@ impl MemoryDirectory {
         directory
             .domains
             .extend(config.parse_lookup_list((&prefix, "lookup.domains"))?);
-        directory.opt = DirectoryOptions::from_config(config, prefix)?;
 
         Ok(Arc::new(directory))
     }

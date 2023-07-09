@@ -755,7 +755,7 @@ impl JMAP {
         }
 
         #[cfg(feature = "test_mode")]
-        if mailbox_ids.is_empty() && account_id == crate::SUPERUSER_ID {
+        if mailbox_ids.is_empty() && account_id == 0 {
             return Ok(mailbox_ids);
         }
 

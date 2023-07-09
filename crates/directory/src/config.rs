@@ -42,7 +42,8 @@ impl ConfigDirectory for Config {
             };
 
             // Add queries/filters as lookups
-            if ["sql", "ldap"].contains(&protocol) {
+            let is_directory = ["sql", "ldap"].contains(&protocol);
+            if is_directory {
                 let name = if protocol == "sql" { "query" } else { "filter" };
                 for lookup_id in self.sub_keys(("directory", id, name)) {
                     config.lookups.insert(
@@ -58,9 +59,8 @@ impl ConfigDirectory for Config {
             }
 
             // Parse lookups
-            let is_remote = protocol != "memory";
             for lookup_id in self.sub_keys(("directory", id, "lookup")) {
-                let lookup = if is_remote {
+                let lookup = if is_directory {
                     Lookup::Directory {
                         directory: directory.clone(),
                         query: self
@@ -120,6 +120,10 @@ impl DirectoryOptions {
         Ok(DirectoryOptions {
             catch_all: config.property_or_static((&key, "options.catch-all"), "false")?,
             subaddressing: config.property_or_static((&key, "options.subaddressing"), "true")?,
+            superuser_group: config
+                .value("options.superuser-group")
+                .unwrap_or("superusers")
+                .to_string(),
         })
     }
 }

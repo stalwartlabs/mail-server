@@ -5,7 +5,6 @@ use imap_proto::{protocol::list::Attribute, StatusResponse};
 use jmap::{
     auth::{acl::EffectiveAcl, AccessToken},
     mailbox::INBOX_ID,
-    SUPERUSER_ID,
 };
 use jmap_proto::{
     object::Object,
@@ -43,31 +42,29 @@ impl SessionData {
 
         // Fetch shared mailboxes
         for &account_id in access_token.shared_accounts(Collection::Mailbox) {
-            if account_id != SUPERUSER_ID {
-                match session
-                    .fetch_account_mailboxes(
-                        account_id,
-                        format!(
-                            "{}/{}",
-                            session.imap.name_shared,
-                            session
-                                .jmap
-                                .get_account_name(account_id)
-                                .await
-                                .unwrap_or_default()
-                                .unwrap_or_else(|| Id::from(account_id).to_string())
-                        )
-                        .into(),
-                        access_token,
+            match session
+                .fetch_account_mailboxes(
+                    account_id,
+                    format!(
+                        "{}/{}",
+                        session.imap.name_shared,
+                        session
+                            .jmap
+                            .get_account_name(account_id)
+                            .await
+                            .unwrap_or_default()
+                            .unwrap_or_else(|| Id::from(account_id).to_string())
                     )
-                    .await
-                {
-                    Ok(account_mailboxes) => {
-                        mailboxes.push(account_mailboxes);
-                    }
-                    Err(_) => {
-                        tracing::warn!(parent: &session.span, account_id = account_id, event = "error", "Failed to retrieve mailboxes.");
-                    }
+                    .into(),
+                    access_token,
+                )
+                .await
+            {
+                Ok(account_mailboxes) => {
+                    mailboxes.push(account_mailboxes);
+                }
+                Err(_) => {
+                    tracing::warn!(parent: &session.span, account_id = account_id, event = "error", "Failed to retrieve mailboxes.");
                 }
             }
         }
@@ -305,11 +302,10 @@ impl SessionData {
 
                 // Add new shared account ids
                 for account_id in has_access_to {
-                    if account_id != SUPERUSER_ID
-                        && !new_accounts
-                            .iter()
-                            .skip(1)
-                            .any(|m| m.account_id == account_id)
+                    if !new_accounts
+                        .iter()
+                        .skip(1)
+                        .any(|m| m.account_id == account_id)
                     {
                         tracing::debug!(parent: &self.span, "Adding shared account {}", account_id);
                         added_account_ids.push(account_id);

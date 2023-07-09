@@ -13,6 +13,7 @@ members = [
     "crates/utils",
     "crates/maybe-async",
     "crates/cli",
+    "crates/install",
     "tests",
 ]
 

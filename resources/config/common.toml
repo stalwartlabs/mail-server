@@ -1,10 +1,14 @@
+#############################################
+# Server configuration
+#############################################
+
 [server]
 hostname = "__HOST__"
 max-connections = 8192
 
 [server.run-as]
-user = "__RUN_AS_USER__"
-group = "__RUN_AS_GROUP__"
+user = "stalwart-mail"
+group = "stalwart-mail"
 
 [server.tls]
 enable = true
@@ -49,5 +53,5 @@ rotate = "daily"
 level = "info"
 
 [certificate."default"]
-cert = "file://__PATH__/etc/certs/tls.crt"
-private-key = "file://__PATH__/etc/private/tls.key"
+cert = "file://__CERT_PATH__"
+private-key = "file://__PK_PATH__"
