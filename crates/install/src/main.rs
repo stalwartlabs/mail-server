@@ -2,19 +2,16 @@ use std::{
     fs,
     io::Cursor,
     path::{Path, PathBuf},
-    process::Command,
     time::SystemTime,
 };
 
 use base64::{engine::general_purpose, Engine};
 use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
-use flate2::bufread::GzDecoder;
 use openssl::rsa::Rsa;
 use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rusqlite::{Connection, OpenFlags};
-use tar::Archive;
 
 const CFG_COMMON: &str = include_str!("../../../resources/config/common.toml");
 const CFG_DIRECTORY: &str = include_str!("../../../resources/config/directory.toml");
@@ -315,8 +312,9 @@ fn main() -> std::io::Result<()> {
             }) {
                 Ok(Ok(bytes)) => {
                     #[cfg(not(target_env = "msvc"))]
-                    if let Err(err) = Archive::new(GzDecoder::new(Cursor::new(bytes)))
-                        .unpack(base_path.join("bin"))
+                    if let Err(err) =
+                        tar::Archive::new(flate2::bufread::GzDecoder::new(Cursor::new(bytes)))
+                            .unpack(base_path.join("bin"))
                     {
                         eprintln!("❌ Failed to unpack {}: {}", url, err);
                         return Ok(());
@@ -435,14 +433,14 @@ fn main() -> std::io::Result<()> {
         // Change permissions
         #[cfg(not(target_env = "msvc"))]
         {
-            let mut cmd = Command::new("chown");
+            let mut cmd = std::process::Command::new("chown");
             cmd.arg("-R")
                 .arg(format!("{}:{}", ACCOUNT_NAME, ACCOUNT_NAME))
                 .arg(&base_path);
             if let Err(err) = cmd.status() {
                 eprintln!("Warning: Failed to set permissions: {}", err);
             }
-            let mut cmd = Command::new("chmod");
+            let mut cmd = std::process::Command::new("chmod");
             cmd.arg("-R")
                 .arg("770")
                 .arg(&format!("{}/etc", base_path.display()))
@@ -470,12 +468,12 @@ fn main() -> std::io::Result<()> {
                     .replace("__TITLE__", component.name()),
             ) {
                 Ok(_) => {
-                    if let Err(err) = Command::new("/bin/systemctl")
+                    if let Err(err) = std::process::Command::new("/bin/systemctl")
                         .arg("enable")
                         .arg(service_file)
                         .status()
                         .and_then(|_| {
-                            Command::new("/bin/systemctl")
+                            std::process::Command::new("/bin/systemctl")
                                 .arg("restart")
                                 .arg(&service_name)
                                 .status()
@@ -504,18 +502,18 @@ fn main() -> std::io::Result<()> {
                     .replace("__TITLE__", component.name()),
             ) {
                 Ok(_) => {
-                    if let Err(err) = Command::new("launchctl")
+                    if let Err(err) = std::process::Command::new("launchctl")
                         .arg("load")
                         .arg(service_file)
                         .status()
                         .and_then(|_| {
-                            Command::new("launchctl")
+                            std::process::Command::new("launchctl")
                                 .arg("enable")
                                 .arg(&service_name)
                                 .status()
                         })
                         .and_then(|_| {
-                            Command::new("launchctl")
+                            std::process::Command::new("launchctl")
                                 .arg("start")
                                 .arg(&service_name)
                                 .status()
