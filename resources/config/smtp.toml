@@ -72,8 +72,7 @@ wait = "5s"
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
 max-recipients = 25
-directory = [ { if = "authenticated-as", ne = "", then = "__SMTP_DIRECTORY__" }, 
-         { else = false } ]
+directory = "__SMTP_DIRECTORY__"
 
 [session.rcpt.cache]
 entries = 1000

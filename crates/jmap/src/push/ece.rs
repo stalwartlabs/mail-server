@@ -206,29 +206,3 @@ pub fn generate_iv(nonce: &[u8], counter: usize) -> [u8; ECE_NONCE_LENGTH] {
     iv[offset..].copy_from_slice(&(mask ^ (counter as u64)).to_be_bytes());
     iv
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ece_roundtrip() {
-        for len in [1, 2, 5, 16, 256, 1024, 2048, 4096, 1024 * 1024] {
-            let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret().unwrap();
-
-            let bytes: Vec<u8> = (0..len).map(|_| store::rand::random::<u8>()).collect();
-
-            let encrypted_bytes =
-                ece_encrypt(&keypair.pub_as_raw().unwrap(), &auth_secret, &bytes).unwrap();
-
-            let decrypted_bytes = ece::decrypt(
-                &keypair.raw_components().unwrap(),
-                &auth_secret,
-                &encrypted_bytes,
-            )
-            .unwrap();
-
-            assert_eq!(bytes, decrypted_bytes, "len: {}", len);
-        }
-    }
-}

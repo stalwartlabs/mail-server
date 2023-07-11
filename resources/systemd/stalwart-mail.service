@@ -1,7 +1,7 @@
 [Unit]
-Description=Stalwart SMTP
+Description=Stalwart __TITLE__ Server
 Conflicts=postfix.service sendmail.service exim4.service
-ConditionPathExists=/usr/local/stalwart-smtp/etc/config.toml
+ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
  
 [Service]
@@ -11,11 +11,11 @@ KillMode=process
 KillSignal=SIGINT
 Restart=on-failure
 RestartSec=5
-ExecStart=/usr/local/stalwart-smtp/bin/stalwart-smtp --config=/usr/local/stalwart-smtp/etc/config.toml
+ExecStart=__PATH__/bin/stalwart-__NAME__ --config=__PATH__/etc/config.toml
 PermissionsStartOnly=true
 StandardOutput=syslog
 StandardError=syslog
-SyslogIdentifier=stalwart-smtp
+SyslogIdentifier=stalwart-__NAME__
  
 [Install]
 WantedBy=multi-user.target

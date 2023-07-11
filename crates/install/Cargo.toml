@@ -11,7 +11,7 @@ readme = "README.md"
 resolver = "2"
 
 [dependencies]
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"]}
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "blocking"] }
 rusqlite = { version = "0.29.0", features = ["bundled"] }
 rpassword = "7.0"
 indicatif = "0.17.0"
@@ -20,6 +20,12 @@ openssl = { version = "0.10.55", features = ["vendored"] }
 base64 = "0.21.2"
 pwhash = "1.0.0"
 rand = "0.8.5"
+clap = { version = "4.1.6", features = ["derive"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = "0.2.147"
+flate2 = "1.0.26"
+tar = "0.4.38"
+
+[target.'cfg(target_env = "msvc")'.dependencies]
+zip-extract = "0.1.2"

@@ -276,30 +276,3 @@ pub fn decode_challenge_oauth(challenge: &[u8]) -> Result<Credentials<String>, &
 
     Err("Failed to find 'auth=Bearer' in challenge.")
 }
-
-#[cfg(test)]
-mod tests {
-    use mail_parser::decoders::base64::base64_decode;
-    use mail_send::Credentials;
-
-    #[test]
-    fn decode_challenge_oauth() {
-        assert!(
-            Credentials::OAuthBearer {
-                token: "vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==".to_string()
-            } == super::decode_challenge_oauth(
-                &base64_decode(
-                    concat!(
-                        "bixhPXVzZXJAZXhhbXBsZS5jb20sAWhv",
-                        "c3Q9c2VydmVyLmV4YW1wbGUuY29tAXBvcnQ9MTQzAWF1dGg9QmVhcmVyI",
-                        "HZGOWRmdDRxbVRjMk52YjNSbGNrQmhiSFJoZG1semRHRXVZMjl0Q2c9PQ",
-                        "EB"
-                    )
-                    .as_bytes(),
-                )
-                .unwrap(),
-            )
-            .unwrap()
-        );
-    }
-}

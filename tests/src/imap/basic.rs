@@ -21,7 +21,10 @@
  * for more details.
 */
 
+use imap::op::authenticate::decode_challenge_oauth;
 use imap_proto::ResponseType;
+use mail_parser::decoders::base64::base64_decode;
+use mail_send::Credentials;
 
 use super::{AssertResult, ImapConnection, Type};
 
@@ -49,4 +52,25 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     imap.assert_read(Type::Continuation, ResponseType::Ok).await;
     imap.send_untagged("AGJvYXR5AG1jYm9hdGZhY2U=").await;
     imap.assert_read(Type::Tagged, ResponseType::No).await;
+}
+
+#[test]
+fn decode_challenge() {
+    assert!(
+        Credentials::OAuthBearer {
+            token: "vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==".to_string()
+        } == decode_challenge_oauth(
+            &base64_decode(
+                concat!(
+                    "bixhPXVzZXJAZXhhbXBsZS5jb20sAWhv",
+                    "c3Q9c2VydmVyLmV4YW1wbGUuY29tAXBvcnQ9MTQzAWF1dGg9QmVhcmVyI",
+                    "HZGOWRmdDRxbVRjMk52YjNSbGNrQmhiSFJoZG1semRHRXVZMjl0Q2c9PQ",
+                    "EB"
+                )
+                .as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    );
 }

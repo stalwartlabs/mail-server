@@ -39,6 +39,7 @@ use jmap::{
         HtmlResponse, StateChangeResponse,
     },
     auth::AccessToken,
+    push::ece::ece_encrypt,
     JMAP,
 };
 use jmap_client::{client::Client, mailbox::Role, push_subscription::Keys};
@@ -374,4 +375,25 @@ async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state
             .collect::<AHashSet<&TypeState>>(),
         state.iter().collect::<AHashSet<&TypeState>>()
     );
+}
+
+#[test]
+fn ece_roundtrip() {
+    for len in [1, 2, 5, 16, 256, 1024, 2048, 4096, 1024 * 1024] {
+        let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret().unwrap();
+
+        let bytes: Vec<u8> = (0..len).map(|_| store::rand::random::<u8>()).collect();
+
+        let encrypted_bytes =
+            ece_encrypt(&keypair.pub_as_raw().unwrap(), &auth_secret, &bytes).unwrap();
+
+        let decrypted_bytes = ece::decrypt(
+            &keypair.raw_components().unwrap(),
+            &auth_secret,
+            &encrypted_bytes,
+        )
+        .unwrap();
+
+        assert_eq!(bytes, decrypted_bytes, "len: {}", len);
+    }
 }

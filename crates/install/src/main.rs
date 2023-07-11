@@ -1,15 +1,20 @@
 use std::{
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
+    process::Command,
     time::SystemTime,
 };
 
 use base64::{engine::general_purpose, Engine};
+use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
+use flate2::bufread::GzDecoder;
 use openssl::rsa::Rsa;
 use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rusqlite::{Connection, OpenFlags};
+use tar::Archive;
 
 const CFG_COMMON: &str = include_str!("../../../resources/config/common.toml");
 const CFG_DIRECTORY: &str = include_str!("../../../resources/config/directory.toml");
@@ -17,7 +22,25 @@ const CFG_JMAP: &str = include_str!("../../../resources/config/jmap.toml");
 const CFG_IMAP: &str = include_str!("../../../resources/config/imap.toml");
 const CFG_SMTP: &str = include_str!("../../../resources/config/smtp.toml");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(target_os = "linux")]
+const SERVICE: &str = include_str!("../../../resources/systemd/stalwart-mail.service");
+#[cfg(target_os = "macos")]
+const SERVICE: &str = include_str!("../../../resources/systemd/stalwart.mail.plist");
+
+#[cfg(target_os = "linux")]
+const ACCOUNT_NAME: &str = "stalwart-mail";
+#[cfg(target_os = "macos")]
+const ACCOUNT_NAME: &str = "_stalwart-mail";
+
+#[cfg(not(target_env = "msvc"))]
+const PKG_EXTENSION: &str = "tar.gz";
+
+#[cfg(target_env = "msvc")]
+const PKG_EXTENSION: &str = "zip";
+
+static TARGET: &str = env!("TARGET");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Component {
     AllInOne,
     Jmap,
@@ -36,23 +59,23 @@ enum Blob {
     Local,
     MinIO,
     S3,
-    GCS,
+    Gcs,
     Azure,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Directory {
-    SQL,
-    LDAP,
+    Sql,
+    Ldap,
     None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SmtpDirectory {
-    SQL,
-    LDAP,
-    LMTP,
-    IMAP,
+    Sql,
+    Ldap,
+    Lmtp,
+    Imap,
 }
 
 const DIRECTORIES: [[&str; 2]; 6] = [
@@ -64,28 +87,63 @@ const DIRECTORIES: [[&str; 2]; 6] = [
     ["reports", ""],
 ];
 
+#[derive(Debug, Parser)]
+#[clap(version, about, long_about = None)]
+#[clap(name = "stalwart-cli")]
+pub struct Arguments {
+    #[clap(long, short = 'p')]
+    path: Option<PathBuf>,
+    #[clap(long, short = 'c')]
+    component: Option<Component>,
+    #[clap(long, short = 'd')]
+    docker: bool,
+}
+
 fn main() -> std::io::Result<()> {
-    let c = "fix";
-    /*#[cfg(not(target_env = "msvc"))]
+    let args = Arguments::parse();
+
+    #[cfg(not(target_env = "msvc"))]
     unsafe {
         if libc::getuid() != 0 {
             eprintln!("This program must be run as root.");
             std::process::exit(1);
         }
-    }*/
+    }
 
-    println!("\nWelcome to the Stalwart mail server installer\n");
+    println!("\nWelcome to the Stalwart Mail Server installer\n");
 
-    let component = select::<Component>(
-        "Which components would you like to install?",
-        &[
-            "All-in-one mail server (JMAP + IMAP + SMTP)",
-            "JMAP server",
-            "IMAP server",
-            "SMTP server",
-        ],
-        Component::AllInOne,
-    )?;
+    // Obtain component to install
+    let (component, skip_download) = if let Some(component) = args.component {
+        (component, true)
+    } else {
+        (
+            select::<Component>(
+                "Which components would you like to install?",
+                &[
+                    "All-in-one mail server (JMAP + IMAP + SMTP)",
+                    "JMAP server",
+                    "IMAP server",
+                    "SMTP server",
+                ],
+                Component::AllInOne,
+            )?,
+            false,
+        )
+    };
+
+    // Obtain base path
+    let base_path = if let Some(base_path) = args.path {
+        base_path
+    } else {
+        PathBuf::from(input(
+            "Installation directory",
+            component.default_base_path(),
+            dir_create_if_missing,
+        )?)
+    };
+    create_directories(&base_path)?;
+
+    // Build configuration file
     let mut cfg_file = match component {
         Component::AllInOne | Component::Imap => {
             [CFG_COMMON, CFG_DIRECTORY, CFG_JMAP, CFG_IMAP, CFG_SMTP].join("\n")
@@ -93,15 +151,46 @@ fn main() -> std::io::Result<()> {
         Component::Jmap => [CFG_COMMON, CFG_DIRECTORY, CFG_JMAP, CFG_SMTP].join("\n"),
         Component::Smtp => [CFG_COMMON, CFG_DIRECTORY, CFG_SMTP].join("\n"),
     };
+    let mut download_url = None;
+
+    // Obtain database engine
     let directory = if component != Component::Smtp {
-        let backend = select::<Backend>(
-            "Which database engine would you like to use?",
-            &[
-                "SQLite (single node, replicated with Litestream)",
-                "FoundationDB (distributed and fault-tolerant)",
-            ],
-            Backend::SQLite,
-        )?;
+        if !skip_download {
+            let backend = select::<Backend>(
+                "Which database engine would you like to use?",
+                &[
+                    "SQLite (single node, replicated with Litestream)",
+                    "FoundationDB (distributed and fault-tolerant)",
+                ],
+                Backend::SQLite,
+            )?;
+
+            download_url = format!(
+                concat!(
+                    "https://github.com/stalwartlabs/{}",
+                    "/releases/latest/download/stalwart-{}-{}-{}.{}"
+                ),
+                match component {
+                    Component::AllInOne => "mail-server",
+                    Component::Jmap => "jmap-server",
+                    Component::Imap => "imap-server",
+                    Component::Smtp => unreachable!(),
+                },
+                match component {
+                    Component::AllInOne => "mail",
+                    Component::Jmap => "jmap",
+                    Component::Imap => "imap",
+                    Component::Smtp => unreachable!(),
+                },
+                match backend {
+                    Backend::SQLite => "sqlite",
+                    Backend::FoundationDB => "foundationdb",
+                },
+                TARGET,
+                PKG_EXTENSION
+            )
+            .into();
+        }
         let blob = select::<Blob>(
             "Where would you like to store e-mails and blobs?",
             &[
@@ -135,15 +224,15 @@ fn main() -> std::io::Result<()> {
             .replace(
                 "__DIRECTORY__",
                 match directory {
-                    Directory::SQL | Directory::None => "sql",
-                    Directory::LDAP => "ldap",
+                    Directory::Sql | Directory::None => "sql",
+                    Directory::Ldap => "ldap",
                 },
             )
             .replace(
                 "__SMTP_DIRECTORY__",
                 match directory {
-                    Directory::SQL | Directory::None => "sql",
-                    Directory::LDAP => "ldap",
+                    Directory::Sql | Directory::None => "sql",
+                    Directory::Ldap => "ldap",
                 },
             )
             .replace(
@@ -165,40 +254,100 @@ fn main() -> std::io::Result<()> {
                 "LMTP server",
                 "IMAP server",
             ],
-            SmtpDirectory::LMTP,
+            SmtpDirectory::Lmtp,
         )?;
         cfg_file = cfg_file
             .replace("__NEXT_HOP__", "lmtp")
             .replace(
                 "__SMTP_DIRECTORY__",
                 match smtp_directory {
-                    SmtpDirectory::SQL => "sql",
-                    SmtpDirectory::LDAP => "ldap",
-                    SmtpDirectory::LMTP => "lmtp",
-                    SmtpDirectory::IMAP => "imap",
+                    SmtpDirectory::Sql => "sql",
+                    SmtpDirectory::Ldap => "ldap",
+                    SmtpDirectory::Lmtp => "lmtp",
+                    SmtpDirectory::Imap => "imap",
                 },
             )
             .replace(
                 "__DIRECTORY__",
                 match smtp_directory {
-                    SmtpDirectory::SQL | SmtpDirectory::LMTP | SmtpDirectory::IMAP => "sql",
-                    SmtpDirectory::LDAP => "ldap",
+                    SmtpDirectory::Sql | SmtpDirectory::Lmtp | SmtpDirectory::Imap => "sql",
+                    SmtpDirectory::Ldap => "ldap",
                 },
             )
             .replace("__NEXT_HOP__", "lmtp");
+
+        if !skip_download {
+            download_url = format!(
+                concat!(
+                    "https://github.com/stalwartlabs/smtp-server",
+                    "/releases/latest/download/stalwart-smtp-{}.{}"
+                ),
+                TARGET, PKG_EXTENSION
+            )
+            .into();
+        }
         match smtp_directory {
-            SmtpDirectory::SQL => Directory::SQL,
-            SmtpDirectory::LDAP => Directory::LDAP,
-            SmtpDirectory::LMTP | SmtpDirectory::IMAP => Directory::None,
+            SmtpDirectory::Sql => Directory::Sql,
+            SmtpDirectory::Ldap => Directory::Ldap,
+            SmtpDirectory::Lmtp | SmtpDirectory::Imap => Directory::None,
         }
     };
-    let base_path = PathBuf::from(input(
-        "Installation directory",
-        component.default_base_path(),
-        dir_create_if_missing,
-    )?);
-    create_directories(&base_path)?;
 
+    // Download binary
+    if let Some(download_url) = download_url {
+        eprintln!("📦 Downloading components...");
+        for url in [
+            download_url,
+            format!(
+                concat!(
+                    "https://github.com/stalwartlabs/mail-server",
+                    "/releases/latest/download/stalwart-cli-{}.{}"
+                ),
+                TARGET, PKG_EXTENSION
+            ),
+        ] {
+            match reqwest::blocking::get(&url).and_then(|r| {
+                if r.status().is_success() {
+                    r.bytes().map(Ok)
+                } else {
+                    Ok(Err(r))
+                }
+            }) {
+                Ok(Ok(bytes)) => {
+                    #[cfg(not(target_env = "msvc"))]
+                    if let Err(err) = Archive::new(GzDecoder::new(Cursor::new(bytes)))
+                        .unpack(base_path.join("bin"))
+                    {
+                        eprintln!("❌ Failed to unpack {}: {}", url, err);
+                        return Ok(());
+                    }
+
+                    #[cfg(target_env = "msvc")]
+                    if let Err(err) =
+                        zip_extract::extract(Cursor::new(bytes), &base_path.join("bin"), true)
+                    {
+                        eprintln!("❌ Failed to unpack {}: {}", url, err);
+                        return Ok(());
+                    }
+                }
+                Ok(Err(response)) => {
+                    eprintln!(
+                        "❌ Failed to download {}, make sure your platform is supported: {}",
+                        url,
+                        response.status()
+                    );
+                    return Ok(());
+                }
+
+                Err(err) => {
+                    eprintln!("❌ Failed to download {}: {}", url, err);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Obtain domain name
     let domain = input(
         "What is your main domain name? (you can add others later)",
         "yourdomain.org",
@@ -214,18 +363,37 @@ fn main() -> std::io::Result<()> {
     .trim()
     .to_lowercase();
 
-    let cert_path = input(
-        &format!("Where is the TLS certificate for '{hostname}' located?"),
-        &format!("/etc/letsencrypt/live/{hostname}/fullchain.pem"),
-        file_exists,
-    )?;
-    let pk_path = input(
-        &format!("Where is the TLS private key for '{hostname}' located?"),
-        &format!("/etc/letsencrypt/live/{hostname}/privkey.pem"),
-        file_exists,
-    )?;
+    // Obtain TLS certificate path
+    let (cert_path, pk_path) = if !args.docker {
+        (
+            input(
+                &format!("Where is the TLS certificate for '{hostname}' located?"),
+                &format!("/etc/letsencrypt/live/{hostname}/fullchain.pem"),
+                file_exists,
+            )?,
+            input(
+                &format!("Where is the TLS private key for '{hostname}' located?"),
+                &format!("/etc/letsencrypt/live/{hostname}/privkey.pem"),
+                file_exists,
+            )?,
+        )
+    } else {
+        // Create directories
+        fs::create_dir_all(base_path.join("etc").join("certs").join(&hostname))?;
+        (
+            format!(
+                "{}/etc/certs/{}/fullchain.pem",
+                base_path.display(),
+                hostname
+            ),
+            format!("{}/etc/certs/{}/privkey.pem", base_path.display(), hostname),
+        )
+    };
 
+    // Generate DKIM key and instructions
     let dkim_instructions = generate_dkim(&base_path, &domain, &hostname)?;
+
+    // Create authentication SQLite database
     let admin_password = if matches!(directory, Directory::None) {
         create_auth_db(&base_path, &domain)?.into()
     } else {
@@ -245,6 +413,13 @@ fn main() -> std::io::Result<()> {
         ));
         fs::rename(&cfg_path, backup_path)?;
     }
+    if args.docker {
+        cfg_file = cfg_file
+            .replace("127.0.0.1:8686", "0.0.0.0:8686")
+            .replace("[server.run-as]", "#[server.run-as]")
+            .replace("user = \"stalwart-mail\"", "#user = \"stalwart-mail\"")
+            .replace("group = \"stalwart-mail\"", "#group = \"stalwart-mail\"");
+    }
     fs::write(
         cfg_path,
         cfg_file
@@ -254,6 +429,107 @@ fn main() -> std::io::Result<()> {
             .replace("__CERT_PATH__", &cert_path)
             .replace("__PK_PATH__", &pk_path),
     )?;
+
+    // Write service file
+    if !args.docker {
+        // Change permissions
+        #[cfg(not(target_env = "msvc"))]
+        {
+            let mut cmd = Command::new("chown");
+            cmd.arg("-R")
+                .arg(format!("{}:{}", ACCOUNT_NAME, ACCOUNT_NAME))
+                .arg(&base_path);
+            if let Err(err) = cmd.status() {
+                eprintln!("Warning: Failed to set permissions: {}", err);
+            }
+            let mut cmd = Command::new("chmod");
+            cmd.arg("-R")
+                .arg("770")
+                .arg(&format!("{}/etc", base_path.display()))
+                .arg(&format!("{}/data", base_path.display()))
+                .arg(&format!("{}/queue", base_path.display()))
+                .arg(&format!("{}/reports", base_path.display()))
+                .arg(&format!("{}/logs", base_path.display()));
+            if let Err(err) = cmd.status() {
+                eprintln!("Warning: Failed to set permissions: {}", err);
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let service_file = format!(
+                "/etc/systemd/system/stalwart-{}.service",
+                component.binary_name()
+            );
+            let service_name = format!("stalwart-{}", component.binary_name());
+            match fs::write(
+                &service_file,
+                SERVICE
+                    .replace("__PATH__", base_path.to_str().unwrap())
+                    .replace("__NAME__", component.binary_name())
+                    .replace("__TITLE__", component.name()),
+            ) {
+                Ok(_) => {
+                    if let Err(err) = Command::new("/bin/systemctl")
+                        .arg("enable")
+                        .arg(service_file)
+                        .status()
+                        .and_then(|_| {
+                            Command::new("/bin/systemctl")
+                                .arg("restart")
+                                .arg(&service_name)
+                                .status()
+                        })
+                    {
+                        eprintln!("Warning: Failed to start service: {}", err);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Warning: Failed to write service file: {}", err);
+                }
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let service_file = format!(
+                "/Library/LaunchDaemons/stalwart.{}.plist",
+                component.binary_name()
+            );
+            let service_name = format!("system/stalwart.{}", component.binary_name());
+            match fs::write(
+                &service_file,
+                SERVICE
+                    .replace("__PATH__", base_path.to_str().unwrap())
+                    .replace("__NAME__", component.binary_name())
+                    .replace("__TITLE__", component.name()),
+            ) {
+                Ok(_) => {
+                    if let Err(err) = Command::new("launchctl")
+                        .arg("load")
+                        .arg(service_file)
+                        .status()
+                        .and_then(|_| {
+                            Command::new("launchctl")
+                                .arg("enable")
+                                .arg(&service_name)
+                                .status()
+                        })
+                        .and_then(|_| {
+                            Command::new("launchctl")
+                                .arg("start")
+                                .arg(&service_name)
+                                .status()
+                        })
+                    {
+                        eprintln!("Warning: Failed to start service: {}", err);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Warning: Failed to write service file: {}", err);
+                }
+            }
+        }
+    }
 
     eprintln!("\n🎉 Installation completed!\n\n✅ {dkim_instructions}\n");
 
@@ -419,11 +695,12 @@ fn generate_dkim(path: &Path, domain: &str, hostname: &str) -> std::io::Result<S
     Ok(instructions)
 }
 
-#[cfg(not(target_env = "msvc"))]
+/*#[cfg(not(target_env = "msvc"))]
 unsafe fn get_uid_gid() -> (libc::uid_t, libc::gid_t) {
-    use std::process::Command;
-    let pw = libc::getpwnam("stalwart-mail".as_ptr() as *const i8);
-    let gr = libc::getgrnam("stalwart-mail".as_ptr() as *const i8);
+    use std::{ffi::CString, process::Command};
+    let c_str = CString::new("stalwart-mail").unwrap();
+    let pw = libc::getpwnam(c_str.as_ptr());
+    let gr = libc::getgrnam(c_str.as_ptr());
 
     if pw.is_null() || gr.is_null() {
         let mut cmd = Command::new("useradd");
@@ -436,13 +713,13 @@ unsafe fn get_uid_gid() -> (libc::uid_t, libc::gid_t) {
             eprintln!("Failed to create stalwart system account: {}", e);
             std::process::exit(1);
         }
-        let pw = libc::getpwnam("stalwart-mail".as_ptr() as *const i8);
-        let gr = libc::getgrnam("stalwart-mail".as_ptr() as *const i8);
+        let pw = libc::getpwnam(c_str.as_ptr());
+        let gr = libc::getgrnam(c_str.as_ptr());
         (pw.as_ref().unwrap().pw_uid, gr.as_ref().unwrap().gr_gid)
     } else {
         ((*pw).pw_uid, ((*gr).gr_gid))
     }
-}
+}*/
 
 trait SelectItem {
     fn from_index(index: usize) -> Self;
@@ -490,8 +767,8 @@ impl SelectItem for Backend {
 impl SelectItem for Directory {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Self::SQL,
-            1 => Self::LDAP,
+            0 => Self::Sql,
+            1 => Self::Ldap,
             2 => Self::None,
             _ => unreachable!(),
         }
@@ -499,8 +776,8 @@ impl SelectItem for Directory {
 
     fn to_index(&self) -> usize {
         match self {
-            Self::SQL => 0,
-            Self::LDAP => 1,
+            Self::Sql => 0,
+            Self::Ldap => 1,
             Self::None => 2,
         }
     }
@@ -509,20 +786,20 @@ impl SelectItem for Directory {
 impl SelectItem for SmtpDirectory {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Self::SQL,
-            1 => Self::LDAP,
-            2 => Self::LMTP,
-            3 => Self::IMAP,
+            0 => Self::Sql,
+            1 => Self::Ldap,
+            2 => Self::Lmtp,
+            3 => Self::Imap,
             _ => unreachable!(),
         }
     }
 
     fn to_index(&self) -> usize {
         match self {
-            SmtpDirectory::SQL => 0,
-            SmtpDirectory::LDAP => 1,
-            SmtpDirectory::LMTP => 2,
-            SmtpDirectory::IMAP => 3,
+            SmtpDirectory::Sql => 0,
+            SmtpDirectory::Ldap => 1,
+            SmtpDirectory::Lmtp => 2,
+            SmtpDirectory::Imap => 3,
         }
     }
 }
@@ -533,7 +810,7 @@ impl SelectItem for Blob {
             0 => Blob::Local,
             1 => Blob::MinIO,
             2 => Blob::S3,
-            3 => Blob::GCS,
+            3 => Blob::Gcs,
             4 => Blob::Azure,
             _ => unreachable!(),
         }
@@ -544,7 +821,7 @@ impl SelectItem for Blob {
             Blob::Local => 0,
             Blob::MinIO => 1,
             Blob::S3 => 2,
-            Blob::GCS => 3,
+            Blob::Gcs => 3,
             Blob::Azure => 4,
         }
     }
@@ -557,6 +834,24 @@ impl Component {
             Self::Jmap => "/opt/stalwart-jmap",
             Self::Imap => "/opt/stalwart-imap",
             Self::Smtp => "/opt/stalwart-smtp",
+        }
+    }
+
+    fn binary_name(&self) -> &'static str {
+        match self {
+            Self::AllInOne => "mail",
+            Self::Jmap => "jmap",
+            Self::Imap => "imap",
+            Self::Smtp => "smtp",
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::AllInOne => "Mail",
+            Self::Jmap => "JMAP",
+            Self::Imap => "IMAP",
+            Self::Smtp => "SMTP",
         }
     }
 }

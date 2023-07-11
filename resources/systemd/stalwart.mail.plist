@@ -4,13 +4,13 @@
 <plist version="1.0">
     <dict>
         <key>Label</key>
-        <string>stalwart.smtp</string>
+        <string>stalwart.__NAME__</string>
         <key>ServiceDescription</key>
-        <string>Stalwart SMTP Server</string>
+        <string>Stalwart __TITLE__ Server</string>
         <key>ProgramArguments</key>
         <array>
-            <string>/usr/local/stalwart-smtp/bin/stalwart-smtp</string>
-            <string>--config=/usr/local/stalwart-smtp/etc/config.toml</string>
+            <string>__PATH__/bin/stalwart-__NAME__</string>
+            <string>--config=__PATH__/etc/config.toml</string>
         </array>
         <key>RunAtLoad</key>
         <true/>

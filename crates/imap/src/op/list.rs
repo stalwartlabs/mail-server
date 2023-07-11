@@ -303,7 +303,7 @@ impl SessionData {
 }
 
 #[allow(clippy::while_let_on_iterator)]
-fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
+pub fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
     if patterns.is_empty() {
         return true;
     }
@@ -369,80 +369,4 @@ fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
     }
 
     false
-}
-
-#[cfg(test)]
-mod tests {
-
-    #[test]
-    fn matches_pattern() {
-        let mailboxes = [
-            "imaptest",
-            "imaptest/test",
-            "imaptest/test2",
-            "imaptest/test3",
-            "imaptest/test3/test4",
-            "imaptest/test3/test4/test5",
-            "foobar/test",
-            "foobar/test/test",
-            "foobar/test1/test1",
-        ];
-
-        for (pattern, expected_match) in [
-            (
-                "imaptest/%",
-                vec!["imaptest/test", "imaptest/test2", "imaptest/test3"],
-            ),
-            ("imaptest/%/%", vec!["imaptest/test3/test4"]),
-            (
-                "imaptest/*",
-                vec![
-                    "imaptest/test",
-                    "imaptest/test2",
-                    "imaptest/test3",
-                    "imaptest/test3/test4",
-                    "imaptest/test3/test4/test5",
-                ],
-            ),
-            ("imaptest/*test4", vec!["imaptest/test3/test4"]),
-            (
-                "imaptest/*test*",
-                vec![
-                    "imaptest/test",
-                    "imaptest/test2",
-                    "imaptest/test3",
-                    "imaptest/test3/test4",
-                    "imaptest/test3/test4/test5",
-                ],
-            ),
-            ("imaptest/%3/%", vec!["imaptest/test3/test4"]),
-            ("imaptest/%3/%4", vec!["imaptest/test3/test4"]),
-            ("imaptest/%t*4", vec!["imaptest/test3/test4"]),
-            ("*st/%3/%4/%5", vec!["imaptest/test3/test4/test5"]),
-            (
-                "*%*%*%",
-                vec![
-                    "imaptest",
-                    "imaptest/test",
-                    "imaptest/test2",
-                    "imaptest/test3",
-                    "imaptest/test3/test4",
-                    "imaptest/test3/test4/test5",
-                    "foobar/test",
-                    "foobar/test/test",
-                    "foobar/test1/test1",
-                ],
-            ),
-            ("foobar*test", vec!["foobar/test", "foobar/test/test"]),
-        ] {
-            let patterns = vec![pattern.to_string()];
-            let mut matched_mailboxes = Vec::new();
-            for mailbox in mailboxes {
-                if super::matches_pattern(&patterns, mailbox) {
-                    matched_mailboxes.push(mailbox);
-                }
-            }
-            assert_eq!(matched_mailboxes, expected_match, "for pattern {}", pattern);
-        }
-    }
 }

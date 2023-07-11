@@ -48,7 +48,7 @@ shared-map = {shard = 32, capacity = 10}
 [global.tracing]
 method = "log"
 path = "__PATH__/logs"
-prefix = "smtp.log"
+prefix = "stalwart.log"
 rotate = "daily"
 level = "info"
 

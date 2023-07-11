@@ -247,11 +247,25 @@ pub async fn jmap_tests() {
     email_submission::test(params.server.clone(), &mut params.client).await;
     websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
-    stress_test::test(params.server.clone(), params.client).await;
 
     if delete {
         params.temp_dir.delete();
     }
+}
+
+#[tokio::test]
+#[ignore]
+pub async fn jmap_stress_tests() {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::WARN)
+            .finish(),
+    )
+    .unwrap();
+
+    let params = init_jmap_tests(true).await;
+    stress_test::test(params.server.clone(), params.client).await;
+    params.temp_dir.delete();
 }
 
 #[allow(dead_code)]

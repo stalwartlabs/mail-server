@@ -1,0 +1,306 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    name: Building for ${{ matrix.target }} on ${{ matrix.host_os }}
+    runs-on: ${{ matrix.host_os }}
+    if: '!cancelled()'
+    strategy: 
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host_os: ubuntu-20.04
+          - target: x86_64-apple-darwin
+            host_os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            host_os: windows-2022
+          #- target: aarch64-unknown-linux-gnu
+          #  host_os: ubuntu-20.04
+          #- target: x86_64-unknown-linux-musl
+          #  host_os: ubuntu-20.04
+          #- target: aarch64-unknown-linux-musl
+          #  host_os: ubuntu-20.04
+          #- target: aarch64-apple-darwin
+          #  host_os: macos-latest
+          #- target: aarch64-pc-windows-msvc
+          #  host_os: windows-2022
+          #- target: aarch64-pc-windows-msvc
+          #  host_os: windows-2022
+          #- target: arm-unknown-linux-musleabihf
+          #  host_os: ubuntu-20.04
+          #- target: arm-unknown-linux-gnueabihf
+          #  host_os: ubuntu-20.04
+          #- target: armv7-unknown-linux-musleabihf
+          #  host_os: ubuntu-20.04
+          #- target: armv7-unknown-linux-gnueabihf
+          #  host_os: ubuntu-20.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies (Linux)
+        if: ${{ contains(matrix.host_os, 'ubuntu') }}
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -yq protobuf-compiler wget
+          wget https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb
+          sudo dpkg -i --force-architecture foundationdb-clients_7.1.0-1_amd64.deb
+
+      - name: Install dependencies (MacOs)
+        if: ${{ contains(matrix.host_os, 'macos') }}
+        run: |
+          brew install protobuf
+          brew install wget
+          wget https://github.com/apple/foundationdb/releases/download/7.1.32/FoundationDB-7.1.32_x86_64.pkg
+          sudo installer -allowUntrusted -dumplog -pkg FoundationDB-7.1.32_x86_64.pkg -target /
+
+      - name: Install dependencies (Windows)
+        if: ${{ contains(matrix.host_os, 'windows') }}
+        uses: arduino/setup-protoc@v1
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          target: ${{ matrix.target }}
+          toolchain: stable
+          
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.host_os }}-${{ matrix.target }}-mail          
+
+      - name: Building binary (Unix version)
+        if: ${{ !contains(matrix.host_os, 'windows') }}
+        run: |
+          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --no-default-features --features foundationdb --release
+          cd target/${{ matrix.target }}/release && tar czvf ../../../stalwart-mail-foundationdb-${{ matrix.target }}.tar.gz stalwart-mail && cd -
+          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
+          cd target/${{ matrix.target }}/release
+          tar czvf ../../../stalwart-mail-sqlite-${{ matrix.target }}.tar.gz stalwart-mail
+          tar czvf ../../../stalwart-cli-${{ matrix.target }}.tar.gz stalwart-cli
+          tar czvf ../../../stalwart-install-${{ matrix.target }}.tar.gz stalwart-install
+          cd -
+
+      - name: Building binary (Windows version)
+        if: ${{ contains(matrix.host_os, 'windows') }}
+        run: |
+          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
+          cd target/${{ matrix.target }}/release
+          7z a ../../../stalwart-mail-sqlite-${{ matrix.target }}.zip stalwart-mail.exe
+          7z a ../../../stalwart-cli-${{ matrix.target }}.zip stalwart-cli.exe
+          7z a ../../../stalwart-install-${{ matrix.target }}.zip stalwart-install.exe
+          cd -
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+            files: 'stalwart-*'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cross_build_tools:
+    runs-on: ubuntu-latest
+    name: Building tools for ${{ matrix.target }} on ${{ matrix.distro }}
+    if: '!cancelled()'
+
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu20.04
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v3
+      - uses: uraimo/run-on-arch-action@v2
+        name: Build artifact
+        id: build
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+
+          # Not required, but speeds up builds
+          githubToken: ${{ github.token }}
+
+          # Create an artifacts directory
+          setup: |
+            mkdir -p "${PWD}/artifacts"
+
+          # Mount the artifacts directory as /artifacts in the container
+          dockerRunArgs: |
+            --volume "${PWD}/artifacts:/artifacts"
+
+          # Pass some environment variables to the container
+          env: | 
+            target: ${{ matrix.target }}
+
+          # The shell to run commands with in the container
+          shell: /bin/sh
+
+          install: |
+            apt-get update -yq
+            apt-get install -yq build-essential cmake wget curl
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+
+          run: |
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cargo build --manifest-path=crates/cli/Cargo.toml --target=${target} --release
+            cargo build --manifest-path=crates/install/Cargo.toml --target=${target} --release
+            cd target/${target}/release
+            tar czvf /artifacts/stalwart-cli-${target}.tar.gz stalwart-cli
+            tar czvf /artifacts/stalwart-install-${target}.tar.gz stalwart-install
+            cd -
+
+      - name: Move packages
+        run: |
+          mv ${PWD}/artifacts/* .
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+            files: 'stalwart-*'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cross_build:
+    runs-on: ubuntu-latest
+    name: Building for ${{ matrix.target }} on ${{ matrix.distro }}
+    if: '!cancelled()'
+
+    strategy:
+      matrix:
+        include:
+          - arch: aarch64
+            distro: ubuntu20.04
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v3
+      - uses: uraimo/run-on-arch-action@v2
+        name: Build artifact
+        id: build
+        with:
+          arch: ${{ matrix.arch }}
+          distro: ${{ matrix.distro }}
+
+          # Not required, but speeds up builds
+          githubToken: ${{ github.token }}
+
+          # Create an artifacts directory
+          setup: |
+            mkdir -p "${PWD}/artifacts"
+
+          # Mount the artifacts directory as /artifacts in the container
+          dockerRunArgs: |
+            --volume "${PWD}/artifacts:/artifacts"
+
+          # Pass some environment variables to the container
+          env: | 
+            target: ${{ matrix.target }}
+
+          # The shell to run commands with in the container
+          shell: /bin/sh
+
+          install: |
+            apt-get update -yq
+            apt-get install -yq build-essential cmake protobuf-compiler wget curl
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+
+          run: |
+            export PATH="$HOME/.cargo/bin:$PATH"
+            cargo build --manifest-path=crates/main/Cargo.toml --target=${target} --release
+            cd target/${target}/release
+            tar czvf /artifacts/stalwart-mail-sqlite-${target}.tar.gz stalwart-mail
+            cd -
+
+      - name: Move packages
+        run: |
+          mv ${PWD}/artifacts/* .
+
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+            files: 'stalwart-*'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  docker-amd:
+    name: Build Docker AMD64 images
+    if: '!cancelled()'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: stalwartlabs/mail-server:latest
+          cache-from: type=registry,ref=stalwartlabs/mail-server:buildcache
+          cache-to: type=registry,ref=stalwartlabs/mail-server:buildcache,mode=max
+          #cache-from: type=gha
+          #cache-to: type=gha,mode=max
+
+  docker-arm:
+    name: Build Docker ARM64 images
+    if: '!cancelled()'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          tags: stalwartlabs/mail-server:latest
+          cache-from: type=registry,ref=stalwartlabs/mail-server:buildcache
+          cache-to: type=registry,ref=stalwartlabs/mail-server:buildcache,mode=max
+          #cache-from: type=gha
+          #cache-to: type=gha,mode=max
