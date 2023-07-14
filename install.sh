@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
-# Stalwart SMTP install script -- based on the rustup installation script.
+# Stalwart Mail install script -- based on the rustup installation script.
 
 set -e
 set -u
@@ -67,14 +67,14 @@ main() {
             ensure dscl /Local/Default -create Groups/_stalwart-mail
             ensure dscl /Local/Default -create Groups/_stalwart-mail Password \*
             ensure dscl /Local/Default -create Groups/_stalwart-mail PrimaryGroupID $_gid
-            ensure dscl /Local/Default -create Groups/_stalwart-mail RealName "Stalwart SMTP service"
+            ensure dscl /Local/Default -create Groups/_stalwart-mail RealName "Stalwart Mail service"
             ensure dscl /Local/Default -create Groups/_stalwart-mail RecordName _stalwart-mail stalwart-mail
 
             ensure dscl /Local/Default -create Users/_stalwart-mail
             ensure dscl /Local/Default -create Users/_stalwart-mail NFSHomeDirectory /Users/_stalwart-mail
             ensure dscl /Local/Default -create Users/_stalwart-mail Password \*
             ensure dscl /Local/Default -create Users/_stalwart-mail PrimaryGroupID $_gid
-            ensure dscl /Local/Default -create Users/_stalwart-mail RealName "Stalwart SMTP service"
+            ensure dscl /Local/Default -create Users/_stalwart-mail RealName "Stalwart Mail service"
             ensure dscl /Local/Default -create Users/_stalwart-mail RecordName _stalwart-mail stalwart-mail
             ensure dscl /Local/Default -create Users/_stalwart-mail UniqueID $_uid
             ensure dscl /Local/Default -create Users/_stalwart-mail UserShell /bin/bash

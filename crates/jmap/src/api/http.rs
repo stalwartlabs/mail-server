@@ -339,6 +339,12 @@ pub async fn parse_jmap_request(
                         .into_http_response(),
                     };
                 }
+                (path_1 @ ("queue" | "report"), path_2, &Method::GET) => {
+                    return jmap
+                        .smtp
+                        .handle_manage_request(req.uri(), req.method(), path_1, path_2)
+                        .await;
+                }
                 _ => (),
             }
         }

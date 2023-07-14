@@ -50,7 +50,7 @@ pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportComm
             page_size,
         } => {
             let stdout = Term::buffered_stdout();
-            let mut query = form_urlencoded::Serializer::new(format!("{url}/report/list?"));
+            let mut query = form_urlencoded::Serializer::new(format!("{url}/admin/report/list?"));
 
             if let Some(domain) = &domain {
                 query.append_pair("domain", domain);
@@ -73,7 +73,7 @@ pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportComm
                         .collect(),
                 ));
                 for (report, id) in smtp_manage_request::<Vec<Option<Report>>>(
-                    &format!("{url}/report/status?ids={}", chunk.join(",")),
+                    &format!("{url}/admin/report/status?ids={}", chunk.join(",")),
                     &credentials,
                 )
                 .await
@@ -110,7 +110,7 @@ pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportComm
         }
         ReportCommands::Status { ids } => {
             for (report, id) in smtp_manage_request::<Vec<Option<Report>>>(
-                &format!("{url}/report/status?ids={}", ids.join(",")),
+                &format!("{url}/admin/report/status?ids={}", ids.join(",")),
                 &credentials,
             )
             .await
@@ -164,7 +164,7 @@ pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportComm
             let mut success_count = 0;
             let mut failed_list = vec![];
             for (success, id) in smtp_manage_request::<Vec<bool>>(
-                &format!("{url}/report/cancel?ids={}", ids.join(",")),
+                &format!("{url}/admin/report/cancel?ids={}", ids.join(",")),
                 &credentials,
             )
             .await

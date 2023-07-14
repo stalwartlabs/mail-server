@@ -74,10 +74,6 @@ relay = [ { if = "authenticated-as", ne = "", then = true },
 max-recipients = 25
 directory = "__SMTP_DIRECTORY__"
 
-[session.rcpt.cache]
-entries = 1000
-ttl = {positive = 10, negative = 5}
-
 [session.rcpt.errors]
 total = 5
 wait = "5s"
@@ -218,10 +214,10 @@ mta-sts = 1024
 [report]
 path = "__PATH__/reports"
 hash = 64
-#submitter = "mx.domain.org"
+#submitter = "__HOST__"
 
 [report.analysis]
-addresses = ["dmarc@*", "abuse@*"]
+addresses = ["dmarc@*", "abuse@*", "postmaster@*"]
 forward = true
 #store = "__PATH__/incoming"
 

@@ -183,7 +183,7 @@ async fn manage_queue() {
     );
 
     // Fetch and validate messages
-    let ids = send_manage_request::<Vec<QueueId>>("/queue/list")
+    let ids = send_manage_request::<Vec<QueueId>>("/admin/queue/list")
         .await
         .unwrap()
         .unwrap_data();
@@ -264,15 +264,24 @@ async fn manage_queue() {
 
     // Test list search
     for (query, expected_ids) in [
-        ("/queue/list?from=bill1@foobar.net".to_string(), vec!["a"]),
-        ("/queue/list?to=foobar.org".to_string(), vec!["d", "e", "f"]),
         (
-            "/queue/list?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
+            "/admin/queue/list?from=bill1@foobar.net".to_string(),
+            vec!["a"],
+        ),
+        (
+            "/admin/queue/list?to=foobar.org".to_string(),
+            vec!["d", "e", "f"],
+        ),
+        (
+            "/admin/queue/list?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
             vec!["c"],
         ),
-        (format!("/queue/list?before={test_search}"), vec!["a", "b"]),
         (
-            format!("/queue/list?after={test_search}"),
+            format!("/admin/queue/list?before={test_search}"),
+            vec!["a", "b"],
+        ),
+        (
+            format!("/admin/queue/list?after={test_search}"),
             vec!["d", "e", "f", "c"],
         ),
     ] {
@@ -290,7 +299,7 @@ async fn manage_queue() {
     // Retry delivery
     assert_eq!(
         send_manage_request::<Vec<bool>>(&format!(
-            "/queue/retry?id={},{}",
+            "/admin/queue/retry?id={},{}",
             id_map.get("e").unwrap(),
             id_map.get("f").unwrap()
         ))
@@ -301,7 +310,7 @@ async fn manage_queue() {
     );
     assert_eq!(
         send_manage_request::<Vec<bool>>(&format!(
-            "/queue/retry?id={}&filter=example1.org&at=2200-01-01T00:00:00Z",
+            "/admin/queue/retry?id={}&filter=example1.org&at=2200-01-01T00:00:00Z",
             id_map.get("a").unwrap(),
         ))
         .await
@@ -365,7 +374,7 @@ async fn manage_queue() {
     ] {
         assert_eq!(
             send_manage_request::<Vec<bool>>(&format!(
-                "/queue/cancel?id={}{}{}",
+                "/admin/queue/cancel?id={}{}{}",
                 id_map.get(id).unwrap(),
                 if !filter.is_empty() { "&filter=" } else { "" },
                 filter
@@ -378,7 +387,7 @@ async fn manage_queue() {
         );
     }
     assert_eq!(
-        send_manage_request::<Vec<QueueId>>("/queue/list")
+        send_manage_request::<Vec<QueueId>>("/admin/queue/list")
             .await
             .unwrap()
             .unwrap_data()
@@ -464,7 +473,7 @@ fn assert_timestamp(timestamp: &DateTime, expected: i64, ctx: &str, message: &Me
 
 async fn get_messages(ids: &[QueueId]) -> Vec<Option<Message>> {
     send_manage_request(&format!(
-        "/queue/status?id={}",
+        "/admin/queue/status?id={}",
         ids.iter()
             .map(|id| id.to_string())
             .collect::<Vec<_>>()

@@ -30,7 +30,7 @@ use hyper::{
     header::{self, AUTHORIZATION},
     server::conn::http1,
     service::service_fn,
-    Method, StatusCode,
+    Method, StatusCode, Uri,
 };
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
@@ -312,15 +312,33 @@ impl SMTP {
 
         let mut path = req.uri().path().split('/');
         path.next();
-        let (status, response) = match (req.method(), path.next(), path.next()) {
-            (&Method::GET, Some("queue"), Some("list")) => {
+        path.next(); // Skip the leading /admin
+        Ok(self
+            .handle_manage_request(
+                req.uri(),
+                req.method(),
+                path.next().unwrap_or_default(),
+                path.next().unwrap_or_default(),
+            )
+            .await)
+    }
+
+    pub async fn handle_manage_request(
+        &self,
+        uri: &Uri,
+        method: &Method,
+        path_1: &str,
+        path_2: &str,
+    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let (status, response) = match (method, path_1, path_2) {
+            (&Method::GET, "queue", "list") => {
                 let mut from = None;
                 let mut to = None;
                 let mut before = None;
                 let mut after = None;
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "from" => {
@@ -373,11 +391,11 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("queue"), Some("status")) => {
+            (&Method::GET, "queue", "status") => {
                 let mut queue_ids = Vec::new();
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "id" | "ids" => match value.parse_queue_ids() {
@@ -412,13 +430,13 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("queue"), Some("retry")) => {
+            (&Method::GET, "queue", "retry") => {
                 let mut queue_ids = Vec::new();
                 let mut time = Instant::now();
                 let mut item = None;
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "id" | "ids" => match value.parse_queue_ids() {
@@ -467,12 +485,12 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("queue"), Some("cancel")) => {
+            (&Method::GET, "queue", "cancel") => {
                 let mut queue_ids = Vec::new();
                 let mut item = None;
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "id" | "ids" => match value.parse_queue_ids() {
@@ -511,12 +529,12 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("report"), Some("list")) => {
+            (&Method::GET, "report", "list") => {
                 let mut domain = None;
                 let mut type_ = None;
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "type" => match value.as_ref() {
@@ -558,11 +576,11 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("report"), Some("status")) => {
+            (&Method::GET, "report", "status") => {
                 let mut report_ids = Vec::new();
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "id" | "ids" => match value.parse_report_ids() {
@@ -597,11 +615,11 @@ impl SMTP {
                     Some(error) => error.into_bad_request(),
                 }
             }
-            (&Method::GET, Some("report"), Some("cancel")) => {
+            (&Method::GET, "report", "cancel") => {
                 let mut report_ids = Vec::new();
                 let mut error = None;
 
-                if let Some(query) = req.uri().query() {
+                if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
                             "id" | "ids" => match value.parse_report_ids() {
@@ -640,12 +658,12 @@ impl SMTP {
                 StatusCode::NOT_FOUND,
                 format!(
                     "{{\"error\": \"not-found\", \"details\": \"URL {} does not exist.\"}}",
-                    req.uri().path()
+                    uri.path()
                 ),
             ),
         };
 
-        Ok(hyper::Response::builder()
+        hyper::Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
             .body(
@@ -653,7 +671,7 @@ impl SMTP {
                     .map_err(|never| match never {})
                     .boxed(),
             )
-            .unwrap())
+            .unwrap()
     }
 
     async fn send_queue_event<T: Serialize>(

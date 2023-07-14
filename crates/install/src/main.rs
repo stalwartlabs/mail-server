@@ -363,15 +363,20 @@ fn main() -> std::io::Result<()> {
 
     // Obtain TLS certificate path
     let (cert_path, pk_path) = if !args.docker {
+        #[cfg(not(target_env = "msvc"))]
+        let cert_base_path = format!("/etc/letsencrypt/live/{}/", hostname);
+        #[cfg(target_env = "msvc")]
+        let cert_base_path = format!("C:\\Program Files\\Letsencrypt\\live\\{}\\", hostname);
+
         (
             input(
                 &format!("Where is the TLS certificate for '{hostname}' located?"),
-                &format!("/etc/letsencrypt/live/{hostname}/fullchain.pem"),
+                &format!("{cert_base_path}fullchain.pem"),
                 file_exists,
             )?,
             input(
                 &format!("Where is the TLS private key for '{hostname}' located?"),
-                &format!("/etc/letsencrypt/live/{hostname}/privkey.pem"),
+                &format!("{cert_base_path}privkey.pem"),
                 file_exists,
             )?,
         )
@@ -827,11 +832,19 @@ impl SelectItem for Blob {
 
 impl Component {
     fn default_base_path(&self) -> &'static str {
+        #[cfg(not(target_env = "msvc"))]
         match self {
             Self::AllInOne => "/opt/stalwart-mail",
             Self::Jmap => "/opt/stalwart-jmap",
             Self::Imap => "/opt/stalwart-imap",
             Self::Smtp => "/opt/stalwart-smtp",
+        }
+        #[cfg(target_env = "msvc")]
+        match self {
+            Self::AllInOne => "C:\\Program Files\\Stalwart Mail",
+            Self::Jmap => "C:\\Program Files\\Stalwart JMAP",
+            Self::Imap => "C:\\Program Files\\Stalwart IMAP",
+            Self::Smtp => "C:\\Program Files\\Stalwart SMTP",
         }
     }
 

@@ -141,7 +141,7 @@ async fn manage_reports() {
     .await;
 
     // List reports
-    let ids = send_manage_request::<Vec<String>>("/report/list")
+    let ids = send_manage_request::<Vec<String>>("/admin/report/list")
         .await
         .unwrap()
         .unwrap_data();
@@ -172,12 +172,12 @@ async fn manage_reports() {
 
     // Test list search
     for (query, expected_ids) in [
-        ("/report/list?type=dmarc", vec!["a", "b"]),
-        ("/report/list?type=tls", vec!["c", "d"]),
-        ("/report/list?domain=foobar.org", vec!["a", "c"]),
-        ("/report/list?domain=foobar.net", vec!["b", "d"]),
-        ("/report/list?domain=foobar.org&type=dmarc", vec!["a"]),
-        ("/report/list?domain=foobar.net&type=tls", vec!["d"]),
+        ("/admin/report/list?type=dmarc", vec!["a", "b"]),
+        ("/admin/report/list?type=tls", vec!["c", "d"]),
+        ("/admin/report/list?domain=foobar.org", vec!["a", "c"]),
+        ("/admin/report/list?domain=foobar.net", vec!["b", "d"]),
+        ("/admin/report/list?domain=foobar.org&type=dmarc", vec!["a"]),
+        ("/admin/report/list?domain=foobar.net&type=tls", vec!["d"]),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
         let ids = send_manage_request::<Vec<String>>(query)
@@ -194,7 +194,7 @@ async fn manage_reports() {
     for id in ["a", "b"] {
         assert_eq!(
             send_manage_request::<Vec<bool>>(&format!(
-                "/report/cancel?id={}",
+                "/admin/report/cancel?id={}",
                 id_map.get(id).unwrap(),
             ))
             .await
@@ -205,7 +205,7 @@ async fn manage_reports() {
         );
     }
     assert_eq!(
-        send_manage_request::<Vec<String>>("/report/list")
+        send_manage_request::<Vec<String>>("/admin/report/list")
             .await
             .unwrap()
             .unwrap_data()
@@ -227,7 +227,7 @@ async fn manage_reports() {
 }
 
 async fn get_reports(ids: &[String]) -> Vec<Option<Report>> {
-    send_manage_request(&format!("/report/status?id={}", ids.join(",")))
+    send_manage_request(&format!("/admin/report/status?id={}", ids.join(",")))
         .await
         .unwrap()
         .unwrap_data()

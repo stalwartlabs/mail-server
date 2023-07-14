@@ -100,7 +100,7 @@ pub async fn cmd_queue(url: &str, credentials: Credentials, command: QueueComman
                         .collect(),
                 ));
                 for (message, id) in smtp_manage_request::<Vec<Option<Message>>>(
-                    &build_query(url, "/queue/status?ids=", chunk),
+                    &build_query(url, "/admin/queue/status?ids=", chunk),
                     &credentials,
                 )
                 .await
@@ -172,7 +172,7 @@ pub async fn cmd_queue(url: &str, credentials: Credentials, command: QueueComman
         }
         QueueCommands::Status { ids } => {
             for (message, id) in smtp_manage_request::<Vec<Option<Message>>>(
-                &build_query(url, "/queue/status?ids=", &parse_ids(&ids)),
+                &build_query(url, "/admin/queue/status?ids=", &parse_ids(&ids)),
                 &credentials,
             )
             .await
@@ -311,7 +311,7 @@ pub async fn cmd_queue(url: &str, credentials: Credentials, command: QueueComman
                 std::process::exit(1);
             }
 
-            let mut query = form_urlencoded::Serializer::new(format!("{url}/queue/retry?"));
+            let mut query = form_urlencoded::Serializer::new(format!("{url}/admin/queue/retry?"));
 
             if let Some(filter) = &domain {
                 query.append_pair("filter", filter);
@@ -365,7 +365,7 @@ pub async fn cmd_queue(url: &str, credentials: Credentials, command: QueueComman
                 std::process::exit(1);
             }
 
-            let mut query = form_urlencoded::Serializer::new(format!("{url}/queue/cancel?"));
+            let mut query = form_urlencoded::Serializer::new(format!("{url}/admin/queue/cancel?"));
 
             if let Some(filter) = &rcpt {
                 query.append_pair("filter", filter);
@@ -443,7 +443,7 @@ async fn query_messages(
     before: &Option<DateTime>,
     after: &Option<DateTime>,
 ) -> Vec<u64> {
-    let mut query = form_urlencoded::Serializer::new(format!("{url}/queue/list?"));
+    let mut query = form_urlencoded::Serializer::new(format!("{url}/admin/queue/list?"));
 
     if let Some(sender) = from {
         query.append_pair("from", sender);

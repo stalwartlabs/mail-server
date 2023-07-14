@@ -15,6 +15,16 @@ try each of these servers individually:
 * [Stalwart IMAP Server](https://github.com/stalwartlabs/imap-server/)
 * [Stalwart SMTP Server](https://github.com/stalwartlabs/smtp-server/)
 
+## Why choose Stalwart?
+
+Within the field of mail servers, established names like Postfix, Courier and Dovecot have long been the go-to solutions. However, the landscape of internet messaging is evolving, with a need for more efficient, easy to maintain, reliable, and secure systems. Here's why you might consider making the switch to Stalwart Mail Server:
+
+- Designed with the latest internet messaging protocols in mind - JMAP and IMAP4rev2, along with the conventional SMTP. 
+- Leverages the performance and security benefits of the Rust programming language. This statically typed, compiled language is known for its memory safety and concurrency support, reducing the likelihood of typical security issues like buffer overflows.
+- Thanks to its native FoundationDB and S3 storage support, it can be scaled across many servers, accommodating millions of users.
+- Available as a single, integrated package that includes JMAP, IMAP, and SMTP servers. This means that you don't have to install, configure and maintain multiple servers to get a complete solution.
+- Designed to be easy to install and maintain, with a single configuration file and a simple command-line interface.
+
 ## License
 
 Licensed under the terms of the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0.en.html) as published by

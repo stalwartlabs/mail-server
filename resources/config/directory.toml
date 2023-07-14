@@ -64,9 +64,9 @@ connect-timeout = "30s"
 
 [directory."ldap".filter]
 name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
-email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(mailAlias=?)))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(mailAlias=?)(mailList=?)))"
 verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(mailAlias=*?*)))"
-expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
+expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(mailList=?))"
 domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(mailAlias=*@?)))"
 
 [directory."ldap".object-classes]

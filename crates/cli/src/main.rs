@@ -50,9 +50,9 @@ async fn main() -> std::io::Result<()> {
     let is_jmap = args.command.is_jmap();
     let credentials = if let Some(credentials) = args.credentials {
         parse_credentials(&credentials)
-    } else if is_jmap {
+    } else {
         let credentials = rpassword::prompt_password(
-            "\nEnter JMAP admin credentials or press [ENTER] to use OAuth: ",
+            "\nEnter administrator credentials or press [ENTER] to use OAuth: ",
         )
         .unwrap();
         if !credentials.is_empty() {
@@ -60,8 +60,6 @@ async fn main() -> std::io::Result<()> {
         } else {
             oauth(&args.url).await
         }
-    } else {
-        parse_credentials(&rpassword::prompt_password("\nEnter SMTP admin credentials: ").unwrap())
     };
 
     if is_jmap {

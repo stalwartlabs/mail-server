@@ -31,7 +31,7 @@ use serde::Deserialize;
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Commands,
-    /// JMAP or SMTP server base URL
+    /// Server base URL
     #[clap(short, long)]
     pub url: String,
     /// Authentication credentials

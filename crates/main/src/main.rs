@@ -27,7 +27,7 @@ use directory::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use managesieve::core::ManageSieveSessionManager;
-use smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
+use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol},
@@ -79,7 +79,7 @@ async fn main() -> std::io::Result<()> {
                 server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
             }
             ServerProtocol::Http => {
-                server.spawn(SmtpAdminSessionManager::new(smtp.clone()), shutdown_rx)
+                tracing::debug!("Ignoring HTTP server listener, using JMAP port instead.");
             }
             ServerProtocol::Jmap => {
                 server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
