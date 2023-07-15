@@ -4073,7 +4073,7 @@ checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 
 [[package]]
 name = "smtp"
-version = "0.1.1"
+version = "0.3.0"
 dependencies = [
  "ahash 0.8.3",
  "blake3",

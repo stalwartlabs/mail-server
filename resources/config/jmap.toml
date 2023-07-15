@@ -70,6 +70,7 @@ max-results = 5000
 account = "1000/1m"
 authentication = "10/1m"
 anonymous = "100/1m"
+use-forwarded = false
 
 [jmap.rate-limit.cache]
 size = 1024
@@ -155,6 +156,7 @@ max-attempts = 3
 
 [oauth.expiry]
 user-code = "30m"
+auth-code = "10m"
 token = "1h"
 refresh-token = "30d"
 refresh-token-renew = "4d"
