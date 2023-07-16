@@ -7,6 +7,9 @@ on:
     tags:
       - "v*.*.*"
 
+env:
+  REGISTRY_IMAGE: stalwartlabs/mail-server
+
 jobs:
   build:
     name: Building for ${{ matrix.target }} on ${{ matrix.host_os }}
