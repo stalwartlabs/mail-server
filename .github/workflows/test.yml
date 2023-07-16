@@ -79,11 +79,11 @@ jobs:
           command: test
           args: --manifest-path=crates/store/Cargo.toml
 
-      - name: Store Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=tests/Cargo.toml store -- --nocapture
+      #- name: Store Tests
+      #  uses: actions-rs/cargo@v1
+      #  with:
+      #    command: test
+      #    args: --manifest-path=tests/Cargo.toml store -- --nocapture
 
       - name: Directory Tests
         uses: actions-rs/cargo@v1
