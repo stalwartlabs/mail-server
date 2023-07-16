@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use jmap_proto::error::request::RequestError;
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
@@ -84,7 +85,8 @@ pub async fn upgrade_websocket_connection(
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
                 jmap.handle_websocket_stream(
-                    WebSocketStream::from_raw_socket(upgraded, Role::Server, None).await,
+                    WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, None)
+                        .await,
                     access_token,
                     instance,
                 )

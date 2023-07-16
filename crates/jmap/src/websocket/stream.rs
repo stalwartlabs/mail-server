@@ -25,6 +25,7 @@ use std::{sync::Arc, time::Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
+use hyper_util::rt::TokioIo;
 use jmap_proto::{
     error::request::RequestError,
     request::websocket::{
@@ -41,7 +42,7 @@ use crate::{auth::AccessToken, JMAP};
 impl JMAP {
     pub async fn handle_websocket_stream(
         &self,
-        mut stream: WebSocketStream<Upgraded>,
+        mut stream: WebSocketStream<TokioIo<Upgraded>>,
         access_token: Arc<AccessToken>,
         instance: Arc<ServerInstance>,
     ) {

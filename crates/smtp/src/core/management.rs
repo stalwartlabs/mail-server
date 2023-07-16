@@ -32,6 +32,7 @@ use hyper::{
     service::service_fn,
     Method, StatusCode, Uri,
 };
+use hyper_util::rt::TokioIo;
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -194,7 +195,7 @@ async fn handle_request(
     if let Err(http_err) = http1::Builder::new()
         .keep_alive(true)
         .serve_connection(
-            stream,
+            TokioIo::new(stream),
             service_fn(|req: hyper::Request<body::Incoming>| {
                 let core = core.clone();
 

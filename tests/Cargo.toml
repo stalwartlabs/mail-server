@@ -41,8 +41,9 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-
 bytes = "1.4.0"
 futures = "0.3"
 ece = "2.2"
-hyper = { version = "1.0.0-rc.3", features = ["server", "http1", "http2"] }
-http-body-util = "0.1.0-rc.2"
+hyper = { version = "1.0.0-rc.4", features = ["server", "http1", "http2"] }
+hyper-util = { git = "https://github.com/hyperium/hyper-util" }
+http-body-util = "0.1.0-rc.3"
 base64 = "0.21"
 dashmap = "5.4"
 ahash = { version = "0.8" }

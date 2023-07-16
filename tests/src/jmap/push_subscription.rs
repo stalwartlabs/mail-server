@@ -33,6 +33,7 @@ use base64::{engine::general_purpose, Engine};
 use ece::EcKeyComponents;
 
 use hyper::{body, server::conn::http1, service::service_fn, StatusCode};
+use hyper_util::rt::TokioIo;
 use jmap::{
     api::{
         http::{fetch_body, ToHttpResponse},
@@ -284,14 +285,16 @@ impl utils::listener::SessionManager for SessionManager {
             let _ = http1::Builder::new()
                 .keep_alive(false)
                 .serve_connection(
-                    session
-                        .instance
-                        .tls_acceptor
-                        .as_ref()
-                        .unwrap()
-                        .accept(session.stream)
-                        .await
-                        .unwrap(),
+                    TokioIo::new(
+                        session
+                            .instance
+                            .tls_acceptor
+                            .as_ref()
+                            .unwrap()
+                            .accept(session.stream)
+                            .await
+                            .unwrap(),
+                    ),
                     service_fn(|mut req: hyper::Request<body::Incoming>| {
                         let push = push.clone();
 

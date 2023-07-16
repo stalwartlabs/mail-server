@@ -31,6 +31,7 @@ use hyper::{
     service::service_fn,
     Method, StatusCode,
 };
+use hyper_util::rt::TokioIo;
 use jmap_proto::{
     error::request::{RequestError, RequestLimitError},
     request::Request,
@@ -409,7 +410,7 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     if let Err(http_err) = http1::Builder::new()
         .keep_alive(true)
         .serve_connection(
-            session.stream,
+            TokioIo::new(session.stream),
             service_fn(|req: hyper::Request<body::Incoming>| {
                 let jmap = jmap.clone();
                 let span = span.clone();

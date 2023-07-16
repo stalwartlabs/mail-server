@@ -1,4 +1,4 @@
-stalwart-mail 0.3.0
+stalwart-mail v0.3.0
 ================================
 - Merged the `stalwart-jmap`, `stalwart-imap` and `stalwart-smtp` repositories into
   `stalwart-mail`.
