@@ -49,7 +49,7 @@ Install Stalwart Mail Server on your server by following the instructions for yo
 - [Windows](https://stalw.art/docs/install/windows)
 - [Docker](https://stalw.art/docs/install/docker)
 
-All documentation is available at [stalw.art/docs](https://stalw.art/docs).
+All documentation is available at [stalw.art/docs](https://stalw.art/docs/get-started).
 
 ## Support
 
