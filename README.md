@@ -30,7 +30,7 @@ Key features:
   - Full-text search available in 17 languages.
   - Disk quotas.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
-  - Subaddressing and catch-all addresses support.
+  - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
 - **Secure**:
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
@@ -49,7 +49,7 @@ Install Stalwart Mail Server on your server by following the instructions for yo
 - [Windows](https://stalw.art/docs/install/windows)
 - [Docker](https://stalw.art/docs/install/docker)
 
-All documentation is available at [stalw.art/docs](https://stalw.art/docs/get-started).
+All documentation is available at [stalw.art/docs/get-started](https://stalw.art/docs/get-started).
 
 ## Support
 
