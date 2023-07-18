@@ -3,16 +3,16 @@
 #############################################
 
 [server.listener."imap"]
-bind = ["0.0.0.0:143"]
+bind = ["[::]:143"]
 protocol = "imap"
 
 [server.listener."imaptls"]
-bind = ["0.0.0.0:993"]
+bind = ["[::]:993"]
 protocol = "imap"
 tls.implicit = true
 
 [server.listener."sieve"]
-bind = ["0.0.0.0:4190"]
+bind = ["[::]:4190"]
 protocol = "managesieve"
 tls.implicit = true
 

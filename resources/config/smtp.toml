@@ -3,16 +3,16 @@
 #############################################
 
 [server.listener."smtp"]
-bind = ["0.0.0.0:25"]
+bind = ["[::]:25"]
 greeting = "Stalwart SMTP at your service"
 protocol = "smtp"
 
 [server.listener."submission"]
-bind = ["0.0.0.0:587"]
+bind = ["[::]:587"]
 protocol = "smtp"
 
 [server.listener."submissions"]
-bind = ["0.0.0.0:465"]
+bind = ["[::]:465"]
 protocol = "smtp"
 tls.implicit = true
 
