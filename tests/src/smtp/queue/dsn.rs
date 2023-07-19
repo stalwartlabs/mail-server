@@ -192,7 +192,7 @@ async fn compare_dsn(message: Box<Message>, test: &str) {
         failed.set_extension("failed");
         fs::write(&failed, dsn.as_bytes()).unwrap();
         panic!(
-            "Failed for {}, ouput saved to {}",
+            "Failed for {}, output saved to {}",
             path.display(),
             failed.display()
         );
