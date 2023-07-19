@@ -41,6 +41,7 @@ FROM debian:buster-slim AS runtime
 
 COPY --from=builder /app/target/release/stalwart-mail /usr/local/bin/stalwart-mail
 COPY --from=builder /app/target/release/stalwart-install /usr/local/bin/stalwart-install
+RUN apt-get update -y && apt-get install -yq ca-certificates
 RUN echo "#\!/bin/sh\n\n/usr/local/bin/stalwart-install -c all-in-one -p /opt/stalwart-mail -d" > /usr/local/bin/configure.sh && \
     chmod +x /usr/local/bin/configure.sh
 RUN useradd stalwart-mail -s /sbin/nologin -M
