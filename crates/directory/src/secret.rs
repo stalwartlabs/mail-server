@@ -47,73 +47,80 @@ impl Principal {
     }
 }
 
+async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> bool {
+    if hashed_secret.starts_with("$argon2")
+        || hashed_secret.starts_with("$pbkdf2")
+        || hashed_secret.starts_with("$scrypt")
+    {
+        let (tx, rx) = oneshot::channel();
+        let secret = secret.to_string();
+        let hashed_secret = hashed_secret.to_string();
+
+        tokio::task::spawn_blocking(move || match PasswordHash::new(&hashed_secret) {
+            Ok(hash) => {
+                tx.send(
+                    hash.verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
+                        .is_ok(),
+                )
+                .ok();
+            }
+            Err(_) => {
+                tracing::warn!(
+                    context = "directory",
+                    event = "error",
+                    hash = hashed_secret,
+                    "Invalid password hash"
+                );
+                tx.send(false).ok();
+            }
+        });
+
+        match rx.await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(context = "directory", event = "error", "Thread join error");
+                false
+            }
+        }
+    } else if hashed_secret.starts_with("$2") {
+        // Blowfish crypt
+        bcrypt::verify(secret, hashed_secret)
+    } else if hashed_secret.starts_with("$6$") {
+        // SHA-512 crypt
+        sha512_crypt::verify(secret, hashed_secret)
+    } else if hashed_secret.starts_with("$5$") {
+        // SHA-256 crypt
+        sha256_crypt::verify(secret, hashed_secret)
+    } else if hashed_secret.starts_with("$sha1") {
+        // SHA-1 crypt
+        sha1_crypt::verify(secret, hashed_secret)
+    } else if hashed_secret.starts_with("$1") {
+        // MD5 based hash
+        md5_crypt::verify(secret, hashed_secret)
+    } else {
+        // Unknown hash
+        tracing::warn!(
+            context = "directory",
+            event = "error",
+            hash = hashed_secret,
+            "Invalid password hash"
+        );
+        false
+    }
+}
+
 async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
     if hashed_secret.starts_with('$') {
-        if hashed_secret.starts_with("$argon2")
-            || hashed_secret.starts_with("$pbkdf2")
-            || hashed_secret.starts_with("$scrypt")
-        {
-            let (tx, rx) = oneshot::channel();
-            let secret = secret.to_string();
-            let hashed_secret = hashed_secret.to_string();
-
-            tokio::task::spawn_blocking(move || match PasswordHash::new(&hashed_secret) {
-                Ok(hash) => {
-                    tx.send(
-                        hash.verify_password(&[&Argon2::default(), &Pbkdf2, &Scrypt], &secret)
-                            .is_ok(),
-                    )
-                    .ok();
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        context = "directory",
-                        event = "error",
-                        hash = hashed_secret,
-                        "Invalid password hash"
-                    );
-                    tx.send(false).ok();
-                }
-            });
-
-            match rx.await {
-                Ok(result) => result,
-                Err(_) => {
-                    tracing::warn!(context = "directory", event = "error", "Thread join error");
-                    false
-                }
-            }
-        } else if hashed_secret.starts_with("$2") {
-            // Blowfish crypt
-            bcrypt::verify(secret, hashed_secret)
-        } else if hashed_secret.starts_with("$6$") {
-            // SHA-512 crypt
-            sha512_crypt::verify(secret, hashed_secret)
-        } else if hashed_secret.starts_with("$5$") {
-            // SHA-256 crypt
-            sha256_crypt::verify(secret, hashed_secret)
-        } else if hashed_secret.starts_with("$sha1") {
-            // SHA-1 crypt
-            sha1_crypt::verify(secret, hashed_secret)
-        } else if hashed_secret.starts_with("$1") {
-            // MD5 based hash
-            md5_crypt::verify(secret, hashed_secret)
-        } else {
-            // Unknown hash
-            tracing::warn!(
-                context = "directory",
-                event = "error",
-                hash = hashed_secret,
-                "Invalid password hash"
-            );
-            false
-        }
+        verify_hash_prefix(hashed_secret, secret).await
     } else if hashed_secret.starts_with('_') {
         // Enhanced DES-based hash
         bsdi_crypt::verify(secret, hashed_secret)
     } else if let Some(hashed_secret) = hashed_secret.strip_prefix('{') {
         if let Some((algo, hashed_secret)) = hashed_secret.split_once('}') {
             match algo {
+                "ARGON2" | "ARGON2I" | "ARGON2ID" | "PBKDF2" => {
+                    verify_hash_prefix(hashed_secret, secret).await
+                }
                 "SHA" => {
                     // SHA-1
                     let mut hasher = Sha1::new();
@@ -175,8 +182,12 @@ async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
                         == hashed_secret
                 }
                 "CRYPT" | "crypt" => {
-                    // Unix crypt
-                    unix_crypt::verify(secret, hashed_secret)
+                    if hashed_secret.starts_with('$') {
+                        verify_hash_prefix(hashed_secret, secret).await
+                    } else {
+                        // Unix crypt
+                        unix_crypt::verify(secret, hashed_secret)
+                    }
                 }
                 "PLAIN" | "plain" | "CLEAR" | "clear" => hashed_secret == secret,
                 _ => {
