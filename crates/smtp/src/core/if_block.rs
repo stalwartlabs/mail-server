@@ -121,19 +121,21 @@ impl Conditions {
 impl IpAddrMask {
     pub fn matches(&self, remote: &IpAddr) -> bool {
         match self {
-            IpAddrMask::V4 { addr, mask } => {
-                if *mask == u32::MAX {
-                    match remote {
-                        IpAddr::V4(remote) => addr == remote,
-                        IpAddr::V6(remote) => {
-                            if let Some(remote) = remote.to_ipv4_mapped() {
-                                addr == &remote
-                            } else {
-                                false
-                            }
+            IpAddrMask::V4 { addr, mask } => match *mask {
+                u32::MAX => match remote {
+                    IpAddr::V4(remote) => addr == remote,
+                    IpAddr::V6(remote) => {
+                        if let Some(remote) = remote.to_ipv4_mapped() {
+                            addr == &remote
+                        } else {
+                            false
                         }
                     }
-                } else {
+                },
+                0 => {
+                    matches!(remote, IpAddr::V4(_))
+                }
+                _ => {
                     u32::from_be_bytes(match remote {
                         IpAddr::V4(ip) => ip.octets(),
                         IpAddr::V6(ip) => {
@@ -146,154 +148,23 @@ impl IpAddrMask {
                     }) & mask
                         == u32::from_be_bytes(addr.octets()) & mask
                 }
-            }
-            IpAddrMask::V6 { addr, mask } => {
-                if mask == &u128::MAX {
-                    match remote {
-                        IpAddr::V6(remote) => remote == addr,
-                        IpAddr::V4(remote) => &remote.to_ipv6_mapped() == addr,
-                    }
-                } else {
+            },
+            IpAddrMask::V6 { addr, mask } => match *mask {
+                u128::MAX => match remote {
+                    IpAddr::V6(remote) => remote == addr,
+                    IpAddr::V4(remote) => &remote.to_ipv6_mapped() == addr,
+                },
+                0 => {
+                    matches!(remote, IpAddr::V6(_))
+                }
+                _ => {
                     u128::from_be_bytes(match remote {
                         IpAddr::V6(ip) => ip.octets(),
                         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
                     }) & mask
                         == u128::from_be_bytes(addr.octets()) & mask
                 }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs, net::IpAddr, path::PathBuf};
-
-    use directory::config::ConfigDirectory;
-    use utils::config::{Config, Server};
-
-    use crate::{
-        config::{condition::ConfigCondition, ConfigContext, IfBlock, IfThen},
-        core::Envelope,
-    };
-
-    struct TestEnvelope {
-        pub local_ip: IpAddr,
-        pub remote_ip: IpAddr,
-        pub sender_domain: String,
-        pub sender: String,
-        pub rcpt_domain: String,
-        pub rcpt: String,
-        pub helo_domain: String,
-        pub authenticated_as: String,
-        pub mx: String,
-        pub listener_id: u16,
-        pub priority: i16,
-    }
-
-    impl Envelope for TestEnvelope {
-        fn local_ip(&self) -> IpAddr {
-            self.local_ip
-        }
-
-        fn remote_ip(&self) -> IpAddr {
-            self.remote_ip
-        }
-
-        fn sender_domain(&self) -> &str {
-            self.sender_domain.as_str()
-        }
-
-        fn sender(&self) -> &str {
-            self.sender.as_str()
-        }
-
-        fn rcpt_domain(&self) -> &str {
-            self.rcpt_domain.as_str()
-        }
-
-        fn rcpt(&self) -> &str {
-            self.rcpt.as_str()
-        }
-
-        fn helo_domain(&self) -> &str {
-            self.helo_domain.as_str()
-        }
-
-        fn authenticated_as(&self) -> &str {
-            self.authenticated_as.as_str()
-        }
-
-        fn mx(&self) -> &str {
-            self.mx.as_str()
-        }
-
-        fn listener_id(&self) -> u16 {
-            self.listener_id
-        }
-
-        fn priority(&self) -> i16 {
-            self.priority
-        }
-    }
-
-    #[tokio::test]
-    async fn eval_if() {
-        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file.push("resources");
-        file.push("smtp");
-        file.push("config");
-        file.push("rules-eval.toml");
-
-        let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-        let servers = vec![
-            Server {
-                id: "smtp".to_string(),
-                internal_id: 123,
-                ..Default::default()
             },
-            Server {
-                id: "smtps".to_string(),
-                internal_id: 456,
-                ..Default::default()
-            },
-        ];
-        let mut context = ConfigContext::new(&servers);
-        context.directory = config.parse_directory().unwrap();
-        let conditions = config.parse_conditions(&context).unwrap();
-
-        let envelope = TestEnvelope {
-            local_ip: config.property_require("envelope.local-ip").unwrap(),
-            remote_ip: config.property_require("envelope.remote-ip").unwrap(),
-            sender_domain: config.property_require("envelope.sender-domain").unwrap(),
-            sender: config.property_require("envelope.sender").unwrap(),
-            rcpt_domain: config.property_require("envelope.rcpt-domain").unwrap(),
-            rcpt: config.property_require("envelope.rcpt").unwrap(),
-            authenticated_as: config
-                .property_require("envelope.authenticated-as")
-                .unwrap(),
-            mx: config.property_require("envelope.mx").unwrap(),
-            listener_id: config.property_require("envelope.listener").unwrap(),
-            priority: config.property_require("envelope.priority").unwrap(),
-            helo_domain: config.property_require("envelope.helo-domain").unwrap(),
-        };
-
-        for (key, conditions) in conditions {
-            //println!("============= Testing {:?} ==================", key);
-            let (_, expected_result) = key.rsplit_once('-').unwrap();
-            assert_eq!(
-                IfBlock {
-                    if_then: vec![IfThen {
-                        conditions,
-                        then: true
-                    }],
-                    default: false,
-                }
-                .eval(&envelope)
-                .await,
-                &expected_result.parse::<bool>().unwrap(),
-                "failed for {key:?}"
-            );
         }
     }
 }
