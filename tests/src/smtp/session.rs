@@ -92,6 +92,10 @@ impl IsTls for DummyIo {
     }
 
     fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
+
+    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
+        ("", "")
+    }
 }
 
 impl Unpin for DummyIo {}
@@ -125,7 +129,11 @@ impl TestSession for Session<DummyIo> {
                 tx_buf: vec![],
                 tls: false,
             },
-            data: SessionData::new("127.0.0.1".parse().unwrap(), "127.0.0.1".parse().unwrap()),
+            data: SessionData::new(
+                "127.0.0.1".parse().unwrap(),
+                "127.0.0.1".parse().unwrap(),
+                0,
+            ),
             params: SessionParameters::default(),
             in_flight: vec![],
         }

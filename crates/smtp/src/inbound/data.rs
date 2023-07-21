@@ -284,8 +284,16 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             }
         }
 
+        // Run Milter filters
+        let mut edited_message = match self.run_milters(&auth_message).await {
+            Ok(modifications) => self
+                .data
+                .apply_modifications(modifications, &auth_message)
+                .map(Arc::new),
+            Err(response) => return response,
+        };
+
         // Pipe message
-        let mut edited_message = None;
         for pipe in &dc.pipe_commands {
             if let Some(command_) = pipe.command.eval(self).await {
                 let piped_message = edited_message.as_ref().unwrap_or(&raw_message).clone();
@@ -387,8 +395,8 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 }
                 ScriptResult::Reject(message) => {
                     tracing::debug!(parent: &self.span,
-                        context = "data",
-                        event = "sieve-reject",
+                        context = "sieve",
+                        event = "reject",
                         reason = message);
 
                     return message.into_bytes().into();

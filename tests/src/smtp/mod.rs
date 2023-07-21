@@ -38,12 +38,12 @@ use tokio::sync::mpsc;
 
 use smtp::{
     config::{
-        if_block::ConfigIf, queue::ConfigQueue, throttle::ConfigThrottle, AggregateReport,
-        ArcAuthConfig, Auth, ConfigContext, Connect, Data, DkimAuthConfig, DmarcAuthConfig,
-        DnsBlConfig, Dsn, Ehlo, EnvelopeKey, Extensions, IfBlock, IpRevAuthConfig, Mail,
-        MailAuthConfig, QueueConfig, QueueOutboundSourceIp, QueueOutboundTimeout, QueueOutboundTls,
-        QueueQuotas, QueueThrottle, Rcpt, Report, ReportAnalysis, ReportConfig, SessionConfig,
-        SessionThrottle, SpfAuthConfig, Throttle, VerifyStrategy,
+        if_block::ConfigIf, queue::ConfigQueue, session::ConfigSession, throttle::ConfigThrottle,
+        AggregateReport, ArcAuthConfig, Auth, ConfigContext, Connect, Data, DkimAuthConfig,
+        DmarcAuthConfig, DnsBlConfig, Dsn, Ehlo, EnvelopeKey, Extensions, IfBlock, IpRevAuthConfig,
+        Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp, QueueOutboundTimeout,
+        QueueOutboundTls, QueueQuotas, QueueThrottle, Rcpt, Report, ReportAnalysis, ReportConfig,
+        SessionConfig, SessionThrottle, SpfAuthConfig, Throttle, VerifyStrategy,
     },
     core::{
         throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
@@ -67,6 +67,7 @@ pub trait ParseTestConfig {
     fn parse_throttle(&self, ctx: &ConfigContext) -> Vec<Throttle>;
     fn parse_quota(&self, ctx: &ConfigContext) -> QueueQuotas;
     fn parse_queue_throttle(&self, ctx: &ConfigContext) -> QueueThrottle;
+    fn parse_milters(&self, ctx: &ConfigContext) -> Vec<Milter>;
 }
 
 impl ParseTestConfig for &str {
@@ -126,6 +127,28 @@ impl ParseTestConfig for &str {
         Config::parse(self)
             .unwrap()
             .parse_queue_throttle(ctx)
+            .unwrap()
+    }
+
+    fn parse_milters(&self, ctx: &ConfigContext) -> Vec<Milter> {
+        Config::parse(self)
+            .unwrap()
+            .parse_milters(
+                ctx,
+                &[
+                    EnvelopeKey::Recipient,
+                    EnvelopeKey::RecipientDomain,
+                    EnvelopeKey::Sender,
+                    EnvelopeKey::SenderDomain,
+                    EnvelopeKey::Mx,
+                    EnvelopeKey::HeloDomain,
+                    EnvelopeKey::AuthenticatedAs,
+                    EnvelopeKey::Listener,
+                    EnvelopeKey::RemoteIp,
+                    EnvelopeKey::LocalIp,
+                    EnvelopeKey::Priority,
+                ],
+            )
             .unwrap()
     }
 }
@@ -237,6 +260,7 @@ impl TestConfig for SessionConfig {
                 add_message_id: IfBlock::new(true),
                 add_date: IfBlock::new(true),
                 pipe_commands: vec![],
+                milters: vec![],
             },
         }
     }

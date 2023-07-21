@@ -33,7 +33,7 @@ pub mod session;
 pub mod throttle;
 
 use std::{
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     path::PathBuf,
     sync::{atomic::AtomicU64, Arc},
     time::Duration,
@@ -51,6 +51,8 @@ use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
 use utils::config::{Rate, Server, ServerProtocol};
+
+use crate::inbound::milter;
 
 #[derive(Debug)]
 pub struct Host {
@@ -247,6 +249,7 @@ pub struct Rcpt {
 pub struct Data {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub pipe_commands: Vec<Pipe>,
+    pub milters: Vec<Milter>,
 
     // Limits
     pub max_messages: IfBlock<usize>,
@@ -266,6 +269,21 @@ pub struct Pipe {
     pub command: IfBlock<Option<String>>,
     pub arguments: IfBlock<Vec<String>>,
     pub timeout: IfBlock<Duration>,
+}
+
+pub struct Milter {
+    pub enable: IfBlock<bool>,
+    pub addrs: Vec<SocketAddr>,
+    pub hostname: String,
+    pub port: u16,
+    pub timeout_connect: Duration,
+    pub timeout_command: Duration,
+    pub timeout_data: Duration,
+    pub tls: bool,
+    pub tls_allow_invalid_certs: bool,
+    pub tempfail_on_error: bool,
+    pub max_frame_len: usize,
+    pub protocol_version: milter::Version,
 }
 
 pub struct SessionConfig {

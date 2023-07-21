@@ -22,16 +22,29 @@
 */
 
 use std::{
+    collections::BTreeSet,
+    fs::{self, File},
+    io::{BufRead, BufReader},
+    num::ParseIntError,
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use mail_auth::{
-    common::parse::TxtRecordParser,
+    common::{
+        lru::{DnsCache, LruCache},
+        parse::TxtRecordParser,
+    },
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
-    MX,
+    trust_dns_resolver::{
+        config::{ResolverConfig, ResolverOpts},
+        AsyncResolver,
+    },
+    Resolver, MX,
 };
+use rustls::Certificate;
 use utils::config::ServerProtocol;
 
 use crate::smtp::{
@@ -42,9 +55,9 @@ use crate::smtp::{
 };
 use smtp::{
     config::{AggregateFrequency, IfBlock, RequireOptional},
-    core::{Session, SMTP},
-    outbound::dane::{Tlsa, TlsaEntry},
-    queue::{manager::Queue, DeliveryAttempt},
+    core::{Resolvers, Session, SMTP},
+    outbound::dane::{DnssecResolver, Tlsa, TlsaEntry},
+    queue::{manager::Queue, DeliveryAttempt, Error, ErrorDetails, Status},
     reporting::PolicyType,
 };
 
@@ -207,4 +220,123 @@ async fn dane_verify() {
     let report = rr.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Tlsa(tlsa.into()));
     assert!(report.failure.is_none());
+}
+
+#[tokio::test]
+async fn dane_test() {
+    let conf = ResolverConfig::cloudflare_tls();
+    let mut opts = ResolverOpts::default();
+    opts.validate = true;
+    opts.try_tcp_on_error = true;
+
+    let r = Resolvers {
+        dns: Resolver::new_cloudflare().unwrap(),
+        dnssec: DnssecResolver {
+            resolver: AsyncResolver::tokio(conf, opts).unwrap(),
+        },
+        cache: smtp::core::DnsCache {
+            tlsa: LruCache::with_capacity(10),
+            mta_sts: LruCache::with_capacity(10),
+        },
+    };
+
+    // Add dns entries
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("resources");
+    path.push("smtp");
+    path.push("dane");
+    let mut file = path.clone();
+    file.push("dns.txt");
+
+    let mut hosts = BTreeSet::new();
+    let mut tlsa = Tlsa {
+        entries: Vec::new(),
+        has_end_entities: false,
+        has_intermediates: false,
+    };
+    let mut hostname = String::new();
+
+    for line in BufReader::new(File::open(file).unwrap()).lines() {
+        let line = line.unwrap();
+        let mut is_end_entity = false;
+        for (pos, item) in line.split_whitespace().enumerate() {
+            match pos {
+                0 => {
+                    if hostname != item && !hostname.is_empty() {
+                        r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+                        tlsa = Tlsa {
+                            entries: Vec::new(),
+                            has_end_entities: false,
+                            has_intermediates: false,
+                        };
+                    }
+                    hosts.insert(item.strip_prefix("_25._tcp.").unwrap().to_string());
+                    hostname = item.to_string();
+                }
+                1 => {
+                    is_end_entity = item == "3";
+                }
+                4 => {
+                    if is_end_entity {
+                        tlsa.has_end_entities = true;
+                    } else {
+                        tlsa.has_intermediates = true;
+                    }
+                    tlsa.entries.push(TlsaEntry {
+                        is_end_entity,
+                        is_sha256: true,
+                        is_spki: true,
+                        data: decode_hex(item).unwrap(),
+                    });
+                }
+                _ => (),
+            }
+        }
+    }
+    r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+
+    // Add certificates
+    assert!(!hosts.is_empty());
+    for host in hosts {
+        // Add certificates
+        let mut certs = Vec::new();
+        for num in 0..6 {
+            let mut file = path.clone();
+            file.push(format!("{host}.{num}.cert"));
+            if file.exists() {
+                certs.push(Certificate(fs::read(file).unwrap()));
+            } else {
+                break;
+            }
+        }
+
+        // Successful DANE verification
+        let tlsa = r
+            .tlsa_lookup(format!("_25._tcp.{host}."))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
+            Ok(())
+        );
+
+        // Failed DANE verification
+        certs.remove(0);
+        assert_eq!(
+            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
+            Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
+                entity: host.to_string(),
+                details: "No matching certificates found in TLSA records".to_string()
+            })))
+        );
+    }
+}
+
+pub fn decode_hex(s: &str) -> Result<Vec<u8>, ParseIntError> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+        .collect()
 }

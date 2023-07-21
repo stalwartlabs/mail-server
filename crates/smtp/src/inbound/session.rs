@@ -228,15 +228,20 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         if receiver.ingest(&mut iter, &mut self.data.message) {
                             let num_rcpts = self.data.rcpt_to.len();
                             let message = self.queue_message().await;
-                            if self.instance.protocol == ServerProtocol::Smtp {
-                                self.write(message.as_ref()).await?;
-                            } else {
-                                for _ in 0..num_rcpts {
+                            if !message.is_empty() {
+                                if self.instance.protocol == ServerProtocol::Smtp {
                                     self.write(message.as_ref()).await?;
+                                } else {
+                                    for _ in 0..num_rcpts {
+                                        self.write(message.as_ref()).await?;
+                                    }
                                 }
+                                self.reset();
+                                state = State::default();
+                            } else {
+                                // Disconnect requested
+                                return Err(());
                             }
-                            self.reset();
-                            state = State::default();
                         } else {
                             break 'outer;
                         }
@@ -250,14 +255,19 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                             if receiver.is_last {
                                 let num_rcpts = self.data.rcpt_to.len();
                                 let message = self.queue_message().await;
-                                if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.write(message.as_ref()).await?;
-                                } else {
-                                    for _ in 0..num_rcpts {
+                                if !message.is_empty() {
+                                    if self.instance.protocol == ServerProtocol::Smtp {
                                         self.write(message.as_ref()).await?;
+                                    } else {
+                                        for _ in 0..num_rcpts {
+                                            self.write(message.as_ref()).await?;
+                                        }
                                     }
+                                    self.reset();
+                                } else {
+                                    // Disconnect requested
+                                    return Err(());
                                 }
-                                self.reset();
                             } else {
                                 self.write(b"250 2.6.0 Chunk accepted.\r\n").await?;
                             }

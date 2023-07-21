@@ -180,6 +180,7 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 pub struct SessionData {
     pub local_ip: IpAddr,
     pub remote_ip: IpAddr,
+    pub remote_port: u16,
     pub helo_domain: String,
 
     pub mail_from: Option<SessionAddress>,
@@ -248,10 +249,11 @@ pub struct SessionParameters {
 }
 
 impl SessionData {
-    pub fn new(local_ip: IpAddr, remote_ip: IpAddr) -> Self {
+    pub fn new(local_ip: IpAddr, remote_ip: IpAddr, remote_port: u16) -> Self {
         SessionData {
             local_ip,
             remote_ip,
+            remote_port,
             helo_domain: String::new(),
             mail_from: None,
             rcpt_to: Vec::new(),
@@ -404,6 +406,10 @@ impl crate::inbound::IsTls for NullIo {
     }
 
     fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
+
+    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
+        ("", "")
+    }
 }
 
 #[cfg(feature = "local_delivery")]
@@ -514,6 +520,7 @@ impl SessionData {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
             remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+            remote_port: 0,
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,

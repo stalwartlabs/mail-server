@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::time::Duration;
+use std::{net::ToSocketAddrs, time::Duration};
 
 use smtp_proto::*;
 
@@ -46,6 +46,11 @@ pub trait ConfigSession {
         ctx: &ConfigContext,
         available_keys: &[EnvelopeKey],
     ) -> super::Result<Vec<Pipe>>;
+    fn parse_milters(
+        &self,
+        ctx: &ConfigContext,
+        available_keys: &[EnvelopeKey],
+    ) -> super::Result<Vec<Milter>>;
 }
 
 impl ConfigSession for Config {
@@ -384,6 +389,7 @@ impl ConfigSession for Config {
                 .parse_if_block("session.data.add-headers.date", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(true)),
             pipe_commands: self.parse_pipes(ctx, &available_keys)?,
+            milters: self.parse_milters(ctx, &available_keys)?,
         })
     }
 
@@ -407,6 +413,59 @@ impl ConfigSession for Config {
             })
         }
         Ok(pipes)
+    }
+
+    fn parse_milters(
+        &self,
+        ctx: &ConfigContext,
+        available_keys: &[EnvelopeKey],
+    ) -> super::Result<Vec<Milter>> {
+        let mut milters = Vec::new();
+        for id in self.sub_keys("session.data.milter") {
+            let hostname = self
+                .value_require(("session.data.milter", id, "hostname"))?
+                .to_string();
+            let port = self.property_require(("session.data.milter", id, "port"))?;
+            milters.push(Milter {
+                enable: self
+                    .parse_if_block(("session.data.milter", id, "enable"), ctx, available_keys)?
+                    .unwrap_or_default(),
+                addrs: format!("{}:{}", hostname, port)
+                    .to_socket_addrs()
+                    .map_err(|err| format!("Unable to resolve milter hostname {hostname}: {err}"))?
+                    .collect(),
+                hostname,
+                port,
+                timeout_connect: self
+                    .property_or_static(("session.data.milter", id, "timeout.connect"), "30s")?,
+                timeout_command: self
+                    .property_or_static(("session.data.milter", id, "timeout.command"), "30s")?,
+                timeout_data: self
+                    .property_or_static(("session.data.milter", id, "timeout.data"), "60s")?,
+                tls: self.property_or_static(("session.data.milter", id, "tls"), "false")?,
+                tls_allow_invalid_certs: self.property_or_static(
+                    ("session.data.milter", id, "allow-invalid-certs"),
+                    "false",
+                )?,
+                tempfail_on_error: self.property_or_static(
+                    ("session.data.milter", id, "options.tempfail-on-error"),
+                    "true",
+                )?,
+                max_frame_len: self.property_or_static(
+                    ("session.data.milter", id, "options.max-response-size"),
+                    "52428800",
+                )?,
+                protocol_version: match self.property_or_static::<u32>(
+                    ("session.data.milter", id, "options.version"),
+                    "2",
+                )? {
+                    6 => milter::Version::V6,
+                    2 => milter::Version::V2,
+                    v => return Err(format!("Unsupported milter protocol version: {}", v)),
+                },
+            })
+        }
+        Ok(milters)
     }
 }
 

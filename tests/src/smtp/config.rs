@@ -21,19 +21,22 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use tokio::net::TcpSocket;
 
 use utils::config::{Config, Listener, Rate, Server, ServerProtocol};
 
 use ahash::{AHashMap, AHashSet};
-use directory::Lookup;
+use directory::{config::ConfigDirectory, Lookup};
 
-use smtp::config::{
-    condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
-    ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
-    StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
+use smtp::{
+    config::{
+        condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
+        ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
+        StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
+    },
+    core::Envelope,
 };
 
 use super::add_test_certs;
@@ -514,5 +517,125 @@ fn parse_servers() {
                 expected_server.id
             );
         }
+    }
+}
+
+struct TestEnvelope {
+    pub local_ip: IpAddr,
+    pub remote_ip: IpAddr,
+    pub sender_domain: String,
+    pub sender: String,
+    pub rcpt_domain: String,
+    pub rcpt: String,
+    pub helo_domain: String,
+    pub authenticated_as: String,
+    pub mx: String,
+    pub listener_id: u16,
+    pub priority: i16,
+}
+
+impl Envelope for TestEnvelope {
+    fn local_ip(&self) -> IpAddr {
+        self.local_ip
+    }
+
+    fn remote_ip(&self) -> IpAddr {
+        self.remote_ip
+    }
+
+    fn sender_domain(&self) -> &str {
+        self.sender_domain.as_str()
+    }
+
+    fn sender(&self) -> &str {
+        self.sender.as_str()
+    }
+
+    fn rcpt_domain(&self) -> &str {
+        self.rcpt_domain.as_str()
+    }
+
+    fn rcpt(&self) -> &str {
+        self.rcpt.as_str()
+    }
+
+    fn helo_domain(&self) -> &str {
+        self.helo_domain.as_str()
+    }
+
+    fn authenticated_as(&self) -> &str {
+        self.authenticated_as.as_str()
+    }
+
+    fn mx(&self) -> &str {
+        self.mx.as_str()
+    }
+
+    fn listener_id(&self) -> u16 {
+        self.listener_id
+    }
+
+    fn priority(&self) -> i16 {
+        self.priority
+    }
+}
+
+#[tokio::test]
+async fn eval_if() {
+    let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    file.push("resources");
+    file.push("smtp");
+    file.push("config");
+    file.push("rules-eval.toml");
+
+    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let servers = vec![
+        Server {
+            id: "smtp".to_string(),
+            internal_id: 123,
+            ..Default::default()
+        },
+        Server {
+            id: "smtps".to_string(),
+            internal_id: 456,
+            ..Default::default()
+        },
+    ];
+    let mut context = ConfigContext::new(&servers);
+    context.directory = config.parse_directory().unwrap();
+    let conditions = config.parse_conditions(&context).unwrap();
+
+    let envelope = TestEnvelope {
+        local_ip: config.property_require("envelope.local-ip").unwrap(),
+        remote_ip: config.property_require("envelope.remote-ip").unwrap(),
+        sender_domain: config.property_require("envelope.sender-domain").unwrap(),
+        sender: config.property_require("envelope.sender").unwrap(),
+        rcpt_domain: config.property_require("envelope.rcpt-domain").unwrap(),
+        rcpt: config.property_require("envelope.rcpt").unwrap(),
+        authenticated_as: config
+            .property_require("envelope.authenticated-as")
+            .unwrap(),
+        mx: config.property_require("envelope.mx").unwrap(),
+        listener_id: config.property_require("envelope.listener").unwrap(),
+        priority: config.property_require("envelope.priority").unwrap(),
+        helo_domain: config.property_require("envelope.helo-domain").unwrap(),
+    };
+
+    for (key, conditions) in conditions {
+        //println!("============= Testing {:?} ==================", key);
+        let (_, expected_result) = key.rsplit_once('-').unwrap();
+        assert_eq!(
+            IfBlock {
+                if_then: vec![IfThen {
+                    conditions,
+                    then: true
+                }],
+                default: false,
+            }
+            .eval(&envelope)
+            .await,
+            &expected_result.parse::<bool>().unwrap(),
+            "failed for {key:?}"
+        );
     }
 }

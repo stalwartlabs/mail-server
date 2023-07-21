@@ -1,0 +1,11 @@
+From: John Doe <john@example.org>
+To: Mary Smith <mary.smith@example.org>
+References: a
+References: b
+X-Mailer: Test
+X-1: 1
+X-2: 2
+X-3: 3
+Subject: Saying Hello
+
+This is a message just to say hello.

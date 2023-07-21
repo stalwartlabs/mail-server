@@ -369,6 +369,7 @@ impl SessionManager for JmapSessionManager {
                                 stream,
                                 local_ip: session.local_ip,
                                 remote_ip: session.remote_ip,
+                                remote_port: session.remote_port,
                                 span,
                                 in_flight: session.in_flight,
                                 instance: session.instance,

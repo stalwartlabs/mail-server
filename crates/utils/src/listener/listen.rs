@@ -98,6 +98,7 @@ impl Server {
                                             stream,
                                             local_ip,
                                             remote_ip: remote_addr.ip(),
+                                            remote_port: remote_addr.port(),
                                             span,
                                             in_flight,
                                             instance: instance.clone(),

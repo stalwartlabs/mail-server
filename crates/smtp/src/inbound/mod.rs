@@ -33,6 +33,7 @@ pub mod auth;
 pub mod data;
 pub mod ehlo;
 pub mod mail;
+pub mod milter;
 pub mod rcpt;
 pub mod session;
 pub mod spawn;
@@ -41,13 +42,19 @@ pub mod vrfy;
 pub trait IsTls {
     fn is_tls(&self) -> bool;
     fn write_tls_header(&self, headers: &mut Vec<u8>);
+    fn tls_version_and_cipher(&self) -> (&'static str, &'static str);
 }
 
 impl IsTls for TcpStream {
     fn is_tls(&self) -> bool {
         false
     }
+
     fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
+
+    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
+        ("", "")
+    }
 }
 
 impl IsTls for TlsStream<TcpStream> {
@@ -55,10 +62,10 @@ impl IsTls for TlsStream<TcpStream> {
         true
     }
 
-    fn write_tls_header(&self, headers: &mut Vec<u8>) {
+    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
         let (_, conn) = self.get_ref();
-        headers.extend_from_slice(b"(using ");
-        headers.extend_from_slice(
+
+        (
             match conn
                 .protocol_version()
                 .unwrap_or(rustls::ProtocolVersion::Unknown(0))
@@ -73,11 +80,7 @@ impl IsTls for TlsStream<TcpStream> {
                 rustls::ProtocolVersion::DTLSv1_2 => "DTLSv1.2",
                 rustls::ProtocolVersion::DTLSv1_3 => "DTLSv1.3",
                 _ => "unknown",
-            }
-            .as_bytes(),
-        );
-        headers.extend_from_slice(b" with cipher ");
-        headers.extend_from_slice(
+            },
             match conn.negotiated_cipher_suite() {
                 Some(rustls::SupportedCipherSuite::Tls13(cs)) => {
                     cs.common.suite.as_str().unwrap_or("unknown")
@@ -86,9 +89,16 @@ impl IsTls for TlsStream<TcpStream> {
                     cs.common.suite.as_str().unwrap_or("unknown")
                 }
                 None => "unknown",
-            }
-            .as_bytes(),
-        );
+            },
+        )
+    }
+
+    fn write_tls_header(&self, headers: &mut Vec<u8>) {
+        let (version, cipher) = self.tls_version_and_cipher();
+        headers.extend_from_slice(b"(using ");
+        headers.extend_from_slice(version.as_bytes());
+        headers.extend_from_slice(b" with cipher ");
+        headers.extend_from_slice(cipher.as_bytes());
         headers.extend_from_slice(b")\r\n\t");
     }
 }

@@ -53,6 +53,7 @@ pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
     pub stream: T,
     pub local_ip: IpAddr,
     pub remote_ip: IpAddr,
+    pub remote_port: u16,
     pub span: tracing::Span,
     pub in_flight: InFlight,
     pub instance: Arc<ServerInstance>,

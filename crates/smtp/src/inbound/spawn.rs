@@ -49,7 +49,7 @@ impl SessionManager for SmtpSessionManager {
             span: session.span,
             stream: session.stream,
             in_flight: vec![session.in_flight],
-            data: SessionData::new(session.local_ip, session.remote_ip),
+            data: SessionData::new(session.local_ip, session.remote_ip, session.remote_port),
             params: SessionParameters::default(),
         };
 

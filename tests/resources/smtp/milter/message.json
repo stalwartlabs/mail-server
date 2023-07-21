@@ -1,0 +1,149 @@
+[
+    {
+        "modifications": [
+            {
+                "AddHeader": {
+                    "name": "X-Hello",
+                    "value": "World"
+                }
+            },
+            {
+                "AddHeader": {
+                    "name": "X-CR",
+                    "value": "LF\r\n"
+                }
+            }
+        ],
+        "result": "X-Hello: World\r\nX-CR: LF\r\nFrom: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: a\r\nReferences: b\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: 3\r\nSubject: Saying Hello\r\n\r\nThis is a message just to say hello.\r\n"
+    },
+    {
+        "modifications": [
+            {
+                "ReplaceBody": {
+                    "value": [
+                        49,
+                        50,
+                        51
+                    ]
+                }
+            }
+        ],
+        "result": "From: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: a\r\nReferences: b\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: 3\r\nSubject: Saying Hello\r\n\r\n123"
+    },
+    {
+        "modifications": [
+            {
+                "AddHeader": {
+                    "name": "X-Spam",
+                    "value": "Yes"
+                }
+            },
+            {
+                "ReplaceBody": {
+                    "value": [
+                        49,
+                        50,
+                        51
+                    ]
+                }
+            },
+            {
+                "ReplaceBody": {
+                    "value": [
+                        52,
+                        53,
+                        54
+                    ]
+                }
+            }
+        ],
+        "result": "X-Spam: Yes\r\nFrom: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: a\r\nReferences: b\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: 3\r\nSubject: Saying Hello\r\n\r\n123456"
+    },
+    {
+        "modifications": [
+            {
+                "ChangeHeader": {
+                    "index": 1,
+                    "name": "References",
+                    "value": ""
+                }
+            },
+            {
+                "ChangeHeader": {
+                    "index": 1,
+                    "name": "References",
+                    "value": "z"
+                }
+            },
+            {
+                "ChangeHeader": {
+                    "index": 1,
+                    "name": "Subject",
+                    "value": "[SPAM] Saying Hello"
+                }
+            }
+        ],
+        "result": "From: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: z\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: 3\r\nSubject: [SPAM] Saying Hello\r\n\r\nThis is a message just to say hello.\r\n"
+    },
+    {
+        "modifications": [
+            {
+                "ChangeHeader": {
+                    "index": 1,
+                    "name": "X-Some-Header",
+                    "value": "Some Value"
+                }
+            },
+            {
+                "InsertHeader": {
+                    "index": 2,
+                    "name": "References",
+                    "value": "<my-new-ref>"
+                }
+            },
+            {
+                "InsertHeader": {
+                    "index": 10,
+                    "name": "X-3",
+                    "value": "z"
+                }
+            },
+            {
+                "ReplaceBody": {
+                    "value": [
+                        52,
+                        53,
+                        54
+                    ]
+                }
+            },
+            {
+                "ReplaceBody": {
+                    "value": [
+                        49,
+                        50,
+                        51
+                    ]
+                }
+            }
+        ],
+        "result": "X-Some-Header: Some Value\r\nFrom: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: a\r\nReferences: <my-new-ref>\r\nReferences: b\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: z\r\nX-3: 3\r\nSubject: Saying Hello\r\n\r\n456123"
+    },
+    {
+        "modifications": [
+            {
+                "Quarantine": {
+                    "reason": "Virus found!"
+                }
+            },
+            {
+                "InsertHeader": {
+                    "index": 1,
+                    "name": "References",
+                    "value": "<my-new-ref>"
+                }
+            }
+        ],
+        "result": "X-Quarantine: Virus found!\r\nFrom: John Doe <john@example.org>\r\nTo: Mary Smith <mary.smith@example.org>\r\nReferences: <my-new-ref>\r\nReferences: a\r\nReferences: b\r\nX-Mailer: Test\r\nX-1: 1\r\nX-2: 2\r\nX-3: 3\r\nSubject: Saying Hello\r\n\r\nThis is a message just to say hello.\r\n"
+    }
+]

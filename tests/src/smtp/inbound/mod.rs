@@ -40,6 +40,7 @@ pub mod dnsrbl;
 pub mod ehlo;
 pub mod limits;
 pub mod mail;
+pub mod milter;
 pub mod rcpt;
 pub mod scripts;
 pub mod sign;
