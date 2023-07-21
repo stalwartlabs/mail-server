@@ -40,6 +40,8 @@ use crate::core::ImapId;
 
 use super::{MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
 
+const MAX_RETRIES: usize = 50;
+
 #[derive(Debug)]
 struct UidMap {
     uid_next: u32,
@@ -195,7 +197,7 @@ impl SessionData {
 
                     match self.jmap.store.write(batch.build()).await {
                         Ok(_) => (),
-                        Err(store::Error::AssertValueFailed) if try_count < 3 => {
+                        Err(store::Error::AssertValueFailed) if try_count < MAX_RETRIES => {
                             try_count += 1;
                             continue;
                         }
@@ -205,7 +207,7 @@ impl SessionData {
                                             account_id = mailbox.account_id,
                                             collection = ?Collection::Mailbox,
                                             error = ?err,
-                                            "Failed to store uid map");
+                                            "Failed to update uid map");
                             return Err(StatusResponse::database_failure());
                         }
                     }
@@ -265,16 +267,25 @@ impl SessionData {
                     .with_account_id(mailbox.account_id)
                     .with_collection(Collection::Mailbox)
                     .update_document(mailbox.mailbox_id.unwrap_or(u32::MAX))
+                    .assert_value(Property::EmailIds, ())
                     .value(Property::EmailIds, &uid_map, F_VALUE);
-                self.jmap.store.write(batch.build()).await.map_err(|err| {
-                    tracing::error!(event = "error",
-                    context = "store",
-                    account_id = mailbox.account_id,
-                    collection = ?Collection::Mailbox,
-                    error = ?err,
-                    "Failed to store uid map");
-                    StatusResponse::database_failure()
-                })?;
+
+                match self.jmap.store.write(batch.build()).await {
+                    Ok(_) => (),
+                    Err(store::Error::AssertValueFailed) if try_count < MAX_RETRIES => {
+                        try_count += 1;
+                        continue;
+                    }
+                    Err(err) => {
+                        tracing::error!(event = "error",
+                                            context = "store",
+                                            account_id = mailbox.account_id,
+                                            collection = ?Collection::Mailbox,
+                                            error = ?err,
+                                            "Failed to store new uid map");
+                        return Err(StatusResponse::database_failure());
+                    }
+                }
 
                 return Ok(MailboxState {
                     uid_next,
