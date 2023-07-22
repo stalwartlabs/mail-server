@@ -286,10 +286,25 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Run Milter filters
         let mut edited_message = match self.run_milters(&auth_message).await {
-            Ok(modifications) => self
-                .data
-                .apply_modifications(modifications, &auth_message)
-                .map(Arc::new),
+            Ok(modifications) => {
+                tracing::debug!(
+                    parent: &self.span,
+                    context = "milter",
+                    event = "accept",
+                    modifications = modifications.iter().fold(String::new(), |mut s, m| {
+                        use std::fmt::Write;
+                        if !s.is_empty() {
+                            s.push_str(", ");
+                        }
+                        let _ = write!(s, "{m}");
+                        s
+                    }),
+                    "Milter filter(s) accepted message.");
+
+                self.data
+                    .apply_modifications(modifications, &auth_message)
+                    .map(Arc::new)
+            }
             Err(response) => return response,
         };
 

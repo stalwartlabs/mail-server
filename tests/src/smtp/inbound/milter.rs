@@ -41,7 +41,8 @@ use tokio::{
 };
 
 use crate::smtp::{
-    session::{load_test_message, TestSession},
+    inbound::{TestMessage, TestQueueEvent},
+    session::{load_test_message, TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
 
@@ -54,13 +55,13 @@ struct HeaderTest {
 #[tokio::test]
 async fn milter_session() {
     // Enable logging
-    let disable = "true";
+    /*let disable = "true";
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
-    .unwrap();
+    .unwrap();*/
 
     // Configure tests
     let _rx = spawn_mock_milter_server();
@@ -72,8 +73,9 @@ async fn milter_session() {
     config.data.milters = r#"[[session.data.milter]]
     hostname = "127.0.0.1"
     port = 9332
+    #port = 11332
     enable = true
-    version = 6
+    options.version = 6
     tls = false
     "#
     .parse_milters(&ConfigContext::new(&[]));
@@ -138,6 +140,56 @@ async fn milter_session() {
         )
         .await;
     qr.assert_empty_queue();
+
+    // Test accept with header addition
+    session
+        .send_message(
+            "0@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.read_event()
+        .await
+        .unwrap_message()
+        .read_lines()
+        .assert_contains("X-Hello: World")
+        .assert_contains("Subject: Is dinner ready?")
+        .assert_contains("Are you hungry yet?");
+
+    // Test accept with header replacement
+    session
+        .send_message(
+            "3@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.read_event()
+        .await
+        .unwrap_message()
+        .read_lines()
+        .assert_contains("Subject: [SPAM] Saying Hello")
+        .assert_count("References: ", 1)
+        .assert_contains("Are you hungry yet?");
+
+    // Test accept with body replacement
+    session
+        .send_message(
+            "2@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.read_event()
+        .await
+        .unwrap_message()
+        .read_lines()
+        .assert_contains("X-Spam: Yes")
+        .assert_contains("123456");
 }
 
 #[test]
@@ -435,6 +487,7 @@ async fn accept_milter(
     let mut buf = vec![0u8; 1024];
     let mut receiver = Receiver::with_max_frame_len(5000000);
     let mut action = None;
+    let mut modidications = None;
 
     'outer: loop {
         let br = tokio::select! {
@@ -498,18 +551,10 @@ async fn accept_milter(
                                     text: "test".to_string(),
                                 },
                                 test_num => {
-                                    for modification in
-                                        &tests[test_num.parse::<usize>().unwrap()].modifications
-                                    {
-                                        // Write modifications
-                                        stream
-                                            .write_all(
-                                                &Response::Modification(modification.clone())
-                                                    .serialize(),
-                                            )
-                                            .await
-                                            .unwrap();
-                                    }
+                                    modidications = tests[test_num.parse::<usize>().unwrap()]
+                                        .modifications
+                                        .clone()
+                                        .into();
                                     Action::Accept
                                 }
                             }
@@ -517,7 +562,21 @@ async fn accept_milter(
                             Response::Action(Action::Accept)
                         }
                         Command::Quit => break 'outer,
-                        Command::EndOfBody => Response::Action(action.take().unwrap()),
+                        Command::EndOfBody => {
+                            if let Some(modifications) = modidications.take() {
+                                for modification in modifications {
+                                    // Write modifications
+                                    stream
+                                        .write_all(
+                                            &Response::Modification(modification).serialize(),
+                                        )
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+
+                            Response::Action(action.take().unwrap())
+                        }
                     };
 
                     // Write response

@@ -334,19 +334,23 @@ fn main() -> std::io::Result<()> {
                 }
             }) {
                 Ok(Ok(bytes)) => {
+                    let unpack_path = if !args.docker {
+                        base_path.join("bin")
+                    } else {
+                        PathBuf::from("/usr/local/bin")
+                    };
+
                     #[cfg(not(target_env = "msvc"))]
                     if let Err(err) =
                         tar::Archive::new(flate2::bufread::GzDecoder::new(Cursor::new(bytes)))
-                            .unpack(base_path.join("bin"))
+                            .unpack(unpack_path)
                     {
                         eprintln!("❌ Failed to unpack {}: {}", url, err);
                         return Ok(());
                     }
 
                     #[cfg(target_env = "msvc")]
-                    if let Err(err) =
-                        zip_extract::extract(Cursor::new(bytes), &base_path.join("bin"), true)
-                    {
+                    if let Err(err) = zip_extract::extract(Cursor::new(bytes), &unpack_path, true) {
                         eprintln!("❌ Failed to unpack {}: {}", url, err);
                         return Ok(());
                     }

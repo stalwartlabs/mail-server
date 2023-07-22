@@ -335,10 +335,11 @@ impl SessionData {
                     needs_rewrite = true;
                 }
                 Modification::ChangeHeader { index, name, value } => {
-                    if message
-                        .raw_parsed_headers()
-                        .iter()
-                        .any(|(n, _)| n.eq_ignore_ascii_case(name.as_bytes()))
+                    if value.is_empty()
+                        || message
+                            .raw_parsed_headers()
+                            .iter()
+                            .any(|(n, _)| n.eq_ignore_ascii_case(name.as_bytes()))
                     {
                         header_changes.push((index, name, value, true));
                         needs_rewrite = true;

@@ -413,7 +413,7 @@ impl Response {
                     buf
                 }
                 Modification::ReplaceBody { value } => {
-                    let mut buf = Command::build(SMFIR_REPLBODY, value.len() as u32 + 1);
+                    let mut buf = Command::build(SMFIR_REPLBODY, value.len() as u32);
                     buf.extend(value);
                     buf
                 }

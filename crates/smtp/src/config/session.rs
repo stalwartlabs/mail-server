@@ -457,7 +457,7 @@ impl ConfigSession for Config {
                 )?,
                 protocol_version: match self.property_or_static::<u32>(
                     ("session.data.milter", id, "options.version"),
-                    "2",
+                    "6",
                 )? {
                     6 => milter::Version::V6,
                     2 => milter::Version::V2,

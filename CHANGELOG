@@ -1,3 +1,10 @@
+stalwart-mail v0.3.1
+================================
+- Added: Milter filter support. Documentation is available [here](https://stalw.art/docs/smtp/filter/milter).
+- Added: Match IP address type using /0 mask (#16).
+- Fix: Support for OpenLDAP password hashing schemes between curly brackets (#8). 
+- Fix: Add CA certificates to Docker runtime (#5).
+
 stalwart-mail v0.3.0
 ================================
 - Merged the `stalwart-jmap`, `stalwart-imap` and `stalwart-smtp` repositories into
