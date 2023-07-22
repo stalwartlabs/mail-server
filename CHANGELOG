@@ -18,4 +18,3 @@ stalwart-mail v0.3.0
 - Rewritten store backend.
 - Rewritten IMAP server to have direct access to the message store (no more IMAP proxy).
 - Replaced `actix` with `hyper`.
-
