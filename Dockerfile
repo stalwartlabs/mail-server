@@ -1,11 +1,17 @@
 FROM debian:bullseye-slim 
 
-RUN apt-get update -y && apt-get install -yq ca-certificates curl tar
+RUN apt-get update -y && apt-get install -yq ca-certificates curl
 
 COPY resources/docker/configure.sh /usr/local/bin/configure.sh
 COPY resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
+RUN sed -i -e 's/__C__/all-in-one/g' /usr/local/bin/configure.sh && \
+    sed -i -e 's/__R__/mail-server/g' /usr/local/bin/configure.sh && \
+    sed -i -e 's/__N__/mail-sqlite/g' /usr/local/bin/configure.sh
+
 RUN chmod a+rx /usr/local/bin/*.sh
+
+RUN /usr/local/bin/configure.sh --download
 
 RUN useradd stalwart-mail -s /sbin/nologin -M
 RUN mkdir -p /opt/stalwart-mail

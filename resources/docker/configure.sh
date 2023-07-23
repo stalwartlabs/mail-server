@@ -7,6 +7,7 @@ set -e
 set -u
 
 readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
+readonly BIN_DIR="/usr/local/bin"
 
 main() {
     downloader --check
@@ -35,32 +36,36 @@ main() {
     fi
 
     # Start configuration mode
-    if [ "$#" -eq 1 ] && [ "$1" = "--init" ]  ; then
-        init
-        configure
-        return 0
+    if [ "$#" -eq 1 ] && [ "$1" = "--download" ]  ; then
+        # Detect platform architecture
+        get_architecture || return 1
+        local _arch="$RETVAL"
+        assert_nz "$_arch" "arch"
+
+        # Download binaries
+        say "⏳ Downloading Stalwart binary for ${_arch}..."
+        local _file="${BIN_DIR}/stalwart-install.tar.gz"
+        local _url="https://github.com/stalwartlabs/__R__/releases/latest/download/stalwart-__N__-${_arch}.tar.gz"
+        ensure downloader "$_url" "$_file" "$_arch"
+        ensure tar zxvf "$_file" -C "$BIN_DIR"
+        ignore rm "$_file"
+
+        say "⏳ Downloading configure tool for ${_arch}..."
+        local _file="${BIN_DIR}/stalwart-install.tar.gz"
+        local _url="${BASE_URL}/stalwart-install-${_arch}.tar.gz"
+        ensure downloader "$_url" "$_file" "$_arch"
+        ensure tar zxvf "$_file" -C "$BIN_DIR"
+        ignore rm "$_file"
+
+        say "⏳ Downloading CLI tool for ${_arch}..."
+        local _file="${BIN_DIR}/stalwart-cli.tar.gz"
+        local _url="${BASE_URL}/stalwart-cli-${_arch}.tar.gz"
+        ensure downloader "$_url" "$_file" "$_arch"
+        ensure tar zxvf "$_file" -C "$BIN_DIR"
+        ignore rm "$_file"
+    else
+        ignore $BIN_DIR/stalwart-install -c __C__ -p /opt/stalwart-mail -d
     fi
-
-    # Detect platform architecture
-    get_architecture || return 1
-    local _arch="$RETVAL"
-    assert_nz "$_arch" "arch"
-
-    # Download latest binary
-    say "⏳ Downloading configure tool for ${_arch}..."
-    local _dir
-    _dir="$(ensure mktemp -d)"
-    local _file="${_dir}/stalwart-install.tar.gz"
-    local _url="${BASE_URL}/stalwart-install-${_arch}.tar.gz"
-    ensure mkdir -p "$_dir"
-    ensure downloader "$_url" "$_file" "$_arch"
-
-    # Copy binary
-    say "⬇️  Running configuration wizard..."
-    ensure tar zxvf "$_file" -C "$_dir"
-    ignore $_dir/stalwart-install -p /opt/stalwart-mail -d
-    ignore rm "$_file"
-    ignore rm "$_dir/stalwart-install"
 
     return 0
 }
