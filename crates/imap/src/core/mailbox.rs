@@ -13,7 +13,7 @@ use jmap_proto::{
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use tokio::io::AsyncRead;
-use utils::listener::limiter::InFlight;
+use utils::{listener::limiter::InFlight, map::mutex_map::MutexMap};
 
 use super::{Account, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
@@ -31,6 +31,7 @@ impl SessionData {
             span: session.span.clone(),
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
+            mailbox_locks: MutexMap::with_capacity(5),
             in_flight,
         };
 

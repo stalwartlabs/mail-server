@@ -46,7 +46,7 @@ certificate = "default"
 
 [global.tracing]
 method = "stdout"
-level = "trace"
+level = "info"
 
 [session.ehlo]
 reject-non-fqdn = false
@@ -196,5 +196,5 @@ refresh-token-renew = "2s"
 allow-plain-text = true
 
 [imap.rate-limit]
-rate = "10000/1s"
+requests = "90000/1s"
 concurrent = 9000

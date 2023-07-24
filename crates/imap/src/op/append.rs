@@ -179,7 +179,7 @@ impl SessionData {
                 .await;
         }
 
-        if !created_ids.is_empty() {
+        if !created_ids.is_empty() && self.imap.enable_uidplus {
             let (uids, uid_validity) = match selected_mailbox {
                 Some(selected_mailbox) if selected_mailbox.id == mailbox => {
                     self.write_mailbox_changes(&selected_mailbox, is_qresync)

@@ -129,3 +129,9 @@ impl ConcurrencyLimiter {
         self.concurrent.load(Ordering::Relaxed) > 0
     }
 }
+
+impl InFlight {
+    pub fn num_concurrent(&self) -> u64 {
+        self.concurrent.load(Ordering::Relaxed)
+    }
+}

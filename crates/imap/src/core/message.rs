@@ -40,7 +40,7 @@ use crate::core::ImapId;
 
 use super::{MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
 
-const MAX_RETRIES: usize = 50;
+const MAX_RETRIES: usize = 10;
 
 #[derive(Debug)]
 struct UidMap {
@@ -68,6 +68,9 @@ impl SessionData {
         let mut try_count = 0;
 
         loop {
+            // Acquire lock on the mailbox
+            let _guard = self.mailbox_locks.lock_hash(mailbox).await;
+
             // Deserialize mailbox data
             let uid_map = self
                 .jmap

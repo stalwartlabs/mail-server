@@ -3,7 +3,7 @@
 #############################################
 
 [server.listener."jmap"]
-bind = ["0.0.0.0:8080"]
+bind = ["[::]:8080"]
 url = "https://__HOST__:8080"
 protocol = "jmap"
 
