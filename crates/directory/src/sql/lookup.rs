@@ -140,6 +140,7 @@ impl Directory for SqlDirectory {
     }
 
     async fn query(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
         let mut q = sqlx::query(query);
         for param in params {
             q = q.bind(param);

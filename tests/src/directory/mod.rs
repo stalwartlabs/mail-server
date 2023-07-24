@@ -62,9 +62,6 @@ email = "address"
 quota = "quota"
 type = "type"
 
-[directory."sql".lookup]
-domains = "SELECT name FROM domains WHERE name = ?"
-
 [directory."ldap"]
 type = "ldap"
 address = "ldap://localhost:3893"

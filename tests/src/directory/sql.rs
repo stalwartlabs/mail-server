@@ -31,13 +31,15 @@ async fn sql_directory() {
     // Enable logging
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
 
     // Obtain directory handle
-    let handle = parse_config().directories.remove("sql").unwrap();
+    let mut config = parse_config();
+    let lookups = config.lookups;
+    let handle = config.directories.remove("sql").unwrap();
 
     // Create tables
     create_test_directory(handle.as_ref()).await;
@@ -79,6 +81,14 @@ async fn sql_directory() {
     create_test_user(handle.as_ref(), "robert", "abcde", "Robert Foobar").await;
     link_test_address(handle.as_ref(), "robert", "robert@catchall.org", "primary").await;
     link_test_address(handle.as_ref(), "robert", "@catchall.org", "alias").await;
+
+    // Text lookup
+    assert!(lookups
+        .get("sql/domains")
+        .unwrap()
+        .contains("example.org")
+        .await
+        .unwrap());
 
     // Test authentication
     assert_eq!(

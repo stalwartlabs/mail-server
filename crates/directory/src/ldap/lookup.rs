@@ -240,10 +240,11 @@ impl Directory for LdapDirectory {
 
     async fn query(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
         let mut conn = self.pool.get().await?;
+        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
 
         Ok(if !params.is_empty() {
             let mut expanded_query = String::with_capacity(query.len() + params.len() * 2);
-            for (pos, item) in query.split('$').enumerate() {
+            for (pos, item) in query.split('?').enumerate() {
                 if pos > 0 {
                     if let Some(param) = params.get(pos - 1) {
                         expanded_query.push_str(param);

@@ -244,6 +244,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build_docker:
+    needs:
+      - build
+      - cross_build
+      - cross_build_tools    
     name: Build Docker image for ${{ matrix.platform }}
     runs-on: ubuntu-latest
     if: '!cancelled()'
