@@ -37,6 +37,7 @@ const CONFIG: &str = r#"
 [directory."sql"]
 type = "sql"
 address = "sqlite::memory:"
+#address = "mysql://root:secret@localhost:3306/stalwart?ssl_mode=disabled"
 
 [directory."sql".options]
 catch-all = true

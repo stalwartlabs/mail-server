@@ -1029,6 +1029,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "bb8",
+ "futures",
  "ldap3",
  "lru-cache",
  "mail-builder",
