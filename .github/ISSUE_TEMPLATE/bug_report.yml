@@ -60,7 +60,7 @@ body:
         - SQLite
         - mySQL
         - PostgreSQL
-        - SQLite
+        - LDAP
   - type: dropdown
     id: os
     attributes:
