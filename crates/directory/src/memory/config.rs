@@ -29,6 +29,14 @@ use crate::{config::ConfigDirectory, Directory, DirectoryOptions, Principal, Typ
 
 use super::{EmailType, MemoryDirectory};
 
+fn parse_secret(value: &str) -> utils::config::Result<String> {
+    match value.strip_prefix("file://") {
+        None => Ok(value.to_string()),
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|err| format!("Failed to read {path:?} for user secret: {err}")),
+    }
+}
+
 impl MemoryDirectory {
     pub fn from_config(
         config: &Config,
@@ -61,8 +69,8 @@ impl MemoryDirectory {
                     name: name.clone(),
                     secrets: config
                         .values((prefix.as_str(), "users", lookup_id, "secret"))
-                        .map(|(_, v)| v.to_string())
-                        .collect(),
+                        .map(|(_, v)| parse_secret(v))
+                        .collect::<Result<_, _>>()?,
                     typ,
                     description: config
                         .value((prefix.as_str(), "users", lookup_id, "description"))
