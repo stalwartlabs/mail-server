@@ -1,0 +1,86 @@
+name: Bug Report
+description: File a bug report
+title: "[Bug]: "
+labels: ["bug"]
+assignees:
+  - mdecimus
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Use this form only for reporting bugs. If you have a question or problem, please use the [Q&A discussion](https://github.com/launchbadge/sqlx/discussions/new?category=q-a).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us, what did you expect to happen?
+      placeholder: Tell us what you see!
+      value: "A bug happened!"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How can we reproduce the problem?
+      description: Please provide detailed steps for reproducing the problem.
+      placeholder: Tell us how to reproduce the problem!
+      value: "I can reproduce the problem by doing the following steps:"
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Version
+      description: What version of our software are you running?
+      options:
+        - v0.3.1
+        - v0.3.0
+        - v0.2.0 or lower
+    validations:
+      required: true
+  - type: dropdown
+    id: db
+    attributes:
+      label: What database are you using?
+      options:
+        - SQLite
+        - FoundationDB
+  - type: dropdown
+    id: blob
+    attributes:
+      label: What blob storage are you using?
+      options:
+        - Local
+        - S3-compatible
+  - type: dropdown
+    id: directory
+    attributes:
+      label: Where is your directory located?
+      options:
+        - SQLite
+        - mySQL
+        - PostgreSQL
+        - SQLite
+  - type: dropdown
+    id: os
+    attributes:
+      label: What operating system are you using?
+      options:
+        - Linux
+        - Docker
+        - MacOS
+        - Windows
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output, set logging level to `trace` if you can't find any relevant errors in the log.
+      render: shell
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stalwartlabs/.github/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

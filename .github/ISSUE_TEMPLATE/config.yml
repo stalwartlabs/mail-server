@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: I have a question or problem
+    url: https://stalw.art/docs/faq
+    about: Read the FAQ
+  - name: I have a question or problem not covered in the FAQ
+    url: https://github.com/launchbadge/sqlx/discussions/new?category=q-a
+    about: Open a Q&A discussion
+  - name: Join Stalwart's Discord
+    url: https://discord.gg/aVQr3jF8jd
+    about: Join our Discord server for help, discussions and release announcements.

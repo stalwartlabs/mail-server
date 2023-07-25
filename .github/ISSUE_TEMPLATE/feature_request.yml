@@ -1,0 +1,36 @@
+name: Feature Request
+description: File a feature request issue
+title: "[Enhancement]: "
+labels: ["enhancement"]
+assignees:
+  - mdecimus
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this feature request form! Use this form only for requesting new features. If you have a question or problem, please use the [Q&A discussion](https://github.com/launchbadge/sqlx/discussions/new?category=q-a).
+  - type: textarea
+    id: request
+    attributes:
+      label: Which feature or improvement would you like to request?
+      description: Write a clear and concise description of what you want to happen.
+      placeholder: "I'd like to see this feature:"
+      value: "I'd like to see this feature:"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-related
+    attributes:
+      label: Is your feature request related to a problem?
+      description: Wrote a clear and concise description of what the problem is.
+      placeholder: Tell us what the problem is!
+      value: "I'm always frustrated when..."
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/stalwartlabs/.github/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true
