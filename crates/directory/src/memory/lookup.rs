@@ -23,7 +23,7 @@
 
 use mail_send::Credentials;
 
-use crate::{to_catch_all_address, unwrap_subaddress, Directory, DirectoryError, Principal};
+use crate::{Directory, DirectoryError, Principal};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -67,13 +67,12 @@ impl Directory for MemoryDirectory {
     async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
         Ok(self
             .emails_to_names
-            .get(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            .get(self.opt.subaddressing.to_subaddress(address).as_ref())
             .or_else(|| {
-                if self.opt.catch_all {
-                    self.emails_to_names.get(&to_catch_all_address(address))
-                } else {
-                    None
-                }
+                self.opt
+                    .catch_all
+                    .to_catch_all(address)
+                    .and_then(|address| self.emails_to_names.get(address.as_ref()))
             })
             .map(|names| {
                 names
@@ -91,13 +90,19 @@ impl Directory for MemoryDirectory {
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
         Ok(self
             .emails_to_names
-            .contains_key(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
-            || (self.opt.catch_all && self.domains.contains(&to_catch_all_address(address))))
+            .contains_key(self.opt.subaddressing.to_subaddress(address).as_ref())
+            || self
+                .opt
+                .catch_all
+                .to_catch_all(address)
+                .map_or(false, |address| {
+                    self.emails_to_names.contains_key(address.as_ref())
+                }))
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
-        let address = unwrap_subaddress(address, self.opt.subaddressing);
+        let address = self.opt.subaddressing.to_subaddress(address);
         for (key, value) in &self.emails_to_names {
             if key.contains(address.as_ref())
                 && value.iter().any(|t| matches!(t, EmailType::Primary(_)))
@@ -110,7 +115,7 @@ impl Directory for MemoryDirectory {
 
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
-        let address = unwrap_subaddress(address, self.opt.subaddressing);
+        let address = self.opt.subaddressing.to_subaddress(address);
         for (key, value) in &self.emails_to_names {
             if key == address.as_ref() {
                 for item in value {

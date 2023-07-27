@@ -239,7 +239,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 }
 
 impl SessionData {
-    pub fn apply_modifications(
+    pub fn apply_milter_modifications(
         &mut self,
         modifications: Vec<Modification>,
         message: &AuthenticatedMessage<'_>,

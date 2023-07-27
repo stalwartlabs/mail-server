@@ -34,7 +34,7 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
-use utils::config::{Config, Rate};
+use utils::config::{Config, DynValue, Rate};
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent, TestReportingEvent},
@@ -42,7 +42,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, IfBlock, VerifyStrategy},
+    config::{AggregateFrequency, ConfigContext, IfBlock, MaybeDynValue, VerifyStrategy},
     core::{Session, SMTP},
 };
 
@@ -134,7 +134,9 @@ async fn dmarc() {
     let mut rr = core.init_test_report();
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
+    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
+        directory.directories.get("local").unwrap().clone(),
+    )));
 
     let mut config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
@@ -166,11 +168,17 @@ async fn dmarc() {
 
     let mut config = &mut core.report.config;
     config.spf.sign = "['rsa']"
-        .parse_if::<Vec<String>>(&ctx)
+        .parse_if::<Vec<DynValue>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
-    config.dmarc.sign = config.spf.sign.clone();
-    config.dkim.sign = config.spf.sign.clone();
+    config.dmarc.sign = "['rsa']"
+        .parse_if::<Vec<DynValue>>(&ctx)
+        .map_if_block(&ctx.signers, "", "")
+        .unwrap();
+    config.dkim.sign = "['rsa']"
+        .parse_if::<Vec<DynValue>>(&ctx)
+        .map_if_block(&ctx.signers, "", "")
+        .unwrap();
 
     // SPF must pass
     let core = Arc::new(core);

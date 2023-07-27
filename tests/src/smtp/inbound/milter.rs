@@ -212,7 +212,7 @@ fn milter_address_modifications() {
 
     // ChangeFrom
     assert!(data
-        .apply_modifications(
+        .apply_milter_modifications(
             vec![Modification::ChangeFrom {
                 sender: "<>".to_string(),
                 args: String::new()
@@ -227,7 +227,7 @@ fn milter_address_modifications() {
 
     // ChangeFrom with parameters
     assert!(data
-        .apply_modifications(
+        .apply_milter_modifications(
             vec![Modification::ChangeFrom {
                 sender: "john@example.org".to_string(),
                 args: "REQUIRETLS ENVID=abc123".to_string(), //"NOTIFY=SUCCESS,FAILURE ENVID=abc123\n".to_string()
@@ -242,7 +242,7 @@ fn milter_address_modifications() {
 
     // Add recipients
     assert!(data
-        .apply_modifications(
+        .apply_milter_modifications(
             vec![
                 Modification::AddRcpt {
                     recipient: "bill@example.org".to_string(),
@@ -276,7 +276,7 @@ fn milter_address_modifications() {
 
     // Remove recipients
     assert!(data
-        .apply_modifications(
+        .apply_milter_modifications(
             vec![
                 Modification::DeleteRcpt {
                     recipient: "bill@example.org".to_string(),
@@ -319,7 +319,7 @@ fn milter_message_modifications() {
             test.result,
             String::from_utf8(
                 session_data
-                    .apply_modifications(test.modifications, &parsed_test_message)
+                    .apply_milter_modifications(test.modifications, &parsed_test_message)
                     .unwrap()
             )
             .unwrap()

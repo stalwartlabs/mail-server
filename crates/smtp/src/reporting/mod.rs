@@ -36,7 +36,7 @@ use mail_parser::DateTime;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
-    config::{AddressMatch, AggregateFrequency, DkimSigner, IfBlock},
+    config::{AddressMatch, AggregateFrequency, DkimSigner, IfBlock, MaybeDynValue},
     core::{management, Session, SMTP},
     outbound::{dane::Tlsa, mta_sts::Policy},
     queue::{DomainPart, Message},
@@ -129,7 +129,7 @@ impl SMTP {
         from_addr: &str,
         rcpts: impl Iterator<Item = impl AsRef<str>>,
         report: Vec<u8>,
-        sign_config: &IfBlock<Vec<Arc<DkimSigner>>>,
+        sign_config: &IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
         span: &tracing::Span,
         deliver_now: bool,
     ) {
@@ -178,11 +178,11 @@ impl SMTP {
 impl Message {
     pub async fn sign(
         &mut self,
-        config: &IfBlock<Vec<Arc<DkimSigner>>>,
+        config: &IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
         bytes: &[u8],
         span: &tracing::Span,
     ) -> Option<Vec<u8>> {
-        let signers = config.eval(self).await;
+        let signers = config.eval_and_capture(self).await.into_value();
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {

@@ -32,6 +32,7 @@ use mail_auth::{
     dmarc::Dmarc,
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
+use utils::config::DynValue;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
@@ -66,7 +67,7 @@ async fn report_dmarc() {
     config.path = IfBlock::new(temp_dir.temp_dir.clone());
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.sign = "['rsa']"
-        .parse_if::<Vec<String>>(&ctx)
+        .parse_if::<Vec<DynValue>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);

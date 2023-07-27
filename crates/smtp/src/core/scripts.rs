@@ -41,11 +41,16 @@ use tokio::{
 
 use crate::queue::{DomainPart, InstantFromTimestamp, Message};
 
-use super::{Session, SMTP};
+use super::{Session, SessionAddress, SessionData, SMTP};
 
 pub enum ScriptResult {
-    Accept,
-    Replace(Vec<u8>),
+    Accept {
+        modifications: Vec<(Envelope, String)>,
+    },
+    Replace {
+        message: Vec<u8>,
+        modifications: Vec<(Envelope, String)>,
+    },
     Reject(String),
     Discard,
 }
@@ -108,7 +113,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 core.run_script_blocking(script, vars_env, envelope, message, handle, span)
             })
             .await
-            .unwrap_or(ScriptResult::Accept)
+            .unwrap_or(ScriptResult::Accept {
+                modifications: vec![],
+            })
     }
 }
 
@@ -135,6 +142,7 @@ impl SMTP {
         let mut messages: Vec<Vec<u8>> = Vec::new();
 
         let mut reject_reason = None;
+        let mut modifications = vec![];
         let mut keep_id = usize::MAX;
 
         // Start event loop
@@ -416,6 +424,10 @@ impl SMTP {
                         messages.push(message);
                         input = true.into();
                     }
+                    Event::SetEnvelope { envelope, value } => {
+                        modifications.push((envelope, value));
+                        input = true.into();
+                    }
                     unsupported => {
                         tracing::warn!(
                             parent: &span,
@@ -443,7 +455,7 @@ impl SMTP {
         // MAX - 1 = discard message
 
         if keep_id == 0 {
-            ScriptResult::Accept
+            ScriptResult::Accept { modifications }
         } else if let Some(mut reject_reason) = reject_reason {
             if !reject_reason.ends_with('\n') {
                 reject_reason.push_str("\r\n");
@@ -459,13 +471,129 @@ impl SMTP {
                 ScriptResult::Reject(format!("503 5.5.3 {reject_reason}"))
             }
         } else if keep_id != usize::MAX - 1 {
-            messages
-                .into_iter()
-                .nth(keep_id - 1)
-                .map(ScriptResult::Replace)
-                .unwrap_or(ScriptResult::Accept)
+            if let Some(message) = messages.into_iter().nth(keep_id - 1) {
+                ScriptResult::Replace {
+                    message,
+                    modifications,
+                }
+            } else {
+                ScriptResult::Accept { modifications }
+            }
         } else {
             ScriptResult::Discard
+        }
+    }
+}
+
+impl SessionData {
+    pub fn apply_sieve_modifications(&mut self, modifications: Vec<(Envelope, String)>) {
+        for (envelope, value) in modifications {
+            match envelope {
+                Envelope::From => {
+                    let (address, address_lcase, domain) = if value.contains('@') {
+                        let address_lcase = value.to_lowercase();
+                        let domain = address_lcase.domain_part().to_string();
+                        (value, address_lcase, domain)
+                    } else if value.is_empty() {
+                        (String::new(), String::new(), String::new())
+                    } else {
+                        continue;
+                    };
+                    if let Some(mail_from) = &mut self.mail_from {
+                        mail_from.address = address;
+                        mail_from.address_lcase = address_lcase;
+                        mail_from.domain = domain;
+                    } else {
+                        self.mail_from = SessionAddress {
+                            address,
+                            address_lcase,
+                            domain,
+                            flags: 0,
+                            dsn_info: None,
+                        }
+                        .into();
+                    }
+                }
+                Envelope::To => {
+                    if value.contains('@') {
+                        let address_lcase = value.to_lowercase();
+                        let domain = address_lcase.domain_part().to_string();
+                        if let Some(rcpt_to) = self.rcpt_to.last_mut() {
+                            rcpt_to.address = value;
+                            rcpt_to.address_lcase = address_lcase;
+                            rcpt_to.domain = domain;
+                        } else {
+                            self.rcpt_to.push(SessionAddress {
+                                address: value,
+                                address_lcase,
+                                domain,
+                                flags: 0,
+                                dsn_info: None,
+                            });
+                        }
+                    }
+                }
+                Envelope::ByMode => {
+                    if let Some(mail_from) = &mut self.mail_from {
+                        mail_from.flags &= !(MAIL_BY_NOTIFY | MAIL_BY_RETURN);
+                        if value == "N" {
+                            mail_from.flags |= MAIL_BY_NOTIFY;
+                        } else if value == "R" {
+                            mail_from.flags |= MAIL_BY_RETURN;
+                        }
+                    }
+                }
+                Envelope::ByTrace => {
+                    if let Some(mail_from) = &mut self.mail_from {
+                        if value == "T" {
+                            mail_from.flags |= MAIL_BY_TRACE;
+                        } else {
+                            mail_from.flags &= !MAIL_BY_TRACE;
+                        }
+                    }
+                }
+                Envelope::Notify => {
+                    if let Some(rcpt_to) = self.rcpt_to.last_mut() {
+                        rcpt_to.flags &= !(RCPT_NOTIFY_DELAY
+                            | RCPT_NOTIFY_FAILURE
+                            | RCPT_NOTIFY_SUCCESS
+                            | RCPT_NOTIFY_NEVER);
+                        if value == "NEVER" {
+                            rcpt_to.flags |= RCPT_NOTIFY_NEVER;
+                        } else {
+                            for value in value.split(',') {
+                                match value.trim() {
+                                    "SUCCESS" => rcpt_to.flags |= RCPT_NOTIFY_SUCCESS,
+                                    "FAILURE" => rcpt_to.flags |= RCPT_NOTIFY_FAILURE,
+                                    "DELAY" => rcpt_to.flags |= RCPT_NOTIFY_DELAY,
+                                    _ => (),
+                                }
+                            }
+                        }
+                    }
+                }
+                Envelope::Ret => {
+                    if let Some(mail_from) = &mut self.mail_from {
+                        mail_from.flags &= !(MAIL_RET_FULL | MAIL_RET_HDRS);
+                        if value == "FULL" {
+                            mail_from.flags |= MAIL_RET_FULL;
+                        } else if value == "HDRS" {
+                            mail_from.flags |= MAIL_RET_HDRS;
+                        }
+                    }
+                }
+                Envelope::Orcpt => {
+                    if let Some(rcpt_to) = self.rcpt_to.last_mut() {
+                        rcpt_to.dsn_info = value.into();
+                    }
+                }
+                Envelope::Envid => {
+                    if let Some(mail_from) = &mut self.mail_from {
+                        mail_from.dsn_info = value.into();
+                    }
+                }
+                Envelope::ByTimeAbsolute | Envelope::ByTimeRelative => (),
+            }
         }
     }
 }

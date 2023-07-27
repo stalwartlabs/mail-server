@@ -50,7 +50,7 @@ use mail_send::Credentials;
 use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
-use utils::config::{Rate, Server, ServerProtocol};
+use utils::config::{DynValue, Rate, Server, ServerProtocol};
 
 use crate::inbound::milter;
 
@@ -222,7 +222,7 @@ pub struct Extensions {
 }
 
 pub struct Auth {
-    pub directory: IfBlock<Option<Arc<dyn Directory>>>,
+    pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
     pub mechanisms: IfBlock<u64>,
     pub require: IfBlock<bool>,
     pub errors_max: IfBlock<usize>,
@@ -231,12 +231,14 @@ pub struct Auth {
 
 pub struct Mail {
     pub script: IfBlock<Option<Arc<Sieve>>>,
+    pub rewrite: IfBlock<Option<DynValue>>,
 }
 
 pub struct Rcpt {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub relay: IfBlock<bool>,
-    pub directory: IfBlock<Option<Arc<dyn Directory>>>,
+    pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
+    pub rewrite: IfBlock<Option<DynValue>>,
 
     // Errors
     pub errors_max: IfBlock<usize>,
@@ -375,10 +377,19 @@ pub enum AddressMatch {
     Equals(String),
 }
 
+#[derive(Clone)]
+pub enum MaybeDynValue<T: ?Sized> {
+    Dynamic {
+        eval: DynValue,
+        items: AHashMap<String, Arc<T>>,
+    },
+    Static(Arc<T>),
+}
+
 pub struct Dsn {
     pub name: IfBlock<String>,
     pub address: IfBlock<String>,
-    pub sign: IfBlock<Vec<Arc<DkimSigner>>>,
+    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
 }
 
 pub struct AggregateReport {
@@ -387,7 +398,7 @@ pub struct AggregateReport {
     pub org_name: IfBlock<Option<String>>,
     pub contact_info: IfBlock<Option<String>>,
     pub send: IfBlock<AggregateFrequency>,
-    pub sign: IfBlock<Vec<Arc<DkimSigner>>>,
+    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
     pub max_size: IfBlock<usize>,
 }
 
@@ -395,7 +406,7 @@ pub struct Report {
     pub name: IfBlock<String>,
     pub address: IfBlock<String>,
     pub subject: IfBlock<String>,
-    pub sign: IfBlock<Vec<Arc<DkimSigner>>>,
+    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
     pub send: IfBlock<Option<Rate>>,
 }
 
@@ -481,12 +492,12 @@ pub enum ArcSealer {
 
 pub struct DkimAuthConfig {
     pub verify: IfBlock<VerifyStrategy>,
-    pub sign: IfBlock<Vec<Arc<DkimSigner>>>,
+    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
 }
 
 pub struct ArcAuthConfig {
     pub verify: IfBlock<VerifyStrategy>,
-    pub seal: IfBlock<Option<Arc<ArcSealer>>>,
+    pub seal: IfBlock<Option<MaybeDynValue<ArcSealer>>>,
 }
 
 pub struct SpfAuthConfig {

@@ -29,6 +29,7 @@ use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, PolicyType, ResultType, TlsReport},
 };
+use utils::config::DynValue;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
@@ -63,7 +64,7 @@ async fn report_tls() {
     config.path = IfBlock::new(temp_dir.temp_dir.clone());
     config.hash = IfBlock::new(16);
     config.tls.sign = "['rsa']"
-        .parse_if::<Vec<String>>(&ctx)
+        .parse_if::<Vec<DynValue>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.tls.max_size = IfBlock::new(4096);

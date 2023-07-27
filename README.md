@@ -24,8 +24,9 @@ Key features:
 - **SMTP** server:
   - Built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
   - Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
-  - Inbound throttling and filtering with granular configuration rules, __sieve__ scripting and __milter__ integration.
+  - Inbound throttling and filtering with granular configuration rules, sieve scripting and milter integration.
   - Virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
+  - Envelope rewriting and message modification.
 - **Flexible**:
   - **LDAP** directory and **SQL** database authentication.
   - Full-text search available in 17 languages.

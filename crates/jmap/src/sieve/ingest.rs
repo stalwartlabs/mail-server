@@ -381,7 +381,10 @@ impl JMAP {
                             continue;
                         }
                     }
-                    Event::ListContains { .. } | Event::Execute { .. } | Event::Notify { .. } => {
+                    Event::ListContains { .. }
+                    | Event::Execute { .. }
+                    | Event::Notify { .. }
+                    | Event::SetEnvelope { .. } => {
                         // Not allowed
                         input = false.into();
                     }
@@ -393,8 +396,6 @@ impl JMAP {
                         });
                         input = true.into();
                     }
-                    #[allow(unreachable_patterns)]
-                    _ => unreachable!(),
                 },
 
                 #[cfg(feature = "test_mode")]

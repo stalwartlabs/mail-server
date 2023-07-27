@@ -239,6 +239,7 @@ impl TestConfig for SessionConfig {
             },
             mail: Mail {
                 script: IfBlock::new(None),
+                rewrite: IfBlock::new(None),
             },
             rcpt: Rcpt {
                 script: IfBlock::new(None),
@@ -247,6 +248,7 @@ impl TestConfig for SessionConfig {
                 errors_max: IfBlock::new(3),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),
                 max_recipients: IfBlock::new(3),
+                rewrite: IfBlock::new(None),
             },
             data: Data {
                 script: IfBlock::new(None),

@@ -32,7 +32,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
+    config::{ConfigContext, IfBlock, MaybeDynValue},
     core::{Session, State, SMTP},
 };
 
@@ -75,7 +75,9 @@ async fn rcpt() {
     let mut config_ext = &mut core.session.config.extensions;
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
+    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
+        directory.directories.get("local").unwrap().clone(),
+    )));
     config.max_recipients = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 5}]"
         .parse_if(&ConfigContext::new(&[]));

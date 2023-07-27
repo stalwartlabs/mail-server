@@ -34,7 +34,7 @@ use super::{
 };
 use utils::config::{
     utils::{AsKey, ParseValue},
-    Config,
+    Config, DynValue,
 };
 
 pub trait ConfigQueue {
@@ -189,7 +189,7 @@ impl ConfigQueue for Config {
                     .parse_if_block("report.dsn.from-address", ctx, &sender_envelope_keys)?
                     .unwrap_or_else(|| IfBlock::new(format!("MAILER-DAEMON@{default_hostname}"))),
                 sign: self
-                    .parse_if_block::<Vec<String>>("report.dsn.sign", ctx, &sender_envelope_keys)?
+                    .parse_if_block::<Vec<DynValue>>("report.dsn.sign", ctx, &sender_envelope_keys)?
                     .unwrap_or_default()
                     .map_if_block(&ctx.signers, "report.dsn.sign", "signature")?,
             },

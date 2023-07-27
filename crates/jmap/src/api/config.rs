@@ -105,8 +105,7 @@ impl crate::Config {
                 .property("jmap.rate-limit.use-forwarded")?
                 .unwrap_or(false),
             oauth_key: settings
-                .value("oauth.key")
-                .map(|k| k.into())
+                .text_file_contents("oauth.key")?
                 .unwrap_or_else(|| {
                     thread_rng()
                         .sample_iter(Alphanumeric)

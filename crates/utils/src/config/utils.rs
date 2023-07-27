@@ -177,6 +177,23 @@ impl Config {
             Err(format!("Property {key:?} not found in configuration file."))
         }
     }
+
+    pub fn text_file_contents(&self, key: impl AsKey) -> super::Result<Option<String>> {
+        let key = key.as_key();
+        if let Some(value) = self.keys.get(&key) {
+            if let Some(value) = value.strip_prefix("file://") {
+                std::fs::read_to_string(value)
+                    .map_err(|err| {
+                        format!("Failed to read file {value:?} for property {key:?}: {err}")
+                    })
+                    .map(Some)
+            } else {
+                Ok(Some(value.to_string()))
+            }
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub trait ParseValues: Sized + Default {

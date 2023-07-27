@@ -70,8 +70,87 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             dsn_info: to.orcpt,
         };
 
+        if self.data.rcpt_to.contains(&rcpt) {
+            return self.write(b"250 2.1.5 OK\r\n").await;
+        }
+        self.data.rcpt_to.push(rcpt);
+
+        // Address rewriting and Sieve filtering
+        let rcpt_script = self
+            .core
+            .session
+            .config
+            .rcpt
+            .script
+            .eval(self)
+            .await
+            .clone();
+        if rcpt_script.is_some() || !self.core.session.config.rcpt.rewrite.is_empty() {
+            // Sieve filtering
+            if let Some(script) = rcpt_script {
+                match self.run_script(script.clone(), None).await {
+                    ScriptResult::Accept { modifications } => {
+                        if !modifications.is_empty() {
+                            tracing::debug!(parent: &self.span,
+                            context = "sieve",
+                            event = "modify",
+                            address = self.data.rcpt_to.last().unwrap().address,
+                            modifications = ?modifications);
+                            self.data.apply_sieve_modifications(modifications);
+                        }
+                    }
+                    ScriptResult::Reject(message) => {
+                        tracing::debug!(parent: &self.span,
+                        context = "sieve",
+                        event = "reject",
+                        address = self.data.rcpt_to.last().unwrap().address,
+                        reason = message);
+                        self.data.rcpt_to.pop();
+                        return self.write(message.as_bytes()).await;
+                    }
+                    _ => (),
+                }
+            }
+
+            // Address rewriting
+            if let Some(new_address) = self
+                .core
+                .session
+                .config
+                .rcpt
+                .rewrite
+                .eval_and_capture(self)
+                .await
+                .into_value()
+            {
+                let mut rcpt = self.data.rcpt_to.last_mut().unwrap();
+                if new_address.contains('@') {
+                    rcpt.address_lcase = new_address.to_lowercase();
+                    rcpt.domain = rcpt.address_lcase.domain_part().to_string();
+                    rcpt.address = new_address.into_owned();
+                }
+            }
+
+            // Check for duplicates
+            let rcpt = self.data.rcpt_to.last().unwrap();
+            if self.data.rcpt_to.iter().filter(|r| r == &rcpt).count() > 1 {
+                self.data.rcpt_to.pop();
+                return self.write(b"250 2.1.5 OK\r\n").await;
+            }
+        }
+
         // Verify address
-        if let Some(directory) = &self.params.rcpt_directory {
+        let rcpt = self.data.rcpt_to.last().unwrap();
+        if let Some(directory) = self
+            .core
+            .session
+            .config
+            .rcpt
+            .directory
+            .eval_and_capture(self)
+            .await
+            .into_value()
+        {
             if let Ok(is_local_domain) = directory.is_local_domain(&rcpt.domain).await {
                 if is_local_domain {
                     if let Ok(is_local_address) = directory.rcpt(&rcpt.address_lcase).await {
@@ -81,6 +160,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                                             event = "error",
                                             address = &rcpt.address_lcase,
                                             "Mailbox does not exist.");
+
+                            self.data.rcpt_to.pop();
                             return self
                                 .rcpt_error(b"550 5.1.2 Mailbox does not exist.\r\n")
                                 .await;
@@ -91,6 +172,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                             event = "error",
                             address = &rcpt.address_lcase,
                             "Temporary address verification failure.");
+
+                        self.data.rcpt_to.pop();
                         return self
                             .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                             .await;
@@ -101,6 +184,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                         event = "error",
                         address = &rcpt.address_lcase,
                         "Relay not allowed.");
+
+                    self.data.rcpt_to.pop();
                     return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
                 }
             } else {
@@ -110,6 +195,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     address = &rcpt.address_lcase,
                     "Temporary address verification failure.");
 
+                self.data.rcpt_to.pop();
                 return self
                     .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                     .await;
@@ -120,36 +206,21 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 event = "error",
                 address = &rcpt.address_lcase,
                 "Relay not allowed.");
+
+            self.data.rcpt_to.pop();
             return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
         }
 
-        if !self.data.rcpt_to.contains(&rcpt) {
-            self.data.rcpt_to.push(rcpt);
-
-            // Sieve filtering
-            if let Some(script) = &self.params.rcpt_script {
-                if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
-                    tracing::debug!(parent: &self.span,
-                            context = "rcpt",
-                            event = "sieve-reject",
-                            address = &self.data.rcpt_to.last().unwrap().address,
-                            reason = message);
-                    self.data.rcpt_to.pop();
-                    return self.write(message.as_bytes()).await;
-                }
-            }
-
-            if self.is_allowed().await {
-                tracing::debug!(parent: &self.span,
+        if self.is_allowed().await {
+            tracing::debug!(parent: &self.span,
                     context = "rcpt",
                     event = "success",
                     address = &self.data.rcpt_to.last().unwrap().address);
-            } else {
-                self.data.rcpt_to.pop();
-                return self
-                    .write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
-                    .await;
-            }
+        } else {
+            self.data.rcpt_to.pop();
+            return self
+                .write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
+                .await;
         }
 
         self.write(b"250 2.1.5 OK\r\n").await

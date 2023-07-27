@@ -28,6 +28,7 @@ use bb8::RunError;
 use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
+use utils::config::DynValue;
 
 pub mod cache;
 pub mod config;
@@ -170,9 +171,20 @@ impl Type {
 
 #[derive(Debug, Default)]
 struct DirectoryOptions {
-    catch_all: bool,
-    subaddressing: bool,
+    catch_all: AddressMapping,
+    subaddressing: AddressMapping,
     superuser_group: String,
+}
+
+#[derive(Debug, Default)]
+pub enum AddressMapping {
+    Enable,
+    Custom {
+        regex: regex::Regex,
+        mapping: DynValue,
+    },
+    #[default]
+    Disable,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -289,23 +301,54 @@ impl DirectoryError {
     }
 }
 
-#[inline(always)]
-fn unwrap_subaddress(address: &str, allow_subaddessing: bool) -> Cow<'_, str> {
-    if allow_subaddessing {
-        if let Some((local_part, domain_part)) = address.rsplit_once('@') {
-            if let Some((local_part, _)) = local_part.split_once('+') {
-                return format!("{}@{}", local_part, domain_part).into();
+impl AddressMapping {
+    pub fn to_subaddress<'x, 'y: 'x>(&'x self, address: &'y str) -> Cow<'x, str> {
+        match self {
+            AddressMapping::Enable => {
+                if let Some((local_part, domain_part)) = address.rsplit_once('@') {
+                    if let Some((local_part, _)) = local_part.split_once('+') {
+                        return format!("{}@{}", local_part, domain_part).into();
+                    }
+                }
             }
+            AddressMapping::Custom { regex, mapping } => {
+                let mut regex_capture = Vec::new();
+                for captures in regex.captures_iter(address) {
+                    for capture in captures.iter() {
+                        regex_capture.push(capture.map_or("", |m| m.as_str()).to_string());
+                    }
+                }
+
+                if !regex_capture.is_empty() {
+                    return mapping.apply(regex_capture);
+                }
+            }
+            AddressMapping::Disable => (),
         }
+
+        address.into()
     }
 
-    address.into()
-}
-
-#[inline(always)]
-fn to_catch_all_address(address: &str) -> String {
-    address
-        .rsplit_once('@')
-        .map(|(_, domain_part)| format!("@{}", domain_part))
-        .unwrap_or_else(|| address.into())
+    pub fn to_catch_all<'x, 'y: 'x>(&'x self, address: &'y str) -> Option<Cow<'x, str>> {
+        match self {
+            AddressMapping::Enable => address
+                .rsplit_once('@')
+                .map(|(_, domain_part)| format!("@{}", domain_part))
+                .map(Cow::Owned),
+            AddressMapping::Custom { regex, mapping } => {
+                let mut regex_capture = Vec::new();
+                for captures in regex.captures_iter(address) {
+                    for capture in captures.iter() {
+                        regex_capture.push(capture.map_or("", |m| m.as_str()).to_string());
+                    }
+                }
+                if !regex_capture.is_empty() {
+                    Some(mapping.apply(regex_capture))
+                } else {
+                    None
+                }
+            }
+            AddressMapping::Disable => None,
+        }
+    }
 }

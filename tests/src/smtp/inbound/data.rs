@@ -30,7 +30,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
+    config::{ConfigContext, IfBlock, MaybeDynValue},
     core::{Session, SMTP},
 };
 
@@ -81,7 +81,9 @@ async fn data() {
     let mut qr = core.init_test_queue("smtp_data_test");
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
+    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
+        directory.directories.get("local").unwrap().clone(),
+    )));
 
     let mut config = &mut core.session.config;
     config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},

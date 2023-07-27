@@ -24,7 +24,7 @@
 use ldap3::{ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{to_catch_all_address, unwrap_subaddress, Directory, Principal, Type};
+use crate::{Directory, Principal, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -101,24 +101,23 @@ impl Directory for LdapDirectory {
                 &self
                     .mappings
                     .filter_email
-                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
+                    .build(self.opt.subaddressing.to_subaddress(address).as_ref()),
                 &self.mappings.attr_name,
             )
             .await?
             .success()
             .map(|(rs, _res)| self.extract_names(rs))?;
 
-        if names.is_empty() && self.opt.catch_all {
+        if !names.is_empty() {
+            Ok(names)
+        } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
             self.pool
                 .get()
                 .await?
                 .search(
                     &self.mappings.base_dn,
                     Scope::Subtree,
-                    &self
-                        .mappings
-                        .filter_email
-                        .build(&to_catch_all_address(address)),
+                    &self.mappings.filter_email.build(address.as_ref()),
                     &self.mappings.attr_name,
                 )
                 .await?
@@ -141,7 +140,7 @@ impl Directory for LdapDirectory {
                 &self
                     .mappings
                     .filter_email
-                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
+                    .build(self.opt.subaddressing.to_subaddress(address).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?
@@ -149,25 +148,27 @@ impl Directory for LdapDirectory {
             .await
         {
             Ok(Some(_)) => Ok(true),
-            Ok(None) if self.opt.catch_all => self
-                .pool
-                .get()
-                .await?
-                .streaming_search(
-                    &self.mappings.base_dn,
-                    Scope::Subtree,
-                    &self
-                        .mappings
-                        .filter_email
-                        .build(&to_catch_all_address(address)),
-                    &self.mappings.attr_email_address,
-                )
-                .await?
-                .next()
-                .await
-                .map(|entry| entry.is_some())
-                .map_err(|e| e.into()),
-            Ok(None) => Ok(false),
+            Ok(None) => {
+                if let Some(address) = self.opt.catch_all.to_catch_all(address) {
+                    self.pool
+                        .get()
+                        .await?
+                        .streaming_search(
+                            &self.mappings.base_dn,
+                            Scope::Subtree,
+                            &self.mappings.filter_email.build(address.as_ref()),
+                            &self.mappings.attr_email_address,
+                        )
+                        .await?
+                        .next()
+                        .await
+                        .map(|entry| entry.is_some())
+                        .map_err(|e| e.into())
+                } else {
+                    Ok(false)
+                }
+            }
+
             Err(e) => Err(e.into()),
         }
     }
@@ -183,7 +184,7 @@ impl Directory for LdapDirectory {
                 &self
                     .mappings
                     .filter_verify
-                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
+                    .build(self.opt.subaddressing.to_subaddress(address).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?;
@@ -216,7 +217,7 @@ impl Directory for LdapDirectory {
                 &self
                     .mappings
                     .filter_expand
-                    .build(unwrap_subaddress(address, self.opt.subaddressing).as_ref()),
+                    .build(self.opt.subaddressing.to_subaddress(address).as_ref()),
                 &self.mappings.attr_email_address,
             )
             .await?;

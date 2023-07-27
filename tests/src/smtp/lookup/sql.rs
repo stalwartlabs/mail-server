@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use utils::config::Config;
+use utils::config::{Config, DynValue};
 
 use crate::{
     directory::sql::{create_test_directory, create_test_user_with_email, link_test_address},
@@ -115,7 +115,7 @@ async fn lookup_sql() {
     // Enable AUTH
     let mut config = &mut core.session.config.auth;
     config.directory = r"'sql'"
-        .parse_if::<Option<String>>(&ctx)
+        .parse_if::<Option<DynValue>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.mechanisms = IfBlock::new(AUTH_PLAIN | AUTH_LOGIN);
@@ -124,7 +124,7 @@ async fn lookup_sql() {
     // Enable VRFY/EXPN/RCPT
     let mut config = &mut core.session.config.rcpt;
     config.directory = r"'sql'"
-        .parse_if::<Option<String>>(&ctx)
+        .parse_if::<Option<DynValue>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.relay = IfBlock::new(false);

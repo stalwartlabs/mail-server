@@ -44,7 +44,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
         // Auth parameters
         let ac = &self.core.session.config.auth;
-        self.params.auth_directory = ac.directory.eval(self).await.clone();
+        self.params.auth_directory = ac.directory.eval_and_capture(self).await.into_value();
         self.params.auth_require = *ac.require.eval(self).await;
         self.params.auth_errors_max = *ac.errors_max.eval(self).await;
         self.params.auth_errors_wait = *ac.errors_wait.eval(self).await;
@@ -53,15 +53,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let ec = &self.core.session.config.extensions;
         self.params.can_expn = *ec.expn.eval(self).await;
         self.params.can_vrfy = *ec.vrfy.eval(self).await;
-        self.params.rcpt_directory = self
-            .core
-            .session
-            .config
-            .rcpt
-            .directory
-            .eval(self)
-            .await
-            .clone();
     }
 
     pub async fn eval_post_auth_params(&mut self) {
@@ -69,25 +60,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let ec = &self.core.session.config.extensions;
         self.params.can_expn = *ec.expn.eval(self).await;
         self.params.can_vrfy = *ec.vrfy.eval(self).await;
-        self.params.rcpt_directory = self
-            .core
-            .session
-            .config
-            .rcpt
-            .directory
-            .eval(self)
-            .await
-            .clone();
     }
 
     pub async fn eval_rcpt_params(&mut self) {
         let rc = &self.core.session.config.rcpt;
-        self.params.rcpt_script = rc.script.eval(self).await.clone();
         self.params.rcpt_relay = *rc.relay.eval(self).await;
         self.params.rcpt_errors_max = *rc.errors_max.eval(self).await;
         self.params.rcpt_errors_wait = *rc.errors_wait.eval(self).await;
         self.params.rcpt_max = *rc.max_recipients.eval(self).await;
-        self.params.rcpt_directory = rc.directory.eval(self).await.clone();
         self.params.rcpt_dsn = *self.core.session.config.extensions.dsn.eval(self).await;
 
         self.params.max_message_size = *self

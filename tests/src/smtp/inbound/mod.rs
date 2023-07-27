@@ -42,6 +42,7 @@ pub mod limits;
 pub mod mail;
 pub mod milter;
 pub mod rcpt;
+pub mod rewrite;
 pub mod scripts;
 pub mod sign;
 pub mod throttle;

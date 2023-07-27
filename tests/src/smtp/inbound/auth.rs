@@ -23,7 +23,7 @@
 
 use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use utils::config::Config;
+use utils::config::{Config, DynValue};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -68,7 +68,7 @@ async fn auth() {
         .parse_if(&ctx);
     config.directory = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'local'},
     {else = false}]"
-        .parse_if::<Option<String>>(&ctx)
+        .parse_if::<Option<DynValue>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 2},

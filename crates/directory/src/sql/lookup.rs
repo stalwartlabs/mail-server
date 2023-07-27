@@ -25,7 +25,7 @@ use futures::TryStreamExt;
 use mail_send::Credentials;
 use sqlx::{any::AnyRow, Column, Row};
 
-use crate::{to_catch_all_address, unwrap_subaddress, Directory, Principal, Type};
+use crate::{Directory, Principal, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -91,49 +91,54 @@ impl Directory for SqlDirectory {
     }
 
     async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
-        let result = sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
-            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+        let ids = sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
+            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
             .fetch(&self.pool)
             .try_collect::<Vec<_>>()
-            .await;
-        match result {
-            Ok(ids) if !ids.is_empty() => Ok(ids),
-            Ok(_) if self.opt.catch_all => {
-                sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
-                    .bind(to_catch_all_address(address))
-                    .fetch(&self.pool)
-                    .try_collect::<Vec<_>>()
-                    .await
-                    .map_err(Into::into)
-            }
-            Ok(_) => Ok(vec![]),
-            Err(err) => Err(err.into()),
+            .await?;
+        if !ids.is_empty() {
+            Ok(ids)
+        } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
+            sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
+                .bind(address.as_ref())
+                .fetch(&self.pool)
+                .try_collect::<Vec<_>>()
+                .await
+                .map_err(Into::into)
+        } else {
+            Ok(ids)
         }
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
         let result = sqlx::query(&self.mappings.query_recipients)
-            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
             .fetch(&self.pool)
             .try_next()
             .await;
         match result {
             Ok(Some(_)) => Ok(true),
-            Ok(None) if self.opt.catch_all => sqlx::query(&self.mappings.query_recipients)
-                .bind(to_catch_all_address(address))
-                .fetch(&self.pool)
-                .try_next()
-                .await
-                .map(|id| id.is_some())
-                .map_err(Into::into),
-            Ok(None) => Ok(false),
+            Ok(None) => {
+                if let Some(address) = self.opt.catch_all.to_catch_all(address) {
+                    sqlx::query(&self.mappings.query_recipients)
+                        .bind(address.as_ref())
+                        .fetch(&self.pool)
+                        .try_next()
+                        .await
+                        .map(|id| id.is_some())
+                        .map_err(Into::into)
+                } else {
+                    Ok(false)
+                }
+            }
+
             Err(err) => Err(err.into()),
         }
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         sqlx::query_scalar::<_, String>(&self.mappings.query_verify)
-            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
             .fetch(&self.pool)
             .try_collect::<Vec<_>>()
             .await
@@ -142,7 +147,7 @@ impl Directory for SqlDirectory {
 
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         sqlx::query_scalar::<_, String>(&self.mappings.query_expand)
-            .bind(unwrap_subaddress(address, self.opt.subaddressing).as_ref())
+            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
             .fetch(&self.pool)
             .try_collect::<Vec<_>>()
             .await

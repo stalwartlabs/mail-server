@@ -145,7 +145,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Verify ARC
         let arc = *ac.arc.verify.eval(self).await;
-        let arc_sealer = ac.arc.seal.eval(self).await;
+        let arc_sealer = ac.arc.seal.eval_and_capture(self).await.into_value();
         let arc_output = if arc.verify() || arc_sealer.is_some() {
             let arc_output = self.core.resolvers.dns.verify_arc(&auth_message).await;
 
@@ -302,7 +302,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     "Milter filter(s) accepted message.");
 
                 self.data
-                    .apply_modifications(modifications, &auth_message)
+                    .apply_milter_modifications(modifications, &auth_message)
                     .map(Arc::new)
             }
             Err(response) => return response,
@@ -404,9 +404,19 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 )
                 .await
             {
-                ScriptResult::Accept => (),
-                ScriptResult::Replace(new_message) => {
-                    edited_message = Arc::new(new_message).into();
+                ScriptResult::Accept { modifications } => {
+                    if !modifications.is_empty() {
+                        self.data.apply_sieve_modifications(modifications)
+                    }
+                }
+                ScriptResult::Replace {
+                    message,
+                    modifications,
+                } => {
+                    if !modifications.is_empty() {
+                        self.data.apply_sieve_modifications(modifications)
+                    }
+                    edited_message = Arc::new(message).into();
                 }
                 ScriptResult::Reject(message) => {
                     tracing::debug!(parent: &self.span,
@@ -492,7 +502,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // DKIM sign
         let raw_message = edited_message.unwrap_or(raw_message);
-        for signer in ac.dkim.sign.eval(self).await.iter() {
+        for signer in ac.dkim.sign.eval_and_capture(self).await.into_value() {
             match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
                 Ok(signature) => {
                     signature.write_header(&mut headers);

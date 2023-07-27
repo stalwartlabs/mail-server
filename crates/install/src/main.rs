@@ -445,7 +445,7 @@ fn main() -> std::io::Result<()> {
     }
     if args.docker {
         cfg_file = cfg_file
-            .replace("127.0.0.1:8686", "0.0.0.0:8686")
+            .replace("127.0.0.1:8080", "0.0.0.0:8080")
             .replace("[server.run-as]", "#[server.run-as]")
             .replace("user = \"stalwart-mail\"", "#user = \"stalwart-mail\"")
             .replace("group = \"stalwart-mail\"", "#group = \"stalwart-mail\"");

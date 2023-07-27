@@ -26,11 +26,11 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use directory::{config::ConfigDirectory, DirectoryConfig};
+use directory::{config::ConfigDirectory, AddressMapping, DirectoryConfig};
 use mail_send::Credentials;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
-use std::{io::BufReader, sync::Arc};
+use std::{borrow::Cow, io::BufReader, sync::Arc};
 use tokio_rustls::TlsAcceptor;
 
 const CONFIG: &str = r#"
@@ -387,5 +387,51 @@ impl core::fmt::Debug for Item {
             Self::Expand(arg0) => f.debug_tuple("Expn").field(arg0).finish(),
             Self::Verify(arg0) => f.debug_tuple("Vrfy").field(arg0).finish(),
         }
+    }
+}
+
+#[test]
+fn address_mappings() {
+    const MAPPINGS: &str = r#"
+    [enable]
+    catch-all = true
+    subaddressing = true
+    expected-sub = "john.doe@example.org"
+    expected-catch = "@example.org"
+
+    [disable]
+    catch-all = false
+    subaddressing = false
+    expected-sub = "john.doe+alias@example.org"
+    expected-catch = false
+
+    [custom]
+    catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
+    subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+    expected-sub = "doe+alias@example.org"
+    expected-catch = "info@example.org"
+    "#;
+
+    let config = utils::config::Config::parse(MAPPINGS).unwrap();
+    const ADDR: &str = "john.doe+alias@example.org";
+
+    for test in ["enable", "disable", "custom"] {
+        let catch_all = AddressMapping::from_config(&config, (test, "catch-all")).unwrap();
+        let subaddressing = AddressMapping::from_config(&config, (test, "subaddressing")).unwrap();
+
+        assert_eq!(
+            subaddressing.to_subaddress(ADDR),
+            config.value_require((test, "expected-sub")).unwrap(),
+            "failed subaddress for {test:?}"
+        );
+
+        assert_eq!(
+            catch_all.to_catch_all(ADDR),
+            config
+                .property_require::<Option<String>>((test, "expected-catch"))
+                .unwrap()
+                .map(Cow::Owned),
+            "failed catch-all for {test:?}"
+        );
     }
 }

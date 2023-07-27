@@ -8,7 +8,9 @@ address = "sqlite://__PATH__/data/accounts.sqlite3?mode=rwc"
 
 [directory."sql".options]
 catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
 subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
 superuser-group = "superusers"
 
 [directory."sql".pool]
@@ -52,7 +54,9 @@ ttl = {positive = '1h', negative = '10m'}
 
 [directory."ldap".options]
 catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
 subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
 superuser-group = "superusers"
 
 [directory."ldap".pool]
@@ -137,7 +141,9 @@ type = "memory"
 
 [directory."memory".options]
 catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
 subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
 superuser-group = "superusers"
 
 [[directory."memory".users]]

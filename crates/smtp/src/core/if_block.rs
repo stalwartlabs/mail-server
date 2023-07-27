@@ -21,13 +21,25 @@
  * for more details.
 */
 
-use std::net::{IpAddr, Ipv4Addr};
+use std::{
+    borrow::Cow,
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+};
+
+use utils::config::DynValue;
 
 use crate::config::{
-    Condition, ConditionMatch, Conditions, EnvelopeKey, IfBlock, IpAddrMask, StringMatch,
+    Condition, ConditionMatch, Conditions, EnvelopeKey, IfBlock, IpAddrMask, MaybeDynValue,
+    StringMatch,
 };
 
 use super::Envelope;
+
+pub struct Captures<'x, T> {
+    value: &'x T,
+    captures: Vec<String>,
+}
 
 impl<T: Default> IfBlock<T> {
     pub async fn eval(&self, envelope: &impl Envelope) -> &T {
@@ -38,6 +50,22 @@ impl<T: Default> IfBlock<T> {
         }
 
         &self.default
+    }
+
+    pub async fn eval_and_capture(&self, envelope: &impl Envelope) -> Captures<'_, T> {
+        for if_then in &self.if_then {
+            if let Some(captures) = if_then.conditions.eval_and_capture(envelope).await {
+                return Captures {
+                    value: &if_then.then,
+                    captures,
+                };
+            }
+        }
+
+        Captures {
+            value: &self.default,
+            captures: vec![],
+        }
     }
 }
 
@@ -116,6 +144,97 @@ impl Conditions {
 
         matched
     }
+
+    pub async fn eval_and_capture(&self, envelope: &impl Envelope) -> Option<Vec<String>> {
+        let mut conditions = self.conditions.iter();
+        let mut matched = false;
+        let mut last_capture = vec![];
+        let mut regex_capture = vec![];
+
+        while let Some(rule) = conditions.next() {
+            match rule {
+                Condition::Match { key, value, not } => {
+                    let ctx_value = envelope.key_to_string(key);
+                    matched = match value {
+                        ConditionMatch::String(value) => match value {
+                            StringMatch::Equal(value) => value.eq(ctx_value.as_ref()),
+                            StringMatch::StartsWith(value) => ctx_value.starts_with(value),
+                            StringMatch::EndsWith(value) => ctx_value.ends_with(value),
+                        },
+                        ConditionMatch::IpAddrMask(value) => value.matches(&match key {
+                            EnvelopeKey::RemoteIp => envelope.remote_ip(),
+                            EnvelopeKey::LocalIp => envelope.local_ip(),
+                            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                        }),
+                        ConditionMatch::UInt(value) => {
+                            *value
+                                == if key == &EnvelopeKey::Listener {
+                                    envelope.listener_id()
+                                } else {
+                                    debug_assert!(false, "Invalid value for UInt context key.");
+                                    u16::MAX
+                                }
+                        }
+                        ConditionMatch::Int(value) => {
+                            *value
+                                == if key == &EnvelopeKey::Listener {
+                                    envelope.priority()
+                                } else {
+                                    debug_assert!(false, "Invalid value for UInt context key.");
+                                    i16::MAX
+                                }
+                        }
+                        ConditionMatch::Lookup(lookup) => {
+                            lookup.contains(ctx_value.as_ref()).await?
+                        }
+                        ConditionMatch::Regex(value) => {
+                            regex_capture.clear();
+
+                            for captures in value.captures_iter(ctx_value.as_ref()) {
+                                for capture in captures.iter() {
+                                    regex_capture
+                                        .push(capture.map_or("", |m| m.as_str()).to_string());
+                                }
+                            }
+
+                            !regex_capture.is_empty()
+                        }
+                    } ^ not;
+
+                    // Save last capture
+                    if matched {
+                        last_capture = if regex_capture.is_empty() {
+                            vec![ctx_value.into_owned()]
+                        } else {
+                            std::mem::take(&mut regex_capture)
+                        };
+                    }
+                }
+                Condition::JumpIfTrue { positions } => {
+                    if matched {
+                        //TODO use advance_by when stabilized
+                        for _ in 0..*positions {
+                            conditions.next();
+                        }
+                    }
+                }
+                Condition::JumpIfFalse { positions } => {
+                    if !matched {
+                        //TODO use advance_by when stabilized
+                        for _ in 0..*positions {
+                            conditions.next();
+                        }
+                    }
+                }
+            }
+        }
+
+        if matched {
+            Some(last_capture)
+        } else {
+            None
+        }
+    }
 }
 
 impl IpAddrMask {
@@ -165,6 +284,98 @@ impl IpAddrMask {
                         == u128::from_be_bytes(addr.octets()) & mask
                 }
             },
+        }
+    }
+}
+
+impl<'x> Captures<'x, DynValue> {
+    pub fn into_value(self) -> Cow<'x, str> {
+        self.value.apply(self.captures)
+    }
+}
+
+impl<'x> Captures<'x, Option<DynValue>> {
+    pub fn into_value(self) -> Option<Cow<'x, str>> {
+        self.value.as_ref().map(|v| v.apply(self.captures))
+    }
+}
+
+impl<'x, T: ?Sized> Captures<'x, MaybeDynValue<T>> {
+    pub fn into_value(self) -> Option<Arc<T>> {
+        match &self.value {
+            MaybeDynValue::Dynamic { eval, items } => {
+                let r = eval.apply(self.captures);
+
+                match items.get(r.as_ref()) {
+                    Some(value) => value.clone().into(),
+                    None => {
+                        tracing::warn!(
+                            context = "eval",
+                            event = "error",
+                            expression = ?eval,
+                            result = ?r,
+                            "Failed to resolve rule: value {r:?} not found in item list",
+                        );
+                        None
+                    }
+                }
+            }
+            MaybeDynValue::Static(value) => value.clone().into(),
+        }
+    }
+}
+
+impl<'x, T: ?Sized> Captures<'x, Vec<MaybeDynValue<T>>> {
+    pub fn into_value(self) -> Vec<Arc<T>> {
+        let mut results = Vec::with_capacity(self.value.len());
+        for value in self.value.iter() {
+            match value {
+                MaybeDynValue::Dynamic { eval, items } => {
+                    let r = eval.apply_borrowed(&self.captures);
+                    match items.get(r.as_ref()) {
+                        Some(value) => {
+                            results.push(value.clone());
+                        }
+                        None => {
+                            tracing::warn!(
+                                context = "eval",
+                                event = "error",
+                                expression = ?eval,
+                                result = ?r,
+                                "Failed to resolve rule: value {r:?} not found in item list",
+                            );
+                        }
+                    }
+                }
+                MaybeDynValue::Static(value) => {
+                    results.push(value.clone());
+                }
+            }
+        }
+        results
+    }
+}
+
+impl<'x, T: ?Sized> Captures<'x, Option<MaybeDynValue<T>>> {
+    pub fn into_value(self) -> Option<Arc<T>> {
+        match self.value.as_ref()? {
+            MaybeDynValue::Dynamic { eval, items } => {
+                let r = eval.apply(self.captures);
+                match items.get(r.as_ref()) {
+                    Some(value) => value.clone().into(),
+                    None => {
+                        tracing::warn!(
+                            context = "eval",
+                            event = "error",
+                            expression = ?eval,
+                            result = ?r,
+                            "Failed to resolve rule: value {r:?} not found in item list",
+                        );
+                        None
+                    }
+                }
+            }
+            MaybeDynValue::Static(value) => value.clone().into(),
         }
     }
 }

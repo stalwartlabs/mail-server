@@ -28,7 +28,7 @@ use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
-use utils::config::Config;
+use utils::config::{Config, DynValue};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -36,7 +36,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{auth::ConfigAuth, ConfigContext, IfBlock, VerifyStrategy},
+    config::{auth::ConfigAuth, ConfigContext, IfBlock, MaybeDynValue, VerifyStrategy},
     core::{Session, SMTP},
 };
 
@@ -81,7 +81,9 @@ report = true
 
 [signature.ed]
 public-key = '11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo='
-private-key = 'nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A='
+private-key = '-----BEGIN PRIVATE KEY-----
+nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A=
+-----END PRIVATE KEY-----'
 domain = 'example.com'
 selector = 'ed'
 headers = ['From', 'To', 'Date', 'Subject', 'Message-ID']
@@ -152,7 +154,9 @@ async fn sign_and_seal() {
 
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
     let mut config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(directory.directories.get("local").unwrap().clone()));
+    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
+        directory.directories.get("local").unwrap().clone(),
+    )));
 
     let mut config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
@@ -170,11 +174,11 @@ async fn sign_and_seal() {
     config.arc.verify = config.spf.verify_ehlo.clone();
     config.dmarc.verify = config.spf.verify_ehlo.clone();
     config.dkim.sign = "['rsa']"
-        .parse_if::<Vec<String>>(&ctx)
+        .parse_if::<Vec<DynValue>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.arc.seal = "'ed'"
-        .parse_if::<Option<String>>(&ctx)
+        .parse_if::<Option<DynValue>>(&ctx)
         .map_if_block(&ctx.sealers, "", "")
         .unwrap();
 

@@ -21,11 +21,11 @@
  * for more details.
 */
 
-use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{borrow::Cow, fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use tokio::net::TcpSocket;
 
-use utils::config::{Config, Listener, Rate, Server, ServerProtocol};
+use utils::config::{Config, DynValue, Listener, Rate, Server, ServerProtocol};
 
 use ahash::{AHashMap, AHashSet};
 use directory::{config::ConfigDirectory, Lookup};
@@ -40,6 +40,20 @@ use smtp::{
 };
 
 use super::add_test_certs;
+
+struct TestEnvelope {
+    pub local_ip: IpAddr,
+    pub remote_ip: IpAddr,
+    pub sender_domain: String,
+    pub sender: String,
+    pub rcpt_domain: String,
+    pub rcpt: String,
+    pub helo_domain: String,
+    pub authenticated_as: String,
+    pub mx: String,
+    pub listener_id: u16,
+    pub priority: i16,
+}
 
 #[test]
 fn parse_conditions() {
@@ -520,18 +534,139 @@ fn parse_servers() {
     }
 }
 
-struct TestEnvelope {
-    pub local_ip: IpAddr,
-    pub remote_ip: IpAddr,
-    pub sender_domain: String,
-    pub sender: String,
-    pub rcpt_domain: String,
-    pub rcpt: String,
-    pub helo_domain: String,
-    pub authenticated_as: String,
-    pub mx: String,
-    pub listener_id: u16,
-    pub priority: i16,
+#[tokio::test]
+async fn eval_if() {
+    let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    file.push("resources");
+    file.push("smtp");
+    file.push("config");
+    file.push("rules-eval.toml");
+
+    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let servers = vec![
+        Server {
+            id: "smtp".to_string(),
+            internal_id: 123,
+            ..Default::default()
+        },
+        Server {
+            id: "smtps".to_string(),
+            internal_id: 456,
+            ..Default::default()
+        },
+    ];
+    let mut context = ConfigContext::new(&servers);
+    context.directory = config.parse_directory().unwrap();
+    let conditions = config.parse_conditions(&context).unwrap();
+
+    let envelope = TestEnvelope::from_config(&config);
+
+    for (key, conditions) in conditions {
+        //println!("============= Testing {:?} ==================", key);
+        let (_, expected_result) = key.rsplit_once('-').unwrap();
+        assert_eq!(
+            IfBlock {
+                if_then: vec![IfThen {
+                    conditions,
+                    then: true
+                }],
+                default: false,
+            }
+            .eval(&envelope)
+            .await,
+            &expected_result.parse::<bool>().unwrap(),
+            "failed for {key:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn eval_dynvalue() {
+    let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    file.push("resources");
+    file.push("smtp");
+    file.push("config");
+    file.push("rules-dynvalue.toml");
+
+    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let mut context = ConfigContext::new(&[]);
+    context.directory = config.parse_directory().unwrap();
+
+    let envelope = TestEnvelope::from_config(&config);
+
+    for test_name in config.sub_keys("eval") {
+        //println!("============= Testing {:?} ==================", key);
+        let if_block = config
+            .parse_if_block::<Option<DynValue>>(
+                ("eval", test_name, "test"),
+                &context,
+                &[
+                    EnvelopeKey::Recipient,
+                    EnvelopeKey::RecipientDomain,
+                    EnvelopeKey::Sender,
+                    EnvelopeKey::SenderDomain,
+                    EnvelopeKey::AuthenticatedAs,
+                    EnvelopeKey::Listener,
+                    EnvelopeKey::RemoteIp,
+                    EnvelopeKey::LocalIp,
+                    EnvelopeKey::Priority,
+                    EnvelopeKey::Mx,
+                ],
+            )
+            .unwrap()
+            .unwrap();
+        let expected = config
+            .property_require::<Option<String>>(("eval", test_name, "expect"))
+            .unwrap()
+            .map(Cow::Owned);
+
+        assert_eq!(
+            if_block.eval_and_capture(&envelope).await.into_value(),
+            expected,
+            "failed for test {test_name:?}"
+        );
+    }
+
+    for test_name in config.sub_keys("maybe-eval") {
+        //println!("============= Testing {:?} ==================", key);
+        let if_block = config
+            .parse_if_block::<Option<DynValue>>(
+                ("maybe-eval", test_name, "test"),
+                &context,
+                &[
+                    EnvelopeKey::Recipient,
+                    EnvelopeKey::RecipientDomain,
+                    EnvelopeKey::Sender,
+                    EnvelopeKey::SenderDomain,
+                    EnvelopeKey::AuthenticatedAs,
+                    EnvelopeKey::Listener,
+                    EnvelopeKey::RemoteIp,
+                    EnvelopeKey::LocalIp,
+                    EnvelopeKey::Priority,
+                    EnvelopeKey::Mx,
+                ],
+            )
+            .unwrap()
+            .unwrap()
+            .map_if_block(
+                &context.directory.directories,
+                ("maybe-eval", test_name, "test"),
+                "test",
+            )
+            .unwrap();
+        let expected = config
+            .value_require(("maybe-eval", test_name, "expect"))
+            .unwrap();
+
+        assert!(if_block
+            .eval_and_capture(&envelope)
+            .await
+            .into_value()
+            .unwrap()
+            .is_local_domain(expected)
+            .await
+            .unwrap());
+    }
 }
 
 impl Envelope for TestEnvelope {
@@ -580,62 +715,22 @@ impl Envelope for TestEnvelope {
     }
 }
 
-#[tokio::test]
-async fn eval_if() {
-    let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    file.push("resources");
-    file.push("smtp");
-    file.push("config");
-    file.push("rules-eval.toml");
-
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
-    let servers = vec![
-        Server {
-            id: "smtp".to_string(),
-            internal_id: 123,
-            ..Default::default()
-        },
-        Server {
-            id: "smtps".to_string(),
-            internal_id: 456,
-            ..Default::default()
-        },
-    ];
-    let mut context = ConfigContext::new(&servers);
-    context.directory = config.parse_directory().unwrap();
-    let conditions = config.parse_conditions(&context).unwrap();
-
-    let envelope = TestEnvelope {
-        local_ip: config.property_require("envelope.local-ip").unwrap(),
-        remote_ip: config.property_require("envelope.remote-ip").unwrap(),
-        sender_domain: config.property_require("envelope.sender-domain").unwrap(),
-        sender: config.property_require("envelope.sender").unwrap(),
-        rcpt_domain: config.property_require("envelope.rcpt-domain").unwrap(),
-        rcpt: config.property_require("envelope.rcpt").unwrap(),
-        authenticated_as: config
-            .property_require("envelope.authenticated-as")
-            .unwrap(),
-        mx: config.property_require("envelope.mx").unwrap(),
-        listener_id: config.property_require("envelope.listener").unwrap(),
-        priority: config.property_require("envelope.priority").unwrap(),
-        helo_domain: config.property_require("envelope.helo-domain").unwrap(),
-    };
-
-    for (key, conditions) in conditions {
-        //println!("============= Testing {:?} ==================", key);
-        let (_, expected_result) = key.rsplit_once('-').unwrap();
-        assert_eq!(
-            IfBlock {
-                if_then: vec![IfThen {
-                    conditions,
-                    then: true
-                }],
-                default: false,
-            }
-            .eval(&envelope)
-            .await,
-            &expected_result.parse::<bool>().unwrap(),
-            "failed for {key:?}"
-        );
+impl TestEnvelope {
+    pub fn from_config(config: &Config) -> Self {
+        Self {
+            local_ip: config.property_require("envelope.local-ip").unwrap(),
+            remote_ip: config.property_require("envelope.remote-ip").unwrap(),
+            sender_domain: config.property_require("envelope.sender-domain").unwrap(),
+            sender: config.property_require("envelope.sender").unwrap(),
+            rcpt_domain: config.property_require("envelope.rcpt-domain").unwrap(),
+            rcpt: config.property_require("envelope.rcpt").unwrap(),
+            authenticated_as: config
+                .property_require("envelope.authenticated-as")
+                .unwrap(),
+            mx: config.property_require("envelope.mx").unwrap(),
+            listener_id: config.property_require("envelope.listener").unwrap(),
+            priority: config.property_require("envelope.priority").unwrap(),
+            helo_domain: config.property_require("envelope.helo-domain").unwrap(),
+        }
     }
 }

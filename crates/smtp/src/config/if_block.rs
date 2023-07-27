@@ -25,10 +25,12 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 
-use super::{condition::ConfigCondition, ConfigContext, EnvelopeKey, IfBlock, IfThen};
+use super::{
+    condition::ConfigCondition, ConfigContext, EnvelopeKey, IfBlock, IfThen, MaybeDynValue,
+};
 use utils::config::{
     utils::{AsKey, ParseValues},
-    Config,
+    Config, DynValue,
 };
 
 pub trait ConfigIf {
@@ -187,6 +189,12 @@ impl<T: Default> IfBlock<Option<T>> {
     }
 }
 
+impl<T> IfBlock<Option<T>> {
+    pub fn is_empty(&self) -> bool {
+        self.default.is_none() && self.if_then.is_empty()
+    }
+}
+
 impl IfBlock<Option<String>> {
     pub fn map_if_block<T: ?Sized>(
         self,
@@ -229,6 +237,7 @@ impl IfBlock<Option<String>> {
     }
 }
 
+/*
 impl IfBlock<Vec<String>> {
     pub fn map_if_block<T: ?Sized>(
         self,
@@ -267,6 +276,104 @@ impl IfBlock<Vec<String>> {
             }
         }
         Ok(result)
+    }
+}
+*/
+
+impl IfBlock<Vec<DynValue>> {
+    pub fn map_if_block<T: ?Sized>(
+        self,
+        map: &AHashMap<String, Arc<T>>,
+        key_name: &str,
+        object_name: &str,
+    ) -> super::Result<IfBlock<Vec<MaybeDynValue<T>>>> {
+        let mut if_then = Vec::with_capacity(self.if_then.len());
+        for if_clause in self.if_then.into_iter() {
+            if_then.push(IfThen {
+                conditions: if_clause.conditions,
+                then: Self::map_value(map, if_clause.then, object_name, key_name)?,
+            });
+        }
+
+        Ok(IfBlock {
+            if_then,
+            default: Self::map_value(map, self.default, object_name, key_name)?,
+        })
+    }
+
+    fn map_value<T: ?Sized>(
+        map: &AHashMap<String, Arc<T>>,
+        values: Vec<DynValue>,
+        object_name: &str,
+        key_name: &str,
+    ) -> super::Result<Vec<MaybeDynValue<T>>> {
+        let mut result = Vec::with_capacity(values.len());
+        for value in values {
+            if let DynValue::String(value) = &value {
+                if let Some(value) = map.get(value) {
+                    result.push(MaybeDynValue::Static(value.clone()));
+                } else {
+                    return Err(format!(
+                        "Unable to find {object_name} {value:?} declared for {key_name:?}",
+                    ));
+                }
+            } else {
+                result.push(MaybeDynValue::Dynamic {
+                    eval: value,
+                    items: map.clone(),
+                });
+            }
+        }
+        Ok(result)
+    }
+}
+
+impl IfBlock<Option<DynValue>> {
+    pub fn map_if_block<T: ?Sized>(
+        self,
+        map: &AHashMap<String, Arc<T>>,
+        key_name: impl AsKey,
+        object_name: &str,
+    ) -> super::Result<IfBlock<Option<MaybeDynValue<T>>>> {
+        let key_name = key_name.as_key();
+        let mut if_then = Vec::with_capacity(self.if_then.len());
+        for if_clause in self.if_then.into_iter() {
+            if_then.push(IfThen {
+                conditions: if_clause.conditions,
+                then: Self::map_value(map, if_clause.then, object_name, &key_name)?,
+            });
+        }
+
+        Ok(IfBlock {
+            if_then,
+            default: Self::map_value(map, self.default, object_name, &key_name)?,
+        })
+    }
+
+    fn map_value<T: ?Sized>(
+        map: &AHashMap<String, Arc<T>>,
+        value: Option<DynValue>,
+        object_name: &str,
+        key_name: &str,
+    ) -> super::Result<Option<MaybeDynValue<T>>> {
+        if let Some(value) = value {
+            if let DynValue::String(value) = &value {
+                if let Some(value) = map.get(value) {
+                    Ok(Some(MaybeDynValue::Static(value.clone())))
+                } else {
+                    Err(format!(
+                        "Unable to find {object_name} {value:?} declared for {key_name:?}",
+                    ))
+                }
+            } else {
+                Ok(Some(MaybeDynValue::Dynamic {
+                    eval: value,
+                    items: map.clone(),
+                }))
+            }
+        } else {
+            Ok(None)
+        }
     }
 }
 

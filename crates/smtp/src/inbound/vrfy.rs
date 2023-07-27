@@ -29,7 +29,16 @@ use std::fmt::Write;
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
-        match &self.params.rcpt_directory {
+        match self
+            .core
+            .session
+            .config
+            .rcpt
+            .directory
+            .eval_and_capture(self)
+            .await
+            .into_value()
+        {
             Some(address_lookup) if self.params.can_vrfy => {
                 match address_lookup.vrfy(&address.to_lowercase()).await {
                     Ok(values) if !values.is_empty() => {
@@ -81,7 +90,16 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
-        match &self.params.rcpt_directory {
+        match self
+            .core
+            .session
+            .config
+            .rcpt
+            .directory
+            .eval_and_capture(self)
+            .await
+            .into_value()
+        {
             Some(address_lookup) if self.params.can_expn => {
                 match address_lookup.expn(&address.to_lowercase()).await {
                     Ok(values) if !values.is_empty() => {

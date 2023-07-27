@@ -139,14 +139,50 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
 
         // Sieve filtering
         if let Some(script) = self.core.session.config.mail.script.eval(self).await {
-            if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
-                tracing::debug!(parent: &self.span,
-                        context = "mail-from",
-                        event = "sieve-reject",
+            match self.run_script(script.clone(), None).await {
+                ScriptResult::Accept { modifications } => {
+                    if !modifications.is_empty() {
+                        tracing::debug!(parent: &self.span,
+                            context = "sieve",
+                            event = "modify",
+                            address = &self.data.mail_from.as_ref().unwrap().address,
+                            modifications = ?modifications);
+                        self.data.apply_sieve_modifications(modifications)
+                    }
+                }
+                ScriptResult::Reject(message) => {
+                    tracing::debug!(parent: &self.span,
+                        context = "sieve",
+                        event = "reject",
                         address = &self.data.mail_from.as_ref().unwrap().address,
                         reason = message);
-                self.data.mail_from = None;
-                return self.write(message.as_bytes()).await;
+                    self.data.mail_from = None;
+                    return self.write(message.as_bytes()).await;
+                }
+                _ => (),
+            }
+        }
+
+        // Address rewriting
+        if let Some(new_address) = self
+            .core
+            .session
+            .config
+            .mail
+            .rewrite
+            .eval_and_capture(self)
+            .await
+            .into_value()
+        {
+            let mut mail_from = self.data.mail_from.as_mut().unwrap();
+            if new_address.contains('@') {
+                mail_from.address_lcase = new_address.to_lowercase();
+                mail_from.domain = mail_from.address_lcase.domain_part().to_string();
+                mail_from.address = new_address.into_owned();
+            } else if new_address.is_empty() {
+                mail_from.address_lcase.clear();
+                mail_from.domain.clear();
+                mail_from.address.clear();
             }
         }
 

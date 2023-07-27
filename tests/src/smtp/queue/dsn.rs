@@ -29,6 +29,7 @@ use std::{
 
 use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use tokio::{fs::File, io::AsyncReadExt};
+use utils::config::DynValue;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestQueueEvent},
@@ -109,7 +110,7 @@ async fn generate_dsn() {
     let ctx = ConfigContext::new(&[]).parse_signatures();
     let mut config = &mut core.queue.config.dsn;
     config.sign = "['rsa']"
-        .parse_if::<Vec<String>>(&ctx)
+        .parse_if::<Vec<DynValue>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
 

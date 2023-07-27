@@ -22,6 +22,7 @@
 */
 
 pub mod certificate;
+pub mod dynvalue;
 pub mod listener;
 pub mod parser;
 pub mod utils;
@@ -72,6 +73,13 @@ pub enum ServerProtocol {
     Imap,
     Http,
     ManageSieve,
+}
+
+#[derive(Debug, Clone)]
+pub enum DynValue {
+    String(String),
+    Position(usize),
+    List(Vec<DynValue>),
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]

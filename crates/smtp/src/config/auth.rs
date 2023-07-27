@@ -30,7 +30,7 @@ use mail_auth::{
 use mail_parser::decoders::base64::base64_decode;
 use utils::config::{
     utils::{AsKey, ParseValue},
-    Config,
+    Config, DynValue,
 };
 
 use super::{
@@ -69,7 +69,7 @@ impl ConfigAuth for Config {
                     .parse_if_block("auth.dkim.verify", ctx, &envelope_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 sign: self
-                    .parse_if_block::<Vec<String>>("auth.dkim.sign", ctx, &envelope_sender_keys)?
+                    .parse_if_block::<Vec<DynValue>>("auth.dkim.sign", ctx, &envelope_sender_keys)?
                     .unwrap_or_default()
                     .map_if_block(&ctx.signers, "auth.dkim.sign", "signature")?,
             },
@@ -78,7 +78,11 @@ impl ConfigAuth for Config {
                     .parse_if_block("auth.arc.verify", ctx, &envelope_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 seal: self
-                    .parse_if_block::<Option<String>>("auth.arc.seal", ctx, &envelope_sender_keys)?
+                    .parse_if_block::<Option<DynValue>>(
+                        "auth.arc.seal",
+                        ctx,
+                        &envelope_sender_keys,
+                    )?
                     .unwrap_or_default()
                     .map_if_block(&ctx.sealers, "auth.arc.seal", "signature")?,
             },
@@ -194,22 +198,43 @@ impl ConfigAuth for Config {
                         (DkimSigner::RsaSha256(signer), ArcSealer::RsaSha256(sealer))
                     }
                     Algorithm::Ed25519Sha256 => {
-                        let public_key =
-                            base64_decode(&self.file_contents(("signature", id, "public-key"))?)
-                                .ok_or_else(|| {
-                                    format!(
-                                        "Failed to base64 decode public key for {}.",
-                                        ("signature", id, "public-key",).as_key(),
-                                    )
-                                })?;
-                        let private_key =
-                            base64_decode(&self.file_contents(("signature", id, "private-key"))?)
-                                .ok_or_else(|| {
-                                format!(
-                                    "Failed to base64 decode private key for {}.",
-                                    ("signature", id, "private-key",).as_key(),
-                                )
+                        let mut public_key = vec![];
+                        let mut private_key = vec![];
+
+                        for (key, key_bytes) in [
+                            (("signature", id, "public-key"), &mut public_key),
+                            (("signature", id, "private-key"), &mut private_key),
+                        ] {
+                            let mut contents = self.file_contents(key)?.into_iter();
+                            let mut base64 = vec![];
+
+                            'outer: while let Some(ch) = contents.next() {
+                                if !ch.is_ascii_whitespace() {
+                                    if ch == b'-' {
+                                        for ch in contents.by_ref() {
+                                            if ch == b'\n' {
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        base64.push(ch);
+                                    }
+
+                                    for ch in contents.by_ref() {
+                                        if ch == b'-' {
+                                            break 'outer;
+                                        } else if !ch.is_ascii_whitespace() {
+                                            base64.push(ch);
+                                        }
+                                    }
+                                }
+                            }
+
+                            *key_bytes = base64_decode(&base64).ok_or_else(|| {
+                                format!("Failed to base64 decode key for {}.", key.as_key(),)
                             })?;
+                        }
+
                         let key = Ed25519Key::from_seed_and_public_key(&private_key, &public_key)
                             .map_err(|err| {
                             format!("Failed to build ED25519 key for signature {id:?}: {err}")

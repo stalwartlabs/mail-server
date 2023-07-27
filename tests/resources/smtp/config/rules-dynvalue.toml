@@ -1,0 +1,88 @@
+
+[envelope]
+rcpt-domain = "foo.example.org"
+rcpt = "user@foo.example.org"
+sender-domain = "foo.net"
+sender = "bill@foo.net"
+local-ip = "192.168.9.3"
+remote-ip = "A:B:C::D:E"
+mx = "mx.somedomain.com"
+authenticated-as = "john@foobar.org"
+priority = -4
+listener = 123
+helo-domain = "hi-domain.net"
+
+[eval."eq"]
+test = [
+    {if = "sender", eq = "bill@foo.net", then = "${0}"},
+    {else = false}
+]
+expect = "bill@foo.net"
+
+[eval."starts-with"]
+test = [
+    {if = "rcpt-domain", starts-with = "foo", then = "${0}${{0}}"},
+    {else = false}
+]
+expect = "foo.example.org${{0}}"
+
+[eval."regex"]
+test = [
+    {if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$", then = "${1}+${2}@${3}"},
+    {else = false}
+]
+expect = "user+foo@example.org"
+
+[eval."regex-full"]
+test = [
+    {if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$", then = "${0}"},
+    {else = false}
+]
+expect = "user@foo.example.org"
+
+[eval."static-match"]
+test = [
+    {if = "authenticated-as", matches = "^([^.]+)@(.+)$", then = "hello world"},
+    {else = false}
+]
+expect = "hello world"
+
+[eval."no-match"]
+test = [
+    {if = "authenticated-as", matches = "^([^.]+)@([^.]+)\.(.+)$org", then = "${1}+${2}@${3}"},
+    {else = false}
+]
+expect = false
+
+[directory."list_mx"]
+type = "memory"
+[directory."list_mx".lookup]
+domains = ["mx"]
+
+[directory."list_foo"]
+type = "memory"
+[directory."list_foo".lookup]
+domains = ["foo"]
+
+[maybe-eval."dyn_mx"]
+test = [
+    {if = "mx", matches = "([^.]+)\.(.+)$", then = "list_${1}"},
+    {else = false}
+]
+expect = "mx"
+
+[maybe-eval."dyn_foo"]
+test = [
+    {if = "sender-domain", matches = "([^.]+)\.(.+)$", then = "list_${1}"},
+    {else = false}
+]
+expect = "foo"
+
+[maybe-eval."static_mx"]
+test = "list_mx"
+expect = "mx"
+
+[maybe-eval."static_foo"]
+test = "list_foo"
+expect = "foo"
+

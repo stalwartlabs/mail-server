@@ -22,6 +22,7 @@
 */
 
 use bb8::{ManageConnection, Pool};
+use regex::Regex;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -34,7 +35,7 @@ use ahash::{AHashMap, AHashSet};
 
 use crate::{
     imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, DirectoryConfig, DirectoryOptions, Lookup,
+    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, Lookup,
 };
 
 pub trait ConfigDirectory {
@@ -141,13 +142,42 @@ impl DirectoryOptions {
     pub fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
         let key = key.as_key();
         Ok(DirectoryOptions {
-            catch_all: config.property_or_static((&key, "options.catch-all"), "false")?,
-            subaddressing: config.property_or_static((&key, "options.subaddressing"), "true")?,
+            catch_all: AddressMapping::from_config(config, (&key, "options.catch-all"))?,
+            subaddressing: AddressMapping::from_config(config, (&key, "options.subaddressing"))?,
             superuser_group: config
                 .value("options.superuser-group")
                 .unwrap_or("superusers")
                 .to_string(),
         })
+    }
+}
+
+impl AddressMapping {
+    pub fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
+        let key = key.as_key();
+        if let Some(value) = config.value(key.as_str()) {
+            match value {
+                "true" => Ok(AddressMapping::Enable),
+                "false" => Ok(AddressMapping::Disable),
+                _ => Err(format!(
+                    "Invalid value for address mapping {key:?}: {value:?}",
+                )),
+            }
+        } else if let Some(regex) = config.value((key.as_str(), "map")) {
+            Ok(AddressMapping::Custom {
+                regex: Regex::new(regex).map_err(|err| {
+                    format!(
+                        "Failed to compile regular expression {:?} for key {:?}: {}.",
+                        regex,
+                        (&key, "map").as_key(),
+                        err
+                    )
+                })?,
+                mapping: config.property_require((key.as_str(), "to"))?,
+            })
+        } else {
+            Ok(AddressMapping::Disable)
+        }
     }
 }
 
