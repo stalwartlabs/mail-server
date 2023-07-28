@@ -198,3 +198,29 @@ allow-plain-text = true
 [imap.rate-limit]
 requests = "90000/1s"
 concurrent = 9000
+
+[signature."ed25519"]
+public-key = "-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAUA3S0BdVG7LeA1agv7ZtqLkQMn+/AoYx1VPyGmLWEIM=
+-----END PUBLIC KEY-----"
+private-key = "-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIPdRszAzLvx4JaSIE4dQdZtN9y2XW+55K+YkCJI6lcn8
+-----END PRIVATE KEY-----"
+domain = "example.org"
+selector = "stalwart_ed"
+headers = ["From", "To", "Date", "Subject", "Message-ID"]
+algorithm = "ed25519-sha256"
+canonicalization = "simple/simple"
+set-body-length = true
+report = true
+
+[signature."ed25519-2"]
+public-key = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="
+private-key = "nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A="
+domain = "example.org"
+selector = "stalwart_ed2"
+headers = ["From", "To", "Date", "Subject", "Message-ID"]
+algorithm = "ed25519-sha256"
+canonicalization = "simple/simple"
+set-body-length = true
+report = true

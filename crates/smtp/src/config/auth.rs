@@ -235,17 +235,20 @@ impl ConfigAuth for Config {
                             })?;
                         }
 
-                        let key = Ed25519Key::from_seed_and_public_key(&private_key, &public_key)
+                        let key = Ed25519Key::from_pkcs8_maybe_unchecked_der(&private_key)
+                            .or_else(|_| {
+                                Ed25519Key::from_seed_and_public_key(&private_key, &public_key)
+                            })
                             .map_err(|err| {
-                            format!("Failed to build ED25519 key for signature {id:?}: {err}")
-                        })?;
-                        let key_clone =
-                            Ed25519Key::from_seed_and_public_key(&private_key, &public_key)
-                                .map_err(|err| {
-                                    format!(
-                                        "Failed to build ED25519 key for signature {id:?}: {err}"
-                                    )
-                                })?;
+                                format!("Failed to build ED25519 key for signature {id:?}: {err}")
+                            })?;
+                        let key_clone = Ed25519Key::from_pkcs8_maybe_unchecked_der(&private_key)
+                            .or_else(|_| {
+                                Ed25519Key::from_seed_and_public_key(&private_key, &public_key)
+                            })
+                            .map_err(|err| {
+                                format!("Failed to build ED25519 key for signature {id:?}: {err}")
+                            })?;
 
                         let (signer, sealer) = parse_signature(self, id, key_clone, key)?;
                         (
