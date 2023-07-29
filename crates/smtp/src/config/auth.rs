@@ -69,7 +69,11 @@ impl ConfigAuth for Config {
                     .parse_if_block("auth.dkim.verify", ctx, &envelope_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 sign: self
-                    .parse_if_block::<Vec<DynValue>>("auth.dkim.sign", ctx, &envelope_sender_keys)?
+                    .parse_if_block::<Vec<DynValue<EnvelopeKey>>>(
+                        "auth.dkim.sign",
+                        ctx,
+                        &envelope_sender_keys,
+                    )?
                     .unwrap_or_default()
                     .map_if_block(&ctx.signers, "auth.dkim.sign", "signature")?,
             },
@@ -78,7 +82,7 @@ impl ConfigAuth for Config {
                     .parse_if_block("auth.arc.verify", ctx, &envelope_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 seal: self
-                    .parse_if_block::<Option<DynValue>>(
+                    .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
                         "auth.arc.seal",
                         ctx,
                         &envelope_sender_keys,

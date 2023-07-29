@@ -42,7 +42,7 @@ use crate::{
     config::AggregateFrequency,
     core::SMTP,
     outbound::mta_sts::{Mode, MxPattern},
-    queue::{InstantFromTimestamp, Schedule},
+    queue::{InstantFromTimestamp, RecipientDomain, Schedule},
     USER_AGENT,
 };
 
@@ -93,14 +93,18 @@ impl GenerateTlsReport for Arc<SMTP> {
             let config = &core.report.config.tls;
             let mut report = TlsReport {
                 organization_name: handle
-                    .block_on(config.org_name.eval(&domain.as_str()))
+                    .block_on(config.org_name.eval(&RecipientDomain::new(domain.as_str())))
                     .clone(),
                 date_range: DateRange {
                     start_datetime: DateTime::from_timestamp(path.created as i64),
                     end_datetime: DateTime::from_timestamp(deliver_at as i64),
                 },
                 contact_info: handle
-                    .block_on(config.contact_info.eval(&domain.as_str()))
+                    .block_on(
+                        config
+                            .contact_info
+                            .eval(&RecipientDomain::new(domain.as_str())),
+                    )
                     .clone(),
                 report_id: format!(
                     "{}_{}",
@@ -241,13 +245,21 @@ impl GenerateTlsReport for Arc<SMTP> {
 
             // Deliver report over SMTP
             if !rcpts.is_empty() {
-                let from_addr = handle.block_on(config.address.eval(&domain.as_str()));
+                let from_addr =
+                    handle.block_on(config.address.eval(&RecipientDomain::new(domain.as_str())));
                 let mut message = Vec::with_capacity(path.size);
                 let _ = report.write_rfc5322_from_bytes(
                     &domain,
-                    handle.block_on(core.report.config.submitter.eval(&domain.as_str())),
+                    handle.block_on(
+                        core.report
+                            .config
+                            .submitter
+                            .eval(&RecipientDomain::new(domain.as_str())),
+                    ),
                     (
-                        handle.block_on(config.name.eval(&domain.as_str())).as_str(),
+                        handle
+                            .block_on(config.name.eval(&RecipientDomain::new(domain.as_str())))
+                            .as_str(),
                         from_addr.as_str(),
                     ),
                     rcpts.iter().copied(),
@@ -283,7 +295,7 @@ impl Scheduler {
             .config
             .tls
             .max_size
-            .eval(&event.domain.as_str())
+            .eval(&RecipientDomain::new(event.domain.as_str()))
             .await;
         let policy_hash = event.policy.to_hash();
 

@@ -44,7 +44,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
         // Auth parameters
         let ac = &self.core.session.config.auth;
-        self.params.auth_directory = ac.directory.eval_and_capture(self).await.into_value();
+        self.params.auth_directory = ac.directory.eval_and_capture(self).await.into_value(self);
         self.params.auth_require = *ac.require.eval(self).await;
         self.params.auth_errors_max = *ac.errors_max.eval(self).await;
         self.params.auth_errors_wait = *ac.errors_wait.eval(self).await;

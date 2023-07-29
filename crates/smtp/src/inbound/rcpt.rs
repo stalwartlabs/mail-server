@@ -121,13 +121,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 .rewrite
                 .eval_and_capture(self)
                 .await
-                .into_value()
+                .into_value(self)
+                .map(|s| s.into_owned())
             {
                 let mut rcpt = self.data.rcpt_to.last_mut().unwrap();
                 if new_address.contains('@') {
                     rcpt.address_lcase = new_address.to_lowercase();
                     rcpt.domain = rcpt.address_lcase.domain_part().to_string();
-                    rcpt.address = new_address.into_owned();
+                    rcpt.address = new_address;
                 }
             }
 
@@ -149,7 +150,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .directory
             .eval_and_capture(self)
             .await
-            .into_value()
+            .into_value(self)
         {
             if let Ok(is_local_domain) = directory.is_local_domain(&rcpt.domain).await {
                 if is_local_domain {

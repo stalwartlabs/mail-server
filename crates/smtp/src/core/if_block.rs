@@ -21,20 +21,14 @@
  * for more details.
 */
 
-use std::{
-    borrow::Cow,
-    net::{IpAddr, Ipv4Addr},
-    sync::Arc,
-};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use utils::config::DynValue;
+use utils::config::{DynValue, KeyLookup};
 
 use crate::config::{
     Condition, ConditionMatch, Conditions, EnvelopeKey, IfBlock, IpAddrMask, MaybeDynValue,
     StringMatch,
 };
-
-use super::Envelope;
 
 pub struct Captures<'x, T> {
     value: &'x T,
@@ -42,7 +36,7 @@ pub struct Captures<'x, T> {
 }
 
 impl<T: Default> IfBlock<T> {
-    pub async fn eval(&self, envelope: &impl Envelope) -> &T {
+    pub async fn eval(&self, envelope: &impl KeyLookup<Key = EnvelopeKey>) -> &T {
         for if_then in &self.if_then {
             if if_then.conditions.eval(envelope).await {
                 return &if_then.then;
@@ -52,7 +46,10 @@ impl<T: Default> IfBlock<T> {
         &self.default
     }
 
-    pub async fn eval_and_capture(&self, envelope: &impl Envelope) -> Captures<'_, T> {
+    pub async fn eval_and_capture(
+        &self,
+        envelope: &impl KeyLookup<Key = EnvelopeKey>,
+    ) -> Captures<'_, T> {
         for if_then in &self.if_then {
             if let Some(captures) = if_then.conditions.eval_and_capture(envelope).await {
                 return Captures {
@@ -70,7 +67,7 @@ impl<T: Default> IfBlock<T> {
 }
 
 impl Conditions {
-    pub async fn eval(&self, envelope: &impl Envelope) -> bool {
+    pub async fn eval(&self, envelope: &impl KeyLookup<Key = EnvelopeKey>) -> bool {
         let mut conditions = self.conditions.iter();
         let mut matched = false;
 
@@ -79,48 +76,27 @@ impl Conditions {
                 Condition::Match { key, value, not } => {
                     matched = match value {
                         ConditionMatch::String(value) => {
-                            let ctx_value = envelope.key_to_string(key);
+                            let ctx_value = envelope.key(key);
                             match value {
                                 StringMatch::Equal(value) => value.eq(ctx_value.as_ref()),
                                 StringMatch::StartsWith(value) => ctx_value.starts_with(value),
                                 StringMatch::EndsWith(value) => ctx_value.ends_with(value),
                             }
                         }
-                        ConditionMatch::IpAddrMask(value) => value.matches(&match key {
-                            EnvelopeKey::RemoteIp => envelope.remote_ip(),
-                            EnvelopeKey::LocalIp => envelope.local_ip(),
-                            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                        }),
-                        ConditionMatch::UInt(value) => {
-                            *value
-                                == if key == &EnvelopeKey::Listener {
-                                    envelope.listener_id()
-                                } else {
-                                    debug_assert!(false, "Invalid value for UInt context key.");
-                                    u16::MAX
-                                }
+                        ConditionMatch::IpAddrMask(value) => {
+                            value.matches(&envelope.key_as_ip(key))
                         }
-                        ConditionMatch::Int(value) => {
-                            *value
-                                == if key == &EnvelopeKey::Listener {
-                                    envelope.priority()
-                                } else {
-                                    debug_assert!(false, "Invalid value for UInt context key.");
-                                    i16::MAX
-                                }
-                        }
+                        ConditionMatch::UInt(value) => *value == envelope.key_as_int(key) as u16,
+                        ConditionMatch::Int(value) => *value == envelope.key_as_int(key) as i16,
                         ConditionMatch::Lookup(lookup) => {
-                            if let Some(result) =
-                                lookup.contains(envelope.key_to_string(key).as_ref()).await
+                            if let Some(result) = lookup.contains(envelope.key(key).as_ref()).await
                             {
                                 result
                             } else {
                                 return false;
                             }
                         }
-                        ConditionMatch::Regex(value) => {
-                            value.is_match(envelope.key_to_string(key).as_ref())
-                        }
+                        ConditionMatch::Regex(value) => value.is_match(envelope.key(key).as_ref()),
                     } ^ not;
                 }
                 Condition::JumpIfTrue { positions } => {
@@ -145,7 +121,10 @@ impl Conditions {
         matched
     }
 
-    pub async fn eval_and_capture(&self, envelope: &impl Envelope) -> Option<Vec<String>> {
+    pub async fn eval_and_capture(
+        &self,
+        envelope: &impl KeyLookup<Key = EnvelopeKey>,
+    ) -> Option<Vec<String>> {
         let mut conditions = self.conditions.iter();
         let mut matched = false;
         let mut last_capture = vec![];
@@ -154,36 +133,18 @@ impl Conditions {
         while let Some(rule) = conditions.next() {
             match rule {
                 Condition::Match { key, value, not } => {
-                    let ctx_value = envelope.key_to_string(key);
+                    let ctx_value = envelope.key(key);
                     matched = match value {
                         ConditionMatch::String(value) => match value {
                             StringMatch::Equal(value) => value.eq(ctx_value.as_ref()),
                             StringMatch::StartsWith(value) => ctx_value.starts_with(value),
                             StringMatch::EndsWith(value) => ctx_value.ends_with(value),
                         },
-                        ConditionMatch::IpAddrMask(value) => value.matches(&match key {
-                            EnvelopeKey::RemoteIp => envelope.remote_ip(),
-                            EnvelopeKey::LocalIp => envelope.local_ip(),
-                            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                        }),
-                        ConditionMatch::UInt(value) => {
-                            *value
-                                == if key == &EnvelopeKey::Listener {
-                                    envelope.listener_id()
-                                } else {
-                                    debug_assert!(false, "Invalid value for UInt context key.");
-                                    u16::MAX
-                                }
+                        ConditionMatch::IpAddrMask(value) => {
+                            value.matches(&envelope.key_as_ip(key))
                         }
-                        ConditionMatch::Int(value) => {
-                            *value
-                                == if key == &EnvelopeKey::Listener {
-                                    envelope.priority()
-                                } else {
-                                    debug_assert!(false, "Invalid value for UInt context key.");
-                                    i16::MAX
-                                }
-                        }
+                        ConditionMatch::UInt(value) => *value == envelope.key_as_int(key) as u16,
+                        ConditionMatch::Int(value) => *value == envelope.key_as_int(key) as i16,
                         ConditionMatch::Lookup(lookup) => {
                             lookup.contains(ctx_value.as_ref()).await?
                         }
@@ -288,23 +249,23 @@ impl IpAddrMask {
     }
 }
 
-impl<'x> Captures<'x, DynValue> {
-    pub fn into_value(self) -> Cow<'x, str> {
-        self.value.apply(self.captures)
+impl<'x> Captures<'x, DynValue<EnvelopeKey>> {
+    pub fn into_value(self, keys: &'x impl KeyLookup<Key = EnvelopeKey>) -> Cow<'x, str> {
+        self.value.apply(self.captures, keys)
     }
 }
 
-impl<'x> Captures<'x, Option<DynValue>> {
-    pub fn into_value(self) -> Option<Cow<'x, str>> {
-        self.value.as_ref().map(|v| v.apply(self.captures))
+impl<'x> Captures<'x, Option<DynValue<EnvelopeKey>>> {
+    pub fn into_value(self, keys: &'x impl KeyLookup<Key = EnvelopeKey>) -> Option<Cow<'x, str>> {
+        self.value.as_ref().map(|v| v.apply(self.captures, keys))
     }
 }
 
 impl<'x, T: ?Sized> Captures<'x, MaybeDynValue<T>> {
-    pub fn into_value(self) -> Option<Arc<T>> {
+    pub fn into_value(self, keys: &impl KeyLookup<Key = EnvelopeKey>) -> Option<Arc<T>> {
         match &self.value {
             MaybeDynValue::Dynamic { eval, items } => {
-                let r = eval.apply(self.captures);
+                let r = eval.apply(self.captures, keys);
 
                 match items.get(r.as_ref()) {
                     Some(value) => value.clone().into(),
@@ -326,12 +287,12 @@ impl<'x, T: ?Sized> Captures<'x, MaybeDynValue<T>> {
 }
 
 impl<'x, T: ?Sized> Captures<'x, Vec<MaybeDynValue<T>>> {
-    pub fn into_value(self) -> Vec<Arc<T>> {
+    pub fn into_value(self, keys: &impl KeyLookup<Key = EnvelopeKey>) -> Vec<Arc<T>> {
         let mut results = Vec::with_capacity(self.value.len());
         for value in self.value.iter() {
             match value {
                 MaybeDynValue::Dynamic { eval, items } => {
-                    let r = eval.apply_borrowed(&self.captures);
+                    let r = eval.apply_borrowed(&self.captures, keys);
                     match items.get(r.as_ref()) {
                         Some(value) => {
                             results.push(value.clone());
@@ -357,10 +318,10 @@ impl<'x, T: ?Sized> Captures<'x, Vec<MaybeDynValue<T>>> {
 }
 
 impl<'x, T: ?Sized> Captures<'x, Option<MaybeDynValue<T>>> {
-    pub fn into_value(self) -> Option<Arc<T>> {
+    pub fn into_value(self, keys: &impl KeyLookup<Key = EnvelopeKey>) -> Option<Arc<T>> {
         match self.value.as_ref()? {
             MaybeDynValue::Dynamic { eval, items } => {
-                let r = eval.apply(self.captures);
+                let r = eval.apply(self.captures, keys);
                 match items.get(r.as_ref()) {
                     Some(value) => value.clone().into(),
                     None => {

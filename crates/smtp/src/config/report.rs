@@ -120,7 +120,11 @@ impl ConfigReport for Config {
                 .parse_if_block(("report", id, "subject"), ctx, available_keys)?
                 .unwrap_or_else(|| IfBlock::new(format!("{} Report", id.to_ascii_uppercase()))),
             sign: self
-                .parse_if_block::<Vec<DynValue>>(("report", id, "sign"), ctx, available_keys)?
+                .parse_if_block::<Vec<DynValue<EnvelopeKey>>>(
+                    ("report", id, "sign"),
+                    ctx,
+                    available_keys,
+                )?
                 .unwrap_or_default()
                 .map_if_block(&ctx.signers, &("report", id, "sign").as_key(), "signature")?,
             send: self
@@ -173,7 +177,7 @@ impl ConfigReport for Config {
                 .parse_if_block(("report", id, "aggregate.send"), ctx, available_keys)?
                 .unwrap_or_default(),
             sign: self
-                .parse_if_block::<Vec<DynValue>>(
+                .parse_if_block::<Vec<DynValue<EnvelopeKey>>>(
                     ("report", id, "aggregate.sign"),
                     ctx,
                     &rcpt_envelope_keys,

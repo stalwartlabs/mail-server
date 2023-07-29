@@ -24,10 +24,11 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use dashmap::mapref::entry::Entry;
+use utils::config::KeyLookup;
 
 use crate::{
-    config::QueueQuota,
-    core::{Envelope, QueueCore},
+    config::{EnvelopeKey, QueueQuota},
+    core::QueueCore,
 };
 
 use super::{Message, QuotaLimiter, SimpleEnvelope, Status, UsedQuota};
@@ -93,7 +94,7 @@ impl QueueCore {
     async fn reserve_quota(
         &self,
         quota: &QueueQuota,
-        envelope: &impl Envelope,
+        envelope: &impl KeyLookup<Key = EnvelopeKey>,
         size: usize,
         id: u64,
         refs: &mut Vec<UsedQuota>,

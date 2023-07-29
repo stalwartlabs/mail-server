@@ -36,7 +36,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::ConfigContext,
+    config::{ConfigContext, EnvelopeKey},
     core::SMTP,
     queue::{
         DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule,
@@ -110,7 +110,7 @@ async fn generate_dsn() {
     let ctx = ConfigContext::new(&[]).parse_signatures();
     let mut config = &mut core.queue.config.dsn;
     config.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
 
@@ -193,7 +193,7 @@ async fn compare_dsn(message: Box<Message>, test: &str) {
         failed.set_extension("failed");
         fs::write(&failed, dsn.as_bytes()).unwrap();
         panic!(
-            "Failed for {}, ouput saved to {}",
+            "Failed for {}, output saved to {}",
             path.display(),
             failed.display()
         );

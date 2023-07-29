@@ -24,11 +24,14 @@
 use std::time::Instant;
 
 use dashmap::mapref::entry::Entry;
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter};
+use utils::{
+    config::KeyLookup,
+    listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter},
+};
 
 use crate::{
-    config::Throttle,
-    core::{throttle::Limiter, Envelope, QueueCore},
+    config::{EnvelopeKey, Throttle},
+    core::{throttle::Limiter, QueueCore},
 };
 
 use super::{Domain, Status};
@@ -43,7 +46,7 @@ impl QueueCore {
     pub async fn is_allowed(
         &self,
         throttle: &Throttle,
-        envelope: &impl Envelope,
+        envelope: &impl KeyLookup<Key = EnvelopeKey>,
         in_flight: &mut Vec<InFlight>,
         span: &tracing::Span,
     ) -> Result<(), Error> {

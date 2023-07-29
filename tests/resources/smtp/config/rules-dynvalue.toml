@@ -24,7 +24,7 @@ test = [
     {if = "rcpt-domain", starts-with = "foo", then = "${0}${{0}}"},
     {else = false}
 ]
-expect = "foo.example.org${{0}}"
+expect = "foo.example.org${0}"
 
 [eval."regex"]
 test = [
@@ -39,6 +39,13 @@ test = [
     {else = false}
 ]
 expect = "user@foo.example.org"
+
+[eval."envelope-match"]
+test = [
+    {if = "authenticated-as", matches = "^([^.]+)@(.+)$", then = "rcpt ${rcpt} listener ${listener} ip ${local-ip} priority ${priority}"},
+    {else = false}
+]
+expect = "rcpt user@foo.example.org listener 123 ip 192.168.9.3 priority -4"
 
 [eval."static-match"]
 test = [
@@ -64,6 +71,11 @@ type = "memory"
 [directory."list_foo".lookup]
 domains = ["foo"]
 
+[directory."list_123"]
+type = "memory"
+[directory."list_123".lookup]
+domains = ["123"]
+
 [maybe-eval."dyn_mx"]
 test = [
     {if = "mx", matches = "([^.]+)\.(.+)$", then = "list_${1}"},
@@ -85,4 +97,8 @@ expect = "mx"
 [maybe-eval."static_foo"]
 test = "list_foo"
 expect = "foo"
+
+[maybe-eval."dyn_123"]
+test = "list_${listener}"
+expect = "123"
 

@@ -22,7 +22,6 @@
 */
 
 use std::{
-    borrow::Cow,
     hash::Hash,
     net::IpAddr,
     sync::{atomic::AtomicU32, Arc},
@@ -50,8 +49,7 @@ use utils::{
 
 use crate::{
     config::{
-        DkimSigner, EnvelopeKey, MailAuthConfig, QueueConfig, ReportConfig, SessionConfig,
-        VerifyStrategy,
+        DkimSigner, MailAuthConfig, QueueConfig, ReportConfig, SessionConfig, VerifyStrategy,
     },
     inbound::auth::SaslToken,
     outbound::{
@@ -276,37 +274,6 @@ impl SessionData {
 impl Default for State {
     fn default() -> Self {
         State::Request(RequestReceiver::default())
-    }
-}
-
-pub trait Envelope {
-    fn local_ip(&self) -> IpAddr;
-    fn remote_ip(&self) -> IpAddr;
-    fn sender_domain(&self) -> &str;
-    fn sender(&self) -> &str;
-    fn rcpt_domain(&self) -> &str;
-    fn rcpt(&self) -> &str;
-    fn helo_domain(&self) -> &str;
-    fn authenticated_as(&self) -> &str;
-    fn mx(&self) -> &str;
-    fn listener_id(&self) -> u16;
-    fn priority(&self) -> i16;
-
-    #[inline(always)]
-    fn key_to_string(&self, key: &EnvelopeKey) -> Cow<'_, str> {
-        match key {
-            EnvelopeKey::Recipient => self.rcpt().into(),
-            EnvelopeKey::RecipientDomain => self.rcpt_domain().into(),
-            EnvelopeKey::Sender => self.sender().into(),
-            EnvelopeKey::SenderDomain => self.sender_domain().into(),
-            EnvelopeKey::Mx => self.mx().into(),
-            EnvelopeKey::AuthenticatedAs => self.authenticated_as().into(),
-            EnvelopeKey::HeloDomain => self.helo_domain().into(),
-            EnvelopeKey::Listener => self.listener_id().to_string().into(),
-            EnvelopeKey::RemoteIp => self.remote_ip().to_string().into(),
-            EnvelopeKey::LocalIp => self.local_ip().to_string().into(),
-            EnvelopeKey::Priority => self.priority().to_string().into(),
-        }
     }
 }
 

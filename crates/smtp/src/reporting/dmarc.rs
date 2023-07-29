@@ -40,7 +40,7 @@ use tokio::{
 use crate::{
     config::AggregateFrequency,
     core::{Session, SMTP},
-    queue::{DomainPart, InstantFromTimestamp, Schedule},
+    queue::{DomainPart, InstantFromTimestamp, RecipientDomain, Schedule},
 };
 
 use super::{
@@ -376,25 +376,50 @@ impl GenerateDmarcReport for Arc<SMTP> {
                 .with_date_range_begin(path.created)
                 .with_date_range_end(deliver_at)
                 .with_report_id(format!("{}_{}", domain.policy, path.created))
-                .with_email(handle.block_on(config.address.eval(&domain.inner.as_str())));
-            if let Some(org_name) = handle.block_on(config.org_name.eval(&domain.inner.as_str())) {
+                .with_email(
+                    handle.block_on(
+                        config
+                            .address
+                            .eval(&RecipientDomain::new(domain.inner.as_str())),
+                    ),
+                );
+            if let Some(org_name) = handle.block_on(
+                config
+                    .org_name
+                    .eval(&RecipientDomain::new(domain.inner.as_str())),
+            ) {
                 report = report.with_org_name(org_name);
             }
-            if let Some(contact_info) =
-                handle.block_on(config.contact_info.eval(&domain.inner.as_str()))
-            {
+            if let Some(contact_info) = handle.block_on(
+                config
+                    .contact_info
+                    .eval(&RecipientDomain::new(domain.inner.as_str())),
+            ) {
                 report = report.with_extra_contact_info(contact_info);
             }
             for (record, count) in record_map {
                 report.add_record(record.with_count(count));
             }
-            let from_addr = handle.block_on(config.address.eval(&domain.inner.as_str()));
+            let from_addr = handle.block_on(
+                config
+                    .address
+                    .eval(&RecipientDomain::new(domain.inner.as_str())),
+            );
             let mut message = Vec::with_capacity(path.size);
             let _ = report.write_rfc5322(
-                handle.block_on(core.report.config.submitter.eval(&domain.inner.as_str())),
+                handle.block_on(
+                    core.report
+                        .config
+                        .submitter
+                        .eval(&RecipientDomain::new(domain.inner.as_str())),
+                ),
                 (
                     handle
-                        .block_on(config.name.eval(&domain.inner.as_str()))
+                        .block_on(
+                            config
+                                .name
+                                .eval(&RecipientDomain::new(domain.inner.as_str())),
+                        )
                         .as_str(),
                     from_addr.as_str(),
                 ),
@@ -432,7 +457,7 @@ impl Scheduler {
             .config
             .dmarc_aggregate
             .max_size
-            .eval(&event.domain.as_str())
+            .eval(&RecipientDomain::new(event.domain.as_str()))
             .await;
 
         let policy = event.dmarc_record.to_hash();

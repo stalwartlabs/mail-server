@@ -25,10 +25,10 @@ use std::borrow::Cow;
 
 use super::{
     utils::{AsKey, ParseValue},
-    DynValue,
+    DynValue, KeyLookup,
 };
 
-impl ParseValue for DynValue {
+impl<T: ParseValue> ParseValue for DynValue<T> {
     #[allow(clippy::while_let_on_iterator)]
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         let mut items = vec![];
@@ -38,35 +38,66 @@ impl ParseValue for DynValue {
         while let Some(&ch) = iter.next() {
             if ch == b'$' && matches!(iter.peek(), Some(b'{')) {
                 iter.next();
-                if matches!(iter.peek(), Some(ch) if ch.is_ascii_digit()) {
-                    if !buf.is_empty() {
-                        items.push(DynValue::String(String::from_utf8(buf).unwrap()));
-                        buf = vec![];
-                    }
-
-                    while let Some(&ch) = iter.next() {
-                        if ch.is_ascii_digit() {
-                            buf.push(ch);
-                        } else if ch == b'}' && !buf.is_empty() {
-                            let str_num = std::str::from_utf8(&buf).unwrap();
-                            items.push(DynValue::Position(str_num.parse().map_err(|_| {
-                                format!(
-                                    "Failed to parse position {str_num:?} in value {value:?} for key {}",
-                                    key.as_key()
-                                )
-                            })?));
-                            buf.clear();
-                            break;
-                        } else {
-                            return Err(format!(
-                                "Invalid dynamic string {value:?} for key {}",
-                                key.as_key()
-                            ));
+                match iter.peek() {
+                    Some(ch) if **ch == b'{' => {
+                        buf.push(b'$');
+                        while let Some(&ch) = iter.next() {
+                            if ch == b'}' {
+                                break;
+                            } else {
+                                buf.push(ch);
+                            }
                         }
                     }
-                } else {
-                    buf.push(b'$');
-                    buf.push(b'{');
+                    Some(ch) => {
+                        if !buf.is_empty() {
+                            items.push(DynValue::String(String::from_utf8(buf).unwrap()));
+                            buf = vec![];
+                        }
+                        if ch.is_ascii_digit() {
+                            while let Some(&ch) = iter.next() {
+                                if ch.is_ascii_digit() {
+                                    buf.push(ch);
+                                } else if ch == b'}' && !buf.is_empty() {
+                                    let str_num = std::str::from_utf8(&buf).unwrap();
+                                    items.push(DynValue::Position(str_num.parse().map_err(|_| {
+                                        format!(
+                                            "Failed to parse position {str_num:?} in value {value:?} for key {}",
+                                            key.as_key()
+                                        )
+                                    })?));
+                                    buf.clear();
+                                    break;
+                                } else {
+                                    return Err(format!(
+                                        "Invalid dynamic string {value:?} for key {}",
+                                        key.as_key()
+                                    ));
+                                }
+                            }
+                        } else {
+                            while let Some(&ch) = iter.next() {
+                                if ch == b'}' {
+                                    if !buf.is_empty() {
+                                        items.push(DynValue::Key(T::parse_value(
+                                            key.clone(),
+                                            std::str::from_utf8(&buf).unwrap_or_default(),
+                                        )?));
+                                        buf.clear();
+                                        break;
+                                    } else {
+                                        return Err(format!(
+                                            "Invalid dynamic string {value:?} for key {}",
+                                            key.as_key()
+                                        ));
+                                    }
+                                } else {
+                                    buf.push(ch);
+                                }
+                            }
+                        }
+                    }
+                    None => {}
                 }
             } else {
                 buf.push(ch);
@@ -90,8 +121,12 @@ impl ParseValue for DynValue {
     }
 }
 
-impl DynValue {
-    pub fn apply(&self, captures: Vec<String>) -> Cow<str> {
+impl<T: ParseValue> DynValue<T> {
+    pub fn apply<'x, 'y: 'x>(
+        &'x self,
+        captures: Vec<String>,
+        keys: &'y impl KeyLookup<Key = T>,
+    ) -> Cow<'x, str> {
         match self {
             DynValue::String(value) => Cow::Borrowed(value.as_str()),
             DynValue::Position(pos) => captures
@@ -110,16 +145,22 @@ impl DynValue {
                                 result.push_str(capture);
                             }
                         }
+                        DynValue::Key(key) => result.push_str(keys.key(key).as_ref()),
                         DynValue::List(_) => unreachable!(),
                     }
                 }
 
                 Cow::Owned(result)
             }
+            DynValue::Key(key) => keys.key(key),
         }
     }
 
-    pub fn apply_borrowed<'x, 'y: 'x>(&'x self, captures: &'y [String]) -> Cow<'x, str> {
+    pub fn apply_borrowed<'x, 'y: 'x>(
+        &'x self,
+        captures: &'y [String],
+        keys: &'y impl KeyLookup<Key = T>,
+    ) -> Cow<'x, str> {
         match self {
             DynValue::String(value) => Cow::Borrowed(value.as_str()),
             DynValue::Position(pos) => captures
@@ -137,12 +178,14 @@ impl DynValue {
                                 result.push_str(capture);
                             }
                         }
+                        DynValue::Key(key) => result.push_str(keys.key(key).as_ref()),
                         DynValue::List(_) => unreachable!(),
                     }
                 }
 
                 Cow::Owned(result)
             }
+            DynValue::Key(key) => keys.key(key),
         }
     }
 }

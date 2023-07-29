@@ -21,22 +21,26 @@
  * for more details.
 */
 
-use std::{borrow::Cow, fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    borrow::Cow,
+    fs,
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::net::TcpSocket;
 
-use utils::config::{Config, DynValue, Listener, Rate, Server, ServerProtocol};
+use utils::config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol};
 
 use ahash::{AHashMap, AHashSet};
 use directory::{config::ConfigDirectory, Lookup};
 
-use smtp::{
-    config::{
-        condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
-        ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
-        StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
-    },
-    core::Envelope,
+use smtp::config::{
+    condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
+    ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
+    StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
 };
 
 use super::add_test_certs;
@@ -597,7 +601,7 @@ async fn eval_dynvalue() {
     for test_name in config.sub_keys("eval") {
         //println!("============= Testing {:?} ==================", key);
         let if_block = config
-            .parse_if_block::<Option<DynValue>>(
+            .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
                 ("eval", test_name, "test"),
                 &context,
                 &[
@@ -621,7 +625,10 @@ async fn eval_dynvalue() {
             .map(Cow::Owned);
 
         assert_eq!(
-            if_block.eval_and_capture(&envelope).await.into_value(),
+            if_block
+                .eval_and_capture(&envelope)
+                .await
+                .into_value(&envelope),
             expected,
             "failed for test {test_name:?}"
         );
@@ -630,7 +637,7 @@ async fn eval_dynvalue() {
     for test_name in config.sub_keys("maybe-eval") {
         //println!("============= Testing {:?} ==================", key);
         let if_block = config
-            .parse_if_block::<Option<DynValue>>(
+            .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
                 ("maybe-eval", test_name, "test"),
                 &context,
                 &[
@@ -661,7 +668,7 @@ async fn eval_dynvalue() {
         assert!(if_block
             .eval_and_capture(&envelope)
             .await
-            .into_value()
+            .into_value(&envelope)
             .unwrap()
             .is_local_domain(expected)
             .await
@@ -669,49 +676,39 @@ async fn eval_dynvalue() {
     }
 }
 
-impl Envelope for TestEnvelope {
-    fn local_ip(&self) -> IpAddr {
-        self.local_ip
+impl KeyLookup for TestEnvelope {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::Recipient => self.rcpt.as_str().into(),
+            EnvelopeKey::RecipientDomain => self.rcpt_domain.as_str().into(),
+            EnvelopeKey::Sender => self.sender.as_str().into(),
+            EnvelopeKey::SenderDomain => self.sender_domain.as_str().into(),
+            EnvelopeKey::AuthenticatedAs => self.authenticated_as.as_str().into(),
+            EnvelopeKey::Listener => self.listener_id.to_string().into(),
+            EnvelopeKey::RemoteIp => self.remote_ip.to_string().into(),
+            EnvelopeKey::LocalIp => self.local_ip.to_string().into(),
+            EnvelopeKey::Priority => self.priority.to_string().into(),
+            EnvelopeKey::Mx => self.mx.as_str().into(),
+            EnvelopeKey::HeloDomain => self.helo_domain.as_str().into(),
+        }
     }
 
-    fn remote_ip(&self) -> IpAddr {
-        self.remote_ip
+    fn key_as_int(&self, key: &Self::Key) -> i32 {
+        match key {
+            EnvelopeKey::Priority => self.priority as i32,
+            EnvelopeKey::Listener => self.listener_id as i32,
+            _ => todo!(),
+        }
     }
 
-    fn sender_domain(&self) -> &str {
-        self.sender_domain.as_str()
-    }
-
-    fn sender(&self) -> &str {
-        self.sender.as_str()
-    }
-
-    fn rcpt_domain(&self) -> &str {
-        self.rcpt_domain.as_str()
-    }
-
-    fn rcpt(&self) -> &str {
-        self.rcpt.as_str()
-    }
-
-    fn helo_domain(&self) -> &str {
-        self.helo_domain.as_str()
-    }
-
-    fn authenticated_as(&self) -> &str {
-        self.authenticated_as.as_str()
-    }
-
-    fn mx(&self) -> &str {
-        self.mx.as_str()
-    }
-
-    fn listener_id(&self) -> u16 {
-        self.listener_id
-    }
-
-    fn priority(&self) -> i16 {
-        self.priority
+    fn key_as_ip(&self, key: &Self::Key) -> IpAddr {
+        match key {
+            EnvelopeKey::RemoteIp => self.remote_ip,
+            EnvelopeKey::LocalIp => self.local_ip,
+            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        }
     }
 }
 

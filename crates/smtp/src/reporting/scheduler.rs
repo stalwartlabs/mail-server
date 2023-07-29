@@ -47,7 +47,7 @@ use tokio::{
 use crate::{
     config::AggregateFrequency,
     core::{management::ReportRequest, worker::SpawnCleanup, ReportCore, SMTP},
-    queue::{InstantFromTimestamp, Schedule},
+    queue::{InstantFromTimestamp, RecipientDomain, Schedule},
 };
 
 use super::{dmarc::GenerateDmarcReport, tls::GenerateTlsReport, Event};
@@ -198,8 +198,23 @@ impl SMTP {
         };
 
         // Build base path
-        let mut path = self.report.config.path.eval(&domain).await.clone();
-        path.push((policy % *self.report.config.hash.eval(&domain).await).to_string());
+        let mut path = self
+            .report
+            .config
+            .path
+            .eval(&RecipientDomain::new(domain))
+            .await
+            .clone();
+        path.push(
+            (policy
+                % *self
+                    .report
+                    .config
+                    .hash
+                    .eval(&RecipientDomain::new(domain))
+                    .await)
+                .to_string(),
+        );
         let _ = fs::create_dir(&path).await;
 
         // Build filename

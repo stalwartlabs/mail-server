@@ -182,7 +182,7 @@ impl Message {
         bytes: &[u8],
         span: &tracing::Span,
     ) -> Option<Vec<u8>> {
-        let signers = config.eval_and_capture(self).await.into_value();
+        let signers = config.eval_and_capture(self).await.into_value(self);
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {

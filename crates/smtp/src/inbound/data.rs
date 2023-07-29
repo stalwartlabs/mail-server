@@ -145,7 +145,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Verify ARC
         let arc = *ac.arc.verify.eval(self).await;
-        let arc_sealer = ac.arc.seal.eval_and_capture(self).await.into_value();
+        let arc_sealer = ac.arc.seal.eval_and_capture(self).await.into_value(self);
         let arc_output = if arc.verify() || arc_sealer.is_some() {
             let arc_output = self.core.resolvers.dns.verify_arc(&auth_message).await;
 
@@ -502,7 +502,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // DKIM sign
         let raw_message = edited_message.unwrap_or(raw_message);
-        for signer in ac.dkim.sign.eval_and_capture(self).await.into_value() {
+        for signer in ac.dkim.sign.eval_and_capture(self).await.into_value(self) {
             match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
                 Ok(signature) => {
                     signature.write_header(&mut headers);

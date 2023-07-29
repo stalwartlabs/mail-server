@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use smtp_proto::{
     request::receiver::{
@@ -31,9 +31,12 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use utils::config::ServerProtocol;
+use utils::config::{KeyLookup, ServerProtocol};
 
-use crate::core::{Envelope, Session, State};
+use crate::{
+    config::EnvelopeKey,
+    core::{Session, State},
+};
 
 use super::{auth::SaslToken, IsTls};
 
@@ -392,75 +395,62 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite> Envelope for Session<T> {
-    #[inline(always)]
-    fn local_ip(&self) -> IpAddr {
-        self.data.local_ip
+impl<T: AsyncRead + AsyncWrite> KeyLookup for Session<T> {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::Recipient => self
+                .data
+                .rcpt_to
+                .last()
+                .map(|r| r.address_lcase.as_str())
+                .unwrap_or_default()
+                .into(),
+            EnvelopeKey::RecipientDomain => self
+                .data
+                .rcpt_to
+                .last()
+                .map(|r| r.domain.as_str())
+                .unwrap_or_default()
+                .into(),
+            EnvelopeKey::Sender => self
+                .data
+                .mail_from
+                .as_ref()
+                .map(|m| m.address_lcase.as_str())
+                .unwrap_or_default()
+                .into(),
+            EnvelopeKey::SenderDomain => self
+                .data
+                .mail_from
+                .as_ref()
+                .map(|m| m.domain.as_str())
+                .unwrap_or_default()
+                .into(),
+            EnvelopeKey::HeloDomain => self.data.helo_domain.as_str().into(),
+            EnvelopeKey::AuthenticatedAs => self.data.authenticated_as.as_str().into(),
+            EnvelopeKey::Listener => self.instance.id.as_str().into(),
+            EnvelopeKey::RemoteIp => self.data.remote_ip.to_string().into(),
+            EnvelopeKey::LocalIp => self.data.local_ip.to_string().into(),
+            EnvelopeKey::Priority => self.data.priority.to_string().into(),
+            EnvelopeKey::Mx => "".into(),
+        }
     }
 
-    #[inline(always)]
-    fn remote_ip(&self) -> IpAddr {
-        self.data.remote_ip
+    fn key_as_int(&self, key: &Self::Key) -> i32 {
+        match key {
+            EnvelopeKey::Listener => self.instance.listener_id as i32,
+            EnvelopeKey::Priority => self.data.priority as i32,
+            _ => 0,
+        }
     }
 
-    #[inline(always)]
-    fn sender_domain(&self) -> &str {
-        self.data
-            .mail_from
-            .as_ref()
-            .map(|a| a.domain.as_str())
-            .unwrap_or_default()
-    }
-
-    #[inline(always)]
-    fn sender(&self) -> &str {
-        self.data
-            .mail_from
-            .as_ref()
-            .map(|a| a.address_lcase.as_str())
-            .unwrap_or_default()
-    }
-
-    #[inline(always)]
-    fn rcpt_domain(&self) -> &str {
-        self.data
-            .rcpt_to
-            .last()
-            .map(|r| r.domain.as_str())
-            .unwrap_or_default()
-    }
-
-    #[inline(always)]
-    fn rcpt(&self) -> &str {
-        self.data
-            .rcpt_to
-            .last()
-            .map(|r| r.address_lcase.as_str())
-            .unwrap_or_default()
-    }
-
-    #[inline(always)]
-    fn helo_domain(&self) -> &str {
-        self.data.helo_domain.as_str()
-    }
-
-    #[inline(always)]
-    fn authenticated_as(&self) -> &str {
-        self.data.authenticated_as.as_str()
-    }
-
-    #[inline(always)]
-    fn mx(&self) -> &str {
-        ""
-    }
-
-    #[inline(always)]
-    fn listener_id(&self) -> u16 {
-        self.instance.listener_id
-    }
-
-    #[inline(always)]
-    fn priority(&self) -> i16 {
-        self.data.priority
+    fn key_as_ip(&self, key: &Self::Key) -> IpAddr {
+        match key {
+            EnvelopeKey::RemoteIp => self.data.remote_ip,
+            EnvelopeKey::LocalIp => self.data.local_ip,
+            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        }
     }
 }

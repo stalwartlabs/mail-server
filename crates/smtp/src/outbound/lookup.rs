@@ -25,9 +25,11 @@ use std::net::IpAddr;
 
 use mail_auth::MX;
 use rand::{seq::SliceRandom, Rng};
+use utils::config::KeyLookup;
 
 use crate::{
-    core::{Envelope, SMTP},
+    config::EnvelopeKey,
+    core::SMTP,
     queue::{Error, ErrorDetails, Status},
 };
 
@@ -37,7 +39,7 @@ impl SMTP {
     pub async fn resolve_host(
         &self,
         remote_host: &NextHop<'_>,
-        envelope: &impl Envelope,
+        envelope: &impl KeyLookup<Key = EnvelopeKey>,
         max_multihomed: usize,
     ) -> Result<(Option<IpAddr>, Vec<IpAddr>), Status<(), Error>> {
         let remote_ips = self
@@ -100,7 +102,7 @@ impl SMTP {
         } else {
             Err(Status::TemporaryFailure(Error::DnsError(format!(
                 "No IP addresses found for {:?}.",
-                envelope.mx()
+                envelope.key(&EnvelopeKey::Mx)
             ))))
         }
     }

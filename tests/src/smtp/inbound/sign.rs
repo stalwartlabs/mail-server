@@ -36,7 +36,9 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{auth::ConfigAuth, ConfigContext, IfBlock, MaybeDynValue, VerifyStrategy},
+    config::{
+        auth::ConfigAuth, ConfigContext, EnvelopeKey, IfBlock, MaybeDynValue, VerifyStrategy,
+    },
     core::{Session, SMTP},
 };
 
@@ -174,11 +176,11 @@ async fn sign_and_seal() {
     config.arc.verify = config.spf.verify_ehlo.clone();
     config.dmarc.verify = config.spf.verify_ehlo.clone();
     config.dkim.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.arc.seal = "'ed'"
-        .parse_if::<Option<DynValue>>(&ctx)
+        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.sealers, "", "")
         .unwrap();
 

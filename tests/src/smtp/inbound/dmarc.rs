@@ -42,7 +42,9 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, IfBlock, MaybeDynValue, VerifyStrategy},
+    config::{
+        AggregateFrequency, ConfigContext, EnvelopeKey, IfBlock, MaybeDynValue, VerifyStrategy,
+    },
     core::{Session, SMTP},
 };
 
@@ -168,15 +170,15 @@ async fn dmarc() {
 
     let mut config = &mut core.report.config;
     config.spf.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.dmarc.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.dkim.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
 

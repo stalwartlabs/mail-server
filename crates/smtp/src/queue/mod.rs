@@ -31,9 +31,12 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
+use utils::{
+    config::KeyLookup,
+    listener::limiter::{ConcurrencyLimiter, InFlight},
+};
 
-use crate::core::{management, Envelope};
+use crate::{config::EnvelopeKey, core::management};
 
 pub mod dsn;
 pub mod manager;
@@ -241,49 +244,30 @@ impl<'x> SimpleEnvelope<'x> {
     }
 }
 
-impl<'x> Envelope for SimpleEnvelope<'x> {
-    fn local_ip(&self) -> IpAddr {
+impl<'x> KeyLookup for SimpleEnvelope<'x> {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::Sender => self.message.return_path_lcase.as_str().into(),
+            EnvelopeKey::SenderDomain => self.message.return_path_domain.as_str().into(),
+            EnvelopeKey::Priority => self.message.priority.to_string().into(),
+            EnvelopeKey::Recipient => self.recipient.into(),
+            EnvelopeKey::RecipientDomain => self.domain.into(),
+            _ => "".into(),
+        }
+    }
+
+    fn key_as_int(&self, key: &Self::Key) -> i32 {
+        if matches!(key, EnvelopeKey::Priority) {
+            self.message.priority as i32
+        } else {
+            0
+        }
+    }
+
+    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
-
-    fn remote_ip(&self) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
-
-    fn sender_domain(&self) -> &str {
-        &self.message.return_path_domain
-    }
-
-    fn sender(&self) -> &str {
-        &self.message.return_path_lcase
-    }
-
-    fn rcpt_domain(&self) -> &str {
-        self.domain
-    }
-
-    fn rcpt(&self) -> &str {
-        self.recipient
-    }
-
-    fn helo_domain(&self) -> &str {
-        ""
-    }
-
-    fn authenticated_as(&self) -> &str {
-        ""
-    }
-
-    fn mx(&self) -> &str {
-        ""
-    }
-
-    fn listener_id(&self) -> u16 {
-        0
-    }
-
-    fn priority(&self) -> i16 {
-        self.message.priority
     }
 }
 
@@ -295,141 +279,86 @@ pub struct QueueEnvelope<'x> {
     pub local_ip: IpAddr,
 }
 
-impl<'x> Envelope for QueueEnvelope<'x> {
-    fn local_ip(&self) -> IpAddr {
-        self.local_ip
+impl<'x> KeyLookup for QueueEnvelope<'x> {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::Sender => self.message.return_path_lcase.as_str().into(),
+            EnvelopeKey::SenderDomain => self.message.return_path_domain.as_str().into(),
+            EnvelopeKey::RecipientDomain => self.domain.into(),
+            EnvelopeKey::Mx => self.mx.into(),
+            EnvelopeKey::Priority => self.message.priority.to_string().into(),
+            _ => "".into(),
+        }
     }
 
-    fn remote_ip(&self) -> IpAddr {
-        self.remote_ip
+    fn key_as_int(&self, key: &Self::Key) -> i32 {
+        if matches!(key, EnvelopeKey::Priority) {
+            self.message.priority as i32
+        } else {
+            0
+        }
     }
 
-    fn sender_domain(&self) -> &str {
-        &self.message.return_path_domain
-    }
-
-    fn sender(&self) -> &str {
-        &self.message.return_path_lcase
-    }
-
-    fn rcpt_domain(&self) -> &str {
-        self.domain
-    }
-
-    fn rcpt(&self) -> &str {
-        ""
-    }
-
-    fn helo_domain(&self) -> &str {
-        ""
-    }
-
-    fn authenticated_as(&self) -> &str {
-        ""
-    }
-
-    fn mx(&self) -> &str {
-        self.mx
-    }
-
-    fn listener_id(&self) -> u16 {
-        0
-    }
-
-    fn priority(&self) -> i16 {
-        self.message.priority
+    fn key_as_ip(&self, key: &Self::Key) -> IpAddr {
+        match key {
+            EnvelopeKey::RemoteIp => self.remote_ip,
+            EnvelopeKey::LocalIp => self.local_ip,
+            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        }
     }
 }
 
-impl Envelope for Message {
-    fn local_ip(&self) -> IpAddr {
+impl KeyLookup for Message {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::Sender => self.return_path_lcase.as_str().into(),
+            EnvelopeKey::SenderDomain => self.return_path_domain.as_str().into(),
+            EnvelopeKey::Priority => self.priority.to_string().into(),
+            _ => "".into(),
+        }
+    }
+
+    fn key_as_int(&self, key: &Self::Key) -> i32 {
+        if matches!(key, EnvelopeKey::Priority) {
+            self.priority as i32
+        } else {
+            0
+        }
+    }
+
+    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
-
-    fn remote_ip(&self) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
-
-    fn sender_domain(&self) -> &str {
-        &self.return_path_domain
-    }
-
-    fn sender(&self) -> &str {
-        &self.return_path_lcase
-    }
-
-    fn rcpt_domain(&self) -> &str {
-        ""
-    }
-
-    fn rcpt(&self) -> &str {
-        ""
-    }
-
-    fn helo_domain(&self) -> &str {
-        ""
-    }
-
-    fn authenticated_as(&self) -> &str {
-        ""
-    }
-
-    fn mx(&self) -> &str {
-        ""
-    }
-
-    fn listener_id(&self) -> u16 {
-        0
-    }
-
-    fn priority(&self) -> i16 {
-        self.priority
     }
 }
 
-impl Envelope for &str {
-    fn local_ip(&self) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
+pub struct RecipientDomain<'x>(&'x str);
+
+impl<'x> RecipientDomain<'x> {
+    pub fn new(domain: &'x str) -> Self {
+        Self(domain)
+    }
+}
+
+impl<'x> KeyLookup for RecipientDomain<'x> {
+    type Key = EnvelopeKey;
+
+    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
+        match key {
+            EnvelopeKey::RecipientDomain => self.0.into(),
+            _ => "".into(),
+        }
     }
 
-    fn remote_ip(&self) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
-
-    fn sender_domain(&self) -> &str {
-        ""
-    }
-
-    fn sender(&self) -> &str {
-        ""
-    }
-
-    fn rcpt_domain(&self) -> &str {
-        self
-    }
-
-    fn rcpt(&self) -> &str {
-        ""
-    }
-
-    fn helo_domain(&self) -> &str {
-        ""
-    }
-
-    fn authenticated_as(&self) -> &str {
-        ""
-    }
-
-    fn mx(&self) -> &str {
-        ""
-    }
-
-    fn listener_id(&self) -> u16 {
+    fn key_as_int(&self, _: &Self::Key) -> i32 {
         0
     }
 
-    fn priority(&self) -> i16 {
-        0
+    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
     }
 }
 

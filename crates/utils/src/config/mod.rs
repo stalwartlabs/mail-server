@@ -27,12 +27,20 @@ pub mod listener;
 pub mod parser;
 pub mod utils;
 
-use std::{collections::BTreeMap, fmt::Display, net::SocketAddr, time::Duration};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    fmt::Display,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 
 use rustls::ServerConfig;
 use tokio::net::TcpSocket;
 
 use crate::{failed, UnwrapFailure};
+
+use self::utils::ParseValue;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -76,10 +84,35 @@ pub enum ServerProtocol {
 }
 
 #[derive(Debug, Clone)]
-pub enum DynValue {
+pub enum DynValue<T: ParseValue> {
     String(String),
     Position(usize),
-    List(Vec<DynValue>),
+    Key(T),
+    List(Vec<DynValue<T>>),
+}
+
+pub trait KeyLookup {
+    type Key: ParseValue;
+
+    fn key(&self, key: &Self::Key) -> Cow<'_, str>;
+    fn key_as_int(&self, key: &Self::Key) -> i32;
+    fn key_as_ip(&self, key: &Self::Key) -> IpAddr;
+}
+
+impl KeyLookup for () {
+    type Key = String;
+
+    fn key(&self, _: &Self::Key) -> Cow<'_, str> {
+        "".into()
+    }
+
+    fn key_as_int(&self, _: &Self::Key) -> i32 {
+        0
+    }
+
+    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]

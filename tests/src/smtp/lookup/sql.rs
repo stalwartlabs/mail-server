@@ -35,7 +35,7 @@ use crate::{
     },
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
+    config::{ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},
 };
 
@@ -115,7 +115,7 @@ async fn lookup_sql() {
     // Enable AUTH
     let mut config = &mut core.session.config.auth;
     config.directory = r"'sql'"
-        .parse_if::<Option<DynValue>>(&ctx)
+        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.mechanisms = IfBlock::new(AUTH_PLAIN | AUTH_LOGIN);
@@ -124,7 +124,7 @@ async fn lookup_sql() {
     // Enable VRFY/EXPN/RCPT
     let mut config = &mut core.session.config.rcpt;
     config.directory = r"'sql'"
-        .parse_if::<Option<DynValue>>(&ctx)
+        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.relay = IfBlock::new(false);

@@ -172,13 +172,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
             .rewrite
             .eval_and_capture(self)
             .await
-            .into_value()
+            .into_value(self)
+            .map(|s| s.into_owned())
         {
             let mut mail_from = self.data.mail_from.as_mut().unwrap();
             if new_address.contains('@') {
                 mail_from.address_lcase = new_address.to_lowercase();
                 mail_from.domain = mail_from.address_lcase.domain_part().to_string();
-                mail_from.address = new_address.into_owned();
+                mail_from.address = new_address;
             } else if new_address.is_empty() {
                 mail_from.address_lcase.clear();
                 mail_from.domain.clear();

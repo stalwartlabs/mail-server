@@ -41,7 +41,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, IfBlock},
+    config::{AggregateFrequency, ConfigContext, EnvelopeKey, IfBlock},
     core::SMTP,
     reporting::{
         dmarc::GenerateDmarcReport,
@@ -67,7 +67,7 @@ async fn report_dmarc() {
     config.path = IfBlock::new(temp_dir.temp_dir.clone());
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.sign = "['rsa']"
-        .parse_if::<Vec<DynValue>>(&ctx)
+        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")
         .unwrap();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);

@@ -181,7 +181,7 @@ pub enum AddressMapping {
     Enable,
     Custom {
         regex: regex::Regex,
-        mapping: DynValue,
+        mapping: DynValue<String>,
     },
     #[default]
     Disable,
@@ -320,7 +320,7 @@ impl AddressMapping {
                 }
 
                 if !regex_capture.is_empty() {
-                    return mapping.apply(regex_capture);
+                    return mapping.apply(regex_capture, &());
                 }
             }
             AddressMapping::Disable => (),
@@ -343,7 +343,7 @@ impl AddressMapping {
                     }
                 }
                 if !regex_capture.is_empty() {
-                    Some(mapping.apply(regex_capture))
+                    Some(mapping.apply(regex_capture, &()))
                 } else {
                     None
                 }

@@ -250,7 +250,11 @@ impl ConfigSession for Config {
 
         Ok(Auth {
             directory: self
-                .parse_if_block::<Option<DynValue>>("session.auth.directory", ctx, &available_keys)?
+                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+                    "session.auth.directory",
+                    ctx,
+                    &available_keys,
+                )?
                 .unwrap_or_default()
                 .map_if_block(
                     &ctx.directory.directories,
@@ -297,7 +301,11 @@ impl ConfigSession for Config {
                 .unwrap_or_default()
                 .map_if_block(&ctx.scripts, "session.mail.script", "script")?,
             rewrite: self
-                .parse_if_block::<Option<DynValue>>("session.mail.rewrite", ctx, &available_keys)?
+                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+                    "session.mail.rewrite",
+                    ctx,
+                    &available_keys,
+                )?
                 .unwrap_or_default(),
         })
     }
@@ -321,7 +329,11 @@ impl ConfigSession for Config {
                 .parse_if_block("session.rcpt.relay", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(false)),
             directory: self
-                .parse_if_block::<Option<DynValue>>("session.rcpt.directory", ctx, &available_keys)?
+                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+                    "session.rcpt.directory",
+                    ctx,
+                    &available_keys,
+                )?
                 .unwrap_or_default()
                 .map_if_block(
                     &ctx.directory.directories,
@@ -338,7 +350,11 @@ impl ConfigSession for Config {
                 .parse_if_block("session.rcpt.max-recipients", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(100)),
             rewrite: self
-                .parse_if_block::<Option<DynValue>>("session.rcpt.rewrite", ctx, &available_keys)?
+                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+                    "session.rcpt.rewrite",
+                    ctx,
+                    &available_keys,
+                )?
                 .unwrap_or_default(),
         })
     }

@@ -113,7 +113,11 @@ async fn address_rewrite() {
         .map_if_block(&ctx.scripts, "session.mail.script", "script")
         .unwrap();
     config.mail.rewrite = settings
-        .parse_if_block::<Option<DynValue>>("session.mail.rewrite", &ctx, &available_keys)
+        .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+            "session.mail.rewrite",
+            &ctx,
+            &available_keys,
+        )
         .unwrap()
         .unwrap_or_default();
     config.rcpt.script = settings
@@ -123,7 +127,11 @@ async fn address_rewrite() {
         .map_if_block(&ctx.scripts, "session.rcpt.script", "script")
         .unwrap();
     config.rcpt.rewrite = settings
-        .parse_if_block::<Option<DynValue>>("session.rcpt.rewrite", &ctx, &available_keys)
+        .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
+            "session.rcpt.rewrite",
+            &ctx,
+            &available_keys,
+        )
         .unwrap()
         .unwrap_or_default();
     config.rcpt.relay = IfBlock::new(true);

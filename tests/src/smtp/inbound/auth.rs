@@ -30,7 +30,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::ConfigContext,
+    config::{ConfigContext, EnvelopeKey},
     core::{Session, State, SMTP},
 };
 
@@ -68,7 +68,7 @@ async fn auth() {
         .parse_if(&ctx);
     config.directory = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'local'},
     {else = false}]"
-        .parse_if::<Option<DynValue>>(&ctx)
+        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
         .unwrap();
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 2},

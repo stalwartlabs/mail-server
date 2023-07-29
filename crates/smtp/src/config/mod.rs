@@ -231,14 +231,14 @@ pub struct Auth {
 
 pub struct Mail {
     pub script: IfBlock<Option<Arc<Sieve>>>,
-    pub rewrite: IfBlock<Option<DynValue>>,
+    pub rewrite: IfBlock<Option<DynValue<EnvelopeKey>>>,
 }
 
 pub struct Rcpt {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub relay: IfBlock<bool>,
     pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
-    pub rewrite: IfBlock<Option<DynValue>>,
+    pub rewrite: IfBlock<Option<DynValue<EnvelopeKey>>>,
 
     // Errors
     pub errors_max: IfBlock<usize>,
@@ -380,7 +380,7 @@ pub enum AddressMatch {
 #[derive(Clone)]
 pub enum MaybeDynValue<T: ?Sized> {
     Dynamic {
-        eval: DynValue,
+        eval: DynValue<EnvelopeKey>,
         items: AHashMap<String, Arc<T>>,
     },
     Static(Arc<T>),

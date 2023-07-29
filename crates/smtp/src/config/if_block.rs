@@ -237,50 +237,7 @@ impl IfBlock<Option<String>> {
     }
 }
 
-/*
-impl IfBlock<Vec<String>> {
-    pub fn map_if_block<T: ?Sized>(
-        self,
-        map: &AHashMap<String, Arc<T>>,
-        key_name: &str,
-        object_name: &str,
-    ) -> super::Result<IfBlock<Vec<Arc<T>>>> {
-        let mut if_then = Vec::with_capacity(self.if_then.len());
-        for if_clause in self.if_then.into_iter() {
-            if_then.push(IfThen {
-                conditions: if_clause.conditions,
-                then: Self::map_value(map, if_clause.then, object_name, key_name)?,
-            });
-        }
-
-        Ok(IfBlock {
-            if_then,
-            default: Self::map_value(map, self.default, object_name, key_name)?,
-        })
-    }
-
-    fn map_value<T: ?Sized>(
-        map: &AHashMap<String, Arc<T>>,
-        values: Vec<String>,
-        object_name: &str,
-        key_name: &str,
-    ) -> super::Result<Vec<Arc<T>>> {
-        let mut result = Vec::with_capacity(values.len());
-        for value in values {
-            if let Some(value) = map.get(&value) {
-                result.push(value.clone());
-            } else {
-                return Err(format!(
-                    "Unable to find {object_name} {value:?} declared for {key_name:?}",
-                ));
-            }
-        }
-        Ok(result)
-    }
-}
-*/
-
-impl IfBlock<Vec<DynValue>> {
+impl IfBlock<Vec<DynValue<EnvelopeKey>>> {
     pub fn map_if_block<T: ?Sized>(
         self,
         map: &AHashMap<String, Arc<T>>,
@@ -303,7 +260,7 @@ impl IfBlock<Vec<DynValue>> {
 
     fn map_value<T: ?Sized>(
         map: &AHashMap<String, Arc<T>>,
-        values: Vec<DynValue>,
+        values: Vec<DynValue<EnvelopeKey>>,
         object_name: &str,
         key_name: &str,
     ) -> super::Result<Vec<MaybeDynValue<T>>> {
@@ -328,7 +285,7 @@ impl IfBlock<Vec<DynValue>> {
     }
 }
 
-impl IfBlock<Option<DynValue>> {
+impl IfBlock<Option<DynValue<EnvelopeKey>>> {
     pub fn map_if_block<T: ?Sized>(
         self,
         map: &AHashMap<String, Arc<T>>,
@@ -352,7 +309,7 @@ impl IfBlock<Option<DynValue>> {
 
     fn map_value<T: ?Sized>(
         map: &AHashMap<String, Arc<T>>,
-        value: Option<DynValue>,
+        value: Option<DynValue<EnvelopeKey>>,
         object_name: &str,
         key_name: &str,
     ) -> super::Result<Option<MaybeDynValue<T>>> {

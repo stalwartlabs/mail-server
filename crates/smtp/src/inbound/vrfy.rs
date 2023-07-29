@@ -37,7 +37,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .directory
             .eval_and_capture(self)
             .await
-            .into_value()
+            .into_value(self)
         {
             Some(address_lookup) if self.params.can_vrfy => {
                 match address_lookup.vrfy(&address.to_lowercase()).await {
@@ -98,7 +98,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .directory
             .eval_and_capture(self)
             .await
-            .into_value()
+            .into_value(self)
         {
             Some(address_lookup) if self.params.can_expn => {
                 match address_lookup.expn(&address.to_lowercase()).await {

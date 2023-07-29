@@ -37,6 +37,7 @@ use smtp::{
         lookup::ToNextHop,
         mta_sts::{Mode, MxPattern, Policy},
     },
+    queue::RecipientDomain,
 };
 
 use crate::smtp::TestConfig;
@@ -75,7 +76,11 @@ async fn lookup_ip() {
     // Ipv4 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
     let (source_ips, remote_ips) = core
-        .resolve_host(&NextHop::MX("mx.foobar.org"), &"envelope", 2)
+        .resolve_host(
+            &NextHop::MX("mx.foobar.org"),
+            &RecipientDomain::new("envelope"),
+            2,
+        )
         .await
         .unwrap();
     assert!(ipv4.contains(&match source_ips.unwrap() {
@@ -87,7 +92,11 @@ async fn lookup_ip() {
     // Ipv6 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
     let (source_ips, remote_ips) = core
-        .resolve_host(&NextHop::MX("mx.foobar.org"), &"envelope", 2)
+        .resolve_host(
+            &NextHop::MX("mx.foobar.org"),
+            &RecipientDomain::new("envelope"),
+            2,
+        )
         .await
         .unwrap();
     assert!(ipv6.contains(&match source_ips.unwrap() {
