@@ -150,6 +150,9 @@ pub struct Config {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
 
+    pub encrypt: bool,
+    pub encrypt_append: bool,
+
     pub principal_allow_lookups: bool,
 
     pub capabilities: BaseCapabilities,

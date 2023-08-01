@@ -737,7 +737,7 @@ impl JMAP {
                     keywords,
                     received_at,
                     skip_duplicates: false,
-                    encrypt: false,
+                    encrypt: self.config.encrypt && self.config.encrypt_append,
                 })
                 .await
             {

@@ -38,6 +38,8 @@ pub mod import;
 pub mod queue;
 pub mod report;
 
+const RETRY_ATTEMPTS: usize = 5;
+
 pub trait UnwrapResult<T> {
     fn unwrap_result(self, action: &str) -> T;
 }

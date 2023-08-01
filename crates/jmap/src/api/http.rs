@@ -237,7 +237,7 @@ pub async fn parse_jmap_request(
                 _ => (),
             }
         }
-        "crypto" => match *req.method() {
+        "crypto" if jmap.config.encrypt => match *req.method() {
             Method::GET => {
                 return jmap.handle_crypto_update(&mut req).await;
             }

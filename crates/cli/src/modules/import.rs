@@ -46,7 +46,7 @@ use mail_parser::mailbox::{
 use serde::de::DeserializeOwned;
 use tokio::{fs::File, io::AsyncReadExt};
 
-use crate::modules::{name_to_id, UnwrapResult};
+use crate::modules::{name_to_id, UnwrapResult, RETRY_ATTEMPTS};
 
 use super::{
     cli::{ImportCommands, MailboxFormat},
@@ -331,43 +331,54 @@ pub async fn cmd_import(mut client: Client, command: ImportCommands) {
                                     pbs.1 += 1;
                                 }
 
-                                if let Err(err) = client
-                                    .email_import(
-                                        message.contents,
-                                        [mailbox_id.as_ref()],
-                                        if !message.flags.is_empty() {
-                                            message
-                                                .flags
-                                                .into_iter()
-                                                .map(|f| match f {
-                                                    maildir::Flag::Passed => "$passed",
-                                                    maildir::Flag::Replied => "$answered",
-                                                    maildir::Flag::Seen => "$seen",
-                                                    maildir::Flag::Trashed => "$deleted",
-                                                    maildir::Flag::Draft => "$draft",
-                                                    maildir::Flag::Flagged => "$flagged",
-                                                })
-                                                .into()
-                                        } else {
-                                            None
-                                        },
-                                        if message.internal_date > 0 {
-                                            (message.internal_date as i64).into()
-                                        } else {
-                                            None
-                                        },
-                                    )
-                                    .await
-                                {
-                                    failures.lock().unwrap().push(format!(
-                                        concat!(
-                                            "Failed to import message {} ",
-                                            "with identifier '{}': {}"
-                                        ),
-                                        message_num, message.identifier, err
-                                    ));
-                                } else {
-                                    total_imported.fetch_add(1, Ordering::Relaxed);
+                                let mut retry_count = 0;
+                                loop {
+                                    match client
+                                        .email_import(
+                                            message.contents.clone(),
+                                            [mailbox_id.as_ref()],
+                                            if !message.flags.is_empty() {
+                                                message
+                                                    .flags
+                                                    .iter()
+                                                    .map(|f| match f {
+                                                        maildir::Flag::Passed => "$passed",
+                                                        maildir::Flag::Replied => "$answered",
+                                                        maildir::Flag::Seen => "$seen",
+                                                        maildir::Flag::Trashed => "$deleted",
+                                                        maildir::Flag::Draft => "$draft",
+                                                        maildir::Flag::Flagged => "$flagged",
+                                                    })
+                                                    .into()
+                                            } else {
+                                                None
+                                            },
+                                            if message.internal_date > 0 {
+                                                (message.internal_date as i64).into()
+                                            } else {
+                                                None
+                                            },
+                                        )
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            total_imported.fetch_add(1, Ordering::Relaxed);
+                                        }
+                                        Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                            retry_count += 1;
+                                            continue;
+                                        }
+                                        Err(err) => {
+                                            failures.lock().unwrap().push(format!(
+                                                concat!(
+                                                    "Failed to import message {} ",
+                                                    "with identifier '{}': {}"
+                                                ),
+                                                message_num, message.identifier, err
+                                            ));
+                                        }
+                                    }
+                                    break;
                                 }
                             });
 
@@ -648,22 +659,33 @@ async fn import_emails(
                 }
             }
 
-            if let Err(err) = client
-                .email_import(
-                    contents,
-                    mailboxes,
-                    if !keywords.is_empty() {
-                        Some(keywords)
-                    } else {
-                        None
-                    },
-                    email.received_at(),
-                )
-                .await
-            {
-                eprintln!("Failed to import emailId {id}: {err}");
-            } else {
-                total_imported.fetch_add(1, Ordering::Relaxed);
+            let mut retry_count = 0;
+            loop {
+                match client
+                    .email_import(
+                        contents.clone(),
+                        mailboxes.clone(),
+                        if !keywords.is_empty() {
+                            Some(keywords.clone())
+                        } else {
+                            None
+                        },
+                        email.received_at(),
+                    )
+                    .await
+                {
+                    Ok(_) => {
+                        total_imported.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(_) if retry_count < RETRY_ATTEMPTS => {
+                        retry_count += 1;
+                        continue;
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to import emailId {id}: {err}");
+                    }
+                }
+                break;
             }
         });
 

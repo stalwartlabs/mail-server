@@ -142,7 +142,7 @@ impl SessionData {
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
                     skip_duplicates: false,
-                    encrypt: true,
+                    encrypt: self.jmap.config.encrypt && self.jmap.config.encrypt_append,
                 })
                 .await
             {

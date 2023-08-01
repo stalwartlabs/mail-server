@@ -104,7 +104,7 @@ impl JMAP {
                         keywords: vec![],
                         received_at: None,
                         skip_duplicates: true,
-                        encrypt: true,
+                        encrypt: self.config.encrypt,
                     })
                     .await
                 }

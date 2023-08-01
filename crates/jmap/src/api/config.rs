@@ -138,6 +138,8 @@ impl crate::Config {
             principal_allow_lookups: settings
                 .property("jmap.principal.allow-lookups")?
                 .unwrap_or(true),
+            encrypt: settings.property_or_static("jmap.encryption.enable", "true")?,
+            encrypt_append: settings.property_or_static("jmap.encryption.append", "false")?,
         };
         config.add_capabilites(settings);
         Ok(config)

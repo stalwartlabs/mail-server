@@ -38,6 +38,8 @@ use jmap_client::{
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 
+use crate::modules::RETRY_ATTEMPTS;
+
 use super::{cli::ExportCommands, name_to_id, UnwrapResult};
 
 pub async fn cmd_export(mut client: Client, command: ExportCommands) {
@@ -94,10 +96,22 @@ pub async fn cmd_export(mut client: Client, command: ExportCommands) {
                 blob_path.push(&blob_id);
 
                 futures.push(async move {
-                    let bytes = client
-                        .download(&blob_id)
-                        .await
-                        .unwrap_result("download blob");
+                    let mut retry_count = 0;
+
+                    let bytes = loop {
+                        match client.download(&blob_id).await {
+                            Ok(bytes) => break bytes,
+                            Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                retry_count += 1;
+                            }
+                            result => {
+                                result.unwrap_result("download blob");
+                                return;
+                            }
+                        }
+                    };
+
                     tokio::fs::OpenOptions::new()
                         .create(true)
                         .write(true)
