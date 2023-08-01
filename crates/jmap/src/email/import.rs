@@ -141,6 +141,7 @@ impl JMAP {
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
                     skip_duplicates: false,
+                    encrypt: true,
                 })
                 .await
             {

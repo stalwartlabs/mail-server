@@ -41,7 +41,7 @@ use crate::{
 };
 
 use super::{
-    parse_form_data, OAuthCode, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, OAUTH_HTML_FOOTER,
+    FormData, OAuthCode, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, MAX_POST_LEN, OAUTH_HTML_FOOTER,
     OAUTH_HTML_HEADER, OAUTH_HTML_LOGIN_CODE_HIDDEN, OAUTH_HTML_LOGIN_FORM,
     OAUTH_HTML_LOGIN_HEADER_CLIENT, OAUTH_HTML_LOGIN_HEADER_FAILED, STATUS_AUTHORIZED,
 };
@@ -109,15 +109,15 @@ impl JMAP {
     // Handles POST request from the code authorization form
     pub async fn handle_user_code_auth_post(&self, req: &mut HttpRequest) -> HttpResponse {
         // Parse form
-        let params = match parse_form_data(req).await {
+        let params = match FormData::from_request(req, MAX_POST_LEN).await {
             Ok(params) => params,
             Err(err) => return err,
         };
 
         let mut auth_code = None;
         let (auth_attempts, code_req) = match params
-            .get("code")
-            .and_then(|code| base64_decode(code.as_bytes()))
+            .get_bytes("code")
+            .and_then(base64_decode)
             .and_then(|bytes| bincode::deserialize::<(u32, HashMap<String, String>)>(&bytes).ok())
         {
             Some(code) => code,

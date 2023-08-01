@@ -33,21 +33,21 @@ pub mod device_auth;
 pub mod token;
 pub mod user_code;
 
-const OAUTH_HTML_HEADER: &str = include_str!("../../../../../resources/oauth/header.htx");
-const OAUTH_HTML_FOOTER: &str = include_str!("../../../../../resources/oauth/footer.htx");
+const OAUTH_HTML_HEADER: &str = include_str!("../../../../../resources/htx/header.htx");
+const OAUTH_HTML_FOOTER: &str = include_str!("../../../../../resources/htx/footer.htx");
 const OAUTH_HTML_LOGIN_HEADER_CLIENT: &str =
-    include_str!("../../../../../resources/oauth/login_hdr_client.htx");
+    include_str!("../../../../../resources/htx/login_hdr_client.htx");
 const OAUTH_HTML_LOGIN_HEADER_DEVICE: &str =
-    include_str!("../../../../../resources/oauth/login_hdr_device.htx");
+    include_str!("../../../../../resources/htx/login_hdr_device.htx");
 const OAUTH_HTML_LOGIN_HEADER_FAILED: &str =
-    include_str!("../../../../../resources/oauth/login_hdr_failed.htx");
-const OAUTH_HTML_LOGIN_FORM: &str = include_str!("../../../../../resources/oauth/login.htx");
-const OAUTH_HTML_LOGIN_CODE: &str = include_str!("../../../../../resources/oauth/login_code.htx");
+    include_str!("../../../../../resources/htx/login_hdr_failed.htx");
+const OAUTH_HTML_LOGIN_FORM: &str = include_str!("../../../../../resources/htx/login.htx");
+const OAUTH_HTML_LOGIN_CODE: &str = include_str!("../../../../../resources/htx/login_code.htx");
 const OAUTH_HTML_LOGIN_CODE_HIDDEN: &str =
-    include_str!("../../../../../resources/oauth/login_code_hidden.htx");
+    include_str!("../../../../../resources/htx/login_code_hidden.htx");
 const OAUTH_HTML_LOGIN_SUCCESS: &str =
-    include_str!("../../../../../resources/oauth/login_success.htx");
-const OAUTH_HTML_ERROR: &str = include_str!("../../../../../resources/oauth/error.htx");
+    include_str!("../../../../../resources/htx/login_success.htx");
+const OAUTH_HTML_ERROR: &str = include_str!("../../../../../resources/htx/error.htx");
 
 const STATUS_AUTHORIZED: u32 = 0;
 const STATUS_TOKEN_ISSUED: u32 = 1;
@@ -57,6 +57,8 @@ const DEVICE_CODE_LEN: usize = 40;
 const USER_CODE_LEN: usize = 8;
 const RANDOM_CODE_LEN: usize = 32;
 const CLIENT_ID_MAX_LEN: usize = 20;
+
+const MAX_POST_LEN: usize = 2048;
 
 const USER_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // No 0, O, I, 1
 
@@ -211,44 +213,69 @@ impl TokenResponse {
     }
 }
 
-pub async fn parse_form_data(
-    req: &mut HttpRequest,
-) -> Result<HashMap<String, String>, HttpResponse> {
-    match (
-        req.headers()
-            .get(CONTENT_TYPE)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|val| val.parse::<mime::Mime>().ok()),
-        fetch_body(req).await,
-    ) {
-        (Some(content_type), Some(body)) => {
-            let mut fields = HashMap::new();
-            if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
-                for mut field in form_data::FormData::new(&body[..], boundary.as_str()).flatten() {
-                    let value = String::from_utf8(field.bytes().unwrap_or_default().to_vec())
-                        .unwrap_or_default();
-                    fields.insert(field.name, value);
+pub struct FormData {
+    fields: HashMap<String, Vec<u8>>,
+}
+
+impl FormData {
+    pub async fn from_request(req: &mut HttpRequest, max_len: usize) -> Result<Self, HttpResponse> {
+        match (
+            req.headers()
+                .get(CONTENT_TYPE)
+                .and_then(|h| h.to_str().ok())
+                .and_then(|val| val.parse::<mime::Mime>().ok()),
+            fetch_body(req, max_len).await,
+        ) {
+            (Some(content_type), Some(body)) => {
+                let mut fields = HashMap::new();
+                if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
+                    for mut field in
+                        form_data::FormData::new(&body[..], boundary.as_str()).flatten()
+                    {
+                        let value = field.bytes().unwrap_or_default().to_vec();
+                        fields.insert(field.name, value);
+                    }
+                } else {
+                    for (key, value) in form_urlencoded::parse(&body) {
+                        fields.insert(key.into_owned(), value.into_owned().into_bytes());
+                    }
                 }
-            } else {
-                for (key, value) in form_urlencoded::parse(&body) {
-                    fields.insert(key.into_owned(), value.into_owned());
-                }
+                Ok(FormData { fields })
             }
-            Ok(fields)
+            _ => Err(HtmlResponse::with_status(
+                StatusCode::BAD_REQUEST,
+                "Invalid post request".to_string(),
+            )
+            .into_http_response()),
         }
-        _ => Err(HtmlResponse::with_status(
-            StatusCode::BAD_REQUEST,
-            "Invalid post request".to_string(),
-        )
-        .into_http_response()),
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.fields
+            .get(key)
+            .and_then(|v| std::str::from_utf8(v).ok())
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<String> {
+        self.fields
+            .remove(key)
+            .and_then(|v| String::from_utf8(v).ok())
+    }
+
+    pub fn get_bytes(&self, key: &str) -> Option<&[u8]> {
+        self.fields.get(key).map(|v| v.as_slice())
+    }
+
+    pub fn remove_bytes(&mut self, key: &str) -> Option<Vec<u8>> {
+        self.fields.remove(key)
     }
 }
 
-pub async fn fetch_body(req: &mut HttpRequest) -> Option<Vec<u8>> {
+pub async fn fetch_body(req: &mut HttpRequest, max_len: usize) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(1024);
     while let Some(Ok(frame)) = req.frame().await {
         if let Some(data) = frame.data_ref() {
-            if bytes.len() + data.len() <= 2048 {
+            if bytes.len() + data.len() <= max_len {
                 bytes.extend_from_slice(data);
             } else {
                 return None;

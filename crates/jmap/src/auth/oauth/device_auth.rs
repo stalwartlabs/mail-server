@@ -36,15 +36,15 @@ use utils::{listener::ServerInstance, map::ttl_dashmap::TtlMap};
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse, JsonResponse},
     auth::oauth::{
-        OAUTH_HTML_ERROR, OAUTH_HTML_LOGIN_HEADER_FAILED, OAUTH_HTML_LOGIN_SUCCESS,
+        MAX_POST_LEN, OAUTH_HTML_ERROR, OAUTH_HTML_LOGIN_HEADER_FAILED, OAUTH_HTML_LOGIN_SUCCESS,
         STATUS_AUTHORIZED,
     },
     JMAP,
 };
 
 use super::{
-    parse_form_data, DeviceAuthResponse, OAuthCode, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN,
-    OAUTH_HTML_FOOTER, OAUTH_HTML_HEADER, OAUTH_HTML_LOGIN_CODE, OAUTH_HTML_LOGIN_FORM,
+    DeviceAuthResponse, FormData, OAuthCode, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, OAUTH_HTML_FOOTER,
+    OAUTH_HTML_HEADER, OAUTH_HTML_LOGIN_CODE, OAUTH_HTML_LOGIN_FORM,
     OAUTH_HTML_LOGIN_HEADER_DEVICE, STATUS_PENDING, USER_CODE_ALPHABET, USER_CODE_LEN,
 };
 
@@ -56,7 +56,7 @@ impl JMAP {
         instance: Arc<ServerInstance>,
     ) -> HttpResponse {
         // Parse form
-        let client_id = match parse_form_data(req)
+        let client_id = match FormData::from_request(req, MAX_POST_LEN)
             .await
             .map(|mut p| p.remove("client_id"))
         {
@@ -150,7 +150,7 @@ impl JMAP {
     // Handles POST request from the device authorization form
     pub async fn handle_user_device_auth_post(&self, req: &mut HttpRequest) -> HttpResponse {
         // Parse form
-        let fields = match parse_form_data(req).await {
+        let fields = match FormData::from_request(req, MAX_POST_LEN).await {
             Ok(fields) => fields,
             Err(err) => return err,
         };
@@ -209,10 +209,9 @@ impl JMAP {
             }
             Response::Failed => {
                 response.push_str(OAUTH_HTML_LOGIN_HEADER_FAILED);
-                response.push_str(&OAUTH_HTML_LOGIN_CODE.replace(
-                    "@@@",
-                    fields.get("code").map(|s| s.as_str()).unwrap_or_default(),
-                ));
+                response.push_str(
+                    &OAUTH_HTML_LOGIN_CODE.replace("@@@", fields.get("code").unwrap_or_default()),
+                );
                 response.push_str(&OAUTH_HTML_LOGIN_FORM.replace("@@@", "about:blank"));
             }
             Response::InvalidCode => {

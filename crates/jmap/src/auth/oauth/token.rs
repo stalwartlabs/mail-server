@@ -42,7 +42,7 @@ use crate::{
 };
 
 use super::{
-    parse_form_data, ErrorType, TokenResponse, CLIENT_ID_MAX_LEN, RANDOM_CODE_LEN,
+    ErrorType, FormData, TokenResponse, CLIENT_ID_MAX_LEN, MAX_POST_LEN, RANDOM_CODE_LEN,
     STATUS_AUTHORIZED, STATUS_PENDING, STATUS_TOKEN_ISSUED,
 };
 
@@ -50,14 +50,11 @@ impl JMAP {
     // Token endpoint
     pub async fn handle_token_request(&self, req: &mut HttpRequest) -> HttpResponse {
         // Parse form
-        let params = match parse_form_data(req).await {
+        let params = match FormData::from_request(req, MAX_POST_LEN).await {
             Ok(params) => params,
             Err(err) => return err,
         };
-        let grant_type = params
-            .get("grant_type")
-            .map(|s| s.as_str())
-            .unwrap_or_default();
+        let grant_type = params.get("grant_type").unwrap_or_default();
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
 
@@ -68,7 +65,7 @@ impl JMAP {
                 params.get("redirect_uri"),
             ) {
                 if let Some(oauth) = self.oauth_codes.get_with_ttl(code) {
-                    if client_id != &oauth.client_id
+                    if client_id != oauth.client_id
                         || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
                     {
                         TokenResponse::error(ErrorType::InvalidClient)
@@ -107,7 +104,7 @@ impl JMAP {
                     .and_then(|dc| self.oauth_codes.get_with_ttl(dc)),
                 params.get("client_id"),
             ) {
-                response = if &oauth.client_id != client_id {
+                response = if oauth.client_id != client_id {
                     TokenResponse::error(ErrorType::InvalidClient)
                 } else {
                     match oauth.status.load(atomic::Ordering::Relaxed) {

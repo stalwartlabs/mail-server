@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::borrow::Cow;
+
 use jmap_proto::{
     object::Object,
     types::{
@@ -29,7 +31,7 @@ use jmap_proto::{
     },
 };
 use mail_parser::{
-    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, RfcHeader,
+    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType, RfcHeader,
 };
 use store::{
     ahash::AHashSet,
@@ -44,7 +46,10 @@ use crate::{
     IngestError, JMAP,
 };
 
-use super::index::{TrimTextValue, MAX_SORT_FIELD_LENGTH};
+use super::{
+    crypto::{EncryptMessage, EncryptMessageError, EncryptionParams},
+    index::{TrimTextValue, MAX_SORT_FIELD_LENGTH},
+};
 
 #[derive(Default)]
 pub struct IngestedEmail {
@@ -63,6 +68,7 @@ pub struct IngestEmail<'x> {
     pub keywords: Vec<Keyword>,
     pub received_at: Option<u64>,
     pub skip_duplicates: bool,
+    pub encrypt: bool,
 }
 
 impl JMAP {
@@ -72,7 +78,7 @@ impl JMAP {
         params: IngestEmail<'_>,
     ) -> Result<IngestedEmail, IngestError> {
         // Check quota
-        let raw_message_len = params.raw_message.len() as i64;
+        let mut raw_message_len = params.raw_message.len() as i64;
         if params.account_quota > 0
             && raw_message_len
                 + self
@@ -85,88 +91,136 @@ impl JMAP {
         }
 
         // Parse message
-        let raw_message = params.raw_message;
-        let message = params.message.ok_or_else(|| IngestError::Permanent {
+        let mut raw_message = Cow::from(params.raw_message);
+        let mut message = params.message.ok_or_else(|| IngestError::Permanent {
             code: [5, 5, 0],
             reason: "Failed to parse e-mail message.".to_string(),
         })?;
 
         // Obtain message references and thread name
-        let mut references = Vec::with_capacity(5);
-        let mut subject = "";
-        for header in message.root_part().headers().iter().rev() {
-            match header.name {
-                HeaderName::Rfc(
-                    RfcHeader::MessageId
-                    | RfcHeader::InReplyTo
-                    | RfcHeader::References
-                    | RfcHeader::ResentMessageId,
-                ) => match &header.value {
-                    HeaderValue::Text(id) if id.len() < MAX_ID_LENGTH => {
-                        references.push(id.as_ref());
-                    }
-                    HeaderValue::TextList(ids) => {
-                        for id in ids {
-                            if id.len() < MAX_ID_LENGTH {
-                                references.push(id.as_ref());
+        let thread_id = {
+            let mut references = Vec::with_capacity(5);
+            let mut subject = "";
+            for header in message.root_part().headers().iter().rev() {
+                match header.name {
+                    HeaderName::Rfc(
+                        RfcHeader::MessageId
+                        | RfcHeader::InReplyTo
+                        | RfcHeader::References
+                        | RfcHeader::ResentMessageId,
+                    ) => match &header.value {
+                        HeaderValue::Text(id) if id.len() < MAX_ID_LENGTH => {
+                            references.push(id.as_ref());
+                        }
+                        HeaderValue::TextList(ids) => {
+                            for id in ids {
+                                if id.len() < MAX_ID_LENGTH {
+                                    references.push(id.as_ref());
+                                }
                             }
                         }
+                        _ => (),
+                    },
+                    HeaderName::Rfc(RfcHeader::Subject) if subject.is_empty() => {
+                        subject = thread_name(match &header.value {
+                            HeaderValue::Text(text) => text.as_ref(),
+                            HeaderValue::TextList(list) if !list.is_empty() => {
+                                list.first().unwrap().as_ref()
+                            }
+                            _ => "",
+                        })
+                        .trim_text(MAX_SORT_FIELD_LENGTH);
                     }
                     _ => (),
-                },
-                HeaderName::Rfc(RfcHeader::Subject) if subject.is_empty() => {
-                    subject = thread_name(match &header.value {
-                        HeaderValue::Text(text) => text.as_ref(),
-                        HeaderValue::TextList(list) if !list.is_empty() => {
-                            list.first().unwrap().as_ref()
-                        }
-                        _ => "",
-                    })
-                    .trim_text(MAX_SORT_FIELD_LENGTH);
                 }
-                _ => (),
             }
-        }
 
-        // Check for duplicates
-        if params.skip_duplicates
-            && !references.is_empty()
-            && !self
-                .store
-                .filter(
-                    params.account_id,
-                    Collection::Email,
-                    references
-                        .iter()
-                        .map(|id| Filter::eq(Property::MessageId, *id))
-                        .collect(),
-                )
-                .await
-                .map_err(|err| {
-                    tracing::error!(
+            // Check for duplicates
+            if params.skip_duplicates
+                && !references.is_empty()
+                && !self
+                    .store
+                    .filter(
+                        params.account_id,
+                        Collection::Email,
+                        references
+                            .iter()
+                            .map(|id| Filter::eq(Property::MessageId, *id))
+                            .collect(),
+                    )
+                    .await
+                    .map_err(|err| {
+                        tracing::error!(
                         event = "error",
                         context = "find_duplicates",
                         error = ?err,
                         "Duplicate message search failed.");
-                    IngestError::Temporary
-                })?
-                .results
-                .is_empty()
-        {
-            return Ok(IngestedEmail {
-                id: Id::default(),
-                change_id: u64::MAX,
-                blob_id: BlobId::default(),
-                size: 0,
-            });
-        }
+                        IngestError::Temporary
+                    })?
+                    .results
+                    .is_empty()
+            {
+                return Ok(IngestedEmail {
+                    id: Id::default(),
+                    change_id: u64::MAX,
+                    blob_id: BlobId::default(),
+                    size: 0,
+                });
+            }
 
-        let thread_id = if !references.is_empty() {
-            self.find_or_merge_thread(params.account_id, subject, &references)
-                .await?
-        } else {
-            None
+            if !references.is_empty() {
+                self.find_or_merge_thread(params.account_id, subject, &references)
+                    .await?
+            } else {
+                None
+            }
         };
+
+        // Encrypt message
+        if params.encrypt && !message.is_encrypted() {
+            if let Some(encrypt_params) = self
+                .get_property::<EncryptionParams>(
+                    params.account_id,
+                    Collection::Principal,
+                    0,
+                    Property::Parameters,
+                )
+                .await
+                .map_err(|_| IngestError::Temporary)?
+            {
+                match message.encrypt(&encrypt_params).await {
+                    Ok(new_raw_message) => {
+                        raw_message = Cow::from(new_raw_message);
+                        raw_message_len = raw_message.len() as i64;
+
+                        // Remove contents from parsed message
+                        for part in &mut message.parts {
+                            match &mut part.body {
+                                PartType::Text(txt) | PartType::Html(txt) => {
+                                    *txt = Cow::from("");
+                                }
+                                PartType::Binary(bin) | PartType::InlineBinary(bin) => {
+                                    *bin = Cow::from(&[][..]);
+                                }
+                                PartType::Message(_) => {
+                                    part.body = PartType::Binary(Cow::from(&[][..]));
+                                }
+                                PartType::Multipart(_) => (),
+                            }
+                        }
+                    }
+                    Err(EncryptMessageError::Error(err)) => {
+                        tracing::error!(
+                            event = "error",
+                            context = "email_ingest",
+                            error = ?err,
+                            "Failed to encrypt message.");
+                        return Err(IngestError::Temporary);
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
 
         // Obtain a documentId and changeId
         let document_id = self
@@ -197,7 +251,7 @@ impl JMAP {
         // Store blob
         let blob_id = BlobId::maildir(params.account_id, document_id);
         self.store
-            .put_blob(&blob_id.kind, raw_message)
+            .put_blob(&blob_id.kind, raw_message.as_ref())
             .await
             .map_err(|err| {
                 tracing::error!(

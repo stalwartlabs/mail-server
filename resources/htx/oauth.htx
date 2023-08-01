@@ -94,7 +94,7 @@
             <p class="auth">Authorize device to access your <b>Stalwart JMAP</b> account</p>
             <div class="form-group"><input class="form-control" type="code" name="text" value="@@@"
                     placeholder="Enter code"></div>
-            <div class="form-group"><input class="form-control" type="email" name="email" placeholder="Email"></div>
+            <div class="form-group"><input class="form-control" type="email" name="email" placeholder="Login"></div>
             <div class="form-group"><input class="form-control" type="password" name="password" placeholder="Password">
             </div>
             <div class="form-group"><button class="btn btn-primary btn-block" type="submit">Authorize</button>
@@ -105,7 +105,7 @@
     <!--div class="illustration"><i class="icon ion-close-circled"></i></div>
             <p class="auth">Incorrect username or password, please try again.</p>
             <div class="form-group"><input class="form-control" type="code" name="text" value="@@@" placeholder="Enter code"></div>
-            <div class="form-group"><input class="form-control" type="email" name="email" placeholder="Email"></div>
+            <div class="form-group"><input class="form-control" type="email" name="email" placeholder="Login"></div>
             <div class="form-group"><input class="form-control" type="password" name="password" placeholder="Password">
             </div>
             <div class="form-group"><button class="btn btn-primary btn-block" type="submit">Authorize</button></div-->

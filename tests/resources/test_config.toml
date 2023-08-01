@@ -98,8 +98,8 @@ type = "local"
 path = "/tmp/stalwart-test"
 
 [certificate.default]
-cert = "file://../../tests/resources/tls_cert.pem"
-private-key = "file://../../tests/resources/tls_privatekey.pem"
+cert = "file://./tests/resources/tls_cert.pem"
+private-key = "file://./tests/resources/tls_privatekey.pem"
 
 [jmap]
 directory = "local"

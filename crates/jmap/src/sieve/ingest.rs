@@ -450,6 +450,7 @@ impl JMAP {
                         keywords: sieve_message.flags,
                         received_at: None,
                         skip_duplicates: true,
+                        encrypt: true,
                     })
                     .await
                 {

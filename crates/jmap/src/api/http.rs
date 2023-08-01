@@ -237,6 +237,18 @@ pub async fn parse_jmap_request(
                 _ => (),
             }
         }
+        "crypto" => match *req.method() {
+            Method::GET => {
+                return jmap.handle_crypto_update(&mut req).await;
+            }
+            Method::POST => {
+                return match jmap.is_auth_allowed(jmap.build_remote_addr(&req, remote_ip)) {
+                    Ok(_) => jmap.handle_crypto_update(&mut req).await,
+                    Err(err) => err.into_http_response(),
+                }
+            }
+            _ => (),
+        },
 
         "admin" => {
             // Make sure the user is a superuser

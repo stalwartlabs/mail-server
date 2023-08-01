@@ -737,6 +737,7 @@ impl JMAP {
                     keywords,
                     received_at,
                     skip_duplicates: false,
+                    encrypt: false,
                 })
                 .await
             {
