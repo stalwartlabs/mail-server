@@ -5,7 +5,6 @@
 [![](https://img.shields.io/discord/923615863037390889?label=Chat)](https://discord.gg/jtgtCNj66U)
 [![](https://img.shields.io/twitter/follow/stalwartlabs)](https://twitter.com/stalwartlabs)
 [![](https://img.shields.io/mastodon/follow/109929667531941122)](https://mastodon.social/@stalwartlabs)
-[![](https://img.shields.io/badge/Follow-%40stalwartlabs-8A2BE2)](https://www.threads.net/@stalwartlabs)
 
 **Stalwart Mail Server** is an open-source mail server solution with JMAP, IMAP4, and SMTP support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
 
@@ -35,6 +34,7 @@ Key features:
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
 - **Secure**:
+  - Encryption at rest with **S/MIME** and **PGP** support.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Access Control Lists (ACLs).
   - Rate limiting.

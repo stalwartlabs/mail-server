@@ -207,7 +207,8 @@ remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
-oauth.auth.max-attempts = 1
+[oauth.auth]
+max-attempts = 1
 
 [oauth.expiry]
 user-code = "1s"

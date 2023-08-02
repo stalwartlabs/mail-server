@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.3] - 2023-08-02
+
+### Added
+- Encryption at rest with **S/MIME** and **PGP** support.
+- Support for referencing context variables from dynamic values.
+ 
+### Changed
+ 
+### Fixed
+- Support for PKCS8v1 ED25519 keys (#20).
+- Automatic retry for import/export blob downloads (#14)
+
 ## [0.3.2] - 2023-07-28
 
 ### Added

@@ -40,6 +40,7 @@ use crate::{
 pub mod auth_acl;
 pub mod auth_limits;
 pub mod auth_oauth;
+pub mod crypto;
 pub mod delivery;
 pub mod email_changes;
 pub mod email_copy;
@@ -205,7 +206,9 @@ remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
-oauth.auth.max-attempts = 1
+
+[oauth.auth]
+max-attempts = 1
 
 [oauth.expiry]
 user-code = "1s"
@@ -247,6 +250,7 @@ pub async fn jmap_tests() {
     email_submission::test(params.server.clone(), &mut params.client).await;
     websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
+    crypto::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();

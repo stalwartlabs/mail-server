@@ -345,7 +345,7 @@ async fn post_expect_redirect(url: &str, params: &AHashMap<String, String>) -> S
     response
         .headers()
         .get(header::LOCATION)
-        .unwrap()
+        .expect("no Location header found in response")
         .to_str()
         .unwrap()
         .to_string()

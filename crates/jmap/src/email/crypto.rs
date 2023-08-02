@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::BTreeSet};
+use std::{borrow::Cow, collections::BTreeSet, fmt::Display};
 
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use jmap_proto::types::{collection::Collection, property::Property};
@@ -53,6 +53,7 @@ const CRYPT_HTML_HEADER: &str = include_str!("../../../../resources/htx/crypto_h
 const CRYPT_HTML_FOOTER: &str = include_str!("../../../../resources/htx/crypto_footer.htx");
 const CRYPT_HTML_FORM: &str = include_str!("../../../../resources/htx/crypto_form.htx");
 const CRYPT_HTML_SUCCESS: &str = include_str!("../../../../resources/htx/crypto_success.htx");
+const CRYPT_HTML_DISABLED: &str = include_str!("../../../../resources/htx/crypto_disabled.htx");
 const CRYPT_HTML_ERROR: &str = include_str!("../../../../resources/htx/crypto_error.htx");
 
 #[derive(Debug)]
@@ -75,9 +76,9 @@ pub enum EncryptionMethod {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct EncryptionParams {
-    method: EncryptionMethod,
-    algo: Algorithm,
-    certs: Vec<Vec<u8>>,
+    pub method: EncryptionMethod,
+    pub algo: Algorithm,
+    pub certs: Vec<Vec<u8>>,
 }
 
 #[async_trait::async_trait]
@@ -496,7 +497,7 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
     Ok(method.map(|method| (method, certs)))
 }
 
-impl Serialize for EncryptionParams {
+impl Serialize for &EncryptionParams {
     fn serialize(self) -> Vec<u8> {
         let len = bincode::serialized_size(&self).unwrap_or_default();
         let mut buf = Vec::with_capacity(len as usize + 1);
@@ -529,7 +530,7 @@ impl Deserialize for EncryptionParams {
     }
 }
 
-impl ToBitmaps for EncryptionParams {
+impl ToBitmaps for &EncryptionParams {
     fn to_bitmaps(&self, _: &mut Vec<store::write::Operation>, _: u8, _: bool) {
         unreachable!()
     }
@@ -538,7 +539,12 @@ impl ToBitmaps for EncryptionParams {
 impl JMAP {
     // Code authorization flow, handles an authorization request
     pub async fn handle_crypto_update(&self, req: &mut HttpRequest) -> HttpResponse {
-        let response = match *req.method() {
+        let mut response = String::with_capacity(
+            CRYPT_HTML_HEADER.len() + CRYPT_HTML_FOOTER.len() + CRYPT_HTML_FORM.len(),
+        );
+        response.push_str(&CRYPT_HTML_HEADER.replace("@@@", "/crypto"));
+
+        match *req.method() {
             hyper::Method::POST => {
                 // Parse form
                 let form = match FormData::from_request(req, 1024 * 1024).await {
@@ -546,54 +552,43 @@ impl JMAP {
                     Err(err) => return err,
                 };
 
-                if let Err(error) = self.validate_form(form).await {
-                    let mut response = String::with_capacity(
-                        CRYPT_HTML_HEADER.len()
-                            + CRYPT_HTML_FOOTER.len()
-                            + CRYPT_HTML_ERROR.len()
-                            + error.len(),
-                    );
-
-                    response.push_str(&CRYPT_HTML_HEADER.replace("@@@", "/crypto"));
-                    response.push_str(&CRYPT_HTML_ERROR.replace("@@@", &error));
-                    response.push_str(CRYPT_HTML_FOOTER);
-
-                    response
-                } else {
-                    let mut response = String::with_capacity(
-                        CRYPT_HTML_HEADER.len()
-                            + CRYPT_HTML_FOOTER.len()
-                            + CRYPT_HTML_SUCCESS.len(),
-                    );
-
-                    response.push_str(&CRYPT_HTML_HEADER.replace("@@@", "/crypto"));
-                    response.push_str(CRYPT_HTML_SUCCESS);
-                    response.push_str(CRYPT_HTML_FOOTER);
-
-                    response
+                match self.validate_form(form).await {
+                    Ok(Some(params)) => {
+                        response.push_str(
+                            &CRYPT_HTML_SUCCESS
+                                .replace(
+                                    "$$$",
+                                    format!("{} ({})", params.method, params.algo).as_str(),
+                                )
+                                .replace("@@@", params.certs.len().to_string().as_str()),
+                        );
+                    }
+                    Ok(None) => {
+                        response.push_str(CRYPT_HTML_DISABLED);
+                    }
+                    Err(error) => {
+                        response.push_str(&CRYPT_HTML_ERROR.replace("@@@", &error));
+                    }
                 }
             }
 
             hyper::Method::GET => {
-                let mut response = String::with_capacity(
-                    CRYPT_HTML_HEADER.len() + CRYPT_HTML_FOOTER.len() + CRYPT_HTML_FORM.len(),
-                );
-
-                response.push_str(&CRYPT_HTML_HEADER.replace("@@@", "/crypto"));
                 response.push_str(CRYPT_HTML_FORM);
-                response.push_str(CRYPT_HTML_FOOTER);
-
-                response
             }
             _ => unreachable!(),
         };
 
+        response.push_str(CRYPT_HTML_FOOTER);
+
         HtmlResponse::new(response).into_http_response()
     }
 
-    async fn validate_form(&self, mut form: FormData) -> Result<(), Cow<str>> {
-        if let (Some(certificate), Some(email), Some(password), Some(encryption)) = (
-            form.remove_bytes("certificate"),
+    async fn validate_form(
+        &self,
+        mut form: FormData,
+    ) -> Result<Option<EncryptionParams>, Cow<str>> {
+        let certificate = form.remove_bytes("certificate");
+        if let (Some(email), Some(password), Some(encryption)) = (
             form.get("email"),
             form.get("password"),
             form.get("encryption"),
@@ -601,7 +596,8 @@ impl JMAP {
             // Validate fields
             if email.is_empty() || password.is_empty() {
                 return Err(Cow::from("Please enter your login and password"));
-            } else if encryption != "disable" && certificate.is_empty() {
+            } else if encryption != "disable" && certificate.as_ref().map_or(true, |c| c.is_empty())
+            {
                 return Err(Cow::from("Please select one or more certificates"));
             }
 
@@ -611,7 +607,8 @@ impl JMAP {
                 .await
                 .ok_or_else(|| Cow::from("Invalid login or password"))?;
             if encryption != "disable" {
-                let (method, certs) = try_parse_certs(certificate).map_err(Cow::from)?;
+                let (method, certs) =
+                    try_parse_certs(certificate.unwrap_or_default()).map_err(Cow::from)?;
                 let algo = match (encryption, method) {
                     ("pgp-256", EncryptionMethod::PGP) => Algorithm::Aes256,
                     ("pgp-128", EncryptionMethod::PGP) => Algorithm::Aes128,
@@ -645,10 +642,12 @@ impl JMAP {
                     .with_account_id(token.primary_id())
                     .with_collection(Collection::Principal)
                     .update_document(0)
-                    .value(Property::Parameters, params, F_VALUE);
+                    .value(Property::Parameters, &params, F_VALUE);
                 self.write_batch(batch).await.map_err(|_| {
                     Cow::from("Failed to save encryption parameters, please try again later")
                 })?;
+
+                Ok(Some(params))
             } else {
                 // Remove encryption params
                 let mut batch = BatchBuilder::new();
@@ -660,11 +659,28 @@ impl JMAP {
                 self.write_batch(batch).await.map_err(|_| {
                     Cow::from("Failed to save encryption parameters, please try again later")
                 })?;
+                Ok(None)
             }
-
-            Ok(())
         } else {
             Err(Cow::from("Missing form parameters"))
+        }
+    }
+}
+
+impl Display for EncryptionMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncryptionMethod::PGP => write!(f, "PGP"),
+            EncryptionMethod::SMIME => write!(f, "S/MIME"),
+        }
+    }
+}
+
+impl Display for Algorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Algorithm::Aes128 => write!(f, "AES-128"),
+            Algorithm::Aes256 => write!(f, "AES-256"),
         }
     }
 }

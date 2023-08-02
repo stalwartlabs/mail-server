@@ -213,6 +213,7 @@ impl TokenResponse {
     }
 }
 
+#[derive(Debug)]
 pub struct FormData {
     fields: HashMap<String, Vec<u8>>,
 }

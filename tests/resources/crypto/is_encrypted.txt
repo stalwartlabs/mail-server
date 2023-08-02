@@ -1,0 +1,101 @@
+Subject: TRUE
+Content-Type: multipart/encrypted;
+        protocol="application/pgp-encrypted";
+        boundary="17778885806d6b28_46555a54adda6fa5_d83705f326a6b951"
+
+body
+---
+Subject: FALSE
+Content-Type: multipart/signed;
+        protocol="application/pkcs7-signature";
+        boundary="17778885806d6b28_46555a54adda6fa5_d83705f326a6b951"
+
+body
+---
+Subject: TRUE
+Content-Type: application/pkcs7-mime;
+        name="smime.p7m";
+        smime-type=enveloped-data
+Content-Disposition: attachment;
+        filename="smime.p7m"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/pkcs7-signature;
+        name="smime.p7s"; smime-type="signed-data"
+Content-Disposition: attachment;
+        filename="smime.p7s"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream;
+        name="smime.p7m"
+Content-Disposition: attachment;
+        filename="smime.p7m"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream;
+        name="smime.p7m"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+        filename="smime.p7m"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+        filename="smime.p7s"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+        filename="smime.p7c"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: TRUE
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+        filename="smime.p7z"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: FALSE
+Content-Type: application/octet-stream
+Content-Disposition: attachment;
+        filename="file.gz"
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: FALSE
+Content-Type: application/octet-stream
+Content-Disposition: attachment
+Content-Transfer-Encoding: base64
+
+body
+---
+Subject: FALSE
+Content-Type: multipart/mixed;
+        boundary="17778885806d6b28_46555a54adda6fa5_d83705f326a6b951"
+
+body
