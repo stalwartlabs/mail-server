@@ -151,7 +151,7 @@ impl EncryptMessage for Message<'_> {
                 for cert in &params.certs {
                     keys.push(SignedPublicKey::from_bytes(&cert[..]).map_err(|err| {
                         EncryptMessageError::Error(format!(
-                            "Failed to parse PGP public key: {}",
+                            "Failed to parse OpenPGP public key: {}",
                             err
                         ))
                     })?);
@@ -430,13 +430,13 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         let tag = std::str::from_utf8(&buf).unwrap();
         if tag.contains("CERTIFICATE") {
             if method.map_or(false, |m| m == EncryptionMethod::PGP) {
-                return Err("Cannot mix PGP and S/MIME certificates".to_string());
+                return Err("Cannot mix OpenPGP and S/MIME certificates".to_string());
             } else {
                 method = Some(EncryptionMethod::SMIME);
             }
         } else if tag.contains("PGP") {
             if method.map_or(false, |m| m == EncryptionMethod::SMIME) {
-                return Err("Cannot mix PGP and S/MIME certificates".to_string());
+                return Err("Cannot mix OpenPGP and S/MIME certificates".to_string());
             } else {
                 method = Some(EncryptionMethod::PGP);
             }
@@ -481,7 +481,7 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         match method.unwrap() {
             EncryptionMethod::PGP => {
                 if let Err(err) = SignedPublicKey::from_bytes(&cert[..]) {
-                    return Err(format!("Failed to decode PGP public key: {}", err));
+                    return Err(format!("Failed to decode OpenPGP public key: {}", err));
                 }
             }
             EncryptionMethod::SMIME => {
@@ -670,7 +670,7 @@ impl JMAP {
 impl Display for EncryptionMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EncryptionMethod::PGP => write!(f, "PGP"),
+            EncryptionMethod::PGP => write!(f, "OpenPGP"),
             EncryptionMethod::SMIME => write!(f, "S/MIME"),
         }
     }

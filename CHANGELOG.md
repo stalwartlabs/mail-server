@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file. This projec
 ## [0.3.3] - 2023-08-02
 
 ### Added
-- Encryption at rest with **S/MIME** and **PGP** support.
+- Encryption at rest with **S/MIME** or **OpenPGP**.
 - Support for referencing context variables from dynamic values.
  
 ### Changed

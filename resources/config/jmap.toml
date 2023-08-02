@@ -36,6 +36,10 @@ timeout = "30s"
 [jmap]
 directory = "__DIRECTORY__"
 
+[jmap.encryption]
+enable = true
+append = false
+
 [jmap.session.cache]
 ttl = "1h"
 size = 100

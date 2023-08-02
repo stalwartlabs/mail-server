@@ -34,7 +34,7 @@ Key features:
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
 - **Secure**:
-  - Encryption at rest with **S/MIME** and **PGP** support.
+  - Encryption at rest with **S/MIME** or **OpenPGP**.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Access Control Lists (ACLs).
   - Rate limiting.
