@@ -227,14 +227,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     pub async fn headers<I, H, V>(&mut self, headers: I) -> super::Result<Action>
     where
         I: Iterator<Item = (H, V)>,
-        H: AsRef<[u8]>,
-        V: AsRef<[u8]>,
+        H: AsRef<str>,
+        V: AsRef<str>,
     {
         if !self.has_option(SMFIP_NOHDRS) {
             for (name, value) in headers {
                 self.write(Command::Header {
-                    name: name.as_ref(),
-                    value: value.as_ref(),
+                    name: name.as_ref().trim().as_bytes(),
+                    value: value.as_ref().trim().as_bytes(),
                 })
                 .await?;
                 if !self.has_option(SMFIP_NR_HDR) {

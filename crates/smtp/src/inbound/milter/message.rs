@@ -219,7 +219,12 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Headers
         client
-            .headers(message.raw_parsed_headers().iter().cloned())
+            .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
+                (
+                    std::str::from_utf8(k).unwrap_or_default(),
+                    std::str::from_utf8(v).unwrap_or_default(),
+                )
+            }))
             .await?
             .assert_continue()?;
 

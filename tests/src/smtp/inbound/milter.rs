@@ -377,9 +377,9 @@ async fn milter_client_test() {
     let mut client = MilterClient::connect(
         &Milter {
             enable: IfBlock::default(),
-            addrs: vec![SocketAddr::from(([127, 0, 0, 1], 1234))],
+            addrs: vec![SocketAddr::from(([127, 0, 0, 1], 11332))],
             hostname: "localhost".to_string(),
-            port: 1234,
+            port: 11332,
             timeout_connect: Duration::from_secs(10),
             timeout_command: Duration::from_secs(30),
             timeout_data: Duration::from_secs(30),
