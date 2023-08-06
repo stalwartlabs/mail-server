@@ -176,10 +176,12 @@ email-list = ["info@example.org"]
 
 [[directory."local".groups]]
 name = "sales"
+email = "sales@example.org"
 description = "Sales Team"
 
 [[directory."local".groups]]
 name = "support"
+email = "support@example.org"
 description = "Support Team"
 
 [oauth]

@@ -81,17 +81,13 @@ impl SessionData {
         mailbox_prefix: Option<String>,
         access_token: &AccessToken,
     ) -> crate::Result<Account> {
-        let mailbox_ids = if access_token.is_primary_id(account_id) {
+        let mailbox_ids = if access_token.is_primary_id(account_id)
+            || access_token.member_of.contains(&account_id)
+        {
             self.jmap
                 .mailbox_get_or_create(account_id)
                 .await
                 .map_err(|_| {})?
-        } else if access_token.member_of.contains(&account_id) {
-            self.jmap
-                .get_document_ids(account_id, Collection::Mailbox)
-                .await
-                .map_err(|_| {})?
-                .unwrap_or_default()
         } else {
             self.jmap
                 .shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)

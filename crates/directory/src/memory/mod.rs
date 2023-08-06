@@ -28,7 +28,7 @@ use crate::{DirectoryOptions, Principal};
 pub mod config;
 pub mod lookup;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MemoryDirectory {
     principals: AHashMap<String, Principal>,
     emails_to_names: AHashMap<String, Vec<EmailType>>,
@@ -37,6 +37,7 @@ pub struct MemoryDirectory {
     opt: DirectoryOptions,
 }
 
+#[derive(Debug)]
 enum EmailType {
     Primary(String),
     Alias(String),

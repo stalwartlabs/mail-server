@@ -23,9 +23,27 @@
 
 use imap_proto::ResponseType;
 
+use crate::jmap::delivery::SmtpConnection;
+
 use super::{append::assert_append_message, AssertResult, ImapConnection, Type};
 
 pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+    // Delivery to support account
+    let mut lmtp = SmtpConnection::connect_port(11201).await;
+    lmtp.ingest(
+        "bill@example.com",
+        &["support@example.com"],
+        concat!(
+            "From: bill@example.com\r\n",
+            "To: support@example.com\r\n",
+            "Subject: TPS Report\r\n",
+            "\r\n",
+            "I'm going to need those TPS reports ASAP. ",
+            "So, if you could do that, that'd be great."
+        ),
+    )
+    .await;
+
     // Connect to all test accounts
     let mut imap_jane = ImapConnection::connect(b"_w ").await;
     let mut imap_bill = ImapConnection::connect(b"_z ").await;
@@ -42,6 +60,25 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
         .await;
         imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
+
+    // Jane should see the Support account
+    imap_jane.send("LIST \"\" \"*\"").await;
+    imap_jane
+        .assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("Shared Folders/support@example.com/Inbox");
+
+    imap_jane
+        .send("SELECT \"Shared Folders/support@example.com/Inbox\"")
+        .await;
+    imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap_jane.send("FETCH 1 (PREVIEW)").await;
+    imap_jane
+        .assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("TPS reports ASAP");
+    imap_jane.send("UNSELECT").await;
+    imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
 
     // John should have no shared folders
     imap_john.send("LIST \"\" \"*\"").await;

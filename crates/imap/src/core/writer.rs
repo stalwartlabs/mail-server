@@ -57,8 +57,7 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
                                     size = bytes.len()
                                 );
-                                /*let tmp = "dd";
-                                println!(
+                                /*let c = println!(
                                     "<- {:?}",
                                     String::from_utf8_lossy(
                                         &bytes[..std::cmp::min(bytes.len(), 100)]

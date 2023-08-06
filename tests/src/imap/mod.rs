@@ -42,7 +42,7 @@ use directory::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
-use smtp::core::SMTP;
+use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -53,7 +53,8 @@ use utils::{config::ServerProtocol, UnwrapFailure};
 use crate::{
     add_test_certs,
     directory::sql::{
-        add_to_group, create_test_directory, create_test_user, create_test_user_with_email,
+        add_to_group, create_test_directory, create_test_group_with_email, create_test_user,
+        create_test_user_with_email,
     },
     store::TempDir,
 };
@@ -78,6 +79,12 @@ bind = ["127.0.0.1:4190"]
 protocol = "managesieve"
 max-connections = 81920
 tls.implicit = true
+
+[server.listener.lmtp-debug]
+bind = ['127.0.0.1:11201']
+greeting = 'Test LMTP instance'
+protocol = 'lmtp'
+tls.implicit = false
 
 [server.socket]
 reuse-addr = true
@@ -260,6 +267,9 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
                 ManageSieveSessionManager::new(jmap.clone(), imap.clone()),
                 shutdown_rx,
             ),
+            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
+                server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
+            }
             _ => unreachable!(),
         };
     });
@@ -287,6 +297,18 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
         "foobar@example.com",
         "secret",
         "Bill Foobar",
+    )
+    .await;
+    create_test_group_with_email(
+        jmap.directory.as_ref(),
+        "support@example.com",
+        "Support Group",
+    )
+    .await;
+    add_to_group(
+        jmap.directory.as_ref(),
+        "jane.smith@example.com",
+        "support@example.com",
     )
     .await;
 

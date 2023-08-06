@@ -295,8 +295,15 @@ impl SmtpConnection {
     }
 
     pub async fn connect() -> Self {
-        let (reader, writer) =
-            tokio::io::split(TcpStream::connect("127.0.0.1:11200").await.unwrap());
+        SmtpConnection::connect_port(11200).await
+    }
+
+    pub async fn connect_port(port: u16) -> Self {
+        let (reader, writer) = tokio::io::split(
+            TcpStream::connect(&format!("127.0.0.1:{port}"))
+                .await
+                .unwrap(),
+        );
         let mut conn = SmtpConnection {
             reader: BufReader::new(reader).lines(),
             writer,

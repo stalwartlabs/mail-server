@@ -73,43 +73,8 @@ impl MemoryDirectory {
                     member_of,
                 },
             );
-            let mut emails = Vec::new();
-            for (pos, (_, email)) in config
-                .values((prefix.as_str(), "users", lookup_id, "email"))
-                .enumerate()
-            {
-                directory
-                    .emails_to_names
-                    .entry(email.to_string())
-                    .or_default()
-                    .push(if pos > 0 {
-                        EmailType::Alias(name.clone())
-                    } else {
-                        EmailType::Primary(name.clone())
-                    });
 
-                if let Some((_, domain)) = email.rsplit_once('@') {
-                    directory.domains.insert(domain.to_lowercase());
-                }
-
-                emails.push(if pos > 0 {
-                    EmailType::Alias(email.to_lowercase())
-                } else {
-                    EmailType::Primary(email.to_lowercase())
-                });
-            }
-            for (_, email) in config.values((prefix.as_str(), "users", lookup_id, "email-list")) {
-                directory
-                    .emails_to_names
-                    .entry(email.to_lowercase())
-                    .or_default()
-                    .push(EmailType::List(name.clone()));
-                if let Some((_, domain)) = email.rsplit_once('@') {
-                    directory.domains.insert(domain.to_lowercase());
-                }
-                emails.push(EmailType::List(email.to_lowercase()));
-            }
-            directory.names_to_email.insert(name, emails);
+            directory.parse_emails(config, (prefix.as_str(), "users", lookup_id), name)?;
         }
 
         for lookup_id in config.sub_keys((prefix.as_str(), "groups")) {
@@ -119,7 +84,7 @@ impl MemoryDirectory {
             directory.principals.insert(
                 name.clone(),
                 Principal {
-                    name,
+                    name: name.clone(),
                     secrets: vec![],
                     typ: Type::Group,
                     description: config
@@ -134,6 +99,8 @@ impl MemoryDirectory {
                         .collect(),
                 },
             );
+
+            directory.parse_emails(config, (prefix.as_str(), "groups", lookup_id), name)?;
         }
 
         directory
@@ -141,5 +108,51 @@ impl MemoryDirectory {
             .extend(config.parse_lookup_list((&prefix, "lookup.domains"))?);
 
         Ok(Arc::new(directory))
+    }
+}
+
+impl MemoryDirectory {
+    fn parse_emails(
+        &mut self,
+        config: &Config,
+        prefix: impl AsKey,
+        name: String,
+    ) -> utils::config::Result<()> {
+        let prefix = prefix.as_key();
+        let mut emails = Vec::new();
+
+        for (pos, (_, email)) in config.values((prefix.as_str(), "email")).enumerate() {
+            self.emails_to_names
+                .entry(email.to_string())
+                .or_default()
+                .push(if pos > 0 {
+                    EmailType::Alias(name.clone())
+                } else {
+                    EmailType::Primary(name.clone())
+                });
+
+            if let Some((_, domain)) = email.rsplit_once('@') {
+                self.domains.insert(domain.to_lowercase());
+            }
+
+            emails.push(if pos > 0 {
+                EmailType::Alias(email.to_lowercase())
+            } else {
+                EmailType::Primary(email.to_lowercase())
+            });
+        }
+        for (_, email) in config.values((prefix.as_str(), "email-list")) {
+            self.emails_to_names
+                .entry(email.to_lowercase())
+                .or_default()
+                .push(EmailType::List(name.clone()));
+            if let Some((_, domain)) = email.rsplit_once('@') {
+                self.domains.insert(domain.to_lowercase());
+            }
+            emails.push(EmailType::List(email.to_lowercase()));
+        }
+
+        self.names_to_email.insert(name, emails);
+        Ok(())
     }
 }
