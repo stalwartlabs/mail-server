@@ -495,6 +495,7 @@ impl SessionData {
     }
 
     pub fn get_mailbox_by_name(&self, mailbox_name: &str) -> Option<MailboxId> {
+        let case_insensitive = mailbox_name.to_lowercase() == "inbox";
         if !self.is_all_mailbox(mailbox_name) {
             for account in self.mailboxes.lock().iter() {
                 if account
@@ -503,7 +504,9 @@ impl SessionData {
                     .map_or(true, |p| mailbox_name.starts_with(p))
                 {
                     for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
-                        if mailbox_name_ == mailbox_name {
+                        let exact_match = mailbox_name_ == mailbox_name;
+                        let case_insensitive_match = mailbox_name_.to_lowercase() == mailbox_name.to_lowercase();
+                        if exact_match || (case_insensitive && case_insensitive_match) {
                             return MailboxId {
                                 account_id: account.account_id,
                                 mailbox_id: Some(*mailbox_id_),

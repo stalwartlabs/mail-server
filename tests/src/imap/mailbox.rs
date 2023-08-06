@@ -46,6 +46,14 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             ],
             true,
         );
+    
+    // Ensure INBOX is case-insensitive
+    imap.send("SELECT \"INBOX\"").await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap.send("SELECT \"Inbox\"").await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap.send("SELECT \"inbox\"").await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
 
     // Create folders
     imap.send("CREATE \"Tofu\"").await;
