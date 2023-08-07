@@ -496,6 +496,7 @@ impl SessionData {
 
     pub fn get_mailbox_by_name(&self, mailbox_name: &str) -> Option<MailboxId> {
         if !self.is_all_mailbox(mailbox_name) {
+            let is_inbox = mailbox_name.eq_ignore_ascii_case("inbox");
             for account in self.mailboxes.lock().iter() {
                 if account
                     .prefix
@@ -503,7 +504,7 @@ impl SessionData {
                     .map_or(true, |p| mailbox_name.starts_with(p))
                 {
                     for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
-                        if mailbox_name_ == mailbox_name {
+                        if mailbox_name_ == mailbox_name || (is_inbox && *mailbox_id_ == INBOX_ID) {
                             return MailboxId {
                                 account_id: account.account_id,
                                 mailbox_id: Some(*mailbox_id_),
