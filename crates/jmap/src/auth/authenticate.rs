@@ -62,7 +62,7 @@ impl JMAP {
                 let addr = self.build_remote_addr(req, remote_ip);
                 if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
-                    self.is_auth_allowed(addr)?;
+                    self.is_auth_allowed_soft(&addr)?;
 
                     // Decode the base64 encoded credentials
                     if let Some((account, secret)) = base64_decode(token.as_bytes())
@@ -73,7 +73,7 @@ impl JMAP {
                             })
                         })
                     {
-                        self.authenticate_plain(&account, &secret).await
+                        self.authenticate_plain(&account, &secret, &addr).await
                     } else {
                         tracing::debug!(
                             context = "authenticate_headers",
@@ -84,7 +84,7 @@ impl JMAP {
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
                     // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(addr)?;
+                    self.is_anonymous_allowed(&addr)?;
 
                     match self.validate_access_token("access_token", &token).await {
                         Ok((account_id, _, _)) => self.get_access_token(account_id).await,
@@ -99,7 +99,7 @@ impl JMAP {
                     }
                 } else {
                     // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(addr)?;
+                    self.is_anonymous_allowed(&addr)?;
                     None
                 }
                 .map(|access_token| {
@@ -118,7 +118,7 @@ impl JMAP {
             }
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(self.build_remote_addr(req, remote_ip))?;
+            self.is_anonymous_allowed(&self.build_remote_addr(req, remote_ip))?;
 
             Ok(None)
         }
@@ -266,15 +266,30 @@ impl JMAP {
         }
     }
 
-    pub async fn authenticate_plain(&self, username: &str, secret: &str) -> Option<AccessToken> {
-        let mut principal = self
+    pub async fn authenticate_plain(
+        &self,
+        username: &str,
+        secret: &str,
+        remote_addr: &RemoteAddress,
+    ) -> Option<AccessToken> {
+        let mut principal = match self
             .directory
             .authenticate(&Credentials::Plain {
                 username: username.to_string(),
                 secret: secret.to_string(),
             })
             .await
-            .ok()??;
+        {
+            Ok(Some(principal)) => principal,
+            Ok(None) => {
+                let _ = self.is_auth_allowed_hard(remote_addr);
+                return None;
+            }
+            Err(_) => {
+                return None;
+            }
+        };
+
         if !principal.has_name() {
             principal.name = username.to_string();
         }

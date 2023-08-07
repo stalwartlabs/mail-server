@@ -72,9 +72,9 @@ impl JMAP {
             })
     }
 
-    pub fn get_anonymous_limiter(&self, addr: RemoteAddress) -> Arc<Mutex<AnonymousLimiter>> {
+    pub fn get_anonymous_limiter(&self, addr: &RemoteAddress) -> Arc<Mutex<AnonymousLimiter>> {
         self.rate_limit_unauth
-            .get(&addr)
+            .get(addr)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
                 let limiter = Arc::new(Mutex::new(AnonymousLimiter {
@@ -87,7 +87,7 @@ impl JMAP {
                         self.config.rate_authenticate_req.period,
                     ),
                 }));
-                self.rate_limit_unauth.insert(addr, limiter.clone());
+                self.rate_limit_unauth.insert(addr.clone(), limiter.clone());
                 limiter
             })
     }
@@ -111,7 +111,7 @@ impl JMAP {
         }
     }
 
-    pub fn is_anonymous_allowed(&self, addr: RemoteAddress) -> Result<(), RequestError> {
+    pub fn is_anonymous_allowed(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
         if self
             .get_anonymous_limiter(addr)
             .lock()
@@ -139,7 +139,16 @@ impl JMAP {
         }
     }
 
-    pub fn is_auth_allowed(&self, addr: RemoteAddress) -> Result<(), RequestError> {
+    pub fn is_auth_allowed_soft(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
+        match self.rate_limit_unauth.get(addr) {
+            Some(limiter) if !limiter.lock().auth_limiter.is_allowed_soft() => {
+                Err(RequestError::too_many_auth_attempts())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    pub fn is_auth_allowed_hard(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
         if self
             .get_anonymous_limiter(addr)
             .lock()

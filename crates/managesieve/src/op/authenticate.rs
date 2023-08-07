@@ -76,7 +76,7 @@ impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
         };
 
         // Throttle authentication requests
-        if self.jmap.is_auth_allowed(self.remote_addr.clone()).is_err() {
+        if self.jmap.is_auth_allowed_soft(&self.remote_addr).is_err() {
             tracing::debug!(parent: &self.span,
                 event = "disconnect",
                 "Too many authentication attempts, disconnecting.",
@@ -89,7 +89,9 @@ impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
         // Authenticate
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                self.jmap.authenticate_plain(&username, &secret).await
+                self.jmap
+                    .authenticate_plain(&username, &secret, &self.remote_addr)
+                    .await
             }
             Credentials::OAuthBearer { token } => {
                 match self

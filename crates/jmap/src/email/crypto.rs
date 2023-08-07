@@ -45,7 +45,7 @@ use store::{
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
-    auth::oauth::FormData,
+    auth::{oauth::FormData, rate_limit::RemoteAddress},
     JMAP,
 };
 
@@ -538,7 +538,11 @@ impl ToBitmaps for &EncryptionParams {
 
 impl JMAP {
     // Code authorization flow, handles an authorization request
-    pub async fn handle_crypto_update(&self, req: &mut HttpRequest) -> HttpResponse {
+    pub async fn handle_crypto_update(
+        &self,
+        req: &mut HttpRequest,
+        remote_addr: &RemoteAddress,
+    ) -> HttpResponse {
         let mut response = String::with_capacity(
             CRYPT_HTML_HEADER.len() + CRYPT_HTML_FOOTER.len() + CRYPT_HTML_FORM.len(),
         );
@@ -552,7 +556,7 @@ impl JMAP {
                     Err(err) => return err,
                 };
 
-                match self.validate_form(form).await {
+                match self.validate_form(form, remote_addr).await {
                     Ok(Some(params)) => {
                         response.push_str(
                             &CRYPT_HTML_SUCCESS
@@ -586,6 +590,7 @@ impl JMAP {
     async fn validate_form(
         &self,
         mut form: FormData,
+        remote_addr: &RemoteAddress,
     ) -> Result<Option<EncryptionParams>, Cow<str>> {
         let certificate = form.remove_bytes("certificate");
         if let (Some(email), Some(password), Some(encryption)) = (
@@ -603,7 +608,7 @@ impl JMAP {
 
             // Authenticate
             let token = self
-                .authenticate_plain(email, password)
+                .authenticate_plain(email, password, remote_addr)
                 .await
                 .ok_or_else(|| Cow::from("Invalid login or password"))?;
             if encryption != "disable" {

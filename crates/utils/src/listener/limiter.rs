@@ -79,6 +79,10 @@ impl RateLimiter {
         }
     }
 
+    pub fn is_allowed_soft(&self) -> bool {
+        self.tokens >= 1 || self.last_refill.elapsed() >= self.max_interval
+    }
+
     pub fn retry_at(&self) -> Instant {
         Instant::now()
             + (self

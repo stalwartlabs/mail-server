@@ -64,7 +64,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
                 .await,
             Err(jmap_client::Error::Problem(err)) if err.status() == Some(401)));
 
-    // Requests should be rate limited
+    // Invalid authentication requests should be rate limited
     let mut n_401 = 0;
     let mut n_429 = 0;
     for n in 0..110 {
@@ -96,7 +96,17 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     }
 
     // Limit should be restored after 1 second
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // Valid authentication requests should not be rate limited
+    for _ in 0..110 {
+        Client::new()
+            .credentials(Credentials::basic("jdoe@example.com", "12345"))
+            .accept_invalid_certs(true)
+            .connect("https://127.0.0.1:8899")
+            .await
+            .unwrap();
+    }
 
     // Login with the correct credentials
     let client = Client::new()

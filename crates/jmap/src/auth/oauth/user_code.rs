@@ -37,6 +37,7 @@ use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
+    auth::rate_limit::RemoteAddress,
     JMAP,
 };
 
@@ -107,7 +108,11 @@ impl JMAP {
     }
 
     // Handles POST request from the code authorization form
-    pub async fn handle_user_code_auth_post(&self, req: &mut HttpRequest) -> HttpResponse {
+    pub async fn handle_user_code_auth_post(
+        &self,
+        req: &mut HttpRequest,
+        remote_addr: &RemoteAddress,
+    ) -> HttpResponse {
         // Parse form
         let params = match FormData::from_request(req, MAX_POST_LEN).await {
             Ok(params) => params,
@@ -132,7 +137,8 @@ impl JMAP {
 
         // Authenticate user
         if let (Some(email), Some(password)) = (params.get("email"), params.get("password")) {
-            if let Some(access_token) = self.authenticate_plain(email, password).await {
+            if let Some(access_token) = self.authenticate_plain(email, password, remote_addr).await
+            {
                 // Generate client code
                 let client_code = thread_rng()
                     .sample_iter(Alphanumeric)
