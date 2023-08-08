@@ -7,4 +7,4 @@ while [ ! -f /opt/stalwart-mail/etc/config.toml ]; do
 done
 
 # If the configuration file exists, start the server.
-exec /usr/local/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml
+exec /usr/local/bin/__B__ --config /opt/stalwart-mail/etc/config.toml
