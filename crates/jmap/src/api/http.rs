@@ -446,7 +446,18 @@ async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
                         uri = req.uri().to_string(),
                     );
 
-                    let response = parse_jmap_request(jmap, req, session.remote_ip, instance).await;
+                    // Parse JMAP request
+                    let mut response =
+                        parse_jmap_request(jmap.clone(), req, session.remote_ip, instance).await;
+
+                    // Add custom headers
+                    if !jmap.config.http_headers.is_empty() {
+                        let headers = response.headers_mut();
+
+                        for (header, value) in &jmap.config.http_headers {
+                            headers.insert(header.clone(), value.clone());
+                        }
+                    }
 
                     Ok::<_, hyper::Error>(response)
                 }

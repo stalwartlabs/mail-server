@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
 use store::{
     fts::Language,
@@ -140,6 +140,32 @@ impl crate::Config {
                 .unwrap_or(true),
             encrypt: settings.property_or_static("jmap.encryption.enable", "true")?,
             encrypt_append: settings.property_or_static("jmap.encryption.append", "false")?,
+            http_headers: settings
+                .values("jmap.http.headers")
+                .map(|(_, v)| {
+                    if let Some((k, v)) = v.split_once(':') {
+                        Ok((
+                            hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
+                                format!(
+                                    "Invalid header found in property \"jmap.http.headers\": {}",
+                                    err
+                                )
+                            })?,
+                            hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
+                                format!(
+                                    "Invalid header found in property \"jmap.http.headers\": {}",
+                                    err
+                                )
+                            })?,
+                        ))
+                    } else {
+                        Err(format!(
+                            "Invalid header found in property \"jmap.http.headers\": {}",
+                            v
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         };
         config.add_capabilites(settings);
         Ok(config)

@@ -104,6 +104,9 @@ private-key = "file://./tests/resources/tls_privatekey.pem"
 [jmap]
 directory = "local"
 
+[jmap.http]
+headers = ["Access-Control-Allow-Origin: *", "Access-Control-Allow-Methods: POST, GET, HEAD"]
+
 [jmap.protocol]
 set.max-objects = 100000
 
