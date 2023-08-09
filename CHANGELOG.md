@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.4] - 2023-08-09
+
+## Added
+- JMAP: Support for setting custom HTTP response headers (#52)
+ 
+### Changed
+ 
+### Fixed
+- SMTP: Missing envelope keys in rewrite rules (#25) 
+- SMTP: Remove CRLF from Milter headers
+- JMAP/IMAP: Successful authentication requests should not count when rate limiting
+- IMAP: Case insensitive Inbox selection
+- IMAP: Automatically create Inbox for group accounts
+
 ## [0.3.3] - 2023-08-02
 
 ### Added
