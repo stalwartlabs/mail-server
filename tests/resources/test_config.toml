@@ -157,6 +157,7 @@ member-of = ["superusers"]
 name = "john"
 description = "John Doe"
 secret = "12345"
+#secret = "$argon2id$v=19$m=16,t=2,p=1$Ym1GMmMwd210YXpGWUF2Ng$MKUyI28a4OADfd7r2iHulQ"
 email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
 email-list = ["info@example.org"]
 member-of = ["sales"]

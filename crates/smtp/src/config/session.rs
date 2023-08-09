@@ -294,6 +294,8 @@ impl ConfigSession for Config {
             EnvelopeKey::RemoteIp,
             EnvelopeKey::LocalIp,
             EnvelopeKey::HeloDomain,
+            EnvelopeKey::Sender,
+            EnvelopeKey::SenderDomain,
         ];
         Ok(Mail {
             script: self
@@ -320,9 +322,20 @@ impl ConfigSession for Config {
             EnvelopeKey::LocalIp,
             EnvelopeKey::HeloDomain,
         ];
+        let available_keys_full = [
+            EnvelopeKey::Sender,
+            EnvelopeKey::SenderDomain,
+            EnvelopeKey::Recipient,
+            EnvelopeKey::RecipientDomain,
+            EnvelopeKey::AuthenticatedAs,
+            EnvelopeKey::Listener,
+            EnvelopeKey::RemoteIp,
+            EnvelopeKey::LocalIp,
+            EnvelopeKey::HeloDomain,
+        ];
         Ok(Rcpt {
             script: self
-                .parse_if_block::<Option<String>>("session.rcpt.script", ctx, &available_keys)?
+                .parse_if_block::<Option<String>>("session.rcpt.script", ctx, &available_keys_full)?
                 .unwrap_or_default()
                 .map_if_block(&ctx.scripts, "session.rcpt.script", "script")?,
             relay: self
@@ -332,7 +345,7 @@ impl ConfigSession for Config {
                 .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
                     "session.rcpt.directory",
                     ctx,
-                    &available_keys,
+                    &available_keys_full,
                 )?
                 .unwrap_or_default()
                 .map_if_block(
@@ -353,7 +366,7 @@ impl ConfigSession for Config {
                 .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
                     "session.rcpt.rewrite",
                     ctx,
-                    &available_keys,
+                    &available_keys_full,
                 )?
                 .unwrap_or_default(),
         })
