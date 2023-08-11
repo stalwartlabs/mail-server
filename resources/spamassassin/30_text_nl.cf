@@ -1,0 +1,275 @@
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# contributed by Jesse Houwing, bug 3197
+#
+#              ..............................................................................
+lang nl report Spam detectie software op het systeem "_HOSTNAME_", heeft dit bericht
+lang nl report als mogelijke spam aangemerkt. Het originele bericht is bijgevoegd als
+lang nl report bijlage bij dit bericht zodat u het kunt bekijken (als het geen spam is)
+lang nl report of soortgelijke toekomstige berichten blokkeren. Zie _CONTACTADDRESS_
+lang nl report voor meer details
+lang nl report
+lang nl report Gedeelte van de inhoud:  _PREVIEW_
+lang nl report
+lang nl report Analyse details:   (_SCORE_ punten, _REQD_ vereist)
+lang nl report
+lang nl report " pnt regel naam             omschrijving"
+lang nl report  ---- ---------------------- -------------------------------------------------
+lang nl report _SUMMARY_
+#              ..............................................................................
+
+#                    ........................................................................
+lang nl unsafe_report Het originele bericht bestond niet geheel uit tekst en is mogelijk
+lang nl unsafe_report onveilig om te openen im sommige emailprogramma's. Het bericht bevat
+lang nl unsafe_report mogelijk een virus of code om te verifieren dat uw adres spam
+lang nl unsafe_report berichten kan ontvangen. Het is veiliger om het bericht op te slaan
+lang nl unsafe_report en het te bekijken in een tekstbewerkingsprogramma.
+#                    ........................................................................
+
+lang nl describe GTUBE                           Standaard test voor ongewenste bulk mail
+lang nl describe TRACKER_ID                      Maakt gebruik van een nummer om het bericht te kunnen volgen
+lang nl describe WEIRD_QUOTING                   Vreemde herhaalde dubbel aanhalingsteken
+lang nl describe __MIME_BASE64                   Bevat een base64 bijlage
+lang nl describe __MIME_QP                       Bevat een  quoted-printable bijlage
+#lang nl describe MIME_BASE64_BLANKS              Extra witregels in base64 codering
+lang nl describe MIME_BASE64_TEXT                Bericht verborgen door middel van base64 codering
+lang nl describe MIME_HTML_MOSTLY                Multipart bericht bestaat voornamelijk uit text/html MIME
+lang nl describe MIME_HTML_ONLY                  Bericht bestaat enkel uit text/html MIME delen
+lang nl describe MIME_HTML_ONLY_MULTI            Bericht heeft enkel text/html MIME delen
+lang nl describe MIME_QP_LONG_LINE               Quoted-printable regel langer dan 76 karakters
+lang nl describe MIME_CHARSET_FARAWAY            MIME karakterset wijst op vreemde taal
+lang nl describe MPART_ALT_DIFF                  HTML en tekst delen zijn verschillend
+lang nl describe CHARSET_FARAWAY                 Karakterset wijst op vreemde taal
+lang nl describe EMAIL_ROT13                     Body bevat een ROT13-versleuteld emailadres
+lang nl describe BLANK_LINES_80_90               Bericht bestaat voor 80-90% uit witregels
+lang nl describe __RCVD_IN_SORBS                 SORBS: verzender is gevonden in SORBS
+lang nl describe RCVD_IN_SORBS_HTTP              SORBS: verzender is een open HTTP proxy server
+lang nl describe RCVD_IN_SORBS_MISC              SORBS: verzender is een open proxy server
+lang nl describe RCVD_IN_SORBS_SMTP              SORBS: verzender is een open SMTP relay
+lang nl describe RCVD_IN_SORBS_SOCKS             SORBS: verzender is een open SOCKS proxy server
+lang nl describe RCVD_IN_SORBS_WEB               SORBS: verzender is een misbruikbare web server
+lang nl describe RCVD_IN_SORBS_BLOCK             SORBS: verzender weigert getest te worden
+lang nl describe RCVD_IN_SORBS_ZOMBIE            SORBS: verzender is een gekaapt netwerk
+lang nl describe RCVD_IN_SORBS_DUL               SORBS: bericht is direct verstuurd vanaf een dynamisch IP adres
+lang nl describe RCVD_IN_SBL                     Ontvangen via een relay die gevonden is in Spamhaus SBL
+lang nl describe RCVD_IN_XBL                     Ontvangen via een relay die gevonden is in Spamhaus XBL
+lang nl describe RCVD_IN_BL_SPAMCOP_NET          Ontvangen via een relay die gevonden is in bl.spamcop.net
+lang nl describe RCVD_IN_MAPS_RBL                Relay in RBL, http://www.mail-abuse.org/rbl/
+lang nl describe RCVD_IN_MAPS_DUL                Relay in DUL, http://www.mail-abuse.org/dul/
+lang nl describe RCVD_IN_MAPS_RSS                Relay in RSS, http://www.mail-abuse.org/rss/
+lang nl describe RCVD_IN_MAPS_NML                Relay in NML, http://www.mail-abuse.org/nml/
+lang nl describe FROM_STARTS_WITH_NUMS           Van: begint met nummers
+lang nl describe FROM_OFFERS                     Van: adres is van "at iets-aangeboden"
+lang nl describe FROM_NO_USER                    Van: heeft geen lokaal deel voor het @-tje
+lang nl describe PLING_QUERY                     Onderwerp heeft een uitroepteken en een vraagteken
+lang nl describe SUBJ_ALL_CAPS                   Onderwerp bevat alleen hoofdletters
+lang nl describe MSGID_SPAM_LETTERS              Spam tool Message-Id: (letters variant)
+lang nl describe MSGID_OUTLOOK_INVALID           Message-Id is nep (in Outlook Express formaat)
+lang nl describe MSGID_RANDY                     Message-Id bevat een patroon dat wordt gebruikt in SPAM
+lang nl describe MSGID_FROM_MTA_HEADER           Message-Id was door een relay toegevoegd
+lang nl describe DATE_SPAMWARE_Y2K               Datum heeft een vreemde Y2K opmaak
+lang nl describe INVALID_DATE                    Ongeldige Date: header (niet RFC 2822)
+lang nl describe INVALID_DATE_TZ_ABSURD          Ongeldige Date: header (tijdzone bestaat niet)
+lang nl describe DATE_IN_PAST_03_06              Date: is 3 tot 6 uur voor Received: datum
+lang nl describe DATE_IN_PAST_06_12              Date: is 6 tot 12 uur voor Received: datum
+lang nl describe DATE_IN_PAST_12_24              Date: is 12 tot 24 uur voor Received: datum
+lang nl describe DATE_IN_PAST_24_48              Date: is 24 tot 48 uur voor Received: datum
+lang nl describe DATE_IN_PAST_96_XX              Date: is 96 of meer uur voor Received: datum
+lang nl describe DATE_IN_FUTURE_03_06            Date: is 3 tot 6 uur na Received: datum
+lang nl describe DATE_IN_FUTURE_06_12            Date: is 6 tot 12 uur na Received: datum
+lang nl describe DATE_IN_FUTURE_12_24            Date: is 12 tot 24 uur na Received: datum
+lang nl describe DATE_IN_FUTURE_24_48            Date: is 24 tot 48 uur na Received: datum
+lang nl describe DATE_IN_FUTURE_48_96            Date: is 48 tot 96 uur na Received: datum
+lang nl describe DATE_IN_FUTURE_96_XX            Date: is 96 of meer uur na Received: datum
+lang nl describe SUBJ_ILLEGAL_CHARS              Onderwerp: bevat te veel 'raw' tekens
+lang nl describe FROM_ILLEGAL_CHARS              Van: bevat te veel 'raw' tekens
+lang nl describe HEAD_ILLEGAL_CHARS              Header: bevat te veel illegale tekens
+lang nl describe JAPANESE_UCE_SUBJECT            Onderwerp: bevat een Japanese UCE tag
+lang nl describe KOREAN_UCE_SUBJECT              Onderwerp: bevat een koreaanse ongewenste email tag
+lang nl describe NO_DNS_FOR_FROM                 Domein in Van heeft geen MX of A DNS record
+lang nl describe RCVD_DOUBLE_IP_SPAM             Buld email vingerafdruk (dubbel IP) gevonden
+lang nl describe RCVD_DOUBLE_IP_LOOSE            Received: door en van lijken op IP adressen
+lang nl describe FORGED_TELESP_RCVD              Bevat een vervalde hostnaam voor een DSL IP in Brazilie
+lang nl describe FORGED_HOTMAIL_RCVD2            hotmail.com 'Van' adres, maar geen 'Received:'
+lang nl describe FORGED_YAHOO_RCVD               'Van' yahoo.com Komt niet overeen met 'Received' headers
+lang nl describe CONFIRMED_FORGED                Received headers zijn vervalst
+lang nl describe MULTI_FORGED                    Received headers wijzen op meerdere vervalsingen
+lang nl describe NONEXISTENT_CHARSET             Karakterset bestaat niet
+lang nl describe CHARSET_FARAWAY_HEADER          Een buitenlandse taal wordt gebruikt in de headers
+lang nl describe MISSING_HEADERS                 Ontbrekende Aan: header
+lang nl describe SUSPICIOUS_RECIPS               Vergelijkbare adressen in de ontvangerslijst
+lang nl describe SORTED_RECIPS                   Ontvangerslijst is gesorteerd op alfabet
+lang nl describe GAPPY_SUBJECT                   Onderwerp: bevat G.a.t.e.n.k.a.a.s
+lang nl describe MISSING_MIMEOLE                 Bericht heeft een X-MSMail-Priority, maar geen X-MimeOLE
+lang nl describe SUBJ_AS_SEEN                    Onderwerp bevat "As Seen"
+lang nl describe SUBJ_DOLLARS                    Onderwerp begint met een bedrag in dollars
+#lang nl describe SUBJ_YOUR_DEBT                  Onderwerp bevat "Your Bills" of iets dergelijks
+lang nl describe SUBJ_YOUR_FAMILY                Onderwerp bevat  "Your Family"
+lang nl describe RCVD_FAKE_HELO_DOTCOM           Received bevat een vervalde HELO hostnaam
+lang nl describe MIME_BOUND_DIGITS_15            Spam tool patroon in MIME grens
+lang nl describe MIME_BOUND_MANY_HEX             Spam tool patroon in MIME grens
+lang nl describe TO_MALFORMED                    Aan: foutief opgesteld adres
+lang nl describe MIME_HEADER_CTYPE_ONLY          'Content-Type' gevonden zonder de benodigde MIME headers
+lang nl describe WITH_LC_SMTP                    Received regel bevat een spam merkteken (lowercase smtp)
+lang nl describe SUBJ_BUY                        Onderwerp: begint met 'Buy(ing)'
+lang nl describe RCVD_AM_PM                      Received headers vervalst (AM/PM)
+lang nl describe HEADER_COUNT_CTYPE              Meerdere Content-Type headers gevonden
+lang nl describe NO_RDNS_DOTCOM_HELO             Host HELO'd als een grote internet provider ISP, maar heeft geen rDNS
+lang nl describe HTML_MESSAGE                    HTML opgenomen in het bericht
+lang nl describe HTML_COMMENT_SAVED_URL          HTML bericht is een opgeslagen webpagina
+lang nl describe HTML_EMBEDS                     HTML met plugin
+lang nl describe HTML_FONT_LOW_CONTRAST          HTML tekstkleur lijkt er op de achtergrondkleur
+lang nl describe HTML_FONT_FACE_BAD              HTML lettertype naam is geen woord
+lang nl describe HTML_FORMACTION_MAILTO          HTML bevat een formulier dat email verstuurd
+lang nl describe HTML_IMAGE_ONLY_04              HTML: plaatjes met 200-400 bytes aan woorden
+lang nl describe HTML_IMAGE_ONLY_08              HTML: plaatjes met 600-800 bytes aan woorden
+lang nl describe HTML_IMAGE_ONLY_12              HTML: plaatjes met 1000-1200 bytes aan woorden
+lang nl describe HTML_IMAGE_RATIO_02             HTML heeft een lage verhouding tussen tekst en plaatjes
+lang nl describe HTML_IMAGE_RATIO_04             HTML heeft een lage verhouding tussen tekst en plaatjes
+lang nl describe HTML_IMAGE_RATIO_06             HTML heeft een lage verhouding tussen tekst en plaatjes
+lang nl describe HTML_IMAGE_RATIO_08             HTML heeft een lage verhouding tussen tekst en plaatjes
+lang nl describe HTML_OBFUSCATE_10_20            Bericht bevat 10% tot 20% HTML verdoezeling
+lang nl describe HTML_OBFUSCATE_20_30            Bericht bevat 20% tot 30% HTML verdoezeling
+lang nl describe HTML_OBFUSCATE_30_40            Bericht bevat 30% tot 40% HTML verdoezeling
+lang nl describe HTML_OBFUSCATE_50_60            Bericht bevat 50% tot 60% HTML verdoezeling
+lang nl describe HTML_OBFUSCATE_70_80            Bericht bevat 70% tot 80% HTML verdoezeling
+lang nl describe HTML_OBFUSCATE_90_100           Bericht bevat 90% tot 100% HTML verdoezeling
+lang nl describe HTML_TAG_BALANCE_BODY           HTML bevat ongebalanceerde "body" tags
+lang nl describe HTML_TAG_BALANCE_HEAD           HTML bevat ongebalanceerde "head" tags
+lang nl describe HTML_BADTAG_40_50               HTML bericht bevat 40% tot 50% foute tags
+lang nl describe HTML_BADTAG_50_60               HTML bericht bevat 50% tot 60% foute tags
+lang nl describe HTML_BADTAG_60_70               HTML bericht bevat 60% tot 70% foute tags
+lang nl describe HTML_BADTAG_90_100              HTML bericht bevat 90% tot 100% foute tags
+lang nl describe HTML_NONELEMENT_30_40           30% tot 40% van de HTML elementen zijn niet standaard
+lang nl describe HTML_NONELEMENT_40_50           40% tot 50% van de HTML elementen zijn niet standaard
+lang nl describe HTML_NONELEMENT_60_70           60% tot 70% van de HTML elementen zijn niet standaard
+lang nl describe HTML_NONELEMENT_80_90           80% tot 90% van de HTML elementen zijn niet standaard
+lang nl describe HTML_CHARSET_FARAWAY            Een vreemde taal wordt gebruikt in de karakterset
+lang nl describe HTML_MIME_NO_HTML_TAG           HTML-only bericht, maar er is geen HTML tag
+lang nl describe HIDE_WIN_STATUS                 Javascript om URLs te verbergen in het bericht
+lang nl describe OBFUSCATING_COMMENT             HTML commentaar om het bericht te verdoezelen
+lang nl describe UPPERCASE_50_75                 Bericht tekst bestaat voor 50-75% uit hoofdletters
+lang nl describe UPPERCASE_75_100                Bericht tekst bestaat voor 75-100% uit hoofdletters
+lang nl describe INVALID_MSGID                   Message-Id is ongeldig, volgens RFC 2822
+lang nl describe FORGED_MUA_MOZILLA              Vervalste mail die afkomstig zou zijn van Mozilla
+lang nl describe GUARANTEED_100_PERCENT          100% gegarandeerd
+lang nl describe DEAR_FRIEND                     Beste vriend, klinkt niet erg bekend...
+lang nl describe DEAR_SOMETHING                  Bevat 'Dear (iets)'
+lang nl describe BILLION_DOLLARS                 Spreekt van heeel veel geld
+lang nl describe EXCUSE_4                        Claimt dat je van de lijst verwijderd kan worden
+lang nl describe EXCUSE_24                       Claimt dat je om deze advertentie hebt gevraagd
+lang nl describe EXCUSE_REMOVE                   Heeft het over hoe je verwijderd kan worden van de lijst
+lang nl describe STRONG_BUY                      Vertelt je over een goede aankoop
+lang nl describe STOCK_ALERT                     Biedt aan je aandelen in de gaten te houden
+lang nl describe NOT_ADVISOR                     Geen geregistreerde beleggings adviseur
+lang nl describe PREST_NON_ACCREDITED            'Prestigieuze "Non-Accredited" Universiteiten'
+lang nl describe BODY_ENHANCEMENT                Informatie over het vergroten van lichaamsdelen
+lang nl describe BODY_ENHANCEMENT2               Informatie over het vergroten van lichaamsdelen
+lang nl describe IMPOTENCE                       Medicijn voor impotentie
+#lang nl describe NA_DOLLARS                      Praat over een miljoen Noord-Amerikaanse dollars
+#lang nl describe US_DOLLARS_3                    Vermeldt miljoenen $ ($NN,NNN,NNN.NN)
+#lang nl describe MILLION_USD                     Heeft het over miljoenen dollars
+lang nl describe MONEY_BACK                      Niet-goed-geld-terug garantie
+lang nl describe FREE_QUOTE_INSTANT              Gratis offerte
+lang nl describe BAD_CREDIT                      Los al uw leningen op
+lang nl describe REFINANCE_YOUR_HOME             Hyphoteek oversluiten
+lang nl describe REFINANCE_NOW                   Hyphoteek oversluiten
+lang nl describe NO_MEDICAL                      Geen medische keuring
+lang nl describe FORWARD_LOOKING                 Aandelen waarschuwing
+lang nl describe ONE_TIME                        Eenmalige afzettingspraktijk
+lang nl describe JOIN_MILLIONS                   Voeg je bij miljoenen Amerikanen
+lang nl describe ONLINE_PHARMACY                 Online apotheek
+lang nl describe MARKETING_PARTNERS              Zegt dat je je bij een partner bedrijf hebt geregistreerd
+lang nl describe LOW_PRICE                       Laagste prijzen
+lang nl describe UNCLAIMED_MONEY                 Mensen laten het geld rondslingeren
+lang nl describe OBSCURED_EMAIL                  Bevat een rot13ed adres
+lang nl describe BANG_OPRAH                      Iets met Oprah!
+lang nl describe ACT_NOW_CAPS                    Heeft het in hoofdletters over "nu in actie komen"
+lang nl describe BANG_GUAR                  ...gegaranderd!
+lang nl describe FREE_PORN                       Dikke kans op porno - Gratis Porno
+lang nl describe CUM_SHOT                        Dikke kans op porno - Kwakjes
+lang nl describe LIVE_PORN                       Dikke kans op porno - Rechtstreekse Porno uitzending
+lang nl describe RATWARE_EGROUPS                 Bulk email kenmerk (eGroups) gevonden
+lang nl describe RATWARE_OE_MALFORMED            X-Mailer bevat misvormde Outlook Express versie
+lang nl describe FORGED_MUA_IMS                  Vals mailtje, pretendeert afkomstig te zijn van IMS
+lang nl describe FORGED_MUA_OUTLOOK              Vals mailtje, pretendeert afkomstig te zijn van MS Outlook
+lang nl describe FORGED_MUA_OIMO                 Vals mailtje, pretendeert afkomstig te zijn van MS Outlook IMO
+lang nl describe FORGED_MUA_EUDORA               Vals mailtje, pretendeert afkomstig te zijn van Eudora
+lang nl describe FORGED_MUA_THEBAT_CS            Mailtje dat pretendeert afkomstig te zijn van The Bat! (charset)
+lang nl describe FORGED_MUA_THEBAT_BOUN          Mailtje dat pretendeert afkomstig te zijn van The Bat! (boundary)
+lang nl describe FORGED_OUTLOOK_HTML             Outlook kan geen berichten met alleen HTML versturen
+lang nl describe FORGED_IMS_HTML                 IMS kan geen berichten met alleen HTML versturen
+lang nl describe FORGED_THEBAT_HTML              The Bat! kan geen berichten met alleen HTML versturen
+lang nl describe FORGED_QUALCOMM_TAGS            QUALCOMM email programma's versturen geen HTML zoals deze
+lang nl describe FORGED_IMS_TAGS                 IMS email programma's versturen geen HTML zoals deze
+lang nl describe FORGED_OUTLOOK_TAGS             Outlook verstuurt geen HTML zoals deze
+lang nl describe RATWARE_HASH_DASH               Bevat een hashbuster in Send-Safe opmaak
+lang nl describe NUMERIC_HTTP_ADDR               Gebruikt een numeriek IP adres in een URL
+lang nl describe HTTP_ESCAPED_HOST               Gebruikt %-escapes in de hostname van een URL
+lang nl describe HTTP_EXCESSIVE_ESCAPES          Volkomen overbodige %-escapes in een URL
+lang nl describe IP_LINK_PLUS                    "Dotted-decimal" IP address gevolgd door CGI
+lang nl describe WEIRD_PORT                      Gebruikt een afwijkend poort nummer voor HTTP
+lang nl describe YAHOO_RD_REDIR                  Bevat een Yahoo Redirect URI
+lang nl describe YAHOO_DRS_REDIR                 Bevat een Yahoo Redirect URI
+
+# 23_bayes.cf
+ifplugin Mail::SpamAssassin::Plugin::Bayes
+lang nl describe BAYES_00                        Bayesiaanse kans op spam is 0 tot 1%
+lang nl describe BAYES_05                        Bayesiaanse kans op spam is 1 tot 5%
+lang nl describe BAYES_20                        Bayesiaanse kans op spam is 5 tot 20%
+lang nl describe BAYES_40                        Bayesiaanse kans op spam is 20 tot 40%
+lang nl describe BAYES_50                        Bayesiaanse kans op spam is 40 tot 60%
+lang nl describe BAYES_60                        Bayesiaanse kans op spam is 60 tot 80%
+lang nl describe BAYES_80                        Bayesiaanse kans op spam is 80 tot 95%
+lang nl describe BAYES_95                        Bayesiaanse kans op spam is 95 tot 99%
+lang nl describe BAYES_99                        Bayesiaanse kans op spam is 99 tot 100%
+lang nl describe BAYES_999                       Bayesiaanse kans op spam is 99.9 tot 100%
+endif
+#
+lang nl describe DRUG_DOSAGE			Heeft het over een prijs per dosis
+
+ifplugin Mail::SpamAssassin::Plugin::AntiVirus
+lang nl describe MIME_SUSPECT_NAME               MIME bestandsnaam komt niet overeen met inhoud
+endif
+
+ifplugin Mail::SpamAssassin::Plugin::DCC
+lang nl describe DCC_CHECK                       Gevonden in DCC (https://www.dcc-servers.net/dcc/)
+endif
+
+ifplugin Mail::SpamAssassin::Plugin::Pyzor
+lang nl describe PYZOR_CHECK                     Gevonden in Pyzor (https://pyzor.readthedocs.io/en/latest/)
+endif
+
+ifplugin Mail::SpamAssassin::Plugin::TextCat
+lang nl describe BODY_8BITS                      Bericht bevat 8 aaneengesloten 8-bit karakters
+lang nl describe UNWANTED_LANGUAGE_BODY          Bericht is opgesteld in een ongewenste taal
+endif
+
+ifplugin Mail::SpamAssassin::Plugin::AccessDB
+lang nl describe ACCESSDB                        Bericht zou gevangen zijn door accessdb
+endif
+
+lang nl describe NORMAL_HTTP_TO_IP               Gebruikt een "dotted-decimal" IP adres in een URL
+

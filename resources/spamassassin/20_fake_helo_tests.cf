@@ -1,0 +1,160 @@
+# SpamAssassin rules file: fake-HELO tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# We should write a new ruletype for these, to save typing.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+#---------------------------------------------------------------------------
+# Handle hosts that look like HELO_DYNAMIC hosts
+
+# cmr-208-124-139-194.cr.net.cable.rogers.com) [208.124.139.194]
+# cmr-208-97-119-114.cr.net.cable.rogers.com) [208.97.119.114]
+header __HELO_STATIC_ROGERS X-Spam-Relays-External =~ /^[^\]]+ helo=cmr-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\S+\.rogers\.com[^\]]+ auth= /i
+
+# o167-89-97-77.outbound-mail.sendgrid.net (bug 7592)
+header __HELO_STATIC_SENDGRID X-Spam-Relays-External =~ /^[^\]]+ helo=o\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}\.outbound-mail\.sendgrid\.net\s[^\]]+ auth= /i
+
+# 50-203-126-142-static.hfc.comcastbusiness.net
+header __HELO_STATIC_COMCAST X-Spam-Relays-External =~ /^[^\]]+ helo=\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}-static\.hfc\.comcastbusiness\.net\s[^\]]+ auth= /i
+
+describe HELO_STATIC_HOST Relay HELO'd using static hostname
+meta HELO_STATIC_HOST (__HELO_STATIC_ROGERS || __HELO_STATIC_SENDGRID || __HELO_STATIC_COMCAST)
+
+# ---------------------------------------------------------------------------
+
+# Suresh says: these will never be used as HELOs from real mail.com relays.
+# Just check the most recent handover; the connection to a internal host.
+# This way a legit sender can send to their MSA using that HELO (quite a few
+# MUAs will do that), but a spammer gets caught.  (List of domains comes from
+# the drop-down list on the Mail.com signup page.)
+#header FAKE_HELO_MAIL_COM_DOM  X-Spam-Relays-External =~ /^[^\]]+ helo=(?:\S+\.|)(?:(?:mail|email|iname|cheerful|consultant|europe|mindless|myself|post|techie|usa|writeme|2die4|artlover|bikerider|catlover|cliffhanger|cutey|doglover|gardener|hot-shot|inorbit|loveable|mad\.scientist|playful|poetic|popstar|saintly|seductive|soon|whoever|winning|witty|yours|africamail|arcticmail|asia|australiamail|europe|japan|samerica|usa|berlin|dublin|london|madrid|moscowmail|munich|nycmail|paris|rome|sanfranmail|singapore|tokyo|accountant|adexec|allergist|alumnidirector|archaeologist|chemist|clerk|columnist|comic|consultant|counsellor|deliveryman|diplomats|doctor|dr|engineer|execs|financier|geologist|graphic-designer|insurer|journalist|lawyer|legislator|lobbyist|minister|optician|pediatrician|presidency|priest|publicist|realtyagent|registerednurses|repairman|representative|rescueteam|scientist|sociologist|teacher|techietechnologist|umpire)\.com|(?:programmer|earthling|hairdresser)\.net|musician\.org) /i
+#describe FAKE_HELO_MAIL_COM_DOM Relay HELO'd with suspicious hostname (mail.com)
+
+
+# ---------------------------------------------------------------------------
+# Interesting new feature; spamware HELO'ing, from a dialup IP addr,
+# using that IP's rDNS entry.  We can catch this easily.  There aren't
+# many legit mailservers calling themselves
+# 'dhcp024-210-034-053.columbus.rr.com'. ;)
+#
+# Note the '^[^\]]+ ' stanza: this ensures that we only match spamware
+# connecting to a internal relay; if a mail came from a dynamic addr but
+# was relayed through their smarthost, that's fine.
+
+# See bug #5856, all references of trusted were changed to internal
+
+# dhcp024-210-034-053.columbus.rr.com [24.210.34.53]
+# c-66-176-16-108.se.client2.attbi.com [66.176.16.108]
+# c-67-168-174-61.client.comcast.net [67.168.174.61]
+# NNN-NNN-NNN-NNN.fibertel.com.ar
+# NN.NN.NNN.NNN.ap.yournet.ne.jp
+# NN.NNN.NN-NN.rev.gaoland.net
+# vaise-1-82-67-44-166.fbx.proxad.net [82.67.44.166]
+# lns-vlq-11-62-147-186-141.adsl.proxad.net [62.147.186.141]
+# dsl-200-95-109-107.prod-infinitum.com.mx [200.95.109.107]
+# port-212-202-77-203.reverse.qsc.de [212.202.77.203]
+# pool-151-203-32-68.bos.east.verizon.net [151.203.32.68]
+# c-67-164-133-216.client.comcast.net [67.164.133.216]
+# 200-171-228-6.customer.telesp.net.br [200.171.228.6]
+# modemcable090.28-201-24.mc.videotron.ca [24.201.28.90]
+# 80-218-47-160.dclient.hispeed.ch [80.218.47.160]
+# cdm-68-226-239-16.laft.cox-internet.com [68.226.239.16]
+# d53-64-35-171.nap.wideopenwest.com [64.53.171.35]
+# 74.67-201-80.adsl.skynet.be [80.201.67.74]
+# 12-218-225-223.client.mchsi.com [12.218.225.223]
+# (require an alpha first, as legit HELO'ing-as-IP-address is hit otherwise)
+header __HELO_DYNAMIC_IPADDR X-Spam-Relays-External =~ /^[^\]]+ helo=(?![^\s\]]+[-.]static[-.])[a-z]\S*\d+[^\d\s]\d+[^\d\s]\d+[^\d\s]\d+[^\d\s][^\.]*\.\S+\.\S+[^\]]+ auth= /i
+meta HELO_DYNAMIC_IPADDR (__HELO_DYNAMIC_IPADDR && !HELO_STATIC_HOST)
+describe HELO_DYNAMIC_IPADDR Relay HELO'd using suspicious hostname (IP addr 1)
+
+# dhcp024-210-034-053.columbus.rr.com [24.210.34.53]
+# catv-506237d8.miskcatv.broadband.hu [80.98.55.216]
+# node-c-8b22.a2000.nl
+# cm89.omega139.maxonline.com.sg
+# cm114.gamma208.maxonline.com.sg
+header __HELO_DYNAMIC_DHCP X-Spam-Relays-External =~ /^[^\]]+ helo=\S*(?:(?<!smtp)(?<!a)cm|catv|docsis|cable|dsl|dhcp|cpe|node)\S*\d+[^\d\s]+\d+[^\]]+ auth= /i
+meta HELO_DYNAMIC_DHCP (__HELO_DYNAMIC_DHCP && !HELO_STATIC_HOST)
+describe HELO_DYNAMIC_DHCP Relay HELO'd using suspicious hostname (DHCP)
+
+# fia83-8.dsl.hccnet.nl [62.251.8.83]
+# fia160-115-100.dsl.hccnet.nl [80.100.115.160]
+header __HELO_DYNAMIC_HCC   X-Spam-Relays-External =~ /^[^\]]+ helo=\S*\d+[^\d\s]+\d+\S*\.(?:docsis|cable|dsl|adsl|dhcp|cpe)\.[^\]]+ auth= /i
+meta HELO_DYNAMIC_HCC (__HELO_DYNAMIC_HCC && !HELO_STATIC_HOST)
+describe HELO_DYNAMIC_HCC Relay HELO'd using suspicious hostname (HCC)
+
+# h0002a5d76857.ne.client2.attbi.com [65.96.12.59]
+
+# CPE0004e2372711-CM000a73666706.cpe.net.cable.rogers.com
+# CPE00e0184f0eba-CM014490118324.cpe.net.cable.rogers.com [24.43.109.140]
+header HELO_DYNAMIC_ROGERS X-Spam-Relays-External =~ /^[^\]]+ helo=CPE\d+\S+\.rogers\.com[^\]]+ auth= /i
+describe HELO_DYNAMIC_ROGERS Relay HELO'd using suspicious hostname (Rogers)
+
+# pD9E4F89F.dip.t-dialin.net [217.228.248.159]
+header HELO_DYNAMIC_DIALIN X-Spam-Relays-External =~ /^[^\]]+ helo=[a-z][A-F0-9]+\.dip\./
+describe HELO_DYNAMIC_DIALIN Relay HELO'd using suspicious hostname (T-Dialin)
+
+# 0xd5aaf40b.dhcp.kabelnettet.dk
+# 0x50a46949.virnxx11.adsl-dhcp.tele.dk
+header HELO_DYNAMIC_HEXIP X-Spam-Relays-External =~ /^[^\]]+ helo=0x[a-f0-9]{8}\./
+describe HELO_DYNAMIC_HEXIP Relay HELO'd using suspicious hostname (Hex IP)
+
+# 118.Red-80-35-201.pooles.rima-tde.net
+header HELO_DYNAMIC_SPLIT_IP X-Spam-Relays-External =~ /^[^\]]+ helo=\d+\.\S+\d+[^\d\s]\d+[^\d\s]\d+[^\d\s]/
+describe HELO_DYNAMIC_SPLIT_IP Relay HELO'd using suspicious hostname (Split IP)
+
+# YahooBB219173000034.bbtec.net [219.173.0.34]
+
+# 10-35-124-91.pool.ukrtel.net [91.124.35.10]
+# 89-215-186-91.2073241113.ddns-lan.rakovski.ekk.bg [217.18.240.147]
+# 200.109.193-29.dyn.dsl.cantv.net [200.109.193.29]
+# 113x35x70x11.ap113.ftth.ucom.ne.jp [113.35.70.11]
+# 98x9x3p5siouq.kvknv3sv1quk.3ejp4xzv.com [213.250.20.156]
+# 1.0/24.137.95.202.in-addr.arpa [202.95.137.1]
+header __HELO_DYNAMIC_IPADDR2 X-Spam-Relays-External =~ /^[^\]]+ helo=(?![^\s\]]+[-.](?:static|mail|smtp|mx)\d*[-.])\d{1,3}(?:[\Wx_]\d{1,3}){3}[^\d\s][^\s.]*\.\S+\.\S+[^\]]+ auth= /i
+meta HELO_DYNAMIC_IPADDR2  (__HELO_DYNAMIC_IPADDR2 && !HELO_DYNAMIC_SPLIT_IP)
+describe HELO_DYNAMIC_IPADDR2 Relay HELO'd using suspicious hostname (IP addr 2)
+
+# h234n2fls32o895.telia.com [217.208.73.234]
+# h53n2fls32o828.telia.com
+# h116n2fls32o1111.telia.com
+# h29n1fls306o1003.telia.com
+
+# CM-vina5-168-207.cm.vtr.net [200.104.168.207]
+# CM-anto1-98-153.cm.vtr.net [200.104.98.153]
+
+# ec9z5l.cm.chello.no
+
+# g225174.upc-g.chello.nl
+# a151145.upc-a.chello.nl
+# a96134.upc-a.chello.nl
+header HELO_DYNAMIC_CHELLO_NL  X-Spam-Relays-External =~ /^[^\]]+ helo=[a-z]\d+\.upc-[a-z]\.chello\.nl[^\]]+ auth= /i
+describe HELO_DYNAMIC_CHELLO_NL Relay HELO'd using suspicious hostname (Chello.nl)
+
+# cp160000-a.mill1.nb.home.nl
+# cp341468-b.venra1.lb.home.nl
+header HELO_DYNAMIC_HOME_NL  X-Spam-Relays-External =~ /^[^\]]+ helo=[a-z]{2}\d+-\S\.\S+\d\.[a-z]{2}\.home\.nl[^]]+ auth= /i
+describe HELO_DYNAMIC_HOME_NL Relay HELO'd using suspicious hostname (Home.nl)
+

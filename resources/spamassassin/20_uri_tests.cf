@@ -1,0 +1,123 @@
+# SpamAssassin rules file: URI tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+# possible IDN spoofing attack: https://web.archive.org/web/20141006091906/https://www.shmoo.com/idn/homograph.txt
+# not expecting any hits on this (yet)
+uri HIGH_CODEPAGE_URI	       /^https?:\/\/[^\/]*\&\#(?:\d{4,}|[3456789]\d\d);/i
+tflags HIGH_CODEPAGE_URI       userconf
+
+###########################################################################
+
+# Redirector URI patterns
+redirector_pattern	/^http:\/\/chkpt\.zdnet\.com\/chkpt\/\w+\/(.*)$/i
+redirector_pattern	/^http:\/\/www(?:\d+)?\.nate\.com\/r\/\w+\/(.*)$/i
+redirector_pattern	/^http:\/\/.+\.gov\/(?:.*\/)?externalLink\.jhtml\?.*url=(.*?)(?:&.*)?$/i
+redirector_pattern	/^http:\/\/redir\.internet\.com\/.+?\/.+?\/(.*)$/i
+redirector_pattern	/^http:\/\/(?:.*?\.)?adtech\.de\/.*(?:;|\|)link=(.*?)(?:;|$)/i
+redirector_pattern	m'^http.*?/redirect\.php\?.*(?<=[?&])goto=(.*?)(?:$|[&\#])'i
+redirector_pattern      m'^https?:/*(?:[^/]+\.)?emf\d\.com/r\.cfm.*?&r=(.*)'i
+
+uri NUMERIC_HTTP_ADDR		m{^https?://[\d.]+(?:[:/?\#]|$)}i
+describe NUMERIC_HTTP_ADDR	Uses a numeric IP address in URL
+
+# Theo sez:
+# Have gotten FPs off this, and whitespace can't be in the host, so...
+# %    Visit my homepage: http://i.like.foo.com %
+# Also ignore some bad parses like http://foo.bar%20http://foo.bar
+uri HTTP_ESCAPED_HOST           /^https?\:\/\/[^\/\s\?\&\#\']*(?!%(?:20|3[cCeE])(?:https?:|mailto:))%[0-9a-fA-F][0-9a-fA-F]/
+describe HTTP_ESCAPED_HOST	Uses %-escapes inside a URL's hostname
+
+# look for URI with escaped 0-9, A-Z, or a-z characters (all other safe
+# characters have been well-tested, but are sometimes unnecessarily escaped
+# in nonspam; requiring "http" or "https" also reduces false positives).
+uri HTTP_EXCESSIVE_ESCAPES	/^https?:\/\/\S*%(?:3\d|[46][1-9a-f]|[57][\da])/i
+describe HTTP_EXCESSIVE_ESCAPES	Completely unnecessary %-escapes inside a URL
+
+# bug 1801
+uri IP_LINK_PLUS	m{^https?://\d+\.\d+\.\d+\.\d+.{0,20}(?:cgi|click|ads|id=)}i
+describe IP_LINK_PLUS	Dotted-decimal IP address followed by CGI
+
+# allow ports 80 and 443 which are http and https, respectively
+# we don't want to hit http://www.cnn.com:USArticle1840@www.liquidshirts.com/
+# though, which actually doesn't have a weird port in it.
+uri WEIRD_PORT			m{https?://[^/?\s]+?:\d+(?<!:80)(?<!:443)(?<!:8080)(?:/|\s|$)}
+describe WEIRD_PORT		Uses non-standard port number for HTTP
+
+# Matt Cline
+# Pretty good for most folks, except for jm: I have a really stupid
+# e-commerce bunch obfuscating their URLs with this for some reason. screw 'em
+# jm: hesitant to remove this outright; it should be good against phishers
+#uri      HTTP_ENTITIES_HOST	m{https?://[^\s\">/]*\&\#[\da-f]+}i
+#describe HTTP_ENTITIES_HOST	URI obscured with character entities
+
+uri YAHOO_RD_REDIR		m{^https?\://rd\.yahoo\.com/(?:[0-9]{4}|partner\b|dir\b)}i
+describe YAHOO_RD_REDIR		Has Yahoo Redirect URI
+
+uri YAHOO_DRS_REDIR		m{^https?://drs\.yahoo\.com/}i
+describe YAHOO_DRS_REDIR	Has Yahoo Redirect URI
+
+# "www" hidden as "%77%77%77", "ww%77", etc.
+# note: *not* anchored to start of string, to catch use of redirectors
+uri HTTP_77			/http:\/\/.{0,2}\%77/
+describe HTTP_77		Contains an URL-encoded hostname (HTTP77)
+
+# a.com.b.c
+uri SPOOF_COM2OTH	m{^https?://(?:\w+\.)+?com\.(?!(?:[a-z]{2}\.)?s3\.amazonaws\.com|\w+\.psmtp\.com)(?:\w+\.){2}}i
+describe SPOOF_COM2OTH	URI contains ".com" in middle
+
+# a.com.b.com
+uri __SPOOF_COM2COM	m{^https?://(?:\w+\.)+?com\.(?!(?:[a-z]{2}\.)?s3\.amazonaws\.com|\w+\.psmtp\.com)(?:\w+\.)+?com\b}i
+meta SPOOF_COM2COM	__SPOOF_COM2COM && !SPOOF_COM2OTH
+describe SPOOF_COM2COM 	URI contains ".com" in middle and end
+
+# a.net.b.com
+uri SPOOF_NET2COM	m{^https?://(?:\w+\.)+?(?:net|org)\.(?!(?:[a-z]{2}\.)?s3\.amazonaws\.com)(?:\w+\.)+?com\b}i
+describe SPOOF_NET2COM 	URI contains ".net" or ".org", then ".com"
+
+uri URI_HEX		m%^https?://[^/?&\#]*\b(?![0-9a-f]{0,12}[a-f]{3})[0-9a-f]{6,}\b%i
+describe URI_HEX	URI hostname has long hexadecimal sequence
+
+uri URI_NOVOWEL		m%^https?://[^/?&\#]*[bcdfgjklmnpqrstvwxz]{7}%i
+describe URI_NOVOWEL	URI hostname has long non-vowel sequence
+tflags URI_NOVOWEL      userconf     # lock scores low
+
+uri URI_UNSUBSCRIBE		/\b(?:gone|opened|out)\.php/i
+describe URI_UNSUBSCRIBE	URI contains suspicious unsubscribe link
+
+
+# bug 3896: URIs in various TLDs, other than 3rd level www
+uri URI_NO_WWW_INFO_CGI	/^(?:https?:\/\/)?[^\/]+(?<!\/www)\.[^.]{7,}\.info\/(?=\S{15,})\S*\?/i
+describe URI_NO_WWW_INFO_CGI	CGI in .info TLD other than third-level "www"
+
+uri URI_NO_WWW_BIZ_CGI	/^(?:https?:\/\/)?[^\/]+(?<!\/www)\.[^.]{7,}\.biz\/(?=\S{15,})\S*\?/i
+describe URI_NO_WWW_BIZ_CGI	CGI in .biz TLD other than third-level "www"
+
+###########################################################################
+
+uri NORMAL_HTTP_TO_IP          m{^https?://(?!1(?:0|27|69\.254|72\.(?:1[6-9]|2\d|3[01])|92\.168)\.)\d+\.\d+\.\d+\.\d+\b(?![.-])}i
+describe NORMAL_HTTP_TO_IP     URI host has a public dotted-decimal IPv4 address
+

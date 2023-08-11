@@ -1,0 +1,45 @@
+# SpamAssassin - ASN rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# Requires the Mail::SpamAssassin::Plugin::ASN plugin be loaded.
+
+# This plugin queries asn.routeviews.org for ASN and route info and adds a
+# header containing the data returned so that it can be used by the bayes
+# tokenizer.  See the plugin's POD docs for more info.
+
+# Apply default ASN rules for pre-4.0 clients only.
+# Usage changed in 4.0: there is also direct GeoDB/GeoIP support,
+# users should configure manually as described in plugin documentation.
+ifplugin Mail::SpamAssassin::Plugin::ASN
+if !(can(Mail::SpamAssassin::Plugin::ASN::has_check_asn))
+ asn_lookup asn.routeviews.org _ASN_ _ASNCIDR_
+ add_header all ASN _ASN_ _ASNCIDR_
+
+ # IPv6 support (Bug 7211)
+ #if can(Mail::SpamAssassin::Plugin::ASN::has_asn_lookup_ipv6)
+ #  asn_lookup_ipv6 origin6.asn.cymru.com _ASN_ _ASNCIDR_
+ #endif
+endif	# !has_check_asn
+endif	# Mail::SpamAssassin::Plugin::ASN

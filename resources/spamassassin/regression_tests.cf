@@ -1,0 +1,62 @@
+# SpamAssassin rules file: regression tests
+#
+# This file contains tests performed on `make test`. It should not be
+# distributed.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+test DEAR_SOMETHING ok Dear IT professional,
+test DEAR_SOMETHING ok Dear Internet Investor:
+test DEAR_FRIEND ok Dear friend,
+test DEAR_FRIEND fail Dear Mr. Ithacus,
+
+test FROM_STARTS_WITH_NUMS     ok   12345678matt@sergeant.org
+test FROM_STARTS_WITH_NUMS     fail matt@sergeant.org
+test FORGED_YAHOO_RCVD fail by mf1.lng.yahoo.com (8.11.1/8.11.1) id g3SDfPH19426
+test NUMERIC_HTTP_ADDR ok http://123456789/foo/bar
+
+test US_DOLLARS_3 fail $-$NFbMF$K!"A49q$+$iLd$$9g$o$;$,;&E~$7$F$$$^$9!#
+test US_DOLLARS_3 ok OF US$75,000,000.00 ( SEVENTYFIVE
+test US_DOLLARS_3 ok DOLLAR(USD$30,000,000,00.)
+test US_DOLLARS_3 ok ($21,500,000.)
+test US_DOLLARS_3 ok ($ 152,000.000.00)
+
+# note: have to use "." instead of "#", as it's the comment char
+
+test TRACKER_ID     ok          2174Hzdm0-105YUqT8863DiDg0-616mqbE4931HEBc0-732qBHd6314l52
+test TRACKER_ID     ok          ofsknxxdqgtgqvsoiytkivajvtj
+test TRACKER_ID     fail        <!-- ADMINISTRIVIA -->
+test TRACKER_ID     fail        Donau-Dampfschifffahrts-Kapitaen
+
+test __OBFUSCATING_COMMENT_A ok     This is a te<!--foo-->st
+test __OBFUSCATING_COMMENT_A fail   Not a <!-- problem --> here
+test __OBFUSCATING_COMMENT_A fail   or<!--problem--> here
+test __OBFUSCATING_COMMENT_A fail   This <tag><!-- neither --></tag> I hope
+
+test HIDE_WIN_STATUS ok <a href=foo onMouseOver="window.status='bar';>
+test HIDE_WIN_STATUS fail attributes like href=foo onMouseOver="window.status='bar'"
+test HIDE_WIN_STATUS fail attributes like href=foo onMouseOver="flashiness"
+
+test BAD_CREDIT ok   no credit checks
+test BAD_CREDIT ok   reestablish credit
+test BAD_CREDIT ok   establish good credit
+test BAD_CREDIT ok   repair your credit
+test BAD_CREDIT fail NOTICE: Your credit card company may place the words "San Antonio"
+

@@ -1,0 +1,147 @@
+# SpamAssassin - DKIM rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# Requires the Mail::SpamAssassin::Plugin::DKIM plugin be loaded.
+
+ifplugin Mail::SpamAssassin::Plugin::DKIM
+
+# Note: DKIM_SIGNED, DKIM_VALID and DKIM_VALID_AU are mainly informational
+# rules, and can serve as a basis for meta rules; it is not difficult for a
+# sender to cause hits on them or to prevent them from firing, so their score
+# should be kept low.
+
+full     DKIM_SIGNED		eval:check_dkim_signed()
+describe DKIM_SIGNED		Message has a DKIM or DK signature, not necessarily valid
+tflags   DKIM_SIGNED		net
+reuse    DKIM_SIGNED
+
+full     DKIM_VALID		eval:check_dkim_valid()
+describe DKIM_VALID		Message has at least one valid DKIM or DK signature
+tflags   DKIM_VALID		net nice
+reuse    DKIM_VALID
+
+meta     DKIM_INVALID		DKIM_SIGNED && !DKIM_VALID
+describe DKIM_INVALID		DKIM or DK signature exists, but is not valid
+
+full     DKIM_VALID_AU		eval:check_dkim_valid_author_sig()
+describe DKIM_VALID_AU		Message has a valid DKIM or DK signature from author's domain
+tflags   DKIM_VALID_AU		net nice
+reuse    DKIM_VALID_AU
+
+if (version >= 3.004002)
+full     DKIM_VALID_EF		eval:check_dkim_valid_envelopefrom()
+describe DKIM_VALID_EF		Message has a valid DKIM or DK signature from envelope-from domain
+tflags   DKIM_VALID_EF		net nice
+reuse    DKIM_VALID_EF
+endif
+
+full     __DKIM_DEPENDABLE	eval:check_dkim_dependable()
+describe __DKIM_DEPENDABLE	A validation failure not attributable to truncation
+reuse    __DKIM_DEPENDABLE
+
+header   DKIM_ADSP_NXDOMAIN	eval:check_dkim_adsp('N')
+describe DKIM_ADSP_NXDOMAIN	No valid author signature and domain not in DNS
+tflags   DKIM_ADSP_NXDOMAIN	net
+reuse    DKIM_ADSP_NXDOMAIN
+
+header   DKIM_ADSP_DISCARD	eval:check_dkim_adsp('D')
+describe DKIM_ADSP_DISCARD	No valid author signature, domain signs all mail and suggests discarding the rest
+tflags   DKIM_ADSP_DISCARD	net
+reuse    DKIM_ADSP_DISCARD
+
+header   DKIM_ADSP_ALL		eval:check_dkim_adsp('A')
+describe DKIM_ADSP_ALL		No valid author signature, domain signs all mail
+tflags   DKIM_ADSP_ALL		net
+reuse    DKIM_ADSP_ALL
+
+header   DKIM_ADSP_CUSTOM_LOW	eval:check_dkim_adsp('1')
+describe DKIM_ADSP_CUSTOM_LOW	No valid author signature, adsp_override is CUSTOM_LOW
+tflags   DKIM_ADSP_CUSTOM_LOW	net userconf
+reuse    DKIM_ADSP_CUSTOM_LOW
+
+header   DKIM_ADSP_CUSTOM_MED	eval:check_dkim_adsp('2')
+describe DKIM_ADSP_CUSTOM_MED	No valid author signature, adsp_override is CUSTOM_MED
+tflags   DKIM_ADSP_CUSTOM_MED	net userconf
+reuse    DKIM_ADSP_CUSTOM_MED
+
+header   DKIM_ADSP_CUSTOM_HIGH	eval:check_dkim_adsp('3')
+describe DKIM_ADSP_CUSTOM_HIGH	No valid author signature, adsp_override is CUSTOM_HIGH
+tflags   DKIM_ADSP_CUSTOM_HIGH	net userconf
+reuse    DKIM_ADSP_CUSTOM_HIGH
+
+full     __RESIGNER1     eval:check_dkim_valid('linkedin.com')
+tflags   __RESIGNER1     net
+reuse    __RESIGNER1
+full     __RESIGNER2     eval:check_dkim_valid('googlegroups.com','yahoogroups.com','yahoogroups.de')
+tflags   __RESIGNER2     net
+reuse    __RESIGNER2
+meta     __VIA_RESIGNER  __RESIGNER1 || __RESIGNER2
+describe __VIA_RESIGNER  Mail through a popular signing remailer
+
+meta     NML_ADSP_CUSTOM_LOW    DKIM_ADSP_CUSTOM_LOW  && !__VIA_ML && !__VIA_RESIGNER
+describe NML_ADSP_CUSTOM_LOW    ADSP custom_low hit, and not from a mailing list
+
+meta     NML_ADSP_CUSTOM_MED    DKIM_ADSP_CUSTOM_MED  && !__VIA_ML && !__VIA_RESIGNER
+describe NML_ADSP_CUSTOM_MED    ADSP custom_med hit, and not from a mailing list
+
+meta     NML_ADSP_CUSTOM_HIGH   DKIM_ADSP_CUSTOM_HIGH && !__VIA_ML && !__VIA_RESIGNER
+describe NML_ADSP_CUSTOM_HIGH   ADSP custom_high hit, and not from a mailing list
+
+if can(Mail::SpamAssassin::Plugin::DKIM::has_arc)
+  full     ARC_SIGNED		eval:check_arc_signed()
+  describe ARC_SIGNED		Message has a ARC signature
+  tflags   ARC_SIGNED		net
+  reuse    ARC_SIGNED
+
+  full     ARC_VALID		eval:check_arc_valid()
+  describe ARC_VALID		Message has a valid ARC signature
+  tflags   ARC_VALID		net
+  reuse    ARC_VALID
+
+  meta     ARC_INVALID		ARC_SIGNED && !ARC_VALID
+  describe ARC_INVALID		ARC signature exists, but is not valid
+endif
+
+#
+# old, declared for compatibility with pre-3.3, should have scores 0
+#
+
+full   DKIM_VERIFIED		eval:check_dkim_valid()
+tflags DKIM_VERIFIED		net nice
+reuse  DKIM_VERIFIED
+
+header DKIM_POLICY_TESTING	eval:check_dkim_testing()
+tflags DKIM_POLICY_TESTING	net nice
+reuse  DKIM_POLICY_TESTING
+
+header DKIM_POLICY_SIGNSOME	eval:check_dkim_signsome()
+tflags DKIM_POLICY_SIGNSOME	net nice
+reuse  DKIM_POLICY_SIGNSOME
+
+header DKIM_POLICY_SIGNALL	eval:check_dkim_signall()
+tflags DKIM_POLICY_SIGNALL	net nice
+reuse  DKIM_POLICY_SIGNALL
+
+endif   # Mail::SpamAssassin::Plugin::DKIM

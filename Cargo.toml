@@ -10,6 +10,7 @@ members = [
     "crates/managesieve",
     "crates/store",
     "crates/directory",
+    "crates/antispam",
     "crates/utils",
     "crates/maybe-async",
     "crates/cli",

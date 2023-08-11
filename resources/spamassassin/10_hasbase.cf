@@ -1,0 +1,89 @@
+# SpamAssassin rules file: Base __HAS_* rules for meta rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# PLEASE KEEP THIS TIDY
+
+# According to Bug 6781
+
+# Header rules
+
+
+header   __HAS_SENDER 		exists:Sender
+
+header 	__HAS_FROM 		exists:From
+
+header 	__HAS_TO		exists:To
+
+header	__HAS_CC		exists:CC
+
+header  __HAS_REPLY_TO          exists:Reply-To
+
+header	__HAS_ORGANIZATION	exists:Organization
+
+# Webmail
+
+# MUA & User Agents
+header  __HAS_UA                exists:User-Agent
+header  __HAS_XMAIL             exists:X-Mailer
+
+
+# Other
+header  __HAS_DKIM_SIGHD	exists:DKIM-Signature
+
+header  __HAS_TNEF		exists:X-MS-TNEF-Correlator
+
+header  __HAS_ERRORS_TO         exists:Errors-To
+header  __HAS_ORIGINALLY        exists:X-Originally-To
+header  __HAS_LIST_ID           exists:List-Id
+header  __HAS_X_BEEN_THERE      exists:X-BeenThere
+header  __HAS_X_REF             exists:References
+header  __HAS_IN_REPLY_TO       exists:In-Reply-To
+header  __XPRIO                 exists:X-Priority
+header  __DISPONOT              exists:Disposition-Notification-To
+header  __RRCPTO                exists:Return-Receipt-To
+header  __OLDPEG                exists:X-Confirm-Reading-To
+header  __AOL_IP                exists:X-AOL-IP
+
+
+# Rawbody rules
+
+
+
+# Mimeheader rules
+# should be encapsulated in if ... endif
+
+ifplugin Mail::SpamAssassin::Plugin::MIMEHeader
+# Put rules below
+
+
+#
+endif
+
+
+
+
+# URI rules
+
+uri 	__HAS_URI /./

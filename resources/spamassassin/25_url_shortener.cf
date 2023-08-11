@@ -1,0 +1,302 @@
+# SpamAssassin - URL shortener rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+###
+### Note that this file contains two separate lists, url_shortener and a
+### backup regex generated from it.  Both must updated and kept in sync.
+###
+### __URL_SHORTENER will always by set by either the plugin or regex
+###
+
+# SpamAssassin 4.0 version required
+if can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_short_url_redir)
+
+body __URL_SHORTENER eval:short_url()
+
+body URL_SHORTENER_CHAINED     eval:short_url_chained()
+describe URL_SHORTENER_CHAINED Message contains shortened URL chained to other shorteners
+tflags URL_SHORTENER_CHAINED   net
+score URL_SHORTENER_CHAINED    0.01
+
+uri URL_SHORTENER_DISABLED      m,^https://(?:bitly\.com/a/blocked|tinyurl\.com/app/nospam),
+describe URL_SHORTENER_DISABLED Message contains shortened URL that has been disabled due to abuse
+tflags URL_SHORTENER_DISABLED   net
+score URL_SHORTENER_DISABLED    2
+
+#
+# Please only add entries that you manually verified as actual working
+# redirectors that can have abusable custom URLs.  Adding non-abusable
+# services only generates unnecessary HTTP requests.
+#
+# After any changes, also update __URL_SHORTENER regex at end of file.
+#
+
+# generic list of likely active services - cleaned up 25.05.2022
+url_shortener .ftn.app
+url_shortener .page.link
+url_shortener .short.gy
+url_shortener .shortz.me
+url_shortener 0rz.tw
+url_shortener 4sq.com
+url_shortener 4url.cc
+url_shortener afly.co
+url_shortener ai6.net
+url_shortener amzn.com
+url_shortener amzn.to
+url_shortener b.link
+url_shortener b23.ru
+url_shortener binged.it
+url_shortener bit.do
+url_shortener bit.ly
+url_shortener bitly.com
+url_shortener bizj.us
+url_shortener chilp.it
+url_shortener conta.cc
+url_shortener crks.me
+url_shortener cutt.ly
+url_shortener cutwin.biz
+url_shortener dai.ly
+url_shortener db.tt
+url_shortener disq.us
+url_shortener dlvr.it
+url_shortener doi.org
+url_shortener doiop.com
+url_shortener eepurl.com
+url_shortener fb.me
+url_shortener fire.to
+url_shortener firsturl.de
+url_shortener firsturl.net
+url_shortener flic.kr
+url_shortener gdurl.com
+url_shortener go.ly
+url_shortener goo.gl
+url_shortener goolnk.com
+url_shortener gplinks.in
+url_shortener guest.link
+url_shortener hellotxt.com
+url_shortener hop.kz
+url_shortener hotshorturl.com
+url_shortener hub.am
+url_shortener huff.to
+url_shortener hurl.it
+url_shortener hyperurl.co
+url_shortener inx.lv
+url_shortener is.gd
+url_shortener it2.in
+url_shortener j.mp
+url_shortener kore.us
+url_shortener kurl.no
+url_shortener l.bestsellers.to
+url_shortener lnk.sk
+url_shortener lnkd.in
+url_shortener lnkiy.in
+url_shortener lru.jp
+url_shortener mrte.ch
+url_shortener n9.cl
+url_shortener ndurl.com
+url_shortener onion.com
+url_shortener ouo.io
+url_shortener ow.ly
+url_shortener owl.li
+url_shortener pduda.mobi
+url_shortener rb.gy
+url_shortener redir.ec
+url_shortener rotf.lol
+url_shortener s.apache.org
+url_shortener s.free.fr
+url_shortener s.id
+url_shortener shar.es
+url_shortener shorl.com
+url_shortener shortn.me
+url_shortener shorturl.at
+url_shortener simurl.net
+url_shortener slidesha.re
+url_shortener smarturl.it
+url_shortener smfu.in
+url_shortener snip.ly
+url_shortener snkr.me
+url_shortener stpmvt.com
+url_shortener t.co
+url_shortener t.ly
+url_shortener tcrn.ch
+url_shortener tgr.ph
+url_shortener tiny.cc
+url_shortener tiny.one
+url_shortener tiny.pl
+url_shortener tinylink.in
+url_shortener tinyurl.com
+url_shortener to.ly
+url_shortener trib.al
+url_shortener twixar.me
+url_shortener u.nu
+url_shortener u.to
+url_shortener url.ie
+url_shortener urlcut.com
+url_shortener urlday.cc
+url_shortener urls.im
+url_shortener urlz.at
+url_shortener urlzs.com
+url_shortener utfg.sk
+url_shortener wow.link
+url_shortener wp.me
+url_shortener x.co
+url_shortener x.hypem.com
+url_shortener xurl.es
+url_shortener yhoo.it
+url_shortener youtu.be
+url_shortener z23.ru
+url_shortener zurl.ws
+
+# www.shrunken.com - list validated 25.05.2022
+url_shortener www.shrunken.com
+url_shortener 0.gp
+url_shortener 2.gp
+url_shortener 2.ly
+url_shortener 3.ly
+url_shortener 4.gp
+url_shortener 4.ly
+url_shortener 5.gp
+url_shortener 6.gp
+url_shortener 6.ly
+url_shortener 7.ly
+url_shortener 8.ly
+url_shortener 9.ly
+url_shortener g.asia
+url_shortener p.asia
+url_shortener ur3.us
+
+# shorturl.com - list validated 25.05.2022
+url_shortener alturl.com
+url_shortener .1sta.com
+url_shortener .24ex.com
+url_shortener .2fear.com
+url_shortener .2fortune.com
+url_shortener .2freedom.com
+url_shortener .2hell.com
+url_shortener .2savvy.com
+url_shortener .2truth.com
+url_shortener .2tunes.com
+url_shortener .2ya.com
+url_shortener .alturl.com
+url_shortener .antiblog.com
+url_shortener .bigbig.com
+url_shortener .dealtap.com
+url_shortener .ebored.com
+url_shortener .echoz.com
+url_shortener .filetap.com
+url_shortener .funurl.com
+url_shortener .headplug.com
+url_shortener .hereweb.com
+url_shortener .hitart.com
+url_shortener .mirrorz.com
+url_shortener .mp3update.com
+url_shortener .shorturl.com
+url_shortener .spyw.com
+url_shortener .vze.com
+
+# iscool.net - list validated 25.05.2022
+url_shortener .arecool.net
+url_shortener .iscool.net
+url_shortener .isfun.net
+url_shortener .tux.nu
+
+# kisa.link - list validated 25.05.2022
+url_shortener kisa.link
+url_shortener www.kisa.link
+url_shortener bul.tc
+url_shortener cy.tc
+url_shortener fn.tc
+url_shortener ftp.tc
+url_shortener gr.tc
+url_shortener hbr.tc
+url_shortener heg.tc
+url_shortener ins.tc
+url_shortener ko.tc
+url_shortener kod.tc
+url_shortener lol.tc
+url_shortener m2.tc
+url_shortener ml.tc
+url_shortener mmo.tc
+url_shortener oy.tc
+url_shortener pc.tc
+url_shortener pubg.tc
+url_shortener pvp.tc
+url_shortener sro.tc
+url_shortener tek.link
+url_shortener tw.tc
+
+# grabify.link - list validated 25.05.2022
+url_shortener grabify.link
+url_shortener catsnthing.com
+url_shortener catsnthings.fun
+url_shortener cheapcinema.club
+url_shortener dateing.club
+url_shortener fortnight.space
+url_shortener fortnitechat.site
+url_shortener freegiftcards.co
+url_shortener gaming-at-my.best
+url_shortener gamingfun.me
+url_shortener headshot.monster
+url_shortener imageshare.best
+url_shortener joinmy.site
+url_shortener leancoding.co
+url_shortener locations.quest
+url_shortener lovebird.guru
+url_shortener myprivate.pics
+url_shortener noodshare.pics
+url_shortener partpicker.shop
+url_shortener progaming.monster
+url_shortener screenshare.pics
+url_shortener screenshot.best
+url_shortener shhh.lol
+url_shortener shrekis.life
+url_shortener sportshub.bar
+url_shortener stopify.co
+url_shortener trulove.guru
+url_shortener yourmy.monster
+
+# GET method required for some services, keep the same services in url_shortener also
+if can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_get)
+url_shortener_get bit.ly
+endif
+
+endif  # has_short_url_redir
+
+
+###
+### Use a regex if DecodeShortURLs plugin is not loaded
+###
+
+if !can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_short_url_redir)
+
+## Generate __URL_SHORTENER with this command, to keep it in sync with url_shortener list:
+##
+## perl -pe 'while (<>) {/^\s*url_shortener\s+(\S+)/ or next;$s=quotemeta($1);$s=~s/^\\./\\w+\\./;push @a,$s} print "uri __URL_SHORTENER m,^https?://(?:".join("|",@a).")/,i\n"' < 25_url_shortener.cf
+##
+
+uri __URL_SHORTENER m,^https?://(?:\w+\.ftn\.app|\w+\.page\.link|\w+\.short\.gy|\w+\.shortz\.me|0rz\.tw|4sq\.com|4url\.cc|afly\.co|ai6\.net|amzn\.com|amzn\.to|b\.link|b23\.ru|binged\.it|bit\.do|bit\.ly|bitly\.com|bizj\.us|chilp\.it|conta\.cc|crks\.me|cutt\.ly|cutwin\.biz|dai\.ly|db\.tt|disq\.us|dlvr\.it|doi\.org|doiop\.com|eepurl\.com|fb\.me|fire\.to|firsturl\.de|firsturl\.net|flic\.kr|gdurl\.com|go\.ly|goo\.gl|goolnk\.com|gplinks\.in|guest\.link|hellotxt\.com|hop\.kz|hotshorturl\.com|hub\.am|huff\.to|hurl\.it|hyperurl\.co|inx\.lv|is\.gd|it2\.in|j\.mp|kore\.us|kurl\.no|l\.bestsellers\.to|lnk\.sk|lnkd\.in|lnkiy\.in|lru\.jp|mrte\.ch|n9\.cl|ndurl\.com|onion\.com|ouo\.io|ow\.ly|owl\.li|pduda\.mobi|rb\.gy|redir\.ec|rotf\.lol|s\.apache\.org|s\.free\.fr|s\.id|shar\.es|shorl\.com|shortn\.me|shorturl\.at|simurl\.net|slidesha\.re|smarturl\.it|smfu\.in|snip\.ly|snkr\.me|stpmvt\.com|t\.co|t\.ly|tcrn\.ch|tgr\.ph|tiny\.cc|tiny\.one|tiny\.pl|tinylink\.in|tinyurl\.com|to\.ly|trib\.al|twixar\.me|u\.nu|u\.to|url\.ie|urlcut\.com|urlday\.cc|urls\.im|urlz\.at|urlzs\.com|utfg\.sk|wow\.link|wp\.me|x\.co|x\.hypem\.com|xurl\.es|yhoo\.it|youtu\.be|z23\.ru|zurl\.ws|www\.shrunken\.com|0\.gp|2\.gp|2\.ly|3\.ly|4\.gp|4\.ly|5\.gp|6\.gp|6\.ly|7\.ly|8\.ly|9\.ly|g\.asia|p\.asia|ur3\.us|alturl\.com|\w+\.1sta\.com|\w+\.24ex\.com|\w+\.2fear\.com|\w+\.2fortune\.com|\w+\.2freedom\.com|\w+\.2hell\.com|\w+\.2savvy\.com|\w+\.2truth\.com|\w+\.2tunes\.com|\w+\.2ya\.com|\w+\.alturl\.com|\w+\.antiblog\.com|\w+\.bigbig\.com|\w+\.dealtap\.com|\w+\.ebored\.com|\w+\.echoz\.com|\w+\.filetap\.com|\w+\.funurl\.com|\w+\.headplug\.com|\w+\.hereweb\.com|\w+\.hitart\.com|\w+\.mirrorz\.com|\w+\.mp3update\.com|\w+\.shorturl\.com|\w+\.spyw\.com|\w+\.vze\.com|\w+\.arecool\.net|\w+\.iscool\.net|\w+\.isfun\.net|\w+\.tux\.nu|kisa\.link|www\.kisa\.link|bul\.tc|cy\.tc|fn\.tc|ftp\.tc|gr\.tc|hbr\.tc|heg\.tc|ins\.tc|ko\.tc|kod\.tc|lol\.tc|m2\.tc|ml\.tc|mmo\.tc|oy\.tc|pc\.tc|pubg\.tc|pvp\.tc|sro\.tc|tek\.link|tw\.tc|grabify\.link|catsnthing\.com|catsnthings\.fun|cheapcinema\.club|dateing\.club|fortnight\.space|fortnitechat\.site|freegiftcards\.co|gaming\-at\-my\.best|gamingfun\.me|headshot\.monster|imageshare\.best|joinmy\.site|leancoding\.co|locations\.quest|lovebird\.guru|myprivate\.pics|noodshare\.pics|partpicker\.shop|progaming\.monster|screenshare\.pics|screenshot\.best|shhh\.lol|shrekis\.life|sportshub\.bar|stopify\.co|trulove\.guru|yourmy\.monster)/,i
+
+endif
+

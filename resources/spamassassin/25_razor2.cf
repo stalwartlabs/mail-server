@@ -1,0 +1,72 @@
+# SpamAssassin rules file: razor2 tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+##
+## SpamAssassin 4.0.0 note:
+##   RAZOR rule priorities are automatically adjusted to -100 when razor_fork
+##   option is enabled (async lookup)
+##
+
+ifplugin Mail::SpamAssassin::Plugin::Razor2
+
+full RAZOR2_CHECK	eval:check_razor2()
+describe RAZOR2_CHECK	Listed in Razor2 (http://razor.sf.net/)
+tflags RAZOR2_CHECK	net autolearn_body
+priority RAZOR2_CHECK	20
+reuse  RAZOR2_CHECK
+
+lang de describe RAZOR2_CHECK	Gelistet im "Razor2"-System (http://razor.sf.net/)
+lang nl describe RAZOR2_CHECK	Gevonden in Razor2 (http://razor.sf.net/)
+lang fr describe RAZOR2_CHECK	Message listé par Razor2, voir http://razor.sourceforge.net
+lang pl describe RAZOR2_CHECK	Na li¶cie Razor2 (http://razor.sf.net/)
+
+# cf (confidence level) is how likely the message is spam.  RAZOR2_CHECK
+# returns true if cf>=min_cf (as defined by user/config).  These return
+# true depending on what cf value the message has.  The algorithm goes:
+# check the message via razor, then go through each mime part and check
+# how razor scored it.  If the part is contested (ie: it's been reported
+# as both ham and spam) it's ignored.  SA takes the highest non-contested
+# part cf score and returns it for the range rules.  ie: This is essentially
+# Razor 2's logic_method 4.
+#
+# Note: Disabling RAZOR2_CHECK (score RAZOR2_CHECK 0) will also disable
+# these checks.
+#
+# Note: The scores are set to 0 on these tests right now until they get
+# better integrated with SA overall.
+#
+
+full    RAZOR2_CF_RANGE_51_100  eval:check_razor2_range('','51','100')
+tflags  RAZOR2_CF_RANGE_51_100	net
+priority RAZOR2_CF_RANGE_51_100 20
+reuse 	RAZOR2_CF_RANGE_51_100
+describe RAZOR2_CF_RANGE_51_100	Razor2 gives confidence level above 50%
+
+lang de describe RAZOR2_CF_RANGE_51_100	Razor2 Spam-Bewertung liegt zwischen 51 und 100
+lang fr describe RAZOR2_CF_RANGE_51_100	Razor2 donne un indice de confiance entre 51 et 100
+lang nl describe RAZOR2_CF_RANGE_51_100	Razor2 geeft een zekerheid tussen 51 en 100
+lang pl describe RAZOR2_CF_RANGE_51_100	Razor2 stwierdzi³ pewno¶æ pomiêdzy 51 i 100
+
+endif

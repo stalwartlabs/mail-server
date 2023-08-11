@@ -1,0 +1,60 @@
+# SpamAssassin - Mail.com Freemail domains file
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# List contains commonly abused end user mail providers
+# "freemail" is solely used for label purposes.
+
+# This dedicated list contains domains provided by mail.com
+
+# Updated 2014-09-17-axb
+
+ifplugin Mail::SpamAssassin::Plugin::FreeMail
+
+freemail_domains accountant.com acdcfan.com activist.com adexec.com africamail.com aircraftmail.com allergist.com alumni.com alumnidirector.com angelic.com appraiser.net archaeologist.com arcticmail.com artlover.com asia-mail.com asia.com atheist.com auctioneer.net australiamail.com
+freemail_domains bartender.net bellair.net berlin.com bikerider.com birdlover.com blader.com boardermail.com brazilmail.com brew-master.com brew-meister.com bsdmail.com
+freemail_domains californiamail.com cash4u.com catlover.com cheerful.com chef.net chemist.com chinamail.com clerk.com clubmember.org collector.org columnist.com comic.com computer4u.com consultant.com contractor.net coolsite.net counsellor.com cutey.com cyber-wizard.com cyberdude.com cybergal.com cyberservices.com
+freemail_domains dallasmail.com dbzmail.com deliveryman.com diplomats.com disciples.com discofan.com disposable.com doctor.com doglover.com doramail.com dr.com dublin.com dutchmail.com
+freemail_domains elvisfan.com email.com engineer.com englandmail.com europe.com europemail.com execs.com
+freemail_domains fastservice.com financier.com fireman.net
+freemail_domains galaxyhit.com gardener.com geologist.com germanymail.com graduate.org graphic-designer.com greenmail.net groupmail.com
+freemail_domains hackermail.com hairdresser.net hilarious.com hiphopfan.com homemail.com hot-shot.com housemail.com humanoid.net
+freemail_domains iname.acom iname.com innocent.com inorbit.com instruction.com instructor.net insurer.com irelandmail.com israelmail.com italymail.com
+freemail_domains job4u.com journalist.com
+freemail_domains keromail.com kissfans.com kittymail.com koreamail.com
+freemail_domains legislator.com linuxmail.org lobbyist.com lovecat.com
+freemail_domains madonnafan.com mail-me.com mail.com marchmail.com metalfan.com mexicomail.com minister.com moscowmail.com munich.com musician.org muslim.com myself.com
+freemail_domains net-shopping.com ninfan.com nonpartisan.com null.net nycmail.com
+freemail_domains oath.com optician.com orthodontist.net
+freemail_domains pacific-ocean.com pacificwest.com pediatrician.com petlover.com photographer.net physicist.net planetmail.com planetmail.net polandmail.com politician.com post.com presidency.com priest.com programmer.net protestant.com publicist.com
+freemail_domains qualityservice.com
+freemail_domains radiologist.net ravemail.com realtyagent.com reborn.com reggaefan.com registerednurses.com reincarnate.com religious.com repairman.com representative.com rescueteam.com rocketship.com
+freemail_domains safrica.com saintly.com salesperson.net samerica.com sanfranmail.com scientist.com scotlandmail.com secretary.net snakebite.com socialworker.net sociologist.com solution4u.com songwriter.net spainmail.com surgical.net swedenmail.com swissmail.com
+freemail_domains teachers.org tech-center.com techie.com technologist.com theplate.com therapist.net toke.com toothfairy.com torontomail.com tvstar.com
+freemail_domains umpire.com usa.com uymail.com
+freemail_domains webname.com worker.com workmail.com writeme.com
+
+endif
+
+

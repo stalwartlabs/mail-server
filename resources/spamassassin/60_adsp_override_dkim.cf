@@ -1,0 +1,218 @@
+# SpamAssassin rules file: default DKIM ADSP overrides
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+
+###########################################################################
+# DKIM ADSP overrides
+
+ifplugin Mail::SpamAssassin::Plugin::DKIM
+
+# Later rules override previous, so to override any of the pre-sets here, just
+# declare the domain as unknown, e.g.: 'adsp_override somedomain unknown' .
+#
+# 'discardable' is implied in absence of the second argument.
+
+adsp_override ebay.com
+adsp_override ebay.at
+adsp_override ebay.be
+adsp_override ebay.ca
+adsp_override ebay.ch
+adsp_override ebay.de
+adsp_override ebay.ee
+adsp_override ebay.es
+adsp_override ebay.fr
+adsp_override ebay.hu
+adsp_override ebay.ie
+adsp_override ebay.in
+adsp_override ebay.it
+adsp_override ebay.nl
+adsp_override ebay.ph
+adsp_override ebay.pl
+adsp_override ebay.pt
+adsp_override ebay.se
+adsp_override ebay.co.kr
+adsp_override ebay.co.uk
+adsp_override ebay.com.au
+adsp_override ebay.com.cn
+adsp_override ebay.com.hk
+adsp_override ebay.com.mx
+adsp_override ebay.com.my
+adsp_override ebay.com.sq
+
+adsp_override paypal.com
+adsp_override paypal.co.uk
+
+adsp_override ealerts.bankofamerica.com
+adsp_override alert.bankofamerica.com
+adsp_override americangreetings.com
+adsp_override yahoo.americangreetings.com
+adsp_override msn.americangreetings.com
+adsp_override egreetings.com
+adsp_override bluemountain.com
+adsp_override hallmark.com
+adsp_override update.hallmark.com
+adsp_override *.hallmark.com
+
+adsp_override amazon.com            all
+adsp_override amazon.co.uk          all
+adsp_override amazon.de             all
+adsp_override amazon.fr             all
+adsp_override birthdayalarm.com     all
+adsp_override astrology.com         all
+adsp_override linkedin.com          all
+adsp_override *.linkedin.com        all
+adsp_override facebookmail.com      all
+adsp_override *.greenpeace.org      all
+adsp_override lists.sourceforge.net all
+adsp_override lufthansa.com         all
+adsp_override *.lufthansa.com       all
+adsp_override *.delivery.net        all
+
+adsp_override youtube.com    custom_high
+
+adsp_override google.com     custom_med
+adsp_override gmail.com      custom_med
+adsp_override googlemail.com custom_med
+
+adsp_override yahoo.com      custom_med
+adsp_override yahoo.com.ar   custom_med
+adsp_override yahoo.com.au   custom_med
+adsp_override yahoo.com.br   custom_med
+adsp_override yahoo.com.cn   custom_med
+adsp_override yahoo.com.hk   custom_med
+adsp_override yahoo.com.mx   custom_med
+adsp_override yahoo.com.my   custom_med
+adsp_override yahoo.com.ph   custom_med
+adsp_override yahoo.com.sg   custom_med
+adsp_override yahoo.com.tw   custom_med
+adsp_override yahoo.co.id    custom_med
+adsp_override yahoo.co.in    custom_med
+adsp_override yahoo.co.jp    custom_med
+adsp_override yahoo.co.nz    custom_med
+adsp_override yahoo.co.th    custom_med
+adsp_override yahoo.co.uk    custom_med
+adsp_override yahoo.ca       custom_med
+adsp_override yahoo.cn       custom_med
+adsp_override yahoo.de       custom_med
+adsp_override yahoo.dk       custom_med
+adsp_override yahoo.es       custom_med
+adsp_override yahoo.fr       custom_med
+adsp_override yahoo.gr       custom_med
+adsp_override yahoo.ie       custom_med
+adsp_override yahoo.it       custom_med
+adsp_override yahoo.no       custom_med
+adsp_override yahoo.pl       custom_med
+adsp_override yahoo.se       custom_med
+
+
+# Ignore linting, makes unnecessary lookups
+adsp_override compiling.spamassassin.taint.org unknown
+
+# To effectively disable ADSP network DNS lookups for all other domains:
+# adsp_override *            unknown
+
+
+# Currently few domains publish their signing practices (draft-ietf-dkim-ssp,
+# ADSP), partly because the ADSP draft/rfc is rather new, partly because they
+# think hardly any recipient bothers to check it, and partly for fear that
+# some recipients might lose mail due to problems in their signature validation
+# procedures or mail mangling by mailers beyond their control.
+# 
+# Nevertheless, recipients could benefit by knowing signing practices of a
+# sending (author's) domain, for example to recognize forged mail claiming
+# to be from certain domains which are popular targets for phishing, like
+# financial institutions. Unfortunately, as signing practices are seldom
+# published or are weak, it is hardly justifiable to look them up in DNS.
+# 
+# To overcome this chicken-or-the-egg problem, the adsp_override mechanism
+# allows recipients using SpamAssassin to override published or defaulted
+# ADSP for certain domains. This makes it possible to manually specify a
+# stronger (or weaker) signing practices than a signing domain is willing
+# to publish (explicitly or by default), and also save on a DNS lookup.
+# 
+# Note that ADSP (published or overridden) is only consulted for messages
+# which do not contain a valid DKIM signature from the author's domain.
+# 
+# According to ADSP draft, signing practices can be one of the following:
+# unknown, all and discardable.
+# 
+# unknown: Messages from this domain might or might not have an author
+# signature. This is a default if a domain exists in DNS but no ADSP record
+# is found.
+# 
+# all: All messages from this domain are signed with an Author Signature.
+# 
+# discardable: All messages from this domain are signed with an Author
+# Signature. If a message arrives without a valid Author Signature, the
+# domain encourages the recipient(s) to discard it.
+# 
+# ADSP lookup can also determine that a domain is "out of scope", i.e., the
+# domain does not exist (NXDOMAIN) in the DNS.
+# 
+# To override domain's signing practices in a SpamAssassin configuration file,
+# specify an adsp_override directive for each sending domain to be overridden.
+# 
+# Its first argument is a domain name. Author's domain is matched against it,
+# matching is case insensitive. This is not a regular expression or a file-glob
+# style wildcard, but limited wildcarding is still available: if this argument
+# starts by a "*." (or is a sole "*"), author's domain matches if it is a
+# subdomain (to one or more levels) of the argument. Otherwise (with no
+# leading asterisk) the match must be exact (not a subdomain).
+# 
+# An optional second parameter is one of the following keywords
+# (case-insensitive): nxdomain, unknown, all, discardable,
+# custom_low, custom_med, custom_high.
+# 
+# Absence of this second parameter implies discardable. If a domain is not
+# listed by a adsp_override directive nor does it explicitly publish any
+# ADSP record, then unknown is implied for valid domains, and nxdomain
+# for domains not existing in DNS. (Note: domain validity may be unchecked
+# with current versions of Mail::DKIM, so nxdomain may never turn up.)
+# 
+# The strong setting discardable is useful for domains which are known
+# to always sign their mail and to always send it directly to recipients
+# (not to mailing lists), and are frequent targets of fishing attempts,
+# such as financial institutions. The discardable is also appropriate
+# for domains which are known never to send any mail.
+# 
+# When a message does not contain a valid signature by the author's domain
+# (the domain in a From header field), the signing practices pertaining
+# to author's domain determine which of the following rules fire and
+# contributes its score: DKIM_ADSP_NXDOMAIN, DKIM_ADSP_ALL, DKIM_ADSP_DISCARD,
+# DKIM_ADSP_CUSTOM_LOW, DKIM_ADSP_CUSTOM_MED, DKIM_ADSP_CUSTOM_HIGH. Not more
+# than one of these rules can fire. The last three can only result from a
+# 'signing_practices' as given in a adsp_override directive (not from a
+# DNS lookup), and can serve as a convenient means of providing a different
+# score if scores assigned to DKIM_ADSP_ALL or DKIM_ADSP_DISCARD are not
+# considered suitable for some domains.
+# 
+# As a precaution against firing DKIM_ADSP_* rules when there is a known
+# local reason for a signature verification failure, the domain's ADSP is
+# considered unknown when DNS lookups are disabled or a DNS lookup encountered
+# a temporary problem on fetching a public key from the author's domain.
+# Similarly, ADSP is considered unknown when this plugin did its own signature
+# verification (signatures were not passed to SA by a caller) and a metarule
+# __TRUNCATED was triggered, indicating the caller intentionally passed a
+# truncated message to SpamAssassin, which was a likely reason for a signature
+# verification failure.
+
+endif # Mail::SpamAssassin::Plugin::DKIM

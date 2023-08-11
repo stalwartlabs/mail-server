@@ -1,0 +1,614 @@
+# SpamAssassin rules file: header tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+###########################################################################
+
+# partial messages; currently-theoretical attack
+# unsurprisingly this hits 0/0 right now.
+header FRAGMENTED_MESSAGE	Content-Type =~ /\bmessage\/partial/i
+describe FRAGMENTED_MESSAGE	Partial message
+tflags FRAGMENTED_MESSAGE       userconf
+
+###########################################################################
+
+header FROM_BLANK_NAME		From =~ /(?:\s|^)"" <\S+>/i
+describe FROM_BLANK_NAME	From: contains empty name
+
+###########################################################################
+# numeric address rules, these are written to avoid overlap with each other
+
+header __FROM_ENDS_IN_NUMS	From:addr =~ /\D\d{8,}\@/i
+
+header FROM_STARTS_WITH_NUMS	From:addr =~ /^\d{3,50}[^0-9\@]/
+describe FROM_STARTS_WITH_NUMS	From: starts with several numbers
+
+# don't match US/Canada phone numbers: 10 digits optionally preceded by a "1"
+header __FROM_ALL_NUMS		From:addr =~ /^(?:\d{1,9}|[02-9]\d{10}|\d{12,})@/
+
+###########################################################################
+
+header FROM_OFFERS		From:addr =~ /\@\S*offers(?![eo]n\b)/i
+describe FROM_OFFERS		From address is "at something-offers"
+
+header FROM_NO_USER		From =~ /(?:^\@|<\@| \@[^\)<]*$|<>)/ [if-unset: unset@unset.unset]
+describe FROM_NO_USER		From: has no local-part before @ sign
+
+# also 100% valid
+# bug 6149: avoid common .jp false positives
+header __PLING_QUERY		Subject =~ /\?.*!|!.*\?/
+meta PLING_QUERY                (__PLING_QUERY && !__ISO_2022_JP_DELIM)
+describe PLING_QUERY		Subject has exclamation mark and question mark
+
+
+
+
+header MSGID_SPAM_CAPS		Message-ID =~ /^\s*<?[A-Z]+\@(?!(?:mailcity|whowhere)\.com)/
+describe MSGID_SPAM_CAPS	Spam tool Message-Id: (caps variant)
+
+header MSGID_SPAM_LETTERS	Message-Id =~ /<[a-z]{5,}\@(\S+\.)+\S+>/
+describe MSGID_SPAM_LETTERS	Spam tool Message-Id: (letters variant)
+
+
+
+# negative lookahead exempts this MUA from circa 1997-2000
+# X-Mailer: Microsoft Outlook Express 4.71.1712.3
+# Message-ID: <01bd45da$2649cdc0$LocalHost@andrew>
+header __MSGID_DOLLARS_OK	MESSAGEID =~ /<[0-9a-f]{4,}\$[0-9a-f]{4,}\$[0-9a-f]{4,}\@\S+>/
+header __MSGID_DOLLARS_MAYBE	MESSAGEID =~ /<\w{4,}\$\w{4,}\$(?!localhost)\w{4,}\@\S+>/i
+meta MSGID_DOLLARS_RANDOM	__MSGID_DOLLARS_MAYBE && !__MSGID_DOLLARS_OK
+
+# bit of a ratware rule, but catches a bit more than just the one ratware
+header __MSGID_RANDY		Message-ID =~ /<[a-z\d][a-z\d\$-]{10,29}[a-z\d]\@[a-z\d][a-z\d.]{3,12}[a-z\d]>/
+# heuristic to eliminate most good Message-ID formats
+header __MSGID_OK_HEX		Message-ID =~ /\b[a-f\d]{8}\b/
+header __MSGID_OK_DIGITS	Message-ID =~ /\d{10}/
+header __MSGID_OK_HOST		Message-ID =~ /\@(?:\D{2,}|(?:\d{1,3}\.){3}\d{1,3})>/
+meta MSGID_RANDY	(__MSGID_RANDY && !(__MSGID_OK_HEX || __MSGID_OK_DIGITS || __MSGID_OK_HOST))
+describe MSGID_RANDY		Message-Id has pattern used in spam
+
+# bug 3395
+header MSGID_YAHOO_CAPS		Message-ID =~ /<[A-Z]+\@yahoo.com>/
+describe MSGID_YAHOO_CAPS	Message-ID has ALLCAPS@yahoo.com
+
+###########################################################################
+
+header   __AT_AOL_MSGID		MESSAGEID =~ /\@aol\.com\b/i
+header   __FROM_AOL_COM		From =~ /\@aol\.com\b/i
+meta     FORGED_MSGID_AOL	(__AT_AOL_MSGID && !__FROM_AOL_COM)
+describe FORGED_MSGID_AOL	Message-ID is forged, (aol.com)
+
+header   __AT_EXCITE_MSGID	MESSAGEID =~ /\@excite\.com\b/i
+header   __MY_RCVD_EXCITE	Received =~ /\.excite\.com\b/i
+meta     FORGED_MSGID_EXCITE	(__AT_EXCITE_MSGID && !__MY_RCVD_EXCITE)
+describe FORGED_MSGID_EXCITE	Message-ID is forged, (excite.com)
+
+header   __AT_HOTMAIL_MSGID	MESSAGEID =~ /\@hotmail\.com\b/i
+header   __FROM_HOTMAIL_COM	From =~ /\@hotmail\.com\b/i
+meta     FORGED_MSGID_HOTMAIL	(__AT_HOTMAIL_MSGID && (!__FROM_HOTMAIL_COM && !__FROM_MSN_COM && !__FROM_YAHOO_COM))
+describe FORGED_MSGID_HOTMAIL	Message-ID is forged, (hotmail.com)
+
+header   __AT_MSN_MSGID		MESSAGEID =~ /\@msn\.com\b/i
+header   __FROM_MSN_COM		From =~ /\@msn\.com\b/i
+meta     FORGED_MSGID_MSN	(__AT_MSN_MSGID && (!__FROM_MSN_COM && !__FROM_HOTMAIL_COM && !__FROM_YAHOO_COM))
+describe FORGED_MSGID_MSN	Message-ID is forged, (msn.com)
+
+header   __AT_YAHOO_MSGID	MESSAGEID =~ /\@yahoo\.com\b/i
+header   __FROM_YAHOO_COM	From =~ /\@yahoo\.com\b/i
+meta     FORGED_MSGID_YAHOO	(__AT_YAHOO_MSGID && !__FROM_YAHOO_COM)
+describe FORGED_MSGID_YAHOO	Message-ID is forged, (yahoo.com)
+
+###########################################################################
+
+header __MSGID_BEFORE_RECEIVED	ALL =~ /^Message-Id:.*?^Received:/msi
+header __MSGID_BEFORE_OKAY	Message-Id =~ /\@[a-z0-9.-]+\.(?:yahoo|wanadoo)(?:\.[a-z]{2,3}){1,2}>/
+
+meta MSGID_FROM_MTA_HEADER	(__MSGID_BEFORE_RECEIVED && !__MSGID_BEFORE_OKAY && !__FROM_HOTMAIL_COM)
+describe MSGID_FROM_MTA_HEADER	Message-Id was added by a relay
+
+
+
+header MSGID_SHORT		MESSAGEID =~ /^.{1,15}$|<.{0,4}\@/
+describe MSGID_SHORT		Message-ID is unusually short
+
+#DEMOTED TO SANDBOX - 2012-03-21
+#header MSGID_MULTIPLE_AT	MESSAGEID =~ /<[^>]*\@[^>]*\@/
+#describe MSGID_MULTIPLE_AT	Message-ID contains multiple '@' characters
+
+###########################################################################
+
+header DATE_SPAMWARE_Y2K	Date =~ /^[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} [0-6]\d \d\d:\d\d:\d\d [A-Z]{3}$/
+describe DATE_SPAMWARE_Y2K	Date header uses unusual Y2K formatting
+
+# as noted on the dev@ list, ":60" is valid for seconds when there's a leap
+# second (12/31/2005 for instance), so let's accept that as valid.  ISO 8601
+# apparently allows for it.
+# there were a few whitespace issues in the original RE, and I wanted to avoid my
+# two common, but yes invalid, date headers.  specifically / \(GMT\)$/ and
+# / 0000 GMT$/.  dos has / "GMT"$/ - tvd
+# 2.229   2.7267   0.0517    0.981   0.86    0.00  INVALID_DATE
+# 2.263   2.7486   0.1368    0.953   0.78    0.00  INVALID_DATE_OLD
+#
+# WRT the tests, remember that ok and fail are reversed -- so valid dates
+# should be "fail" and invalid dates should be "ok".
+header INVALID_DATE		Date !~ /^\s*(?:(?i:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s)?\s*(?:[12]\d|3[01]|0?[1-9])\s+(?i:Jan|Feb|Ma[ry]|Apr|Ju[nl]|Aug|Sep|Oct|Nov|Dec)\s+(?:19[7-9]\d|2\d{3})\s+(?:[01]?\d|2[0-3])\:[0-5]\d(?::(?:[0-5]\d|60))?(?:\s+[AP]M)?(?:\s+(?:[+-][0-9]{4}|UT|[A-Z]{2,3}T|0000 GMT|"GMT"))?(?:\s*\(.*\))?\s*$/ [if-unset: Wed, 31 Jul 2002 16:41:57 +0200]
+describe INVALID_DATE		Invalid Date: header (not RFC 2822)
+test INVALID_DATE fail    Sat, 31 Dec 2005 23:59:60 -0500
+test INVALID_DATE fail    Wed, 31 Jul 2002 16:41:57 +0200
+test INVALID_DATE fail    Sat, 31 Dec 2005 23:00:00 
+test INVALID_DATE ok      Sat, 31 Dec 2005 24:00:00 -0500
+test INVALID_DATE ok      Thurs, 31 Jul 2002 16:41:57 +0200
+
+# allow +1300, NZ timezone
+header INVALID_DATE_TZ_ABSURD	Date =~ /[-+](?!(?:0\d|1[0-4])(?:[03]0|[14]5))\d{4}$/
+describe INVALID_DATE_TZ_ABSURD	Invalid Date: header (timezone does not exist)
+
+header INVALID_TZ_CST		ALL =~ /[+-]\d\d[30]0(?<!-0600|-0500|\+0800|\+0930|\+1030)\s+(?:\bCST\b|\(CST\))/
+describe INVALID_TZ_CST		Invalid date in header (wrong CST timezone)
+
+header INVALID_TZ_EST		ALL =~ /[+-]\d\d[30]0(?<!-0500|-0300|\+1000|\+1100)\s+(?:\bEST\b|\(EST\))/
+describe INVALID_TZ_EST		Invalid date in header (wrong EST timezone)
+
+
+###########################################################################
+# MIME encoding with spam characteristics
+
+ifplugin Mail::SpamAssassin::Plugin::HeaderEval
+meta __SUBJECT_NEEDS_MIME	__SUBJ_ILLEGAL_CHARS
+endif
+
+header __SUBJECT_ENCODED_QP	Subject:raw =~ /=\?\S+\?Q\?/i
+header __SUBJECT_ENCODED_B64	Subject:raw =~ /=\?\S+\?B\?/i
+
+
+
+header __FROM_NEEDS_MIME	From:name:raw =~ /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]/
+header __FROM_NEEDS_MIME2	From:name =~ /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\xff]/
+header __FROM_ENCODED_QP	From:raw =~ /=\?\S+\?Q\?/i
+header __FROM_ENCODED_B64	From:raw =~ /=\?\S+\?B\?/i
+
+
+meta FROM_EXCESS_BASE64		__FROM_ENCODED_B64 && !__FROM_NEEDS_MIME2
+describe FROM_EXCESS_BASE64	From: base64 encoded unnecessarily
+
+
+###########################################################################
+# ADV tags in various languages
+
+header ENGLISH_UCE_SUBJECT	Subject =~ /^[^0-9a-z]*adv(?:ert)?\b/i
+describe ENGLISH_UCE_SUBJECT	Subject contains an English UCE tag
+
+# alan premselaar <alien@12inch.com>, see SpamAssassin-talk list 2003-03
+# quinlan: 2003-03-23 here are more generic Japanese iso-2022-jp codes
+# ("not yet acceptance" or "email") + "announcement"
+# FWIW, according to Peter Evans, this should be sufficient to catch the
+# UCE tag and a common attempt at evasion (using the "sue" instead of
+# "mi" Chinese character).  2006-10-12: updated by bug 4021.
+header JAPANESE_UCE_SUBJECT     Subject =~ /\e\$B.*(?:L\$>5Bz|EE;R%a!<%k)(?:8x|9-)9p/
+describe JAPANESE_UCE_SUBJECT	Subject contains a Japanese UCE tag
+
+# check body for "shou nin daku kou koku" UCE tag (bug 4021)
+body __JAPANESE_UCE_BODY        /(?:L\$>5Bz|EE;R%a!<%k)(?:8x|9-)9p/
+
+meta JAPANESE_UCE_BODY (__ISO_2022_JP_DELIM && __JAPANESE_UCE_BODY)
+describe JAPANESE_UCE_BODY      Body contains Japanese UCE tag
+
+# quinlan: "advertisement" in Russian KOI8-R
+# (no longer common, but worth noting in future)
+#header RUSSIAN_UCE_SUBJECT	Subject =~ /\xf0\xe5\xea\xeb\xe0\xec\xf3/
+#describe RUSSIAN_UCE_SUBJECT	Subject contains a Russian UCE tag
+
+# Korean UCE Subject: lines are usually 8-bit, but are occasionally encoded
+# with quoted-printable or base64.
+#
+# \xbc\xba\xc0\xce means "adult"
+# \xb1\xa4\xb0\xed means "advertisement"
+# \xc1\xa4\xba\xb8 means "information"
+# \xc8\xab\xba\xb8 means "publicity"
+#
+# Each two byte sequence is one Korean letter; the spaces and periods are
+# sometimes used to obscure the words.  \xb1\xa4\xb0\xed is the most common
+# tag and is sometimes very obscured so we look harder.
+#
+header KOREAN_UCE_SUBJECT	Subject =~ /[({[<][. ]*(?-i:\xbc\xba[. ]*\xc0\xce[. ]*)?(?-i:\xb1\xa4(?:[. ]*|[\x00-\x7f]{0,3})\xb0\xed|\xc1\xa4[. ]*\xba\xb8|\xc8\xab[. ]*\xba\xb8)[. ]*[)}\]>]/
+describe KOREAN_UCE_SUBJECT	Subject: contains Korean unsolicited email tag
+
+###########################################################################
+
+# two reliable signatures
+header __DOUBLE_IP_SPAM_1	Received =~ /from \[\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\] by \d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} with/
+header __DOUBLE_IP_SPAM_2	Received =~ /from\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\s+by\s+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3};/
+# loose match
+header __DOUBLE_IP_LOOSE	Received =~ /(?:\b(?:from|by)\b.{1,4}\b\d{1,3}[._-]\d{1,3}[._-]\d{1,3}[._-]\d{1,3}(?<!127\.0\.0\.1)\b.{0,4}){2}/i
+# spam signature
+meta RCVD_DOUBLE_IP_SPAM	(__DOUBLE_IP_SPAM_1 || __DOUBLE_IP_SPAM_2)
+describe RCVD_DOUBLE_IP_SPAM	Bulk email fingerprint (double IP) found
+# other matches
+meta RCVD_DOUBLE_IP_LOOSE	(__DOUBLE_IP_LOOSE && !RCVD_DOUBLE_IP_SPAM)
+describe RCVD_DOUBLE_IP_LOOSE   Received: by and from look like IP addresses
+
+header FORGED_TELESP_RCVD	Received =~ /\.(?!br).. \(\d+-\d+-\d+-\d+\.dsl\.telesp\.net\.br /
+describe FORGED_TELESP_RCVD	Contains forged hostname for a DSL IP in Brazil
+
+# forgery meta-rules: more reliable than their inputs
+meta CONFIRMED_FORGED		(__FORGED_RCVD_TRAIL && (__FORGED_AOL_RCVD || __FORGED_HOTMAIL_RCVD || __FORGED_EUDORAMAIL_RCVD || FORGED_YAHOO_RCVD || __FORGED_JUNO_RCVD || FORGED_GMAIL_RCVD))
+describe CONFIRMED_FORGED	Received headers are forged
+
+meta MULTI_FORGED		((__FORGED_AOL_RCVD + __FORGED_HOTMAIL_RCVD + __FORGED_EUDORAMAIL_RCVD + FORGED_YAHOO_RCVD + __FORGED_JUNO_RCVD + FORGED_GMAIL_RCVD) > 1)
+describe MULTI_FORGED		Received headers indicate multiple forgeries
+
+header NONEXISTENT_CHARSET	Content-Type =~ /charset=.?DEFAULT/
+describe NONEXISTENT_CHARSET	Character set doesn't exist
+
+header __HAS_MESSAGE_ID		exists:Message-Id
+priority __HAS_MESSAGE_ID	-2000 # Bug 8078
+meta MISSING_MID		!__HAS_MESSAGE_ID
+describe MISSING_MID            Missing Message-Id: header
+
+header __HAS_DATE		exists:Date
+priority __HAS_DATE		-2000 # Bug 8078
+meta MISSING_DATE		!__HAS_DATE
+describe MISSING_DATE           Missing Date: header
+
+header __HAS_SUBJECT		exists:Subject
+priority __HAS_SUBJECT		-2000 # Bug 8078
+meta MISSING_SUBJECT		!__HAS_SUBJECT
+describe MISSING_SUBJECT	Missing Subject: header
+
+# bug 6353
+header __HAS_FROM		exists:From
+priority __HAS_FROM		-2000 # Bug 8078
+meta MISSING_FROM		!__HAS_FROM
+describe MISSING_FROM		Missing From: header
+
+# bug 6149: avoid common .jp false positives
+header __GAPPY_SUBJECT		Subject =~ /\b(?:[a-z]([-_. =~\/:,*!\@\#\$\%\^&+;\"\'<>\\])\1{0,2}){4}/i
+meta GAPPY_SUBJECT              (__GAPPY_SUBJECT && !__ISO_2022_JP_DELIM)
+describe GAPPY_SUBJECT		Subject: contains G.a.p.p.y-T.e.x.t
+
+### header existence tests (description is added automatically)
+
+# X-Fix example: NTMail fixed non RFC822 compliant EMail message
+#
+# X-PMFLAGS is all caps
+#
+# Headers that seem to only be used by a single spamming software and
+# are found together in the same message:
+# 1. X-MailingID and X-ServerHost
+# 2. X-Stormpost-To and X-List-Unsubscribe
+#
+# not spammish: X-EM-Registration, X-EM-Version, X-Antiabuse, X-List-Host,
+# X-Message-Id
+# bad FP rate: Comment, Date-warning
+
+header PREVENT_NONDELIVERY	exists:Prevent-NonDelivery-Report
+describe PREVENT_NONDELIVERY	Message has Prevent-NonDelivery-Report header
+
+header X_IP			exists:X-IP
+describe X_IP			Message has X-IP header
+
+header   __HAS_MIMEOLE          exists:X-MimeOLE
+header   __HAS_MSMAIL_PRI       exists:X-MSMail-Priority
+header   __HAS_SQUIRRELMAIL_IN_MAILER	X-Mailer =~ /SquirrelMail\b/
+# Ever growing Office version list without X-MimeOLE, bug 6346, 7122, 7463.
+header   __HAS_OFFICE1214_IN_MAILER	X-Mailer =~ /^Microsoft (?:Office )?Outlook 1[2456]\.0/
+# CGP MAPI module fingerprint, to protect from MISSING_MIMEOLE
+header   __HAS_CGP_MAPI_IN_MAILER X-Mailer =~ /CommuniGate Pro MAPI/
+meta     MISSING_MIMEOLE	(__HAS_MSMAIL_PRI && !__HAS_MIMEOLE && !__HAS_SQUIRRELMAIL_IN_MAILER && !__HAS_OFFICE1214_IN_MAILER && !__HAS_CGP_MAPI_IN_MAILER && !__HDR_RCVD_TONLINEDE && !__MIME_BASE64 && !__DKIM_EXISTS) 
+describe MISSING_MIMEOLE	Message has X-MSMail-Priority, but no X-MimeOLE
+
+header __HAS_X_MAILER		exists:X-Mailer
+
+header __IS_EXCH		X-MimeOLE =~ /Produced By Microsoft Exchange V/
+
+header SUBJ_AS_SEEN		Subject =~ /\bAs Seen/i
+describe SUBJ_AS_SEEN		Subject contains "As Seen"
+
+header SUBJ_DOLLARS             Subject =~ /^\$[0-9.,]+\b/
+describe SUBJ_DOLLARS           Subject starts with dollar amount
+
+
+
+
+
+
+#DISABLING DUE TO POOR S/O 2012-09-27
+#header SUBJ_YOUR_DEBT		Subject =~ /Your (?:Bills|Debt|Credit)/i
+#describe SUBJ_YOUR_DEBT		Subject contains "Your Bills" or similar
+
+header SUBJ_YOUR_FAMILY		Subject =~ /Your Family/i
+describe SUBJ_YOUR_FAMILY	Subject contains "Your Family"
+
+
+# the real services never HELO as 'foo.com', instead 'mail.foo.com' or
+# something like that.  Note: be careful when expanding this... legit dotcom
+# HELOers include: hotmail.com, drizzle.com, lockergnome.com.
+header RCVD_FAKE_HELO_DOTCOM    Received =~ /^from (?:msn|yahoo|yourwebsite|lycos|excite|cs|aol|localhost|koreanmail|allexecs|mydomain|juno|eudoramail|compuserve|desertmail|excite|caramail)\.com \(/m
+describe RCVD_FAKE_HELO_DOTCOM  Received contains a faked HELO hostname
+
+header SUBJECT_DIET		Subject =~ /\bLose .*(?:pounds|lbs|weight)/i
+describe SUBJECT_DIET		Subject talks about losing pounds
+
+
+# MIME boundary tests; spam tools use distinctive patterns.
+header MIME_BOUND_DD_DIGITS	Content-Type =~ /boundary=\"--\d+\"/
+describe MIME_BOUND_DD_DIGITS	Spam tool pattern in MIME boundary
+header MIME_BOUND_DIGITS_15	Content-Type =~ /boundary=\"\d{15,}\"/
+describe MIME_BOUND_DIGITS_15	Spam tool pattern in MIME boundary
+header MIME_BOUND_MANY_HEX	Content-Type =~ /boundary="[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}"/
+describe MIME_BOUND_MANY_HEX	Spam tool pattern in MIME boundary
+
+# note: the first alternation is anchored for speed
+header TO_MALFORMED             To !~ /(?:^|[^\S"])(?:(?:\"[^\"]+\"|\S+)\@\S+\.\S+|^\s*.+:\s*;|^\s*\"[^\"]+\":\s*;|^\s*\([^\)]*\)\s*$|<\S+(?:\!\S+){1,}>|^\s*$)/ [if-unset: unset@unset.unset]
+describe TO_MALFORMED           To: has a malformed address
+
+header __CD                     exists:Content-Disposition
+header __CT                     exists:Content-Type
+header __CTE                    exists:Content-Transfer-Encoding
+header __MIME_VERSION           exists:MIME-Version
+header __CT_TEXT_PLAIN          Content-Type =~ /^text\/plain\b/i
+meta MIME_HEADER_CTYPE_ONLY     (!__CD && !__CTE && __CT && !__MIME_VERSION && !__CT_TEXT_PLAIN)
+describe MIME_HEADER_CTYPE_ONLY 'Content-Type' found without required MIME headers
+
+header WITH_LC_SMTP		Received =~ /\swith\ssmtp;\s/
+describe WITH_LC_SMTP		Received line contains spam-sign (lowercase smtp)
+
+
+header SUBJ_BUY                 Subject =~ /^buy/i
+describe SUBJ_BUY               Subject line starts with Buy or Buying
+
+# seems to be ratware
+header RCVD_AM_PM		Received =~ /; [A-Z][a-z][a-z], \d{1,2} \d{4} \d{1,2}:\d\d:\d\d [AP]M [+-]\d{4}/
+describe RCVD_AM_PM		Received headers forged (AM/PM)
+
+header __USER_AGENT_MSN		X-Mailer =~ /^MSN Explorer /
+
+# host no longer exists according to administrator
+header FAKE_OUTBLAZE_RCVD	Received =~ /\.mr\.outblaze\.com/
+describe FAKE_OUTBLAZE_RCVD	Received header contains faked 'mr.outblaze.com'
+
+
+# thanks to David Ritz for passing this on
+header UNCLOSED_BRACKET		ALL =~ /\[\d+\r?\n/s
+describe UNCLOSED_BRACKET	Headers contain an unclosed bracket
+
+header FROM_DOMAIN_NOVOWEL	From =~ /\@\S*[bcdfgjklmnpqrstvwxz]{7}/i
+describe FROM_DOMAIN_NOVOWEL	From: domain has series of non-vowel letters
+tflags FROM_DOMAIN_NOVOWEL userconf     # lock scores low
+
+header FROM_LOCAL_NOVOWEL	From =~ /[bcdfgjklmnpqrstvwxz]{7}\S*\@/i
+describe FROM_LOCAL_NOVOWEL	From: localpart has series of non-vowel letters
+tflags FROM_LOCAL_NOVOWEL userconf     # lock scores low
+
+header FROM_LOCAL_HEX		From =~ /[0-9a-f]{11}\S*\@/i
+describe FROM_LOCAL_HEX		From: localpart has long hexadecimal sequence
+
+header FROM_LOCAL_DIGITS	From =~ /\d{11}\S*\@/i
+describe FROM_LOCAL_DIGITS	From: localpart has long digit sequence
+
+header __TOCC_EXISTS		exists:ToCc
+
+header X_PRIORITY_CC		ALL =~ /^X-Priority:[^\n]{0,80}^Cc:/msi
+describe X_PRIORITY_CC		Cc: after X-Priority: (bulk email fingerprint)
+
+# catch non-RFC2047 compliant messages
+# Apple Mail has a bug where headers will have whitespace around the encoded
+# text, so try to ignore that
+header BAD_ENC_HEADER		ALL:raw =~ /=\?[^?\s]+\?[^?\s]\?\s*[^?]+\s(?!\?=)/
+describe BAD_ENC_HEADER		Message has bad MIME encoding in the header
+
+
+header __ML1  Precedence =~ m{\b(list|bulk)\b}i
+meta   __ML2  __HAS_LIST_ID
+header __ML3  exists:List-Post
+header __ML4  exists:Mailing-List
+header __ML5  Return-Path:addr =~ m{^([^\@]+-(request|bounces|admin|owner)|owner-[^\@]+)(\@|\z)}i
+meta     __VIA_ML  __ML1 || __ML2 || __ML3 || __ML4 || __ML5
+describe __VIA_ML  Mail from a mailing list
+
+
+# some clueless mailing lists (like zmailer with an RFC822TABS option on)
+# are replacing a leading space by a TAB in header fields From, To,
+# Cc, Date (Bug 6429)
+header   __ML_TURNS_SP_TO_TAB  Received =~ /\(ORCPT <rfc822;/
+describe __ML_TURNS_SP_TO_TAB  A mailing list changing a space to a TAB
+
+
+# must keep it in sync with https://www.iana.org/assignments/ipv4-address-space/
+header RCVD_ILLEGAL_IP		X-Spam-Relays-Untrusted =~ / (?:by|ip)=(?=\d+\.\d+\.\d+\.\d+ )(?:(?:0|2(?:2[4-9]|[3-5]\d)|192\.0\.2|198\.51\.100|203\.0\.113)\.|(?:\d+\.){0,3}(?!(?:2(?:[0-4]\d|5[0-5])|[01]?\d\d?)\b))/
+describe RCVD_ILLEGAL_IP	Received: contains illegal IP address
+
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::HeaderEval
+
+header __FORGED_AOL_RCVD	        eval:check_for_fake_aol_relay_in_rcvd()
+
+header CHARSET_FARAWAY_HEADER	eval:check_for_faraway_charset_in_headers()
+describe CHARSET_FARAWAY_HEADER	A foreign language charset used in headers
+tflags CHARSET_FARAWAY_HEADER	userconf
+
+    ###################################################################
+
+# illegal characters that should be MIME encoded
+# might want to exempt users using languages that don't use Latin
+# alphabets, but do it in the eval
+
+# Will FP without 4.0 and UTF-8 support
+if (version >= 4.000000)
+  header __SUBJ_ILLEGAL_CHARS	eval:check_illegal_chars('Subject','0.00','2')
+  meta SUBJ_ILLEGAL_CHARS         (__SUBJ_ILLEGAL_CHARS && !__FROM_YAHOO_COM)
+  header FROM_ILLEGAL_CHARS	eval:check_illegal_chars('From','0.20','2')
+  header __HEAD_ILLEGAL_CHARS	eval:check_illegal_chars('ALL','0.010','2')
+  meta HEAD_ILLEGAL_CHARS	__HEAD_ILLEGAL_CHARS && !__SUBJ_ILLEGAL_CHARS && !FROM_ILLEGAL_CHARS
+endif
+if (version < 4.000000)
+  meta __SUBJ_ILLEGAL_CHARS 0
+  meta SUBJ_ILLEGAL_CHARS 0
+  meta FROM_ILLEGAL_CHARS 0
+  meta __HEAD_ILLEGAL_CHARS 0
+  meta HEAD_ILLEGAL_CHARS 0
+endif
+
+describe SUBJ_ILLEGAL_CHARS	Subject: has too many raw illegal characters
+describe FROM_ILLEGAL_CHARS	From: has too many raw illegal characters
+describe HEAD_ILLEGAL_CHARS	Headers have too many raw illegal characters
+
+    ###################################################################
+
+# a forged Hotmail message; host HELO'd as hotmail.com, but it wasn't
+header __FORGED_HOTMAIL_RCVD	eval:check_for_forged_hotmail_received_headers()
+
+# this, by comparison is more common: from was @hotmail.com, but it wasn't
+header FORGED_HOTMAIL_RCVD2	eval:check_for_no_hotmail_received_headers()
+describe FORGED_HOTMAIL_RCVD2 hotmail.com 'From' address, but no 'Received:'
+
+header __FORGED_EUDORAMAIL_RCVD	eval:check_for_forged_eudoramail_received_headers()
+
+header FORGED_YAHOO_RCVD	eval:check_for_forged_yahoo_received_headers()
+describe FORGED_YAHOO_RCVD	'From' yahoo.com does not match 'Received' headers
+
+if (version >= 3.004002)
+header FORGED_GMAIL_RCVD	eval:check_for_forged_gmail_received_headers()
+describe FORGED_GMAIL_RCVD	'From' gmail.com does not match 'Received' headers
+endif
+
+header __FORGED_JUNO_RCVD	eval:check_for_forged_juno_received_headers()
+
+
+
+header SORTED_RECIPS		eval:sorted_recipients()
+describe SORTED_RECIPS		Recipient list is sorted by address
+
+header SUSPICIOUS_RECIPS	eval:similar_recipients('0.65','undef')
+describe SUSPICIOUS_RECIPS	Similar addresses in recipient list
+
+# this is a quite common false positive, as it's legal to remove a To but leave
+# a CC. so don't score it high.
+header MISSING_HEADERS		eval:check_for_missing_to_header()
+describe MISSING_HEADERS	Missing To: header
+
+header DATE_IN_PAST_03_06	eval:check_for_shifted_date('-6', '-3')
+describe DATE_IN_PAST_03_06	Date: is 3 to 6 hours before Received: date
+
+header DATE_IN_PAST_06_12	eval:check_for_shifted_date('-12', '-6')
+describe DATE_IN_PAST_06_12	Date: is 6 to 12 hours before Received: date
+
+header DATE_IN_PAST_12_24	eval:check_for_shifted_date('-24', '-12')
+describe DATE_IN_PAST_12_24	Date: is 12 to 24 hours before Received: date
+
+header DATE_IN_PAST_24_48	eval:check_for_shifted_date('-48', '-24')
+describe DATE_IN_PAST_24_48	Date: is 24 to 48 hours before Received: date
+
+
+header DATE_IN_PAST_96_XX	eval:check_for_shifted_date('undef', '-96')
+describe DATE_IN_PAST_96_XX	Date: is 96 hours or more before Received: date
+
+header DATE_IN_FUTURE_03_06	eval:check_for_shifted_date('3', '6')
+describe DATE_IN_FUTURE_03_06	Date: is 3 to 6 hours after Received: date
+
+header DATE_IN_FUTURE_06_12	eval:check_for_shifted_date('6', '12')
+describe DATE_IN_FUTURE_06_12	Date: is 6 to 12 hours after Received: date
+
+header DATE_IN_FUTURE_12_24	eval:check_for_shifted_date('12', '24')
+describe DATE_IN_FUTURE_12_24	Date: is 12 to 24 hours after Received: date
+
+header DATE_IN_FUTURE_24_48	eval:check_for_shifted_date('24', '48')
+describe DATE_IN_FUTURE_24_48	Date: is 24 to 48 hours after Received: date
+
+header DATE_IN_FUTURE_48_96	eval:check_for_shifted_date('48', '96')
+describe DATE_IN_FUTURE_48_96	Date: is 48 to 96 hours after Received: date
+
+#header DATE_IN_FUTURE_96_XX	eval:check_for_shifted_date('96', 'undef')
+meta DATE_IN_FUTURE_96_XX 	(0)
+describe DATE_IN_FUTURE_96_XX	Date: is 96 hours or more after Received: date
+
+header UNRESOLVED_TEMPLATE	eval:check_unresolved_template()
+describe UNRESOLVED_TEMPLATE	Headers contain an unresolved template
+
+header SUBJ_ALL_CAPS		eval:subject_is_all_caps()
+describe SUBJ_ALL_CAPS		Subject is all capitals
+
+
+header LOCALPART_IN_SUBJECT	eval:check_for_to_in_subject('user')
+describe LOCALPART_IN_SUBJECT	Local part of To: address appears in Subject
+
+header MSGID_OUTLOOK_INVALID	eval:check_outlook_message_id()
+describe MSGID_OUTLOOK_INVALID	Message-Id is fake (in Outlook Express format)
+
+header HEADER_COUNT_CTYPE	eval:check_header_count_range('Content-Type','2','999')
+describe HEADER_COUNT_CTYPE	Multiple Content-Type headers found
+
+endif
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::MIMEEval
+
+# this is also mostly-theoretical, so allow 0 hits
+header HEAD_LONG                eval:check_msg_parse_flags('truncated_header')
+describe HEAD_LONG              Message headers are very long
+tflags HEAD_LONG                userconf
+
+header MISSING_HB_SEP		eval:check_msg_parse_flags('missing_head_body_separator')
+describe MISSING_HB_SEP		Missing blank line between message header and body
+tflags MISSING_HB_SEP		userconf
+
+endif
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::RelayEval
+
+header __UNPARSEABLE_RELAY_COUNT        eval:check_relays_unparseable()
+tflags __UNPARSEABLE_RELAY_COUNT        userconf
+
+meta	 UNPARSEABLE_RELAY	(__UNPARSEABLE_RELAY_COUNT >= 1)
+tflags	 UNPARSEABLE_RELAY	userconf
+describe UNPARSEABLE_RELAY      Informational: message has unparseable relay lines
+
+
+header RCVD_HELO_IP_MISMATCH	eval:helo_ip_mismatch()
+describe RCVD_HELO_IP_MISMATCH	Received: HELO and IP do not match, but should
+
+# not used directly right now due to FPs; but CONFIRMED_FORGED turns it
+# into a 1.0 S/O rule anyway, so that's not a problem ;)
+# 2.626   3.6340   1.5251    0.704   0.34    1.44  FORGED_RCVD_TRAIL
+# 0.956   3.3890   0.0000    1.000   0.98    4.30  CONFIRMED_FORGED
+header __FORGED_RCVD_TRAIL	eval:check_for_forged_received_trail()
+
+header NO_RDNS_DOTCOM_HELO	eval:check_for_no_rdns_dotcom_helo()
+describe NO_RDNS_DOTCOM_HELO	Host HELO'd as a big ISP, but had no rDNS
+
+endif
+
+ifplugin Mail::SpamAssassin::Plugin::HeaderEval
+
+header __ENV_AND_HDR_FROM_MATCH	eval:check_for_matching_env_and_hdr_from()
+
+endif
+

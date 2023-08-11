@@ -1,0 +1,251 @@
+# SpamAssassin rules file: DNS blocklist and welcomelist tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::DNSEval
+
+# See the Mail::SpamAssassin::Conf manual page for details of how to use
+# check_rbl().
+
+# ---------------------------------------------------------------------------
+# Multizone / Multi meaning BLs first.
+#
+# Note that currently TXT queries cannot be used for these, since the
+# DNSBLs do not return the A type (127.0.0.x) as part of the TXT reply.
+
+
+# ---------------------------------------------------------------------------
+# SORBS
+# transfers: both axfr and ixfr available
+# URL: http://www.dnsbl.sorbs.net/
+# pay-to-use: no
+# delist: $50 fee for RCVD_IN_SORBS_SPAM, others have free retest on request
+
+header __RCVD_IN_SORBS          eval:check_rbl('sorbs', 'dnsbl.sorbs.net.')
+describe __RCVD_IN_SORBS        SORBS: sender is listed in SORBS
+tflags __RCVD_IN_SORBS          net
+reuse  __RCVD_IN_SORBS
+
+header RCVD_IN_SORBS_HTTP       eval:check_rbl_sub('sorbs', '127.0.0.2')
+describe RCVD_IN_SORBS_HTTP     SORBS: sender is open HTTP proxy server
+tflags RCVD_IN_SORBS_HTTP       net
+reuse  RCVD_IN_SORBS_HTTP
+
+header RCVD_IN_SORBS_SOCKS      eval:check_rbl_sub('sorbs', '127.0.0.3')
+describe RCVD_IN_SORBS_SOCKS    SORBS: sender is open SOCKS proxy server
+tflags RCVD_IN_SORBS_SOCKS      net
+reuse  RCVD_IN_SORBS_SOCKS
+
+header RCVD_IN_SORBS_MISC       eval:check_rbl_sub('sorbs', '127.0.0.4')
+describe RCVD_IN_SORBS_MISC     SORBS: sender is open proxy server
+tflags RCVD_IN_SORBS_MISC       net
+reuse  RCVD_IN_SORBS_MISC
+
+header RCVD_IN_SORBS_SMTP       eval:check_rbl_sub('sorbs', '127.0.0.5')
+describe RCVD_IN_SORBS_SMTP     SORBS: sender is open SMTP relay
+tflags RCVD_IN_SORBS_SMTP       net
+reuse  RCVD_IN_SORBS_SMTP
+
+# delist: $50 fee
+#header RCVD_IN_SORBS_SPAM      eval:check_rbl_sub('sorbs', '127.0.0.6')
+#describe RCVD_IN_SORBS_SPAM    SORBS: sender is a spam source
+#tflags RCVD_IN_SORBS_SPAM      net
+#reuse  RCVD_IN_SORBS_SPAM      RCVD_IN_SORBS_SPAM
+
+header RCVD_IN_SORBS_WEB        eval:check_rbl_sub('sorbs', '127.0.0.7')
+describe RCVD_IN_SORBS_WEB      SORBS: sender is an abusable web server
+tflags RCVD_IN_SORBS_WEB        net
+reuse  RCVD_IN_SORBS_WEB
+
+header RCVD_IN_SORBS_BLOCK      eval:check_rbl_sub('sorbs', '127.0.0.8')
+describe RCVD_IN_SORBS_BLOCK    SORBS: sender demands to never be tested
+tflags RCVD_IN_SORBS_BLOCK      net
+reuse  RCVD_IN_SORBS_BLOCK
+
+header RCVD_IN_SORBS_ZOMBIE     eval:check_rbl_sub('sorbs', '127.0.0.9')
+describe RCVD_IN_SORBS_ZOMBIE   SORBS: sender is on a hijacked network
+tflags RCVD_IN_SORBS_ZOMBIE     net
+reuse  RCVD_IN_SORBS_ZOMBIE
+
+header RCVD_IN_SORBS_DUL        eval:check_rbl('sorbs-lastexternal', 'dnsbl.sorbs.net.', '127.0.0.10')
+describe RCVD_IN_SORBS_DUL      SORBS: sent directly from dynamic IP address
+tflags RCVD_IN_SORBS_DUL        net
+reuse  RCVD_IN_SORBS_DUL
+
+# ---------------------------------------------------------------------------
+# Spamhaus ZEN includes SBL+CSS+XBL+PBL
+# https://www.spamhaus.org/faq/section/DNSBL%20Usage#200
+#
+# Spamhaus XBL contains the Abuseat CBL data (cbl.abuseat.org)
+
+header __RCVD_IN_ZEN            eval:check_rbl('zen', 'zen.spamhaus.org.')
+describe __RCVD_IN_ZEN          Received via a relay in Spamhaus Zen
+tflags __RCVD_IN_ZEN            net
+reuse  __RCVD_IN_ZEN
+
+# SBL is the Spamhaus Block List: https://www.spamhaus.org/sbl/
+header RCVD_IN_SBL              eval:check_rbl_sub('zen', '127.0.0.2')
+describe RCVD_IN_SBL            Received via a relay in Spamhaus SBL
+tflags RCVD_IN_SBL              net
+reuse  RCVD_IN_SBL
+
+# XBL is the Exploits Block List: https://www.spamhaus.org/xbl/
+header RCVD_IN_XBL              eval:check_rbl('zen-lastexternal', 'zen.spamhaus.org.', '^127\.0\.0\.[4567]$')
+describe RCVD_IN_XBL            Received via a relay in Spamhaus XBL
+tflags RCVD_IN_XBL              net
+reuse  RCVD_IN_XBL
+
+# PBL is the Policy Block List: https://www.spamhaus.org/pbl/
+header RCVD_IN_PBL              eval:check_rbl('zen-lastexternal', 'zen.spamhaus.org.', '^127\.0\.0\.1[01]$')
+describe RCVD_IN_PBL            Received via a relay in Spamhaus PBL
+tflags RCVD_IN_PBL              net
+reuse  RCVD_IN_PBL
+
+# CSS is the Spamhaus CSS Component of the SBL List: https://www.spamhaus.org/css/
+header RCVD_IN_SBL_CSS		eval:check_rbl_sub('zen', '127.0.0.3')
+describe RCVD_IN_SBL_CSS	Received via a relay in Spamhaus SBL-CSS
+tflags RCVD_IN_SBL_CSS		net
+reuse  RCVD_IN_SBL_CSS
+
+# New blocked checks 10/2019
+header RCVD_IN_ZEN_BLOCKED_OPENDNS	eval:check_rbl('zen-lastexternal', 'zen.spamhaus.org.', '^127\.255\.255\.254$')
+describe RCVD_IN_ZEN_BLOCKED_OPENDNS	ADMINISTRATOR NOTICE: The query to zen.spamhaus.org was blocked due to usage of an open resolver. See https://www.spamhaus.org/returnc/pub/
+tflags RCVD_IN_ZEN_BLOCKED_OPENDNS	net
+reuse RCVD_IN_ZEN_BLOCKED_OPENDNS
+
+# New blocked checks 10/2019
+header RCVD_IN_ZEN_BLOCKED	eval:check_rbl('zen-lastexternal', 'zen.spamhaus.org.', '^127\.255\.255\.255$')
+describe RCVD_IN_ZEN_BLOCKED	ADMINISTRATOR NOTICE: The query to zen.spamhaus.org was blocked. See https://www.spamhaus.org/returnc/vol/
+tflags RCVD_IN_ZEN_BLOCKED	net
+reuse RCVD_IN_ZEN_BLOCKED
+
+if can(Mail::SpamAssassin::Conf::feature_dns_block_rule)
+dns_block_rule RCVD_IN_ZEN_BLOCKED_OPENDNS zen.spamhaus.org
+dns_block_rule RCVD_IN_ZEN_BLOCKED zen.spamhaus.org
+endif
+
+
+# Now, single zone BLs follow:
+
+# ---------------------------------------------------------------------------
+# NOTE: donation tests, see README file for details
+
+header RCVD_IN_BL_SPAMCOP_NET   eval:check_rbl_txt('spamcop', 'bl.spamcop.net.', '(?i:spamcop)')
+describe RCVD_IN_BL_SPAMCOP_NET Received via a relay in bl.spamcop.net
+tflags RCVD_IN_BL_SPAMCOP_NET   net
+reuse  RCVD_IN_BL_SPAMCOP_NET
+
+# ---------------------------------------------------------------------------
+# NOTE: commercial tests, see README file for details
+
+header RCVD_IN_MAPS_RBL         eval:check_rbl('rblplus', 'activationcode.r.mail-abuse.com.', '1')
+describe RCVD_IN_MAPS_RBL       Relay in RBL, http://www.mail-abuse.com/enduserinfo_rbl.html
+tflags RCVD_IN_MAPS_RBL         net
+reuse RCVD_IN_MAPS_RBL
+
+header RCVD_IN_MAPS_DUL         eval:check_rbl('rblplus-lastexternal', 'activationcode.r.mail-abuse.com.', '2')
+describe RCVD_IN_MAPS_DUL       Relay in DUL, http://www.mail-abuse.com/enduserinfo_dul.html
+tflags RCVD_IN_MAPS_DUL         net
+reuse RCVD_IN_MAPS_DUL
+
+header RCVD_IN_MAPS_RSS         eval:check_rbl_sub('rblplus', '4')
+describe RCVD_IN_MAPS_RSS       Relay in RSS, http://www.mail-abuse.com/enduserinfo_rss.html
+tflags RCVD_IN_MAPS_RSS         net
+reuse RCVD_IN_MAPS_RSS
+
+header RCVD_IN_MAPS_OPS         eval:check_rbl_sub('rblplus', '8')
+describe RCVD_IN_MAPS_OPS       Relay in OPS, http://www.mail-abuse.com/enduserinfo_ops.html
+tflags RCVD_IN_MAPS_OPS         net
+reuse RCVD_IN_MAPS_OPS
+
+# The NML isn't part of the RBL+ and I find any documentation for it - is it dead?
+header RCVD_IN_MAPS_NML         eval:check_rbl('nml', 'nonconfirm.mail-abuse.com.')
+describe RCVD_IN_MAPS_NML       Relay in NML, http://www.mail-abuse.com/enduserinfo_nml.html
+tflags RCVD_IN_MAPS_NML         net
+reuse RCVD_IN_MAPS_NML
+
+# ---------------------------------------------------------------------------
+# Section for DNS WL related lookups below.
+
+# IADB support ...
+header __RCVD_IN_IADB           eval:check_rbl('iadb-firsttrusted', 'iadb.isipp.com.')
+tflags __RCVD_IN_IADB           net nice
+reuse __RCVD_IN_IADB
+
+header RCVD_IN_IADB_VOUCHED     eval:check_rbl_sub('iadb-firsttrusted', '127.0.1.255')
+describe RCVD_IN_IADB_VOUCHED   ISIPP IADB lists as vouched-for sender
+tflags RCVD_IN_IADB_VOUCHED     net nice
+reuse RCVD_IN_IADB_VOUCHED
+
+# ---------------------------------------------------------------------------
+# Validity (née Return Path, SenderScore) reputation DNSBLs
+# https://issues.apache.org/SpamAssassin/show_bug.cgi?id=6247
+# Certified:
+# https://www.validity.com/resource-center/fact-sheet-certification/
+# (replaces RCVD_IN_BSP_TRUSTED, RCVD_IN_BSP_OTHER, RCVD_IN_SSC_TRUSTED_COI, RCVD_IN_RP_CERTIFIED)
+header RCVD_IN_VALIDITY_CERTIFIED     eval:check_rbl_txt('ssc-firsttrusted', 'sa-trusted.bondedsender.org.')
+describe RCVD_IN_VALIDITY_CERTIFIED   Sender in Validity Certification - Contact certification@validity.com
+tflags RCVD_IN_VALIDITY_CERTIFIED     net nice publish
+reuse RCVD_IN_VALIDITY_CERTIFIED      RCVD_IN_RP_CERTIFIED
+
+# Safe:
+# https://www.validity.com/resource-center/fact-sheet-certification/
+# (replaces HABEAS_ACCREDITED_COI, HABEAS_ACCREDITED_SOI, HABEAS_CHECKED, RCVD_IN_RP_SAFE)
+header RCVD_IN_VALIDITY_SAFE     eval:check_rbl_txt('ssc-firsttrusted','sa-accredit.habeas.com.')
+describe RCVD_IN_VALIDITY_SAFE   Sender in Validity Safe - Contact certification@validity.com
+tflags RCVD_IN_VALIDITY_SAFE     net nice publish
+reuse RCVD_IN_VALIDITY_SAFE      RCVD_IN_RP_SAFE
+
+# Validity RPBL (née Return Path Reputation Network Blacklist - RNBL):
+# https://www.senderscore.org/blocklistlookup/
+# (replaces RCVD_IN_RP_RNBL)
+header RCVD_IN_VALIDITY_RPBL     eval:check_rbl('rnbl-lastexternal','bl.score.senderscore.com.')
+describe RCVD_IN_VALIDITY_RPBL   Relay in Validity RPBL, https://senderscore.org/blocklistlookup/
+tflags RCVD_IN_VALIDITY_RPBL     net publish
+reuse RCVD_IN_VALIDITY_RPBL      RCVD_IN_RP_RNBL
+
+endif
+
+#These are old and useless - The zones are no longer supported by SpamHaus 2018-12-12
+#ifplugin Mail::SpamAssassin::Plugin::AskDNS
+#
+#askdns   DKIMDOMAIN_IN_DWL  _DKIMDOMAIN_._vouch.dwl.spamhaus.org TXT /^([a-z]+ )*(transaction|list|all)( [a-z]+)*$/
+#tflags   DKIMDOMAIN_IN_DWL  net nice
+#describe DKIMDOMAIN_IN_DWL  Signing domain listed in Spamhaus DWL
+#reuse    DKIMDOMAIN_IN_DWL
+#
+#askdns   __DKIMDOMAIN_IN_DWL_ANY  _DKIMDOMAIN_._vouch.dwl.spamhaus.org TXT
+#tflags   __DKIMDOMAIN_IN_DWL_ANY  net nice
+#describe __DKIMDOMAIN_IN_DWL_ANY  Any TXT response received from a Spamhaus DWL
+#reuse    __DKIMDOMAIN_IN_DWL_ANY
+#
+#meta     DKIMDOMAIN_IN_DWL_UNKNOWN  __DKIMDOMAIN_IN_DWL_ANY && !DKIMDOMAIN_IN_DWL
+#tflags   DKIMDOMAIN_IN_DWL_UNKNOWN  net nice
+#describe DKIMDOMAIN_IN_DWL_UNKNOWN  Unrecognized response from Spamhaus DWL
+#
+#endif

@@ -1,0 +1,79 @@
+# SpamAssassin rules file: meta tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# Add meta tests which cover *both* headers and body here.
+#
+# Note: body tests are run with long lines, so be sure to limit the
+# size of searches; use /.{0,30}/ instead of /.*/ to avoid huge
+# search times.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+# some tests that will trigger FPs on ISO-2022-JP mails.
+
+body __ISO_2022_JP_DELIM	/\e\$B/
+
+meta UPPERCASE_50_75            (!__ISO_2022_JP_DELIM && __UPPERCASE_50_75)
+describe UPPERCASE_50_75        message body is 50-75% uppercase
+meta UPPERCASE_75_100           (!__ISO_2022_JP_DELIM && __UPPERCASE_75_100)
+describe UPPERCASE_75_100       message body is 75-100% uppercase
+
+header __SANE_MSGID		MESSAGEID =~ /^<[^<>\\ \t\n\r\x0b\x80-\xff]+\@[^<>\\ \t\n\r\x0b\x80-\xff]+>\s*$/m
+header __HAS_MSGID		MESSAGEID =~ /\S/
+header __MSGID_COMMENT		MESSAGEID =~ /\(.*\)/m
+meta INVALID_MSGID		__HAS_MSGID && !(__SANE_MSGID || __MSGID_COMMENT)
+describe INVALID_MSGID		Message-Id is not valid, according to RFC 2822
+
+#See Bug 7411
+#header __MOZILLA_MUA		X-Mailer =~ /\bMozilla\b/
+header __MOZILLA_MUA            User-Agent =~ /^mozilla\b/i
+header __MOZILLA_MSGID		MESSAGEID =~ /^<(?:[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}|[A-F\d]{8}\.[A-F1-9][A-F\d]{0,7})\@\S+>$/m
+meta FORGED_MUA_MOZILLA		(__MOZILLA_MUA && !__UNUSABLE_MSGID && !__MOZILLA_MSGID)
+describe FORGED_MUA_MOZILLA	Forged mail pretending to be from Mozilla
+
+header __PC_RND_HEADER		ALL =~ /%RA?ND(?:OM)?(?:_|\b|[A-Z]{3})/i
+rawbody __PC_RND_RAWBODY	/%RA?ND(?:OM)?(?:_|\b|[A-Z]{3})/i
+meta PERCENT_RANDOM		(__PC_RND_HEADER || __PC_RND_RAWBODY)
+describe PERCENT_RANDOM		Message has a random macro in it
+
+# __MIME_ATTACHMENT defined in 20_html_tests.cf
+body __NONEMPTY_BODY	/\S/
+tflags __NONEMPTY_BODY	nosubject
+priority __NONEMPTY_BODY -2000 # Bug 8078
+meta EMPTY_MESSAGE	!__MIME_ATTACHMENT && !__NONEMPTY_BODY
+describe EMPTY_MESSAGE	Message appears to have no textual parts
+
+meta NO_HEADERS_MESSAGE (MISSING_DATE && MISSING_HEADERS && NO_RECEIVED && NO_RELAYS && MISSING_MID)
+describe NO_HEADERS_MESSAGE Message appears to be missing most RFC-822 headers
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::MIMEEval
+
+body __UPPERCASE_25_50          eval:check_for_uppercase('25', '50')
+body __UPPERCASE_50_75          eval:check_for_uppercase('50', '75')
+body __UPPERCASE_75_100         eval:check_for_uppercase('75', '100')
+
+endif

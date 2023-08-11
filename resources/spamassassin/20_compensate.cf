@@ -1,0 +1,48 @@
+# SpamAssassin rules file: compensation for common false positives
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+# Header compensation tests
+
+require_version @@VERSION@@
+
+header __HAS_RCVD       exists:Received
+priority __HAS_RCVD     -2000 # Bug 8078
+meta NO_RECEIVED        (!__HAS_RCVD)
+tflags NO_RECEIVED      nice userconf
+describe NO_RECEIVED    Informational: message has no Received headers
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::RelayEval
+
+# The message was never sent via an untrustworthy host.
+header ALL_TRUSTED      eval:check_all_trusted()
+describe ALL_TRUSTED    Passed through trusted hosts only via SMTP
+tflags ALL_TRUSTED      nice userconf
+
+header NO_RELAYS        eval:check_no_relays()
+tflags NO_RELAYS        nice userconf
+describe NO_RELAYS      Informational: message was not relayed via SMTP
+
+endif

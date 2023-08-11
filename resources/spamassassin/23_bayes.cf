@@ -1,0 +1,83 @@
+# SpamAssassin basic config file
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::Bayes
+
+body BAYES_00		eval:check_bayes('0.00', '0.01')
+body BAYES_05		eval:check_bayes('0.01', '0.05')
+body BAYES_20		eval:check_bayes('0.05', '0.20')
+body BAYES_40		eval:check_bayes('0.20', '0.40')
+
+# note: tread carefully around 0.5... the Bayesian classifier
+# will use that for anything it's unsure about, or if it's untrained.
+body BAYES_50		eval:check_bayes('0.40', '0.60')
+
+body BAYES_60		eval:check_bayes('0.60', '0.80')
+body BAYES_80		eval:check_bayes('0.80', '0.95')
+body BAYES_95		eval:check_bayes('0.95', '0.99')
+body BAYES_99		eval:check_bayes('0.99', '1.00')
+
+#Additional rule to add more of a score to BAYES_99 FOR 99.9% to 100%
+body BAYES_999		eval:check_bayes('0.999', '1.00')
+
+tflags BAYES_00		nice learn
+tflags BAYES_05		nice learn
+tflags BAYES_20		nice learn
+tflags BAYES_40		nice learn
+tflags BAYES_50		learn
+tflags BAYES_60		learn
+tflags BAYES_80		learn
+tflags BAYES_95		learn
+tflags BAYES_99		learn
+tflags BAYES_999	learn
+
+describe BAYES_00	Bayes spam probability is 0 to 1%
+describe BAYES_05	Bayes spam probability is 1 to 5%
+describe BAYES_20	Bayes spam probability is 5 to 20%
+describe BAYES_40	Bayes spam probability is 20 to 40%
+describe BAYES_50	Bayes spam probability is 40 to 60%
+describe BAYES_60	Bayes spam probability is 60 to 80%
+describe BAYES_80	Bayes spam probability is 80 to 95%
+describe BAYES_95	Bayes spam probability is 95 to 99%
+describe BAYES_99	Bayes spam probability is 99 to 100%
+describe BAYES_999      Bayes spam probability is 99.9 to 100%
+
+priority BAYES_00 	-90
+priority BAYES_05 	-90
+priority BAYES_20 	-90
+priority BAYES_40 	-90
+priority BAYES_50 	-90
+priority BAYES_60 	-90
+priority BAYES_80 	-90
+priority BAYES_95 	-90
+priority BAYES_99 	-90
+priority BAYES_99	-90
+priority BAYES_999	-90
+
+endif

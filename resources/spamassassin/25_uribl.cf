@@ -1,0 +1,364 @@
+# SpamAssassin - URIDNSBL rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+# Requires the Mail::SpamAssassin::Plugin::URIDNSBL plugin be loaded.
+# Note that this plugin defines a new config setting, 'uridnsbl',
+# which lists the zones to look up in advance.  The rules will
+# not hit unless each rule has a corresponding 'uridnsbl' line.
+
+ifplugin Mail::SpamAssassin::Plugin::URIDNSBL
+
+###########################################################################
+## Spamhaus
+
+uridnssub       URIBL_SBL        zen.spamhaus.org.       A   127.0.0.2
+body            URIBL_SBL        eval:check_uridnsbl('URIBL_SBL')
+describe        URIBL_SBL        Contains an URL's NS IP listed in the Spamhaus SBL blocklist
+tflags          URIBL_SBL        net
+reuse           URIBL_SBL
+
+uridnssub       URIBL_CSS        zen.spamhaus.org.       A   127.0.0.3
+body            URIBL_CSS        eval:check_uridnsbl('URIBL_CSS')
+describe        URIBL_CSS        Contains an URL's NS IP listed in the Spamhaus CSS blocklist
+tflags          URIBL_CSS        net
+reuse           URIBL_CSS
+
+# Only works correctly from 3.4.3, earlier versions basically run as URIBL_SBL duplicate
+if can(Mail::SpamAssassin::Plugin::URIDNSBL::has_uridnsbl_for_a)
+  uridnssub       URIBL_SBL_A      zen.spamhaus.org.       A   127.0.0.2
+  body            URIBL_SBL_A      eval:check_uridnsbl('URIBL_SBL_A')
+  describe        URIBL_SBL_A      Contains URL's A record listed in the Spamhaus SBL blocklist
+  tflags          URIBL_SBL_A      net a
+  reuse           URIBL_SBL_A
+
+  uridnssub       URIBL_CSS_A      zen.spamhaus.org.       A   127.0.0.3
+  body            URIBL_CSS_A      eval:check_uridnsbl('URIBL_CSS_A')
+  describe        URIBL_CSS_A      Contains URL's A record listed in the Spamhaus CSS blocklist
+  tflags          URIBL_CSS_A      net a
+  reuse           URIBL_CSS_A
+endif
+
+# New blocked checks 10/2019
+uridnssub URIBL_ZEN_BLOCKED_OPENDNS  zen.spamhaus.org.       A   127.255.255.254
+body      URIBL_ZEN_BLOCKED_OPENDNS  eval:check_uridnsbl('URIBL_ZEN_BLOCKED_OPENDNS')
+describe  URIBL_ZEN_BLOCKED_OPENDNS  ADMINISTRATOR NOTICE: The query to zen.spamhaus.org was blocked due to usage of an open resolver. See https://www.spamhaus.org/returnc/pub/
+tflags    URIBL_ZEN_BLOCKED_OPENDNS  net
+reuse     URIBL_ZEN_BLOCKED_OPENDNS
+
+# New blocked checks 10/2019
+uridnssub URIBL_ZEN_BLOCKED  zen.spamhaus.org.       A   127.255.255.255
+body      URIBL_ZEN_BLOCKED  eval:check_uridnsbl('URIBL_ZEN_BLOCKED')
+describe  URIBL_ZEN_BLOCKED  ADMINISTRATOR NOTICE: The query to zen.spamhaus.org was blocked. See https://www.spamhaus.org/returnc/vol/
+tflags    URIBL_ZEN_BLOCKED  net
+reuse     URIBL_ZEN_BLOCKED
+
+if can(Mail::SpamAssassin::Conf::feature_dns_block_rule)
+dns_block_rule URIBL_ZEN_BLOCKED_OPENDNS zen.spamhaus.org
+dns_block_rule URIBL_ZEN_BLOCKED zen.spamhaus.org
+endif
+
+
+# DBL, https://www.spamhaus.org/dbl/
+# changes axb 05-17-2014: as per https://www.spamhaus.org/news/article/713/
+# SH changes effective 06-01-2014
+if can(Mail::SpamAssassin::Plugin::URIDNSBL::has_tflags_domains_only)
+
+urirhssub       URIBL_DBL_SPAM   	dbl.spamhaus.org.       A   127.0.1.2
+body            URIBL_DBL_SPAM   	eval:check_uridnsbl('URIBL_DBL_SPAM')
+describe        URIBL_DBL_SPAM   	Contains a spam URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_SPAM   	net domains_only notrim
+reuse           URIBL_DBL_SPAM
+
+urirhssub       URIBL_DBL_PHISH  	dbl.spamhaus.org.       A   127.0.1.4
+body            URIBL_DBL_PHISH	 	eval:check_uridnsbl('URIBL_DBL_PHISH')
+describe        URIBL_DBL_PHISH	 	Contains a Phishing URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_PHISH  	net domains_only notrim
+reuse           URIBL_DBL_PHISH
+
+urirhssub       URIBL_DBL_MALWARE  	dbl.spamhaus.org.       A   127.0.1.5
+body            URIBL_DBL_MALWARE  	eval:check_uridnsbl('URIBL_DBL_MALWARE')
+describe        URIBL_DBL_MALWARE  	Contains a malware URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_MALWARE  	net domains_only notrim
+reuse           URIBL_DBL_MALWARE
+
+urirhssub       URIBL_DBL_BOTNETCC  	dbl.spamhaus.org.       A   127.0.1.6
+body            URIBL_DBL_BOTNETCC	eval:check_uridnsbl('URIBL_DBL_BOTNETCC')
+describe        URIBL_DBL_BOTNETCC	Contains a botned C&C URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_BOTNETCC	net domains_only notrim
+reuse           URIBL_DBL_BOTNETCC
+
+urirhssub       URIBL_DBL_ABUSE_SPAM  	dbl.spamhaus.org.       A   127.0.1.102
+body            URIBL_DBL_ABUSE_SPAM	eval:check_uridnsbl('URIBL_DBL_ABUSE_SPAM')
+describe        URIBL_DBL_ABUSE_SPAM	Contains an abused spamvertized URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_ABUSE_SPAM	net domains_only notrim
+reuse           URIBL_DBL_ABUSE_SPAM
+
+urirhssub       URIBL_DBL_ABUSE_REDIR  	dbl.spamhaus.org.       A   127.0.1.103
+body            URIBL_DBL_ABUSE_REDIR  	eval:check_uridnsbl('URIBL_DBL_ABUSE_REDIR')
+describe        URIBL_DBL_ABUSE_REDIR  	Contains an abused redirector URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_ABUSE_REDIR  	net domains_only notrim
+reuse           URIBL_DBL_ABUSE_REDIR
+
+urirhssub       URIBL_DBL_ABUSE_PHISH  	dbl.spamhaus.org.       A   127.0.1.104
+body            URIBL_DBL_ABUSE_PHISH	eval:check_uridnsbl('URIBL_DBL_ABUSE_PHISH')
+describe        URIBL_DBL_ABUSE_PHISH	Contains an abused phishing URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_ABUSE_PHISH	net domains_only notrim
+reuse           URIBL_DBL_ABUSE_PHISH
+
+urirhssub       URIBL_DBL_ABUSE_MALW  	dbl.spamhaus.org.       A   127.0.1.105
+body            URIBL_DBL_ABUSE_MALW	eval:check_uridnsbl('URIBL_DBL_ABUSE_MALW')
+describe        URIBL_DBL_ABUSE_MALW	Contains an abused malware URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_ABUSE_MALW	net domains_only notrim
+reuse           URIBL_DBL_ABUSE_MALW
+
+urirhssub       URIBL_DBL_ABUSE_BOTCC  	dbl.spamhaus.org.       A   127.0.1.106
+body            URIBL_DBL_ABUSE_BOTCC  	eval:check_uridnsbl('URIBL_DBL_ABUSE_BOTCC')
+describe        URIBL_DBL_ABUSE_BOTCC  	Contains an abused botnet C&C URL listed in the Spamhaus DBL blocklist
+tflags          URIBL_DBL_ABUSE_BOTCC  	net domains_only notrim
+reuse           URIBL_DBL_ABUSE_BOTCC
+
+
+# this indicates that IP-address queries were sent to DBL, and should
+# never appear; if it does, something is wrong with SpamAssassin
+urirhssub       URIBL_DBL_ERROR  dbl.spamhaus.org.       A   127.0.1.255
+body            URIBL_DBL_ERROR  eval:check_uridnsbl('URIBL_DBL_ERROR')
+describe        URIBL_DBL_ERROR  Error: queried the Spamhaus DBL blocklist for an IP
+tflags          URIBL_DBL_ERROR  net domains_only notrim
+reuse           URIBL_DBL_ERROR
+
+# New blocked checks 10/2019
+urirhssub       URIBL_DBL_BLOCKED_OPENDNS  dbl.spamhaus.org.       A   127.255.255.254
+body            URIBL_DBL_BLOCKED_OPENDNS  eval:check_uridnsbl('URIBL_DBL_BLOCKED_OPENDNS')
+describe        URIBL_DBL_BLOCKED_OPENDNS  ADMINISTRATOR NOTICE: The query to dbl.spamhaus.org was blocked due to usage of an open resolver. See https://www.spamhaus.org/returnc/pub/
+tflags          URIBL_DBL_BLOCKED_OPENDNS  net domains_only notrim
+reuse           URIBL_DBL_BLOCKED_OPENDNS
+
+# New blocked checks 10/2019
+urirhssub       URIBL_DBL_BLOCKED  dbl.spamhaus.org.       A   127.255.255.255
+body            URIBL_DBL_BLOCKED  eval:check_uridnsbl('URIBL_DBL_BLOCKED')
+describe        URIBL_DBL_BLOCKED  ADMINISTRATOR NOTICE: The query to dbl.spamhaus.org was blocked. See https://www.spamhaus.org/returnc/vol/
+tflags          URIBL_DBL_BLOCKED  net domains_only notrim
+reuse           URIBL_DBL_BLOCKED
+
+endif
+
+###########################################################################
+## SURBL
+
+#MERGED INTO BIT 64 per bug 7279
+#urirhssub       URIBL_SC_SURBL  multi.surbl.org.        A   2
+#body            URIBL_SC_SURBL  eval:check_uridnsbl('URIBL_SC_SURBL')
+#describe        URIBL_SC_SURBL  Contains an URL listed in the SC SURBL blocklist
+#tflags          URIBL_SC_SURBL  net notrim
+#reuse           URIBL_SC_SURBL
+
+urirhssub       URIBL_WS_SURBL  multi.surbl.org.        A   4
+body            URIBL_WS_SURBL  eval:check_uridnsbl('URIBL_WS_SURBL')
+describe        URIBL_WS_SURBL  Contains an URL listed in the WS SURBL blocklist
+tflags          URIBL_WS_SURBL  net notrim
+reuse           URIBL_WS_SURBL
+
+urirhssub       URIBL_PH_SURBL  multi.surbl.org.        A   8
+body            URIBL_PH_SURBL  eval:check_uridnsbl('URIBL_PH_SURBL')
+describe        URIBL_PH_SURBL  Contains an URL listed in the PH SURBL blocklist
+tflags          URIBL_PH_SURBL  net notrim
+reuse           URIBL_PH_SURBL
+
+urirhssub       URIBL_MW_SURBL  multi.surbl.org.        A   16
+body            URIBL_MW_SURBL  eval:check_uridnsbl('URIBL_MW_SURBL')
+describe        URIBL_MW_SURBL  Contains a URL listed in the MW SURBL blocklist
+tflags          URIBL_MW_SURBL  net notrim
+reuse           URIBL_MW_SURBL
+
+urirhssub       URIBL_CR_SURBL  multi.surbl.org.        A   128
+body            URIBL_CR_SURBL  eval:check_uridnsbl('URIBL_CR_SURBL')
+describe        URIBL_CR_SURBL  Contains an URL listed in the CR SURBL blocklist
+tflags          URIBL_CR_SURBL  net notrim
+reuse           URIBL_CR_SURBL
+
+#MERGED INTO BIT 64 per bug 7279
+#urirhssub       URIBL_AB_SURBL  multi.surbl.org.        A   32
+#body            URIBL_AB_SURBL  eval:check_uridnsbl('URIBL_AB_SURBL')
+#describe        URIBL_AB_SURBL  Contains an URL listed in the AB SURBL blocklist
+#tflags          URIBL_AB_SURBL  net notrim
+#reuse           URIBL_AB_SURBL
+
+#JP MOVED INTO ABUSE AS WELL AND BIT REUSED  per bug 7279
+urirhssub       URIBL_ABUSE_SURBL  multi.surbl.org.        A   64
+body            URIBL_ABUSE_SURBL  eval:check_uridnsbl('URIBL_ABUSE_SURBL')
+describe        URIBL_ABUSE_SURBL  Contains an URL listed in the ABUSE SURBL blocklist
+tflags          URIBL_ABUSE_SURBL  net notrim
+reuse           URIBL_ABUSE_SURBL
+
+#SURBL BLOCK RULES - Bit 1 means your DNS has been blocked and this rule should be triggered to notify you.
+urirhssub       SURBL_BLOCKED   multi.surbl.org.        A   1
+body            SURBL_BLOCKED   eval:check_uridnsbl('SURBL_BLOCKED')
+describe        SURBL_BLOCKED   ADMINISTRATOR NOTICE: The query to SURBL was blocked.  See http://wiki.apache.org/spamassassin/DnsBlocklists\#dnsbl-block for more information.
+tflags          SURBL_BLOCKED   net noautolearn notrim
+reuse           SURBL_BLOCKED
+
+if can(Mail::SpamAssassin::Conf::feature_dns_block_rule)
+dns_block_rule SURBL_BLOCKED multi.surbl.org
+endif
+
+###########################################################################
+## URIBL
+
+urirhssub       URIBL_BLACK     multi.uribl.com.        A   2
+body            URIBL_BLACK     eval:check_uridnsbl('URIBL_BLACK')
+describe        URIBL_BLACK     Contains an URL listed in the URIBL blacklist
+tflags          URIBL_BLACK     net
+reuse           URIBL_BLACK
+
+urirhssub       URIBL_GREY      multi.uribl.com.        A   4
+body            URIBL_GREY      eval:check_uridnsbl('URIBL_GREY')
+describe        URIBL_GREY      Contains an URL listed in the URIBL greylist
+tflags          URIBL_GREY      net
+reuse           URIBL_GREY
+
+urirhssub       URIBL_RED       multi.uribl.com.        A   8
+body            URIBL_RED       eval:check_uridnsbl('URIBL_RED')
+describe        URIBL_RED       Contains an URL listed in the URIBL redlist
+tflags          URIBL_RED       net
+reuse           URIBL_RED
+
+#URIBL BLOCK RULES - Bit 1 means your DNS has been blocked and this rule should be triggered to notify you.
+urirhssub       URIBL_BLOCKED   multi.uribl.com.        A   1
+body            URIBL_BLOCKED   eval:check_uridnsbl('URIBL_BLOCKED')
+describe        URIBL_BLOCKED   ADMINISTRATOR NOTICE: The query to URIBL was blocked.  See http://wiki.apache.org/spamassassin/DnsBlocklists\#dnsbl-block for more information.
+tflags          URIBL_BLOCKED   net noautolearn
+reuse           URIBL_BLOCKED
+
+if can(Mail::SpamAssassin::Conf::feature_dns_block_rule)
+dns_block_rule URIBL_BLOCKED multi.uribl.com
+endif
+
+###########################################################################
+## DOMAINS TO SKIP (KNOWN GOOD)
+
+# Linting
+uridnsbl_skip_domain taint.org
+
+# Don't bother looking for example domains as per RFC 2606.
+uridnsbl_skip_domain example.com example.net example.org
+
+uridnsbl_skip_domain local.cf
+
+# MUA CSS class definitions
+uridnsbl_skip_domain div.tk p.tk li.tk no.tk
+
+# (roughly) top 200 domains not blacklisted by SURBL
+uridnsbl_skip_domain 126.com 163.com 2o7.net 4at1.com
+uridnsbl_skip_domain 5iantlavalamp.com about.com adelphia.net adobe.com addthis.com
+uridnsbl_skip_domain agora-inc.com agoramedia.com akamai.net
+uridnsbl_skip_domain akamaitech.net amazon.com ancestry.com aol.com
+uridnsbl_skip_domain apache.org apple.com arcamax.com astrology.com apple.news
+uridnsbl_skip_domain atdmt.com att.net bbc.co.uk
+uridnsbl_skip_domain bcentral.com bellsouth.net bfi0.com
+uridnsbl_skip_domain bridgetrack.com cafe24.com charter.net
+uridnsbl_skip_domain citibank.com citizensbank.com cjb.net
+uridnsbl_skip_domain classmates.com clickbank.net cnet.com
+uridnsbl_skip_domain cnn.com com.com com.ne.kr comcast.net
+uridnsbl_skip_domain corporate-ir.net cox.net cs.com
+uridnsbl_skip_domain custhelp.com daum.net dd.se debian.org
+uridnsbl_skip_domain dell.com directtrack.com directnic.com domain.com
+uridnsbl_skip_domain dsbl.org earthlink.net ebay.co.uk ebay.com
+uridnsbl_skip_domain ebayimg.com ebaystatic.com edgesuite.net ediets.com
+uridnsbl_skip_domain egroups.com emode.com excite.com f-secure.com
+uridnsbl_skip_domain free.fr freebsd.org
+uridnsbl_skip_domain gentoo.org geocities.com gmail.com gmx.net
+uridnsbl_skip_domain go.com google.com googleadservices.com grisoft.com
+uridnsbl_skip_domain hallmark.com hinet.net hotbar.com hotmail.com
+uridnsbl_skip_domain hotpop.com hp.com ibm.com incredimail.com
+uridnsbl_skip_domain investorplace.com ivillage.com joingevalia.com
+uridnsbl_skip_domain juno.com kernel.org livejournal.com lycos.com
+uridnsbl_skip_domain m7z.net mac.com macromedia.com
+uridnsbl_skip_domain mail.com mail.ru mailscanner.info marketwatch.com
+uridnsbl_skip_domain mcafee.com mchsi.com messagelabs.com
+uridnsbl_skip_domain microsoft.com military.com mindspring.com mit.edu
+uridnsbl_skip_domain monster.com msn.com nate.com
+uridnsbl_skip_domain netflix.com netscape.com netscape.net netzero.net
+uridnsbl_skip_domain norman.com nytimes.com optonline.net osdn.com
+uridnsbl_skip_domain overstock.com pacbell.net pandasoftware.com
+uridnsbl_skip_domain paypal.com peoplepc.com plaxo.com
+uridnsbl_skip_domain prodigy.net radaruol.com.br
+uridnsbl_skip_domain real.com redhat.com regions.com regionsnet.com
+uridnsbl_skip_domain rogers.com rr.com sbcglobal.net sec.gov sf.net
+uridnsbl_skip_domain shaw.ca shockwave.com smithbarney.com
+uridnsbl_skip_domain sourceforge.net spamcop.net speedera.net sportsline.com
+uridnsbl_skip_domain sun.com suntrust.com sympatico.ca t-online.de
+uridnsbl_skip_domain tails.nl telus.net terra.com.br ticketmaster.com
+uridnsbl_skip_domain tinyurl.com tiscali.co.uk tom.com
+uridnsbl_skip_domain tone.co.nz tux.org uol.com.br
+uridnsbl_skip_domain ups.com verizon.net w3.org usps.com
+uridnsbl_skip_domain wamu.com wanadoo.fr washingtonpost.com weatherbug.com
+uridnsbl_skip_domain web.de webshots.com webtv.net wsj.com
+uridnsbl_skip_domain yahoo.ca yahoo.co.kr yahoo.co.uk
+uridnsbl_skip_domain yahoo.com yahoo.com.br yahoogroups.com yimg.com
+uridnsbl_skip_domain yopi.de yoursite.com zdnet.com
+uridnsbl_skip_domain openxmlformats.org passport.com xmlsoap.org
+uridnsbl_skip_domain abc.xyz avast.com schema.org
+
+# wtogami's most frequent known good URIDNSBL lookups (1/1/2011)
+uridnsbl_skip_domain alexa.com ask.com baidu.com bing.com craigslist.org
+uridnsbl_skip_domain doubleclick.com ebay.de facebook.com flickr.com godaddy.com
+uridnsbl_skip_domain google.co.in google.it mozilla.com myspace.com rediff.com
+uridnsbl_skip_domain twitter.com wordpress.com yahoo.co.jp youtube.com
+
+# axb's frequent known good URIDNSBL lookups
+
+uridnsbl_skip_domain fedex.com
+uridnsbl_skip_domain openoffice.org
+uridnsbl_skip_domain vk.com
+
+# pointless footer noise
+uridnsbl_skip_domain security.cloud
+uridnsbl_skip_domain yac.mx
+
+# Microsoft on ns1.msedge.net
+uridnsbl_skip_domain microsofttranslator.com office.com microsoftonline.com bing.com msedge.net
+
+# Some frequent known good URIDNSBL lookups 3.10.2018 -hk
+uridnsbl_skip_domain aka.ms akamaihd.net alibaba.com alicdn.com amazon.co.uk
+uridnsbl_skip_domain amazon.de amazonses.com bandcamp.com
+uridnsbl_skip_domain booking.com cdninstagram.com dhl.com
+uridnsbl_skip_domain dhl.fi dna.fi domain.fi dpd.de dropbox.com ebay.fr
+uridnsbl_skip_domain elisa.fi elisanet.fi emltrk.com fbcdn.net ficora.fi
+uridnsbl_skip_domain gappssmtp.com github.com google-analytics.com
+uridnsbl_skip_domain google.de google.fi googleusercontent.com
+uridnsbl_skip_domain gstatic.com hotels.com ikea.com images-amazon.com
+uridnsbl_skip_domain inet.fi instagram.com kolumbus.fi licdn.com linkedin.com
+uridnsbl_skip_domain media-amazon.com mtasv.net mzstatic.com nebula.fi
+uridnsbl_skip_domain nic.fi onmicrosoft.com oracle.com paypalobjects.com
+uridnsbl_skip_domain pinimg.com pinterest.com posti.com posti.fi pstmrk.it
+uridnsbl_skip_domain skype.com soundcloud.com ssl-images-amazon.com
+uridnsbl_skip_domain suomi24.fi t.co telia.com telia.fi tnt.com tori.fi
+uridnsbl_skip_domain tripadvisor.com twimg.com youtu.be
+# Some more frequent known good URIDNSBL lookups 10.4.2020 -hk
+uridnsbl_skip_domain docs.google.com etuovi.com iki.fi nflxext.com nflximg.com
+uridnsbl_skip_domain nflximg.net outlook.com postnord.com postnord.fi postnord.no
+uridnsbl_skip_domain saunalahti.fi
+
+endif   # Mail::SpamAssassin::Plugin::URIDNSBL

@@ -1,0 +1,96 @@
+# SpamAssassin rules file: advance fee fraud rules (Nigerian 419 scams)
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+# predicate naming used to avoid renumbering
+# 1. assign new rules a random unique three letter sequence
+# 2. sort on rule definition, not rule name
+
+header __FRAUD_VQE	Subject =~ /^(?:Re:|\[.{1,10}\])?\s*(?:very )?urgent\s+(?:(?:and|&)\s+)?(?:confidential|assistance|business|attention|reply|response|help)\b/i
+
+body __FRAUD_DBI	/(?:\bdollars?\b|\busd(?:ollars)?(?:[0-9]|\b)|\bus\$|\$[0-9,.]{6,}|\$[0-9].{0,8}[mb]illion|\$[0-9.,]{2,10} ?m|\beuros?\b|u[.]?s[.]? [0-9.]+ m)/i
+body __FRAUD_KJV	/(?:claim|concerning) (?:the|this) money/i
+body __FRAUD_IRJ	/(?:finance|holding|securit(?:ies|y)) (?:company|firm|storage house)/i
+body __FRAUD_NEB	/(?:government|bank) of nigeria/i
+body __FRAUD_XJR	/(?:who was a|as a|an? honest|you being a|to any) foreigner/i
+body __FRAUD_DPR	/\b(?:(?:respond|reply) (?:urgently|immediately)|(?:urgent|immediate|earliest) (?:reply|response))\b/i
+body __FRAUD_PTS	/\b(?:ass?ass?inat(?:ed|ion)|murder(?:e?d)?|kill(?:ed|ing)\b[^.]{0,99}\b(?:war veterans|rebels?))\b/i
+body __FRAUD_BEP	/\b(?:bank of nigeria|central bank of|trust bank|apex bank|amalgamated bank)\b/i
+body __FRAUD_TDP	/\b(?:business partner(?:s|ship)?|silent partner(?:s|ship)?)\b/i
+body __FRAUD_GAN	/\b(?:charles taylor|serena|abacha|gu[eéè]i|sese[- ]?seko|kabila)\b/i
+body __FRAUD_IRT	/\b(?:compliments? of the|dear friend|dear sir|yours faithfully|season'?s greetings)\b/i
+body __FRAUD_AON	/\b(?:confidential|private|alternate|alternative) (?:(?:e-? *)?mail)\b/i
+body __FRAUD_WNY	/\b(?:disburse?(?:ment)?|incurr?(?:ed)?|remunerr?at(?:ed?|ion)|remm?itt?(?:ed|ance|ing)?)\b/i
+body __FRAUD_IPK	/\b(?:in|to|visit) your country\b/i
+body __FRAUD_QXX	/\b(?:my name is|i am) (?:mrs?|engr|barrister|dr|prince(?:ss)?)[. ]/i
+body __FRAUD_IOU	/\b(?:no risks?|risk-? *free|free of risks?|100% safe)\b/i
+body __FRAUD_EZY	/\b(?:of|the) late president\b/i
+body __FRAUD_MLY	/\b(?:reply|respond)\b[^.]{0,50}\b(?:to|through)\b[^.]{0,50}\@\b/i
+body __FRAUD_ZFJ	/\b(?:wife|son|brother|daughter) of the late\b/i
+body __FRAUD_KDT	/\bU\.?S\.?(?:D\.?)?\s*(?:\$\s*)?(?:\d+,\d+,\d+|\d+\.\d+\.\d+|\d+(?:\.\d+)?\s*milli?on)/i
+body __FRAUD_ULK	/\baffidavits?\b/i
+body __FRAUD_BGP	/\battached to ticket number\b/i
+body __FRAUD_FBI	/\bdisburs/i
+body __FRAUD_JBU	/\bforeign account\b/i
+body __FRAUD_YWW	/\bfurnish you with\b/i
+body __FRAUD_JYG	/\bgive\s+you .{0,15}(?:fund|money|total|sum|contact|percent)\b/i
+body __FRAUD_XVW	/\bhonest cooperation\b/i
+body __FRAUD_UUY	/\blegitimate business(?:es)?\b/i
+body __FRAUD_SNT	/\blocate(?: .{1,20})? extended relative/i
+body __FRAUD_LTX	/\bmilli?on (?:.{1,25} thousand\s*)?(?:(?:united states|u\.?s\.?) dollars|(?i:U\.?S\.?D?))\b/i
+body __FRAUD_JNB	/\boperat(?:e|ing)\b[^.]{0,99}\b(?:for(?:ei|ie)gn|off-? ?shore|over-? ?seas?) (?:bank )?accounts?\b/i
+body __FRAUD_QFY	/\bover-? *(?:invoiced?|cost(?:s|ing)?)\b/i
+body __FRAUD_WDR	/\bprivate lawyer\b/i
+body __FRAUD_WFC	/\bsecur(?:e|ing) (?:the )?(?:funds?|monies)\b/i
+body __FRAUD_AUM	/\bthe desk of\b/i
+body __FRAUD_MCQ	/\btransaction\b.{1,30}\b(?:magnitude|diplomatic|strict|absolute|secret|confiden(?:tial|ce)|guarantee)/i
+body __FRAUD_ETX	/\byour\b[^.]{0,99}\b(?:contact (?:details|information)|private (?:e?[- ]?mail|telephone|tel|phone|fax))\b/i
+body __FRAUD_PVN	/as the beneficiary/i
+body __FRAUD_FVU	/award notification/i
+body __FRAUD_CKF	/computer ballot system/i
+body __FRAUD_FCW	/fiduciary agent/i
+body __FRAUD_MQO	/foreign (?:business partner|customer)/i
+body __FRAUD_TCC	/foreign (?:offshore )?(?:bank|account)/i
+body __FRAUD_GBW	/god gives .{1,10}second chance/i
+body __FRAUD_NRG	/i am contacting you/i
+body __FRAUD_RLX	/lott(?:o|ery) (?:co,?ordinator|international)/i
+body __FRAUD_AXF	/magnanimity/i
+body __FRAUD_THJ	/modalit(?:y|ies)/i
+body __FRAUD_YQV	/nigerian? (?:national|government)/i
+body __FRAUD_YJA	/over-invoice/i
+body __FRAUD_YPO	/the total sum/i
+body __FRAUD_UOQ	/vital documents/i
+
+#
+# jhardin: temporarily disable to gauge and score ADVANCE_FEE_NEW rules in isolation
+#
+# meta ADVANCE_FEE_2 (__FRAUD_KJV + __FRAUD_IRJ + __FRAUD_NEB + __FRAUD_XJR + __FRAUD_EZY + __FRAUD_ZFJ + __FRAUD_KDT + __FRAUD_BGP + __FRAUD_FBI + __FRAUD_JBU + __FRAUD_JYG + __FRAUD_XVW + __FRAUD_SNT + __FRAUD_LTX + __FRAUD_MCQ + __FRAUD_PVN + __FRAUD_FVU + __FRAUD_CKF + __FRAUD_FCW + __FRAUD_MQO + __FRAUD_TCC + __FRAUD_GBW + __FRAUD_NRG + __FRAUD_RLX + __FRAUD_AXF + __FRAUD_THJ + __FRAUD_YQV + __FRAUD_YJA + __FRAUD_YPO + __FRAUD_UOQ + __FRAUD_DBI + __FRAUD_BEP + __FRAUD_DPR + __FRAUD_QXX + __FRAUD_QFY + __FRAUD_PTS + __FRAUD_TDP + __FRAUD_GAN + __FRAUD_IPK + __FRAUD_AON + __FRAUD_WNY + __FRAUD_AUM + __FRAUD_WFC + __FRAUD_YWW + __FRAUD_ULK + __FRAUD_IOU + __FRAUD_JNB + __FRAUD_IRT + __FRAUD_ETX + __FRAUD_WDR + __FRAUD_UUY + __FRAUD_MLY > 2)
+# meta ADVANCE_FEE_3 (__FRAUD_KJV + __FRAUD_IRJ + __FRAUD_NEB + __FRAUD_XJR + __FRAUD_EZY + __FRAUD_ZFJ + __FRAUD_KDT + __FRAUD_BGP + __FRAUD_FBI + __FRAUD_JBU + __FRAUD_JYG + __FRAUD_XVW + __FRAUD_SNT + __FRAUD_LTX + __FRAUD_MCQ + __FRAUD_PVN + __FRAUD_FVU + __FRAUD_CKF + __FRAUD_FCW + __FRAUD_MQO + __FRAUD_TCC + __FRAUD_GBW + __FRAUD_NRG + __FRAUD_RLX + __FRAUD_AXF + __FRAUD_THJ + __FRAUD_YQV + __FRAUD_YJA + __FRAUD_YPO + __FRAUD_UOQ + __FRAUD_DBI + __FRAUD_BEP + __FRAUD_DPR + __FRAUD_QXX + __FRAUD_QFY + __FRAUD_PTS + __FRAUD_TDP + __FRAUD_GAN + __FRAUD_IPK + __FRAUD_AON + __FRAUD_WNY + __FRAUD_AUM + __FRAUD_WFC + __FRAUD_YWW + __FRAUD_ULK + __FRAUD_IOU + __FRAUD_JNB + __FRAUD_IRT + __FRAUD_ETX + __FRAUD_WDR + __FRAUD_UUY + __FRAUD_MLY > 3)
+# meta ADVANCE_FEE_4 (__FRAUD_KJV + __FRAUD_IRJ + __FRAUD_NEB + __FRAUD_XJR + __FRAUD_EZY + __FRAUD_ZFJ + __FRAUD_KDT + __FRAUD_BGP + __FRAUD_FBI + __FRAUD_JBU + __FRAUD_JYG + __FRAUD_XVW + __FRAUD_SNT + __FRAUD_LTX + __FRAUD_MCQ + __FRAUD_PVN + __FRAUD_FVU + __FRAUD_CKF + __FRAUD_FCW + __FRAUD_MQO + __FRAUD_TCC + __FRAUD_GBW + __FRAUD_NRG + __FRAUD_RLX + __FRAUD_AXF + __FRAUD_THJ + __FRAUD_YQV + __FRAUD_YJA + __FRAUD_YPO + __FRAUD_UOQ + __FRAUD_DBI + __FRAUD_BEP + __FRAUD_DPR + __FRAUD_QXX + __FRAUD_QFY + __FRAUD_PTS + __FRAUD_TDP + __FRAUD_GAN + __FRAUD_IPK + __FRAUD_AON + __FRAUD_WNY + __FRAUD_AUM + __FRAUD_WFC + __FRAUD_YWW + __FRAUD_ULK + __FRAUD_IOU + __FRAUD_JNB + __FRAUD_IRT + __FRAUD_ETX + __FRAUD_WDR + __FRAUD_UUY + __FRAUD_MLY > 4)
+# 
+# describe ADVANCE_FEE_2	Appears to be advance fee fraud (Nigerian 419)
+# describe ADVANCE_FEE_3	Appears to be advance fee fraud (Nigerian 419)
+# describe ADVANCE_FEE_4	Appears to be advance fee fraud (Nigerian 419)

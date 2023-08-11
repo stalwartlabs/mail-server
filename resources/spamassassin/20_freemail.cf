@@ -1,0 +1,65 @@
+# SpamAssassin - FreeMail rules
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::FreeMail
+
+body     __freemail_safe_fwd  /---\s?(?:(?:Forwarded|Original) message|Alkuper(?:\xe4|\xc3\xa4)inen viesti)/i
+header   __freemail_safe_rls  X-Spam-Relays-External =~ /^[^\]]+ rdns=\S+\.(?:tfbnw\.net|ebay\.com|tieto\.com) /
+meta     __freemail_safe      __freemail_safe_fwd || __ML2 || __ML4 || __HAS_X_MAILING_LIST || __HAS_X_MAILMAN_VERSION || __freemail_safe_rls
+
+header   __freemail_replyto  eval:check_freemail_replyto('replyto')
+meta     FREEMAIL_REPLYTO  __freemail_replyto && !__freemail_safe
+describe FREEMAIL_REPLYTO  Reply-To/From or Reply-To/body contain different freemails
+score    FREEMAIL_REPLYTO  2
+
+header   __freemail_reply  eval:check_freemail_replyto('reply')
+meta     FREEMAIL_REPLY  __freemail_reply && !__freemail_replyto && !__freemail_safe
+describe FREEMAIL_REPLY  From and body contain different freemails
+score    FREEMAIL_REPLY  0.5
+
+header   FREEMAIL_FROM  eval:check_freemail_from()
+describe FREEMAIL_FROM  Sender email is commonly abused enduser mail provider
+score    FREEMAIL_FROM  0.001
+
+header   FREEMAIL_ENVFROM_END_DIGIT  eval:check_freemail_header('EnvelopeFrom', '\d@')
+describe FREEMAIL_ENVFROM_END_DIGIT  Envelope-from freemail username ends in digit
+score    FREEMAIL_ENVFROM_END_DIGIT  0.1
+
+header   FREEMAIL_REPLYTO_END_DIGIT  eval:check_freemail_header('Reply-To', '\d@')
+describe FREEMAIL_REPLYTO_END_DIGIT  Reply-To freemail username ends in digit
+score    FREEMAIL_REPLYTO_END_DIGIT  0.1
+
+#header   FREEMAIL_SUBJECT  eval:check_freemail_header('Subject')
+#describe FREEMAIL_SUBJECT  Subject contains freemail
+#score    FREEMAIL_SUBJECT  0.001
+
+# Idea from John Hardin
+header   __freemail_hdr_replyto  eval:check_freemail_header('Reply-To')
+meta     FREEMAIL_FORGED_REPLYTO  __freemail_hdr_replyto && !FREEMAIL_FROM && !__freemail_safe
+describe FREEMAIL_FORGED_REPLYTO  Freemail in Reply-To, but not From
+score    FREEMAIL_FORGED_REPLYTO  0.1
+
+endif
+

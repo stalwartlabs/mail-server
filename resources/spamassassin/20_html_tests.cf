@@ -1,0 +1,239 @@
+# SpamAssassin rules file: HTML tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+# HTML parser tests
+#
+# please sort these by eval type then name
+
+meta HTML_SHORT_LINK_IMG_1	__HTML_LENGTH_0000_1024 && __HTML_LINK_IMAGE
+meta HTML_SHORT_LINK_IMG_2	__HTML_LENGTH_1024_1536 && __HTML_LINK_IMAGE
+meta HTML_SHORT_LINK_IMG_3	__HTML_LENGTH_1536_2048 && __HTML_LINK_IMAGE
+describe HTML_SHORT_LINK_IMG_1	HTML is very short with a linked image
+describe HTML_SHORT_LINK_IMG_2	HTML is very short with a linked image
+describe HTML_SHORT_LINK_IMG_3	HTML is very short with a linked image
+
+
+meta HTML_SHORT_CENTER		(__HTML_LENGTH_384 && __TAG_EXISTS_CENTER)
+describe HTML_SHORT_CENTER	HTML is very short with CENTER tag
+
+
+meta HTML_TITLE_SUBJ_DIFF	__HTML_TITLE_SUBJ_DIFF && !__MIME_ATTACHMENT
+
+meta HTML_CHARSET_FARAWAY	(__HTML_CHARSET_FARAWAY && __HIGHBITS)
+describe HTML_CHARSET_FARAWAY	A foreign language charset used in HTML markup
+tflags HTML_CHARSET_FARAWAY	userconf
+
+meta HTML_MIME_NO_HTML_TAG	MIME_HTML_ONLY && !__TAG_EXISTS_HTML
+describe HTML_MIME_NO_HTML_TAG	HTML-only message, but there is no HTML tag
+
+meta HTML_MISSING_CTYPE		(!__MIME_HTML && HTML_MESSAGE)
+describe HTML_MISSING_CTYPE	Message is HTML without HTML Content-Type
+
+###########################################################################
+# rawbody HTML tests
+
+rawbody HIDE_WIN_STATUS		/<[^>]{1,1000}onMouseOver=[^>]{1,1000}window\.status=/i
+describe HIDE_WIN_STATUS	Javascript to hide URLs in browser
+
+rawbody __OBFUSCATING_COMMENT_A	/\w(?:<![^>]*>)+\w/
+rawbody __OBFUSCATING_COMMENT_B	/[^\s>](?:<![^>]*>)+[^\s<]/
+ifplugin Mail::SpamAssassin::Plugin::HTMLEval
+ifplugin Mail::SpamAssassin::Plugin::MIMEEval
+meta OBFUSCATING_COMMENT	((__OBFUSCATING_COMMENT_A && HTML_MESSAGE) || (__OBFUSCATING_COMMENT_B && MIME_HTML_ONLY)) && !__ISO_2022_JP_DELIM
+describe OBFUSCATING_COMMENT	HTML comments which obfuscate text
+endif
+endif
+
+# spams that are assembled from a Javascript array
+# look for the XOR op
+rawbody __JS_FROMCHARCODE       /String\.fromCharCode\s*\(\s*\S+\s*\[\s*\S+\s*\]\s*\^/
+rawbody __JS_DOCWRITE           /document\.write/
+meta JS_FROMCHARCODE            (__JS_FROMCHARCODE && __JS_DOCWRITE)
+describe JS_FROMCHARCODE        Document is built from a Javascript charcode array
+
+# a good possible rule that may resurface
+# ! $ % ' ( ) , - . / : ; = ? @ _
+#rawbody ENTITY_DEC_OTHER	/\&\#0*(?:3[3679]|4[014567]|5[89]|6[134]|95)\;/
+#describe ENTITY_DEC_OTHER	HTML contains needlessly encoded punctuation
+
+body __HIGHBITS                     /(?:[\x80-\xff].?){4}/
+# note: __HIGHBITS is used by HTML_CHARSET_FARAWAY
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::HTMLEval
+
+# HTML control test, HTML spam rules should all have better S/O than this
+body HTML_MESSAGE		eval:html_test('html')
+describe HTML_MESSAGE		HTML included in message
+
+# HTML comment tests
+body HTML_COMMENT_SHORT		eval:html_text_match('comment', '<!(?!-).{0,6}>')
+describe HTML_COMMENT_SHORT	HTML comment is very short
+
+body HTML_COMMENT_SAVED_URL	eval:html_text_match('comment', '<!-- saved from url=\(\d{4}\)')
+describe HTML_COMMENT_SAVED_URL	HTML message is a saved web page
+
+body HTML_EMBEDS		eval:html_test('embeds')
+describe HTML_EMBEDS		HTML with embedded plugin object
+
+
+body HTML_EXTRA_CLOSE		eval:html_range('closed_extra_ratio', '0.09', 'inf')
+describe HTML_EXTRA_CLOSE	HTML contains far too many close tags
+
+
+
+body HTML_FONT_SIZE_LARGE	eval:html_range('max_size', '5', '6')
+describe HTML_FONT_SIZE_LARGE	HTML font size is large
+
+body HTML_FONT_SIZE_HUGE	eval:html_range('max_size', '6', 'inf')
+describe HTML_FONT_SIZE_HUGE	HTML font size is huge
+
+
+
+
+body HTML_FONT_LOW_CONTRAST	eval:html_test('font_low_contrast')
+describe HTML_FONT_LOW_CONTRAST	HTML font color similar or identical to background
+
+body HTML_FONT_FACE_BAD		eval:html_test('font_face_bad')
+describe HTML_FONT_FACE_BAD	HTML font face is not a word
+
+
+body HTML_FORMACTION_MAILTO	eval:html_test('form_action_mailto')
+describe HTML_FORMACTION_MAILTO	HTML includes a form which sends mail
+
+# HTML_IMAGE_ONLY - not much raw HTML with images (absolute)
+body HTML_IMAGE_ONLY_04		eval:html_image_only('0000','0400')
+body HTML_IMAGE_ONLY_08		eval:html_image_only('0400','0800')
+body HTML_IMAGE_ONLY_12		eval:html_image_only('0800','1200')
+body HTML_IMAGE_ONLY_16		eval:html_image_only('1200','1600')
+body HTML_IMAGE_ONLY_20		eval:html_image_only('1600','2000')
+body HTML_IMAGE_ONLY_24		eval:html_image_only('2000','2400')
+body HTML_IMAGE_ONLY_28		eval:html_image_only('2400','2800')
+body HTML_IMAGE_ONLY_32		eval:html_image_only('2800','3200')
+describe HTML_IMAGE_ONLY_04	HTML: images with 0-400 bytes of words
+describe HTML_IMAGE_ONLY_08	HTML: images with 400-800 bytes of words
+describe HTML_IMAGE_ONLY_12	HTML: images with 800-1200 bytes of words
+describe HTML_IMAGE_ONLY_16	HTML: images with 1200-1600 bytes of words
+describe HTML_IMAGE_ONLY_20	HTML: images with 1600-2000 bytes of words
+describe HTML_IMAGE_ONLY_24	HTML: images with 2000-2400 bytes of words
+describe HTML_IMAGE_ONLY_28	HTML: images with 2400-2800 bytes of words
+describe HTML_IMAGE_ONLY_32	HTML: images with 2800-3200 bytes of words
+
+# HTML_IMAGE_RATIO - more image area than text (ratio)
+body HTML_IMAGE_RATIO_02	eval:html_image_ratio('0.000','0.002')
+body HTML_IMAGE_RATIO_04        eval:html_image_ratio('0.002','0.004')
+body HTML_IMAGE_RATIO_06        eval:html_image_ratio('0.004','0.006')
+body HTML_IMAGE_RATIO_08        eval:html_image_ratio('0.006','0.008')
+describe HTML_IMAGE_RATIO_02    HTML has a low ratio of text to image area
+describe HTML_IMAGE_RATIO_04    HTML has a low ratio of text to image area
+describe HTML_IMAGE_RATIO_06    HTML has a low ratio of text to image area
+describe HTML_IMAGE_RATIO_08    HTML has a low ratio of text to image area
+
+# HTML obfuscation
+body HTML_OBFUSCATE_05_10	eval:html_range('obfuscation_ratio','.05','.1')
+body HTML_OBFUSCATE_10_20	eval:html_range('obfuscation_ratio','.1','.2')
+body HTML_OBFUSCATE_20_30	eval:html_range('obfuscation_ratio','.2','.3')
+body HTML_OBFUSCATE_30_40	eval:html_range('obfuscation_ratio','.3','.4')
+body HTML_OBFUSCATE_50_60	eval:html_range('obfuscation_ratio','.5','.6')
+body HTML_OBFUSCATE_70_80	eval:html_range('obfuscation_ratio','.7','.8')
+body HTML_OBFUSCATE_90_100	eval:html_range('obfuscation_ratio','.9','1.0')
+describe HTML_OBFUSCATE_05_10	Message is 5% to 10% HTML obfuscation
+describe HTML_OBFUSCATE_10_20	Message is 10% to 20% HTML obfuscation
+describe HTML_OBFUSCATE_20_30	Message is 20% to 30% HTML obfuscation
+describe HTML_OBFUSCATE_30_40	Message is 30% to 40% HTML obfuscation
+describe HTML_OBFUSCATE_50_60	Message is 50% to 60% HTML obfuscation
+describe HTML_OBFUSCATE_70_80	Message is 70% to 80% HTML obfuscation
+describe HTML_OBFUSCATE_90_100	Message is 90% to 100% HTML obfuscation
+
+body HTML_TAG_BALANCE_BODY	eval:html_tag_balance('body', '!= 0')
+describe HTML_TAG_BALANCE_BODY	HTML has unbalanced "body" tags
+
+body HTML_TAG_BALANCE_HEAD	eval:html_tag_balance('head', '!= 0')
+describe HTML_TAG_BALANCE_HEAD	HTML has unbalanced "head" tags
+
+body HTML_TAG_EXIST_BGSOUND	eval:html_tag_exists('bgsound')
+describe HTML_TAG_EXIST_BGSOUND	HTML has "bgsound" tag
+
+# percentage of tags that are not legal elements in HTML
+body HTML_BADTAG_40_50	eval:html_range('bad_tag_ratio','0.40','0.50')
+body HTML_BADTAG_50_60	eval:html_range('bad_tag_ratio','0.50','0.60')
+body HTML_BADTAG_60_70	eval:html_range('bad_tag_ratio','0.60','0.70')
+body HTML_BADTAG_90_100	eval:html_range('bad_tag_ratio','0.90','1.00')
+describe HTML_BADTAG_40_50	HTML message is 40% to 50% bad tags
+describe HTML_BADTAG_50_60	HTML message is 50% to 60% bad tags
+describe HTML_BADTAG_60_70	HTML message is 60% to 70% bad tags
+describe HTML_BADTAG_90_100	HTML message is 90% to 100% bad tags
+
+# percentage of unique non-elements in HTML
+body HTML_NONELEMENT_30_40	eval:html_range('non_element_ratio','0.30','0.40')
+body HTML_NONELEMENT_40_50	eval:html_range('non_element_ratio','0.40','0.50')
+body HTML_NONELEMENT_60_70	eval:html_range('non_element_ratio','0.60','0.70')
+body HTML_NONELEMENT_80_90	eval:html_range('non_element_ratio','0.80','0.90')
+describe HTML_NONELEMENT_30_40	30% to 40% of HTML elements are non-standard
+describe HTML_NONELEMENT_40_50	40% to 50% of HTML elements are non-standard
+describe HTML_NONELEMENT_60_70	60% to 70% of HTML elements are non-standard
+describe HTML_NONELEMENT_80_90	80% to 90% of HTML elements are non-standard
+
+# short HTML messages with certain attributes
+body __HTML_LINK_IMAGE		eval:html_text_match('anchor', '<img>')
+body __HTML_LENGTH_0000_1024	eval:html_range('length', '0', '1024')
+body __HTML_LENGTH_1024_1536	eval:html_range('length', '1024', '1536')
+body __HTML_LENGTH_1536_2048	eval:html_range('length', '1536', '2048')
+
+body __HTML_LENGTH_512		eval:html_eval('length', '< 512')
+body __COMMENT_EXISTS		eval:html_text_match('comment', '<!.*?>')
+
+body __HTML_LENGTH_384		eval:html_eval('length', '< 384')
+body __TAG_EXISTS_CENTER	eval:html_tag_exists('center')
+
+body __HTML_TITLE_120		eval:html_text_match('title', '.{120}')
+
+body __HTML_TITLE_SUBJ_DIFF	eval:html_title_subject_ratio('3.5')
+
+
+body __HTML_CHARSET_FARAWAY	eval:html_charset_faraway()
+
+body HTML_IFRAME_SRC	eval:check_iframe_src()
+describe HTML_IFRAME_SRC	Message has HTML IFRAME tag with SRC URI
+
+else
+
+meta __COMMENT_EXISTS		0
+meta __TAG_EXISTS_CENTER	0
+
+endif
+
+###########################################################################
+
+ifplugin Mail::SpamAssassin::Plugin::MIMEEval
+
+# __MIME_ATTACHMENT also used in 20_meta_tests.cf
+body __MIME_ATTACHMENT		eval:check_for_mime('mime_attachment')
+priority __MIME_ATTACHMENT	-2000 # Bug 8078
+
+endif

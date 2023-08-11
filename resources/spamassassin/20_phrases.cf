@@ -1,0 +1,192 @@
+# SpamAssassin rules file: phrase tests
+#
+# Please don't modify this file as your changes will be overwritten with
+# the next update. Use @@LOCAL_RULES_DIR@@/local.cf instead.
+# See 'perldoc Mail::SpamAssassin::Conf' for details.
+#
+# Note: body tests are run with long lines, so be sure to limit the
+# size of searches; use /.{0,30}/ instead of /.*/ to avoid huge
+# search times.
+#
+# <@LICENSE>
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to you under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at:
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# </@LICENSE>
+#
+###########################################################################
+
+require_version @@VERSION@@
+
+###########################################################################
+
+# new way to phrase unsubscribe link
+body REMOVE_BEFORE_LINK		m{(?:no thanks|not interested|unsubscribe here).{0,5}http://}i
+describe REMOVE_BEFORE_LINK	Removal phrase right before a link
+
+###########################################################################
+# CLICK rules
+# note HTML_LINK_CLICK* rules in HTML parser section
+
+
+body GUARANTEED_100_PERCENT	/100% GUARANTEED/i
+describe GUARANTEED_100_PERCENT	One hundred percent guaranteed
+body DEAR_FRIEND		/^\s*Dear Friend\b/i
+describe DEAR_FRIEND		Dear Friend? That's not very dear!
+body DEAR_SOMETHING		/\bDear (?:IT\W|Internet|candidate|sirs?|madam|investor|travell?er|car shopper|web)\b/i
+describe DEAR_SOMETHING		Contains 'Dear (something)'
+body BILLION_DOLLARS		/[BM]ILLION DOLLAR/
+describe BILLION_DOLLARS	Talks about lots of money
+
+body EXCUSE_4			/To Be Removed,? Please/i
+describe EXCUSE_4		Claims you can be removed from the list
+
+# strange pattern because otherwise it matches the std. majordomo line
+# pls note the comment above. DO NOT just put "to" in the first group!
+
+body EXCUSE_REMOVE		/to be removed from.{0,20}(?:mailings|offers)/i
+describe EXCUSE_REMOVE		Talks about how to be removed from mailings
+
+body STRONG_BUY			/strong buy/i
+describe STRONG_BUY		Tells you about a strong buy
+
+
+body STOCK_ALERT		/\bstock alert/i
+describe STOCK_ALERT		Offers a alert about a stock
+body NOT_ADVISOR		/not a registered investment advisor/i
+describe NOT_ADVISOR		Not registered investment advisor
+
+
+body PREST_NON_ACCREDITED	/prestigi?ous\b.{0,20}\bnon-accredited\b.{0,20}\buniversities/i
+describe PREST_NON_ACCREDITED	'Prestigious Non-Accredited Universities'
+
+body BODY_ENHANCEMENT		/\b(?:enlarge|increase|grow|lengthen|larger\b|bigger\b|longer\b|thicker\b|\binches\b).{0,50}\b(?:penis|male organ|pee[ -]?pee|dick|sc?hlong|wh?anger|breast(?!\s+cancer))/i
+describe BODY_ENHANCEMENT	Information on growing body parts
+
+body BODY_ENHANCEMENT2		/\b(?:penis|male organ|pee[ -]?pee|dick|sc?hlong|wh?anger|breast(?!\s+cancer)).{0,50}\b(?:enlarge|increase|grow|lengthen|larger\b|bigger\b|longer\b|thicker\b|\binches\b|size)/i
+describe BODY_ENHANCEMENT2	Information on getting larger body parts
+
+body     IMPOTENCE              /\b(?:impotence (?:problem|cure|solution)|Premature Ejaculation|erectile dysfunction)/i
+describe IMPOTENCE              Impotence cure
+
+
+
+#MOVED TO 20_rules_to_sandbox.cf - kmcgrail 2015-05-14
+#body NA_DOLLARS			/\b(?:\d{1,3})?Million\b.{0,40}\b(?:Canadian Dollar?s?|US\$|U\.? ?S\.? Dollar)/i
+#describe NA_DOLLARS		Talks about a million North American dollars
+#
+#body US_DOLLARS_3               /(?:\$|usd).?\d{1,3}[,.]\d{3}[,.]\d{3}(?:[,.]\d\d)?/i
+#describe US_DOLLARS_3           Mentions millions of $ ($NN,NNN,NNN.NN)
+#
+#body MILLION_USD              	/Million\b.{0,40}\b(?:United States? Dollars?|USD)/i
+#describe MILLION_USD 		Talks about millions of dollars
+
+
+
+body     __URG_BIZ		/urgent.{0,16}(?:assistance|business|buy|confidential|notice|proposal|reply|request|response)/i
+meta     URG_BIZ		__URG_BIZ
+describe URG_BIZ		Contains urgent matter
+
+
+
+body     MONEY_BACK             /money back guarantee/i
+describe MONEY_BACK             Money back guarantee
+
+
+
+body FREE_QUOTE_INSTANT		/free.{0,12}(?:(?:instant|express|online|no.?obligation).{0,4})+.{0,32}\bquote/i
+describe FREE_QUOTE_INSTANT	Free express or no-obligation quote
+
+body BAD_CREDIT		        /\b((?:bad|poor|eliminate|repair|(?:re)?establish|damag).{0,10} (?:credit|debt)|no credit (?:check|histor|need))/i
+describe BAD_CREDIT		Eliminate Bad Credit
+
+
+body REFINANCE_YOUR_HOME	/\brefinance your(?: current)? (?:home|house)\b/i
+describe REFINANCE_YOUR_HOME	Home refinancing
+
+body REFINANCE_NOW              /time to refinance|refinanc\w{1,3}\b.{0,16}\bnow\b/i
+describe REFINANCE_NOW          Home refinancing
+
+body NO_MEDICAL		        /\bno medical exam/i
+describe NO_MEDICAL		No Medical Exams
+
+
+# seems like we vastly reduce FPs on this one with a small change or two
+body DIET_1             /\b(?:(?:without|no) (?:exercis(?:e(?! price)|ing)|dieting)|weight.?loss|(?:extra|lose|lost|losing).{0,10}(?:pounds|weight|inches|lbs)|burn.{1,10}fat)\b/i
+describe DIET_1		Lose Weight Spam
+
+
+body FIN_FREE		        /\bfinancial(?:ly)? (?:free|independen)/i
+describe FIN_FREE 		Freedom of a financial nature
+
+body FORWARD_LOOKING	        /\bcontains forward-looking statements\b/i
+describe FORWARD_LOOKING	Stock Disclaimer Statement
+
+body ONE_TIME			/\bone\W+time (?:charge|investment|offer|promotion)/i
+describe ONE_TIME		One Time Rip Off
+
+body JOIN_MILLIONS	        /\bjoin (?:millions|thousands)\b/i
+describe JOIN_MILLIONS		Join Millions of Americans
+
+body MARKETING_PARTNERS		/\b(?:marketing|network) partner|\bpartner (?:web)?site/i
+describe MARKETING_PARTNERS	Claims you registered with a partner
+
+body LOW_PRICE                  /\blow.{0,4} (?-i:P)rice/i
+describe LOW_PRICE              Lowest Price
+
+body UNCLAIMED_MONEY            /\bunclaimed\s(?:assets?|accounts?|mon(?:ey|ies)|balance|funds?|prizes?|rewards?|payments?|deposits?)\b/i
+describe UNCLAIMED_MONEY        People just leave money laying around
+
+body OBSCURED_EMAIL		/\w+\^\S+\(\w{2,4}\b/
+describe OBSCURED_EMAIL		Message seems to contain rot13ed address
+
+body BANG_OPRAH      		/\boprah!/i
+describe BANG_OPRAH      	Talks about Oprah with an exclamation!
+
+#adding boundary checks: https://issues.apache.org/SpamAssassin/show_bug.cgi?id=6870
+body ACT_NOW_CAPS               /\bA(?i:ct) N(?i:ow)\b/
+describe ACT_NOW_CAPS		Talks about 'acting now' with capitals
+
+body MORE_SEX               /increased?.{0,9}(?:sex|stamina)/i
+describe MORE_SEX 		Talks about a bigger drive for sex
+
+# explicitly capped at 1.0 score because of FP potential
+body BANG_GUAR	         	/\bguaranteed?\!/i
+describe BANG_GUAR		Something is emphatically guaranteed
+
+
+
+body __RUDE_HTML_1	/Get a capable html e-mailer/i
+body __RUDE_HTML_2	/not support the display of HTML. Please view this message in a different/i
+body __RUDE_HTML_3	/This message contains an HTML formatted message but your email client does/i
+body __RUDE_HTML_4	/Your mailer do not support HTML messages. Switch to a better mailer/i
+meta RUDE_HTML		__RUDE_HTML_1 || __RUDE_HTML_2 || __RUDE_HTML_3 || __RUDE_HTML_4
+describe RUDE_HTML	Spammer message says you need an HTML mailer
+
+body INVESTMENT_ADVICE		/\binvestment advice/i
+describe INVESTMENT_ADVICE	Message mentions investment advice
+
+
+body MALE_ENHANCE	/male enhancement/i
+describe MALE_ENHANCE	Message talks about enhancing men
+
+body PRICES_ARE_AFFORDABLE	/\baffordable .{0,10}prices\b/i
+describe PRICES_ARE_AFFORDABLE	Message says that prices aren't too expensive
+
+body REPLICA_WATCH /\breplica.{1,20}rolex/i
+describe REPLICA_WATCH	Message talks about a replica watch
+
+body EM_ROLEX /[^\s\w.]rolex/i
+describe EM_ROLEX	Message puts emphasis on the watch manufacturer
+
