@@ -175,7 +175,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
             .into_value(self)
             .map(|s| s.into_owned())
         {
-            let mut mail_from = self.data.mail_from.as_mut().unwrap();
+            let mail_from = self.data.mail_from.as_mut().unwrap();
             if new_address.contains('@') {
                 mail_from.address_lcase = new_address.to_lowercase();
                 mail_from.domain = mail_from.address_lcase.domain_part().to_string();

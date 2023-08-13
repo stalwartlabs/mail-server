@@ -37,7 +37,7 @@ use smtp::{
 #[tokio::test]
 async fn limits() {
     let mut core = SMTP::test();
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.transfer_limit = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 10},
     {else = 1024}]"
         .parse_if(&ConfigContext::new(&[]));

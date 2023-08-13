@@ -32,7 +32,7 @@ use smtp::{
 #[tokio::test]
 async fn throttle_inbound() {
     let mut core = SMTP::test();
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.throttle.connect = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
     key = 'remote-ip'

@@ -135,12 +135,12 @@ async fn dmarc() {
     // Create report channels
     let mut rr = core.init_test_report();
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
     )));
 
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
     config.data.add_date = IfBlock::new(true);
     config.data.add_message_id = IfBlock::new(true);
@@ -148,7 +148,7 @@ async fn dmarc() {
     config.data.add_return_path = IfBlock::new(true);
     config.data.add_received_spf = IfBlock::new(true);
 
-    let mut config = &mut core.report.config;
+    let config = &mut core.report.config;
     config.dkim.send = IfBlock::new(Some(Rate {
         requests: 1,
         period: Duration::from_secs(1),
@@ -157,7 +157,7 @@ async fn dmarc() {
     config.spf.send = config.dkim.send.clone();
     config.dmarc_aggregate.send = IfBlock::new(AggregateFrequency::Daily);
 
-    let mut config = &mut core.mail_auth;
+    let config = &mut core.mail_auth;
     config.spf.verify_ehlo = "[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     { else = 'relaxed' }]"
         .parse_if(&ConfigContext::new(&[]));
@@ -168,7 +168,7 @@ async fn dmarc() {
     { else = 'strict' }]"
         .parse_if(&ConfigContext::new(&[]));
 
-    let mut config = &mut core.report.config;
+    let config = &mut core.report.config;
     config.spf.sign = "['rsa']"
         .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")

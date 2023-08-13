@@ -108,7 +108,7 @@ async fn generate_dsn() {
     // Load config
     let mut core = SMTP::test();
     let ctx = ConfigContext::new(&[]).parse_signatures();
-    let mut config = &mut core.queue.config.dsn;
+    let config = &mut core.queue.config.dsn;
     config.sign = "['rsa']"
         .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.signers, "", "")

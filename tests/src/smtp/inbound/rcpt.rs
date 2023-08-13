@@ -72,9 +72,9 @@ domains = ["foobar.org"]
 async fn rcpt() {
     let mut core = SMTP::test();
 
-    let mut config_ext = &mut core.session.config.extensions;
+    let config_ext = &mut core.session.config.extensions;
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
     )));

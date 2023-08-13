@@ -66,12 +66,12 @@ async fn vrfy_expn() {
     let ctx = ConfigContext::new(&[]);
 
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
     )));
 
-    let mut config = &mut core.session.config.extensions;
+    let config = &mut core.session.config.extensions;
     config.vrfy = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
         .parse_if(&ctx);

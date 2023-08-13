@@ -61,7 +61,7 @@ async fn auth() {
     let mut ctx = ConfigContext::new(&[]);
     ctx.directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
 
-    let mut config = &mut core.session.config.auth;
+    let config = &mut core.session.config.auth;
 
     config.require = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"

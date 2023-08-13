@@ -113,7 +113,7 @@ async fn lookup_sql() {
     }
 
     // Enable AUTH
-    let mut config = &mut core.session.config.auth;
+    let config = &mut core.session.config.auth;
     config.directory = r"'sql'"
         .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")
@@ -122,7 +122,7 @@ async fn lookup_sql() {
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable VRFY/EXPN/RCPT
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = r"'sql'"
         .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
         .map_if_block(&ctx.directory.directories, "", "")

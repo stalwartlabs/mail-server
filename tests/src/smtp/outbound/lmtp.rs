@@ -90,7 +90,7 @@ async fn lmtp_delivery() {
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
-    let mut config = &mut core.queue.config;
+    let config = &mut core.queue.config;
     config.retry = IfBlock::new(vec![Duration::from_millis(100)]);
     config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
     {else = ['100ms']}]"

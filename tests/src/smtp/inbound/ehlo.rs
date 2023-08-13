@@ -48,7 +48,7 @@ async fn ehlo() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1024},
     {else = 2048}]"
         .parse_if(&ConfigContext::new(&[]));

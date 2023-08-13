@@ -80,12 +80,12 @@ async fn data() {
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
     )));
 
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},
     {else = false}]"
         .parse_if(&ConfigContext::new(&[]));

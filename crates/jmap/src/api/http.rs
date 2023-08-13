@@ -72,7 +72,13 @@ pub async fn parse_jmap_request(
             let (_in_flight, access_token) = match jmap.authenticate_headers(&req, remote_ip).await
             {
                 Ok(Some(session)) => session,
-                Ok(None) => return RequestError::unauthorized().into_http_response(),
+                Ok(None) => {
+                    return if req.method() != Method::OPTIONS {
+                        RequestError::unauthorized().into_http_response()
+                    } else {
+                        ().into_http_response()
+                    }
+                }
                 Err(err) => return err.into_http_response(),
             };
 
@@ -164,6 +170,9 @@ pub async fn parse_jmap_request(
                     return upgrade_websocket_connection(jmap, req, access_token, instance.clone())
                         .await;
                 }
+                (_, &Method::OPTIONS) => {
+                    return ().into_http_response();
+                }
                 _ => (),
             }
         }
@@ -191,6 +200,9 @@ pub async fn parse_jmap_request(
                     }
                     Err(err) => err.into_http_response(),
                 };
+            }
+            (_, &Method::OPTIONS) => {
+                return ().into_http_response();
             }
             _ => (),
         },
@@ -239,6 +251,9 @@ pub async fn parse_jmap_request(
                         Ok(_) => jmap.handle_token_request(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
+                }
+                (_, &Method::OPTIONS) => {
+                    return ().into_http_response();
                 }
                 _ => (),
             }
@@ -604,6 +619,19 @@ impl ToHttpResponse for HtmlResponse {
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(
                 Full::new(Bytes::from(self.body))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
+            .unwrap()
+    }
+}
+
+impl ToHttpResponse for () {
+    fn into_http_response(self) -> HttpResponse {
+        hyper::Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .body(
+                Full::new(Bytes::new())
                     .map_err(|never| match never {})
                     .boxed(),
             )

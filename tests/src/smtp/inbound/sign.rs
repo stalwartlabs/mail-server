@@ -155,12 +155,12 @@ async fn sign_and_seal() {
     );
 
     let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
     )));
 
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
     config.data.add_date = IfBlock::new(true);
     config.data.add_message_id = IfBlock::new(true);
@@ -168,7 +168,7 @@ async fn sign_and_seal() {
     config.data.add_return_path = IfBlock::new(true);
     config.data.add_received_spf = IfBlock::new(true);
 
-    let mut config = &mut core.mail_auth;
+    let config = &mut core.mail_auth;
     let ctx = ConfigContext::new(&[]).parse_signatures();
     config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();

@@ -51,12 +51,12 @@ async fn queue_retry() {
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_queue_retry_test");
 
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.relay = IfBlock::new(true);
-    let mut config = &mut core.session.config.extensions;
+    let config = &mut core.session.config.extensions;
     config.deliver_by = IfBlock::new(Some(Duration::from_secs(86400)));
     config.future_release = IfBlock::new(Some(Duration::from_secs(86400)));
-    let mut config = &mut core.queue.config;
+    let config = &mut core.queue.config;
     config.retry = IfBlock::new(vec![
         Duration::from_millis(100),
         Duration::from_millis(200),

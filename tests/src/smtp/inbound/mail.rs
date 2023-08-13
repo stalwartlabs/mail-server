@@ -67,7 +67,7 @@ async fn mail() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.ehlo.require = IfBlock::new(true);
     core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     core.mail_auth.spf.verify_mail_from = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},

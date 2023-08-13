@@ -39,11 +39,11 @@ async fn report_analyze() {
     let mut qr = core.init_test_queue("smtp_analyze_report_test");
     let report_dir = make_temp_dir("smtp_report_incoming", true);
 
-    let mut config = &mut core.session.config.rcpt;
+    let config = &mut core.session.config.rcpt;
     config.relay = IfBlock::new(true);
-    let mut config = &mut core.session.config.data;
+    let config = &mut core.session.config.data;
     config.max_messages = IfBlock::new(1024);
-    let mut config = &mut core.report.config.analysis;
+    let config = &mut core.report.config.analysis;
     config.addresses = vec![
         AddressMatch::StartsWith("reports@".to_string()),
         AddressMatch::EndsWith("@dmarc.foobar.org".to_string()),

@@ -68,7 +68,7 @@ async fn milter_session() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_milter_test");
-    let mut config = &mut core.session.config;
+    let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
     config.data.milters = r#"[[session.data.milter]]
     hostname = "127.0.0.1"

@@ -124,7 +124,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 .into_value(self)
                 .map(|s| s.into_owned())
             {
-                let mut rcpt = self.data.rcpt_to.last_mut().unwrap();
+                let rcpt = self.data.rcpt_to.last_mut().unwrap();
                 if new_address.contains('@') {
                     rcpt.address_lcase = new_address.to_lowercase();
                     rcpt.domain = rcpt.address_lcase.domain_part().to_string();

@@ -65,7 +65,7 @@ async fn dnsrbl() {
     );
 
     let mut qr = core.init_test_queue("smtp_dnsrbl_test");
-    let mut config = &mut core.mail_auth.dnsbl;
+    let config = &mut core.mail_auth.dnsbl;
     config.ip_lookup = vec![
         "zen.spamhaus.org".to_string(),
         "bl.spamcop.net".to_string(),
