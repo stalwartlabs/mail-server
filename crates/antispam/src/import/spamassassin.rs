@@ -621,7 +621,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 "meta" => {
                     if let Some((test_name, expression)) = params.split_once(' ') {
                         let tokens = MetaExpression::from_meta(expression);
-                        if tokens.tokens.contains(&Token::Divide) {
+                        /*if tokens.tokens.contains(&Token::Divide) {
                             println!(
                                 "->: {expression}\n{:?}\n<-: {}",
                                 tokens
@@ -635,7 +635,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                         }
                         rules.entry(test_name.to_string()).or_default().t = RuleType::Meta {
                             tokens: tokens.tokens,
-                        };
+                        };*/
                     } else {
                         eprintln!(
                             "Warning: Invalid meta command on {}, line {}",

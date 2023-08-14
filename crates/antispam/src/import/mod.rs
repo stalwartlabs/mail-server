@@ -121,6 +121,10 @@ pub enum Token {
     Add,
     Multiply,
     Divide,
+
+    // Sieve specific
+    BeginExpression(bool),
+    EndExpression(bool),
 }
 
 impl Rule {

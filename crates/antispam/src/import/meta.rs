@@ -1,21 +1,35 @@
-use std::collections::{HashMap, HashSet};
+use std::{collections::HashMap, fmt::Display};
 
 use super::Token;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MetaExpression {
-    pub tokens: Vec<Token>,
-    pub token_depth: Vec<u32>,
+    pub tokens: Vec<TokenDepth>,
+    depth_range: HashMap<u32, DepthRange>,
+    depth: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenDepth {
+    token: Token,
+    depth: u32,
+    prefix: Vec<Token>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct DepthRange {
+    start: usize,
+    end: usize,
+    expr_end: Option<(usize, bool)>,
+    logic_end: bool,
 }
 
 impl MetaExpression {
-    pub fn from_meta(meta: &str) -> Self {
-        let mut tokens = Vec::new();
-        let mut token_depth = Vec::new();
+    pub fn from_meta(expr: &str) -> Self {
+        let mut meta = MetaExpression::default();
         let mut seen_comp = false;
         let mut buf = String::new();
-        let mut pc = 0;
-        let mut iter = meta.chars().peekable();
+        let mut iter = expr.chars().peekable();
 
         while let Some(ch) = iter.next() {
             match ch {
@@ -26,22 +40,19 @@ impl MetaExpression {
                     if !buf.is_empty() {
                         let token = Token::from(buf);
                         buf = String::new();
-                        if matches!(token, Token::Tag(_))
-                            && !seen_comp
+                        if !seen_comp
                             && matches!(
                                 iter.clone()
                                     .find(|t| { ['&', '|', '>', '<', '='].contains(t) }),
                                 None | Some('&' | '|')
                             )
                         {
-                            tokens.push(token);
-                            tokens.push(Token::Gt);
-                            tokens.push(Token::Number(0));
-                            token_depth.extend_from_slice(&[pc, pc, pc]);
+                            meta.push(token);
+                            meta.push(Token::Gt);
+                            meta.push(Token::Number(0));
                             seen_comp = true;
                         } else {
-                            token_depth.push(pc);
-                            tokens.push(token);
+                            meta.push(token);
                         }
                     }
 
@@ -49,45 +60,38 @@ impl MetaExpression {
                         '&' => {
                             seen_comp = false;
                             if matches!(iter.next(), Some('&')) {
-                                tokens.push(Token::And);
-                                token_depth.push(pc);
+                                meta.push(Token::And);
                             } else {
-                                eprintln!("Warning: Single & in meta expression {meta} at {pc}",);
+                                eprintln!("Warning: Single & in meta expression {expr}",);
                             }
                         }
                         '|' => {
                             seen_comp = false;
                             if matches!(iter.next(), Some('|')) {
-                                tokens.push(Token::Or);
-                                token_depth.push(pc);
+                                meta.push(Token::Or);
                             } else {
-                                eprintln!("Warning: Single | in meta expression {meta} at {pc}",);
+                                eprintln!("Warning: Single | in meta expression {expr}",);
                             }
                         }
                         '!' => {
                             seen_comp = false;
-                            token_depth.push(pc);
-                            tokens.push(Token::Not)
+                            meta.push(Token::Not)
                         }
                         '=' => {
                             seen_comp = true;
-                            token_depth.push(pc);
-                            tokens.push(match iter.next() {
+                            meta.push(match iter.next() {
                                 Some('=') => Token::Eq,
                                 Some('>') => Token::Ge,
                                 Some('<') => Token::Le,
                                 _ => {
-                                    eprintln!(
-                                        "Warning: Single = in meta expression {meta} at {pc}",
-                                    );
+                                    eprintln!("Warning: Single = in meta expression {expr}",);
                                     Token::Eq
                                 }
                             });
                         }
                         '>' => {
                             seen_comp = true;
-                            token_depth.push(pc);
-                            tokens.push(match iter.peek() {
+                            meta.push(match iter.peek() {
                                 Some('=') => {
                                     iter.next();
                                     Token::Ge
@@ -97,8 +101,7 @@ impl MetaExpression {
                         }
                         '<' => {
                             seen_comp = true;
-                            token_depth.push(pc);
-                            tokens.push(match iter.peek() {
+                            meta.push(match iter.peek() {
                                 Some('=') => {
                                     iter.next();
                                     Token::Le
@@ -106,37 +109,22 @@ impl MetaExpression {
                                 _ => Token::Lt,
                             })
                         }
-                        '(' => {
-                            token_depth.push(pc);
-                            pc += 1;
-                            tokens.push(Token::OpenParen)
-                        }
+                        '(' => meta.push(Token::OpenParen),
                         ')' => {
-                            if pc > 0 {
-                                pc -= 1;
-                            } else {
+                            if meta.depth == 0 {
                                 eprintln!(
-                                    "Warning: Unmatched close parenthesis in meta expression {meta}"
+                                    "Warning: Unmatched close parenthesis in meta expression {expr}"
                                 );
                             }
-                            token_depth.push(pc);
-                            tokens.push(Token::CloseParen)
+
+                            meta.push(Token::CloseParen)
                         }
-                        '+' => {
-                            token_depth.push(pc);
-                            tokens.push(Token::Add)
-                        }
-                        '*' => {
-                            token_depth.push(pc);
-                            tokens.push(Token::Multiply)
-                        }
-                        '/' => {
-                            token_depth.push(pc);
-                            tokens.push(Token::Divide)
-                        }
+                        '+' => meta.push(Token::Add),
+                        '*' => meta.push(Token::Multiply),
+                        '/' => meta.push(Token::Divide),
                         ' ' => {}
                         _ => {
-                            eprintln!("Warning: Invalid character {ch} in meta expression {meta}");
+                            eprintln!("Warning: Invalid character {ch} in meta expression {expr}");
                             break;
                         }
                     }
@@ -144,24 +132,138 @@ impl MetaExpression {
             }
         }
 
-        if pc > 0 {
-            eprintln!("Warning: Unmatched open parenthesis in meta expression {meta}");
+        if meta.depth > 0 {
+            eprintln!("Warning: Unmatched open parenthesis in meta expression {expr}");
         }
 
         if !buf.is_empty() {
-            token_depth.push(pc);
-            tokens.push(Token::from(buf));
+            meta.push(Token::from(buf));
             if !seen_comp {
-                tokens.push(Token::Gt);
-                tokens.push(Token::Number(0));
-                token_depth.push(pc);
-                token_depth.push(pc);
+                meta.push(Token::Gt);
+                meta.push(Token::Number(0));
             }
         }
 
-        MetaExpression {
-            tokens,
-            token_depth,
+        meta.finalize();
+        meta
+    }
+
+    fn push(&mut self, token: Token) {
+        let pos = self.tokens.len();
+        let depth_range = self
+            .depth_range
+            .entry(self.depth)
+            .or_insert_with(|| DepthRange {
+                start: pos,
+                end: pos,
+                ..Default::default()
+            });
+        depth_range.end = pos;
+        let mut depth = self.depth;
+        let mut prefix = vec![];
+
+        match &token {
+            Token::OpenParen => {
+                if let Some((pos, true)) = depth_range.expr_end {
+                    depth_range.expr_end = Some((pos, false));
+                }
+                self.depth += 1;
+            }
+            Token::CloseParen => {
+                if let Some((pos, is_static)) = depth_range.expr_end.take() {
+                    self.tokens[pos + 2]
+                        .prefix
+                        .push(Token::BeginExpression(is_static));
+                    prefix.push(Token::EndExpression(is_static));
+                }
+                if depth_range.logic_end {
+                    prefix.push(Token::CloseParen);
+                }
+                self.depth = self.depth.saturating_sub(1);
+                depth = self.depth;
+            }
+            Token::Or | Token::And => {
+                let start_prefix = &mut self.tokens[depth_range.start].prefix;
+                if !start_prefix.contains(&Token::And) && !start_prefix.contains(&Token::Or) {
+                    start_prefix.insert(0, token.clone());
+                }
+                depth_range.logic_end = true;
+                if let Some((pos, is_static)) = depth_range.expr_end.take() {
+                    self.tokens[pos + 2]
+                        .prefix
+                        .push(Token::BeginExpression(is_static));
+                    prefix.push(Token::EndExpression(is_static));
+                }
+            }
+            Token::Lt | Token::Gt | Token::Eq | Token::Le | Token::Ge => {
+                let mut is_static = true;
+                let mut start_pos = usize::MAX;
+                for (pos, token) in self.tokens.iter().enumerate().rev() {
+                    if token.depth >= depth {
+                        start_pos = pos;
+                        match &token.token {
+                            Token::And | Token::Or | Token::Not => {
+                                start_pos += 1;
+                                break;
+                            }
+                            Token::OpenParen
+                            | Token::CloseParen
+                            | Token::Add
+                            | Token::Multiply
+                            | Token::Divide
+                            | Token::Tag(_) => {
+                                is_static = false;
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                if start_pos != usize::MAX {
+                    self.tokens.push(TokenDepth {
+                        token: Token::EndExpression(is_static),
+                        depth,
+                        prefix: vec![],
+                    });
+                    self.tokens[start_pos].prefix =
+                        vec![token.clone(), Token::BeginExpression(is_static)];
+                    depth_range.expr_end = Some((pos, true));
+                }
+            }
+            Token::Tag(_) | Token::Add | Token::Multiply | Token::Divide => {
+                if let Some((pos, true)) = depth_range.expr_end {
+                    depth_range.expr_end = Some((pos, false));
+                }
+            }
+            _ => {}
+        }
+        self.tokens.push(TokenDepth {
+            token,
+            depth,
+            prefix,
+        })
+    }
+
+    fn finalize(&mut self) {
+        if let Some(depth_range) = self.depth_range.get(&self.depth) {
+            if let Some((pos, is_static)) = depth_range.expr_end {
+                self.tokens[pos + 2]
+                    .prefix
+                    .push(Token::BeginExpression(is_static));
+                self.tokens.push(TokenDepth {
+                    token: Token::EndExpression(is_static),
+                    depth: self.depth,
+                    prefix: vec![],
+                });
+            }
+            if depth_range.logic_end {
+                self.tokens.push(TokenDepth {
+                    token: Token::CloseParen,
+                    depth: self.depth,
+                    prefix: vec![],
+                });
+            }
         }
     }
 }
@@ -176,144 +278,67 @@ impl From<String> for Token {
     }
 }
 
-impl From<MetaExpression> for String {
-    fn from(meta: MetaExpression) -> Self {
-        let mut script = String::from("if ");
-        let mut tokens = meta.tokens.iter().zip(meta.token_depth.iter()).enumerate();
-        let mut expr_end = None;
+impl Display for MetaExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("if ")?;
 
-        // Find start and end of logical expressions
-        let mut logical_pos_start: HashMap<usize, Token> = HashMap::new();
-        let mut logical_pos_end: HashSet<usize> = HashSet::new();
-        let mut depth_starts: HashMap<u32, usize> = HashMap::new();
-        for (pos, (token, depth)) in tokens.clone() {
-            if !depth_starts.contains_key(depth) {
-                depth_starts.insert(*depth, pos);
+        for token in &self.tokens {
+            for token in &token.prefix {
+                token.fmt(f)?;
             }
-            if matches!(token, Token::And | Token::Or) {
-                let block_start = *depth_starts.get(depth).unwrap();
 
-                if let std::collections::hash_map::Entry::Vacant(e) =
-                    logical_pos_start.entry(block_start)
-                {
-                    e.insert(token.clone());
-                    // Find end
-                    let mut logical_end = usize::MAX;
-                    for (p, (_, d)) in tokens.clone() {
-                        if depth == d {
-                            logical_end = p;
-                        }
-                    }
-                    logical_pos_end.insert(logical_end);
-                }
-            }
+            match &token.token {
+                Token::And | Token::Or => f.write_str(", "),
+                Token::Gt | Token::Lt | Token::Eq | Token::Ge | Token::Le => f.write_str(" "),
+                _ => token.token.fmt(f),
+            }?;
         }
 
-        while let Some((pos, (token, depth))) = tokens.next() {
-            // Add blocks
-            if let Some(token) = logical_pos_start.remove(&pos) {
-                match token {
-                    Token::And => script.push_str("allof("),
-                    Token::Or => script.push_str("anyof("),
+        Ok(())
+    }
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Tag(t) => t.fmt(f),
+            Token::Number(n) => n.fmt(f),
+            Token::And => f.write_str("allof("),
+            Token::Or => f.write_str("anyof("),
+            Token::Not => f.write_str("not "),
+            Token::Lt | Token::Eq | Token::Ge | Token::Le | Token::Gt => {
+                f.write_str("string :")?;
+                match self {
+                    Token::Eq => f.write_str("eq")?,
+                    Token::Gt => f.write_str("gt")?,
+                    Token::Lt => f.write_str("lt")?,
+                    Token::Ge => f.write_str("ge")?,
+                    Token::Le => f.write_str("gt")?,
                     _ => unreachable!(),
                 }
-            } else {
-                match token {
-                    Token::And | Token::Or => script.push_str(", "),
-                    Token::Not => script.push_str("not "),
-                    _ => (),
-                }
+                f.write_str(" ")
             }
 
-            // Find expression type
-            if expr_end.is_none() {
-                if let Some((
-                    pos,
-                    (token @ (Token::Eq | Token::Gt | Token::Lt | Token::Ge | Token::Le), _),
-                )) = tokens.clone().find(|(_, (t, d))| {
-                    depth == *d
-                        && matches!(
-                            t,
-                            Token::Eq
-                                | Token::Gt
-                                | Token::Lt
-                                | Token::Ge
-                                | Token::Le
-                                | Token::Not
-                                | Token::And
-                                | Token::Or
-                        )
-                }) {
-                    script.push_str("string :");
-                    match token {
-                        Token::Eq => script.push_str("eq"),
-                        Token::Gt => script.push_str("gt"),
-                        Token::Lt => script.push_str("lt"),
-                        Token::Ge => script.push_str("ge"),
-                        Token::Le => script.push_str("gt"),
-                        _ => unreachable!(),
-                    }
-                    script.push_str(" \"");
-
-                    // Find expression end
-                    for (p, (token, d)) in tokens.clone() {
-                        if p > pos {
-                            if depth <= d {
-                                if matches!(token, Token::And | Token::Or) {
-                                    expr_end = Some(p - 1);
-                                    break;
-                                } else {
-                                    expr_end = Some(p);
-                                }
-                            } else {
-                                break;
-                            }
-                        }
-                    }
+            Token::OpenParen => f.write_str("("),
+            Token::CloseParen => f.write_str(")"),
+            Token::Add => f.write_str(" + "),
+            Token::Multiply => f.write_str(" * "),
+            Token::Divide => f.write_str(" / "),
+            Token::BeginExpression(is_static) => {
+                if *is_static {
+                    f.write_str("\"")
+                } else {
+                    f.write_str("\"${")
                 }
             }
-
-            match token {
-                Token::Tag(tag) => {
-                    script.push_str(tag);
+            Token::EndExpression(is_static) => {
+                if *is_static {
+                    f.write_str("\"")
+                } else {
+                    f.write_str("}\"")
                 }
-                Token::Number(number) => {
-                    script.push_str(&number.to_string());
-                }
-                Token::And | Token::Or | Token::Not => {}
-                Token::Gt | Token::Lt | Token::Eq | Token::Ge | Token::Le => {
-                    script.push_str("\" \"");
-                }
-                Token::OpenParen => {
-                    script.push('(');
-                }
-                Token::CloseParen => {
-                    script.push(')');
-                }
-                Token::Add => {
-                    script.push_str(" + ");
-                }
-                Token::Multiply => {
-                    script.push_str(" * ");
-                }
-                Token::Divide => {
-                    script.push_str(" / ");
-                }
-            }
-
-            // Add end of expression
-            if expr_end == Some(pos) {
-                script.push_str("\"");
-                expr_end = None;
-            }
-
-            // Add end of logical block
-            if logical_pos_end.contains(&pos) {
-                script.push(')');
             }
         }
-
-        script
     }
 }
 
@@ -324,7 +349,7 @@ mod test {
     #[test]
     fn parse_meta() {
         for (expr, expected) in [
-            (
+            /*(
                 concat!(
                     "( ! HTML_IMAGE_ONLY_16 ) && ",
                     "( __LOWER_E > 20 ) && ",
@@ -338,18 +363,15 @@ mod test {
             ("__ML2 || __ML4", ""),
             ("(__AT_HOTMAIL_MSGID && (!__FROM_HOTMAIL_COM && !__FROM_MSN_COM && !__FROM_YAHOO_COM))", ""),
             ("(0)", ""),
-            ("RAZOR2_CHECK + DCC_CHECK + PYZOR_CHECK > 1", ""),
-            /*(("", ""),
-            ("", ""),
-            ("", ""),
-            ("", ""),
-            ("", ""),
-            ("", ""),
-            ("", ""),*/
+            ("RAZOR2_CHECK + DCC_CHECK + PYZOR_CHECK > 1", ""),*/
+            ("__HAS_MSGID && !(__SANE_MSGID || __MSGID_COMMENT)", ""),
+            ("!__CTYPE_HTML && __X_MAILER_APPLEMAIL && (__MSGID_APPLEMAIL || __MIME_VERSION_APPLEMAIL)", ""),
+            ("((__AUTO_GEN_MS||__AUTO_GEN_3||__AUTO_GEN_4) && !__XM_VBULLETIN && !__X_CRON_ENV)", ""),
+
         ] {
             let meta = MetaExpression::from_meta(expr);
-            //println!("{:?}", meta.tokens);
-            let result = String::from(meta);
+            //println!("{:#?}", meta.tokens);
+            let result = meta.to_string();
 
             //println!("{}", expected);
             println!("{}", result);
