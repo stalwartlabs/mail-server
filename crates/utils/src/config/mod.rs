@@ -68,8 +68,12 @@ pub struct Servers {
 pub struct Listener {
     pub socket: TcpSocket,
     pub addr: SocketAddr,
-    pub ttl: Option<u32>,
     pub backlog: Option<u32>,
+
+    // TCP options
+    pub ttl: Option<u32>,
+    pub linger: Option<Duration>,
+    pub nodelay: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]

@@ -21,6 +21,7 @@ certificate = "default"
 ignore-client-order = true
 
 [server.socket]
+nodelay = true
 reuse-addr = true
 #reuse-port = true
 backlog = 1024

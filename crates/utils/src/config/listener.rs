@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc};
 
 use rustls::{
     cipher_suite::{
@@ -209,8 +209,6 @@ impl Config {
                 TcpSocket::new_v6()
             }
             .map_err(|err| format!("Failed to create socket: {err}"))?;
-            let mut backlog = None;
-            let mut ttl = None;
 
             // Set socket options
             for option in [
@@ -218,10 +216,7 @@ impl Config {
                 "reuse-port",
                 "send-buffer-size",
                 "recv-buffer-size",
-                "linger",
                 "tos",
-                "backlog",
-                "ttl",
             ] {
                 if let Some(value) = self.value_or_default(
                     ("server.listener", id, "socket", option),
@@ -234,18 +229,7 @@ impl Config {
                         "reuse-port" => socket.set_reuseport(value.parse_key(key)?),
                         "send-buffer-size" => socket.set_send_buffer_size(value.parse_key(key)?),
                         "recv-buffer-size" => socket.set_recv_buffer_size(value.parse_key(key)?),
-                        "linger" => {
-                            socket.set_linger(Duration::from_millis(value.parse_key(key)?).into())
-                        }
                         "tos" => socket.set_tos(value.parse_key(key)?),
-                        "backlog" => {
-                            backlog = Some(value.parse_key(key)?);
-                            continue;
-                        }
-                        "ttl" => {
-                            ttl = Some(value.parse_key(key)?);
-                            continue;
-                        }
                         _ => unreachable!(),
                     }
                     .map_err(|err| {
@@ -257,8 +241,24 @@ impl Config {
             listeners.push(Listener {
                 socket,
                 addr,
-                ttl,
-                backlog,
+                ttl: self.property_or_default(
+                    ("server.listener", id, "socket.ttl"),
+                    "server.socket.ttl",
+                )?,
+                backlog: self.property_or_default(
+                    ("server.listener", id, "socket.backlog"),
+                    "server.socket.backlog",
+                )?,
+                linger: self.property_or_default(
+                    ("server.listener", id, "socket.linger"),
+                    "server.socket.linger",
+                )?,
+                nodelay: self
+                    .property_or_default(
+                        ("server.listener", id, "socket.nodelay"),
+                        "server.socket.nodelay",
+                    )?
+                    .unwrap_or(true),
             });
         }
 
@@ -278,7 +278,11 @@ impl Config {
             data: match protocol {
                 ServerProtocol::Smtp | ServerProtocol::Lmtp => self
                     .value_or_default(("server.listener", id, "greeting"), "server.greeting")
-                    .unwrap_or("Stalwart SMTP at your service")
+                    .unwrap_or(concat!(
+                        "Stalwart SMTP v",
+                        env!("CARGO_PKG_VERSION"),
+                        " at your service."
+                    ))
                     .to_string(),
 
                 ServerProtocol::Jmap => self

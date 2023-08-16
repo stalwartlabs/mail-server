@@ -70,6 +70,11 @@ impl Server {
             );
             let local_ip = listener.addr.ip();
 
+            // Obtain TCP options
+            let nodelay = listener.nodelay;
+            let ttl = listener.ttl;
+            let linger = listener.linger;
+
             // Bind socket
             let listener = listener.listen();
 
@@ -92,6 +97,36 @@ impl Server {
                                             remote.ip = remote_addr.ip().to_string(),
                                             remote.port = remote_addr.port(),
                                         );
+
+                                        // Set TCP options
+                                        if let Err(err) = stream.set_nodelay(nodelay) {
+                                            tracing::warn!(
+                                                context = "tcp",
+                                                event = "error",
+                                                instance = instance.id,
+                                                protocol = ?instance.protocol,
+                                                "Failed to set no-delay: {}", err);
+                                        }
+                                        if let Some(ttl) = ttl {
+                                            if let Err(err) = stream.set_ttl(ttl) {
+                                                tracing::warn!(
+                                                    context = "tcp",
+                                                    event = "error",
+                                                    instance = instance.id,
+                                                    protocol = ?instance.protocol,
+                                                    "Failed to set TTL: {}", err);
+                                            }
+                                        }
+                                        if linger.is_some() {
+                                            if let Err(err) = stream.set_linger(linger) {
+                                                tracing::warn!(
+                                                    context = "tcp",
+                                                    event = "error",
+                                                    instance = instance.id,
+                                                    protocol = ?instance.protocol,
+                                                    "Failed to set linger: {}", err);
+                                            }
+                                        }
 
                                         // Spawn connection
                                         manager.spawn(SessionData {
@@ -179,16 +214,9 @@ impl Servers {
 
 impl Listener {
     pub fn listen(self) -> TcpListener {
-        let listener = self
-            .socket
+        self.socket
             .listen(self.backlog.unwrap_or(1024))
-            .unwrap_or_else(|err| failed(&format!("Failed to listen on {}: {}", self.addr, err)));
-        if let Some(ttl) = self.ttl {
-            listener.set_ttl(ttl).unwrap_or_else(|err| {
-                failed(&format!("Failed to set TTL on {}: {}", self.addr, err))
-            });
-        }
-        listener
+            .unwrap_or_else(|err| failed(&format!("Failed to listen on {}: {}", self.addr, err)))
     }
 }
 
