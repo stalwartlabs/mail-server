@@ -611,6 +611,14 @@ impl TlsStrategy {
     }
 
     #[inline(always)]
+    pub fn try_start_tls(&self) -> bool {
+        matches!(
+            self.tls,
+            RequireOptional::Require | RequireOptional::Optional
+        )
+    }
+
+    #[inline(always)]
     pub fn is_dane_required(&self) -> bool {
         matches!(self.dane, RequireOptional::Require)
     }
