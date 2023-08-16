@@ -118,6 +118,7 @@ impl Session<TcpStream> {
             tracing::debug!(parent: &session.span, event = "error", reason = %err, "Failed to write greeting.");
             return Err(());
         }
+        let _ = session.stream.flush().await;
 
         // Split stream into read and write halves
         let (stream_rx, stream_tx) = tokio::io::split(session.stream);
@@ -206,6 +207,7 @@ impl Session<TlsStream<TcpStream>> {
             tracing::debug!(parent: &span, event = "error", reason = %err, "Failed to write greeting.");
             return Err(());
         }
+        let _ = stream.flush().await;
 
         // Spit stream into read and write halves
         let (stream_rx, stream_tx) = tokio::io::split(stream);

@@ -64,9 +64,14 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     )
                                 );*/
 
-                                if let Err(err) = stream_tx.write_all(bytes.as_ref()).await {
-                                    debug!("Failed to write to stream: {}", err);
-                                    break 'outer;
+                                match stream_tx.write_all(bytes.as_ref()).await {
+                                    Ok(_) => {
+                                        let _ = stream_tx.flush().await;
+                                    }
+                                    Err(err) => {
+                                        debug!("Failed to write to stream: {}", err);
+                                        break 'outer;
+                                    }
                                 }
                             }
                             Event::Upgrade(channel) => {
@@ -93,9 +98,14 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                     while let Some(event) = rx.recv().await {
                         match event {
                             Event::Bytes(bytes) => {
-                                if let Err(err) = stream_tx.write_all(bytes.as_ref()).await {
-                                    debug!("Failed to write to stream: {}", err);
-                                    break 'outer;
+                                match stream_tx.write_all(bytes.as_ref()).await {
+                                    Ok(_) => {
+                                        let _ = stream_tx.flush().await;
+                                    }
+                                    Err(err) => {
+                                        debug!("Failed to write to stream: {}", err);
+                                        break 'outer;
+                                    }
                                 }
                             }
                             _ => {
