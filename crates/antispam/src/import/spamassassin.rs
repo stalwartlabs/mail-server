@@ -1,8 +1,7 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    default,
-    fmt::format,
-    fs,
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::{Display, Write},
+    fs::{self},
     path::PathBuf,
 };
 
@@ -12,7 +11,9 @@ use super::{
     Header, HeaderMatches, HeaderPart, Rule, RuleType, TestFlag, Token, UnwrapResult,
 };
 
-static SUPPORTED_PLUGINS: [&str; 37] = [
+const VERSION: f64 = 4.000000;
+
+static IF_TRUE: [&str; 57] = [
     "Mail::SpamAssassin::Plugin::DKIM",
     "Mail::SpamAssassin::Plugin::SPF",
     "Mail::SpamAssassin::Plugin::ASN",
@@ -49,8 +50,30 @@ static SUPPORTED_PLUGINS: [&str; 37] = [
     "Mail::SpamAssassin::Plugin::VBounce",
     "Mail::SpamAssassin::Plugin::WLBLEval",
     "Mail::SpamAssassin::Plugin::WelcomeListSubject",
-    "Mail::SpamAssassin::Plugin::WhiteListSubject",
+    "Mail::SpamAssassin::Conf::feature_bayes_stopwords",
+    "Mail::SpamAssassin::Conf::feature_bug6558_free",
+    "Mail::SpamAssassin::Conf::feature_capture_rules",
+    "Mail::SpamAssassin::Conf::feature_dns_local_ports_permit_avoid",
+    "Mail::SpamAssassin::Conf::feature_originating_ip_headers",
+    "Mail::SpamAssassin::Conf::feature_registryboundaries",
+    "Mail::SpamAssassin::Conf::feature_welcomelist_blocklist",
+    "Mail::SpamAssassin::Conf::feature_yesno_takes_args",
+    "Mail::SpamAssassin::Conf::perl_min_version_5010000",
+    "Mail::SpamAssassin::Plugin::BodyEval::has_check_body_length",
+    "Mail::SpamAssassin::Plugin::DKIM::has_arc",
+    "Mail::SpamAssassin::Plugin::DecodeShortURLs::has_get",
+    "Mail::SpamAssassin::Plugin::DecodeShortURLs::has_short_url_redir",
+    "Mail::SpamAssassin::Plugin::MIMEEval::has_check_abundant_unicode_ratio",
+    "Mail::SpamAssassin::Plugin::MIMEEval::has_check_for_ascii_text_illegal",
+    "Mail::SpamAssassin::Plugin::SPF::has_check_for_spf_errors",
+    "Mail::SpamAssassin::Plugin::URIDNSBL::has_tflags_domains_only",
+    "Mail::SpamAssassin::Plugin::URIDNSBL::has_uridnsbl_for_a",
+    "Mail::SpamAssassin::Plugin::ASN::has_check_asn",
+    "Mail::SpamAssassin::Conf::compat_welcomelist_blocklist",
+    "Mail::SpamAssassin::Conf::feature_dns_block_rule",
 ];
+
+static IF_FALSE: [&str; 1] = ["Mail::SpamAssassin::Plugin::WhiteListSubject"];
 
 static SUPPORTED_FUNCTIONS: [&str; 162] = [
     "check_abundant_unicode_ratio",
@@ -217,59 +240,6 @@ static SUPPORTED_FUNCTIONS: [&str; 162] = [
     "tvd_vertical_words",
 ];
 
-static IF_TRUE: [&str; 25] = [
-    "!(!plugin(Mail::SpamAssassin::Plugin::DKIM))",
-    "(version >= 3.003000)",
-    "(version >= 3.004000)",
-    "(version >= 3.004001)",
-    "(version >= 3.004002)",
-    "(version >= 3.004003)",
-    "(version >= 4.000000)",
-    "can(Mail::SpamAssassin::Conf::feature_bayes_stopwords)",
-    "can(Mail::SpamAssassin::Conf::feature_bug6558_free)",
-    "can(Mail::SpamAssassin::Conf::feature_capture_rules)",
-    "can(Mail::SpamAssassin::Conf::feature_dns_local_ports_permit_avoid)",
-    "can(Mail::SpamAssassin::Conf::feature_originating_ip_headers)",
-    "can(Mail::SpamAssassin::Conf::feature_registryboundaries)",
-    "can(Mail::SpamAssassin::Conf::feature_welcomelist_blocklist)",
-    "can(Mail::SpamAssassin::Conf::feature_yesno_takes_args)",
-    "can(Mail::SpamAssassin::Conf::perl_min_version_5010000)",
-    "can(Mail::SpamAssassin::Plugin::BodyEval::has_check_body_length)",
-    "can(Mail::SpamAssassin::Plugin::DKIM::has_arc)",
-    "can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_get)",
-    "can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_short_url_redir)",
-    "can(Mail::SpamAssassin::Plugin::MIMEEval::has_check_abundant_unicode_ratio)",
-    "can(Mail::SpamAssassin::Plugin::MIMEEval::has_check_for_ascii_text_illegal)",
-    "can(Mail::SpamAssassin::Plugin::SPF::has_check_for_spf_errors)",
-    "can(Mail::SpamAssassin::Plugin::URIDNSBL::has_tflags_domains_only)",
-    "can(Mail::SpamAssassin::Plugin::URIDNSBL::has_uridnsbl_for_a)",
-];
-
-static IF_FALSE: [&str; 22] = [
-    "(version < 4.000000)",
-    "!((version >= 3.003000))",
-    "!((version >= 3.004000))",
-    "can(Mail::SpamAssassin::Conf::feature_dns_block_rule)",
-    "!plugin(Mail::SpamAssassin::Plugin::BodyEval)",
-    "!plugin(Mail::SpamAssassin::Plugin::DKIM)",
-    "!plugin(Mail::SpamAssassin::Plugin::FreeMail)",
-    "!plugin(Mail::SpamAssassin::Plugin::HTMLEval)",
-    "!plugin(Mail::SpamAssassin::Plugin::HeaderEval)",
-    "!plugin(Mail::SpamAssassin::Plugin::ImageInfo)",
-    "!plugin(Mail::SpamAssassin::Plugin::MIMEEval)",
-    "!plugin(Mail::SpamAssassin::Plugin::MIMEHeader)",
-    "!plugin(Mail::SpamAssassin::Plugin::ReplaceTags)",
-    "!plugin(Mail::SpamAssassin::Plugin::SPF)",
-    "!plugin(Mail::SpamAssassin::Plugin::WLBLEval)",
-    "!plugin(Mail::SpamAssassin::Plugin::WelcomeListSubject)",
-    "!(can(Mail::SpamAssassin::Conf::feature_bug6558_free))",
-    "!(can(Mail::SpamAssassin::Plugin::ASN::has_check_asn))",
-    "!(can(Mail::SpamAssassin::Plugin::BodyEval::has_check_body_length))",
-    "!can(Mail::SpamAssassin::Conf::compat_welcomelist_blocklist)",
-    "!can(Mail::SpamAssassin::Conf::feature_welcomelist_blocklist)",
-    "!can(Mail::SpamAssassin::Plugin::DecodeShortURLs::has_short_url_redir)",
-];
-
 pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, validate_regex: bool) {
     let mut paths: Vec<_> = fs::read_dir(&path)
         .unwrap_result("read directory")
@@ -285,7 +255,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
     let mut replace_rules: HashSet<String> = HashSet::new();
     let mut tags: HashMap<String, String> = HashMap::new();
 
-    let mut unsupported_plugins: BTreeMap<String, HashMap<PathBuf, Vec<String>>> = BTreeMap::new();
+    let mut unsupported_ifs: BTreeMap<String, HashMap<PathBuf, Vec<String>>> = BTreeMap::new();
     let mut unsupported_commands: BTreeMap<String, HashMap<PathBuf, Vec<String>>> = BTreeMap::new();
 
     for path in paths {
@@ -345,7 +315,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 last_ch = ch;
             }
 
-            let (cmd, params) = line
+            let (cmd, mut params) = line
                 .split_once(' ')
                 .map(|(k, v)| (k.trim(), v.trim()))
                 .unwrap_or((line.as_str().trim(), ""));
@@ -358,10 +328,10 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
             match cmd {
                 "ifplugin" => {
                     is_supported_stack.push(is_supported_block);
-                    is_supported_block = SUPPORTED_PLUGINS.contains(&params);
+                    is_supported_block = IF_TRUE.contains(&params);
 
-                    if !is_supported_block {
-                        unsupported_plugins
+                    if !is_supported_block && !IF_FALSE.contains(&params) {
+                        unsupported_ifs
                             .entry(params.to_string())
                             .or_default()
                             .entry(path.clone())
@@ -370,14 +340,79 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                     }
                 }
                 "if" => {
-                    is_supported_stack.push(is_supported_block);
-                    is_supported_block = IF_TRUE.contains(&params);
-                    if !is_supported_block && !IF_FALSE.contains(&params) {
-                        eprintln!(
-                            "Warning: Unknown if condition on {}, line {}",
-                            path.display(),
-                            line_num
-                        );
+                    let _params = params;
+                    let mut is_not = false;
+                    loop {
+                        let mut has_changes = false;
+                        if let Some(expr) = params.strip_prefix('!') {
+                            is_not = !is_not;
+                            params = expr.trim();
+                            has_changes = true;
+                        }
+                        if let Some(expr) =
+                            params.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                        {
+                            params = expr.trim();
+                            has_changes = true;
+                        }
+                        if let Some(expr) = params
+                            .strip_prefix("can(")
+                            .or_else(|| params.strip_prefix("plugin("))
+                            .and_then(|v| v.strip_suffix(')'))
+                        {
+                            params = expr.trim();
+                            has_changes = true;
+                        }
+                        if !has_changes {
+                            break;
+                        }
+                    }
+
+                    if let Some(version) = params.strip_prefix("version ") {
+                        is_supported_stack.push(is_supported_block);
+                        let (op, version) = version.trim().split_once(' ').unwrap_or(("", version));
+                        let version = version
+                            .parse::<f64>()
+                            .unwrap_result("Failed to parse version");
+                        match op {
+                            "<" => {
+                                is_supported_block = (VERSION < version) ^ is_not;
+                            }
+                            "<=" => {
+                                is_supported_block = (VERSION <= version) ^ is_not;
+                            }
+                            ">" => {
+                                is_supported_block = (VERSION > version) ^ is_not;
+                            }
+                            ">=" => {
+                                is_supported_block = (VERSION >= version) ^ is_not;
+                            }
+                            "==" => {
+                                is_supported_block = (VERSION == version) ^ is_not;
+                            }
+                            "!=" => {
+                                is_supported_block = (VERSION != version) ^ is_not;
+                            }
+                            _ => {
+                                eprintln!(
+                                    "Warning: Invalid version operator on {}, line {}",
+                                    path.display(),
+                                    line_num
+                                );
+                            }
+                        }
+                    } else {
+                        is_supported_stack.push(is_supported_block);
+                        is_supported_block = IF_TRUE.contains(&params);
+                        if !is_supported_block && !IF_FALSE.contains(&params) {
+                            unsupported_ifs
+                                .entry(params.to_string())
+                                .or_default()
+                                .entry(path.clone())
+                                .or_default()
+                                .push(line_num.to_string());
+                        }
+                        is_supported_block ^= is_not;
                     }
                 }
                 "endif" => {
@@ -410,7 +445,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                     if let Some((name, value)) =
                         params.split_once(' ').map(|(k, v)| (k.trim(), v.trim()))
                     {
-                        let mut rule = rules.entry(name.to_string()).or_default();
+                        let rule = rules.entry(name.to_string()).or_default();
 
                         if let Some(function) = value.strip_prefix("eval:") {
                             if let Some((fnc_name, params_)) = function
@@ -478,17 +513,33 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                             if let Some(exists) = value.strip_prefix("exists:") {
                                 rule.t = RuleType::Header {
                                     matches: HeaderMatches::Exists,
-                                    header: Header::Name {
-                                        name: exists.to_string(),
-                                        part: vec![],
-                                    },
+                                    header: Header::Name(exists.to_string()),
                                     if_unset: None,
                                     pattern: String::new(),
+                                    part: vec![],
                                 };
                             } else if let Some((header, (op, mut pattern))) = value
                                 .split_once(' ')
                                 .and_then(|(k, v)| (k.trim(), v.trim().split_once(' ')?).into())
                             {
+                                let (header, part) = header.split_once(':').unwrap_or((header, ""));
+                                let part = part.split(':').filter_map(|part| {
+                                    match part.trim() {
+                                        "name" => {Some(HeaderPart::Name)}
+                                        "addr" => {Some(HeaderPart::Addr)}
+                                        "raw" => {Some(HeaderPart::Raw)}
+                                        "" => None,
+                                        _ => {
+                                            eprintln!(
+                                                "Warning: Invalid header part {part:?} on {}, line {}",
+                                                path.display(),
+                                                line_num
+                                            );
+                                            None
+                                        }
+                                    }
+
+                                }).collect::<Vec<_>>();
                                 rule.t = RuleType::Header {
                                     matches: match op {
                                         "=~" => HeaderMatches::Matches,
@@ -502,38 +553,13 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                                             continue;
                                         }
                                     },
-                                    header: if let Some((header, part)) = header.split_once(':') {
-                                        Header::Name {
-                                    name: header.to_string(),
-                                    part: part.split(':').filter_map(|part| {
-                                        match part {
-                                            "name" => {Some(HeaderPart::Name)}
-                                            "addr" => {Some(HeaderPart::Addr)}
-                                            "raw" => {Some(HeaderPart::Raw)}
-                                            _ => {
-                                                eprintln!(
-                                                    "Warning: Invalid header part {part:?} on {}, line {}",
-                                                    path.display(),
-                                                    line_num
-                                                );
-                                                None
-                                            }
-                                        }
-
-                                    }).collect::<Vec<_>>()
-                                }
-                                    } else {
-                                        match header {
-                                            "ALL" => Header::All,
-                                            "MESSAGEID" => Header::MessageId,
-                                            "ALL-EXTERNAL" => Header::AllExternal,
-                                            "EnvelopeFrom" => Header::EnvelopeFrom,
-                                            "ToCc" => Header::ToCc,
-                                            _ => Header::Name {
-                                                name: header.to_string(),
-                                                part: vec![],
-                                            },
-                                        }
+                                    header: match header {
+                                        "ALL" => Header::All,
+                                        "MESSAGEID" => Header::MessageId,
+                                        "ALL-EXTERNAL" => Header::AllExternal,
+                                        "EnvelopeFrom" => Header::EnvelopeFrom,
+                                        "ToCc" => Header::ToCc,
+                                        _ => Header::Name(header.to_string()),
                                     },
                                     if_unset: pattern.rsplit_once("[if-unset:").and_then(
                                         |(new_pattern, if_unset)| {
@@ -553,6 +579,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                                         },
                                     ),
                                     pattern: fix_broken_regex(pattern).to_string(),
+                                    part,
                                 };
                             } else {
                                 eprintln!(
@@ -620,7 +647,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 }
                 "meta" => {
                     if let Some((test_name, expression)) = params.split_once(' ') {
-                        let tokens = MetaExpression::from_meta(expression);
+                        let expr = MetaExpression::from_meta(expression);
                         /*if tokens.tokens.contains(&Token::Divide) {
                             println!(
                                 "->: {expression}\n{:?}\n<-: {}",
@@ -632,10 +659,8 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                                 String::from(tokens.clone())
                             );
                             std::process::exit(1);
-                        }
-                        rules.entry(test_name.to_string()).or_default().t = RuleType::Meta {
-                            tokens: tokens.tokens,
-                        };*/
+                        }*/
+                        rules.entry(test_name.to_string()).or_default().t = RuleType::Meta { expr };
                     } else {
                         eprintln!(
                             "Warning: Invalid meta command on {}, line {}",
@@ -993,53 +1018,51 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
             }
         })
         .collect::<Vec<_>>();
-    rules.sort_unstable_by(|a, b| b.cmp(a));
+    rules.sort_unstable();
 
-    let no_meta: Vec<Token> = vec![];
+    let no_meta = MetaExpression::default();
     let mut meta = &no_meta;
 
     let mut tests_done = HashSet::new();
+    let mut tests_linked = HashSet::new();
     let mut rules_iter = rules.iter();
     let mut rules_stack = Vec::new();
+    let mut rules_sorted = Vec::with_capacity(rules.len());
 
+    // Sort rules by meta
     loop {
         while let Some(rule) = rules_iter.next() {
+            let in_meta = !meta.tokens.is_empty();
             if tests_done.contains(&rule.name)
-                || (!meta.is_empty()
+                || (in_meta
                     && !meta
+                        .tokens
                         .iter()
-                        .any(|t| matches!(t, Token::Tag(n) if n == &rule.name)))
+                        .any(|t| matches!(&t.token, Token::Tag(n) if n == &rule.name)))
             {
                 continue;
             }
+            tests_done.insert(&rule.name);
+            if in_meta {
+                tests_linked.insert(&rule.name);
+            }
 
             match &rule.t {
-                RuleType::Meta { tokens } => {
-                    meta = tokens;
-                    rules_stack.push((meta, rules_iter));
+                RuleType::Meta { expr } if rule.score() != 0.0 => {
+                    rules_stack.push((meta, rule, rules_iter));
                     rules_iter = rules.iter();
+                    meta = expr;
                 }
-                RuleType::Header {
-                    matches,
-                    header,
-                    if_unset,
-                    pattern,
-                } => todo!(),
-                RuleType::Body { pattern, raw } => todo!(),
-                RuleType::Full { pattern } => todo!(),
-                RuleType::Uri { pattern } => todo!(),
-                RuleType::Eval { function, params } => todo!(),
-                RuleType::None => (),
+                _ => {
+                    rules_sorted.push(rule);
+                    //write!(&mut script, "{rule}").unwrap();
+                }
             }
-
-            tests_done.insert(&rule.name);
         }
 
-        if let Some((prev_meta, prev_rules_iter)) = rules_stack.pop() {
-            for token in meta {
-                //TODO
-            }
-
+        if let Some((prev_meta, prev_rule, prev_rules_iter)) = rules_stack.pop() {
+            rules_sorted.push(prev_rule);
+            //write!(&mut script, "{prev_rule}").unwrap();
             rules_iter = prev_rules_iter;
             meta = prev_meta;
         } else {
@@ -1047,9 +1070,48 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
         }
     }
 
+    // Generate script
+    let mut script = String::new();
+    let mut rules_iter = rules_sorted.iter();
+
+    while let Some(&rule) = rules_iter.next() {
+        if rule.score() == 0.0 && !tests_linked.contains(&rule.name) {
+            if do_warn {
+                eprintln!("Warning: Test {} is never linked to.", rule.name);
+            }
+            continue;
+        }
+
+        // Calculate forward scores
+        let (score_pos, score_neg) =
+            rules_iter
+                .clone()
+                .fold((0.0, 0.0), |(acc_pos, acc_neg), rule| {
+                    let score = rule.score();
+                    if score > 0.0 {
+                        (acc_pos + score, acc_neg)
+                    } else if score < 0.0 {
+                        (acc_pos, acc_neg + score)
+                    } else {
+                        (acc_pos, acc_neg)
+                    }
+                });
+        let mut rule = rule.clone();
+        rule.forward_score_neg = score_neg;
+        rule.forward_score_pos = score_pos;
+
+        write!(&mut script, "{rule}").unwrap();
+    }
+
+    fs::write(
+        "/Users/me/code/mail-server/_ignore/script.sieve",
+        script.as_bytes(),
+    )
+    .unwrap();
+
     for (message, unsupported) in [
         ("commands", unsupported_commands),
-        ("plugins", unsupported_plugins),
+        ("plugins", unsupported_ifs),
     ] {
         if !unsupported.is_empty() {
             eprintln!("Unsupported {}:", message);
@@ -1069,5 +1131,160 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 );
             }
         }
+    }
+}
+
+impl Display for Rule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Add comment
+        self.description
+            .get("en")
+            .map(|v| {
+                writeln!(f, "# {v} (rank {})", self.priority).unwrap();
+            })
+            .unwrap_or_else(|| writeln!(f, "# {} (rank {})", self.name, self.priority).unwrap());
+
+        match &self.t {
+            RuleType::Header {
+                matches,
+                header: header @ (Header::All | Header::AllExternal),
+                if_unset,
+                pattern,
+                part,
+            } => {
+                write!(
+                    f,
+                    "if vnd.stalwart.eval(\"match_all_headers\", \"{}\", {:?})",
+                    if header == &Header::All {
+                        "all"
+                    } else {
+                        "all-external"
+                    },
+                    pattern
+                )?;
+            }
+            RuleType::Header {
+                matches,
+                header,
+                if_unset,
+                pattern,
+                part,
+            } => {
+                f.write_str("if ")?;
+                let cmd = if matches!(header, Header::EnvelopeFrom) {
+                    "envelope"
+                } else if part.contains(&HeaderPart::Addr) || part.contains(&HeaderPart::Name) {
+                    "address"
+                } else {
+                    "header"
+                };
+                match matches {
+                    HeaderMatches::Matches => write!(f, "{cmd} :regex ")?,
+                    HeaderMatches::NotMatches => write!(f, "not {cmd} :regex ")?,
+                    HeaderMatches::Exists => write!(f, "{cmd} :contains ")?,
+                }
+                for part in part {
+                    match part {
+                        HeaderPart::Name => f.write_str(":name ")?,
+                        HeaderPart::Addr => f.write_str(":all ")?,
+                        HeaderPart::Raw => f.write_str(":raw ")?,
+                    }
+                }
+                match header {
+                        Header::MessageId => f.write_str("[\"Message-Id\",\"Resent-Message-Id\",\"X-Message-Id\",\"X-Original-Message-ID\"]")?,
+                        Header::ToCc => f.write_str("[\"To\",\"Cc\"]")?,
+                        Header::Name (name) => write!(f, "{:?}", name)?,
+                        Header::EnvelopeFrom => f.write_str("\"from\"")?,
+                        Header::All |
+                        Header::AllExternal => unreachable!(),
+                    }
+
+                write!(f, " {:?}", pattern)?;
+            }
+            RuleType::Body { pattern, raw } => {
+                if *raw {
+                    write!(f, "if body :raw :regex {pattern:?}")?;
+                } else if !self.flags.contains(&TestFlag::NoSubject) {
+                    write!(f, "if body :subject :regex {pattern:?}")?;
+                } else {
+                    write!(f, "if body :regex {pattern:?}")?;
+                }
+            }
+            RuleType::Full { pattern } => {
+                write!(f, "if vnd.stalwart.eval(\"match_full\", {:?})", pattern)?;
+            }
+            RuleType::Uri { pattern } => {
+                write!(f, "if vnd.stalwart.eval(\"match_uri\", {:?})", pattern)?;
+            }
+            RuleType::Eval { function, params } => {
+                write!(f, "if vnd.stalwart.eval({function:?}")?;
+                for param in params {
+                    write!(f, ", {param:?}")?;
+                }
+                f.write_str(")")?;
+            }
+            RuleType::Meta { expr } => {
+                expr.fmt(f)?;
+            }
+            RuleType::None => {
+                f.write_str("if false")?;
+            }
+        }
+
+        f.write_str(" {\n\tset \"")?;
+        f.write_str(&self.name)?;
+        f.write_str("\" \"1\";\n")?;
+        let score = self.score();
+
+        if score != 0.0 {
+            f.write_str("\tset \"score\" \"${score")?;
+            if score > 0.0 {
+                f.write_str(" + ")?;
+                score.fmt(f)?;
+            } else {
+                f.write_str(" - ")?;
+                (-score).fmt(f)?;
+            }
+            f.write_str("}\";\n\t")?;
+
+            if score > 0.0 {
+                if self.forward_score_neg != 0.0 {
+                    write!(
+                        f,
+                        concat!(
+                            "if allof(string :value \"ge\" :comparator ",
+                            "\"i;ascii-numeric\" \"${{score}}\" \"${{spam_score}}\", ",
+                            "string :value \"ge\" :comparator ",
+                            "\"i;ascii-numeric\" \"${{score - {:.4}}}\" \"${{spam_score}}\")"
+                        ),
+                        -self.forward_score_neg
+                    )?;
+                } else {
+                    f.write_str(concat!(
+                        "if string :value \"ge\" :comparator ",
+                        "\"i;ascii-numeric\" \"${score}\" \"${spam_score}\""
+                    ))?;
+                }
+            } else if self.forward_score_pos != 0.0 {
+                write!(
+                    f,
+                    concat!(
+                        "if allof(string :value \"lt\" :comparator ",
+                        "\"i;ascii-numeric\" \"${{score}}\" \"${{spam_score}}\", ",
+                        "string :value \"lt\" :comparator ",
+                        "\"i;ascii-numeric\" \"${{score + {:.4}}}\" \"${{spam_score}}\")"
+                    ),
+                    self.forward_score_pos
+                )?;
+            } else {
+                f.write_str(concat!(
+                    "if string :value \"lt\" :comparator ",
+                    "\"i;ascii-numeric\" \"${score}\" \"${spam_score}\""
+                ))?;
+            }
+            f.write_str(" {\n\t\treturn;\n\t}\n")?;
+        }
+
+        f.write_str("}\n\n")
     }
 }

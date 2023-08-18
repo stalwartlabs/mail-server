@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
+use self::meta::MetaExpression;
+
 pub mod meta;
 pub mod spamassassin;
 pub mod utils;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Rule {
     name: String,
     t: RuleType,
@@ -12,13 +14,16 @@ struct Rule {
     description: HashMap<String, String>,
     priority: i32,
     flags: Vec<TestFlag>,
+    forward_score_pos: f64,
+    forward_score_neg: f64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 enum RuleType {
     Header {
         matches: HeaderMatches,
         header: Header,
+        part: Vec<HeaderPart>,
         if_unset: Option<String>,
         pattern: String,
     },
@@ -37,7 +42,7 @@ enum RuleType {
         params: Vec<String>,
     },
     Meta {
-        tokens: Vec<Token>,
+        expr: MetaExpression,
     },
 
     #[default]
@@ -56,7 +61,7 @@ impl RuleType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum TestFlag {
     Net,
     Nice,
@@ -74,7 +79,7 @@ enum TestFlag {
     DnsBlockRule(String),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 enum Header {
     #[default]
     All,
@@ -82,13 +87,10 @@ enum Header {
     AllExternal,
     EnvelopeFrom,
     ToCc,
-    Name {
-        name: String,
-        part: Vec<HeaderPart>,
-    },
+    Name(String),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 enum HeaderMatches {
     #[default]
     Matches,
@@ -96,7 +98,7 @@ enum HeaderMatches {
     Exists,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 enum HeaderPart {
     Name,
     Addr,
@@ -108,23 +110,42 @@ enum HeaderPart {
 pub enum Token {
     Tag(String),
     Number(u32),
+    Logical(Logical),
+    Comparator(Comparator),
+    Operation(Operation),
+
+    OpenParen,
+    CloseParen,
+
+    // Sieve specific
+    BeginExpression(bool),
+    EndExpression(bool),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Logical {
     And,
     Or,
     Not,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Comparator {
     Gt,
     Lt,
     Eq,
     Ge,
     Le,
-    OpenParen,
-    CloseParen,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Operation {
     Add,
     Multiply,
     Divide,
-
-    // Sieve specific
-    BeginExpression(bool),
-    EndExpression(bool),
+    And,
+    Or,
+    Not,
 }
 
 impl Rule {
@@ -143,12 +164,39 @@ impl Rule {
 
 impl Ord for Rule {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.priority.cmp(&other.priority) {
-            std::cmp::Ordering::Equal => match self.score().partial_cmp(&other.score()).unwrap() {
-                std::cmp::Ordering::Equal => other.name.cmp(&self.name),
+        let this_score = self.score();
+        let other_score = other.score();
+
+        let this_is_negative = this_score < 0.0;
+        let other_is_negative = other_score < 0.0;
+
+        if this_is_negative != other_is_negative {
+            if this_is_negative {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        } else {
+            let this_priority = if this_score != 0.0 {
+                self.priority
+            } else {
+                9000
+            };
+            let other_priority = if other_score != 0.0 {
+                other.priority
+            } else {
+                9000
+            };
+
+            match this_priority.cmp(&other_priority) {
+                std::cmp::Ordering::Equal => {
+                    match other_score.abs().partial_cmp(&this_score.abs()).unwrap() {
+                        std::cmp::Ordering::Equal => other.name.cmp(&self.name),
+                        x => x,
+                    }
+                }
                 x => x,
-            },
-            x => x,
+            }
         }
     }
 }

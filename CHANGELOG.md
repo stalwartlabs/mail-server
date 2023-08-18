@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.5] - 2023-08-18
+
+## Added
+- TCP listener option `nodelay`.
+ 
+### Changed
+ 
+### Fixed
+- SMTP: Allow disabling `STARTTLS`.
+- JMAP: Support for `OPTIONS` HTTP method.
+
 ## [0.3.4] - 2023-08-09
 
 ## Added

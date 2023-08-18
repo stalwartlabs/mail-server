@@ -37,7 +37,9 @@ timeout = "30s"
 directory = "__DIRECTORY__"
 
 [jmap.http]
-#headers = ["Access-Control-Allow-Origin: *", "Access-Control-Allow-Methods: POST, GET"]
+#headers = ["Access-Control-Allow-Origin: *", 
+#           "Access-Control-Allow-Methods: POST, GET, HEAD, OPTIONS", 
+#           "Access-Control-Allow-Headers: *"]
 
 [jmap.encryption]
 enable = true
