@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use self::meta::MetaExpression;
-
+pub mod ast;
 pub mod meta;
 pub mod spamassassin;
+pub mod tokenizer;
 pub mod utils;
 
 #[derive(Debug, Default, Clone)]
@@ -47,6 +47,12 @@ enum RuleType {
 
     #[default]
     None,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MetaExpression {
+    pub tokens: Vec<Token>,
+    pub expr: Expr,
 }
 
 impl RuleType {
@@ -116,10 +122,6 @@ pub enum Token {
 
     OpenParen,
     CloseParen,
-
-    // Sieve specific
-    BeginExpression(bool),
-    EndExpression(bool),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -143,9 +145,64 @@ pub enum Operation {
     Add,
     Multiply,
     Divide,
+    Subtract,
     And,
     Or,
     Not,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Expr {
+    UnaryOp(UnaryOperator, Box<Expr>),
+    BinaryOp(Box<Expr>, BinaryOperator, Box<Expr>),
+    Literal(u32),
+    Identifier(String),
+}
+
+impl Default for Expr {
+    fn default() -> Self {
+        Self::Literal(0)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum UnaryOperator {
+    Not,
+    Minus,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum BinaryOperator {
+    Or,
+    And,
+    Greater,
+    Lesser,
+    GreaterOrEqual,
+    LesserOrEqual,
+    Equal,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    BitwiseAnd,
+    BitwiseOr,
+}
+
+impl BinaryOperator {
+    pub fn precedence(&self) -> u32 {
+        match self {
+            Self::Or => 1,
+            Self::And => 2,
+            Self::Greater
+            | Self::Lesser
+            | Self::GreaterOrEqual
+            | Self::LesserOrEqual
+            | Self::Equal => 3,
+            Self::Add | Self::Subtract => 4,
+            Self::Multiply | Self::Divide => 5,
+            Self::BitwiseAnd | Self::BitwiseOr => 6,
+        }
+    }
 }
 
 impl Rule {

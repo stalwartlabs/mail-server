@@ -6,9 +6,9 @@ use std::{
 };
 
 use super::{
-    meta::MetaExpression,
     utils::{fix_broken_regex, replace_tags},
-    Header, HeaderMatches, HeaderPart, Rule, RuleType, TestFlag, Token, UnwrapResult,
+    Header, HeaderMatches, HeaderPart, MetaExpression, Rule, RuleType, TestFlag, Token,
+    UnwrapResult,
 };
 
 const VERSION: f64 = 4.000000;
@@ -1038,7 +1038,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                     && !meta
                         .tokens
                         .iter()
-                        .any(|t| matches!(&t.token, Token::Tag(n) if n == &rule.name)))
+                        .any(|t| matches!(&t, Token::Tag(n) if n == &rule.name)))
             {
                 continue;
             }
