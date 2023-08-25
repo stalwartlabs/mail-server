@@ -152,7 +152,7 @@ pub struct SubmissionCapabilities {
     #[serde(rename(serialize = "maxDelayedSend"))]
     max_delayed_send: usize,
     #[serde(rename(serialize = "submissionExtensions"))]
-    submission_extensions: Vec<String>,
+    submission_extensions: VecMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -220,13 +220,14 @@ impl crate::Config {
             Capability::Submission,
             Capabilities::Submission(SubmissionCapabilities {
                 max_delayed_send: 86400 * 30,
-                submission_extensions: vec![
-                    "FUTURERELEASE".to_string(),
-                    "SIZE".to_string(),
-                    "DSN".to_string(),
-                    "DELIVERYBY".to_string(),
-                    "MT-PRIORITY".to_string(),
-                ],
+                submission_extensions: VecMap::from_iter([
+                    ("FUTURERELEASE".to_string(), Vec::new()),
+                    ("SIZE".to_string(), Vec::new()),
+                    ("DSN".to_string(), Vec::new()),
+                    ("DELIVERYBY".to_string(), Vec::new()),
+                    ("MT-PRIORITY".to_string(), vec!["MIXER".to_string()]),
+                    ("REQUIRETLS".to_string(), vec![]),
+                ]),
             }),
         );
         self.capabilities.capabilities.append(
