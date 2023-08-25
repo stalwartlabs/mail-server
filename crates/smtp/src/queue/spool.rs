@@ -215,6 +215,7 @@ impl Message {
                     notify: Schedule::later(expires + Duration::from_secs(10)),
                     expires: Instant::now() + expires,
                     status: Status::Scheduled,
+                    disable_tls: false,
                     changed: false,
                 });
                 idx

@@ -102,6 +102,7 @@ pub struct Domain {
     pub notify: Schedule<u32>,
     pub expires: Instant,
     pub status: Status<(), Error>,
+    pub disable_tls: bool,
     pub changed: bool,
 }
 

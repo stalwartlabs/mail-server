@@ -211,6 +211,7 @@ impl Message {
                 retry: Schedule::now(),
                 notify: Schedule::now(),
                 status: Status::Scheduled,
+                disable_tls: false,
                 changed: false,
             });
         }

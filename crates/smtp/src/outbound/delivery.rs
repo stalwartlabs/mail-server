@@ -187,6 +187,7 @@ impl DeliveryAttempt {
                 };
 
                 // Prepare TLS strategy
+                let mut disable_tls = false;
                 let mut tls_strategy = TlsStrategy {
                     mta_sts: *queue_config.tls.mta_sts.eval(&envelope).await,
                     ..Default::default()
@@ -668,7 +669,7 @@ impl DeliveryAttempt {
                             };
 
                             // Try starting TLS
-                            if tls_strategy.try_start_tls() {
+                            if tls_strategy.try_start_tls() && !domain.disable_tls {
                                 smtp_client.timeout =
                                     *queue_config.timeout.tls.eval(&envelope).await;
                                 match try_start_tls(
@@ -821,18 +822,29 @@ impl DeliveryAttempt {
                                             })
                                             .await;
                                         }
-                                        last_status = Status::from_tls_error(envelope.mx, error);
+
+                                        last_status = if tls_strategy.is_tls_required()
+                                            || (self.message.flags & MAIL_REQUIRETLS) != 0
+                                            || mta_sts_policy.is_some()
+                                            || dane_policy.is_some()
+                                        {
+                                            Status::from_tls_error(envelope.mx, error)
+                                        } else {
+                                            disable_tls = true;
+                                            Status::from_tls_error(envelope.mx, error)
+                                                .into_temporary()
+                                        };
                                         continue 'next_host;
                                     }
                                 }
                             } else {
-                                // TLS has been disabled in the configuration file
+                                // TLS has been disabled
                                 tracing::info!(
                                     parent: &span,
                                     context = "tls",
                                     event = "disabled",
                                     mx = envelope.mx,
-                                    reason = "TLS is disabled for this host",
+                                    reason = if domain.disable_tls {"TLS is disabled for this host"} else {"TLS is unavailable for this host, falling back to plain-text."},
                                 );
 
                                 self.message
@@ -893,6 +905,7 @@ impl DeliveryAttempt {
                         };
 
                         // Update status for the current domain and continue with the next one
+                        domain.disable_tls = disable_tls;
                         domain
                             .set_status(delivery_result, queue_config.retry.eval(&envelope).await);
                         continue 'next_domain;

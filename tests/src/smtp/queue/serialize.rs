@@ -79,6 +79,7 @@ async fn queue_serialize() {
                 notify: Schedule::now(),
                 expires: Instant::now() + Duration::from_secs(10),
                 status: Status::Scheduled,
+                disable_tls: false,
                 changed: false,
             },
             Domain {
@@ -87,6 +88,7 @@ async fn queue_serialize() {
                 notify: Schedule::now(),
                 expires: Instant::now() + Duration::from_secs(10),
                 status: Status::Scheduled,
+                disable_tls: false,
                 changed: false,
             },
         ],

@@ -525,6 +525,17 @@ impl<T, E> Status<T, E> {
         }
     }
 
+    pub fn into_temporary(self) -> Self {
+        match self {
+            Status::PermanentFailure(err) => Status::TemporaryFailure(err),
+            other => other,
+        }
+    }
+
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, Status::PermanentFailure(_))
+    }
+
     fn write_dsn_action(&self, dsn: &mut String) {
         dsn.push_str("Action: ");
         dsn.push_str(match self {

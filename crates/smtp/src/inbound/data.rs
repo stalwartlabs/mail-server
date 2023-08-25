@@ -632,6 +632,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     expires,
                     status: queue::Status::Scheduled,
                     domain: rcpt.domain,
+                    disable_tls: false,
                     changed: false,
                 });
             }
