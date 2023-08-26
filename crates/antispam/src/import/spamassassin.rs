@@ -6,7 +6,8 @@ use std::{
 };
 
 use super::{
-    utils::{fix_broken_regex, replace_tags},
+    tokenizer::Tokenizer,
+    utils::{fix_broken_regex, import_regex, replace_tags},
     Header, HeaderMatches, HeaderPart, MetaExpression, Rule, RuleType, TestFlag, Token,
     UnwrapResult,
 };
@@ -240,7 +241,7 @@ static SUPPORTED_FUNCTIONS: [&str; 162] = [
     "tvd_vertical_words",
 ];
 
-pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, validate_regex: bool) {
+pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
     let mut paths: Vec<_> = fs::read_dir(&path)
         .unwrap_result("read directory")
         .map(|r| r.unwrap_result("read directory entry"))
@@ -323,7 +324,6 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
             if cmd.is_empty() {
                 continue;
             }
-            let todo = "GB_TO_ADDR caca";
 
             match cmd {
                 "ifplugin" => {
@@ -647,20 +647,12 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 }
                 "meta" => {
                     if let Some((test_name, expression)) = params.split_once(' ') {
-                        let expr = MetaExpression::from_meta(expression);
-                        /*if tokens.tokens.contains(&Token::Divide) {
-                            println!(
-                                "->: {expression}\n{:?}\n<-: {}",
-                                tokens
-                                    .tokens
-                                    .iter()
-                                    .zip(tokens.token_depth.iter())
-                                    .collect::<Vec<_>>(),
-                                String::from(tokens.clone())
-                            );
-                            std::process::exit(1);
-                        }*/
-                        rules.entry(test_name.to_string()).or_default().t = RuleType::Meta { expr };
+                        rules.entry(test_name.to_string()).or_default().t = RuleType::Meta {
+                            expr: MetaExpression {
+                                tokens: Tokenizer::new(expression).collect(),
+                                expr: expression.to_string(),
+                            },
+                        };
                     } else {
                         eprintln!(
                             "Warning: Invalid meta command on {}, line {}",
@@ -779,16 +771,6 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
                 "replace_tag" | "replace_inter" | "replace_post" | "replace_pre" => {
                     if let Some((tag, pattern)) = params.split_once(' ') {
                         let pattern = replace_tags(pattern, replace_start, replace_end, &tags);
-                        if validate_regex {
-                            if let Err(err) = fancy_regex::Regex::new(&pattern) {
-                                eprintln!(
-                                    "Warning: Invalid regex {pattern:?} on {}, line {}: {}",
-                                    path.display(),
-                                    line_num,
-                                    err
-                                );
-                            }
-                        }
                         let tag_class = cmd.strip_prefix("replace_").unwrap();
                         let tag = if tag_class != "tag" {
                             format!("{} {}", tag_class, tag)
@@ -994,13 +976,28 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
         }
     }
 
+    let mut var_to_rule = HashMap::new();
     let mut rules = rules
         .into_iter()
         .filter_map(|(name, mut rule)| {
             if !matches!(rule.t, RuleType::None) {
-                if validate_regex {
-                    if let Some(pattern) = rule.t.pattern() {
-                        if let Err(err) = fancy_regex::Regex::new(pattern) {
+                if let Some(pattern) = rule.t.pattern() {
+                    let (pattern_, variables) = import_regex(pattern);
+                    *pattern = pattern_;
+                    rule.required_vars = variables;
+                    match fancy_regex::Regex::new(pattern) {
+                        Ok(r) => {
+                            rule.captured_vars = r
+                                .capture_names()
+                                .enumerate()
+                                .filter_map(|(pos, var_name)| {
+                                    let var_name = var_name?;
+                                    var_to_rule.insert(var_name.to_string(), name.clone());
+                                    (var_name.to_string(), pos).into()
+                                })
+                                .collect();
+                        }
+                        Err(err) => {
                             eprintln!(
                                 "Warning: Invalid regex {} for test {}: {}",
                                 pattern, name, err
@@ -1020,8 +1017,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
         .collect::<Vec<_>>();
     rules.sort_unstable();
 
-    let no_meta = MetaExpression::default();
-    let mut meta = &no_meta;
+    let mut required_rests: Vec<&str> = vec![];
 
     let mut tests_done = HashSet::new();
     let mut tests_linked = HashSet::new();
@@ -1032,46 +1028,72 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool, vali
     // Sort rules by meta
     loop {
         while let Some(rule) = rules_iter.next() {
-            let in_meta = !meta.tokens.is_empty();
+            let in_linked = !required_rests.is_empty();
             if tests_done.contains(&rule.name)
-                || (in_meta
-                    && !meta
-                        .tokens
-                        .iter()
-                        .any(|t| matches!(&t, Token::Tag(n) if n == &rule.name)))
+                || (in_linked && !required_rests.contains(&rule.name.as_str()))
             {
                 continue;
             }
             tests_done.insert(&rule.name);
-            if in_meta {
+            if in_linked {
                 tests_linked.insert(&rule.name);
             }
 
-            match &rule.t {
-                RuleType::Meta { expr } if rule.score() != 0.0 => {
-                    rules_stack.push((meta, rule, rules_iter));
-                    rules_iter = rules.iter();
-                    meta = expr;
-                }
-                _ => {
-                    rules_sorted.push(rule);
-                    //write!(&mut script, "{rule}").unwrap();
-                }
+            let new_required_tests = match &rule.t {
+                RuleType::Meta { expr } if rule.score() != 0.0 || rule.is_subrule() => expr
+                    .tokens
+                    .iter()
+                    .filter_map(|t| match &t {
+                        Token::Tag(t) if !tests_done.contains(t) => Some(t.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => rule
+                    .required_vars
+                    .iter()
+                    .filter_map(|required_var| {
+                        if let Some(required_test) = var_to_rule.get(required_var) {
+                            if !tests_done.contains(required_test) {
+                                Some(required_test.as_str())
+                            } else {
+                                None
+                            }
+                        } else {
+                            eprintln!(
+                                "Warning: Variable {required_var:?} not found for test {:?}",
+                                rule.name
+                            );
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            };
+
+            if !new_required_tests.is_empty() {
+                rules_stack.push((rule, rules_iter, required_rests));
+                rules_iter = rules.iter();
+                required_rests = new_required_tests;
+            } else {
+                rules_sorted.push(rule);
             }
         }
 
-        if let Some((prev_meta, prev_rule, prev_rules_iter)) = rules_stack.pop() {
+        if let Some((prev_rule, prev_rules_iter, prev_required_tests)) = rules_stack.pop() {
             rules_sorted.push(prev_rule);
-            //write!(&mut script, "{prev_rule}").unwrap();
             rules_iter = prev_rules_iter;
-            meta = prev_meta;
+            required_rests = prev_required_tests;
         } else {
             break;
         }
     }
 
     // Generate script
-    let mut script = String::new();
+    let mut script = String::from(concat!(
+        "require [\"variables\", \"include\", \"regex\", \"body\", \"vnd.stalwart.plugins\"];\n\n",
+        "global \"score\";\n",
+        "global \"spam_score\";\n",
+        "\n"
+    ));
     let mut rules_iter = rules_sorted.iter();
 
     while let Some(&rule) = rules_iter.next() {
@@ -1146,15 +1168,13 @@ impl Display for Rule {
 
         match &self.t {
             RuleType::Header {
-                matches,
                 header: header @ (Header::All | Header::AllExternal),
-                if_unset,
                 pattern,
-                part,
+                ..
             } => {
                 write!(
                     f,
-                    "if vnd.stalwart.eval(\"match_all_headers\", \"{}\", {:?})",
+                    "if match_all_headers {:?} {:?}",
                     if header == &Header::All {
                         "all"
                     } else {
@@ -1170,10 +1190,49 @@ impl Display for Rule {
                 pattern,
                 part,
             } => {
+                let is_raw = part.contains(&HeaderPart::Raw);
+                let is_name = part.contains(&HeaderPart::Name);
+                let is_addr = part.contains(&HeaderPart::Addr);
+
+                let mut pattern = pattern.as_str();
+                let mut matches = *matches;
+
                 f.write_str("if ")?;
+
+                // Map unset statements into expressions
+                let mut has_unset = match if_unset {
+                    Some(val) if pattern == format!("^{val}$") => {
+                        // convert /^UNSET$/ [if-unset: UNSET] to exists
+                        pattern = "";
+                        matches = HeaderMatches::Exists;
+                        f.write_str("not ")?;
+                        false
+                    }
+                    Some(_) => true,
+                    None => false,
+                };
+
+                if has_unset {
+                    match header {
+                        Header::MessageId => f.write_str(concat!(
+                            "allof(header :contains ",
+                            "[\"Message-Id\",\"Resent-Message-Id\",",
+                            "\"X-Message-Id\",\"X-Original-Message-ID\"]"
+                        ))?,
+                        Header::ToCc => f.write_str("allof(header :contains [\"To\",\"Cc\"]")?,
+                        Header::Name(name) => write!(f, "allof(header :contains {:?}", name)?,
+                        Header::EnvelopeFrom | Header::All | Header::AllExternal => {
+                            has_unset = false;
+                        }
+                    }
+                    if has_unset {
+                        f.write_str(" \"\", ")?;
+                    }
+                }
+
                 let cmd = if matches!(header, Header::EnvelopeFrom) {
                     "envelope"
-                } else if part.contains(&HeaderPart::Addr) || part.contains(&HeaderPart::Name) {
+                } else if (is_name || is_addr) && !is_raw {
                     "address"
                 } else {
                     "header"
@@ -1183,23 +1242,29 @@ impl Display for Rule {
                     HeaderMatches::NotMatches => write!(f, "not {cmd} :regex ")?,
                     HeaderMatches::Exists => write!(f, "{cmd} :contains ")?,
                 }
-                for part in part {
-                    match part {
-                        HeaderPart::Name => f.write_str(":name ")?,
-                        HeaderPart::Addr => f.write_str(":all ")?,
-                        HeaderPart::Raw => f.write_str(":raw ")?,
+                if !is_raw {
+                    if is_name {
+                        f.write_str(":name ")?;
+                    } else if is_addr {
+                        f.write_str(":all ")?;
                     }
                 }
                 match header {
-                        Header::MessageId => f.write_str("[\"Message-Id\",\"Resent-Message-Id\",\"X-Message-Id\",\"X-Original-Message-ID\"]")?,
-                        Header::ToCc => f.write_str("[\"To\",\"Cc\"]")?,
-                        Header::Name (name) => write!(f, "{:?}", name)?,
-                        Header::EnvelopeFrom => f.write_str("\"from\"")?,
-                        Header::All |
-                        Header::AllExternal => unreachable!(),
-                    }
+                    Header::MessageId => f.write_str(concat!(
+                        "[\"Message-Id\",\"Resent-Message-Id\",",
+                        "\"X-Message-Id\",\"X-Original-Message-ID\"]"
+                    ))?,
+                    Header::ToCc => f.write_str("[\"To\",\"Cc\"]")?,
+                    Header::Name(name) => write!(f, "{:?}", name)?,
+                    Header::EnvelopeFrom => f.write_str("\"from\"")?,
+                    Header::All | Header::AllExternal => unreachable!(),
+                }
 
                 write!(f, " {:?}", pattern)?;
+
+                if has_unset {
+                    f.write_str(")")?;
+                }
             }
             RuleType::Body { pattern, raw } => {
                 if *raw {
@@ -1211,33 +1276,42 @@ impl Display for Rule {
                 }
             }
             RuleType::Full { pattern } => {
-                write!(f, "if vnd.stalwart.eval(\"match_full\", {:?})", pattern)?;
+                write!(f, "if match_full {:?}", pattern)?;
             }
             RuleType::Uri { pattern } => {
-                write!(f, "if vnd.stalwart.eval(\"match_uri\", {:?})", pattern)?;
+                write!(f, "if match_uri {:?}", pattern)?;
             }
             RuleType::Eval { function, params } => {
-                write!(f, "if vnd.stalwart.eval({function:?}")?;
+                write!(f, "if {function}")?;
                 for param in params {
-                    write!(f, ", {param:?}")?;
+                    f.write_str(" ")?;
+                    if let Some(param) = param.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
+                    {
+                        write!(f, "\"{param}\"")?;
+                    } else if param.starts_with('\"') {
+                        f.write_str(param)?;
+                    } else {
+                        write!(f, "\"{param}\"")?;
+                    }
                 }
-                f.write_str(")")?;
             }
             RuleType::Meta { expr } => {
-                expr.fmt(f)?;
+                write!(f, "if eval {:?}", expr.expr.trim())?;
             }
             RuleType::None => {
                 f.write_str("if false")?;
             }
         }
 
-        f.write_str(" {\n\tset \"")?;
-        f.write_str(&self.name)?;
-        f.write_str("\" \"1\";\n")?;
-        let score = self.score();
+        write!(f, " {{\n\tset :local \"{}\" \"1\";\n", self.name)?;
 
+        for (var_name, pos) in &self.captured_vars {
+            writeln!(f, "\tset :local \"{}\" \"${{{}}}\";", var_name, pos)?;
+        }
+
+        let score = self.score();
         if score != 0.0 {
-            f.write_str("\tset \"score\" \"${score")?;
+            f.write_str("\tset \"score\" \"%{score")?;
             if score > 0.0 {
                 f.write_str(" + ")?;
                 score.fmt(f)?;
@@ -1251,36 +1325,20 @@ impl Display for Rule {
                 if self.forward_score_neg != 0.0 {
                     write!(
                         f,
-                        concat!(
-                            "if allof(string :value \"ge\" :comparator ",
-                            "\"i;ascii-numeric\" \"${{score}}\" \"${{spam_score}}\", ",
-                            "string :value \"ge\" :comparator ",
-                            "\"i;ascii-numeric\" \"${{score - {:.4}}}\" \"${{spam_score}}\")"
-                        ),
+                        "if eval \"score >= spam_score && score - {:.4} >= spam_score\"",
                         -self.forward_score_neg
                     )?;
                 } else {
-                    f.write_str(concat!(
-                        "if string :value \"ge\" :comparator ",
-                        "\"i;ascii-numeric\" \"${score}\" \"${spam_score}\""
-                    ))?;
+                    f.write_str("if eval \"score >= spam_score\"")?;
                 }
             } else if self.forward_score_pos != 0.0 {
                 write!(
                     f,
-                    concat!(
-                        "if allof(string :value \"lt\" :comparator ",
-                        "\"i;ascii-numeric\" \"${{score}}\" \"${{spam_score}}\", ",
-                        "string :value \"lt\" :comparator ",
-                        "\"i;ascii-numeric\" \"${{score + {:.4}}}\" \"${{spam_score}}\")"
-                    ),
+                    "if eval \"score < spam_score && score + {:.4} < spam_score\"",
                     self.forward_score_pos
                 )?;
             } else {
-                f.write_str(concat!(
-                    "if string :value \"lt\" :comparator ",
-                    "\"i;ascii-numeric\" \"${score}\" \"${spam_score}\""
-                ))?;
+                f.write_str("if eval \"score < spam_score\"")?;
             }
             f.write_str(" {\n\t\treturn;\n\t}\n")?;
         }

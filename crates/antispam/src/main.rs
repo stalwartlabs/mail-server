@@ -9,7 +9,6 @@ fn main() {
         PathBuf::from("/Users/me/code/mail-server/resources/spamassassin"),
         "cf".to_string(),
         false,
-        false,
     );
 }
 

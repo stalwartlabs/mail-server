@@ -1,7 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-pub mod ast;
-pub mod meta;
 pub mod spamassassin;
 pub mod tokenizer;
 pub mod utils;
@@ -11,6 +9,8 @@ struct Rule {
     name: String,
     t: RuleType,
     scores: Vec<f64>,
+    captured_vars: Vec<(String, usize)>,
+    required_vars: HashSet<String>,
     description: HashMap<String, String>,
     priority: i32,
     flags: Vec<TestFlag>,
@@ -52,7 +52,7 @@ enum RuleType {
 #[derive(Debug, Clone, Default)]
 pub struct MetaExpression {
     pub tokens: Vec<Token>,
-    pub expr: Expr,
+    pub expr: String,
 }
 
 impl RuleType {
@@ -96,7 +96,7 @@ enum Header {
     Name(String),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 enum HeaderMatches {
     #[default]
     Matches,
@@ -151,64 +151,10 @@ pub enum Operation {
     Not,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
-    UnaryOp(UnaryOperator, Box<Expr>),
-    BinaryOp(Box<Expr>, BinaryOperator, Box<Expr>),
-    Literal(u32),
-    Identifier(String),
-}
-
-impl Default for Expr {
-    fn default() -> Self {
-        Self::Literal(0)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum UnaryOperator {
-    Not,
-    Minus,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum BinaryOperator {
-    Or,
-    And,
-    Greater,
-    Lesser,
-    GreaterOrEqual,
-    LesserOrEqual,
-    Equal,
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    BitwiseAnd,
-    BitwiseOr,
-}
-
-impl BinaryOperator {
-    pub fn precedence(&self) -> u32 {
-        match self {
-            Self::Or => 1,
-            Self::And => 2,
-            Self::Greater
-            | Self::Lesser
-            | Self::GreaterOrEqual
-            | Self::LesserOrEqual
-            | Self::Equal => 3,
-            Self::Add | Self::Subtract => 4,
-            Self::Multiply | Self::Divide => 5,
-            Self::BitwiseAnd | Self::BitwiseOr => 6,
-        }
-    }
-}
-
 impl Rule {
     fn score(&self) -> f64 {
         self.scores.last().copied().unwrap_or_else(|| {
-            if self.name.starts_with("__") {
+            if self.is_subrule() {
                 0.0
             } else if self.name.starts_with("T_") {
                 0.01
@@ -216,6 +162,10 @@ impl Rule {
                 1.0
             }
         })
+    }
+
+    fn is_subrule(&self) -> bool {
+        self.name.starts_with("__")
     }
 }
 

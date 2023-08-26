@@ -45,47 +45,7 @@ impl<'x> Iterator for Tokenizer<'x> {
                     let token = match ch {
                         '&' | '|' => {
                             if matches!(self.iter.next(), Some(c) if c == ch) {
-                                let is_and = ch == '&';
-                                if self.depth > self.comparator_depth {
-                                    Token::Operation(if is_and {
-                                        Operation::And
-                                    } else {
-                                        Operation::Or
-                                    })
-                                } else {
-                                    let mut depth = self.depth;
-                                    let mut found_comp = false;
-
-                                    for ch in self.iter.clone() {
-                                        match ch {
-                                            '(' => depth += 1,
-                                            ')' => {
-                                                depth -= 1;
-                                            }
-                                            '<' | '>' | '=' => {
-                                                found_comp = true;
-                                                break;
-                                            }
-                                            _ => (),
-                                        }
-                                    }
-
-                                    if found_comp && depth < self.depth {
-                                        self.comparator_depth = depth;
-                                        Token::Operation(if is_and {
-                                            Operation::And
-                                        } else {
-                                            Operation::Or
-                                        })
-                                    } else {
-                                        self.comparator_depth = u32::MAX;
-                                        Token::Logical(if is_and {
-                                            Logical::And
-                                        } else {
-                                            Logical::Or
-                                        })
-                                    }
-                                }
+                                Token::Logical(if ch == '&' { Logical::And } else { Logical::Or })
                             } else {
                                 eprintln!("Warning: Single {ch} in meta expression {}", self.expr);
                                 return None;
@@ -176,6 +136,16 @@ impl<'x> Iterator for Tokenizer<'x> {
             Some(Token::from(std::mem::take(&mut self.buf)))
         } else {
             None
+        }
+    }
+}
+
+impl From<String> for Token {
+    fn from(value: String) -> Self {
+        if let Ok(value) = value.parse() {
+            Token::Number(value)
+        } else {
+            Token::Tag(value)
         }
     }
 }
