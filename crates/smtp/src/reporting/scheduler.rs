@@ -205,16 +205,15 @@ impl SMTP {
             .eval(&RecipientDomain::new(domain))
             .await
             .clone();
-        path.push(
-            (policy
-                % *self
-                    .report
-                    .config
-                    .hash
-                    .eval(&RecipientDomain::new(domain))
-                    .await)
-                .to_string(),
-        );
+        let hash = *self
+            .report
+            .config
+            .hash
+            .eval(&RecipientDomain::new(domain))
+            .await;
+        if hash > 0 {
+            path.push((policy % hash).to_string());
+        }
         let _ = fs::create_dir(&path).await;
 
         // Build filename
