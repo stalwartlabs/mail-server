@@ -43,6 +43,8 @@ pub struct MilterClient<T: AsyncRead + AsyncWrite> {
     receiver: Receiver,
     version: Version,
     options: u32,
+    flags_actions: u32,
+    flags_protocol: u32,
     span: tracing::Span,
 }
 

@@ -55,6 +55,17 @@ impl MilterClient<TcpStream> {
                             options: 0,
                             version: config.protocol_version,
                             span,
+                            flags_actions: config.flags_actions.unwrap_or(
+                                SMFIF_ADDHDRS
+                                    | SMFIF_CHGBODY
+                                    | SMFIF_ADDRCPT
+                                    | SMFIF_DELRCPT
+                                    | SMFIF_CHGHDRS
+                                    | SMFIF_QUARANTINE
+                                    | SMFIF_CHGFROM
+                                    | SMFIF_ADDRCPT_PAR,
+                            ),
+                            flags_protocol: config.flags_protocol.unwrap_or(0x42),
                         });
                     }
                     Err(err) => {
@@ -89,6 +100,8 @@ impl MilterClient<TcpStream> {
                 options: self.options,
                 version: self.version,
                 span: self.span,
+                flags_actions: self.flags_actions,
+                flags_protocol: self.flags_protocol,
             })
         })
         .await
@@ -103,15 +116,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
                 Version::V2 => 2,
                 Version::V6 => 6,
             },
-            actions: SMFIF_ADDHDRS
-                | SMFIF_CHGBODY
-                | SMFIF_ADDRCPT
-                | SMFIF_DELRCPT
-                | SMFIF_CHGHDRS
-                | SMFIF_QUARANTINE
-                | SMFIF_CHGFROM
-                | SMFIF_ADDRCPT_PAR,
-            protocol: SMFIP_SKIP,
+            actions: self.flags_actions,
+            protocol: self.flags_protocol,
         }))
         .await?;
         match self.read().await? {

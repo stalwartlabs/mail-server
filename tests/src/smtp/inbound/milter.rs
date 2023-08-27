@@ -374,12 +374,14 @@ fn milter_frame_receiver() {
 #[tokio::test]
 #[ignore]
 async fn milter_client_test() {
+    //const PORT : u16 = 11332;
+    const PORT: u16 = 7357;
     let mut client = MilterClient::connect(
         &Milter {
             enable: IfBlock::default(),
-            addrs: vec![SocketAddr::from(([127, 0, 0, 1], 11332))],
+            addrs: vec![SocketAddr::from(([127, 0, 0, 1], PORT))],
             hostname: "localhost".to_string(),
-            port: 11332,
+            port: PORT,
             timeout_connect: Duration::from_secs(10),
             timeout_command: Duration::from_secs(30),
             timeout_data: Duration::from_secs(30),
@@ -388,6 +390,8 @@ async fn milter_client_test() {
             tempfail_on_error: false,
             max_frame_len: 5000000,
             protocol_version: Version::V6,
+            flags_actions: None,
+            flags_protocol: None,
         },
         tracing::span!(tracing::Level::TRACE, "hi"),
     )

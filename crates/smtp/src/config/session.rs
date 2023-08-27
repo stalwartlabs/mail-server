@@ -498,6 +498,16 @@ impl ConfigSession for Config {
                     2 => milter::Version::V2,
                     v => return Err(format!("Unsupported milter protocol version: {}", v)),
                 },
+                flags_actions: self.property((
+                    "session.data.milter",
+                    id,
+                    "options.flags.actions",
+                ))?,
+                flags_protocol: self.property((
+                    "session.data.milter",
+                    id,
+                    "options.flags.protocol",
+                ))?,
             })
         }
         Ok(milters)

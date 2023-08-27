@@ -286,6 +286,8 @@ pub struct Milter {
     pub tempfail_on_error: bool,
     pub max_frame_len: usize,
     pub protocol_version: milter::Version,
+    pub flags_actions: Option<u32>,
+    pub flags_protocol: Option<u32>,
 }
 
 pub struct SessionConfig {
