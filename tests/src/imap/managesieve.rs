@@ -62,6 +62,10 @@ pub async fn test() {
         .send_literal("PUTSCRIPT \"simple script\" ", "if true { keep; }\r\n")
         .await;
     sieve.assert_read(ResponseType::Ok).await;
+
+    // PutScript should overwrite existing scripts
+    sieve.send("PUTSCRIPT \"holidays\" \"discard;\"").await;
+    sieve.assert_read(ResponseType::Ok).await;
     sieve
         .send_literal(
             "PUTSCRIPT \"holidays\" ",
@@ -69,11 +73,6 @@ pub async fn test() {
         )
         .await;
     sieve.assert_read(ResponseType::Ok).await;
-    sieve.send("PUTSCRIPT \"holidays\" \"discard;\"").await;
-    sieve
-        .assert_read(ResponseType::No)
-        .await
-        .assert_contains("ALREADYEXISTS");
 
     // GetScript
     sieve.send("GETSCRIPT \"simple script\"").await;

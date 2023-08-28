@@ -55,7 +55,12 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
-        self.validate_name(account_id, &new_name).await?;
+        if self.validate_name(account_id, &new_name).await?.is_some() {
+            return Err(StatusResponse::no(format!(
+                "A sieve script with name '{name}' already exists.",
+            ))
+            .with_code(ResponseCode::AlreadyExists));
+        }
 
         // Obtain script values
         let script = self

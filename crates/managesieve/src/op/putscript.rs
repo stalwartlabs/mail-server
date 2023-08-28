@@ -28,7 +28,10 @@ use jmap_proto::{
     types::{blob::BlobId, collection::Collection, property::Property, value::Value},
 };
 use sieve::compiler::ErrorType;
-use store::{query::Filter, write::BatchBuilder};
+use store::{
+    query::Filter,
+    write::{assert::HashedValue, BatchBuilder},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -70,9 +73,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             );
         }
 
-        // Validate name
-        self.validate_name(account_id, &name).await?;
-
         // Compile script
         match self.jmap.sieve_compiler.compile(&script) {
             Ok(compiled_script) => {
@@ -87,43 +87,88 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             }
         }
 
-        // Obtain document id
-        let document_id = self
-            .jmap
-            .assign_document_id(account_id, Collection::SieveScript)
-            .await?;
+        // Validate name
+        if let Some(document_id) = self.validate_name(account_id, &name).await? {
+            // Update blob
+            self.jmap
+                .put_blob(
+                    &BlobId::linked(account_id, Collection::SieveScript, document_id).kind,
+                    &script,
+                )
+                .await?;
 
-        // Store blob
-        self.jmap
-            .put_blob(
-                &BlobId::linked(account_id, Collection::SieveScript, document_id).kind,
-                &script,
-            )
-            .await?;
+            // Obtain script values
+            let script = self
+                .jmap
+                .get_property::<HashedValue<Object<Value>>>(
+                    account_id,
+                    Collection::SieveScript,
+                    document_id,
+                    Property::Value,
+                )
+                .await?
+                .ok_or_else(|| {
+                    StatusResponse::no("Script not found").with_code(ResponseCode::NonExistent)
+                })?;
 
-        // Write record
-        let mut changelog = self.jmap.begin_changes(account_id).await?;
-        changelog.log_insert(Collection::SieveScript, document_id);
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::SieveScript)
-            .create_document(document_id)
-            .custom(
-                ObjectIndexBuilder::new(SCHEMA).with_changes(
-                    Object::with_capacity(3)
-                        .with_property(Property::Name, name)
-                        .with_property(Property::IsActive, Value::Bool(false))
-                        .with_property(Property::Size, Value::UnsignedInt(script_len)),
-                ),
-            )
-            .custom(changelog);
-        self.jmap.write_batch(batch).await?;
+            // Write record
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::SieveScript)
+                .update_document(document_id)
+                .custom(
+                    ObjectIndexBuilder::new(SCHEMA)
+                        .with_current(script)
+                        .with_changes(
+                            Object::with_capacity(1)
+                                .with_property(Property::Size, Value::UnsignedInt(script_len)),
+                        ),
+                );
+            self.jmap.write_batch(batch).await?;
+        } else {
+            // Obtain document id
+            let document_id = self
+                .jmap
+                .assign_document_id(account_id, Collection::SieveScript)
+                .await?;
+
+            // Store blob
+            self.jmap
+                .put_blob(
+                    &BlobId::linked(account_id, Collection::SieveScript, document_id).kind,
+                    &script,
+                )
+                .await?;
+
+            // Write record
+            let mut changelog = self.jmap.begin_changes(account_id).await?;
+            changelog.log_insert(Collection::SieveScript, document_id);
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::SieveScript)
+                .create_document(document_id)
+                .custom(
+                    ObjectIndexBuilder::new(SCHEMA).with_changes(
+                        Object::with_capacity(3)
+                            .with_property(Property::Name, name)
+                            .with_property(Property::IsActive, Value::Bool(false))
+                            .with_property(Property::Size, Value::UnsignedInt(script_len)),
+                    ),
+                )
+                .custom(changelog);
+            self.jmap.write_batch(batch).await?;
+        }
 
         Ok(StatusResponse::ok("Success.").into_bytes())
     }
 
-    pub async fn validate_name(&self, account_id: u32, name: &str) -> Result<(), StatusResponse> {
+    pub async fn validate_name(
+        &self,
+        account_id: u32,
+        name: &str,
+    ) -> Result<Option<u32>, StatusResponse> {
         if name.is_empty() {
             Err(StatusResponse::no("Script name cannot be empty."))
         } else if name.len() > self.jmap.config.sieve_max_script_name {
@@ -132,23 +177,17 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             Err(StatusResponse::no(
                 "The 'vacation' name is reserved, please use a different name.",
             ))
-        } else if !self
-            .jmap
-            .filter(
-                account_id,
-                Collection::SieveScript,
-                vec![Filter::eq(Property::Name, name)],
-            )
-            .await?
-            .results
-            .is_empty()
-        {
-            Err(
-                StatusResponse::no(format!("A sieve script with name '{name}' already exists.",))
-                    .with_code(ResponseCode::AlreadyExists),
-            )
         } else {
-            Ok(())
+            Ok(self
+                .jmap
+                .filter(
+                    account_id,
+                    Collection::SieveScript,
+                    vec![Filter::eq(Property::Name, name)],
+                )
+                .await?
+                .results
+                .min())
         }
     }
 }
