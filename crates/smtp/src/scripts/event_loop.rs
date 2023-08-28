@@ -21,111 +21,33 @@
  * for more details.
 */
 
-use std::{borrow::Cow, process::Command, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use directory::Lookup;
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
-    CommandType, Envelope, Event, Input, MatchAs, Recipient, Sieve,
+    Event, Input, MatchAs, Recipient, Sieve,
 };
 use smtp_proto::{
-    MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY,
-    RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
+    MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
+    RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    runtime::Handle,
+use tokio::runtime::Handle;
+
+use crate::{
+    core::SMTP,
+    queue::{DomainPart, InstantFromTimestamp, Message},
 };
 
-use crate::queue::{DomainPart, InstantFromTimestamp, Message};
-
-use super::{Session, SessionAddress, SessionData, SMTP};
-
-pub enum ScriptResult {
-    Accept {
-        modifications: Vec<(Envelope, String)>,
-    },
-    Replace {
-        message: Vec<u8>,
-        modifications: Vec<(Envelope, String)>,
-    },
-    Reject(String),
-    Discard,
-}
-
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
-    pub async fn run_script(
-        &self,
-        script: Arc<Sieve>,
-        message: Option<Arc<Vec<u8>>>,
-    ) -> ScriptResult {
-        let core = self.core.clone();
-        let span = self.span.clone();
-
-        // Set environment variables
-        let mut vars_env: AHashMap<String, Cow<str>> = AHashMap::with_capacity(6);
-        vars_env.insert(
-            "remote_ip".to_string(),
-            self.data.remote_ip.to_string().into(),
-        );
-        vars_env.insert(
-            "helo_domain".to_string(),
-            self.data.helo_domain.clone().into(),
-        );
-        vars_env.insert(
-            "authenticated_as".to_string(),
-            self.data.authenticated_as.clone().into(),
-        );
-
-        // Set envelope
-        let envelope = if let Some(mail_from) = &self.data.mail_from {
-            let mut envelope: Vec<(Envelope, Cow<str>)> = Vec::with_capacity(6);
-            envelope.push((Envelope::From, mail_from.address.clone().into()));
-            if let Some(env_id) = &mail_from.dsn_info {
-                envelope.push((Envelope::Envid, env_id.clone().into()));
-            }
-            if let Some(rcpt) = self.data.rcpt_to.last() {
-                envelope.push((Envelope::To, rcpt.address.clone().into()));
-                if let Some(orcpt) = &rcpt.dsn_info {
-                    envelope.push((Envelope::Orcpt, orcpt.clone().into()));
-                }
-            }
-            if (mail_from.flags & MAIL_RET_FULL) != 0 {
-                envelope.push((Envelope::Ret, "FULL".into()));
-            } else if (mail_from.flags & MAIL_RET_HDRS) != 0 {
-                envelope.push((Envelope::Ret, "HDRS".into()));
-            }
-            if (mail_from.flags & MAIL_BY_NOTIFY) != 0 {
-                envelope.push((Envelope::ByMode, "N".into()));
-            } else if (mail_from.flags & MAIL_BY_RETURN) != 0 {
-                envelope.push((Envelope::ByMode, "R".into()));
-            }
-            envelope
-        } else {
-            Vec::with_capacity(0)
-        };
-
-        let handle = Handle::current();
-        self.core
-            .spawn_worker(move || {
-                core.run_script_blocking(script, vars_env, envelope, message, handle, span)
-            })
-            .await
-            .unwrap_or(ScriptResult::Accept {
-                modifications: vec![],
-            })
-    }
-}
+use super::{plugins::PluginContext, ScriptParameters, ScriptResult};
 
 impl SMTP {
-    fn run_script_blocking(
+    pub fn run_script_blocking(
         &self,
         script: Arc<Sieve>,
-        vars_env: AHashMap<String, Cow<'static, str>>,
-        envelope: Vec<(Envelope, Cow<'static, str>)>,
-        message: Option<Arc<Vec<u8>>>,
+        params: ScriptParameters,
         handle: Handle,
         span: tracing::Span,
     ) -> ScriptResult {
@@ -133,9 +55,9 @@ impl SMTP {
         let mut instance = self
             .sieve
             .runtime
-            .filter(message.as_deref().map_or(b"", |m| &m[..]))
-            .with_vars_env(vars_env)
-            .with_envelope_list(envelope)
+            .filter(params.message.as_deref().map_or(b"", |m| &m[..]))
+            .with_vars_env(params.variables)
+            .with_envelope_list(params.envelope)
             .with_user_address(&self.sieve.config.from_addr)
             .with_user_full_name(&self.sieve.config.from_name);
         let mut input = Input::script("__script", script);
@@ -144,6 +66,8 @@ impl SMTP {
         let mut reject_reason = None;
         let mut modifications = vec![];
         let mut keep_id = usize::MAX;
+
+        let mut plugin_data = AHashMap::new();
 
         // Start event loop
         while let Some(result) = instance.run(input) {
@@ -193,54 +117,18 @@ impl SMTP {
                             }
                         }
                     }
-                    Event::Execute {
-                        command_type,
-                        command,
-                        arguments,
-                    } => match command_type {
-                        CommandType::Query => {
-                            if let Some(db) = &self.sieve.config.db {
-                                let result = handle.block_on(db.query(
-                                    &command,
-                                    &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
-                                ));
-
-                                input = if command
-                                    .as_bytes()
-                                    .get(..6)
-                                    .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
-                                {
-                                    result.unwrap_or(false).into()
-                                } else {
-                                    result.is_ok().into()
-                                };
-                            } else {
-                                tracing::warn!(
-                                    parent: &span,
-                                    context = "sieve",
-                                    event = "config-error",
-                                    reason = "No directory configured",
-                                );
-                                input = false.into();
-                            }
-                        }
-                        CommandType::Binary => {
-                            match Command::new(command).args(arguments).output() {
-                                Ok(result) => {
-                                    input = result.status.success().into();
-                                }
-                                Err(err) => {
-                                    tracing::warn!(
-                                        parent: &span,
-                                        context = "sieve",
-                                        event = "execute-failed",
-                                        reason = %err,
-                                    );
-                                    input = false.into();
-                                }
-                            }
-                        }
-                    },
+                    Event::Plugin { id, arguments } => {
+                        input = self.run_plugin_blocking(
+                            id,
+                            PluginContext {
+                                span: &span,
+                                handle: &handle,
+                                core: self,
+                                data: &mut plugin_data,
+                                arguments,
+                            },
+                        );
+                    }
                     Event::Keep { message_id, .. } => {
                         keep_id = message_id;
                         input = true.into();
@@ -481,119 +369,6 @@ impl SMTP {
             }
         } else {
             ScriptResult::Discard
-        }
-    }
-}
-
-impl SessionData {
-    pub fn apply_sieve_modifications(&mut self, modifications: Vec<(Envelope, String)>) {
-        for (envelope, value) in modifications {
-            match envelope {
-                Envelope::From => {
-                    let (address, address_lcase, domain) = if value.contains('@') {
-                        let address_lcase = value.to_lowercase();
-                        let domain = address_lcase.domain_part().to_string();
-                        (value, address_lcase, domain)
-                    } else if value.is_empty() {
-                        (String::new(), String::new(), String::new())
-                    } else {
-                        continue;
-                    };
-                    if let Some(mail_from) = &mut self.mail_from {
-                        mail_from.address = address;
-                        mail_from.address_lcase = address_lcase;
-                        mail_from.domain = domain;
-                    } else {
-                        self.mail_from = SessionAddress {
-                            address,
-                            address_lcase,
-                            domain,
-                            flags: 0,
-                            dsn_info: None,
-                        }
-                        .into();
-                    }
-                }
-                Envelope::To => {
-                    if value.contains('@') {
-                        let address_lcase = value.to_lowercase();
-                        let domain = address_lcase.domain_part().to_string();
-                        if let Some(rcpt_to) = self.rcpt_to.last_mut() {
-                            rcpt_to.address = value;
-                            rcpt_to.address_lcase = address_lcase;
-                            rcpt_to.domain = domain;
-                        } else {
-                            self.rcpt_to.push(SessionAddress {
-                                address: value,
-                                address_lcase,
-                                domain,
-                                flags: 0,
-                                dsn_info: None,
-                            });
-                        }
-                    }
-                }
-                Envelope::ByMode => {
-                    if let Some(mail_from) = &mut self.mail_from {
-                        mail_from.flags &= !(MAIL_BY_NOTIFY | MAIL_BY_RETURN);
-                        if value == "N" {
-                            mail_from.flags |= MAIL_BY_NOTIFY;
-                        } else if value == "R" {
-                            mail_from.flags |= MAIL_BY_RETURN;
-                        }
-                    }
-                }
-                Envelope::ByTrace => {
-                    if let Some(mail_from) = &mut self.mail_from {
-                        if value == "T" {
-                            mail_from.flags |= MAIL_BY_TRACE;
-                        } else {
-                            mail_from.flags &= !MAIL_BY_TRACE;
-                        }
-                    }
-                }
-                Envelope::Notify => {
-                    if let Some(rcpt_to) = self.rcpt_to.last_mut() {
-                        rcpt_to.flags &= !(RCPT_NOTIFY_DELAY
-                            | RCPT_NOTIFY_FAILURE
-                            | RCPT_NOTIFY_SUCCESS
-                            | RCPT_NOTIFY_NEVER);
-                        if value == "NEVER" {
-                            rcpt_to.flags |= RCPT_NOTIFY_NEVER;
-                        } else {
-                            for value in value.split(',') {
-                                match value.trim() {
-                                    "SUCCESS" => rcpt_to.flags |= RCPT_NOTIFY_SUCCESS,
-                                    "FAILURE" => rcpt_to.flags |= RCPT_NOTIFY_FAILURE,
-                                    "DELAY" => rcpt_to.flags |= RCPT_NOTIFY_DELAY,
-                                    _ => (),
-                                }
-                            }
-                        }
-                    }
-                }
-                Envelope::Ret => {
-                    if let Some(mail_from) = &mut self.mail_from {
-                        mail_from.flags &= !(MAIL_RET_FULL | MAIL_RET_HDRS);
-                        if value == "FULL" {
-                            mail_from.flags |= MAIL_RET_FULL;
-                        } else if value == "HDRS" {
-                            mail_from.flags |= MAIL_RET_HDRS;
-                        }
-                    }
-                }
-                Envelope::Orcpt => {
-                    if let Some(rcpt_to) = self.rcpt_to.last_mut() {
-                        rcpt_to.dsn_info = value.into();
-                    }
-                }
-                Envelope::Envid => {
-                    if let Some(mail_from) = &mut self.mail_from {
-                        mail_from.dsn_info = value.into();
-                    }
-                }
-                Envelope::ByTimeAbsolute | Envelope::ByTimeRelative => (),
-            }
         }
     }
 }

@@ -23,6 +23,7 @@
 
 use mail_auth::{
     arc::ArcSet, dkim::Signature, ArcOutput, AuthenticatedMessage, AuthenticationResults,
+    DkimResult, DmarcResult, IprevResult, SpfResult,
 };
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
@@ -128,6 +129,61 @@ impl DkimSigner {
         match self {
             DkimSigner::RsaSha256(signer) => signer.sign_chained(message.iter().copied()),
             DkimSigner::Ed25519Sha256(signer) => signer.sign_chained(message.iter().copied()),
+        }
+    }
+}
+
+pub trait AuthResult {
+    fn as_str(&self) -> &'static str;
+}
+
+impl AuthResult for SpfResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            SpfResult::Pass => "pass",
+            SpfResult::Fail => "fail",
+            SpfResult::SoftFail => "softfail",
+            SpfResult::Neutral => "neutral",
+            SpfResult::None => "none",
+            SpfResult::TempError => "temperror",
+            SpfResult::PermError => "permerror",
+        }
+    }
+}
+
+impl AuthResult for IprevResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            IprevResult::Pass => "pass",
+            IprevResult::Fail(_) => "fail",
+            IprevResult::TempError(_) => "temperror",
+            IprevResult::PermError(_) => "permerror",
+            IprevResult::None => "none",
+        }
+    }
+}
+
+impl AuthResult for DkimResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            DkimResult::Pass => "pass",
+            DkimResult::None => "none",
+            DkimResult::Neutral(_) => "neutral",
+            DkimResult::Fail(_) => "fail",
+            DkimResult::PermError(_) => "permerror",
+            DkimResult::TempError(_) => "temperror",
+        }
+    }
+}
+
+impl AuthResult for DmarcResult {
+    fn as_str(&self) -> &'static str {
+        match self {
+            DmarcResult::Pass => "pass",
+            DmarcResult::Fail(_) => "fail",
+            DmarcResult::TempError(_) => "temperror",
+            DmarcResult::PermError(_) => "permerror",
+            DmarcResult::None => "none",
         }
     }
 }

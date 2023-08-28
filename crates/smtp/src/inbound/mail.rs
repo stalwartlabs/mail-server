@@ -29,8 +29,9 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     config::{DNSBL_IPREV, DNSBL_RETURN_PATH},
-    core::{scripts::ScriptResult, Session, SessionAddress},
+    core::{Session, SessionAddress},
     queue::DomainPart,
+    scripts::ScriptResult,
 };
 
 use super::IsTls;
@@ -139,7 +140,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
 
         // Sieve filtering
         if let Some(script) = self.core.session.config.mail.script.eval(self).await {
-            match self.run_script(script.clone(), None).await {
+            match self
+                .run_script(script.clone(), self.build_script_parameters())
+                .await
+            {
                 ScriptResult::Accept { modifications } => {
                     if !modifications.is_empty() {
                         tracing::debug!(parent: &self.span,

@@ -47,6 +47,7 @@ pub mod inbound;
 pub mod outbound;
 pub mod queue;
 pub mod reporting;
+pub mod scripts;
 
 pub static USER_AGENT: &str = concat!("StalwartSMTP/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart SMTP v", env!("CARGO_PKG_VERSION"),);

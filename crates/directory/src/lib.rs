@@ -80,11 +80,22 @@ pub trait Directory: Sync + Send {
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
-    async fn query(&self, query: &str, params: &[&str]) -> Result<bool>;
+    async fn lookup(&self, query: &str, params: &[&str]) -> Result<bool>;
+    async fn query(&self, query: &str, params: &[&str]) -> Result<Vec<QueryColumn>>;
 
     fn type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum QueryColumn {
+    Integer(i64),
+    Bool(bool),
+    Float(f64),
+    Text(String),
+    Blob(Vec<u8>),
+    Null,
 }
 
 #[derive(Clone)]
@@ -101,10 +112,12 @@ pub enum Lookup {
 impl Lookup {
     pub async fn contains(&self, item: &str) -> Option<bool> {
         match self {
-            Lookup::Directory { directory, query } => match directory.query(query, &[item]).await {
-                Ok(result) => result.into(),
-                Err(_) => None,
-            },
+            Lookup::Directory { directory, query } => {
+                match directory.lookup(query, &[item]).await {
+                    Ok(result) => result.into(),
+                    Err(_) => None,
+                }
+            }
             Lookup::List { list } => list.contains(item).into(),
         }
     }

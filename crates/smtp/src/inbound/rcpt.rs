@@ -27,8 +27,9 @@ use smtp_proto::{
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
-    core::{scripts::ScriptResult, Session, SessionAddress},
+    core::{Session, SessionAddress},
     queue::DomainPart,
+    scripts::ScriptResult,
 };
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
@@ -88,7 +89,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         if rcpt_script.is_some() || !self.core.session.config.rcpt.rewrite.is_empty() {
             // Sieve filtering
             if let Some(script) = rcpt_script {
-                match self.run_script(script.clone(), None).await {
+                match self
+                    .run_script(script.clone(), self.build_script_parameters())
+                    .await
+                {
                     ScriptResult::Accept { modifications } => {
                         if !modifications.is_empty() {
                             tracing::debug!(parent: &self.span,

@@ -14,8 +14,6 @@ struct Rule {
     description: HashMap<String, String>,
     priority: i32,
     flags: Vec<TestFlag>,
-    forward_score_pos: f64,
-    forward_score_neg: f64,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -171,7 +169,21 @@ impl Rule {
 
 impl Ord for Rule {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let this_score = self.score();
+        match self.priority.cmp(&other.priority) {
+            std::cmp::Ordering::Equal => {
+                match other
+                    .score()
+                    .abs()
+                    .partial_cmp(&self.score().abs())
+                    .unwrap()
+                {
+                    std::cmp::Ordering::Equal => other.name.cmp(&self.name),
+                    x => x,
+                }
+            }
+            x => x,
+        }
+        /*let this_score = self.score();
         let other_score = other.score();
 
         let this_is_negative = this_score < 0.0;
@@ -204,7 +216,7 @@ impl Ord for Rule {
                 }
                 x => x,
             }
-        }
+        }*/
     }
 }
 

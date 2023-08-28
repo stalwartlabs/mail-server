@@ -441,7 +441,7 @@ impl TestConfig for SieveCore {
                 from_name: "Mailer Daemon".to_string(),
                 return_path: "".to_string(),
                 sign: vec![],
-                db: None,
+                directories: Default::default(),
             },
         }
     }

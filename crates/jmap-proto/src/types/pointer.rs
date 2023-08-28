@@ -34,10 +34,6 @@ pub enum JSONPointer {
     Path(Vec<JSONPointer>),
 }
 
-pub trait JSONPointerEval {
-    fn eval_json_pointer(&self, ptr: &JSONPointer) -> Option<Vec<u64>>;
-}
-
 enum TokenType {
     Unknown,
     Number,

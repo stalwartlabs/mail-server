@@ -291,6 +291,7 @@ impl SessionData {
                 {
                     account
                 } else {
+                    #[allow(clippy::unnecessary_literal_unwrap)]
                     return Err(StatusResponse::no(format!(
                         "Shared account '{}' not found.",
                         prefix.unwrap_or_default()

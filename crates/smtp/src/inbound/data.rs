@@ -44,12 +44,13 @@ use tokio::{
 
 use crate::{
     config::DNSBL_FROM,
-    core::{scripts::ScriptResult, Session, SessionAddress, State},
+    core::{Session, SessionAddress, State},
     queue::{self, DomainPart, Message, SimpleEnvelope},
     reporting::analysis::AnalyzeReport,
+    scripts::ScriptResult,
 };
 
-use super::IsTls;
+use super::{AuthResult, IsTls};
 
 impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
     pub async fn queue_message(&mut self) -> Cow<'static, [u8]> {
@@ -204,7 +205,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         }
 
         // Verify DMARC
-        match &self.data.spf_mail_from {
+        let dmarc_result = match &self.data.spf_mail_from {
             Some(spf_output) if dmarc.verify() => {
                 let dmarc_output = self
                     .core
@@ -232,6 +233,17 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
                 // Add to DMARC output to the Authentication-Results header
                 auth_results = auth_results.with_dmarc_result(&dmarc_output);
+                let dmarc_result = if dmarc_output.spf_result() == &DmarcResult::Pass
+                    || dmarc_output.dkim_result() == &DmarcResult::Pass
+                {
+                    DmarcResult::Pass
+                } else if dmarc_output.spf_result() != &DmarcResult::None {
+                    dmarc_output.spf_result().clone()
+                } else if dmarc_output.dkim_result() != &DmarcResult::None {
+                    dmarc_output.dkim_result().clone()
+                } else {
+                    DmarcResult::None
+                };
 
                 if !rejected {
                     tracing::debug!(parent: &self.span,
@@ -271,9 +283,11 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         (&b"550 5.7.1 Email rejected per DMARC policy.\r\n"[..]).into()
                     };
                 }
+
+                dmarc_result.into()
             }
-            _ => (),
-        }
+            _ => None,
+        };
 
         // Analyze reports
         if self.is_report() {
@@ -397,13 +411,35 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
         // Sieve filtering
         if let Some(script) = dc.script.eval(self).await {
-            match self
-                .run_script(
-                    script.clone(),
-                    Some(edited_message.as_ref().unwrap_or(&raw_message).clone()),
+            let params = self
+                .build_script_parameters()
+                .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
+                .set_variable("from", auth_message.from().to_string())
+                .set_variable(
+                    "arc",
+                    arc_output
+                        .as_ref()
+                        .map(|a| a.result().as_str())
+                        .unwrap_or_default(),
                 )
-                .await
-            {
+                .set_variable(
+                    "dkim",
+                    dkim_output
+                        .iter()
+                        .find(|r| matches!(r.result(), DkimResult::Pass))
+                        .or_else(|| dkim_output.first())
+                        .map(|r| r.result().as_str())
+                        .unwrap_or_default(),
+                )
+                .set_variable(
+                    "dmarc",
+                    dmarc_result
+                        .as_ref()
+                        .map(|a| a.as_str())
+                        .unwrap_or_default(),
+                );
+
+            match self.run_script(script.clone(), params).await {
                 ScriptResult::Accept { modifications } => {
                     if !modifications.is_empty() {
                         self.data.apply_sieve_modifications(modifications)

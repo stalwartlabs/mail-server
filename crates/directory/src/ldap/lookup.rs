@@ -24,7 +24,7 @@
 use ldap3::{ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{Directory, Principal, Type};
+use crate::{Directory, Principal, QueryColumn, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -239,11 +239,55 @@ impl Directory for LdapDirectory {
         Ok(emails)
     }
 
-    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+    async fn lookup(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+        self.query_(query, params)
+            .await
+            .map(|entry| entry.is_some())
+    }
+
+    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
+        self.query_(query, params).await.map(|entry| {
+            if let Some(entry) = entry {
+                let mut object = String::new();
+                for (attr, values) in SearchEntry::construct(entry).attrs {
+                    for value in values {
+                        object.push_str(&attr);
+                        object.push(':');
+                        object.push_str(&value);
+                        object.push('\n');
+                    }
+                }
+                vec![QueryColumn::Text(object)]
+            } else {
+                vec![]
+            }
+        })
+    }
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+        self.pool
+            .get()
+            .await?
+            .streaming_search(
+                &self.mappings.base_dn,
+                Scope::Subtree,
+                &self.mappings.filter_domains.build(domain),
+                Vec::<String>::new(),
+            )
+            .await?
+            .next()
+            .await
+            .map(|entry| entry.is_some())
+            .map_err(|e| e.into())
+    }
+}
+
+impl LdapDirectory {
+    async fn query_(&self, query: &str, params: &[&str]) -> crate::Result<Option<ResultEntry>> {
         let mut conn = self.pool.get().await?;
         tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
 
-        Ok(if !params.is_empty() {
+        if !params.is_empty() {
             let mut expanded_query = String::with_capacity(query.len() + params.len() * 2);
             for (pos, item) in query.split('?').enumerate() {
                 if pos > 0 {
@@ -270,29 +314,10 @@ impl Directory for LdapDirectory {
             .await
         }?
         .next()
-        .await?
-        .is_some())
+        .await
+        .map_err(|e| e.into())
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        self.pool
-            .get()
-            .await?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &self.mappings.filter_domains.build(domain),
-                Vec::<String>::new(),
-            )
-            .await?
-            .next()
-            .await
-            .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
-    }
-}
-
-impl LdapDirectory {
     async fn find_principal(&self, filter: &str) -> crate::Result<Option<Principal>> {
         let (rs, _res) = self
             .pool

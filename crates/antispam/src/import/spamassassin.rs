@@ -1090,13 +1090,13 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
     // Generate script
     let mut script = String::from(concat!(
         "require [\"variables\", \"include\", \"regex\", \"body\", \"vnd.stalwart.plugins\"];\n\n",
-        "global \"score\";\n",
-        "global \"spam_score\";\n",
+        "set \"score\" \"0.0\";\n",
+        "set \"spam_score\" \"0.0\";\n",
+        "set \"awl_factor\" \"0.5\";\n",
         "\n"
     ));
-    let mut rules_iter = rules_sorted.iter();
 
-    while let Some(&rule) = rules_iter.next() {
+    for rule in rules_sorted {
         if rule.score() == 0.0 && !tests_linked.contains(&rule.name) {
             if do_warn {
                 eprintln!("Warning: Test {} is never linked to.", rule.name);
@@ -1105,7 +1105,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         }
 
         // Calculate forward scores
-        let (score_pos, score_neg) =
+        /*let (score_pos, score_neg) =
             rules_iter
                 .clone()
                 .fold((0.0, 0.0), |(acc_pos, acc_neg), rule| {
@@ -1120,7 +1120,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                 });
         let mut rule = rule.clone();
         rule.forward_score_neg = score_neg;
-        rule.forward_score_pos = score_pos;
+        rule.forward_score_pos = score_pos;*/
 
         write!(&mut script, "{rule}").unwrap();
     }
@@ -1281,20 +1281,35 @@ impl Display for Rule {
             RuleType::Uri { pattern } => {
                 write!(f, "if match_uri {:?}", pattern)?;
             }
-            RuleType::Eval { function, params } => {
-                write!(f, "if {function}")?;
-                for param in params {
-                    f.write_str(" ")?;
-                    if let Some(param) = param.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
-                    {
-                        write!(f, "\"{param}\"")?;
-                    } else if param.starts_with('\"') {
-                        f.write_str(param)?;
-                    } else {
-                        write!(f, "\"{param}\"")?;
+            RuleType::Eval { function, params } => match function.as_str() {
+                "check_from_in_auto_welcomelist" | "check_from_in_auto_whitelist" => {
+                    f.write_str(concat!(
+                        "query :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE from = ? AND ip = ?\" [\"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "if eval \"awl_count > 0\" {\n",
+                        "\tquery \"UPDATE awl SET score += ?, count += 1 WHERE from = ? AND ip = ?\" [\"%{score}\", \"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "\tset \"score\" \"%{score + ((awl_score / awl_count) - score) * awl_factor}\";\n",
+                        "} else {\n",
+                        "\tquery \"INSERT OR IGNORE INTO (score, count, from, ip) (?, 1, ?, ?)\" [\"%{score}\", \"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "}\n\n",
+                    ))?;
+                    return Ok(());
+                }
+                _ => {
+                    write!(f, "if {function}")?;
+                    for param in params {
+                        f.write_str(" ")?;
+                        if let Some(param) =
+                            param.strip_prefix('\'').and_then(|v| v.strip_suffix('\''))
+                        {
+                            write!(f, "\"{param}\"")?;
+                        } else if param.starts_with('\"') {
+                            f.write_str(param)?;
+                        } else {
+                            write!(f, "\"{param}\"")?;
+                        }
                     }
                 }
-            }
+            },
             RuleType::Meta { expr } => {
                 write!(f, "if eval {:?}", expr.expr.trim())?;
             }
@@ -1303,7 +1318,7 @@ impl Display for Rule {
             }
         }
 
-        write!(f, " {{\n\tset :local \"{}\" \"1\";\n", self.name)?;
+        writeln!(f, " {{\n\tset :local \"{}\" \"1\";", self.name)?;
 
         for (var_name, pos) in &self.captured_vars {
             writeln!(f, "\tset :local \"{}\" \"${{{}}}\";", var_name, pos)?;
@@ -1319,9 +1334,9 @@ impl Display for Rule {
                 f.write_str(" - ")?;
                 (-score).fmt(f)?;
             }
-            f.write_str("}\";\n\t")?;
+            f.write_str("}\";\n")?;
 
-            if score > 0.0 {
+            /*if score > 0.0 {
                 if self.forward_score_neg != 0.0 {
                     write!(
                         f,
@@ -1340,7 +1355,7 @@ impl Display for Rule {
             } else {
                 f.write_str("if eval \"score < spam_score\"")?;
             }
-            f.write_str(" {\n\t\treturn;\n\t}\n")?;
+            f.write_str(" {\n\t\treturn;\n\t}\n")?;*/
         }
 
         f.write_str("}\n\n")

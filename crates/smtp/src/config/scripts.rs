@@ -25,7 +25,10 @@ use std::time::Duration;
 
 use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
-use crate::core::{SieveConfig, SieveCore};
+use crate::{
+    core::{SieveConfig, SieveCore},
+    scripts::plugins::RegisterSievePlugins,
+};
 use utils::config::{utils::AsKey, Config};
 
 use super::ConfigContext;
@@ -39,14 +42,15 @@ impl ConfigSieve for Config {
         // Allocate compiler and runtime
         let compiler = Compiler::new()
             .with_max_string_size(52428800)
-            .with_max_string_size(10240)
             .with_max_variable_name_size(100)
             .with_max_nested_blocks(50)
             .with_max_nested_tests(50)
             .with_max_nested_foreverypart(10)
-            .with_max_local_variables(128)
+            .with_max_local_variables(8192)
             .with_max_header_size(10240)
-            .with_max_includes(10);
+            .with_max_includes(10)
+            .register_plugins();
+
         let mut runtime = Runtime::new()
             .without_capabilities([
                 Capability::FileInto,
@@ -60,7 +64,7 @@ impl ConfigSieve for Config {
                 Capability::ImapSieve,
                 Capability::Duplicate,
             ])
-            .with_capability(Capability::Execute)
+            .with_capability(Capability::Plugins)
             .with_max_variable_size(102400)
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
@@ -135,17 +139,7 @@ impl ConfigSieve for Config {
                     .unwrap_or_default()
                     .to_string(),
                 sign,
-                db: if let Some(db) = self.value("sieve.use-directory") {
-                    if let Some(db) = ctx.directory.directories.get(db) {
-                        Some(db.clone())
-                    } else {
-                        return Err(format!(
-                            "Directory {db:?} not found for key \"sieve.use-directory\"."
-                        ));
-                    }
-                } else {
-                    None
-                },
+                directories: ctx.directory.directories.clone(),
             },
         })
     }

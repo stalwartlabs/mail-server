@@ -21,7 +21,8 @@
  * for more details.
 */
 
-use std::path::PathBuf;
+use core::panic;
+use std::{fmt::Write, fs, path::PathBuf, sync::Arc};
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
@@ -32,7 +33,9 @@ use directory::config::ConfigDirectory;
 use smtp::{
     config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},
+    scripts::ScriptResult,
 };
+use tokio::runtime::Handle;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
@@ -63,7 +66,6 @@ from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 sign = ["rsa"]
-use-directory = "sql"
 
 [sieve.limits]
 redirects = 3
@@ -74,86 +76,6 @@ nested-includes = 5
 duplicate-expiry = "7d"
 
 [sieve.scripts]
-connect = '''
-require ["variables", "reject"];
-
-if string "${env.remote_ip}" "10.0.0.88" {
-    reject "Your IP '${env.remote_ip}' is not welcomed here.";
-}
-'''
-
-ehlo = '''
-require ["variables", "extlists", "reject"];
-
-if string :list "${env.helo_domain}" "local/invalid-ehlos" {
-    reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
-}
-'''
-
-mail = '''
-require ["variables", "vnd.stalwart.execute", "envelope", "reject"];
-
-if envelope :localpart :is "from" "spammer" {
-    reject "450 4.1.1 Invalid address";
-}
-
-execute :query "CREATE TABLE IF NOT EXISTS blocked_senders (addr TEXT PRIMARY KEY)";
-execute :query "INSERT OR IGNORE INTO blocked_senders (addr) VALUES (?)" "marketing@spam-domain.com";
-
-if execute :query "SELECT 1 FROM blocked_senders WHERE addr=? LIMIT 1" ["${envelope.from}"] {
-    reject "Your address has been blocked.";
-}
-'''
-
-rcpt = '''
-require ["variables", "vnd.stalwart.execute", "envelope", "reject"];
-
-if envelope :domain :is "to" "foobar.org" {
-    execute :query "CREATE TABLE IF NOT EXISTS greylist (addr TEXT PRIMARY KEY)";
-
-    set "triplet" "${env.remote_ip}.${envelope.from}.${envelope.to}";
-
-    if not execute :query "SELECT 1 FROM greylist WHERE addr=? LIMIT 1" ["${triplet}"] {
-        execute :query "INSERT INTO greylist (addr) VALUES (?)" ["${triplet}"];
-        reject "422 4.2.2 You have been greylisted '${triplet}'.";
-    }
-}
-
-'''
-
-data = '''
-require ["envelope", "reject", "variables", "replace", "mime", "foreverypart", "editheader", "extracttext", "enotify"];
-
-if envelope :localpart :is "to" "thomas" {
-    deleteheader "from";
-    addheader "From" "no-reply@my.domain";
-    redirect "redirect@here.email";
-    discard;
-}
-
-if envelope :localpart :is "to" "bill" {
-    reject "Bill cannot receive messages.";
-    stop;
-}
-
-if envelope :localpart :is "to" "jane" {
-    set "counter" "a";
-    foreverypart {
-        if header :mime :contenttype "content-type" "text/html" {
-            extracttext :upper "text_content";
-            replace "${text_content}";
-        }
-        set :length "part_num" "${counter}";
-        addheader :last "X-Part-Number" "${part_num}";
-        set "counter" "${counter}a";
-    }
-}
-
-if envelope :domain :is "to" "foobar.net" {
-    notify "mailto:john@example.net?cc=jane@example.org&subject=You%20have%20got%20mail";
-}
-'''
-
 "#;
 
 #[tokio::test]
@@ -165,37 +87,96 @@ async fn sieve_scripts() {
     )
     .unwrap();*/
 
-    let mut pipe_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    pipe_path.push("resources");
-    pipe_path.push("smtp");
-    pipe_path.push("pipe");
+    // Add test scripts
+    let mut config = CONFIG.to_string();
+    for entry in fs::read_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("smtp")
+            .join("sieve"),
+    )
+    .unwrap()
+    {
+        let entry = entry.unwrap();
+        writeln!(
+            &mut config,
+            "{} = \"file://{}\"",
+            entry
+                .file_name()
+                .to_str()
+                .unwrap()
+                .split_once('.')
+                .unwrap()
+                .0,
+            entry.path().to_str().unwrap()
+        )
+        .unwrap();
+    }
 
     // Prepare config
     let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_sieve_test");
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let config = Config::parse(
-        &CONFIG
+        &config
             .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
-            .replace("%CFG_PATH%", pipe_path.as_path().to_str().unwrap()),
+            .replace(
+                "%CFG_PATH%",
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join("smtp")
+                    .join("pipe")
+                    .as_path()
+                    .to_str()
+                    .unwrap(),
+            ),
     )
     .unwrap();
     ctx.directory = config.parse_directory().unwrap();
     let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
-    config.connect.script = IfBlock::new(ctx.scripts.get("connect").cloned());
-    config.ehlo.script = IfBlock::new(ctx.scripts.get("ehlo").cloned());
-    config.mail.script = IfBlock::new(ctx.scripts.get("mail").cloned());
-    config.rcpt.script = IfBlock::new(ctx.scripts.get("rcpt").cloned());
-    config.data.script = IfBlock::new(ctx.scripts.get("data").cloned());
+    config.connect.script = IfBlock::new(ctx.scripts.get("stage_connect").cloned());
+    config.ehlo.script = IfBlock::new(ctx.scripts.get("stage_ehlo").cloned());
+    config.mail.script = IfBlock::new(ctx.scripts.get("stage_mail").cloned());
+    config.rcpt.script = IfBlock::new(ctx.scripts.get("stage_rcpt").cloned());
+    config.data.script = IfBlock::new(ctx.scripts.get("stage_data").cloned());
     config.rcpt.relay = IfBlock::new(true);
     config.data.pipe_commands = pipes;
+    let core = Arc::new(core);
 
-    // Test connect script
-    let mut session = Session::test(core);
+    // Build session
+    let mut session = Session::test(core.clone());
     session.data.remote_ip = "10.0.0.88".parse().unwrap();
     assert!(!session.init_conn().await);
+
+    // Run tests
+    let span = tracing::info_span!("sieve_scripts");
+    for (name, script) in &ctx.scripts {
+        if name.starts_with("stage_") || name.ends_with("_include") {
+            continue;
+        }
+        let script = script.clone();
+        let params = session
+            .build_script_parameters()
+            .set_variable("from", "john.doe@example.org");
+        let handle = Handle::current();
+        let span = span.clone();
+        let core_ = core.clone();
+        match core
+            .spawn_worker(move || core_.run_script_blocking(script, params, handle, span))
+            .await
+            .unwrap()
+        {
+            ScriptResult::Accept { .. } => (),
+            ScriptResult::Reject(message) => panic!("{}", message),
+            err => {
+                panic!("Unexpected script result {err:?}");
+            }
+        }
+    }
+
+    // Test connect script
     session
         .response()
         .assert_contains("503 5.5.3 Your IP '10.0.0.88' is not welcomed here");

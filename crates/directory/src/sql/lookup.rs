@@ -23,9 +23,9 @@
 
 use futures::TryStreamExt;
 use mail_send::Credentials;
-use sqlx::{any::AnyRow, Column, Row};
+use sqlx::{any::AnyRow, postgres::any::AnyTypeInfoKind, Column, Row};
 
-use crate::{Directory, Principal, Type};
+use crate::{Directory, Principal, QueryColumn, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -154,18 +154,42 @@ impl Directory for SqlDirectory {
             .map_err(Into::into)
     }
 
-    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
-        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
-        let mut q = sqlx::query(query);
-        for param in params {
-            q = q.bind(param);
-        }
+    async fn lookup(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+        self.query_(query, params).await.map(|row| row.is_some())
+    }
 
-        q.fetch(&self.pool)
-            .try_next()
-            .await
-            .map(|r| r.is_some())
-            .map_err(Into::into)
+    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
+        self.query_(query, params).await.map(|row| {
+            if let Some(row) = row {
+                let mut columns = Vec::with_capacity(row.columns().len());
+                for col in row.columns() {
+                    let idx = col.ordinal();
+                    columns.push(match col.type_info().kind() {
+                        AnyTypeInfoKind::Null => QueryColumn::Null,
+                        AnyTypeInfoKind::Bool => {
+                            QueryColumn::Bool(row.try_get(idx).unwrap_or_default())
+                        }
+                        AnyTypeInfoKind::SmallInt
+                        | AnyTypeInfoKind::Integer
+                        | AnyTypeInfoKind::BigInt => {
+                            QueryColumn::Integer(row.try_get(idx).unwrap_or_default())
+                        }
+                        AnyTypeInfoKind::Real | AnyTypeInfoKind::Double => {
+                            QueryColumn::Float(row.try_get(idx).unwrap_or_default())
+                        }
+                        AnyTypeInfoKind::Text => {
+                            QueryColumn::Text(row.try_get(idx).unwrap_or_default())
+                        }
+                        AnyTypeInfoKind::Blob => {
+                            QueryColumn::Blob(row.try_get(idx).unwrap_or_default())
+                        }
+                    });
+                }
+                columns
+            } else {
+                vec![]
+            }
+        })
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
@@ -176,6 +200,18 @@ impl Directory for SqlDirectory {
             .await
             .map(|id| id.is_some())
             .map_err(Into::into)
+    }
+}
+
+impl SqlDirectory {
+    async fn query_(&self, query: &str, params: &[&str]) -> crate::Result<Option<AnyRow>> {
+        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
+        let mut q = sqlx::query(query);
+        for param in params {
+            q = q.bind(param);
+        }
+
+        q.fetch(&self.pool).try_next().await.map_err(Into::into)
     }
 }
 

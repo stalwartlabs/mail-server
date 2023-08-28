@@ -65,7 +65,6 @@ use self::throttle::{Limiter, ThrottleKey, ThrottleKeyHasherBuilder};
 pub mod if_block;
 pub mod management;
 pub mod params;
-pub mod scripts;
 pub mod throttle;
 pub mod worker;
 
@@ -115,7 +114,7 @@ pub struct SieveConfig {
     pub from_name: String,
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
-    pub db: Option<Arc<dyn Directory>>,
+    pub directories: AHashMap<String, Arc<dyn Directory>>,
 }
 
 pub struct Resolvers {

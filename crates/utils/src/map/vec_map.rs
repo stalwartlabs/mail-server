@@ -190,7 +190,7 @@ impl<K: Eq + PartialEq, V> IntoIterator for VecMap<K, V> {
     type IntoIter = std::iter::Zip<std::vec::IntoIter<K>, std::vec::IntoIter<V>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.k.into_iter().zip(self.v.into_iter())
+        self.k.into_iter().zip(self.v)
     }
 }
 

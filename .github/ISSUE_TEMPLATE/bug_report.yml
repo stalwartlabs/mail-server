@@ -33,9 +33,8 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
-        - v0.3.1
-        - v0.3.0
-        - v0.2.0 or lower
+        - v0.3.x
+        - v0.2.x or lower
     validations:
       required: true
   - type: dropdown

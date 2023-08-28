@@ -23,7 +23,7 @@
 
 use mail_send::Credentials;
 
-use crate::{Directory, DirectoryError, Principal};
+use crate::{Directory, DirectoryError, Principal, QueryColumn};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -132,7 +132,11 @@ impl Directory for MemoryDirectory {
         Ok(result)
     }
 
-    async fn query(&self, _query: &str, _params: &[&str]) -> crate::Result<bool> {
+    async fn lookup(&self, _query: &str, _params: &[&str]) -> crate::Result<bool> {
+        Err(DirectoryError::unsupported("memory", "lookp"))
+    }
+
+    async fn query(&self, _query: &str, _params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
         Err(DirectoryError::unsupported("memory", "query"))
     }
 

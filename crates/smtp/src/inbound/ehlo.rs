@@ -25,7 +25,8 @@ use std::{net::IpAddr, time::SystemTime};
 
 use crate::{
     config::{DNSBL_EHLO, DNSBL_IP},
-    core::{scripts::ScriptResult, Session},
+    core::Session,
+    scripts::ScriptResult,
 };
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
@@ -96,10 +97,13 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
             // Sieve filtering
             if let Some(script) = self.core.session.config.ehlo.script.eval(self).await {
-                if let ScriptResult::Reject(message) = self.run_script(script.clone(), None).await {
+                if let ScriptResult::Reject(message) = self
+                    .run_script(script.clone(), self.build_script_parameters())
+                    .await
+                {
                     tracing::debug!(parent: &self.span,
-                        context = "ehlo",
-                        event = "sieve-reject",
+                        context = "sieve",
+                        event = "reject",
                         domain = &self.data.helo_domain,
                         reason = message);
 
