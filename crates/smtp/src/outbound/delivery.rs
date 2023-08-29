@@ -627,10 +627,16 @@ impl DeliveryAttempt {
                         };
 
                         // Prepare TLS connector
-                        let tls_connector = if !remote_host.allow_invalid_certs() {
-                            &core.queue.connectors.pki_verify
-                        } else {
+                        let is_strict_tls = tls_strategy.is_tls_required()
+                            || (self.message.flags & MAIL_REQUIRETLS) != 0
+                            || mta_sts_policy.is_some()
+                            || dane_policy.is_some();
+                        let tls_connector = if !is_strict_tls || remote_host.allow_invalid_certs() {
+                            // Many mail servers on the internet have invalid certificates, if TLS is set to optional and
+                            // the remote host does not have a DANE or MTA-STS policy, then we allow invalid certificates.
                             &core.queue.connectors.dummy_verify
+                        } else {
+                            &core.queue.connectors.pki_verify
                         };
 
                         let delivery_result = if !remote_host.implicit_tls() {
@@ -773,11 +779,7 @@ impl DeliveryAttempt {
                                             .await;
                                         }
 
-                                        if tls_strategy.is_tls_required()
-                                            || (self.message.flags & MAIL_REQUIRETLS) != 0
-                                            || mta_sts_policy.is_some()
-                                            || dane_policy.is_some()
-                                        {
+                                        if is_strict_tls {
                                             last_status =
                                                 Status::from_starttls_error(envelope.mx, response);
                                             continue 'next_host;
@@ -823,11 +825,7 @@ impl DeliveryAttempt {
                                             .await;
                                         }
 
-                                        last_status = if tls_strategy.is_tls_required()
-                                            || (self.message.flags & MAIL_REQUIRETLS) != 0
-                                            || mta_sts_policy.is_some()
-                                            || dane_policy.is_some()
-                                        {
+                                        last_status = if is_strict_tls {
                                             Status::from_tls_error(envelope.mx, error)
                                         } else {
                                             disable_tls = true;

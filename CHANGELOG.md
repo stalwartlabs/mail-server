@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.6] - 2023-08-29
+
+## Added
+- Arithmetic and logical expression evaluation in Sieve scripts.
+- Support for storing query results in Sieve variables.
+- Results of SPF, DKIM, ARC, DMARC and IPREV checks available as environment variables in Sieve scripts.
+- Configurable protocol flags for Milter filters.
+- Fall-back to plain text when `STARTTLS` fails and `starttls` is set to `optional`.
+
+### Changed
+ 
+### Fixed
+- Do not panic when `hash = 0` in reports. (#60)
+- JMAP Session resource returns `EmailSubmission` capabilities using arrays rather than objects.
+
 ## [0.3.5] - 2023-08-18
 
 ## Added

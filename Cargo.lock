@@ -306,7 +306,7 @@ checksum = "1fcf00bc6d5abb29b5f97e3c61a90b6d3caa12f3faf897d4a3e3607c050a35a7"
 dependencies = [
  "http",
  "log",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "url",
@@ -1291,7 +1291,7 @@ dependencies = [
  "pbkdf2 0.12.2",
  "pwhash",
  "regex",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "scrypt",
  "sha1",
  "sha2 0.10.7",
@@ -1499,9 +1499,9 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b30f669a7961ef1631673d2766cc92f52d64f7ef354d4fe0ddfd30ed52f0f4f"
+checksum = "136526188508e25c6fef639d7927dfb3e0e3084488bf202267829cf7fc23dbdd"
 dependencies = [
  "errno-dragonfly",
  "libc",
@@ -1949,9 +1949,9 @@ dependencies = [
 
 [[package]]
 name = "hashlink"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "312f66718a2d7789ffef4f4b7b213138ed9f1eb3aa1d0d82fc99f88fb3ffd26f"
+checksum = "e8094feaf31ff591f651a2664fb9cfd92bba7a60ce3197265e9482ebe753c8f7"
 dependencies = [
  "hashbrown 0.14.0",
 ]
@@ -2142,7 +2142,7 @@ dependencies = [
  "futures-util",
  "http",
  "hyper 0.14.27",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "tokio",
  "tokio-rustls 0.24.1",
 ]
@@ -2238,7 +2238,7 @@ dependencies = [
 
 [[package]]
 name = "imap"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -2250,7 +2250,7 @@ dependencies = [
  "mail-send",
  "md5",
  "parking_lot",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "store",
  "tokio",
@@ -2403,7 +2403,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2465,7 +2465,7 @@ dependencies = [
  "maybe-async 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot",
  "reqwest",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "serde",
  "serde_json",
  "tokio",
@@ -2575,7 +2575,7 @@ dependencies = [
  "nom",
  "percent-encoding",
  "ring",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-native-certs",
  "thiserror",
  "tokio",
@@ -2738,7 +2738,7 @@ dependencies = [
  "base64 0.20.0",
  "gethostname",
  "md5",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "smtp-proto",
  "tokio",
  "tokio-rustls 0.24.1",
@@ -2747,7 +2747,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "directory",
  "imap",
@@ -2777,7 +2777,7 @@ dependencies = [
  "mail-send",
  "md5",
  "parking_lot",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "sieve-rs",
  "store",
@@ -2940,11 +2940,11 @@ checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
 name = "nix"
-version = "0.26.3"
+version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abbbc55ad7b13aac85f9401c796dcda1b864e07fcad40ad47792eaa8932ea502"
+checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
 dependencies = [
- "bitflags 2.4.0",
+ "bitflags 1.3.2",
  "cfg-if",
  "libc",
  "memoffset 0.7.1",
@@ -3972,7 +3972,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -4202,9 +4202,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.9"
+version = "0.38.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bfe0f2582b4931a45d1fa608f8a8722e8b3c7ac54dd6d5f3b3212791fedef49"
+checksum = "ed6248e1caa625eb708e266e06159f135e8c26f2bb7ceb72dc4b2766d0340964"
 dependencies = [
  "bitflags 2.4.0",
  "errno",
@@ -4215,9 +4215,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.20.8"
+version = "0.20.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff78fc74d175294f4e83b28343315ffcfb114b156f0185e9741cb5570f50e2f"
+checksum = "1b80e3dec595989ea8510028f30c408a4630db12c9cbb8de34203b89d6577e99"
 dependencies = [
  "log",
  "ring",
@@ -4227,9 +4227,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.21.6"
+version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d1feddffcfcc0b33f5c6ce9a29e341e4cd59c3f78e7ee45f4a40c038b1d6cbb"
+checksum = "cd8d6c9f025a446bc4d18ad9632e69aec8f287aa84499ee335599fabd20c3fd8"
 dependencies = [
  "log",
  "ring",
@@ -4531,9 +4531,9 @@ dependencies = [
 
 [[package]]
 name = "sharded-slab"
-version = "0.1.5"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6805d8ff0f66aa61fb79a97a51ba210dcae753a797336dea8a36a3168196fab"
+checksum = "900fba806f70c630b0a382d0d825e17a0f19fcd059a2ade1ff237bcddf446b31"
 dependencies = [
  "lazy_static",
 ]
@@ -4606,7 +4606,7 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 
 [[package]]
 name = "smtp"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "ahash 0.8.3",
  "blake3",
@@ -4628,7 +4628,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -4770,7 +4770,7 @@ dependencies = [
  "once_cell",
  "paste",
  "percent-encoding",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -4929,7 +4929,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "clap",
  "console",
@@ -4951,7 +4951,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-install"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "base64 0.21.3",
  "clap",
@@ -5143,7 +5143,7 @@ dependencies = [
  "num_cpus",
  "rayon",
  "reqwest",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -5300,7 +5300,7 @@ version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "tokio",
  "webpki",
 ]
@@ -5311,7 +5311,7 @@ version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
 dependencies = [
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "tokio",
 ]
 
@@ -5334,7 +5334,7 @@ checksum = "ec509ac96e9a0c43427c74f003127d953a265737636129424288d27cb5c4b12c"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "tokio",
  "tokio-rustls 0.24.1",
  "tungstenite 0.19.0",
@@ -5560,7 +5560,7 @@ dependencies = [
  "lazy_static",
  "rand",
  "ring",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "rustls-pemfile",
  "smallvec",
  "thiserror",
@@ -5585,7 +5585,7 @@ dependencies = [
  "lru-cache",
  "parking_lot",
  "resolv-conf",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "smallvec",
  "thiserror",
  "tokio",
@@ -5620,7 +5620,7 @@ dependencies = [
  "httparse",
  "log",
  "rand",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "sha1",
  "thiserror",
  "url",
@@ -5763,7 +5763,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -5773,7 +5773,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "privdrop",
- "rustls 0.21.6",
+ "rustls 0.21.7",
  "rustls-pemfile",
  "serde",
  "smtp-proto",
