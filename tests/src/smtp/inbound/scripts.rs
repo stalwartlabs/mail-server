@@ -320,7 +320,6 @@ async fn sieve_scripts() {
         redirect.recipients.first().unwrap().address,
         "redirect@here.email"
     );
-
     redirect
         .read_lines()
         .assert_contains("From: no-reply@my.domain")
@@ -328,6 +327,31 @@ async fn sieve_scripts() {
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
         .assert_not_contains("From: Joe SixPack <joe@football.example.com>");
+    qr.assert_empty_queue();
+
+    // Expect an intact redirected message
+    session
+        .send_message(
+            "test@example.net",
+            &["bob@foobar.gov"],
+            "test:no_dkim",
+            "250",
+        )
+        .await;
+    let redirect = qr.read_event().await.unwrap_message();
+    assert_eq!(redirect.return_path, "");
+    assert_eq!(redirect.recipients.len(), 1);
+    assert_eq!(
+        redirect.recipients.first().unwrap().address,
+        "redirect@somewhere.email"
+    );
+    redirect
+        .read_lines()
+        .assert_not_contains("From: no-reply@my.domain")
+        .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
+        .assert_contains("Subject: Is dinner ready?")
+        .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
+        .assert_contains("From: Joe SixPack <joe@football.example.com>");
     qr.assert_empty_queue();
 
     // Test pipes

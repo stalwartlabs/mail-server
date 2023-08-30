@@ -7,6 +7,11 @@ if envelope :localpart :is "to" "thomas" {
     discard;
 }
 
+if envelope :localpart :is "to" "bob" {
+    redirect "redirect@somewhere.email";
+    discard;
+}
+
 if envelope :localpart :is "to" "bill" {
     reject "Bill cannot receive messages.";
     stop;

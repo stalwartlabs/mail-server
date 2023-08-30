@@ -278,7 +278,12 @@ impl SMTP {
                         }
 
                         // Queue message
-                        if let Some(raw_message) = messages.get(message_id - 1) {
+                        let raw_message = if message_id > 0 {
+                            messages.get(message_id - 1).map(|m| m.as_slice())
+                        } else {
+                            instance.message().raw_message().into()
+                        };
+                        if let Some(raw_message) = raw_message {
                             let headers = if !self.sieve.config.sign.is_empty() {
                                 let mut headers = Vec::new();
                                 for dkim in &self.sieve.config.sign {
