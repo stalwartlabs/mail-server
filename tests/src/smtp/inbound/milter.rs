@@ -74,6 +74,7 @@ async fn milter_session() {
     hostname = "127.0.0.1"
     port = 9332
     #port = 11332
+    #port = 7357
     enable = true
     options.version = 6
     tls = false

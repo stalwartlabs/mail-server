@@ -217,6 +217,9 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 .assert_continue()?;
         }
 
+        // Data
+        client.data().await?.assert_continue()?;
+
         // Headers
         client
             .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
@@ -227,9 +230,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             }))
             .await?
             .assert_continue()?;
-
-        // Data
-        client.data().await?.assert_continue()?;
 
         // Message body
         let (action, modifications) = client.body(message.raw_message()).await?;
