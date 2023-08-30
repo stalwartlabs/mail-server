@@ -25,6 +25,7 @@ pub mod exec;
 pub mod query;
 
 use ahash::AHashMap;
+use mail_parser::Message;
 use sieve::{compiler::Number, Compiler, Input, PluginArgument};
 use tokio::runtime::Handle;
 
@@ -38,6 +39,7 @@ pub struct PluginContext<'x> {
     pub handle: &'x Handle,
     pub core: &'x SMTP,
     pub data: &'x mut AHashMap<String, String>,
+    pub message: &'x Message<'x>,
     pub arguments: Vec<PluginArgument<String, Number>>,
 }
 

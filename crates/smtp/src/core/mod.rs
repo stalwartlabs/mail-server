@@ -227,7 +227,6 @@ pub struct SessionParameters {
     pub auth_errors_wait: Duration,
 
     // Rcpt parameters
-    pub rcpt_relay: bool,
     pub rcpt_errors_max: usize,
     pub rcpt_errors_wait: Duration,
     pub rcpt_max: usize,
@@ -427,7 +426,6 @@ impl Session<NullIo> {
                 auth_require: Default::default(),
                 auth_errors_max: Default::default(),
                 auth_errors_wait: Default::default(),
-                rcpt_relay: Default::default(),
                 rcpt_errors_max: Default::default(),
                 rcpt_errors_wait: Default::default(),
                 rcpt_max: Default::default(),

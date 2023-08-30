@@ -718,6 +718,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                     }
                 }
                 "tflags" => {
+                    let TODO = "implement flags";
                     let mut params = params.split_ascii_whitespace();
                     if let Some(test_name) = params.next() {
                         let test_flags = &mut rules.entry(test_name.to_string()).or_default().flags;
@@ -1091,7 +1092,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
     let mut script = String::from(concat!(
         "require [\"variables\", \"include\", \"regex\", \"body\", \"vnd.stalwart.plugins\"];\n\n",
         "set \"score\" \"0.0\";\n",
-        "set \"spam_score\" \"0.0\";\n",
+        "set \"spam_score\" \"5.0\";\n",
         "set \"awl_factor\" \"0.5\";\n",
         "\n"
     ));
@@ -1284,16 +1285,160 @@ impl Display for Rule {
             RuleType::Eval { function, params } => match function.as_str() {
                 "check_from_in_auto_welcomelist" | "check_from_in_auto_whitelist" => {
                     f.write_str(concat!(
-                        "query :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE from = ? AND ip = ?\" [\"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "query :use \"spam\" :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE sender = ? AND ip = ?\" [\"${env.from}\", \"%{env.remote_ip}\"];\n",
                         "if eval \"awl_count > 0\" {\n",
-                        "\tquery \"UPDATE awl SET score += ?, count += 1 WHERE from = ? AND ip = ?\" [\"%{score}\", \"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"UPDATE awl SET score = score + ?, count = count + 1 WHERE sender = ? AND ip = ?\" [\"%{score}\", \"${env.from}\", \"%{env.remote_ip}\"];\n",
                         "\tset \"score\" \"%{score + ((awl_score / awl_count) - score) * awl_factor}\";\n",
                         "} else {\n",
-                        "\tquery \"INSERT OR IGNORE INTO (score, count, from, ip) (?, 1, ?, ?)\" [\"%{score}\", \"${envelope.from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"INSERT INTO awl (score, count, sender, ip) VALUES (?, 1, ?, ?)\" [\"%{score}\", \"${env.from}\", \"%{env.remote_ip}\"];\n",
                         "}\n\n",
                     ))?;
                     return Ok(());
                 }
+                "check_from_in_blacklist"
+                | "check_from_in_blocklist"
+                | "check_from_in_default_welcomelist"
+                | "check_from_in_default_whitelist"
+                | "check_from_in_welcomelist"
+                | "check_from_in_whitelist"
+                | "check_to_in_blacklist"
+                | "check_to_in_blocklist"
+                | "check_to_in_welcomelist"
+                | "check_to_in_whitelist"
+                | "check_subject_in_blacklist"
+                | "check_subject_in_blocklist"
+                | "check_subject_in_welcomelist"
+                | "check_subject_in_whitelist"
+                | "check_to_in_more_spam"
+                | "check_to_in_all_spam" => {
+                    let mut parts = function.split('_').peekable();
+                    parts.next();
+                    let header = parts.next().unwrap();
+                    parts.next();
+                    let mut list = String::new();
+
+                    for part in parts {
+                        if !list.is_empty() {
+                            list.push('_');
+                        }
+                        list.push_str(match part {
+                            "welcomelist" | "whitelist" => "welcome",
+                            "blacklist" | "blocklist" => "block",
+                            "more" | "all" | "spam" => part,
+                            "default" => "def",
+                            _ => unreachable!(),
+                        })
+                    }
+
+                    let fnc = if header == "subject" {
+                        "header"
+                    } else {
+                        "address"
+                    };
+                    write!(f, "if {fnc} :list \"{header}\" \"sa/list_{list}_{header}\"")?;
+                }
+                "check_from_in_list" | "check_replyto_in_list" => {
+                    let mut header = function.split('_').nth(1).unwrap();
+                    if header == "replyto" {
+                        header = "reply-to";
+                    }
+                    #[allow(clippy::print_in_format_impl)]
+                    if let Some(list) = params.first() {
+                        write!(
+                            f,
+                            "if address :list \"{header}\" \"sa/list_{}\"",
+                            list.to_lowercase()
+                        )?;
+                    } else {
+                        eprintln!("Warning: Found invalid 'check_{header}_in_list' command without parameters.");
+                        write!(f, "if false")?;
+                    }
+                }
+                "check_for_spf_helo_fail"
+                | "check_for_spf_helo_neutral"
+                | "check_for_spf_helo_none"
+                | "check_for_spf_helo_pass"
+                | "check_for_spf_helo_permerror"
+                | "check_for_spf_helo_softfail"
+                | "check_for_spf_helo_temperror"
+                | "check_for_spf_neutral"
+                | "check_for_spf_none"
+                | "check_for_spf_fail"
+                | "check_for_spf_pass"
+                | "check_for_spf_permerror"
+                | "check_for_spf_softfail"
+                | "check_for_spf_temperror" => {
+                    let mut parts = function.split('_').rev();
+                    let result = parts.next().unwrap();
+                    let spf = if parts.next().unwrap() == "helo" {
+                        "spf_ehlo"
+                    } else {
+                        "spf"
+                    };
+                    write!(f, "if string :is \"${{env.{spf}_result}}\" \"{result}\"")?;
+                }
+                "check_arc_signed" => {
+                    f.write_str("if string :value \"ne\" \"${env.arc_result}\" \"none\"")?;
+                }
+                "check_arc_valid" => {
+                    f.write_str("if string :is \"${env.arc_result}\" \"pass\"")?;
+                }
+                "check_dmarc_missing" => {
+                    f.write_str("if string :is \"${env.dmarc_policy}\" \"none\"")?;
+                }
+                "check_dmarc_pass" => {
+                    f.write_str("if string :is \"${env.dmarc_result}\" \"pass\"")?;
+                }
+                "check_dmarc_none" | "check_dmarc_quarantine" | "check_dmarc_reject" => {
+                    let policy = function.split('_').nth(2).unwrap();
+                    write!(f, "if allof(string :is \"${{env.dmarc_result}}\" \"fail\", string :is \"${{env.dmarc_policy}}\" \"{policy}\")")?;
+                }
+                "check_dkim_adsp"
+                | "check_dkim_signall"
+                | "check_dkim_signsome"
+                | "check_dkim_valid_author_sig" => {
+                    // ADSP is deprecated (see https://datatracker.ietf.org/doc/status-change-adsp-rfc5617-to-historic/)
+                    f.write_str("if false")?;
+                }
+                "check_dkim_dependable" => {
+                    writeln!(f, "set :local \"{}\" \"1\";", self.name)?;
+                    return Ok(());
+                }
+                "check_dkim_signed" => {
+                    f.write_str("if string :value \"ne\" \"${env.dkim_result}\" \"none\"")?;
+                }
+                "check_dkim_testing" => {
+                    f.write_str("if header :contains \"DKIM-Signature\" \"t=y\"")?;
+                }
+                "check_dkim_valid" => {
+                    f.write_str("if string :is \"${env.dkim_result}\" \"pass\"")?;
+                }
+                "check_dkim_valid_envelopefrom" => {
+                    f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", string :is \"${envelope.from}\" \"${env.from}\")")?;
+                }
+                "check_for_def_dkim_welcomelist_from"
+                | "check_for_def_dkim_whitelist_from"
+                | "check_for_dkim_welcomelist_from"
+                | "check_for_dkim_whitelist_from"
+                | "check_for_def_spf_welcomelist_from"
+                | "check_for_def_spf_whitelist_from"
+                | "check_for_spf_welcomelist_from"
+                | "check_for_spf_whitelist_from" => {
+                    let list = match (function.contains("dkim"), function.contains("def")) {
+                        (true, true) => "def_dkim",
+                        (true, false) => "dkim",
+                        (false, true) => "def_spf",
+                        (false, false) => "spf",
+                    };
+                    write!(f, "if address :list \"from\" \"sa/list_{list}\"")?;
+                }
+                "check_for_missing_to_header" => {
+                    write!(f, "if not exists \"to\"")?;
+                }
+                "check_for_to_in_subject" => {
+                    f.write_str("if address :list \"to\" \"${header.subject}\"")?;
+                }
+
                 _ => {
                     write!(f, "if {function}")?;
                     for param in params {

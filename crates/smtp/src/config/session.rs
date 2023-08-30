@@ -339,7 +339,7 @@ impl ConfigSession for Config {
                 .unwrap_or_default()
                 .map_if_block(&ctx.scripts, "session.rcpt.script", "script")?,
             relay: self
-                .parse_if_block("session.rcpt.relay", ctx, &available_keys)?
+                .parse_if_block("session.rcpt.relay", ctx, &available_keys_full)?
                 .unwrap_or_else(|| IfBlock::new(false)),
             directory: self
                 .parse_if_block::<Option<DynValue<EnvelopeKey>>>(

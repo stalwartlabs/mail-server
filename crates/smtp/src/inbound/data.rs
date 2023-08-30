@@ -205,7 +205,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         }
 
         // Verify DMARC
-        let dmarc_result = match &self.data.spf_mail_from {
+        let (dmarc_result, dmarc_policy) = match &self.data.spf_mail_from {
             Some(spf_output) if dmarc.verify() => {
                 let dmarc_output = self
                     .core
@@ -244,6 +244,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 } else {
                     DmarcResult::None
                 };
+                let dmarc_policy = dmarc_output.policy();
 
                 if !rejected {
                     tracing::debug!(parent: &self.span,
@@ -284,9 +285,9 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     };
                 }
 
-                dmarc_result.into()
+                (dmarc_result.into(), dmarc_policy.into())
             }
-            _ => None,
+            _ => (None, None),
         };
 
         // Analyze reports
@@ -416,14 +417,14 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
                 .set_variable("from", auth_message.from().to_string())
                 .set_variable(
-                    "arc",
+                    "arc_result",
                     arc_output
                         .as_ref()
                         .map(|a| a.result().as_str())
                         .unwrap_or_default(),
                 )
                 .set_variable(
-                    "dkim",
+                    "dkim_result",
                     dkim_output
                         .iter()
                         .find(|r| matches!(r.result(), DkimResult::Pass))
@@ -432,8 +433,15 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         .unwrap_or_default(),
                 )
                 .set_variable(
-                    "dmarc",
+                    "dmarc_result",
                     dmarc_result
+                        .as_ref()
+                        .map(|a| a.as_str())
+                        .unwrap_or_default(),
+                )
+                .set_variable(
+                    "dmarc_policy",
+                    dmarc_policy
                         .as_ref()
                         .map(|a| a.as_str())
                         .unwrap_or_default(),

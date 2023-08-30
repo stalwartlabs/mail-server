@@ -41,7 +41,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .set_variable("helo_domain", self.data.helo_domain.to_string())
             .set_variable("authenticated_as", self.data.authenticated_as.clone())
             .set_variable(
-                "spf",
+                "spf_result",
                 self.data
                     .spf_mail_from
                     .as_ref()
@@ -49,7 +49,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .unwrap_or_default(),
             )
             .set_variable(
-                "spf_ehlo",
+                "spf_ehlo_result",
                 self.data
                     .spf_ehlo
                     .as_ref()
@@ -57,7 +57,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .unwrap_or_default(),
             )
             .set_variable(
-                "iprev",
+                "iprev_result",
                 self.data
                     .iprev
                     .as_ref()

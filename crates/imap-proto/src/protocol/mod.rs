@@ -197,7 +197,7 @@ pub fn literal_string(buf: &mut Vec<u8>, text: &str) {
 pub fn quoted_timestamp(buf: &mut Vec<u8>, timestamp: i64) {
     buf.push(b'"');
     buf.extend_from_slice(
-        DateTime::<Utc>::from_utc(
+        DateTime::<Utc>::from_naive_utc_and_offset(
             NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap_or_default(),
             Utc,
         )

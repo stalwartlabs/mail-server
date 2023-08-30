@@ -64,7 +64,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
     pub async fn eval_rcpt_params(&mut self) {
         let rc = &self.core.session.config.rcpt;
-        self.params.rcpt_relay = *rc.relay.eval(self).await;
         self.params.rcpt_errors_max = *rc.errors_max.eval(self).await;
         self.params.rcpt_errors_wait = *rc.errors_wait.eval(self).await;
         self.params.rcpt_max = *rc.max_recipients.eval(self).await;

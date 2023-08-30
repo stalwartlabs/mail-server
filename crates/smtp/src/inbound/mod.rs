@@ -22,8 +22,8 @@
 */
 
 use mail_auth::{
-    arc::ArcSet, dkim::Signature, ArcOutput, AuthenticatedMessage, AuthenticationResults,
-    DkimResult, DmarcResult, IprevResult, SpfResult,
+    arc::ArcSet, dkim::Signature, dmarc::Policy, ArcOutput, AuthenticatedMessage,
+    AuthenticationResults, DkimResult, DmarcResult, IprevResult, SpfResult,
 };
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
@@ -184,6 +184,16 @@ impl AuthResult for DmarcResult {
             DmarcResult::TempError(_) => "temperror",
             DmarcResult::PermError(_) => "permerror",
             DmarcResult::None => "none",
+        }
+    }
+}
+
+impl AuthResult for Policy {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Policy::Reject => "reject",
+            Policy::Quarantine => "quarantine",
+            Policy::None | Policy::Unspecified => "none",
         }
     }
 }

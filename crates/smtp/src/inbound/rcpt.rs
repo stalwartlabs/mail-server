@@ -183,7 +183,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                             .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                             .await;
                     }
-                } else if !self.params.rcpt_relay {
+                } else if !*self.core.session.config.rcpt.relay.eval(self).await {
                     tracing::debug!(parent: &self.span,
                         context = "rcpt", 
                         event = "error",
@@ -205,7 +205,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                     .await;
             }
-        } else if !self.params.rcpt_relay {
+        } else if !*self.core.session.config.rcpt.relay.eval(self).await {
             tracing::debug!(parent: &self.span,
                 context = "rcpt", 
                 event = "error",

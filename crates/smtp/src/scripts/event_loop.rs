@@ -125,6 +125,7 @@ impl SMTP {
                                 handle: &handle,
                                 core: self,
                                 data: &mut plugin_data,
+                                message: instance.message(),
                                 arguments,
                             },
                         );

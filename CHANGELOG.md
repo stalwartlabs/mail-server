@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 - Do not panic when `hash = 0` in reports. (#60)
 - JMAP Session resource returns `EmailSubmission` capabilities using arrays rather than objects.
+- ManageSieve `PUTSCRIPT` should replace existing scripts.
 
 ## [0.3.5] - 2023-08-18
 
