@@ -321,6 +321,21 @@ mod tests {
                     .into(),
                 },
             ),
+            (
+                "A12 SELECT \"INBOX\" (QRESYNC (1693237464 16582))\r\n",
+                select::Arguments {
+                    mailbox_name: "INBOX".to_string(),
+                    tag: "A12".to_string(),
+                    condstore: false,
+                    qresync: QResync {
+                        uid_validity: 1693237464,
+                        modseq: 16582,
+                        known_uids: None,
+                        seq_match: None,
+                    }
+                    .into(),
+                },
+            ),
         ] {
             assert_eq!(
                 receiver

@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use imap_proto::{
-    protocol::{fetch, list::ListItem, select::Response, ImapResponse},
+    protocol::{fetch, list::ListItem, select::Response, ImapResponse, Sequence},
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
@@ -93,7 +93,11 @@ impl<T: AsyncRead> Session<T> {
                                             tag: String::new(),
                                             sequence_set: qresync
                                                 .known_uids
-                                                .unwrap_or_else(|| qresync.seq_match.unwrap().1),
+                                                .or_else(|| qresync.seq_match.map(|(_, s)| s))
+                                                .unwrap_or(Sequence::Range {
+                                                    start: 1.into(),
+                                                    end: None,
+                                                }),
                                             attributes: vec![fetch::Attribute::Flags],
                                             changed_since: qresync.modseq.into(),
                                             include_vanished: true,

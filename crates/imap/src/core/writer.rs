@@ -98,6 +98,13 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                     while let Some(event) = rx.recv().await {
                         match event {
                             Event::Bytes(bytes) => {
+                                tracing::trace!(
+                                    parent: &span,
+                                    event = "write",
+                                    data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+                                    size = bytes.len()
+                                );
+
                                 match stream_tx.write_all(bytes.as_ref()).await {
                                     Ok(_) => {
                                         let _ = stream_tx.flush().await;
