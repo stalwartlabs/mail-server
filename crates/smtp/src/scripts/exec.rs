@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
 use sieve::{Envelope, Sieve};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_RET_FULL, MAIL_RET_HDRS};
@@ -41,6 +41,12 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .set_variable("helo_domain", self.data.helo_domain.to_string())
             .set_variable("authenticated_as", self.data.authenticated_as.clone())
             .set_variable(
+                "now",
+                SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs()),
+            )
+            .set_variable(
                 "spf_result",
                 self.data
                     .spf_mail_from
@@ -55,15 +61,13 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .as_ref()
                     .map(|r| r.result().as_str())
                     .unwrap_or_default(),
-            )
-            .set_variable(
-                "iprev_result",
-                self.data
-                    .iprev
-                    .as_ref()
-                    .map(|r| r.result().as_str())
-                    .unwrap_or_default(),
             );
+        if let Some(ip_rev) = &self.data.iprev {
+            params = params.set_variable("iprev_result", ip_rev.result().as_str());
+            if let Some(ptr) = ip_rev.ptr.as_ref().and_then(|addrs| addrs.first()) {
+                params = params.set_variable("iprev_ptr", ptr.to_string());
+            }
+        }
 
         if let Some(mail_from) = &self.data.mail_from {
             params

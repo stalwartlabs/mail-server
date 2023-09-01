@@ -25,7 +25,7 @@ rustls = "0.21.0"
 rustls-pemfile = "1.0"
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}
-webpki-roots = { version = "0.23.0"}
+webpki-roots = { version = "0.25"}
 hyper = { version = "1.0.0-rc.4", features = ["server", "http1", "http2"] }
 hyper-util = { git = "https://github.com/hyperium/hyper-util" }
 http-body-util = "0.1.0-rc.3"
@@ -47,6 +47,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 num_cpus = "1.15.0"
 lazy_static = "1.4"
+whatlang = "0.16"
 
 [features]
 test_mode = []

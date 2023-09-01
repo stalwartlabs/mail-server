@@ -29,6 +29,7 @@ use sieve::{runtime::Variable, Envelope};
 pub mod envelope;
 pub mod event_loop;
 pub mod exec;
+pub mod functions;
 pub mod plugins;
 
 #[derive(Debug)]

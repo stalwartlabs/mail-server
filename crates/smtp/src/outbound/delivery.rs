@@ -903,7 +903,6 @@ impl DeliveryAttempt {
                         };
 
                         // Update status for the current domain and continue with the next one
-                        domain.disable_tls = disable_tls;
                         domain
                             .set_status(delivery_result, queue_config.retry.eval(&envelope).await);
                         continue 'next_domain;
@@ -911,6 +910,7 @@ impl DeliveryAttempt {
                 }
 
                 // Update status
+                domain.disable_tls = disable_tls;
                 domain.set_status(last_status, queue_config.retry.eval(&envelope).await);
             }
             self.message.domains = domains;

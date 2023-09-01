@@ -36,6 +36,7 @@ pub mod lmtp;
 pub mod mta_sts;
 pub mod smtp;
 pub mod throttle;
+pub mod tls;
 
 const SERVER: &str = "
 [server]

@@ -27,7 +27,7 @@ use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
 use crate::{
     core::{SieveConfig, SieveCore},
-    scripts::plugins::RegisterSievePlugins,
+    scripts::{functions::register_functions, plugins::RegisterSievePlugins},
 };
 use utils::config::{utils::AsKey, Config};
 
@@ -39,6 +39,9 @@ pub trait ConfigSieve {
 
 impl ConfigSieve for Config {
     fn parse_sieve(&self, ctx: &mut ConfigContext) -> super::Result<SieveCore> {
+        // Register functions
+        let mut fnc_map = register_functions();
+
         // Allocate compiler and runtime
         let compiler = Compiler::new()
             .with_max_string_size(52428800)
@@ -49,7 +52,8 @@ impl ConfigSieve for Config {
             .with_max_local_variables(8192)
             .with_max_header_size(10240)
             .with_max_includes(10)
-            .register_plugins();
+            .register_plugins()
+            .register_functions(&mut fnc_map);
 
         let mut runtime = Runtime::new()
             .without_capabilities([
@@ -65,10 +69,12 @@ impl ConfigSieve for Config {
                 Capability::Duplicate,
             ])
             .with_capability(Capability::Plugins)
+            .with_capability(Capability::ForEveryLine)
             .with_max_variable_size(102400)
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
-            .with_valid_ext_lists(ctx.directory.lookups.keys().map(|k| k.to_string()));
+            .with_valid_ext_lists(ctx.directory.lookups.keys().map(|k| k.to_string()))
+            .with_functions(&mut fnc_map);
 
         if let Some(value) = self.property("sieve.limits.redirects")? {
             runtime.set_max_redirects(value);

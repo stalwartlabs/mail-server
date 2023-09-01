@@ -21,6 +21,7 @@
  * for more details.
 */
 
+pub mod detect_lang;
 pub mod exec;
 pub mod query;
 
@@ -43,8 +44,9 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<PluginArgument<String, Number>>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 2] = [query::exec, exec::exec];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 2] = [query::register, exec::register];
+const PLUGINS_EXEC: [ExecPluginFnc; 3] = [query::exec, exec::exec, detect_lang::exec];
+const PLUGINS_REGISTER: [RegisterPluginFnc; 3] =
+    [query::register, exec::register, detect_lang::register];
 
 pub trait RegisterSievePlugins {
     fn register_plugins(self) -> Self;
