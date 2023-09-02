@@ -87,9 +87,41 @@ impl SessionData {
         let mailbox = if let Some(mailbox) = self.get_mailbox_by_name(&mailbox_name) {
             mailbox
         } else {
-            return Err(
-                StatusResponse::no("Mailbox does not exist.").with_code(ResponseCode::NonExistent)
-            );
+            // Some IMAP clients will try to get the status of a mailbox with the NoSelect flag
+            return if mailbox_name == self.imap.name_shared
+                || mailbox_name
+                    .split_once('/')
+                    .map_or(false, |(base_name, path)| {
+                        base_name == self.imap.name_shared && !path.contains('/')
+                    })
+            {
+                Ok(StatusItem {
+                    mailbox_name,
+                    items: items
+                        .iter()
+                        .map(|item| {
+                            (
+                                *item,
+                                match item {
+                                    Status::Messages
+                                    | Status::Size
+                                    | Status::Unseen
+                                    | Status::Recent
+                                    | Status::Deleted
+                                    | Status::HighestModSeq => StatusItemType::Number(0),
+                                    Status::UidNext | Status::UidValidity => {
+                                        StatusItemType::Number(1)
+                                    }
+                                    Status::MailboxId => StatusItemType::String("none".to_string()),
+                                },
+                            )
+                        })
+                        .collect(),
+                })
+            } else {
+                Err(StatusResponse::no("Mailbox does not exist.")
+                    .with_code(ResponseCode::NonExistent))
+            };
         };
 
         // Make sure all requested fields are up to date

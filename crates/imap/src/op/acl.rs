@@ -58,7 +58,7 @@ impl<T: AsyncRead> Session<T> {
 
                 tokio::spawn(async move {
                     match data.get_acl_mailbox(&arguments, true).await {
-                        Ok((_, values, _)) => {
+                        Ok(Some((_, values, _))) => {
                             let mut permissions = Vec::new();
                             if let Some(acls) = values
                                 .inner
@@ -137,6 +137,21 @@ impl<T: AsyncRead> Session<T> {
                             )
                             .await;
                         }
+                        Ok(None) => {
+                            // Response for "All Mail" folder
+                            data.write_bytes(
+                                StatusResponse::completed(Command::GetAcl)
+                                    .with_tag(arguments.tag)
+                                    .serialize(
+                                        GetAclResponse {
+                                            mailbox_name: arguments.mailbox_name,
+                                            permissions: vec![],
+                                        }
+                                        .into_bytes(is_rev2),
+                                    ),
+                            )
+                            .await;
+                        }
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -157,7 +172,7 @@ impl<T: AsyncRead> Session<T> {
 
                 tokio::spawn(async move {
                     match data.get_acl_mailbox(&arguments, false).await {
-                        Ok((mailbox, values, access_token)) => {
+                        Ok(Some((mailbox, values, access_token))) => {
                             data.write_bytes(
                                 StatusResponse::completed(Command::MyRights)
                                     .with_tag(arguments.tag)
@@ -212,6 +227,30 @@ impl<T: AsyncRead> Session<T> {
                             )
                             .await;
                         }
+                        Ok(None) => {
+                            // Response for All mail folder
+                            data.write_bytes(
+                                StatusResponse::completed(Command::MyRights)
+                                    .with_tag(arguments.tag)
+                                    .serialize(
+                                        MyRightsResponse {
+                                            mailbox_name: arguments.mailbox_name,
+                                            rights: vec![
+                                                Rights::Read,
+                                                Rights::Lookup,
+                                                Rights::Insert,
+                                                Rights::DeleteMessages,
+                                                Rights::Expunge,
+                                                Rights::Seen,
+                                                Rights::Write,
+                                                Rights::Post,
+                                            ],
+                                        }
+                                        .into_bytes(is_rev2),
+                                    ),
+                            )
+                            .await;
+                        }
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -233,7 +272,18 @@ impl<T: AsyncRead> Session<T> {
                 tokio::spawn(async move {
                     // Validate mailbox
                     let (mailbox, values, _) = match data.get_acl_mailbox(&arguments, true).await {
-                        Ok(result) => result,
+                        Ok(Some(result)) => result,
+                        Ok(None) => {
+                            data.write_bytes(
+                                StatusResponse::no(
+                                    "ACL operations are not permitted on this mailbox.",
+                                )
+                                .with_tag(arguments.tag)
+                                .into_bytes(),
+                            )
+                            .await;
+                            return;
+                        }
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -475,7 +525,7 @@ impl SessionData {
         &self,
         arguments: &Arguments,
         validate: bool,
-    ) -> crate::op::Result<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)> {
+    ) -> crate::op::Result<Option<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)>> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(mailbox_id) = mailbox.mailbox_id {
                 match (
@@ -497,7 +547,7 @@ impl SessionData {
                                 .effective_acl(&access_token)
                                 .contains(Acl::Administer)
                         {
-                            Ok((mailbox, values, access_token))
+                            Ok(Some((mailbox, values, access_token)))
                         } else {
                             Err(StatusResponse::no(
                                 "You do not have enough permissions to perform this operation.",
@@ -509,9 +559,7 @@ impl SessionData {
                     _ => Err(StatusResponse::database_failure()),
                 }
             } else {
-                Err(StatusResponse::no(
-                    "ACL operations are not permitted on this mailbox.",
-                ))
+                Ok(None)
             }
         } else {
             Err(StatusResponse::no("Mailbox does not exist."))

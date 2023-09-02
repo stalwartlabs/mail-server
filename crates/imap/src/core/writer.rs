@@ -57,12 +57,8 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
                                     size = bytes.len()
                                 );
-                                /*let c = println!(
-                                    "<- {:?}",
-                                    String::from_utf8_lossy(
-                                        &bytes[..std::cmp::min(bytes.len(), 100)]
-                                    )
-                                );*/
+
+                                //let c = print!("{}", String::from_utf8_lossy(&bytes));
 
                                 match stream_tx.write_all(bytes.as_ref()).await {
                                     Ok(_) => {
@@ -104,6 +100,8 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
                                     size = bytes.len()
                                 );
+
+                                //let c = print!("{}", String::from_utf8_lossy(&bytes));
 
                                 match stream_tx.write_all(bytes.as_ref()).await {
                                     Ok(_) => {
