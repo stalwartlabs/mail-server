@@ -175,7 +175,10 @@ impl SessionData {
         let mut list_items = Vec::with_capacity(10);
 
         // Add "All Mail" folder
-        if !filter_subscribed && matches_pattern(&patterns, &self.imap.name_all) {
+        if self.imap.name_all_enable
+            && !filter_subscribed
+            && matches_pattern(&patterns, &self.imap.name_all)
+        {
             list_items.push(ListItem {
                 mailbox_name: self.imap.name_all.clone(),
                 attributes: vec![Attribute::All, Attribute::NoInferiors],

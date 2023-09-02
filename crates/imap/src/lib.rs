@@ -47,6 +47,7 @@ impl IMAP {
                 .value("imap.folders.name.shared")
                 .unwrap_or("Shared Folders")
                 .to_string(),
+            name_all_enable: config.property_or_static("imap.folders.all-messages", "true")?,
             name_all: config
                 .value("imap.folders.name.all")
                 .unwrap_or("All Mail")

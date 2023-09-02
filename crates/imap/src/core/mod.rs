@@ -75,6 +75,7 @@ pub struct IMAP {
     pub max_auth_failures: u32,
     pub name_shared: String,
     pub name_all: String,
+    pub name_all_enable: bool,
     pub allow_plain_auth: bool,
     pub enable_uidplus: bool,
 
