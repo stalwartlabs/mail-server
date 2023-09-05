@@ -236,6 +236,7 @@ impl TestConfig for SessionConfig {
                 require: IfBlock::new(false),
                 errors_max: IfBlock::new(10),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),
+                allow_plain_text: IfBlock::new(false),
             },
             mail: Mail {
                 script: IfBlock::new(None),

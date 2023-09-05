@@ -284,6 +284,9 @@ impl ConfigSession for Config {
             errors_wait: self
                 .parse_if_block("session.auth.errors.wait", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(Duration::from_secs(30))),
+            allow_plain_text: self
+                .parse_if_block("session.auth.allow-plain-text", ctx, &available_keys)?
+                .unwrap_or_else(|| IfBlock::new(false)),
         })
     }
 

@@ -225,6 +225,7 @@ pub struct Auth {
     pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
     pub mechanisms: IfBlock<u64>,
     pub require: IfBlock<bool>,
+    pub allow_plain_text: IfBlock<bool>,
     pub errors_max: IfBlock<usize>,
     pub errors_wait: IfBlock<Duration>,
 }

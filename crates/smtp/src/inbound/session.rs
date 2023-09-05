@@ -103,6 +103,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                                     self.write(b"503 5.5.1 Already authenticated.\r\n").await?;
                                 } else if mechanism & (AUTH_LOGIN | AUTH_PLAIN) != 0
                                     && !self.stream.is_tls()
+                                    && !self.params.auth_plain_text
                                 {
                                     self.write(b"503 5.5.1 Clear text authentication without TLS is forbidden.\r\n").await?;
                                 } else if let Some(mut token) =

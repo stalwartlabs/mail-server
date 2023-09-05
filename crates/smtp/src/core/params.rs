@@ -48,6 +48,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         self.params.auth_require = *ac.require.eval(self).await;
         self.params.auth_errors_max = *ac.errors_max.eval(self).await;
         self.params.auth_errors_wait = *ac.errors_wait.eval(self).await;
+        self.params.auth_plain_text = *ac.allow_plain_text.eval(self).await;
 
         // VRFY/EXPN parameters
         let ec = &self.core.session.config.extensions;

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.7] - 2023-09-05
+
+## Added
+- Option to disable IMAP All Messages folder (#68).
+- Option to allow unencrypted SMTP AUTH (#72)
+- Support for `rcpt-domain` key in `rcpt.relay` SMTP rule evaluation.
+
+### Changed
+ 
+### Fixed
+- SMTP strategy `Ipv6thenIpv4` returns only IPv6 addresses (#70)
+- Invalid IMAP `FETCH` responses for non-UTF-8 messages (#70)
+- Allow `STATUS` and `ACL` IMAP operations on virtual mailboxes.
+- IMAP `SELECT QRESYNC` without specifying a UID causes panic (#67)
+- Milter `DATA` command is sent after headers which causes ClamAV to hang.
+- Sieve `redirect` of unmodified messages does not work.
+
 ## [0.3.6] - 2023-08-29
 
 ## Added

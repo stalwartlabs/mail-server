@@ -170,7 +170,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         if self.data.authenticated_as.is_empty() {
             response.auth_mechanisms = *ac.mechanisms.eval(self).await;
             if response.auth_mechanisms != 0 {
-                if !self.stream.is_tls() {
+                if !self.stream.is_tls() && !self.params.auth_plain_text {
                     response.auth_mechanisms &= !(AUTH_PLAIN | AUTH_LOGIN);
                 }
                 if response.auth_mechanisms != 0 {
