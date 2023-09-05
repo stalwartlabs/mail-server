@@ -379,7 +379,10 @@ impl SessionData {
                     }
                     Attribute::Preview { .. } => {
                         items.push(DataItem::Preview {
-                            contents: email.get(&Property::Preview).as_string().map(|p| p.into()),
+                            contents: email
+                                .get(&Property::Preview)
+                                .as_string()
+                                .map(|p| p.as_bytes().into()),
                         });
                     }
                     Attribute::Rfc822Size => {
@@ -392,7 +395,7 @@ impl SessionData {
                     }
                     Attribute::Rfc822 => {
                         items.push(DataItem::Rfc822 {
-                            contents: String::from_utf8_lossy(raw_message.as_ref().unwrap()),
+                            contents: raw_message.as_ref().unwrap().into(),
                         });
                     }
                     Attribute::Rfc822Header => {
@@ -403,7 +406,7 @@ impl SessionData {
                             .get(message.offset_header..message.offset_body)
                         {
                             items.push(DataItem::Rfc822Header {
-                                contents: String::from_utf8_lossy(header),
+                                contents: header.into(),
                             });
                         }
                     }
@@ -415,7 +418,7 @@ impl SessionData {
                             .get(message.offset_body..message.offset_end)
                         {
                             items.push(DataItem::Rfc822Text {
-                                contents: String::from_utf8_lossy(text),
+                                contents: text.into(),
                             });
                         }
                     }
@@ -593,7 +596,7 @@ pub trait AsImapDataItem<'x> {
         &'z self,
         sections: &[Section],
         partial: Option<(u32, u32)>,
-    ) -> Option<Cow<'x, str>>;
+    ) -> Option<Cow<'x, [u8]>>;
     fn binary(
         &self,
         sections: &[u32],
@@ -805,14 +808,16 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         &'z self,
         sections: &[Section],
         partial: Option<(u32, u32)>,
-    ) -> Option<Cow<'x, str>> {
+    ) -> Option<Cow<'x, [u8]>> {
         let mut part = self.root_part();
         if sections.is_empty() {
-            return String::from_utf8_lossy(get_partial_bytes(
-                self.raw_message.get(part.offset_header..part.offset_end)?,
-                partial,
-            ))
-            .into();
+            return Some(
+                get_partial_bytes(
+                    self.raw_message.get(part.offset_header..part.offset_end)?,
+                    partial,
+                )
+                .into(),
+            );
         }
 
         let mut message = self;
@@ -848,13 +853,15 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     }
                 }
                 Section::Header => {
-                    return String::from_utf8_lossy(get_partial_bytes(
-                        message
-                            .raw_message
-                            .get(part.offset_header..part.offset_body)?,
-                        partial,
-                    ))
-                    .into();
+                    return Some(
+                        get_partial_bytes(
+                            message
+                                .raw_message
+                                .get(part.offset_header..part.offset_body)?,
+                            partial,
+                        )
+                        .into(),
+                    );
                 }
                 Section::HeaderFields { not, fields } => {
                     let mut headers =
@@ -876,22 +883,19 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     headers.extend_from_slice(b"\r\n");
 
                     return Some(if partial.is_none() {
-                        String::from_utf8(headers).map_or_else(
-                            |err| String::from_utf8_lossy(err.as_bytes()).into_owned().into(),
-                            |s| s.into(),
-                        )
+                        headers.into()
                     } else {
-                        String::from_utf8_lossy(get_partial_bytes(&headers, partial))
-                            .into_owned()
-                            .into()
+                        get_partial_bytes(&headers, partial).to_vec().into()
                     });
                 }
                 Section::Text => {
-                    return String::from_utf8_lossy(get_partial_bytes(
-                        message.raw_message.get(part.offset_body..part.offset_end)?,
-                        partial,
-                    ))
-                    .into();
+                    return Some(
+                        get_partial_bytes(
+                            message.raw_message.get(part.offset_body..part.offset_end)?,
+                            partial,
+                        )
+                        .into(),
+                    );
                 }
                 Section::Mime => {
                     let mut headers =
@@ -912,14 +916,9 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     }
                     headers.extend_from_slice(b"\r\n");
                     return Some(if partial.is_none() {
-                        String::from_utf8(headers).map_or_else(
-                            |err| String::from_utf8_lossy(err.as_bytes()).into_owned().into(),
-                            |s| s.into(),
-                        )
+                        headers.into()
                     } else {
-                        String::from_utf8_lossy(get_partial_bytes(&headers, partial))
-                            .into_owned()
-                            .into()
+                        get_partial_bytes(&headers, partial).to_vec().into()
                     });
                 }
             }
@@ -928,17 +927,13 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         // BODY[x] should return both headers and body, but most clients
         // expect BODY[x] to return only the body, just like BOXY[x.TEXT] does.
 
-        String::from_utf8_lossy(get_partial_bytes(
-            message.raw_message.get(part.offset_body..part.offset_end)?,
-            partial,
-        ))
-        .into()
-
-        /*String::from_utf8_lossy(get_partial_bytes(
-            raw_message.get(part.offset_header..part.offset_end)?,
-            partial,
-        ))
-        .into()*/
+        Some(
+            get_partial_bytes(
+                message.raw_message.get(part.offset_body..part.offset_end)?,
+                partial,
+            )
+            .into(),
+        )
     }
 
     fn binary(

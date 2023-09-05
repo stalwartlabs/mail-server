@@ -415,7 +415,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             let params = self
                 .build_script_parameters()
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
-                .set_variable("from", auth_message.from().to_string())
+                .set_variable("dmarc_from", auth_message.from().to_string())
                 .set_variable(
                     "arc_result",
                     arc_output
@@ -735,7 +735,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 .iprev
                 .as_ref()
                 .and_then(|ir| ir.ptr.as_ref())
-                .and_then(|ptr| ptr.first().map(|s| s.as_str()))
+                .and_then(|ptr| ptr.first().map(|s| s.strip_suffix('.').unwrap_or(s)))
                 .unwrap_or("unknown")
                 .as_bytes(),
         );
@@ -747,12 +747,12 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         headers.extend_from_slice(self.instance.hostname.as_bytes());
         headers.extend_from_slice(b" (Stalwart SMTP) with ");
         headers.extend_from_slice(
-            if self.stream.is_tls() {
-                "ESMTPS"
-            } else {
-                "ESMTP"
-            }
-            .as_bytes(),
+            match (self.stream.is_tls(), self.data.authenticated_as.is_empty()) {
+                (true, true) => b"ESMTPS",
+                (true, false) => b"ESMTPSA",
+                (false, true) => b"ESMTP",
+                (false, false) => b"ESMTPA",
+            },
         );
         headers.extend_from_slice(b" id ");
         headers.extend_from_slice(format!("{id:X}").as_bytes());

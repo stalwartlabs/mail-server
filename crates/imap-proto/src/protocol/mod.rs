@@ -187,11 +187,11 @@ pub fn quoted_string_or_nil(buf: &mut Vec<u8>, text: Option<&str>) {
     }
 }
 
-pub fn literal_string(buf: &mut Vec<u8>, text: &str) {
+pub fn literal_string(buf: &mut Vec<u8>, text: &[u8]) {
     buf.push(b'{');
     buf.extend_from_slice(text.len().to_string().as_bytes());
     buf.extend_from_slice(b"}\r\n");
-    buf.extend_from_slice(text.as_bytes());
+    buf.extend_from_slice(text);
 }
 
 pub fn quoted_timestamp(buf: &mut Vec<u8>, timestamp: i64) {

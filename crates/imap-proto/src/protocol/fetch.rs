@@ -112,7 +112,7 @@ pub enum DataItem<'x> {
     BodySection {
         sections: Vec<Section>,
         origin_octet: Option<u32>,
-        contents: Cow<'x, str>,
+        contents: Cow<'x, [u8]>,
     },
     Envelope {
         envelope: Envelope<'x>,
@@ -127,19 +127,19 @@ pub enum DataItem<'x> {
         uid: u32,
     },
     Rfc822 {
-        contents: Cow<'x, str>,
+        contents: Cow<'x, [u8]>,
     },
     Rfc822Header {
-        contents: Cow<'x, str>,
+        contents: Cow<'x, [u8]>,
     },
     Rfc822Size {
         size: usize,
     },
     Rfc822Text {
-        contents: Cow<'x, str>,
+        contents: Cow<'x, [u8]>,
     },
     Preview {
-        contents: Option<Cow<'x, str>>,
+        contents: Option<Cow<'x, [u8]>>,
     },
     ModSeq {
         modseq: u64,
@@ -733,7 +733,7 @@ impl<'x> DataItem<'x> {
                 }
                 match contents {
                     BodyContents::Text(text) => {
-                        literal_string(buf, text);
+                        literal_string(buf, text.as_bytes());
                     }
                     BodyContents::Bytes(bytes) => {
                         buf.extend_from_slice(b"~{");
@@ -1322,7 +1322,7 @@ mod tests {
                         Section::Mime,
                     ],
                     origin_octet: 11.into(),
-                    contents: "howdy".into(),
+                    contents: b"howdy"[..].into(),
                 },
                 "BODY[1.2.MIME]<11> {5}\r\nhowdy",
             ),
@@ -1333,7 +1333,7 @@ mod tests {
                         fields: vec!["Subject".into(), "x-special".into()],
                     }],
                     origin_octet: None,
-                    contents: "howdy".into(),
+                    contents: b"howdy"[..].into(),
                 },
                 "BODY[HEADER.FIELDS.NOT (SUBJECT X-SPECIAL)] {5}\r\nhowdy",
             ),
@@ -1344,7 +1344,7 @@ mod tests {
                         fields: vec!["From".into(), "List-Archive".into()],
                     }],
                     origin_octet: None,
-                    contents: "howdy".into(),
+                    contents: b"howdy"[..].into(),
                 },
                 "BODY[HEADER.FIELDS (FROM LIST-ARCHIVE)] {5}\r\nhowdy",
             ),
@@ -1382,10 +1382,10 @@ mod tests {
                             super::DataItem::Uid { uid: 983 },
                             super::DataItem::Rfc822Size { size: 443 },
                             super::DataItem::Rfc822Text {
-                                contents: "hi".into()
+                                contents: b"hi"[..].into()
                             },
                             super::DataItem::Rfc822Header {
-                                contents: "header".into()
+                                contents: b"header"[..].into()
                             },
                         ],
                     }],
