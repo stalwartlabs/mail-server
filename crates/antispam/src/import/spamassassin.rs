@@ -15,13 +15,11 @@ use super::{
 
 const VERSION: f64 = 4.000000;
 
-static IF_TRUE: [&str; 57] = [
+static IF_TRUE: [&str; 54] = [
     "Mail::SpamAssassin::Plugin::DKIM",
     "Mail::SpamAssassin::Plugin::SPF",
     "Mail::SpamAssassin::Plugin::ASN",
     "Mail::SpamAssassin::Plugin::AWL",
-    "Mail::SpamAssassin::Plugin::AccessDB",
-    "Mail::SpamAssassin::Plugin::AntiVirus",
     "Mail::SpamAssassin::Plugin::AskDNS",
     "Mail::SpamAssassin::Plugin::AutoLearnThreshold",
     "Mail::SpamAssassin::Plugin::Bayes",
@@ -44,7 +42,6 @@ static IF_TRUE: [&str; 57] = [
     "Mail::SpamAssassin::Plugin::Razor2",
     "Mail::SpamAssassin::Plugin::RelayEval",
     "Mail::SpamAssassin::Plugin::ReplaceTags",
-    "Mail::SpamAssassin::Plugin::Shortcircuit",
     "Mail::SpamAssassin::Plugin::TextCat",
     "Mail::SpamAssassin::Plugin::TxRep",
     "Mail::SpamAssassin::Plugin::URIDNSBL",
@@ -75,7 +72,12 @@ static IF_TRUE: [&str; 57] = [
     "Mail::SpamAssassin::Conf::feature_dns_block_rule",
 ];
 
-static IF_FALSE: [&str; 1] = ["Mail::SpamAssassin::Plugin::WhiteListSubject"];
+static IF_FALSE: [&str; 4] = [
+    "Mail::SpamAssassin::Plugin::WhiteListSubject",
+    "Mail::SpamAssassin::Plugin::AccessDB",
+    "Mail::SpamAssassin::Plugin::AntiVirus",
+    "Mail::SpamAssassin::Plugin::Shortcircuit",
+];
 
 static SUPPORTED_FUNCTIONS: [&str; 162] = [
     "check_abundant_unicode_ratio",
@@ -1103,8 +1105,17 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         "set \"awl_factor\" \"0.5\";\n",
         "set \"body\" \"${body.to_text}\";\n",
         "set \"body_len\" \"${body.len()}\";\n",
+        "set \"headers_raw\" \"${headers.raw}\";\n",
         "set \"thread_name\" \"${header.subject.thread_name()}\";\n",
         "set \"sent_date\" \"${header.date.date}\";\n",
+        "set \"mail_from\" \"${envelope.from}\";\n",
+        "if eval \"mail_from.is_empty()\" {\n",
+        "\tset \"mail_from\" \"postmaster@${env.helo_domain}\";\n",
+        "}\n",
+        "set \"mail_from_domain\" \"${mail_from.domain_part()}\";\n",
+        "set \"from\" \"${header.from.addr}\";\n",
+        "set \"from_domain\" \"${from.domain_part()}\";\n",
+        "set \"from_name\" \"${header.from.name.trim()}\";\n",
         "\n"
     ));
 
@@ -1115,25 +1126,6 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
             }
             continue;
         }
-
-        // Calculate forward scores
-        /*let (score_pos, score_neg) =
-            rules_iter
-                .clone()
-                .fold((0.0, 0.0), |(acc_pos, acc_neg), rule| {
-                    let score = rule.score();
-                    if score > 0.0 {
-                        (acc_pos + score, acc_neg)
-                    } else if score < 0.0 {
-                        (acc_pos, acc_neg + score)
-                    } else {
-                        (acc_pos, acc_neg)
-                    }
-                });
-        let mut rule = rule.clone();
-        rule.forward_score_neg = score_neg;
-        rule.forward_score_pos = score_pos;*/
-
         write!(&mut script, "{rule}").unwrap();
     }
 
@@ -1297,12 +1289,12 @@ impl Display for Rule {
                 match function.as_str() {
                     "check_from_in_auto_welcomelist" | "check_from_in_auto_whitelist" => {
                         f.write_str(concat!(
-                        "query :use \"spam\" :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE sender = ? AND ip = ?\" [\"${env.from}\", \"%{env.remote_ip}\"];\n",
+                        "query :use \"spam\" :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE sender = ? AND ip = ?\" [\"${from}\", \"%{env.remote_ip}\"];\n",
                         "if eval \"awl_count > 0\" {\n",
-                        "\tquery :use \"spam\" \"UPDATE awl SET score = score + ?, count = count + 1 WHERE sender = ? AND ip = ?\" [\"%{score}\", \"${env.from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"UPDATE awl SET score = score + ?, count = count + 1 WHERE sender = ? AND ip = ?\" [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
                         "\tset \"score\" \"%{score + ((awl_score / awl_count) - score) * awl_factor}\";\n",
                         "} else {\n",
-                        "\tquery :use \"spam\" \"INSERT INTO awl (score, count, sender, ip) VALUES (?, 1, ?, ?)\" [\"%{score}\", \"${env.from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"INSERT INTO awl (score, count, sender, ip) VALUES (?, 1, ?, ?)\" [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
                         "}\n\n",
                     ))?;
                         return Ok(());
@@ -1410,9 +1402,16 @@ impl Display for Rule {
                     | "check_dkim_signsome"
                     | "check_dkim_valid_author_sig"
                     | "check_access_database"
-                    | "check_body_8bits" => {
+                    | "check_body_8bits"
+                    | "check_shortcircuit"
+                    | "check_suspect_name"
+                    | "check_microsoft_executable"
+                    | "check_outlook_message_id"
+                    | "gated_through_received_hdr_remover"
+                    | "check_for_faraway_charset_in_headers" => {
                         // ADSP is deprecated (see https://datatracker.ietf.org/doc/status-change-adsp-rfc5617-to-historic/)
                         // check_body_8bits: Not really useful
+                        // check_shortcircuit: Not used
                         f.write_str("if false")?;
                     }
                     "check_dkim_dependable" => {
@@ -1447,7 +1446,7 @@ impl Display for Rule {
                         }
                     }
                     "check_dkim_valid_envelopefrom" => {
-                        f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", string :is \"${envelope.from}\" \"${env.from}\")")?;
+                        f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", string :is \"${mail_from}\" \"${from}\")")?;
                     }
                     "check_for_def_dkim_welcomelist_from"
                     | "check_for_def_dkim_whitelist_from"
@@ -1530,10 +1529,10 @@ impl Display for Rule {
                         )?;
                     }
                     "check_equal_from_domains" => {
-                        f.write_str("if not string :is \"${envelope.from.base_domain()}\" \"${header.from.base_domain()}\"")?;
+                        f.write_str("if not string :is \"${mail_from.subdomain_part()}\" \"${from.subdomain_part()}\"")?;
                     }
                     "check_for_no_rdns_dotcom_helo" => {
-                        f.write_str(concat!("if not string :is \"${env.iprev_result}\" [\"pass\", \"\", \"temperror\"]"))?;
+                        f.write_str("if not string :is \"${env.iprev_result}\" [\"pass\", \"\", \"temperror\"]")?;
                     }
                     "helo_ip_mismatch" => {
                         f.write_str(concat!(
@@ -1542,7 +1541,7 @@ impl Display for Rule {
                         ))?;
                     }
                     "subject_is_all_caps" => {
-                        f.write_str("if eval \"thread_name.len() >= 10 && thread_name.word_count() > 1 && thread_name.is_uppercase()\"")?;
+                        f.write_str("if eval \"thread_name.len() >= 10 && thread_name.count_words() > 1 && thread_name.is_uppercase()\"")?;
                     }
                     "check_for_shifted_date" => {
                         let mut params = params.iter();
@@ -1580,6 +1579,148 @@ impl Display for Rule {
                         }
 
                         f.write_str("\"")?;
+                    }
+                    "check_ratware_envelope_from" => {
+                        f.write_str(concat!(
+                            "set \"env_from_local\" \"${mail_from.local_part()}\";\n",
+                            "set \"to_local\" \"${header.to.addr.local_part()}\";\n",
+                            "set \"to_domain\" \"${header.to.addr.domain_part()}\";\n",
+                            "if all_of(",
+                            "not string :is \"${env_from_local}\" \"\", ",
+                            "not string :is \"${to_local}\" \"\", ",
+                            "not string :is \"${to_domain}\" \"\", ",
+                            "string :contains \"${env_from_local}\" \"${to_domain}\", ",
+                            "string :contains \"${env_from_local}\" \"${to_local}\")"
+                        ))?;
+                    }
+                    "check_ratware_name_id" => {
+                        f.write_str(concat!(
+                            "if header :contains ",
+                            "[\"Message-Id\",\"Resent-Message-Id\",",
+                            "\"X-Message-Id\",\"X-Original-Message-ID\"] ",
+                            "\"${from}\"",
+                        ))?;
+                    }
+                    "check_mailfrom_matches_rcvd" => {
+                        f.write_str(
+                            "if string :contains \"${env.helo_domain}\" \"${mail_from_domain}\"",
+                        )?;
+                    }
+
+                    "check_unresolved_template" => {
+                        f.write_str(concat!(
+                            "foreveryline \"${headers_raw}\" {\n",
+                            "\tif allof(string :regex \"${line}\" \"%[A-Z][A-Z_-]\", ",
+                            "not string :regex \"${line}\" \"(?i)^(?:X-VMS-To|X-UIDL|",
+                            "X-Face|To|Cc|From|Subject|References|In-Reply-To|(?:X-|Resent-|",
+                            "X-Original-)?Message-Id):\")",
+                        ))?;
+                        self.fmt_match(f, 2)?;
+                        f.write_str("\t\tbreak;\n\t}\n}\n\n")?;
+                        return Ok(());
+                    }
+                    "check_for_matching_env_and_hdr_from" => {
+                        f.write_str("if string :is \"${mail_from}\" \"${from}\"")?;
+                    }
+                    "check_fromname_equals_replyto" => {
+                        f.write_str("if string :is \"${from_name}\" \"${header.reply-to.addr}\"")?;
+                    }
+                    "check_fromname_equals_to" => {
+                        f.write_str(concat!(
+                            "foreveryline \"${header.to[*].addr[*]}\" {\n",
+                            "\tif string :is \"${from_name}\" \"${line}\"",
+                        ))?;
+                        self.fmt_match(f, 2)?;
+                        f.write_str("\t\tbreak;\n\t}\n}\n\n")?;
+                        return Ok(());
+                    }
+                    "check_fromname_spoof" => {
+                        f.write_str(concat!(
+                            "if allof(eval \"from_name.is_email()\", ",
+                            "not string :is \"${from_name.domain_name_part()}\" \"${from.domain_name_part()}\")",
+                        ))?;
+                    }
+                    "check_header_count_range" => {
+                        let mut params = params.iter();
+                        let hdr_name = params
+                            .next()
+                            .expect("missing parameters for check_header_count_range")
+                            .to_lowercase();
+                        let range_from = params
+                            .next()
+                            .and_then(param_to_num::<u32>)
+                            .expect("missing parameters for check_header_count_range from");
+                        let range_to = params
+                            .next()
+                            .and_then(param_to_num::<u32>)
+                            .expect("missing parameters for check_header_count_range to");
+
+                        if range_to > 100 {
+                            write!(
+                                f,
+                                "if eval \"header.{hdr_name}[*].raw.count() >= {range_from}\""
+                            )?;
+                        } else {
+                            write!(f, "if eval \"header.{hdr_name}[*].raw.count() >= {range_from} && header.{hdr_name}[*].raw.count() < {range_to}\"")?;
+                        }
+                    }
+                    "check_illegal_chars" => {
+                        let mut params = params.iter();
+                        let hdr_name = params
+                            .next()
+                            .expect("missing parameters for check_illegal_chars");
+                        let hdr_name = if hdr_name.contains("ALL") {
+                            "headers_raw".to_string()
+                        } else {
+                            format!("header.{}[*].raw", hdr_name.to_lowercase())
+                        };
+                        let ratio = params
+                            .next()
+                            .and_then(param_to_num::<f64>)
+                            .expect("missing parameters for check_illegal_chars ratio");
+                        let count = params
+                            .next()
+                            .and_then(param_to_num::<u32>)
+                            .expect("missing parameters for check_illegal_chars count");
+                        writeln!(f, "set \"c_count\" \"%{{{hdr_name}.count_chars()}}\";\n")?;
+                        writeln!(
+                            f,
+                            "set \"i_count\" \"%{{{hdr_name}.count_control_chars()}}\";\n"
+                        )?;
+                        writeln!(
+                            f,
+                            "if eval \"i_count > {count} && i_count / c_count > {ratio}\""
+                        )?;
+                    }
+                    "check_freemail_from" => {
+                        f.write_str(concat!(
+                            "if anyof(address :domain :list ",
+                            "[\"From\", \"Resent-From\", \"Envelope-Sender\",",
+                            "\"Resent-Sender\", \"X-Envelope-From\"] \"sa/freemail_domains\", ",
+                            "envelope :list \"from\" \"sa/freemail_domains\")",
+                        ))?;
+                    }
+                    "check_freemail_header" => {
+                        let header = strip_quotes(
+                            params
+                                .iter()
+                                .next()
+                                .expect("missing header name for check_freemail_header"),
+                        );
+                        if header.contains("EnvelopeFrom") {
+                            f.write_str(
+                                "if string :list \"%{mail_from_domain}\" \"sa/freemail_domains\"",
+                            )?;
+                        } else {
+                            writeln!(
+                                f,
+                                "if address :domain \"{}\" \"sa/freemail_domains\"",
+                                header
+                                    .split_once(':')
+                                    .map_or(header, |v| v.1)
+                                    .to_lowercase()
+                            )?;
+                        }
                     }
 
                     _ => {
@@ -1640,10 +1781,11 @@ impl Rule {
 }
 
 fn param_to_num<N: FromStr>(text: impl AsRef<str>) -> Option<N> {
-    let text = text.as_ref();
+    strip_quotes(text.as_ref()).parse::<N>().ok()
+}
+
+fn strip_quotes(text: &str) -> &str {
     text.strip_prefix('\"')
         .and_then(|v| v.strip_suffix('\"'))
         .unwrap_or(text)
-        .parse::<N>()
-        .ok()
 }

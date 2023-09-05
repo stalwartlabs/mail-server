@@ -75,7 +75,7 @@ async fn lookup_ip() {
 
     // Ipv4 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
-    let (source_ips, remote_ips) = core
+    let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
@@ -83,15 +83,17 @@ async fn lookup_ip() {
         )
         .await
         .unwrap();
-    assert!(ipv4.contains(&match source_ips.unwrap() {
+    assert!(ipv4.contains(&match resolve_result.source_ipv4.unwrap() {
         std::net::IpAddr::V4(v4) => v4,
         _ => unreachable!(),
     }));
-    assert!(remote_ips.contains(&"172.168.0.100".parse().unwrap()));
+    assert!(resolve_result
+        .remote_ips
+        .contains(&"172.168.0.100".parse().unwrap()));
 
     // Ipv6 strategy
     core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
-    let (source_ips, remote_ips) = core
+    let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
@@ -99,11 +101,13 @@ async fn lookup_ip() {
         )
         .await
         .unwrap();
-    assert!(ipv6.contains(&match source_ips.unwrap() {
+    assert!(ipv6.contains(&match resolve_result.source_ipv6.unwrap() {
         std::net::IpAddr::V6(v6) => v6,
         _ => unreachable!(),
     }));
-    assert!(remote_ips.contains(&"e:f::a".parse().unwrap()));
+    assert!(resolve_result
+        .remote_ips
+        .contains(&"e:f::a".parse().unwrap()));
 }
 
 #[test]

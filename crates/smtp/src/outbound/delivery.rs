@@ -392,7 +392,7 @@ impl DeliveryAttempt {
                     }
 
                     // Obtain source and remote IPs
-                    let (source_ip, remote_ips) = match core
+                    let resolve_result = match core
                         .resolve_host(remote_host, &envelope, max_multihomed)
                         .await
                     {
@@ -556,8 +556,15 @@ impl DeliveryAttempt {
                     };
 
                     // Try each IP address
-                    envelope.local_ip = source_ip.unwrap_or(no_ip);
-                    'next_ip: for remote_ip in remote_ips {
+                    'next_ip: for remote_ip in resolve_result.remote_ips {
+                        // Set source IP, if any
+                        let source_ip = if remote_ip.is_ipv4() {
+                            resolve_result.source_ipv4
+                        } else {
+                            resolve_result.source_ipv6
+                        };
+                        envelope.local_ip = source_ip.unwrap_or(no_ip);
+
                         // Throttle remote host
                         let mut in_flight_host = Vec::new();
                         envelope.remote_ip = remote_ip;

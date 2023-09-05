@@ -32,6 +32,7 @@ use super::add_test_certs;
 
 pub mod dane;
 pub mod extensions;
+pub mod ip_lookup;
 pub mod lmtp;
 pub mod mta_sts;
 pub mod smtp;

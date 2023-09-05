@@ -21,9 +21,9 @@
  * for more details.
 */
 
-use std::net::IpAddr;
+use std::{net::IpAddr, sync::Arc};
 
-use mail_auth::MX;
+use mail_auth::{IpLookupStrategy, MX};
 use rand::{seq::SliceRandom, Rng};
 use utils::config::KeyLookup;
 
@@ -35,16 +35,75 @@ use crate::{
 
 use super::NextHop;
 
+pub struct IpLookupResult {
+    pub source_ipv4: Option<IpAddr>,
+    pub source_ipv6: Option<IpAddr>,
+    pub remote_ips: Vec<IpAddr>,
+}
+
 impl SMTP {
+    pub async fn ip_lookup(
+        &self,
+        key: &str,
+        strategy: IpLookupStrategy,
+        max_results: usize,
+    ) -> mail_auth::Result<Vec<IpAddr>> {
+        let (has_ipv4, has_ipv6, v4_first) = match strategy {
+            IpLookupStrategy::Ipv4Only => (true, false, false),
+            IpLookupStrategy::Ipv6Only => (false, true, false),
+            IpLookupStrategy::Ipv4thenIpv6 => (true, true, true),
+            IpLookupStrategy::Ipv6thenIpv4 => (true, true, false),
+        };
+        let ipv4_addrs = if has_ipv4 {
+            match self.resolvers.dns.ipv4_lookup(key).await {
+                Ok(addrs) => addrs,
+                Err(_) if has_ipv6 => Arc::new(Vec::new()),
+                Err(err) => return Err(err),
+            }
+        } else {
+            Arc::new(Vec::new())
+        };
+
+        if has_ipv6 {
+            let ipv6_addrs = match self.resolvers.dns.ipv6_lookup(key).await {
+                Ok(addrs) => addrs,
+                Err(_) if !ipv4_addrs.is_empty() => Arc::new(Vec::new()),
+                Err(err) => return Err(err),
+            };
+            if v4_first {
+                Ok(ipv4_addrs
+                    .iter()
+                    .copied()
+                    .map(IpAddr::from)
+                    .chain(ipv6_addrs.iter().copied().map(IpAddr::from))
+                    .take(max_results)
+                    .collect())
+            } else {
+                Ok(ipv6_addrs
+                    .iter()
+                    .copied()
+                    .map(IpAddr::from)
+                    .chain(ipv4_addrs.iter().copied().map(IpAddr::from))
+                    .take(max_results)
+                    .collect())
+            }
+        } else {
+            Ok(ipv4_addrs
+                .iter()
+                .take(max_results)
+                .copied()
+                .map(IpAddr::from)
+                .collect())
+        }
+    }
+
     pub async fn resolve_host(
         &self,
         remote_host: &NextHop<'_>,
         envelope: &impl KeyLookup<Key = EnvelopeKey>,
         max_multihomed: usize,
-    ) -> Result<(Option<IpAddr>, Vec<IpAddr>), Status<(), Error>> {
+    ) -> Result<IpLookupResult, Status<(), Error>> {
         let remote_ips = self
-            .resolvers
-            .dns
             .ip_lookup(
                 remote_host.fqdn_hostname().as_ref(),
                 *self.queue.config.ip_strategy.eval(envelope).await,
@@ -65,40 +124,42 @@ impl SMTP {
                 }
             })?;
 
-        if let Some(remote_ip) = remote_ips.first() {
-            let mut source_ip = None;
+        if !remote_ips.is_empty() {
+            let mut result = IpLookupResult {
+                source_ipv4: None,
+                source_ipv6: None,
+                remote_ips,
+            };
 
-            if remote_ip.is_ipv4() {
-                let source_ips = self.queue.config.source_ip.ipv4.eval(envelope).await;
-                match source_ips.len().cmp(&1) {
-                    std::cmp::Ordering::Equal => {
-                        source_ip = IpAddr::from(*source_ips.first().unwrap()).into();
-                    }
-                    std::cmp::Ordering::Greater => {
-                        source_ip = IpAddr::from(
-                            source_ips[rand::thread_rng().gen_range(0..source_ips.len())],
-                        )
-                        .into();
-                    }
-                    std::cmp::Ordering::Less => (),
+            // Obtain source IPv4 address
+            let source_ips = self.queue.config.source_ip.ipv4.eval(envelope).await;
+            match source_ips.len().cmp(&1) {
+                std::cmp::Ordering::Equal => {
+                    result.source_ipv4 = IpAddr::from(*source_ips.first().unwrap()).into();
                 }
-            } else {
-                let source_ips = self.queue.config.source_ip.ipv6.eval(envelope).await;
-                match source_ips.len().cmp(&1) {
-                    std::cmp::Ordering::Equal => {
-                        source_ip = IpAddr::from(*source_ips.first().unwrap()).into();
-                    }
-                    std::cmp::Ordering::Greater => {
-                        source_ip = IpAddr::from(
-                            source_ips[rand::thread_rng().gen_range(0..source_ips.len())],
-                        )
-                        .into();
-                    }
-                    std::cmp::Ordering::Less => (),
+                std::cmp::Ordering::Greater => {
+                    result.source_ipv4 =
+                        IpAddr::from(source_ips[rand::thread_rng().gen_range(0..source_ips.len())])
+                            .into();
                 }
+                std::cmp::Ordering::Less => (),
             }
 
-            Ok((source_ip, remote_ips))
+            // Obtain source IPv6 address
+            let source_ips = self.queue.config.source_ip.ipv6.eval(envelope).await;
+            match source_ips.len().cmp(&1) {
+                std::cmp::Ordering::Equal => {
+                    result.source_ipv6 = IpAddr::from(*source_ips.first().unwrap()).into();
+                }
+                std::cmp::Ordering::Greater => {
+                    result.source_ipv6 =
+                        IpAddr::from(source_ips[rand::thread_rng().gen_range(0..source_ips.len())])
+                            .into();
+                }
+                std::cmp::Ordering::Less => (),
+            }
+
+            Ok(result)
         } else {
             Err(Status::TemporaryFailure(Error::DnsError(format!(
                 "No IP addresses found for {:?}.",
