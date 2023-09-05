@@ -29,7 +29,7 @@ use jmap_client::{
     email::{self, Header, HeaderForm},
 };
 use jmap_proto::types::id::Id;
-use mail_parser::{HeaderName, RfcHeader};
+use mail_parser::HeaderName;
 
 use crate::jmap::{mailbox::destroy_all_mailboxes, replace_blob_ids};
 
@@ -184,10 +184,10 @@ pub fn all_headers() -> Vec<email::Property> {
     let mut properties = Vec::new();
 
     for header in [
-        HeaderName::Rfc(RfcHeader::From),
-        HeaderName::Rfc(RfcHeader::To),
-        HeaderName::Rfc(RfcHeader::Cc),
-        HeaderName::Rfc(RfcHeader::Bcc),
+        HeaderName::From,
+        HeaderName::To,
+        HeaderName::Cc,
+        HeaderName::Bcc,
         HeaderName::Other("X-Address-Single".into()),
         HeaderName::Other("X-Address".into()),
         HeaderName::Other("X-AddressList-Single".into()),
@@ -228,10 +228,10 @@ pub fn all_headers() -> Vec<email::Property> {
     }
 
     for header in [
-        HeaderName::Rfc(RfcHeader::ListPost),
-        HeaderName::Rfc(RfcHeader::ListSubscribe),
-        HeaderName::Rfc(RfcHeader::ListUnsubscribe),
-        HeaderName::Rfc(RfcHeader::ListOwner),
+        HeaderName::ListPost,
+        HeaderName::ListSubscribe,
+        HeaderName::ListUnsubscribe,
+        HeaderName::ListOwner,
         HeaderName::Other("X-List-Single".into()),
         HeaderName::Other("X-List".into()),
     ] {
@@ -258,8 +258,8 @@ pub fn all_headers() -> Vec<email::Property> {
     }
 
     for header in [
-        HeaderName::Rfc(RfcHeader::Date),
-        HeaderName::Rfc(RfcHeader::ResentDate),
+        HeaderName::Date,
+        HeaderName::ResentDate,
         HeaderName::Other("X-Date-Single".into()),
         HeaderName::Other("X-Date".into()),
     ] {
@@ -286,8 +286,8 @@ pub fn all_headers() -> Vec<email::Property> {
     }
 
     for header in [
-        HeaderName::Rfc(RfcHeader::MessageId),
-        HeaderName::Rfc(RfcHeader::References),
+        HeaderName::MessageId,
+        HeaderName::References,
         HeaderName::Other("X-Id-Single".into()),
         HeaderName::Other("X-Id".into()),
     ] {
@@ -314,8 +314,8 @@ pub fn all_headers() -> Vec<email::Property> {
     }
 
     for header in [
-        HeaderName::Rfc(RfcHeader::Subject),
-        HeaderName::Rfc(RfcHeader::Keywords),
+        HeaderName::Subject,
+        HeaderName::Keywords,
         HeaderName::Other("X-Text-Single".into()),
         HeaderName::Other("X-Text".into()),
     ] {

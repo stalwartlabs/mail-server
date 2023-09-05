@@ -65,6 +65,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
+
     lmtp.ingest(
         "bill@example.com",
         &["jdoe@example.com"],

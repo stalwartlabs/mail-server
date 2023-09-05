@@ -32,7 +32,7 @@ use jmap::{
 };
 use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
-use mail_parser::{Message, MimeHeaders};
+use mail_parser::{MessageParser, MimeHeaders};
 
 use crate::{directory::sql::create_test_user_with_email, jmap::delivery::SmtpConnection};
 
@@ -227,7 +227,9 @@ pub async fn import_certs_and_encrypt() {
         };
 
         for algo in [Algorithm::Aes128, Algorithm::Aes256] {
-            let message = Message::parse(b"Subject: test\r\ntest\r\n").unwrap();
+            let message = MessageParser::new()
+                .parse(b"Subject: test\r\ntest\r\n")
+                .unwrap();
             assert!(!message.is_encrypted());
             params.algo = algo;
             message.encrypt(&params).await.unwrap();
@@ -259,7 +261,9 @@ pub fn check_is_encrypted() {
 
     for raw_message in messages.split("---") {
         let is_encrypted = raw_message.contains("TRUE");
-        let message = Message::parse(raw_message.trim().as_bytes()).unwrap();
+        let message = MessageParser::new()
+            .parse(raw_message.trim().as_bytes())
+            .unwrap();
         assert!(message.content_type().is_some());
         assert_eq!(
             message.is_encrypted(),

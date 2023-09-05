@@ -36,7 +36,7 @@ use jmap_proto::{
         type_state::TypeState,
     },
 };
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
 use crate::{auth::AccessToken, IngestError, JMAP};
@@ -134,7 +134,7 @@ impl JMAP {
             match self
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
-                    message: Message::parse(&raw_message),
+                    message: MessageParser::new().parse(&raw_message),
                     account_id,
                     account_quota,
                     mailbox_ids,

@@ -2,36 +2,36 @@
 hostname = "test.example.org"
 
 [server.listener.jmap]
-bind = ["127.0.0.1:9990"]
-url = "https://127.0.0.1:9990"
+bind = ["0.0.0.0:9990"]
+url = "https://0.0.0.0:9990"
 protocol = "jmap"
 max-connections = 8192
 
 [server.listener.imap]
-bind = ["127.0.0.1:9991"]
+bind = ["0.0.0.0:143"]
 protocol = "imap"
 max-connections = 8192
 
 [server.listener.imaptls]
-bind = ["127.0.0.1:9992"]
+bind = ["0.0.0.0:9992"]
 protocol = "imap"
 max-connections = 8192
 tls.implicit = true
 
 [server.listener.sieve]
-bind = ["127.0.0.1:9993"]
+bind = ["0.0.0.0:9993"]
 protocol = "managesieve"
 max-connections = 8192
 tls.implicit = true
 
 [server.listener.smtps]
-bind = ['127.0.0.1:9994']
+bind = ['0.0.0.0:9994']
 greeting = 'Test SMTP instance'
 protocol = 'smtp'
 tls.implicit = true
 
 [server.listener.smtp]
-bind = ['127.0.0.1:9995']
+bind = ['0.0.0.0:587']
 greeting = 'Test SMTP instance'
 protocol = 'smtp'
 tls.implicit = false
@@ -46,7 +46,7 @@ certificate = "default"
 
 [global.tracing]
 method = "stdout"
-level = "info"
+level = "trace"
 
 [session.ehlo]
 reject-non-fqdn = false

@@ -29,7 +29,7 @@ use imap_proto::{
 
 use jmap::email::ingest::IngestEmail;
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::TypeState};
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use tokio::io::AsyncRead;
 
 use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
@@ -135,7 +135,7 @@ impl SessionData {
                 .jmap
                 .email_ingest(IngestEmail {
                     raw_message: &message.message,
-                    message: Message::parse(&message.message),
+                    message: MessageParser::new().parse(&message.message),
                     account_id,
                     account_quota,
                     mailbox_ids: vec![mailbox_id],

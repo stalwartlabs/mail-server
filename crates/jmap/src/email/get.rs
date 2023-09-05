@@ -30,7 +30,7 @@ use jmap_proto::{
         property::Property, value::Value,
     },
 };
-use mail_parser::Message;
+use mail_parser::MessageParser;
 
 use crate::{auth::AccessToken, email::headers::HeaderToValue, JMAP};
 
@@ -192,7 +192,7 @@ impl JMAP {
                 vec![]
             };
             let message = if !raw_message.is_empty() {
-                let message = Message::parse(&raw_message);
+                let message = MessageParser::new().parse(&raw_message);
                 if message.is_none() {
                     tracing::warn!(
                         event = "parse-error",

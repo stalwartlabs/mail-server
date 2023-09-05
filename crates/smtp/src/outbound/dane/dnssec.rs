@@ -45,7 +45,7 @@ impl DnssecResolver {
         options: ResolverOpts,
     ) -> Result<Self, ResolveError> {
         Ok(Self {
-            resolver: AsyncResolver::tokio(config, options)?,
+            resolver: AsyncResolver::tokio(config, options),
         })
     }
 }

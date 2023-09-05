@@ -19,7 +19,7 @@ mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-feature
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] } 
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" }
+sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
 ahash = { version = "0.8" }
 rustls = "0.21.0"
 rustls-pemfile = "1.0"

@@ -1297,7 +1297,7 @@ dependencies = [
  "smtp-proto",
  "sqlx",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "utils",
 ]
@@ -1480,14 +1480,14 @@ dependencies = [
 
 [[package]]
 name = "enum-as-inner"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9720bba047d567ffc8a3cba48bf19126600e249ab7f128e9233e6376976a116"
+checksum = "5ffccbb6966c05b32ef8fbac435df276c4ae4d3dc55a8cd0eb9745e6c12f546a"
 dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.29",
 ]
 
 [[package]]
@@ -2143,7 +2143,7 @@ dependencies = [
  "hyper 0.14.27",
  "rustls 0.21.7",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
 ]
 
 [[package]]
@@ -2216,17 +2216,6 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "idna"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "418a0a6fab821475f634efe3ccc45c013f742efe03d853e8d3355d5cb850ecf8"
-dependencies = [
- "matches",
- "unicode-bidi",
- "unicode-normalization",
-]
-
-[[package]]
-name = "idna"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d20d6b07bfbc108882d88ed8e37d39636dcc260e15e30c45e6ba089610b917c"
@@ -2253,7 +2242,7 @@ dependencies = [
  "rustls-pemfile",
  "store",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "utils",
 ]
@@ -2578,7 +2567,7 @@ dependencies = [
  "rustls-native-certs",
  "thiserror",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tokio-stream",
  "tokio-util",
  "url",
@@ -2694,8 +2683,8 @@ dependencies = [
 
 [[package]]
 name = "mail-auth"
-version = "0.3.2"
-source = "git+https://github.com/stalwartlabs/mail-auth#a6cd1d6cc0a79943903e8154eecc29f2de003e2a"
+version = "0.3.3"
+source = "git+https://github.com/stalwartlabs/mail-auth#949b8fcd91f329b424e22a3f2bbc3040869f3490"
 dependencies = [
  "ahash 0.8.3",
  "flate2",
@@ -2703,7 +2692,7 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "parking_lot",
- "quick-xml 0.28.2",
+ "quick-xml 0.30.0",
  "ring",
  "rustls-pemfile",
  "serde",
@@ -2722,8 +2711,8 @@ dependencies = [
 
 [[package]]
 name = "mail-parser"
-version = "0.8.2"
-source = "git+https://github.com/stalwartlabs/mail-parser#7c08078617ef9b355da445dbf88df64879eb8059"
+version = "0.9.0"
+source = "git+https://github.com/stalwartlabs/mail-parser#e5a4e65112fd8aa4c527d37b87413d939f1259a1"
 dependencies = [
  "encoding_rs",
  "serde",
@@ -2740,7 +2729,7 @@ dependencies = [
  "rustls 0.21.7",
  "smtp-proto",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "webpki-roots 0.25.2",
 ]
 
@@ -2781,7 +2770,7 @@ dependencies = [
  "sieve-rs",
  "store",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "utils",
 ]
@@ -2806,12 +2795,6 @@ checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
  "regex-automata 0.1.10",
 ]
-
-[[package]]
-name = "matches"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "matchit"
@@ -3733,9 +3716,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.28.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce5e73202a820a31f8a0ee32ada5e21029c81fd9e3ebf668a40832e4219d9d1"
+checksum = "eff6510e86862b57b210fd8cbe8ed3f0d7d600b9c2863cd4549a2e033c66e956"
 dependencies = [
  "memchr",
 ]
@@ -3977,7 +3960,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tokio-util",
  "tower-service",
  "url",
@@ -4552,7 +4535,7 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 [[package]]
 name = "sieve-rs"
 version = "0.3.1"
-source = "git+https://github.com/stalwartlabs/sieve#53ff94606cf4a3e03b8820280ef8fae0bfa500ec"
+source = "git+https://github.com/stalwartlabs/sieve#f17c085cbefd2c422d49924795d68255a6c7658c"
 dependencies = [
  "ahash 0.8.3",
  "bincode",
@@ -4637,7 +4620,7 @@ dependencies = [
  "smtp-proto",
  "sqlx",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "utils",
  "webpki-roots 0.25.2",
@@ -5154,7 +5137,7 @@ dependencies = [
  "sqlx",
  "store",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "utils",
@@ -5296,17 +5279,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.23.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
-dependencies = [
- "rustls 0.20.9",
- "tokio",
- "webpki",
-]
-
-[[package]]
-name = "tokio-rustls"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
@@ -5336,7 +5308,7 @@ dependencies = [
  "log",
  "rustls 0.21.7",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tungstenite 0.19.0",
  "webpki-roots 0.23.1",
 ]
@@ -5544,9 +5516,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f7f83d1e4a0e4358ac54c5c3681e5d7da5efc5a7a632c90bb6d6669ddd9bc26"
+checksum = "0dc775440033cb114085f6f2437682b194fa7546466024b1037e82a48a052a69"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -5555,44 +5527,45 @@ dependencies = [
  "futures-channel",
  "futures-io",
  "futures-util",
- "idna 0.2.3",
+ "idna",
  "ipnet",
- "lazy_static",
+ "once_cell",
  "rand",
  "ring",
- "rustls 0.20.9",
+ "rustls 0.21.7",
  "rustls-pemfile",
+ "rustls-webpki 0.101.4",
  "smallvec",
  "thiserror",
  "tinyvec",
  "tokio",
- "tokio-rustls 0.23.4",
+ "tokio-rustls",
  "tracing",
  "url",
- "webpki",
 ]
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aff21aa4dcefb0a1afbfac26deb0adc93888c7d295fb63ab273ef276ba2b7cfe"
+checksum = "2dff7aed33ef3e8bf2c9966fccdfed93f93d46f432282ea875cd66faabc6ef2f"
 dependencies = [
  "cfg-if",
  "futures-util",
  "ipconfig",
- "lazy_static",
  "lru-cache",
+ "once_cell",
  "parking_lot",
+ "rand",
  "resolv-conf",
- "rustls 0.20.9",
+ "rustls 0.21.7",
  "smallvec",
  "thiserror",
  "tokio",
- "tokio-rustls 0.23.4",
+ "tokio-rustls",
  "tracing",
  "trust-dns-proto",
- "webpki-roots 0.22.6",
+ "webpki-roots 0.25.2",
 ]
 
 [[package]]
@@ -5745,7 +5718,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "143b538f18257fac9cad154828a57c6bf5157e1aa604d4816b5995bf6de87ae5"
 dependencies = [
  "form_urlencoded",
- "idna 0.4.0",
+ "idna",
  "percent-encoding",
 ]
 
@@ -5778,7 +5751,7 @@ dependencies = [
  "serde",
  "smtp-proto",
  "tokio",
- "tokio-rustls 0.24.1",
+ "tokio-rustls",
  "tracing",
  "tracing-appender",
  "tracing-opentelemetry",

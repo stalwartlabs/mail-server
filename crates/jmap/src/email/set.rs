@@ -50,7 +50,7 @@ use mail_builder::{
     mime::{BodyPart, MimePart},
     MessageBuilder,
 };
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use store::{
     ahash::AHashSet,
     fts::term_index::TokenIndex,
@@ -730,7 +730,7 @@ impl JMAP {
             match self
                 .email_ingest(IngestEmail {
                     raw_message: &raw_message,
-                    message: Message::parse(&raw_message),
+                    message: MessageParser::new().parse(&raw_message),
                     account_id,
                     account_quota,
                     mailbox_ids: mailboxes,

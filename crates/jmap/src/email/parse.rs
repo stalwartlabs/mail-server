@@ -28,7 +28,7 @@ use jmap_proto::{
     types::{property::Property, value::Value},
 };
 use mail_parser::{
-    decoders::html::html_to_text, parsers::preview::preview_text, Message, PartType,
+    decoders::html::html_to_text, parsers::preview::preview_text, MessageParser, PartType,
 };
 use utils::map::vec_map::VecMap;
 
@@ -108,7 +108,7 @@ impl JMAP {
                     continue;
                 }
             };
-            let message = if let Some(message) = Message::parse(&raw_message) {
+            let message = if let Some(message) = MessageParser::new().parse(&raw_message) {
                 message
             } else {
                 response.not_parsable.push(blob_id);

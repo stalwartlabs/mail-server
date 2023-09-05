@@ -26,7 +26,7 @@ use std::{borrow::Cow, collections::BTreeSet, fmt::Display};
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
-use mail_parser::{decoders::base64::base64_decode, Message, MimeHeaders};
+use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};
 use pgp::{composed, crypto::sym::SymmetricKeyAlgorithm, Deserializable, SignedPublicKey};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use rasn::types::{ObjectIdentifier, OctetString};
@@ -632,11 +632,11 @@ impl JMAP {
                 };
 
                 // Try a test encryption
-                if let Err(EncryptMessageError::Error(message)) =
-                    Message::parse("Subject: test\r\ntest\r\n".as_bytes())
-                        .unwrap()
-                        .encrypt(&params)
-                        .await
+                if let Err(EncryptMessageError::Error(message)) = MessageParser::new()
+                    .parse("Subject: test\r\ntest\r\n".as_bytes())
+                    .unwrap()
+                    .encrypt(&params)
+                    .await
                 {
                     return Err(Cow::from(message));
                 }

@@ -496,13 +496,7 @@ impl From<Group<'_>> for Value {
                         group
                             .addresses
                             .into_iter()
-                            .filter_map(|addr| {
-                                if addr.address.as_ref()?.contains('@') {
-                                    Some(addr.into())
-                                } else {
-                                    None
-                                }
-                            })
+                            .map(Value::from)
                             .collect::<Vec<Value>>(),
                     ),
                 ),

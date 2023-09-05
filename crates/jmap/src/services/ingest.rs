@@ -22,7 +22,7 @@
 */
 
 use jmap_proto::types::{state::StateChange, type_state::TypeState};
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use store::ahash::AHashMap;
 use utils::ipc::{DeliveryResult, IngestMessage};
 
@@ -97,7 +97,7 @@ impl JMAP {
 
                     self.email_ingest(IngestEmail {
                         raw_message: &raw_message,
-                        message: Message::parse(&raw_message),
+                        message: MessageParser::new().parse(&raw_message),
                         account_id: uid,
                         account_quota,
                         mailbox_ids: vec![INBOX_ID],

@@ -1123,6 +1123,10 @@
     {
       "name": "John (my dear friend)",
       "email": "jdoe@one.test"
+    },
+    {
+      "name": "the end of the group",
+      "email": ""
     }
   ],
   "header:X-AddressesGroup-Single:asAddresses:all": [
@@ -1138,6 +1142,10 @@
       {
         "name": "John (my dear friend)",
         "email": "jdoe@one.test"
+      },
+      {
+        "name": "the end of the group",
+        "email": ""
       }
     ]
   ],
@@ -1161,7 +1169,12 @@
     },
     {
       "name": null,
-      "addresses": []
+      "addresses": [
+        {
+          "name": "the end of the group",
+          "email": ""
+        }
+      ]
     }
   ],
   "header:X-AddressesGroup-Single:asGroupedAddresses:all": [
@@ -1185,7 +1198,12 @@
       },
       {
         "name": null,
-        "addresses": []
+        "addresses": [
+          {
+            "name": "the end of the group",
+            "email": ""
+          }
+        ]
       }
     ]
   ],

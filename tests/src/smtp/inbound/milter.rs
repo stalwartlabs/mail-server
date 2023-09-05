@@ -24,7 +24,7 @@
 use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use mail_auth::AuthenticatedMessage;
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
     config::{ConfigContext, IfBlock, Milter},
@@ -401,7 +401,7 @@ async fn milter_client_test() {
     client.init().await.unwrap();
 
     let raw_message = load_test_message("arc", "messages");
-    let message = Message::parse(raw_message.as_bytes()).unwrap();
+    let message = MessageParser::new().parse(raw_message.as_bytes()).unwrap();
 
     let r = client
         .connection(

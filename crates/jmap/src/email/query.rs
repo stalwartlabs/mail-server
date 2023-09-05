@@ -27,7 +27,7 @@ use jmap_proto::{
     object::email::QueryArguments,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
-use mail_parser::{HeaderName, RfcHeader};
+use mail_parser::HeaderName;
 use store::{
     fts::{builder::MAX_TOKEN_LENGTH, Language},
     query::{self},
@@ -158,63 +158,67 @@ impl JMAP {
                     let header_name = header.next().ok_or_else(|| {
                         MethodError::InvalidArguments("Header name is missing.".to_string())
                     })?;
-                    if let Some(HeaderName::Rfc(header_name)) = HeaderName::parse(&header_name) {
-                        let is_id = matches!(
-                            header_name,
-                            RfcHeader::MessageId
-                                | RfcHeader::InReplyTo
-                                | RfcHeader::References
-                                | RfcHeader::ResentMessageId
-                        );
-                        let tokens = if let Some(header_value) = header.next() {
-                            let header_num = u8::from(header_name).to_string();
-                            header_value
-                                .split_ascii_whitespace()
-                                .filter_map(|token| {
-                                    if token.len() < MAX_TOKEN_LENGTH {
-                                        if is_id {
-                                            format!("{header_num}{token}")
+
+                    match HeaderName::parse(&header_name) {
+                        Some(HeaderName::Other(_)) | None => {
+                            return Err(MethodError::InvalidArguments(format!(
+                                "Querying non-RFC header '{header_name}' is not allowed.",
+                            )));
+                        }
+                        Some(header_name) => {
+                            let is_id = matches!(
+                                header_name,
+                                HeaderName::MessageId
+                                    | HeaderName::InReplyTo
+                                    | HeaderName::References
+                                    | HeaderName::ResentMessageId
+                            );
+                            let tokens = if let Some(header_value) = header.next() {
+                                let header_num = header_name.id().to_string();
+                                header_value
+                                    .split_ascii_whitespace()
+                                    .filter_map(|token| {
+                                        if token.len() < MAX_TOKEN_LENGTH {
+                                            if is_id {
+                                                format!("{header_num}{token}")
+                                            } else {
+                                                format!("{header_num}{}", token.to_lowercase())
+                                            }
+                                            .into()
                                         } else {
-                                            format!("{header_num}{}", token.to_lowercase())
+                                            None
                                         }
-                                        .into()
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                        } else {
-                            vec![]
-                        };
-                        match tokens.len() {
-                            0 => {
-                                filters.push(query::Filter::has_raw_text(
-                                    Property::Headers,
-                                    u8::from(header_name).to_string(),
-                                ));
-                            }
-                            1 => {
-                                filters.push(query::Filter::has_raw_text(
-                                    Property::Headers,
-                                    tokens.into_iter().next().unwrap(),
-                                ));
-                            }
-                            _ => {
-                                filters.push(query::Filter::And);
-                                for token in tokens {
+                                    })
+                                    .collect::<Vec<_>>()
+                            } else {
+                                vec![]
+                            };
+                            match tokens.len() {
+                                0 => {
                                     filters.push(query::Filter::has_raw_text(
                                         Property::Headers,
-                                        token,
+                                        header_name.id().to_string(),
                                     ));
                                 }
-                                filters.push(query::Filter::End);
+                                1 => {
+                                    filters.push(query::Filter::has_raw_text(
+                                        Property::Headers,
+                                        tokens.into_iter().next().unwrap(),
+                                    ));
+                                }
+                                _ => {
+                                    filters.push(query::Filter::And);
+                                    for token in tokens {
+                                        filters.push(query::Filter::has_raw_text(
+                                            Property::Headers,
+                                            token,
+                                        ));
+                                    }
+                                    filters.push(query::Filter::End);
+                                }
                             }
                         }
-                    } else {
-                        return Err(MethodError::InvalidArguments(format!(
-                            "Querying non-RFC header '{header_name}' is not allowed.",
-                        )));
-                    };
+                    }
                 }
 
                 // Non-standard

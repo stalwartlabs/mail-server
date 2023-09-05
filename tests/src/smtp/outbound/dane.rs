@@ -232,7 +232,7 @@ async fn dane_test() {
     let r = Resolvers {
         dns: Resolver::new_cloudflare().unwrap(),
         dnssec: DnssecResolver {
-            resolver: AsyncResolver::tokio(conf, opts).unwrap(),
+            resolver: AsyncResolver::tokio(conf, opts),
         },
         cache: smtp::core::DnsCache {
             tlsa: LruCache::with_capacity(10),

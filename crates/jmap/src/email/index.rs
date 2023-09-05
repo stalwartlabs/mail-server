@@ -35,7 +35,7 @@ use jmap_proto::{
 use mail_parser::{
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
-    Addr, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType, RfcHeader,
+    Addr, Address, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType,
 };
 use store::{
     fts::{
@@ -53,6 +53,7 @@ pub const MAX_SORT_FIELD_LENGTH: usize = 255;
 pub const MAX_STORED_FIELD_LENGTH: usize = 512;
 pub const PREVIEW_LENGTH: usize = 256;
 
+#[derive(Debug)]
 pub struct SortedAddressBuilder {
     last_is_space: bool,
     pub buf: String,
@@ -120,176 +121,177 @@ impl IndexMessage for BatchBuilder {
                 language = part_language;
                 let mut extra_ids = Vec::new();
                 for header in part.headers.into_iter().rev() {
-                    if let HeaderName::Rfc(rfc_header) = header.name {
-                        // Index hasHeader property
-                        let header_num = (rfc_header as u8).to_string();
-                        fts.index_raw_token(Property::Headers, &header_num);
+                    if matches!(header.name, HeaderName::Other(_)) {
+                        continue;
+                    }
+                    // Index hasHeader property
+                    let header_num = header.name.id().to_string();
+                    fts.index_raw_token(Property::Headers, &header_num);
 
-                        match rfc_header {
-                            RfcHeader::MessageId
-                            | RfcHeader::InReplyTo
-                            | RfcHeader::References
-                            | RfcHeader::ResentMessageId => {
-                                header.value.visit_text(|id| {
-                                    // Add ids to inverted index
-                                    if id.len() < MAX_ID_LENGTH {
-                                        self.value(Property::MessageId, id, F_INDEX);
-                                    }
+                    match header.name {
+                        HeaderName::MessageId
+                        | HeaderName::InReplyTo
+                        | HeaderName::References
+                        | HeaderName::ResentMessageId => {
+                            header.value.visit_text(|id| {
+                                // Add ids to inverted index
+                                if id.len() < MAX_ID_LENGTH {
+                                    self.value(Property::MessageId, id, F_INDEX);
+                                }
 
-                                    // Index ids without stemming
-                                    if id.len() < MAX_TOKEN_LENGTH {
-                                        fts.index_raw_token(
-                                            Property::Headers,
-                                            format!("{header_num}{id}"),
-                                        );
-                                    }
-                                });
-
-                                if matches!(
-                                    rfc_header,
-                                    RfcHeader::MessageId
-                                        | RfcHeader::InReplyTo
-                                        | RfcHeader::References
-                                ) && !seen_headers[rfc_header as usize]
-                                {
-                                    metadata.append(
-                                        rfc_header.into(),
-                                        header
-                                            .value
-                                            .trim_text(MAX_STORED_FIELD_LENGTH)
-                                            .into_form(&HeaderForm::MessageIds),
+                                // Index ids without stemming
+                                if id.len() < MAX_TOKEN_LENGTH {
+                                    fts.index_raw_token(
+                                        Property::Headers,
+                                        format!("{header_num}{id}"),
                                     );
-                                    seen_headers[rfc_header as usize] = true;
-                                } else {
-                                    header.value.into_visit_text(|id| {
-                                        extra_ids.push(Value::Text(id));
-                                    });
                                 }
+                            });
+
+                            if matches!(
+                                header.name,
+                                HeaderName::MessageId
+                                    | HeaderName::InReplyTo
+                                    | HeaderName::References
+                            ) && !seen_headers[header.name.id() as usize]
+                            {
+                                metadata.append(
+                                    Property::from_header(&header.name),
+                                    header
+                                        .value
+                                        .trim_text(MAX_STORED_FIELD_LENGTH)
+                                        .into_form(&HeaderForm::MessageIds),
+                                );
+                                seen_headers[header.name.id() as usize] = true;
+                            } else {
+                                header.value.into_visit_text(|id| {
+                                    extra_ids.push(Value::Text(id));
+                                });
                             }
-                            RfcHeader::From
-                            | RfcHeader::To
-                            | RfcHeader::Cc
-                            | RfcHeader::Bcc
-                            | RfcHeader::ReplyTo
-                            | RfcHeader::Sender => {
-                                let property = Property::from(rfc_header);
-                                let seen_header = seen_headers[rfc_header as usize];
-                                if matches!(
-                                    rfc_header,
-                                    RfcHeader::From
-                                        | RfcHeader::To
-                                        | RfcHeader::Cc
-                                        | RfcHeader::Bcc
-                                ) {
-                                    let mut sort_text = SortedAddressBuilder::new();
-                                    let mut found_addr = seen_header;
+                        }
+                        HeaderName::From
+                        | HeaderName::To
+                        | HeaderName::Cc
+                        | HeaderName::Bcc
+                        | HeaderName::ReplyTo
+                        | HeaderName::Sender => {
+                            let property = Property::from_header(&header.name);
+                            let seen_header = seen_headers[header.name.id() as usize];
+                            if matches!(
+                                header.name,
+                                HeaderName::From
+                                    | HeaderName::To
+                                    | HeaderName::Cc
+                                    | HeaderName::Bcc
+                            ) {
+                                let mut sort_text = SortedAddressBuilder::new();
+                                let mut found_addr = seen_header;
 
-                                    header.value.visit_addresses(|element, value| {
-                                        if !found_addr {
-                                            match element {
-                                                AddressElement::Name => {
-                                                    found_addr = !sort_text.push(value);
-                                                }
-                                                AddressElement::Address => {
-                                                    sort_text.push(value);
-                                                    found_addr = true;
-                                                }
-                                                AddressElement::GroupName => (),
+                                header.value.visit_addresses(|element, value| {
+                                    if !found_addr {
+                                        match element {
+                                            AddressElement::Name => {
+                                                found_addr = !sort_text.push(value);
                                             }
+                                            AddressElement::Address => {
+                                                sort_text.push(value);
+                                                found_addr = true;
+                                            }
+                                            AddressElement::GroupName => (),
                                         }
-
-                                        // Index an address name or email without stemming
-                                        fts.index_raw(u8::from(&property), value);
-                                    });
-
-                                    if !seen_header {
-                                        // Add address to inverted index
-                                        self.value(u8::from(&property), sort_text.build(), F_INDEX);
                                     }
-                                }
+
+                                    // Index an address name or email without stemming
+                                    fts.index_raw(u8::from(&property), value);
+                                });
 
                                 if !seen_header {
-                                    // Add address to metadata
-                                    metadata.append(
-                                        property,
-                                        header
-                                            .value
-                                            .trim_text(MAX_STORED_FIELD_LENGTH)
-                                            .into_form(&HeaderForm::Addresses),
-                                    );
-                                    seen_headers[rfc_header as usize] = true;
+                                    // Add address to inverted index
+                                    self.value(u8::from(&property), sort_text.build(), F_INDEX);
                                 }
                             }
-                            RfcHeader::Date => {
-                                if !seen_headers[rfc_header as usize] {
-                                    if let HeaderValue::DateTime(datetime) = &header.value {
-                                        self.value(
-                                            Property::SentAt,
-                                            datetime.to_timestamp() as u64,
-                                            F_INDEX,
-                                        );
-                                    }
-                                    metadata.append(
-                                        Property::SentAt,
-                                        header.value.into_form(&HeaderForm::Date),
-                                    );
-                                    seen_headers[rfc_header as usize] = true;
-                                }
+
+                            if !seen_header {
+                                // Add address to metadata
+                                metadata.append(
+                                    property,
+                                    header
+                                        .value
+                                        .trim_text(MAX_STORED_FIELD_LENGTH)
+                                        .into_form(&HeaderForm::Addresses),
+                                );
+                                seen_headers[header.name.id() as usize] = true;
                             }
-                            RfcHeader::Subject => {
-                                // Index subject
-                                let subject = match &header.value {
-                                    HeaderValue::Text(text) => text.clone(),
-                                    HeaderValue::TextList(list) if !list.is_empty() => {
-                                        list.first().unwrap().clone()
-                                    }
-                                    _ => "".into(),
-                                };
-
-                                if !seen_headers[rfc_header as usize] {
-                                    // Add to metadata
-                                    metadata.append(
-                                        Property::Subject,
-                                        header
-                                            .value
-                                            .trim_text(MAX_STORED_FIELD_LENGTH)
-                                            .into_form(&HeaderForm::Text),
-                                    );
-
-                                    // Index thread name
-                                    let thread_name = thread_name(&subject);
+                        }
+                        HeaderName::Date => {
+                            if !seen_headers[header.name.id() as usize] {
+                                if let HeaderValue::DateTime(datetime) = &header.value {
                                     self.value(
-                                        Property::Subject,
-                                        if !thread_name.is_empty() {
-                                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                                        } else {
-                                            "!"
-                                        },
+                                        Property::SentAt,
+                                        datetime.to_timestamp() as u64,
                                         F_INDEX,
                                     );
-
-                                    seen_headers[rfc_header as usize] = true;
                                 }
-
-                                // Index subject for FTS
-                                fts.index(Property::Subject, subject, language);
+                                metadata.append(
+                                    Property::SentAt,
+                                    header.value.into_form(&HeaderForm::Date),
+                                );
+                                seen_headers[header.name.id() as usize] = true;
                             }
-
-                            RfcHeader::Comments | RfcHeader::Keywords | RfcHeader::ListId => {
-                                // Index headers
-                                header.value.visit_text(|text| {
-                                    for token in text.split_ascii_whitespace() {
-                                        if token.len() < MAX_TOKEN_LENGTH {
-                                            fts.index_raw_token(
-                                                Property::Headers,
-                                                format!("{header_num}{}", token.to_lowercase()),
-                                            );
-                                        }
-                                    }
-                                });
-                            }
-                            _ => (),
                         }
+                        HeaderName::Subject => {
+                            // Index subject
+                            let subject = match &header.value {
+                                HeaderValue::Text(text) => text.clone(),
+                                HeaderValue::TextList(list) if !list.is_empty() => {
+                                    list.first().unwrap().clone()
+                                }
+                                _ => "".into(),
+                            };
+
+                            if !seen_headers[header.name.id() as usize] {
+                                // Add to metadata
+                                metadata.append(
+                                    Property::Subject,
+                                    header
+                                        .value
+                                        .trim_text(MAX_STORED_FIELD_LENGTH)
+                                        .into_form(&HeaderForm::Text),
+                                );
+
+                                // Index thread name
+                                let thread_name = thread_name(&subject);
+                                self.value(
+                                    Property::Subject,
+                                    if !thread_name.is_empty() {
+                                        thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                                    } else {
+                                        "!"
+                                    },
+                                    F_INDEX,
+                                );
+
+                                seen_headers[header.name.id() as usize] = true;
+                            }
+
+                            // Index subject for FTS
+                            fts.index(Property::Subject, subject, language);
+                        }
+
+                        HeaderName::Comments | HeaderName::Keywords | HeaderName::ListId => {
+                            // Index headers
+                            header.value.visit_text(|text| {
+                                for token in text.split_ascii_whitespace() {
+                                    if token.len() < MAX_TOKEN_LENGTH {
+                                        fts.index_raw_token(
+                                            Property::Headers,
+                                            format!("{header_num}{}", token.to_lowercase()),
+                                        );
+                                    }
+                                }
+                            });
+                        }
+                        _ => (),
                     }
                 }
 
@@ -300,7 +302,7 @@ impl IndexMessage for BatchBuilder {
             }
 
             // Add subject to index if missing
-            if !seen_headers[RfcHeader::Subject as usize] {
+            if !seen_headers[HeaderName::Subject.id() as usize] {
                 self.value(Property::Subject, "!", F_INDEX);
             }
 
@@ -347,7 +349,7 @@ impl IndexMessage for BatchBuilder {
                         .language()
                         .unwrap_or(Language::Unknown);
                     if let Some(HeaderValue::Text(subject)) =
-                        nested_message.remove_header_rfc(RfcHeader::Subject)
+                        nested_message.remove_header(HeaderName::Subject)
                     {
                         fts.index(
                             Property::Attachments,
@@ -549,17 +551,19 @@ trait GetContentLanguage {
 
 impl GetContentLanguage for MessagePart<'_> {
     fn language(&self) -> Option<Language> {
-        self.headers.rfc(&RfcHeader::ContentLanguage).and_then(|v| {
-            Language::from_iso_639(match v {
-                HeaderValue::Text(v) => v.as_ref(),
-                HeaderValue::TextList(v) => v.first()?,
-                _ => {
-                    return None;
-                }
+        self.headers
+            .header_value(&HeaderName::ContentLanguage)
+            .and_then(|v| {
+                Language::from_iso_639(match v {
+                    HeaderValue::Text(v) => v.as_ref(),
+                    HeaderValue::TextList(v) => v.first()?,
+                    _ => {
+                        return None;
+                    }
+                })
+                .unwrap_or(Language::Unknown)
+                .into()
             })
-            .unwrap_or(Language::Unknown)
-            .into()
-        })
     }
 }
 
@@ -569,6 +573,7 @@ trait VisitValues {
     fn into_visit_text(self, visitor: impl FnMut(String));
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum AddressElement {
     Name,
     Address,
@@ -578,15 +583,7 @@ enum AddressElement {
 impl VisitValues for HeaderValue<'_> {
     fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
         match self {
-            HeaderValue::Address(addr) => {
-                if let Some(name) = &addr.name {
-                    visitor(AddressElement::Name, name);
-                }
-                if let Some(addr) = &addr.address {
-                    visitor(AddressElement::Address, addr);
-                }
-            }
-            HeaderValue::AddressList(addr_list) => {
+            HeaderValue::Address(Address::List(addr_list)) => {
                 for addr in addr_list {
                     if let Some(name) = &addr.name {
                         visitor(AddressElement::Name, name);
@@ -596,21 +593,7 @@ impl VisitValues for HeaderValue<'_> {
                     }
                 }
             }
-            HeaderValue::Group(group) => {
-                if let Some(name) = &group.name {
-                    visitor(AddressElement::GroupName, name);
-                }
-
-                for addr in &group.addresses {
-                    if let Some(name) = &addr.name {
-                        visitor(AddressElement::Name, name);
-                    }
-                    if let Some(addr) = &addr.address {
-                        visitor(AddressElement::Address, addr);
-                    }
-                }
-            }
-            HeaderValue::GroupList(groups) => {
+            HeaderValue::Address(Address::Group(groups)) => {
                 for group in groups {
                     if let Some(name) = &group.name {
                         visitor(AddressElement::GroupName, name);
@@ -666,10 +649,12 @@ pub trait TrimTextValue {
 impl TrimTextValue for HeaderValue<'_> {
     fn trim_text(self, length: usize) -> Self {
         match self {
-            HeaderValue::Address(v) => HeaderValue::Address(v.trim_text(length)),
-            HeaderValue::AddressList(v) => HeaderValue::AddressList(v.trim_text(length)),
-            HeaderValue::Group(v) => HeaderValue::Group(v.trim_text(length)),
-            HeaderValue::GroupList(v) => HeaderValue::GroupList(v.trim_text(length)),
+            HeaderValue::Address(Address::List(v)) => {
+                HeaderValue::Address(Address::List(v.trim_text(length)))
+            }
+            HeaderValue::Address(Address::Group(v)) => {
+                HeaderValue::Address(Address::Group(v.trim_text(length)))
+            }
             HeaderValue::Text(v) => HeaderValue::Text(v.trim_text(length)),
             HeaderValue::TextList(v) => HeaderValue::TextList(v.trim_text(length)),
             v => v,

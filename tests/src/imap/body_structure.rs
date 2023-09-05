@@ -28,7 +28,7 @@ use imap_proto::{
     protocol::fetch::{BodyContents, DataItem, Section},
     ResponseCode, StatusResponse,
 };
-use mail_parser::Message;
+use mail_parser::MessageParser;
 
 use super::resources_dir;
 
@@ -41,7 +41,7 @@ fn body_structure() {
         }
 
         let raw_message = fs::read(&file_name).unwrap();
-        let message = Message::parse(&raw_message).unwrap();
+        let message = MessageParser::new().parse(&raw_message).unwrap();
         let mut buf = Vec::new();
 
         // Serialize body and bodystructure

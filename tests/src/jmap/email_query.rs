@@ -30,7 +30,7 @@ use jmap_client::{
     email,
 };
 use jmap_proto::types::{collection::Collection, id::Id};
-use mail_parser::RfcHeader;
+use mail_parser::HeaderName;
 use store::{ahash::AHashMap, write::BatchBuilder};
 
 use crate::{
@@ -192,7 +192,10 @@ pub async fn query(client: &mut Client) {
         ),
         (
             Filter::and(vec![
-                (email::query::Filter::header(RfcHeader::Comments.to_string(), Some("attributed"))),
+                (email::query::Filter::header(
+                    HeaderName::Comments.to_string(),
+                    Some("attributed"),
+                )),
                 (email::query::Filter::from("john")),
                 (email::query::Filter::cc("oil")),
             ]),

@@ -45,7 +45,7 @@ use jmap_proto::{
         property::Property, state::StateChange, type_state::TypeState, value::Value,
     },
 };
-use mail_parser::{GetHeader, Message, PartType, RfcHeader};
+use mail_parser::{Address, GetHeader, HeaderName, Message, MessageParser, PartType};
 use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, BatchBuilder, F_BITMAP, F_VALUE},
@@ -319,7 +319,7 @@ impl SessionData {
             };
 
             let message = if let Some(raw_message) = &raw_message {
-                if let Some(message) = Message::parse(raw_message) {
+                if let Some(message) = MessageParser::new().parse(raw_message) {
                     message.into()
                 } else {
                     tracing::warn!(
@@ -671,8 +671,8 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
         };
         let content_type = part
             .headers
-            .rfc(&RfcHeader::ContentType)
-            .and_then(|ct| ct.as_content_type_ref());
+            .header_value(&HeaderName::ContentType)
+            .and_then(|ct| ct.as_content_type());
 
         let mut body_md5 = None;
         let mut extension = BodyPartExtension::default();
@@ -695,18 +695,18 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 
             fields.body_id = part
                 .headers
-                .rfc(&RfcHeader::ContentId)
-                .and_then(|id| id.as_text_ref().map(|id| format!("<{}>", id).into()));
+                .header_value(&HeaderName::ContentId)
+                .and_then(|id| id.as_text().map(|id| format!("<{}>", id).into()));
 
             fields.body_description = part
                 .headers
-                .rfc(&RfcHeader::ContentDescription)
-                .and_then(|ct| ct.as_text_ref().map(|ct| ct.into()));
+                .header_value(&HeaderName::ContentDescription)
+                .and_then(|ct| ct.as_text().map(|ct| ct.into()));
 
             fields.body_encoding = part
                 .headers
-                .rfc(&RfcHeader::ContentTransferEncoding)
-                .and_then(|ct| ct.as_text_ref().map(|ct| ct.into()));
+                .header_value(&HeaderName::ContentTransferEncoding)
+                .and_then(|ct| ct.as_text().map(|ct| ct.into()));
 
             fields.body_size_octets = body.as_ref().map(|b| b.len()).unwrap_or(0);
 
@@ -730,8 +730,10 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     .map(|b| format!("{:x}", md5::compute(b)).into());
             }
 
-            extension.body_disposition =
-                part.headers.rfc(&RfcHeader::ContentDisposition).map(|cd| {
+            extension.body_disposition = part
+                .headers
+                .header_value(&HeaderName::ContentDisposition)
+                .map(|cd| {
                     let cd = cd.content_type();
 
                     (
@@ -747,18 +749,18 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                     )
                 });
 
-            extension.body_language =
-                part.headers
-                    .rfc(&RfcHeader::ContentLanguage)
-                    .and_then(|hv| {
-                        hv.as_text_list()
-                            .map(|list| list.into_iter().map(|item| item.into()).collect())
-                    });
+            extension.body_language = part
+                .headers
+                .header_value(&HeaderName::ContentLanguage)
+                .and_then(|hv| {
+                    hv.as_text_list()
+                        .map(|list| list.into_iter().map(|item| item.into()).collect())
+                });
 
             extension.body_location = part
                 .headers
-                .rfc(&RfcHeader::ContentLocation)
-                .and_then(|ct| ct.as_text_ref().map(|ct| ct.into()));
+                .header_value(&HeaderName::ContentLocation)
+                .and_then(|ct| ct.as_text().map(|ct| ct.into()));
         }
 
         match &part.body {
@@ -1045,27 +1047,27 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
             date: self.date().cloned(),
             subject: self.subject().map(|s| s.into()),
             from: self
-                .header_values(RfcHeader::From)
+                .header_values(HeaderName::From)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             sender: self
-                .header_values(RfcHeader::Sender)
+                .header_values(HeaderName::Sender)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             reply_to: self
-                .header_values(RfcHeader::ReplyTo)
+                .header_values(HeaderName::ReplyTo)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             to: self
-                .header_values(RfcHeader::To)
+                .header_values(HeaderName::To)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             cc: self
-                .header_values(RfcHeader::Cc)
+                .header_values(HeaderName::Cc)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             bcc: self
-                .header_values(RfcHeader::Bcc)
+                .header_values(HeaderName::Bcc)
                 .flat_map(|a| a.as_imap_address())
                 .collect(),
             in_reply_to: self.in_reply_to().as_text_list().map(|list| {
@@ -1109,15 +1111,7 @@ impl AsImapAddress for mail_parser::HeaderValue<'_> {
         let mut addresses = Vec::new();
 
         match self {
-            mail_parser::HeaderValue::Address(addr) => {
-                if let Some(email) = &addr.address {
-                    addresses.push(fetch::Address::Single(fetch::EmailAddress {
-                        name: addr.name.as_ref().map(|n| n.as_ref().into()),
-                        address: email.as_ref().into(),
-                    }));
-                }
-            }
-            mail_parser::HeaderValue::AddressList(list) => {
+            mail_parser::HeaderValue::Address(Address::List(list)) => {
                 for addr in list {
                     if let Some(email) = &addr.address {
                         addresses.push(fetch::Address::Single(fetch::EmailAddress {
@@ -1127,23 +1121,7 @@ impl AsImapAddress for mail_parser::HeaderValue<'_> {
                     }
                 }
             }
-            mail_parser::HeaderValue::Group(group) => {
-                addresses.push(fetch::Address::Group(fetch::AddressGroup {
-                    name: group.name.as_ref().map(|n| n.as_ref().into()),
-                    addresses: group
-                        .addresses
-                        .iter()
-                        .filter_map(|addr| {
-                            fetch::EmailAddress {
-                                name: addr.name.as_ref().map(|n| n.as_ref().into()),
-                                address: addr.address.as_ref()?.as_ref().into(),
-                            }
-                            .into()
-                        })
-                        .collect(),
-                }));
-            }
-            mail_parser::HeaderValue::GroupList(list) => {
+            mail_parser::HeaderValue::Address(Address::Group(list)) => {
                 for group in list {
                     addresses.push(fetch::Address::Group(fetch::AddressGroup {
                         name: group.name.as_ref().map(|n| n.as_ref().into()),

@@ -33,7 +33,7 @@ use imap_proto::{
 };
 
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use mail_parser::{HeaderName, RfcHeader};
+use mail_parser::HeaderName;
 use store::{
     fts::{builder::MAX_TOKEN_LENGTH, Language},
     query::{self, log::Query, sort::Pagination, ResultSet},
@@ -353,17 +353,22 @@ impl SessionData {
                         Language::None,
                     ));
                 }
-                search::Filter::Header(header, value) => {
-                    if let Some(HeaderName::Rfc(header_name)) = HeaderName::parse(&header) {
+                search::Filter::Header(header, value) => match HeaderName::parse(&header) {
+                    Some(HeaderName::Other(_)) | None => {
+                        return Err(StatusResponse::no(format!(
+                            "Querying non-RFC header '{header}' is not allowed.",
+                        )));
+                    }
+                    Some(header_name) => {
                         let is_id = matches!(
                             header_name,
-                            RfcHeader::MessageId
-                                | RfcHeader::InReplyTo
-                                | RfcHeader::References
-                                | RfcHeader::ResentMessageId
+                            HeaderName::MessageId
+                                | HeaderName::InReplyTo
+                                | HeaderName::References
+                                | HeaderName::ResentMessageId
                         );
                         let tokens = if !value.is_empty() {
-                            let header_num = u8::from(header_name).to_string();
+                            let header_num = header_name.id().to_string();
                             value
                                 .split_ascii_whitespace()
                                 .filter_map(|token| {
@@ -386,7 +391,7 @@ impl SessionData {
                             0 => {
                                 filters.push(query::Filter::has_raw_text(
                                     Property::Headers,
-                                    u8::from(header_name).to_string(),
+                                    header_name.id().to_string(),
                                 ));
                             }
                             1 => {
@@ -406,12 +411,8 @@ impl SessionData {
                                 filters.push(query::Filter::End);
                             }
                         }
-                    } else {
-                        return Err(StatusResponse::no(format!(
-                            "Querying non-RFC header '{header}' is not allowed.",
-                        )));
-                    };
-                }
+                    }
+                },
                 search::Filter::Keyword(keyword) => {
                     filters.push(query::Filter::is_in_bitmap(
                         Property::Keywords,

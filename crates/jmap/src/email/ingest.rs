@@ -31,7 +31,7 @@ use jmap_proto::{
     },
 };
 use mail_parser::{
-    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType, RfcHeader,
+    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType,
 };
 use store::{
     ahash::AHashSet,
@@ -103,12 +103,10 @@ impl JMAP {
             let mut subject = "";
             for header in message.root_part().headers().iter().rev() {
                 match header.name {
-                    HeaderName::Rfc(
-                        RfcHeader::MessageId
-                        | RfcHeader::InReplyTo
-                        | RfcHeader::References
-                        | RfcHeader::ResentMessageId,
-                    ) => match &header.value {
+                    HeaderName::MessageId
+                    | HeaderName::InReplyTo
+                    | HeaderName::References
+                    | HeaderName::ResentMessageId => match &header.value {
                         HeaderValue::Text(id) if id.len() < MAX_ID_LENGTH => {
                             references.push(id.as_ref());
                         }
@@ -121,7 +119,7 @@ impl JMAP {
                         }
                         _ => (),
                     },
-                    HeaderName::Rfc(RfcHeader::Subject) if subject.is_empty() => {
+                    HeaderName::Subject if subject.is_empty() => {
                         subject = thread_name(match &header.value {
                             HeaderValue::Text(text) => text.as_ref(),
                             HeaderValue::TextList(list) if !list.is_empty() => {

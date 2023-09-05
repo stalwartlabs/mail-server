@@ -35,7 +35,7 @@ use mail_auth::{
     report::{tlsrpt::TlsReport, ActionDisposition, DmarcResult, Feedback, Report},
     zip,
 };
-use mail_parser::{DateTime, HeaderValue, Message, MimeHeaders, PartType};
+use mail_parser::{DateTime, MessageParser, MimeHeaders, PartType};
 
 use crate::core::SMTP;
 
@@ -65,21 +65,17 @@ impl AnalyzeReport for Arc<SMTP> {
     fn analyze_report(&self, message: Arc<Vec<u8>>) {
         let core = self.clone();
         self.worker_pool.spawn(move || {
-            let message = if let Some(message) = Message::parse(&message) {
+            let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
             } else {
                 tracing::debug!(context = "report", "Failed to parse message.");
                 return;
             };
-            let from = match message.from() {
-                HeaderValue::Address(addr) => addr.address.as_ref().map(|a| a.as_ref()),
-                HeaderValue::AddressList(addr_list) => addr_list
-                    .last()
-                    .and_then(|a| a.address.as_ref())
-                    .map(|a| a.as_ref()),
-                _ => None,
-            }
-            .unwrap_or("unknown");
+            let from = message
+                .from()
+                .and_then(|a| a.last())
+                .and_then(|a| a.address())
+                .unwrap_or("unknown");
             let mut reports = Vec::new();
 
             for part in &message.parts {

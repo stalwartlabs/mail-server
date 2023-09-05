@@ -29,7 +29,7 @@ use jmap_proto::{
     },
     types::{acl::Acl, collection::Collection},
 };
-use mail_parser::{decoders::html::html_to_text, Message, PartType};
+use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
 use store::{
     fts::{
         builder::MAX_TOKEN_LENGTH,
@@ -150,7 +150,7 @@ impl JMAP {
             };
 
             // Parse message
-            let message = if let Some(message) = Message::parse(&raw_message) {
+            let message = if let Some(message) = MessageParser::new().parse(&raw_message) {
                 message
             } else {
                 response.not_found.push(email_id);

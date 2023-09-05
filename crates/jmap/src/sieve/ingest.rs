@@ -24,7 +24,7 @@
 use std::borrow::Cow;
 
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use mail_parser::Message;
+use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
 use smtp::core::{NullIo, Session, SessionAddress};
 use store::{
@@ -59,7 +59,7 @@ impl JMAP {
         mut active_script: ActiveScript,
     ) -> Result<IngestedEmail, IngestError> {
         // Parse message
-        let message = if let Some(message) = Message::parse(raw_message) {
+        let message = if let Some(message) = MessageParser::new().parse(raw_message) {
             message
         } else {
             return Err(IngestError::Permanent {
@@ -428,7 +428,9 @@ impl JMAP {
                 // Parse message if needed
                 let message = if message_id == 0 && !instance.has_message_changed() {
                     instance.take_message()
-                } else if let Some(message) = Message::parse(&sieve_message.raw_message) {
+                } else if let Some(message) =
+                    MessageParser::new().parse(sieve_message.raw_message.as_ref())
+                {
                     message
                 } else {
                     tracing::error!(

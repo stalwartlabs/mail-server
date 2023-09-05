@@ -23,7 +23,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use mail_parser::RfcHeader;
+use mail_parser::HeaderName;
 use serde::Serialize;
 use store::write::{DeserializeFrom, SerializeInto};
 
@@ -692,19 +692,19 @@ impl Property {
         }
     }
 
-    pub fn as_rfc_header(&self) -> RfcHeader {
+    pub fn as_rfc_header(&self) -> HeaderName<'static> {
         match self {
-            Property::MessageId => RfcHeader::MessageId,
-            Property::InReplyTo => RfcHeader::InReplyTo,
-            Property::References => RfcHeader::References,
-            Property::Sender => RfcHeader::Sender,
-            Property::From => RfcHeader::From,
-            Property::To => RfcHeader::To,
-            Property::Cc => RfcHeader::Cc,
-            Property::Bcc => RfcHeader::Bcc,
-            Property::ReplyTo => RfcHeader::ReplyTo,
-            Property::Subject => RfcHeader::Subject,
-            Property::SentAt => RfcHeader::Date,
+            Property::MessageId => HeaderName::MessageId,
+            Property::InReplyTo => HeaderName::InReplyTo,
+            Property::References => HeaderName::References,
+            Property::Sender => HeaderName::Sender,
+            Property::From => HeaderName::From,
+            Property::To => HeaderName::To,
+            Property::Cc => HeaderName::Cc,
+            Property::Bcc => HeaderName::Bcc,
+            Property::ReplyTo => HeaderName::ReplyTo,
+            Property::Subject => HeaderName::Subject,
+            Property::SentAt => HeaderName::Date,
             _ => unreachable!(),
         }
     }
@@ -994,21 +994,21 @@ impl From<Property> for u8 {
     }
 }
 
-impl From<RfcHeader> for Property {
-    fn from(value: RfcHeader) -> Self {
-        match value {
-            RfcHeader::Subject => Property::Subject,
-            RfcHeader::From => Property::From,
-            RfcHeader::To => Property::To,
-            RfcHeader::Cc => Property::Cc,
-            RfcHeader::Date => Property::SentAt,
-            RfcHeader::Bcc => Property::Bcc,
-            RfcHeader::ReplyTo => Property::ReplyTo,
-            RfcHeader::Sender => Property::Sender,
-            RfcHeader::InReplyTo => Property::InReplyTo,
-            RfcHeader::MessageId => Property::MessageId,
-            RfcHeader::References => Property::References,
-            RfcHeader::ResentMessageId => Property::EmailIds,
+impl Property {
+    pub fn from_header(header: &HeaderName) -> Self {
+        match header {
+            HeaderName::Subject => Property::Subject,
+            HeaderName::From => Property::From,
+            HeaderName::To => Property::To,
+            HeaderName::Cc => Property::Cc,
+            HeaderName::Date => Property::SentAt,
+            HeaderName::Bcc => Property::Bcc,
+            HeaderName::ReplyTo => Property::ReplyTo,
+            HeaderName::Sender => Property::Sender,
+            HeaderName::InReplyTo => Property::InReplyTo,
+            HeaderName::MessageId => Property::MessageId,
+            HeaderName::References => Property::References,
+            HeaderName::ResentMessageId => Property::EmailIds,
             _ => unreachable!(),
         }
     }
