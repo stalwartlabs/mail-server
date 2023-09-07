@@ -59,6 +59,7 @@ directory = [ { if = "listener", ne = "smtp", then = "__SMTP_DIRECTORY__" },
            { else = false } ]
 require = [ { if = "listener", ne = "smtp", then = true},
             { else = false } ]
+allow-plain-text = false
 
 [session.auth.errors]
 total = 3

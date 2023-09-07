@@ -162,8 +162,6 @@ impl<T: CommandParser> Receiver<T> {
                     if !ch.is_ascii_whitespace() {
                         self.buf.push(ch);
                         self.state = State::Tag;
-                    } else if ch == b'\n' {
-                        return Err(self.error_reset("Expected a tag."));
                     }
                 }
                 State::Tag => match ch {
@@ -177,17 +175,19 @@ impl<T: CommandParser> Receiver<T> {
                             self.state = State::Command { is_uid: false };
                         }
                     }
-                    _ if !ch.is_ascii_whitespace() => {
+                    b'\t' | b'\r' => {}
+                    b'\n' => {
+                        return Err(self.error_reset(format!(
+                            "Missing command after tag {:?}, found CRLF instead.",
+                            std::str::from_utf8(&self.buf).unwrap_or_default()
+                        )));
+                    }
+                    _ => {
                         if self.buf.len() < 128 {
                             self.buf.push(ch);
                         } else {
                             return Err(self.error_reset("Tag too long."));
                         }
-                    }
-                    _ => {
-                        return Err(
-                            self.error_reset(format!("Invalid character {:?} in tag.", ch as char))
-                        );
                     }
                 },
                 State::Command { is_uid } => {
@@ -1072,8 +1072,8 @@ mod tests {
     fn receiver_parse_invalid() {
         let mut receiver = Receiver::<Command>::new();
         for invalid in [
-            "\r\n",
-            "  \r \n",
+            //"\r\n",
+            //"  \r \n",
             "a001\r\n",
             "a001 unknown\r\n",
             "a001 login {abc}\r\n",

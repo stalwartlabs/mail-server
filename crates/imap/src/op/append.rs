@@ -192,7 +192,7 @@ impl SessionData {
                             .into_iter()
                             .filter_map(|id| mailbox.id_to_imap.get(&id))
                             .map(|id| id.uid)
-                            .collect(),
+                            .collect::<Vec<_>>(),
                         mailbox.uid_validity,
                     )
                 }
@@ -212,7 +212,9 @@ impl SessionData {
                     )
                 }
             };
-            response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });
+            if !uids.is_empty() {
+                response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });
+            }
         }
 
         Ok(response.with_tag(arguments.tag))

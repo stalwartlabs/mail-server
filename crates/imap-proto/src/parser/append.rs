@@ -32,11 +32,19 @@ use crate::{
 
 use super::parse_datetime;
 
+enum State {
+    None,
+    Flags,
+    UTF8,
+    UTF8Data,
+}
+
 impl Request<Command> {
     pub fn parse_append(self) -> crate::Result<append::Arguments> {
         match self.tokens.len() {
             0 | 1 => Err(self.into_error("Missing arguments.")),
             _ => {
+                // Obtain mailbox name
                 let mut tokens = self.tokens.into_iter().peekable();
                 let mailbox_name = tokens
                     .next()
@@ -45,49 +53,101 @@ impl Request<Command> {
                     .map_err(|v| (self.tag.as_str(), v))?;
                 let mut messages = Vec::new();
 
-                while let Some(token) = tokens.next() {
-                    let mut flags = Vec::new();
-                    let token = match token {
-                        Token::ParenthesisOpen => {
-                            #[allow(clippy::while_let_on_iterator)]
-                            while let Some(token) = tokens.next() {
-                                match token {
-                                    Token::ParenthesisClose => break,
-                                    Token::Argument(value) => {
-                                        flags.push(
-                                            Flag::parse_imap(value)
-                                                .map_err(|v| (self.tag.as_str(), v))?,
-                                        );
-                                    }
-                                    _ => return Err((self.tag.as_str(), "Invalid flag.").into()),
-                                }
-                            }
-                            tokens
-                                .next()
-                                .ok_or((self.tag.as_str(), "Missing paramaters after flags."))?
-                        }
-                        token => token,
+                while tokens.peek().is_some() {
+                    // Parse flags
+                    let mut message = Message {
+                        message: vec![],
+                        flags: vec![],
+                        received_at: None,
                     };
-                    let (message, received_at) = if tokens.peek().is_some() {
-                        let token_bytes = token.unwrap_bytes();
-                        if token_bytes.len() <= 28 {
-                            if let Ok(date_time) = parse_datetime(&token_bytes) {
-                                (tokens.next().unwrap().unwrap_bytes(), Some(date_time))
-                            } else {
-                                (token_bytes, None)
-                            }
-                        } else {
-                            (token_bytes, None)
-                        }
-                    } else {
-                        (token.unwrap_bytes(), None)
-                    };
+                    let mut state = State::None;
+                    let mut seen_flags = false;
 
-                    messages.push(Message {
-                        message,
-                        flags,
-                        received_at,
-                    });
+                    while let Some(token) = tokens.next() {
+                        match token {
+                            Token::ParenthesisOpen => {
+                                state = match state {
+                                    State::None if !seen_flags => {
+                                        seen_flags = true;
+                                        State::Flags
+                                    }
+                                    State::UTF8 => State::UTF8Data,
+                                    _ => {
+                                        return Err((
+                                            self.tag.as_str(),
+                                            "Invalid opening parenthesis found.",
+                                        )
+                                            .into())
+                                    }
+                                };
+                            }
+                            Token::ParenthesisClose => match state {
+                                State::None | State::UTF8 => {
+                                    return Err((
+                                        self.tag.as_str(),
+                                        "Invalid closing parenthesis found.",
+                                    )
+                                        .into())
+                                }
+                                State::Flags => {
+                                    state = State::None;
+                                }
+                                State::UTF8Data => {
+                                    break;
+                                }
+                            },
+                            Token::Argument(value) => match state {
+                                State::None => {
+                                    if value.eq_ignore_ascii_case(b"utf8") {
+                                        state = State::UTF8;
+                                    } else if matches!(tokens.peek(), Some(Token::Argument(_)))
+                                        && value.len() <= 28
+                                        && !value.contains(&b'\n')
+                                    {
+                                        if let Ok(date_time) = parse_datetime(&value) {
+                                            message.received_at = Some(date_time);
+                                        } else {
+                                            return Err((
+                                                self.tag.as_str(),
+                                                "Failed to parse received time.",
+                                            )
+                                                .into());
+                                        }
+                                    } else {
+                                        message.message = value;
+                                        break;
+                                    }
+                                }
+                                State::Flags => {
+                                    message.flags.push(
+                                        Flag::parse_imap(value)
+                                            .map_err(|v| (self.tag.as_str(), v))?,
+                                    );
+                                }
+                                State::UTF8 => {
+                                    return Err((
+                                        self.tag.as_str(),
+                                        "Expected parenthesis after UTF8.",
+                                    )
+                                        .into());
+                                }
+                                State::UTF8Data => {
+                                    if message.message.is_empty() {
+                                        message.message = value;
+                                    } else {
+                                        return Err((
+                                            self.tag.as_str(),
+                                            "Invalid parameter after message literal.",
+                                        )
+                                            .into());
+                                    }
+                                }
+                            },
+                            _ => return Err((self.tag.as_str(), "Invalid arguments.").into()),
+                        }
+                    }
+
+                    messages.push(message);
                 }
 
                 Ok(append::Arguments {
@@ -176,13 +236,37 @@ mod tests {
                     }],
                 },
             ),
+            (
+                "42 APPEND \"Drafts\" (\\Draft) UTF8 (~{5+}\r\nhello)\r\n",
+                append::Arguments {
+                    tag: "42".to_string(),
+                    mailbox_name: "Drafts".to_string(),
+                    messages: vec![Message {
+                        message: vec![b'h', b'e', b'l', b'l', b'o'],
+                        flags: vec![Flag::Draft],
+                        received_at: None,
+                    }],
+                },
+            ),
+            (
+                "42 APPEND \"Drafts\" (\\Draft) \"20-Nov-2022 23:59:59 +0300\" UTF8 (~{5+}\r\nhello)\r\n",
+                append::Arguments {
+                    tag: "42".to_string(),
+                    mailbox_name: "Drafts".to_string(),
+                    messages: vec![Message {
+                        message: vec![b'h', b'e', b'l', b'l', b'o'],
+                        flags: vec![Flag::Draft],
+                        received_at: Some(1668977999),
+                    }],
+                },
+            ),
         ] {
             assert_eq!(
                 receiver
                     .parse(&mut command.as_bytes().iter())
-                    .unwrap()
+                    .expect(command)
                     .parse_append()
-                    .unwrap(),
+                    .expect(command),
                 arguments,
                 "{:?}",
                 command
@@ -191,7 +275,7 @@ mod tests {
 
         // Multiappend
         for line in [
-            "A003 APPEND saved-messages (\\Seen) {329}\r\n",
+            "A003 APPEND saved-messages (\\Seen) UTF8 ({329}\r\n",
             "Date: Mon, 7 Feb 1994 21:52:25 -0800 (PST)\r\n",
             "From: Fred Foobar <foobar@Blurdybloop.example.COM>\r\n",
             "Subject: afternoon meeting\r\n",
@@ -200,7 +284,7 @@ mod tests {
             "MIME-Version: 1.0\r\n",
             "Content-Type: TEXT/PLAIN; CHARSET=US-ASCII\r\n",
             "\r\n",
-            "Hello Joe, do you think we can meet at 3:30 tomorrow?\r\n",
+            "Hello Joe, do you think we can meet at 3:30 tomorrow?\r\n)",
             " (\\Seen) \"7-Feb-1994 22:43:04 -0800\" {295}\r\n",
             "Date: Mon, 7 Feb 1994 22:43:04 -0800 (PST)\r\n",
             "From: Joe Mooch <mooch@OWaTaGu.example.net>\r\n",
