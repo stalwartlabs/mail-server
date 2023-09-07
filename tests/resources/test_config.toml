@@ -8,7 +8,7 @@ protocol = "jmap"
 max-connections = 8192
 
 [server.listener.imap]
-bind = ["0.0.0.0:143"]
+bind = ["0.0.0.0:9991"]
 protocol = "imap"
 max-connections = 8192
 
@@ -31,7 +31,7 @@ protocol = 'smtp'
 tls.implicit = true
 
 [server.listener.smtp]
-bind = ['0.0.0.0:587']
+bind = ['0.0.0.0:9995']
 greeting = 'Test SMTP instance'
 protocol = 'smtp'
 tls.implicit = false
@@ -46,7 +46,8 @@ certificate = "default"
 
 [global.tracing]
 method = "stdout"
-level = "trace"
+#level = "trace"
+level = "info"
 
 [session.ehlo]
 reject-non-fqdn = false

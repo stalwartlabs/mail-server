@@ -21,13 +21,22 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::BTreeSet, fmt::Display};
+use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor};
 
+use crate::{
+    api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
+    auth::{oauth::FormData, rate_limit::RemoteAddress},
+    JMAP,
+};
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
 use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};
-use pgp::{composed, crypto::sym::SymmetricKeyAlgorithm, Deserializable, SignedPublicKey};
+use openpgp::{
+    parse::Parse,
+    serialize::stream,
+    types::{KeyFlags, SymmetricAlgorithm},
+};
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use rasn::types::{ObjectIdentifier, OctetString};
 use rasn_cms::{
@@ -38,15 +47,10 @@ use rasn_cms::{
     CONTENT_ENVELOPED_DATA,
 };
 use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Encrypt, RsaPublicKey};
+use sequoia_openpgp as openpgp;
 use store::{
     write::{BatchBuilder, ToBitmaps, F_CLEAR, F_VALUE},
     Deserialize, Serialize,
-};
-
-use crate::{
-    api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
-    auth::{oauth::FormData, rate_limit::RemoteAddress},
-    JMAP,
 };
 
 const CRYPT_HTML_HEADER: &str = include_str!("../../../../resources/htx/crypto_header.htx");
@@ -55,6 +59,8 @@ const CRYPT_HTML_FORM: &str = include_str!("../../../../resources/htx/crypto_for
 const CRYPT_HTML_SUCCESS: &str = include_str!("../../../../resources/htx/crypto_success.htx");
 const CRYPT_HTML_DISABLED: &str = include_str!("../../../../resources/htx/crypto_disabled.htx");
 const CRYPT_HTML_ERROR: &str = include_str!("../../../../resources/htx/crypto_error.htx");
+
+const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
 
 #[derive(Debug)]
 pub enum EncryptMessageError {
@@ -132,7 +138,7 @@ impl EncryptMessage for Message<'_> {
                 outer_message.extend_from_slice(boundary.as_bytes());
                 outer_message.extend_from_slice(
                     concat!(
-                        "\r\nContent-Type: application/pgp-encrypted\r\n",
+                        "\r\nContent-Type: application/pgp-encrypted\r\n\r\n",
                         "Version: 1\r\n\r\n--"
                     )
                     .as_bytes(),
@@ -146,42 +152,85 @@ impl EncryptMessage for Message<'_> {
                     .as_bytes(),
                 );
 
-                // Parse public key
-                let mut keys = Vec::with_capacity(params.certs.len());
-                for cert in &params.certs {
-                    keys.push(SignedPublicKey::from_bytes(&cert[..]).map_err(|err| {
+                let certs = params
+                    .certs
+                    .iter()
+                    .map(openpgp::Cert::from_bytes)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|err| {
                         EncryptMessageError::Error(format!(
                             "Failed to parse OpenPGP public key: {}",
                             err
                         ))
-                    })?);
-                }
+                    })?;
 
                 // Encrypt contents (TODO: use rayon)
                 let algo = params.algo;
                 let encrypted_contents = tokio::task::spawn_blocking(move || {
-                    composed::message::Message::new_literal_bytes("none", &inner_message)
-                        .encrypt_to_keys(
-                            &mut StdRng::from_entropy(),
-                            match algo {
-                                Algorithm::Aes128 => SymmetricKeyAlgorithm::AES128,
-                                Algorithm::Aes256 => SymmetricKeyAlgorithm::AES256,
-                            },
-                            &keys.iter().collect::<Vec<_>>(),
-                        )
+                    // Parse public key
+                    let mut keys = Vec::with_capacity(certs.len());
+                    let policy = openpgp::policy::StandardPolicy::new();
+
+                    for cert in &certs {
+                        for key in cert
+                            .keys()
+                            .with_policy(&policy, None)
+                            .supported()
+                            .alive()
+                            .revoked(false)
+                            .key_flags(&KeyFlags::empty().set_transport_encryption())
+                        {
+                            keys.push(key);
+                        }
+                    }
+
+                    // Compose a writer stack corresponding to the output format and
+                    // packet structure we want.
+                    let mut sink = Vec::with_capacity(inner_message.len());
+
+                    // Stream an OpenPGP message.
+                    let message = stream::Armorer::new(stream::Message::new(&mut sink))
+                        .build()
                         .map_err(|err| {
+                            EncryptMessageError::Error(format!("Failed to create armorer: {}", err))
+                        })?;
+                    let message = stream::Encryptor::for_recipients(message, keys)
+                        .symmetric_algo(match algo {
+                            Algorithm::Aes128 => SymmetricAlgorithm::AES128,
+                            Algorithm::Aes256 => SymmetricAlgorithm::AES256,
+                        })
+                        .build()
+                        .map_err(|err| {
+                            EncryptMessageError::Error(format!(
+                                "Failed to build encryptor: {}",
+                                err
+                            ))
+                        })?;
+                    let mut message =
+                        stream::LiteralWriter::new(message).build().map_err(|err| {
+                            EncryptMessageError::Error(format!(
+                                "Failed to create literal writer: {}",
+                                err
+                            ))
+                        })?;
+                    std::io::copy(&mut Cursor::new(inner_message), &mut message).map_err(
+                        |err| {
                             EncryptMessageError::Error(format!(
                                 "Failed to encrypt message: {}",
                                 err
                             ))
-                        })?
-                        .to_armored_string(None)
-                        .map_err(|err| {
-                            EncryptMessageError::Error(format!(
-                                "Failed to convert to armored string: {}",
-                                err
-                            ))
-                        })
+                        },
+                    )?;
+                    message.finalize().map_err(|err| {
+                        EncryptMessageError::Error(format!("Failed to finalize message: {}", err))
+                    })?;
+
+                    String::from_utf8(sink).map_err(|err| {
+                        EncryptMessageError::Error(format!(
+                            "Failed to convert encrypted message to UTF-8: {}",
+                            err
+                        ))
+                    })
                 })
                 .await
                 .map_err(|err| {
@@ -382,26 +431,43 @@ pub fn try_parse_certs(bytes: Vec<u8>) -> Result<(EncryptionMethod, Vec<Vec<u8>>
         Ok(result)
     } else if rasn::der::decode::<rasn_pkix::Certificate>(&bytes[..]).is_ok() {
         Ok((EncryptionMethod::SMIME, vec![bytes]))
-    } else if SignedPublicKey::from_bytes(&bytes[..]).is_ok() {
-        Ok((EncryptionMethod::PGP, vec![bytes]))
+    } else if let Ok(cert) = openpgp::Cert::from_bytes(&bytes[..]) {
+        if !has_pgp_keys(cert) {
+            Ok((EncryptionMethod::PGP, vec![bytes]))
+        } else {
+            Err("Could not find any suitable keys in certificate".to_string())
+        }
     } else {
         Err("Could not find any valid certificates".to_string())
     }
 }
 
+fn has_pgp_keys(cert: openpgp::Cert) -> bool {
+    cert.keys()
+        .with_policy(&P, None)
+        .supported()
+        .alive()
+        .revoked(false)
+        .key_flags(&KeyFlags::empty().set_transport_encryption())
+        .next()
+        .is_some()
+}
+
 #[allow(clippy::type_complexity)]
-fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)>, String> {
-    let mut bytes = bytes.iter();
+fn try_parse_pem(bytes_: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)>, String> {
+    let mut bytes = bytes_.iter().enumerate();
     let mut buf = vec![];
     let mut method = None;
     let mut certs = vec![];
 
     loop {
         // Find start of PEM block
-        for &ch in bytes.by_ref() {
+        let mut start_pos = 0;
+        for (pos, &ch) in bytes.by_ref() {
             if ch.is_ascii_whitespace() {
                 continue;
             } else if ch == b'-' {
+                start_pos = pos;
                 break;
             } else {
                 return Ok(None);
@@ -409,7 +475,7 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         }
 
         // Find block type
-        for &ch in bytes.by_ref() {
+        for (_, &ch) in bytes.by_ref() {
             match ch {
                 b'-' => (),
                 b'\n' => break,
@@ -443,7 +509,7 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         } else {
             // Ignore block
             let mut found_end = false;
-            for &ch in bytes.by_ref() {
+            for (_, &ch) in bytes.by_ref() {
                 if ch == b'-' {
                     found_end = true;
                 } else if ch == b'\n' && found_end {
@@ -457,13 +523,15 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         // Collect base64
         buf.clear();
         let mut found_end = false;
-        for &ch in bytes.by_ref() {
+        let mut end_pos = 0;
+        for (pos, &ch) in bytes.by_ref() {
             match ch {
                 b'-' => {
                     found_end = true;
                 }
                 b'\n' => {
                     if found_end {
+                        end_pos = pos;
                         break;
                     }
                 }
@@ -479,18 +547,29 @@ fn try_parse_pem(bytes: &[u8]) -> Result<Option<(EncryptionMethod, Vec<Vec<u8>>)
         let cert = base64_decode(&buf)
             .ok_or_else(|| "Failed to decode base64 certificate.".to_string())?;
         match method.unwrap() {
-            EncryptionMethod::PGP => {
-                if let Err(err) = SignedPublicKey::from_bytes(&cert[..]) {
-                    return Err(format!("Failed to decode OpenPGP public key: {}", err));
+            EncryptionMethod::PGP => match openpgp::Cert::from_bytes(bytes_) {
+                Ok(cert) => {
+                    if !has_pgp_keys(cert) {
+                        return Err(
+                            "Could not find any suitable keys in OpenPGP public key".to_string()
+                        );
+                    }
+                    certs.push(
+                        bytes_
+                            .get(start_pos..end_pos + 1)
+                            .unwrap_or_default()
+                            .to_vec(),
+                    );
                 }
-            }
+                Err(err) => return Err(format!("Failed to decode OpenPGP public key: {}", err)),
+            },
             EncryptionMethod::SMIME => {
                 if let Err(err) = rasn::der::decode::<rasn_pkix::Certificate>(&cert) {
                     return Err(format!("Failed to decode X509 certificate: {}", err));
                 }
+                certs.push(cert);
             }
         }
-        certs.push(cert);
         buf.clear();
     }
 

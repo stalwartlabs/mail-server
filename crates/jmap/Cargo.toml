@@ -42,7 +42,7 @@ chrono = "0.4"
 dashmap = "5.4"
 aes = "0.8.3"
 cbc = { version = "0.1.2", features = ["alloc"] }
-pgp = "0.10.2"
+sequoia-openpgp = "1.16"
 rand = "0.8.5"
 rasn = "0.9.5"
 rasn-cms = "0.9.5"
