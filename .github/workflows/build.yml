@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   pull_request:
   push:
+    tags:
+      - "*"
+    branches:
+      - main
 
 jobs:
   build:
@@ -35,7 +39,7 @@ jobs:
         if: startsWith(matrix.host_os, 'ubuntu')
         shell: bash
         run: |
-          sudo apt-get update &&
+          sudo apt-get update
           sudo apt-get install -yq build-essential g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
 
       - name: Install Dependencies (Linux, x86)
