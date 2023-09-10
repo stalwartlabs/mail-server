@@ -4,356 +4,182 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    tags:
-      - "v*.*.*"
-
-env:
-  REGISTRY_IMAGE: stalwartlabs/mail-server
 
 jobs:
   build:
-    name: Building for ${{ matrix.target }} on ${{ matrix.host_os }}
-    runs-on: ${{ matrix.host_os }}
-    if: '!cancelled()'
-    strategy: 
+    name: Build / ${{matrix.target}}
+
+    runs-on: ${{matrix.host_os}}
+
+    strategy:
       matrix:
         include:
+          - target: aarch64-unknown-linux-gnu
+            host_os: ubuntu-20.04
+            rustflags: -C linker=aarch64-linux-gnu-gcc
           - target: x86_64-unknown-linux-gnu
             host_os: ubuntu-20.04
-          - target: x86_64-apple-darwin
-            host_os: macos-latest
+            rustflags:
           - target: x86_64-pc-windows-msvc
             host_os: windows-2022
-          #- target: aarch64-unknown-linux-gnu
-          #  host_os: ubuntu-20.04
-          #- target: x86_64-unknown-linux-musl
-          #  host_os: ubuntu-20.04
-          #- target: aarch64-unknown-linux-musl
-          #  host_os: ubuntu-20.04
-          #- target: aarch64-apple-darwin
-          #  host_os: macos-latest
-          #- target: aarch64-pc-windows-msvc
-          #  host_os: windows-2022
-          #- target: aarch64-pc-windows-msvc
-          #  host_os: windows-2022
-          #- target: arm-unknown-linux-musleabihf
-          #  host_os: ubuntu-20.04
-          #- target: arm-unknown-linux-gnueabihf
-          #  host_os: ubuntu-20.04
-          #- target: armv7-unknown-linux-musleabihf
-          #  host_os: ubuntu-20.04
-          #- target: armv7-unknown-linux-gnueabihf
-          #  host_os: ubuntu-20.04
+            rustflags:
+          - target: x86_64-apple-darwin
+            host_os: macos-latest
+            rustflags:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
+        uses: actions/checkout@v4
 
-      - name: Install dependencies (Linux)
-        if: ${{ contains(matrix.host_os, 'ubuntu') }}
+      - name: Install Dependencies (Linux)
+        if: startsWith(matrix.host_os, 'ubuntu')
+        shell: bash
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -yq protobuf-compiler wget
-          wget https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb
+          sudo apt-get update &&
+          sudo apt-get install -yq build-essential g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Install Dependencies (Linux, x86)
+        if: startsWith(matrix.host_os, 'ubuntu') && startsWith(matrix.target, 'x86_64')
+        shell: bash
+        run: |
+          curl -LO https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb
           sudo dpkg -i --force-architecture foundationdb-clients_7.1.0-1_amd64.deb
+          echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
 
-      - name: Install dependencies (MacOs)
-        if: ${{ contains(matrix.host_os, 'macos') }}
+      - name: Install Dependencies (MacOS)
+        if: startsWith(matrix.host_os, 'macos')
+        shell: bash
         run: |
-          brew install protobuf
-          brew install wget
-          wget https://github.com/apple/foundationdb/releases/download/7.1.32/FoundationDB-7.1.32_x86_64.pkg
-          sudo installer -allowUntrusted -dumplog -pkg FoundationDB-7.1.32_x86_64.pkg -target /
+          curl -LO https://github.com/apple/foundationdb/releases/download/7.1.34/FoundationDB-7.1.34_x86_64.pkg
+          sudo installer -allowUntrusted -dumplog -pkg FoundationDB-7.1.34_x86_64.pkg -target /
+          echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
 
-      - name: Install dependencies (Windows)
-        if: ${{ contains(matrix.host_os, 'windows') }}
-        uses: arduino/setup-protoc@v1
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          target: ${{ matrix.target }}
-          toolchain: stable
-          
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.host_os }}-${{ matrix.target }}-mail          
+          key: ${{matrix.host_os}}-${{matrix.target}}-mail
 
-      - name: Building binary (Unix version)
-        if: ${{ !contains(matrix.host_os, 'windows') }}
+      - name: Build
+        shell: bash
         run: |
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --no-default-features --features foundationdb --release
-          cd target/${{ matrix.target }}/release && tar czvf ../../../stalwart-mail-foundationdb-${{ matrix.target }}.tar.gz stalwart-mail && cd -
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
-          cd target/${{ matrix.target }}/release
-          tar czvf ../../../stalwart-mail-sqlite-${{ matrix.target }}.tar.gz stalwart-mail
-          tar czvf ../../../stalwart-cli-${{ matrix.target }}.tar.gz stalwart-cli
-          tar czvf ../../../stalwart-install-${{ matrix.target }}.tar.gz stalwart-install
-          cd -
+          set -xe
 
-      - name: Building binary (Windows version)
-        if: ${{ contains(matrix.host_os, 'windows') }}
-        run: |
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
-          cd target/${{ matrix.target }}/release
-          7z a ../../../stalwart-mail-sqlite-${{ matrix.target }}.zip stalwart-mail.exe
-          7z a ../../../stalwart-cli-${{ matrix.target }}.zip stalwart-cli.exe
-          7z a ../../../stalwart-install-${{ matrix.target }}.zip stalwart-install.exe
-          cd -
+          target="${{matrix.target}}"
+          rustup target add "${target}"
 
-      - name: Publish Release
-        if: startsWith(github.ref, 'refs/tags/')
+          root="${PWD}"
+          mkdir artifacts archives
+          ext="${{startsWith(matrix.host_os, 'windows') == true && '.exe' || ''}}"
+
+          # Workaround a Windows moment
+          export PATH="/c/Strawberry/c/bin:/c/Strawberry/perl/site/bin:/c/Strawberry/perl/bin:$PATH"
+
+          build() {
+            RUSTFLAGS="${{matrix.rustflags}}" cargo build --release --target "${target}" "$@"
+          }
+
+          artifact() {
+            local file="${1}${ext}"
+            local name="${root}/archives/${2:-$1}-${target}"
+            if [ "${ext}" = ".exe" ]; then
+              7z a "${name}.zip" "${file}"
+            else
+              tar czvf "${name}.tar.gz" "${file}"
+            fi
+            mv "${file}" "${root}/artifacts/${2:-$1}"
+          }
+
+          mkdir -p "${root}/target/${target}/release" && cd "$_"
+
+          if [ "$USE_FOUNDATIONDB" = 1 ]; then
+            build -p mail-server --no-default-features --features foundationdb
+            artifact stalwart-mail stalwart-mail-foundationdb
+          fi
+
+          build -p mail-server -p stalwart-cli -p stalwart-install
+          artifact stalwart-mail stalwart-mail-sqlite
+          artifact stalwart-cli
+          artifact stalwart-install
+
+      - name: Upload Archives
+        uses: actions/upload-artifact@v3
+        with:
+          name: archives
+          path: ./archives
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{matrix.target}}
+          path: ./artifacts
+
+  release:
+    name: Release
+
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: archives
+          path: ./archives
+
+      - name: Release
         uses: softprops/action-gh-release@v1
         with:
-            files: 'stalwart-*'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: ./archives/*
+          prerelease: ${{!startsWith(github.ref, 'refs/tags/') == true && true || null}}
+          tag_name: ${{!startsWith(github.ref, 'refs/tags/') == true && 'nightly' || null}}
 
-  cross_build_tools:
+
+  docker_build:
+    name: Docker Build
+
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    name: Building tools for ${{ matrix.target }} on ${{ matrix.distro }}
-    if: '!cancelled()'
 
-    strategy:
-      matrix:
-        include:
-          - arch: aarch64
-            distro: ubuntu20.04
-            target: aarch64-unknown-linux-gnu
+    permissions:
+      packages: write
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: uraimo/run-on-arch-action@v2
-        name: Build artifact
-        id: build
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Log In to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          arch: ${{ matrix.arch }}
-          distro: ${{ matrix.distro }}
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{github.token}}
 
-          # Not required, but speeds up builds
-          githubToken: ${{ github.token }}
-
-          # Create an artifacts directory
-          setup: |
-            mkdir -p "${PWD}/artifacts"
-
-          # Mount the artifacts directory as /artifacts in the container
-          dockerRunArgs: |
-            --volume "${PWD}/artifacts:/artifacts"
-
-          # Pass some environment variables to the container
-          env: | 
-            target: ${{ matrix.target }}
-
-          # The shell to run commands with in the container
-          shell: /bin/sh
-
-          install: |
-            apt-get update -yq
-            apt-get install -yq build-essential cmake wget curl
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-
-          run: |
-            export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build --manifest-path=crates/cli/Cargo.toml --target=${target} --release
-            cargo build --manifest-path=crates/install/Cargo.toml --target=${target} --release
-            cd target/${target}/release
-            tar czvf /artifacts/stalwart-cli-${target}.tar.gz stalwart-cli
-            tar czvf /artifacts/stalwart-install-${target}.tar.gz stalwart-install
-            cd -
-
-      - name: Move packages
-        run: |
-          mv ${PWD}/artifacts/* .
-
-      - name: Publish Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-            files: 'stalwart-*'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cross_build:
-    runs-on: ubuntu-latest
-    name: Building for ${{ matrix.target }} on ${{ matrix.distro }}
-    if: '!cancelled()'
-
-    strategy:
-      matrix:
-        include:
-          - arch: aarch64
-            distro: ubuntu20.04
-            target: aarch64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@v3
-      - uses: uraimo/run-on-arch-action@v2
-        name: Build artifact
-        id: build
-        with:
-          arch: ${{ matrix.arch }}
-          distro: ${{ matrix.distro }}
-
-          # Not required, but speeds up builds
-          githubToken: ${{ github.token }}
-
-          # Create an artifacts directory
-          setup: |
-            mkdir -p "${PWD}/artifacts"
-
-          # Mount the artifacts directory as /artifacts in the container
-          dockerRunArgs: |
-            --volume "${PWD}/artifacts:/artifacts"
-
-          # Pass some environment variables to the container
-          env: | 
-            target: ${{ matrix.target }}
-
-          # The shell to run commands with in the container
-          shell: /bin/sh
-
-          install: |
-            apt-get update -yq
-            apt-get install -yq build-essential cmake protobuf-compiler wget curl
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-
-          run: |
-            export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build --manifest-path=crates/main/Cargo.toml --target=${target} --release
-            cd target/${target}/release
-            tar czvf /artifacts/stalwart-mail-sqlite-${target}.tar.gz stalwart-mail
-            cd -
-
-      - name: Move packages
-        run: |
-          mv ${PWD}/artifacts/* .
-
-      - name: Publish Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-            files: 'stalwart-*'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build_docker:
-    needs:
-      - build
-      - cross_build
-      - cross_build_tools    
-    name: Build Docker image for ${{ matrix.platform }}
-    runs-on: ubuntu-latest
-    if: '!cancelled()'
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - linux/amd64
-          - linux/arm64
-    steps:
-      -
-        name: Prepare
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
-      -
-        name: Checkout
-        uses: actions/checkout@v3
-      -
-        name: Docker meta
+      - name: Extract Metadata for Docker
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: |
+            ghcr.io/${{github.repository}}
           tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-      -
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      -
-        name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push by digest
+            type=ref,event=tag
+            type=edge,branch=main
+
+      - name: Build and Push Docker Images
         id: build
         uses: docker/build-push-action@v4
         with:
           context: .
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          #cache-from: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ env.PLATFORM_PAIR }}
-          #cache-to: type=registry,ref=s${{ env.REGISTRY_IMAGE }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max
-          cache-from: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,scope=build-${{ env.PLATFORM_PAIR }}
-      -
-        name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-      -
-        name: Upload digest
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-  
-  merge_docker:
-    name: Merge and push Docker manifest
-    runs-on: ubuntu-latest
-    needs:
-      - build_docker
-    steps:
-      -
-        name: Download digests
-        uses: actions/download-artifact@v3
-        with:
-          name: digests
-          path: /tmp/digests
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      -
-        name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-      -
-        name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
-      -
-        name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{steps.meta.outputs.tags}}
+          labels: ${{steps.meta.outputs.labels}}
