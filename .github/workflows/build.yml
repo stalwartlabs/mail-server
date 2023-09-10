@@ -168,11 +168,18 @@ jobs:
           username: ${{github.actor}}
           password: ${{github.token}}
 
+      - name: Log In to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_TOKEN}}
+
       - name: Extract Metadata for Docker
         id: meta
         uses: docker/metadata-action@v4
         with:
           images: |
+            ${{github.repository}}
             ghcr.io/${{github.repository}}
           tags: |
             type=ref,event=tag
