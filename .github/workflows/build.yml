@@ -4,10 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    tags:
-      - "*"
-    branches:
-      - main
+    tags: ["v*.*.*"]
+    branches: ["main"]
 
 jobs:
   build:
