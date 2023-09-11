@@ -24,6 +24,7 @@ RUN RUSTFLAGS="$(cat /flags.txt)" cargo build --target "$(cat /target.txt)" --re
 RUN mv "/build/target/$(cat /target.txt)/release" "/output"
 
 FROM docker.io/debian:bookworm-slim
+ENV STALWART_COMPONENT=all-in-one
 WORKDIR /opt/stalwart-mail
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -32,6 +33,7 @@ COPY --from=builder /output/stalwart-mail /usr/local/bin
 COPY --from=builder /output/stalwart-cli /usr/local/bin
 COPY --from=builder /output/stalwart-install /usr/local/bin
 COPY ./resources/docker/entrypoint.sh /usr/local/bin
+COPY ./resources/docker/configure.sh /usr/local/bin
 RUN chmod -R 755 /usr/local/bin
 CMD ["/usr/local/bin/stalwart-mail"]
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh", "/opt/stalwart-mail/etc"]
