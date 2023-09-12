@@ -9,13 +9,13 @@ use std::{
 use super::{
     tokenizer::Tokenizer,
     utils::{fix_broken_regex, import_regex, replace_tags},
-    Header, HeaderMatches, HeaderPart, MetaExpression, Rule, RuleType, TestFlag, Token,
-    UnwrapResult,
+    Header, HeaderMatches, HeaderPart, MetaExpression, ReceivedPart, Rule, RuleType, TestFlag,
+    Token, UnwrapResult,
 };
 
 const VERSION: f64 = 4.000000;
 
-static IF_TRUE: [&str; 54] = [
+static IF_TRUE: [&str; 53] = [
     "Mail::SpamAssassin::Plugin::DKIM",
     "Mail::SpamAssassin::Plugin::SPF",
     "Mail::SpamAssassin::Plugin::ASN",
@@ -46,7 +46,6 @@ static IF_TRUE: [&str; 54] = [
     "Mail::SpamAssassin::Plugin::TxRep",
     "Mail::SpamAssassin::Plugin::URIDNSBL",
     "Mail::SpamAssassin::Plugin::URIEval",
-    "Mail::SpamAssassin::Plugin::VBounce",
     "Mail::SpamAssassin::Plugin::WLBLEval",
     "Mail::SpamAssassin::Plugin::WelcomeListSubject",
     "Mail::SpamAssassin::Conf::feature_bayes_stopwords",
@@ -72,11 +71,12 @@ static IF_TRUE: [&str; 54] = [
     "Mail::SpamAssassin::Conf::feature_dns_block_rule",
 ];
 
-static IF_FALSE: [&str; 4] = [
+static IF_FALSE: [&str; 5] = [
     "Mail::SpamAssassin::Plugin::WhiteListSubject",
     "Mail::SpamAssassin::Plugin::AccessDB",
     "Mail::SpamAssassin::Plugin::AntiVirus",
     "Mail::SpamAssassin::Plugin::Shortcircuit",
+    "Mail::SpamAssassin::Plugin::VBounce",
 ];
 
 static SUPPORTED_FUNCTIONS: [&str; 162] = [
@@ -261,6 +261,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
 
     let mut unsupported_ifs: BTreeMap<String, HashMap<PathBuf, Vec<String>>> = BTreeMap::new();
     let mut unsupported_commands: BTreeMap<String, HashMap<PathBuf, Vec<String>>> = BTreeMap::new();
+    let mut common_headers = BTreeMap::new();
 
     for path in paths {
         let path = path.path();
@@ -517,9 +518,8 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                                 rule.t = RuleType::Header {
                                     matches: HeaderMatches::Exists,
                                     header: Header::Name(exists.to_string()),
-                                    if_unset: None,
                                     pattern: String::new(),
-                                    part: vec![],
+                                    part: HeaderPart::Default,
                                 };
                             } else if let Some((header, (op, mut pattern))) = value
                                 .split_once(' ')
@@ -543,44 +543,59 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                                     }
 
                                 }).collect::<Vec<_>>();
-                                rule.t = RuleType::Header {
-                                    matches: match op {
-                                        "=~" => HeaderMatches::Matches,
-                                        "!~" => HeaderMatches::NotMatches,
-                                        _ => {
-                                            eprintln!(
-                                                "Warning: Invalid operator {op:?} on {}, line {}",
-                                                path.display(),
-                                                line_num
-                                            );
-                                            continue;
+                                let header = match header {
+                                    "ALL" | "ALL-EXTERNAL" => Header::All,
+                                    "MESSAGEID" => Header::MessageId,
+                                    "EnvelopeFrom" => Header::EnvelopeFrom,
+                                    "ToCc" => Header::ToCc,
+                                    _ => Header::Name(header.to_lowercase()),
+                                };
+                                let part = if part.contains(&HeaderPart::Addr) {
+                                    HeaderPart::Addr
+                                } else if part.contains(&HeaderPart::Name) {
+                                    HeaderPart::Name
+                                } else if part.contains(&HeaderPart::Raw) {
+                                    HeaderPart::Raw
+                                } else {
+                                    HeaderPart::Default
+                                };
+
+                                let mut matches = match op {
+                                    "=~" => HeaderMatches::Matches,
+                                    "!~" => HeaderMatches::NotMatches,
+                                    _ => {
+                                        panic!(
+                                            "Warning: Invalid operator {op:?} on {}, line {}",
+                                            path.display(),
+                                            line_num
+                                        );
+                                    }
+                                };
+
+                                if let Some((new_pattern, if_unset)) =
+                                    pattern.rsplit_once("[if-unset:")
+                                {
+                                    pattern = new_pattern.trim();
+                                    if let Some(if_unset) =
+                                        if_unset.strip_suffix(']').map(|v| v.trim())
+                                    {
+                                        if pattern == format!("^{if_unset}$") {
+                                            // convert /^UNSET$/ [if-unset: UNSET] to exists
+                                            pattern = "";
+                                            matches = HeaderMatches::NotExists;
                                         }
-                                    },
-                                    header: match header {
-                                        "ALL" => Header::All,
-                                        "MESSAGEID" => Header::MessageId,
-                                        "ALL-EXTERNAL" => Header::AllExternal,
-                                        "EnvelopeFrom" => Header::EnvelopeFrom,
-                                        "ToCc" => Header::ToCc,
-                                        _ => Header::Name(header.to_string()),
-                                    },
-                                    if_unset: pattern.rsplit_once("[if-unset:").and_then(
-                                        |(new_pattern, if_unset)| {
-                                            pattern = new_pattern.trim();
-                                            if let Some(if_unset) =
-                                                if_unset.strip_suffix(']').map(|v| v.trim())
-                                            {
-                                                if_unset.to_string().into()
-                                            } else {
-                                                eprintln!(
-                                                    "Warning: Failed to parse if_unset for header command on {}, line {}",
-                                                    path.display(),
-                                                    line_num
-                                                );
-                                                None
-                                            }
-                                        },
-                                    ),
+                                    } else {
+                                        panic!(
+                                            "Warning: Failed to parse if_unset for header command on {}, line {}",
+                                            path.display(),
+                                            line_num
+                                        );
+                                    }
+                                }
+
+                                rule.t = RuleType::Header {
+                                    matches,
+                                    header,
                                     pattern: fix_broken_regex(pattern).to_string(),
                                     part,
                                 };
@@ -986,16 +1001,121 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         }
     }
 
-    let mut var_to_rule = HashMap::new();
+    let mut var_to_rule: HashMap<String, String> = HashMap::new();
     let mut rules = rules
         .into_iter()
-        .filter_map(|(name, mut rule)| {
-            if !matches!(rule.t, RuleType::None) {
-                if let Some(pattern) = rule.t.pattern() {
-                    let (pattern_, variables) = import_regex(pattern);
-                    *pattern = pattern_;
+        .flat_map(|(name, mut rule)| {
+            let mut result = vec![];
+            rule.name = name;
+
+            match &mut rule.t {
+                RuleType::Header {
+                    pattern,
+                    header: Header::Name(hdr_name),
+                    ..
+                } if hdr_name.to_lowercase().starts_with("x-spam-relays-") => {
+                    #[derive(Debug)]
+                    enum Part {
+                        Id(Vec<ReceivedPart>),
+                        Pattern(String),
+                    }
+                    let (pattern_, flags, _) = import_regex(pattern);
+                    let mut buf = String::new();
+                    let mut parts = vec![];
+                    let mut last_ch = char::from(0);
+
+                    for ch in pattern_.chars() {
+                        if ch == '=' && (last_ch.is_alphabetic() || last_ch == ')') {
+                            let mut found_suffix = false;
+                            for (ids, key) in [
+                                (vec![ReceivedPart::From], "helo"),
+                                (vec![ReceivedPart::Protocol], "auth"),
+                                (vec![ReceivedPart::FromIp], "ip"),
+                                (vec![ReceivedPart::FromIpRev], "rdns"),
+                                (vec![ReceivedPart::For], "envfrom"),
+                                (vec![ReceivedPart::By], "by"),
+                                (vec![ReceivedPart::Ident], "ident"),
+                                (
+                                    vec![ReceivedPart::From, ReceivedPart::FromIpRev],
+                                    "(?:rdns|helo)",
+                                ),
+                                (vec![ReceivedPart::Id], "id"),
+                                (vec![ReceivedPart::By, ReceivedPart::FromIp], "(?:by|ip)"),
+                            ] {
+                                if let Some(v) = buf.strip_suffix(key) {
+                                    parts.push(Part::Pattern(v.trim().to_string()));
+                                    parts.push(Part::Id(ids));
+                                    found_suffix = true;
+                                    break;
+                                }
+                            }
+
+                            if !found_suffix {
+                                panic!("Failed to parse x-spam-relays- pattern {pattern_}: {buf}");
+                            }
+                            buf.clear();
+                        } else {
+                            buf.push(ch);
+                        }
+
+                        last_ch = ch;
+                    }
+
+                    if !buf.is_empty() {
+                        parts.push(Part::Pattern(buf.trim().to_string()));
+                    }
+                    if matches!(parts.first(), Some(Part::Pattern(_))) {
+                        parts.remove(0);
+                    }
+                    for part in parts.chunks_exact(2) {
+                        if let (Part::Id(ids), Part::Pattern(pattern)) = (&part[0], &part[1]) {
+                            if !pattern.is_empty() {
+                                for id in ids {
+                                    result.push(Rule {
+                                        name: rule.name.clone(),
+                                        t: RuleType::Header {
+                                            matches: HeaderMatches::Matches,
+                                            header: Header::Received(*id),
+                                            part: HeaderPart::Default,
+                                            pattern: if !flags.is_empty() {
+                                                format!("(?{flags}){pattern}")
+                                            } else {
+                                                pattern.to_string()
+                                            },
+                                        },
+                                        scores: rule.scores.clone(),
+                                        captured_vars: rule.captured_vars.clone(),
+                                        required_vars: rule.required_vars.clone(),
+                                        description: rule.description.clone(),
+                                        priority: rule.priority,
+                                        flags: rule.flags.clone(),
+                                    });
+
+                                    common_headers
+                                        .entry((Header::Received(*id), HeaderPart::Default))
+                                        .or_insert_with(HashSet::new)
+                                        .insert(rule.name.to_string());
+                                }
+                            }
+                        } else {
+                            unreachable!();
+                        }
+                    }
+                }
+                RuleType::Header { pattern, .. }
+                | RuleType::Body { pattern, .. }
+                | RuleType::Full { pattern, .. }
+                | RuleType::Uri { pattern, .. } => {
+                    let (pattern_, flags, variables) = import_regex(pattern);
+
+                    *pattern = if !flags.is_empty() {
+                        format!("(?{flags}){pattern_}")
+                    } else {
+                        pattern_
+                    };
                     rule.required_vars = variables;
-                    match fancy_regex::Regex::new(pattern) {
+                    let cococ = "fd";
+                    /*match fancy_regex::Regex::new(pattern) {
                         Ok(r) => {
                             rule.captured_vars = r
                                 .capture_names()
@@ -1013,16 +1133,33 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                                 pattern, name, err
                             );
                         }
+                    }*/
+
+                    if let RuleType::Header {
+                        matches: HeaderMatches::Matches | HeaderMatches::NotMatches,
+                        header: header @ (Header::MessageId | Header::Name(_) | Header::ToCc),
+                        part,
+                        ..
+                    } = &rule.t
+                    {
+                        common_headers
+                            .entry((header.clone(), *part))
+                            .or_insert_with(HashSet::new)
+                            .insert(rule.name.to_string());
+                    }
+
+                    result.push(rule);
+                }
+                RuleType::None => {
+                    if do_warn {
+                        eprintln!("Warning: Test {} has no type: {rule:?}", rule.name);
                     }
                 }
-                rule.name = name;
-                rule.into()
-            } else {
-                if do_warn {
-                    eprintln!("Warning: Test {name} has no type: {rule:?}");
+                _ => {
+                    result.push(rule);
                 }
-                None
             }
+            result
         })
         .collect::<Vec<_>>();
     rules.sort_unstable();
@@ -1099,13 +1236,19 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
 
     // Generate script
     let mut script = String::from(concat!(
-        "require [\"variables\", \"include\", \"regex\", \"body\", \"vnd.stalwart.plugins\"];\n\n",
+        "require [\"variables\", \"include\", \"regex\", \"body\", ",
+        "\"vnd.stalwart.foreveryline\", \"vnd.stalwart.eval\",",
+        " \"vnd.stalwart.plugins\"];\n\n",
         "set \"score\" \"0.0\";\n",
         "set \"spam_score\" \"5.0\";\n",
         "set \"awl_factor\" \"0.5\";\n",
         "set \"body\" \"${body.to_text}\";\n",
         "set \"body_len\" \"${body.len()}\";\n",
-        "set \"headers_raw\" \"${headers.raw}\";\n",
+        "set \"body_ucc\" \"${count_uppercase(body)}\";\n",
+        "set \"body_lcc\" \"${count_lowercase(body)}\";\n",
+        "set \"body_ul_ratio\" \"${body_ucc / (body_ucc + body_lcc)}\";\n",
+        "set \"headers_raw\" \"${header.*.raw}\";\n",
+        "set \"headers_text\" \"${header.*.text}\";\n",
         "set \"thread_name\" \"${header.subject.thread_name()}\";\n",
         "set \"sent_date\" \"${header.date.date}\";\n",
         "set \"mail_from\" \"${envelope.from}\";\n",
@@ -1119,14 +1262,168 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         "\n"
     ));
 
+    // Print grouped rules
+    let mut descriptions: HashMap<String, BTreeMap<String, String>> = HashMap::new();
+    let mut processed_rules = HashSet::new();
+    for ((header, part), rule_names) in common_headers {
+        script.push_str("foreveryline \"${");
+        let mut add_to_processed = true;
+        match &header {
+            Header::All => {
+                script.push_str(match part {
+                    HeaderPart::Raw => "headers_raw",
+                    _ => "headers_text",
+                });
+            }
+            Header::MessageId => {
+                script.push_str(concat!(
+                    "header.message-id:resent-message-id:",
+                    "x-message-id:x-original-message-id[*].id[*]"
+                ));
+            }
+            Header::ToCc => {
+                script.push_str("header.to:cc[*]");
+                script.push_str(match part {
+                    HeaderPart::Name => ".name[*]",
+                    HeaderPart::Addr => ".addr[*]",
+                    HeaderPart::Raw => ".raw",
+                    HeaderPart::Default => ".text",
+                });
+            }
+            Header::Name(name) => {
+                script.push_str("header.");
+                script.push_str(name);
+                script.push_str("[*]");
+                script.push_str(match part {
+                    HeaderPart::Name => ".name[*]",
+                    HeaderPart::Addr => ".addr[*]",
+                    HeaderPart::Raw => ".raw",
+                    HeaderPart::Default => "",
+                });
+            }
+            Header::Received(rcvd) => {
+                script.push_str("header.received[*].rcvd.");
+                script.push_str(match rcvd {
+                    ReceivedPart::From => "from",
+                    ReceivedPart::FromIp => "ip",
+                    ReceivedPart::FromIpRev => "iprev",
+                    ReceivedPart::Protocol => "with",
+                    ReceivedPart::By => "by",
+                    ReceivedPart::For => "for",
+                    ReceivedPart::Ident => "ident",
+                    ReceivedPart::Id => "id",
+                });
+                if matches!(
+                    rcvd,
+                    ReceivedPart::From | ReceivedPart::FromIp | ReceivedPart::FromIpRev
+                ) {
+                    add_to_processed = false;
+                }
+            }
+            Header::EnvelopeFrom => unreachable!(),
+        }
+
+        script.push_str("}\" {\n");
+        for rule_name in rule_names {
+            for rule in &rules {
+                if rule.name == rule_name {
+                    if rule.score() == 0.0 && !tests_linked.contains(&rule.name) {
+                        if do_warn {
+                            println!("Warning: Test {} is never linked to.", rule.name);
+                        }
+                        continue;
+                    }
+                    if let RuleType::Header {
+                        matches,
+                        pattern,
+                        header: header_,
+                        ..
+                    } = &rule.t
+                    {
+                        if header_ != &header {
+                            continue;
+                        }
+
+                        write!(&mut script, "\tif allof(eval \"!{}\", ", rule_name).unwrap();
+                        match matches {
+                            HeaderMatches::Matches => script.push_str("string :regex "),
+                            HeaderMatches::NotMatches => script.push_str("not string :regex "),
+                            HeaderMatches::Exists | HeaderMatches::NotExists => unreachable!(),
+                        }
+                        script.push_str("\"${line}\" ");
+                        write!(&mut script, "{:?})", pattern).unwrap();
+                        let spaces = "\t".repeat(2);
+                        writeln!(
+                            &mut script,
+                            " {{\n{spaces}set :local \"{}\" \"1\";",
+                            rule.name
+                        )
+                        .unwrap();
+
+                        for (var_name, pos) in &rule.captured_vars {
+                            writeln!(
+                                &mut script,
+                                "{spaces}set :local \"{}\" \"${{{}}}\";",
+                                var_name, pos
+                            )
+                            .unwrap();
+                        }
+
+                        let score = rule.score();
+                        if score != 0.0 {
+                            script.push_str(&spaces);
+                            script.push_str("set \"score\" \"%{score");
+                            if score > 0.0 {
+                                script.push_str(" + ");
+                                script.push_str(&score.to_string());
+                            } else {
+                                script.push_str(" - ");
+                                script.push_str((-score).to_string().as_str());
+                            }
+                            script.push_str("}\";\n");
+                        }
+                        script.push_str("\t}\n");
+                    } else {
+                        unreachable!();
+                    }
+
+                    if add_to_processed {
+                        processed_rules.insert(rule_name);
+                    }
+                    break;
+                }
+            }
+        }
+        script.push_str("}\n\n");
+    }
+
     for rule in rules_sorted {
+        for (lang, text) in &rule.description {
+            descriptions
+                .entry(lang.to_string())
+                .or_default()
+                .insert(rule.name.to_string(), text.to_string());
+        }
+
         if rule.score() == 0.0 && !tests_linked.contains(&rule.name) {
             if do_warn {
                 eprintln!("Warning: Test {} is never linked to.", rule.name);
             }
             continue;
+        } else if !processed_rules.contains(&rule.name) {
+            write!(&mut script, "{rule}").unwrap();
         }
-        write!(&mut script, "{rule}").unwrap();
+    }
+
+    for (lang, texts) in descriptions {
+        let mut file = fs::File::create(format!(
+            "/Users/me/code/mail-server/_ignore/descriptions_{}.txt",
+            lang
+        ))
+        .unwrap();
+        for (name, text) in texts {
+            //file.write_all(format!("set {:?} {:?}", name, text).as_bytes());
+        }
     }
 
     fs::write(
@@ -1172,79 +1469,54 @@ impl Display for Rule {
 
         match &self.t {
             RuleType::Header {
-                header: header @ (Header::All | Header::AllExternal),
-                pattern,
+                matches: matches @ (HeaderMatches::Exists | HeaderMatches::NotExists),
+                header,
                 ..
             } => {
-                write!(
-                    f,
-                    "if match_all_headers {:?} {:?}",
-                    if header == &Header::All {
-                        "all"
-                    } else {
-                        "all-external"
-                    },
-                    pattern
-                )?;
+                match matches {
+                    HeaderMatches::Exists => write!(f, "if exists ")?,
+                    HeaderMatches::NotExists => write!(f, "not exists ")?,
+                    _ => unreachable!(),
+                }
+                match header {
+                    Header::MessageId => f.write_str(concat!(
+                        "[\"Message-Id\",\"Resent-Message-Id\",",
+                        "\"X-Message-Id\",\"X-Original-Message-ID\"]"
+                    ))?,
+                    Header::ToCc => f.write_str("[\"To\",\"Cc\"]")?,
+                    Header::Name(name) => write!(f, "{:?}", name)?,
+                    _ => unreachable!(),
+                }
             }
+
             RuleType::Header {
                 matches,
                 header,
-                if_unset,
                 pattern,
                 part,
             } => {
-                let is_raw = part.contains(&HeaderPart::Raw);
-                let is_name = part.contains(&HeaderPart::Name);
-                let is_addr = part.contains(&HeaderPart::Addr);
+                let is_raw = part == &HeaderPart::Raw;
+                let is_name = part == &HeaderPart::Name;
+                let is_addr = part == &HeaderPart::Addr;
 
-                let mut pattern = pattern.as_str();
-                let mut matches = *matches;
+                let pattern = pattern.as_str();
+                let matches = *matches;
 
                 f.write_str("if ")?;
-
-                // Map unset statements into expressions
-                let mut has_unset = match if_unset {
-                    Some(val) if pattern == format!("^{val}$") => {
-                        // convert /^UNSET$/ [if-unset: UNSET] to exists
-                        pattern = "";
-                        matches = HeaderMatches::Exists;
-                        f.write_str("not ")?;
-                        false
-                    }
-                    Some(_) => true,
-                    None => false,
-                };
-
-                if has_unset {
-                    match header {
-                        Header::MessageId => f.write_str(concat!(
-                            "allof(header :contains ",
-                            "[\"Message-Id\",\"Resent-Message-Id\",",
-                            "\"X-Message-Id\",\"X-Original-Message-ID\"]"
-                        ))?,
-                        Header::ToCc => f.write_str("allof(header :contains [\"To\",\"Cc\"]")?,
-                        Header::Name(name) => write!(f, "allof(header :contains {:?}", name)?,
-                        Header::EnvelopeFrom | Header::All | Header::AllExternal => {
-                            has_unset = false;
-                        }
-                    }
-                    if has_unset {
-                        f.write_str(" \"\", ")?;
-                    }
-                }
 
                 let cmd = if matches!(header, Header::EnvelopeFrom) {
                     "envelope"
                 } else if (is_name || is_addr) && !is_raw {
                     "address"
+                } else if matches!(header, Header::All | Header::Received(_)) {
+                    "string"
                 } else {
                     "header"
                 };
                 match matches {
                     HeaderMatches::Matches => write!(f, "{cmd} :regex ")?,
                     HeaderMatches::NotMatches => write!(f, "not {cmd} :regex ")?,
-                    HeaderMatches::Exists => write!(f, "{cmd} :contains ")?,
+                    HeaderMatches::Exists | HeaderMatches::NotExists => unreachable!(),
                 }
                 if !is_raw {
                     if is_name {
@@ -1261,14 +1533,30 @@ impl Display for Rule {
                     Header::ToCc => f.write_str("[\"To\",\"Cc\"]")?,
                     Header::Name(name) => write!(f, "{:?}", name)?,
                     Header::EnvelopeFrom => f.write_str("\"from\"")?,
-                    Header::All | Header::AllExternal => unreachable!(),
+                    Header::All => {
+                        if is_raw {
+                            f.write_str("\"${headers_raw}\"")?
+                        } else {
+                            f.write_str("\"${headers_text}\"")?
+                        }
+                    }
+                    Header::Received(rcvd) => {
+                        f.write_str("\"${env.")?;
+                        f.write_str(match rcvd {
+                            ReceivedPart::From => "helo_domain",
+                            ReceivedPart::FromIp => "remote_ip",
+                            ReceivedPart::FromIpRev => "iprev_ptr",
+                            _ => unreachable!(),
+                        })?;
+                        f.write_str("}\"")?;
+                    }
                 }
 
                 write!(f, " {:?}", pattern)?;
 
-                if has_unset {
+                /*if has_unset {
                     f.write_str(")")?;
-                }
+                }*/
             }
             RuleType::Body { pattern, raw } => {
                 if *raw {
@@ -1289,12 +1577,12 @@ impl Display for Rule {
                 match function.as_str() {
                     "check_from_in_auto_welcomelist" | "check_from_in_auto_whitelist" => {
                         f.write_str(concat!(
-                        "query :use \"spam\" :set [\"awl_score\", \"awl_count\"] \"SELECT score, count FROM awl WHERE sender = ? AND ip = ?\" [\"${from}\", \"%{env.remote_ip}\"];\n",
+                        "query :use \"spam\" :set [\"awl_score\", \"awl_count\"] \"SELECT score, count ","FROM awl WHERE sender = ? AND ip = ?\" [\"${from}\", \"%{env.remote_ip}\"];\n",
                         "if eval \"awl_count > 0\" {\n",
-                        "\tquery :use \"spam\" \"UPDATE awl SET score = score + ?, count = count + 1 WHERE sender = ? AND ip = ?\" [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"UPDATE awl SET score = score + ?, count = count + 1 WHERE ","sender = ? AND ip = ?\" [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
                         "\tset \"score\" \"%{score + ((awl_score / awl_count) - score) * awl_factor}\";\n",
                         "} else {\n",
-                        "\tquery :use \"spam\" \"INSERT INTO awl (score, count, sender, ip) VALUES (?, 1, ?, ?)\" [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
+                        "\tquery :use \"spam\" \"INSERT INTO awl (score, count, sender, ip) VALUES (?, 1, ?, ?)\""," [\"%{score}\", \"${from}\", \"%{env.remote_ip}\"];\n",
                         "}\n\n",
                     ))?;
                         return Ok(());
@@ -1408,7 +1696,22 @@ impl Display for Rule {
                     | "check_microsoft_executable"
                     | "check_outlook_message_id"
                     | "gated_through_received_hdr_remover"
-                    | "check_for_faraway_charset_in_headers" => {
+                    | "check_for_faraway_charset"
+                    | "check_for_faraway_charset_in_headers"
+                    | "check_all_trusted"
+                    | "check_relays_unparseable"
+                    | "check_welcomelist_bounce_relays"
+                    | "check_whitelist_bounce_relays"
+                    | "have_any_bounce_relays"
+                    | "check_for_fake_aol_relay_in_rcvd"
+                    | "check_for_forged_eudoramail_received_headers"
+                    | "check_for_forged_gmail_received_headers"
+                    | "check_for_forged_hotmail_received_headers"
+                    | "check_for_forged_juno_received_headers"
+                    | "check_for_forged_yahoo_received_headers"
+                    | "check_for_no_hotmail_received_headers"
+                    | "check_stock_info"
+                    | "check_abundant_unicode_ratio" => {
                         // ADSP is deprecated (see https://datatracker.ietf.org/doc/status-change-adsp-rfc5617-to-historic/)
                         // check_body_8bits: Not really useful
                         // check_shortcircuit: Not used
@@ -1636,8 +1939,8 @@ impl Display for Rule {
                     }
                     "check_fromname_spoof" => {
                         f.write_str(concat!(
-                            "if allof(eval \"from_name.is_email()\", ",
-                            "not string :is \"${from_name.domain_name_part()}\" \"${from.domain_name_part()}\")",
+                            "if eval \"is_email(from_name) && ",
+                            "domain_name_part(from_name) != domain_name_part(from)\")",
                         ))?;
                     }
                     "check_header_count_range" => {
@@ -1658,10 +1961,10 @@ impl Display for Rule {
                         if range_to > 100 {
                             write!(
                                 f,
-                                "if eval \"header.{hdr_name}[*].raw.count() >= {range_from}\""
+                                "if eval \"count(header.{hdr_name}[*].raw) >= {range_from}\""
                             )?;
                         } else {
-                            write!(f, "if eval \"header.{hdr_name}[*].raw.count() >= {range_from} && header.{hdr_name}[*].raw.count() < {range_to}\"")?;
+                            write!(f, "if eval \"count(header.{hdr_name}[*].raw) >= {range_from} && header.{hdr_name}[*].raw.count() < {range_to}\"")?;
                         }
                     }
                     "check_illegal_chars" => {
@@ -1721,6 +2024,45 @@ impl Display for Rule {
                                     .to_lowercase()
                             )?;
                         }
+                    }
+                    "check_no_relays" => {}
+                    "check_for_forged_received_trail" => {
+                        f.write_str(concat!(
+                            "if allof(string :value \"${env.iprev_ptr}\" \"\", ",
+                            "string :value \"ne\" \"%{env.helo_domain}\" \"${env.iprev_ptr}\")"
+                        ))?;
+                    }
+
+                    "check_for_mime_html_only"
+                    | "check_for_mime_html"
+                    | "multipart_alternative_difference"
+                    | "multipart_alternative_difference_count"
+                    | "check_ma_non_text"
+                    | "check_for_ascii_text_illegal"
+                    | "check_mime_multipart_ratio"
+                    | "check_msg_parse_flags"
+                    | "tvd_vertical_words"
+                    | "check_base64_length"
+                    | "check_for_uppercase" => {
+                        // Handled externally
+                        return Ok(());
+                        //f.write_str("if eval \"header.content-type == 'text/html'\"")?;
+                        /*
+
+                         let params = params
+                            .iter()
+                            .next()
+                            .expect("missing parameter for check_msg_parse_flags");
+                        if params.contains("mime_epilogue_exists") {
+                            f.write_str("if eval \"header.content-type.type == 'multipart' && !ends-with(trim(part.raw), '--')\"")?;
+                        } else if params.contains("missing_mime_headers")
+                            || params.contains("missing_head_body_separator")
+                        {
+                            let c = "implemented in loop";
+                        } else {
+                            panic!("Warning: Invalid check_msg_parse_flags {:?}", params);
+                        }
+                         */
                     }
 
                     _ => {

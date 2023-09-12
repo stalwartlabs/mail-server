@@ -54,6 +54,13 @@ pub trait RegisterSievePlugins {
 
 impl RegisterSievePlugins for Compiler {
     fn register_plugins(mut self) -> Self {
+        #[cfg(feature = "test_mode")]
+        {
+            self.register_plugin("print")
+                .with_id(PLUGINS_EXEC.len() as u32)
+                .with_string_argument();
+        }
+
         for (i, fnc) in PLUGINS_REGISTER.iter().enumerate() {
             fnc(i as u32, &mut self);
         }
@@ -63,9 +70,27 @@ impl RegisterSievePlugins for Compiler {
 
 impl SMTP {
     pub fn run_plugin_blocking(&self, id: u32, ctx: PluginContext<'_>) -> Input {
+        #[cfg(feature = "test_mode")]
+        if id == PLUGINS_EXEC.len() as u32 {
+            return test_print(ctx);
+        }
+
         PLUGINS_EXEC
             .get(id as usize)
             .map(|fnc| fnc(ctx))
             .unwrap_or(false.into())
     }
+}
+
+#[cfg(feature = "test_mode")]
+pub fn test_print(ctx: PluginContext<'_>) -> Input {
+    println!(
+        "{}",
+        ctx.arguments
+            .into_iter()
+            .next()
+            .and_then(|a| a.unwrap_string())
+            .unwrap()
+    );
+    Input::True
 }

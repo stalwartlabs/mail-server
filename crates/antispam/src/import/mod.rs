@@ -21,8 +21,7 @@ enum RuleType {
     Header {
         matches: HeaderMatches,
         header: Header,
-        part: Vec<HeaderPart>,
-        if_unset: Option<String>,
+        part: HeaderPart,
         pattern: String,
     },
     Body {
@@ -83,15 +82,27 @@ enum TestFlag {
     DnsBlockRule(String),
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 enum Header {
     #[default]
     All,
     MessageId,
-    AllExternal,
     EnvelopeFrom,
     ToCc,
+    Received(ReceivedPart),
     Name(String),
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+enum ReceivedPart {
+    From,
+    FromIp,
+    FromIpRev,
+    By,
+    For,
+    Ident,
+    Id,
+    Protocol,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -100,14 +111,16 @@ enum HeaderMatches {
     Matches,
     NotMatches,
     Exists,
+    NotExists,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 enum HeaderPart {
     Name,
     Addr,
-    #[default]
     Raw,
+    #[default]
+    Default,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

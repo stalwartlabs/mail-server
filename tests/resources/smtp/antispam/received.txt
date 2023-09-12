@@ -1,0 +1,45 @@
+helo_domain my.domain.com
+iprev_ptr some.other.host.com
+expect __forged_rcvd_trail
+
+From: john@example.com
+To: jane@example.com
+Subject: test
+
+test
+<!-- NEXT TEST -->
+expect __forged_rcvd_trail
+
+Return-Path: <president@whitehouse.gov>
+Received: from mailhost.whitehouse.gov ([192.168.51.200])
+        by heartbeat.whitehouse.gov (8.8.8/8.8.8) with ESMTP id SAA22453
+        for <vice-president@heartbeat.whitehouse.gov>;
+        Mon, 13 Aug 1998 l8:14:23 +1000
+Received: from the_big_box.whitehouse.gov ([192.168.51.50])
+        by mailhost.whitehouse.gov (8.8.8/8.8.7) with ESMTP id RAA20366
+        for vice-president@whitehouse.gov; Mon, 13 Aug 1998 17:42:41 +1000
+Received: from mail1.insuranceiq.com (host66.insuranceiq.com [65.217.159.66] (may be forged)) 
+          by dogma.slashnull.org (8.11.6/8.11.6) with ESMTP id h2F0c2x31856 for <jm@jmason.org>; 
+          Sat, 15 Mar 2003 00:38:03 GMT
+Date: Mon, 13 Aug 1998 17:42:41 +1000
+Message-Id: <199804130742.RAA20366@mai1host.whitehouse.gov>
+From: Bill Clinton <president@whitehouse.gov>
+To: A1 (The Enforcer) Gore <vice-president@whitehouse.gov>
+Subject:  Map of Argentina with Description
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hi A1,
+
+I finally figured out this MIME thing.  Pretty cool.  I'll send you
+some sax music in .au files next week!
+
+Anyway, the attached image is really too small to get a good look at
+Argentina.  Try this for a much better map:
+
+     http://www.1one1yp1anet.com/dest/sam/graphics/map-arg.htm
+
+Then again, shouldn't the CIA have something like that?
+
+Bill

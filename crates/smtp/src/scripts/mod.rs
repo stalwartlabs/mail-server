@@ -49,6 +49,8 @@ pub struct ScriptParameters {
     message: Option<Arc<Vec<u8>>>,
     variables: AHashMap<Cow<'static, str>, Variable<'static>>,
     envelope: Vec<(Envelope, Variable<'static>)>,
+    #[cfg(feature = "test_mode")]
+    expected_variables: Option<AHashMap<String, Variable<'static>>>,
 }
 
 impl ScriptParameters {
@@ -57,6 +59,8 @@ impl ScriptParameters {
             variables: AHashMap::with_capacity(10),
             envelope: Vec::with_capacity(6),
             message: None,
+            #[cfg(feature = "test_mode")]
+            expected_variables: None,
         }
     }
 
@@ -73,6 +77,15 @@ impl ScriptParameters {
         value: impl Into<Variable<'static>>,
     ) -> Self {
         self.variables.insert(name.into(), value.into());
+        self
+    }
+
+    #[cfg(feature = "test_mode")]
+    pub fn with_expected_variables(
+        mut self,
+        expected_variables: AHashMap<String, Variable<'static>>,
+    ) -> Self {
+        self.expected_variables = expected_variables.into();
         self
     }
 }

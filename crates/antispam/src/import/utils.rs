@@ -81,7 +81,7 @@ pub fn fix_broken_regex(value: &str) -> &str {
     }
 }
 
-pub fn import_regex(value: &str) -> (String, HashSet<String>) {
+pub fn import_regex(value: &str) -> (String, String, HashSet<String>) {
     // Obtain separator
     let mut iter = value.chars().peekable();
     let separator = match iter.next() {
@@ -134,14 +134,7 @@ pub fn import_regex(value: &str) -> (String, HashSet<String>) {
         }
     }
 
-    (
-        if !flags.is_empty() {
-            format!("(?{flags}){regex}")
-        } else {
-            regex
-        },
-        variables,
-    )
+    (regex, flags, variables)
 }
 
 #[cfg(test)]
@@ -164,7 +157,11 @@ mod test {
                 vec!["GB_TO_ADDR"],
             ),
         ] {
-            let (regex, regex_vars) = super::import_regex(expr);
+            let (mut regex, flags, regex_vars) = super::import_regex(expr);
+            if !flags.is_empty() {
+                regex = format!("(?{flags}){regex}");
+            }
+
             assert_eq!(regex, result);
             assert_eq!(
                 HashSet::from_iter(vars.iter().map(|s| s.to_string())),

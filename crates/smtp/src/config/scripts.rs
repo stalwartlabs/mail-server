@@ -70,6 +70,7 @@ impl ConfigSieve for Config {
             ])
             .with_capability(Capability::Plugins)
             .with_capability(Capability::ForEveryLine)
+            .with_capability(Capability::Eval)
             .with_max_variable_size(102400)
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")

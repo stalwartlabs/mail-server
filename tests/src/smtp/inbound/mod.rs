@@ -32,6 +32,7 @@ use smtp::{
 
 use super::{QueueReceiver, ReportReceiver};
 
+pub mod antispam;
 pub mod auth;
 pub mod basic;
 pub mod data;
