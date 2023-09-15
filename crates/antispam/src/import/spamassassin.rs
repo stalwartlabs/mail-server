@@ -1660,30 +1660,30 @@ impl Display for Rule {
                     | "check_for_spf_permerror"
                     | "check_for_spf_softfail"
                     | "check_for_spf_temperror" => {
-                        let mut parts = function.split('_').rev();
+                        /*let mut parts = function.split('_').rev();
                         let result = parts.next().unwrap();
                         let spf = if parts.next().unwrap() == "helo" {
                             "spf_ehlo"
                         } else {
                             "spf"
                         };
-                        write!(f, "if string :is \"${{env.{spf}_result}}\" \"{result}\"")?;
+                        write!(f, "if string :is \"${{env.{spf}_result}}\" \"{result}\"")?;*/
                     }
                     "check_arc_signed" => {
-                        f.write_str("if string :value \"ne\" \"${env.arc_result}\" \"none\"")?;
+                        //f.write_str("if string :value \"ne\" \"${env.arc_result}\" \"none\"")?;
                     }
                     "check_arc_valid" => {
-                        f.write_str("if string :is \"${env.arc_result}\" \"pass\"")?;
+                        //f.write_str("if string :is \"${env.arc_result}\" \"pass\"")?;
                     }
                     "check_dmarc_missing" => {
-                        f.write_str("if string :is \"${env.dmarc_policy}\" \"none\"")?;
+                        //f.write_str("if string :is \"${env.dmarc_policy}\" \"none\"")?;
                     }
                     "check_dmarc_pass" => {
-                        f.write_str("if string :is \"${env.dmarc_result}\" \"pass\"")?;
+                        //f.write_str("if string :is \"${env.dmarc_result}\" \"pass\"")?;
                     }
                     "check_dmarc_none" | "check_dmarc_quarantine" | "check_dmarc_reject" => {
-                        let policy = function.split('_').nth(2).unwrap();
-                        write!(f, "if allof(string :is \"${{env.dmarc_result}}\" \"fail\", string :is \"${{env.dmarc_policy}}\" \"{policy}\")")?;
+                        //let policy = function.split('_').nth(2).unwrap();
+                        //write!(f, "if allof(string :is \"${{env.dmarc_result}}\" \"fail\", string :is \"${{env.dmarc_policy}}\" \"{policy}\")")?;
                     }
                     "check_dkim_adsp"
                     | "check_dkim_signall"
@@ -1718,17 +1718,18 @@ impl Display for Rule {
                         f.write_str("if false")?;
                     }
                     "check_dkim_dependable" => {
-                        writeln!(f, "set :local \"{}\" \"1\";", self.name)?;
-                        return Ok(());
+                        //writeln!(f, "set :local \"{}\" \"1\";", self.name)?;
+                        //return Ok(());
                     }
                     "check_dkim_signed" => {
-                        f.write_str("if string :value \"ne\" \"${env.dkim_result}\" \"none\"")?;
+                        //f.write_str("if string :value \"ne\" \"${env.dkim_result}\" \"none\"")?;
                     }
                     "check_dkim_testing" => {
-                        f.write_str("if header :contains \"DKIM-Signature\" \"t=y\"")?;
+                        // score 0
+                        //f.write_str("if header :contains \"DKIM-Signature\" \"t=y\"")?;
                     }
                     "check_dkim_valid" => {
-                        if params.is_empty() {
+                        /*if params.is_empty() {
                             f.write_str("if string :is \"${env.dkim_result}\" \"pass\"")?;
                         } else {
                             f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", ")?;
@@ -1746,10 +1747,10 @@ impl Display for Rule {
                             } else {
                                 f.write_str(")")?;
                             }
-                        }
+                        }*/
                     }
                     "check_dkim_valid_envelopefrom" => {
-                        f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", string :is \"${mail_from}\" \"${from}\")")?;
+                        //f.write_str("if allof(string :is \"${env.dkim_result}\" \"pass\", string :is \"${mail_from}\" \"${from}\")")?;
                     }
                     "check_for_def_dkim_welcomelist_from"
                     | "check_for_def_dkim_whitelist_from"
@@ -1768,16 +1769,18 @@ impl Display for Rule {
                         write!(f, "if address :list \"from\" \"sa/list_{list}\"")?;
                     }
                     "check_for_missing_to_header" => {
-                        write!(f, "if not exists \"to\"")?;
+                        //write!(f, "if not exists \"to\"")?;
                     }
                     "check_for_to_in_subject" => {
-                        f.write_str("foreveryline \"${header.to[*].addr[*]}\" {\n")?;
+                        /*f.write_str("foreveryline \"${header.to[*].addr[*]}\" {\n")?;
                         f.write_str("\tif string :contains \"${header.subject}\" \"${line}\"")?;
                         self.fmt_match(f, 2)?;
                         f.write_str("\t\tbreak;\n\t}\n}\n\n")?;
-                        return Ok(());
+                        return Ok(());*/
                     }
                     "check_blank_line_ratio" => {
+                        /*
+                        score = 0
                         let mut params = params.iter();
 
                         if let (Some(min), Some(max), Some(min_lines)) = (
@@ -1808,7 +1811,7 @@ impl Display for Rule {
                             )?;
                         } else {
                             panic!("Warning: Invalid check_blank_line_ratio");
-                        }
+                        }*/
                     }
                     "check_language" => {
                         f.write_str(concat!(
@@ -1821,7 +1824,7 @@ impl Display for Rule {
                         return Ok(());
                     }
                     "check_body_length" => {
-                        write!(
+                        /*write!(
                             f,
                             "if eval \"body_len < {}\" ",
                             params
@@ -1829,25 +1832,25 @@ impl Display for Rule {
                                 .next()
                                 .and_then(param_to_num::<usize>)
                                 .expect("missing body length on check_body_length")
-                        )?;
+                        )?;*/
                     }
                     "check_equal_from_domains" => {
-                        f.write_str("if not string :is \"${mail_from.subdomain_part()}\" \"${from.subdomain_part()}\"")?;
+                        //f.write_str("if not string :is \"${mail_from.subdomain_part()}\" \"${from.subdomain_part()}\"")?;
                     }
                     "check_for_no_rdns_dotcom_helo" => {
-                        f.write_str("if not string :is \"${env.iprev_result}\" [\"pass\", \"\", \"temperror\"]")?;
+                        //f.write_str("if not string :is \"${env.iprev_result}\" [\"pass\", \"\", \"temperror\"]")?;
                     }
                     "helo_ip_mismatch" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "if allof(not string :is \"${env.iprev_ptr}\" \"\", ",
                             "not string is \"${env.iprev_ptr}\" \"${env.helo_domain}\")"
-                        ))?;
+                        ))?;*/
                     }
                     "subject_is_all_caps" => {
-                        f.write_str("if eval \"thread_name.len() >= 10 && thread_name.count_words() > 1 && thread_name.is_uppercase()\"")?;
+                        //f.write_str("if eval \"thread_name.len() >= 10 && thread_name.count_words() > 1 && thread_name.is_uppercase()\"")?;
                     }
                     "check_for_shifted_date" => {
-                        let mut params = params.iter();
+                        /*let mut params = params.iter();
                         let mut range = [None; 2];
                         for item in range.iter_mut() {
                             let param = params
@@ -1881,10 +1884,10 @@ impl Display for Rule {
                             }
                         }
 
-                        f.write_str("\"")?;
+                        f.write_str("\"")?;*/
                     }
                     "check_ratware_envelope_from" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "set \"env_from_local\" \"${mail_from.local_part()}\";\n",
                             "set \"to_local\" \"${header.to.addr.local_part()}\";\n",
                             "set \"to_domain\" \"${header.to.addr.domain_part()}\";\n",
@@ -1894,24 +1897,24 @@ impl Display for Rule {
                             "not string :is \"${to_domain}\" \"\", ",
                             "string :contains \"${env_from_local}\" \"${to_domain}\", ",
                             "string :contains \"${env_from_local}\" \"${to_local}\")"
-                        ))?;
+                        ))?;*/
                     }
                     "check_ratware_name_id" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "if header :contains ",
                             "[\"Message-Id\",\"Resent-Message-Id\",",
                             "\"X-Message-Id\",\"X-Original-Message-ID\"] ",
                             "\"${from}\"",
-                        ))?;
+                        ))?;*/
                     }
                     "check_mailfrom_matches_rcvd" => {
-                        f.write_str(
+                        /*f.write_str(
                             "if string :contains \"${env.helo_domain}\" \"${mail_from_domain}\"",
-                        )?;
+                        )?;*/
                     }
 
                     "check_unresolved_template" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "foreveryline \"${headers_raw}\" {\n",
                             "\tif allof(string :regex \"${line}\" \"%[A-Z][A-Z_-]\", ",
                             "not string :regex \"${line}\" \"(?i)^(?:X-VMS-To|X-UIDL|",
@@ -1920,31 +1923,31 @@ impl Display for Rule {
                         ))?;
                         self.fmt_match(f, 2)?;
                         f.write_str("\t\tbreak;\n\t}\n}\n\n")?;
-                        return Ok(());
+                        return Ok(());*/
                     }
                     "check_for_matching_env_and_hdr_from" => {
-                        f.write_str("if string :is \"${mail_from}\" \"${from}\"")?;
+                        //f.write_str("if string :is \"${mail_from}\" \"${from}\"")?;
                     }
                     "check_fromname_equals_replyto" => {
-                        f.write_str("if string :is \"${from_name}\" \"${header.reply-to.addr}\"")?;
+                        //f.write_str("if string :is \"${from_name}\" \"${header.reply-to.addr}\"")?;
                     }
                     "check_fromname_equals_to" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "foreveryline \"${header.to[*].addr[*]}\" {\n",
                             "\tif string :is \"${from_name}\" \"${line}\"",
                         ))?;
                         self.fmt_match(f, 2)?;
                         f.write_str("\t\tbreak;\n\t}\n}\n\n")?;
-                        return Ok(());
+                        return Ok(());*/
                     }
                     "check_fromname_spoof" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "if eval \"is_email(from_name) && ",
                             "domain_name_part(from_name) != domain_name_part(from)\")",
-                        ))?;
+                        ))?;*/
                     }
                     "check_header_count_range" => {
-                        let mut params = params.iter();
+                        /*let mut params = params.iter();
                         let hdr_name = params
                             .next()
                             .expect("missing parameters for check_header_count_range")
@@ -1965,10 +1968,10 @@ impl Display for Rule {
                             )?;
                         } else {
                             write!(f, "if eval \"count(header.{hdr_name}[*].raw) >= {range_from} && header.{hdr_name}[*].raw.count() < {range_to}\"")?;
-                        }
+                        }*/
                     }
                     "check_illegal_chars" => {
-                        let mut params = params.iter();
+                        /*let mut params = params.iter();
                         let hdr_name = params
                             .next()
                             .expect("missing parameters for check_illegal_chars");
@@ -1993,7 +1996,7 @@ impl Display for Rule {
                         writeln!(
                             f,
                             "if eval \"i_count > {count} && i_count / c_count > {ratio}\""
-                        )?;
+                        )?;*/
                     }
                     "check_freemail_from" => {
                         f.write_str(concat!(
@@ -2027,10 +2030,10 @@ impl Display for Rule {
                     }
                     "check_no_relays" => {}
                     "check_for_forged_received_trail" => {
-                        f.write_str(concat!(
+                        /*f.write_str(concat!(
                             "if allof(string :value \"${env.iprev_ptr}\" \"\", ",
                             "string :value \"ne\" \"%{env.helo_domain}\" \"${env.iprev_ptr}\")"
-                        ))?;
+                        ))?;*/
                     }
 
                     "check_for_mime_html_only"
@@ -2043,7 +2046,9 @@ impl Display for Rule {
                     | "check_msg_parse_flags"
                     | "tvd_vertical_words"
                     | "check_base64_length"
-                    | "check_for_uppercase" => {
+                    | "check_for_uppercase"
+                    | "check_for_mime"
+                    | "html_charset_faraway" => {
                         // Handled externally
                         return Ok(());
                         //f.write_str("if eval \"header.content-type == 'text/html'\"")?;

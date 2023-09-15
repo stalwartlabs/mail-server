@@ -69,7 +69,7 @@ impl ConfigSieve for Config {
                 Capability::Duplicate,
             ])
             .with_capability(Capability::Plugins)
-            .with_capability(Capability::ForEveryLine)
+            .with_capability(Capability::While)
             .with_capability(Capability::Eval)
             .with_max_variable_size(102400)
             .with_max_header_size(10240)

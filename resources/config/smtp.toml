@@ -328,7 +328,6 @@ from-addr = "no-reply@__DOMAIN__"
 return-path = ""
 #hostname = "__HOST__"
 sign = ["rsa"]
-use-directory = "__SMTP_DIRECTORY__"
 
 [sieve.limits]
 redirects = 3

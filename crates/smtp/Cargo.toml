@@ -48,6 +48,7 @@ serde_json = "1.0"
 num_cpus = "1.15.0"
 lazy_static = "1.4"
 whatlang = "0.16"
+imagesize = "0.12"
 
 [features]
 test_mode = []

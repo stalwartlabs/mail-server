@@ -38,8 +38,11 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub fn build_script_parameters(&self) -> ScriptParameters {
         let mut params = ScriptParameters::new()
             .set_variable("remote_ip", self.data.remote_ip.to_string())
-            .set_variable("helo_domain", self.data.helo_domain.to_string())
-            .set_variable("authenticated_as", self.data.authenticated_as.clone())
+            .set_variable("helo_domain", self.data.helo_domain.to_lowercase())
+            .set_variable(
+                "authenticated_as",
+                self.data.authenticated_as.to_lowercase(),
+            )
             .set_variable(
                 "now",
                 SystemTime::now()
@@ -65,27 +68,27 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         if let Some(ip_rev) = &self.data.iprev {
             params = params.set_variable("iprev_result", ip_rev.result().as_str());
             if let Some(ptr) = ip_rev.ptr.as_ref().and_then(|addrs| addrs.first()) {
-                params = params.set_variable("iprev_ptr", ptr.to_string());
+                params = params.set_variable("iprev_ptr", ptr.to_lowercase());
             }
         }
 
         if let Some(mail_from) = &self.data.mail_from {
             params
                 .envelope
-                .push((Envelope::From, mail_from.address.clone().into()));
+                .push((Envelope::From, mail_from.address_lcase.to_string().into()));
             if let Some(env_id) = &mail_from.dsn_info {
                 params
                     .envelope
-                    .push((Envelope::Envid, env_id.clone().into()));
+                    .push((Envelope::Envid, env_id.to_lowercase().into()));
             }
             if let Some(rcpt) = self.data.rcpt_to.last() {
                 params
                     .envelope
-                    .push((Envelope::To, rcpt.address.clone().into()));
+                    .push((Envelope::To, rcpt.address_lcase.to_string().into()));
                 if let Some(orcpt) = &rcpt.dsn_info {
                     params
                         .envelope
-                        .push((Envelope::Orcpt, orcpt.clone().into()));
+                        .push((Envelope::Orcpt, orcpt.to_lowercase().into()));
                 }
             }
             if (mail_from.flags & MAIL_RET_FULL) != 0 {

@@ -42,7 +42,7 @@ chrono = "0.4"
 dashmap = "5.4"
 aes = "0.8.3"
 cbc = { version = "0.1.2", features = ["alloc"] }
-sequoia-openpgp = "1.16"
+sequoia-openpgp = { version = "1.16", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
 rand = "0.8.5"
 rasn = "0.9.5"
 rasn-cms = "0.9.5"

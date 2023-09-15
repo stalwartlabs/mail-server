@@ -9,7 +9,10 @@ use smtp::{
     config::{scripts::ConfigSieve, ConfigContext, IfBlock},
     core::{Session, SessionAddress, SMTP},
     inbound::AuthResult,
-    scripts::ScriptResult,
+    scripts::{
+        functions::html::{get_attribute, html_img_area, html_to_tokens},
+        ScriptResult,
+    },
 };
 use tokio::runtime::Handle;
 use utils::config::Config;
@@ -229,6 +232,175 @@ async fn antispam() {
             }
         }
     }
+}
+
+#[test]
+fn html_tokens() {
+    for (input, expected) in [
+        (
+            "<html>hello<br/>world<br/></html>",
+            vec![
+                Variable::String("<html".to_string()),
+                Variable::String("_hello".to_string()),
+                Variable::String("<br/".to_string()),
+                Variable::String("_world".to_string()),
+                Variable::String("<br/".to_string()),
+                Variable::String("</html".to_string()),
+            ],
+        ),
+        (
+            "<html>using &lt;><br/></html>",
+            vec![
+                Variable::String("<html".to_string()),
+                Variable::String("_using <>".to_string()),
+                Variable::String("<br/".to_string()),
+                Variable::String("</html".to_string()),
+            ],
+        ),
+        (
+            "test <not br/>tag<br />",
+            vec![
+                Variable::String("_test".to_string()),
+                Variable::String("<not br/".to_string()),
+                Variable::String("_ tag".to_string()),
+                Variable::String("<br /".to_string()),
+            ],
+        ),
+        (
+            "<>< ><tag\n/>>hello    world< br \n />",
+            vec![
+                Variable::String("<".to_string()),
+                Variable::String("<".to_string()),
+                Variable::String("<tag /".to_string()),
+                Variable::String("_>hello world".to_string()),
+                Variable::String("<br /".to_string()),
+            ],
+        ),
+        (
+            concat!(
+                "<head><title>ignore head</title><not head>xyz</not head></head>",
+                "<h1>&lt;body&gt;</h1>"
+            ),
+            vec![
+                Variable::String("<head".to_string()),
+                Variable::String("<title".to_string()),
+                Variable::String("_ignore head".to_string()),
+                Variable::String("</title".to_string()),
+                Variable::String("<not head".to_string()),
+                Variable::String("_xyz".to_string()),
+                Variable::String("</not head".to_string()),
+                Variable::String("</head".to_string()),
+                Variable::String("<h1".to_string()),
+                Variable::String("_<body>".to_string()),
+                Variable::String("</h1".to_string()),
+            ],
+        ),
+        (
+            concat!(
+                "<p>what is &heartsuit;?</p><p>&#x000DF;&Abreve;&#914;&gamma; ",
+                "don&apos;t hurt me.</p>"
+            ),
+            vec![
+                Variable::String("<p".to_string()),
+                Variable::String("_what is ♥?".to_string()),
+                Variable::String("</p".to_string()),
+                Variable::String("<p".to_string()),
+                Variable::String("_ßĂΒγ don't hurt me.".to_string()),
+                Variable::String("</p".to_string()),
+            ],
+        ),
+        (
+            concat!(
+                "<!--[if mso]><style type=\"text/css\">body, table, td, a, p, ",
+                "span, ul, li {font-family: Arial, sans-serif!important;}</style><![endif]-->",
+                "this is <!-- <> < < < < ignore  > -> here -->the actual<!--> text"
+            ),
+            vec![
+                Variable::String(
+                    concat!(
+                        "<!--[if mso]><style type=\"text/css\">body, table, ",
+                        "td, a, p, span, ul, li {font-family: Arial, sans-serif!",
+                        "important;}</style><![endif]--"
+                    )
+                    .to_string(),
+                ),
+                Variable::String("_this is".to_string()),
+                Variable::String("<!-- <> < < < < ignore  > -> here --".to_string()),
+                Variable::String("_ the actual".to_string()),
+                Variable::String("<!--".to_string()),
+                Variable::String("_ text".to_string()),
+            ],
+        ),
+        (
+            "   < p >  hello < / p > < p > world < / p >   !!! < br > ",
+            vec![
+                Variable::String("<p ".to_string()),
+                Variable::String("_hello".to_string()),
+                Variable::String("</p ".to_string()),
+                Variable::String("<p ".to_string()),
+                Variable::String("_ world".to_string()),
+                Variable::String("</p ".to_string()),
+                Variable::String("_ !!!".to_string()),
+                Variable::String("<br ".to_string()),
+            ],
+        ),
+        (
+            " <p>please unsubscribe <a href=#>here</a>.</p> ",
+            vec![
+                Variable::String("<p".to_string()),
+                Variable::String("_please unsubscribe".to_string()),
+                Variable::String("<a href=#".to_string()),
+                Variable::String("_ here".to_string()),
+                Variable::String("</a".to_string()),
+                Variable::String("_.".to_string()),
+                Variable::String("</p".to_string()),
+            ],
+        ),
+    ] {
+        assert_eq!(html_to_tokens(input), expected, "Failed for '{:?}'", input);
+    }
+
+    for (tag, attr_name, expected) in [
+        ("<img width=200 height=400", "width", "200"),
+        ("<img width=200 height=400", "height", "400"),
+        ("<img width = 200 height = 400", "width", "200"),
+        ("<img width = 200 height = 400", "height", "400"),
+        ("<img width =200 height =400", "width", "200"),
+        ("<img width =200 height =400", "height", "400"),
+        ("<img width= 200 height= 400", "width", "200"),
+        ("<img width= 200 height= 400", "height", "400"),
+        ("<img width=\"200\" height=\"400\"", "width", "200"),
+        ("<img width=\"200\" height=\"400\"", "height", "400"),
+        ("<img width = \"200\" height = \"400\"", "width", "200"),
+        ("<img width = \"200\" height = \"400\"", "height", "400"),
+        (
+            "<img width=\" 200 % \" height=\" 400 % \"",
+            "width",
+            " 200 % ",
+        ),
+        (
+            "<img width=\" 200 % \" height=\" 400 % \"",
+            "height",
+            " 400 % ",
+        ),
+    ] {
+        assert_eq!(
+            get_attribute(tag, attr_name).unwrap_or_default(),
+            expected,
+            "failed for {tag:?}, {attr_name:?}"
+        );
+    }
+
+    assert_eq!(
+        html_img_area(&html_to_tokens(concat!(
+            "<img width=200 height=400 />",
+            "20",
+            "30",
+            "<img width=10% height=\" 20% \"/>",
+            "<img width=\"50\" height   =   \"60\">"
+        ))),
+        92600
+    );
 }
 
 trait ParseConfigValue: Sized {
