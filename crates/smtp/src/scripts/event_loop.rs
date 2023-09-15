@@ -363,7 +363,7 @@ impl SMTP {
                     assert_eq!(value, expected, "Variable {name:?} has unexpected value");
                 } else {
                     panic!("Missing variable {name:?} with value {expected:?}\nExpected {:?}\nFound: {:?}", 
-                    expected_variables.keys().collect::<Vec<_>>(), 
+                    expected_variables.keys().collect::<Vec<_>>(),
                     instance.global_variable_names().collect::<Vec<_>>());
                 }
             }

@@ -5485,6 +5485,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-journald"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba316a74e8fc3c3896a850dba2375928a9fa171b085ecddfc7c054d39970f3fd"
+dependencies = [
+ "libc",
+ "tracing-core",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tracing-log"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5775,6 +5786,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-appender",
+ "tracing-journald",
  "tracing-opentelemetry",
  "tracing-subscriber",
 ]

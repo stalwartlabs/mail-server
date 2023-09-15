@@ -179,6 +179,17 @@ pub fn enable_tracing(config: &Config, message: &str) -> config::Result<Option<W
 
             Ok(None)
         }
+        #[cfg(unix)]
+        "journal" => {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::Registry::default()
+                    .with(tracing_journald::layer().failed("Failed to configure journal"))
+                    .with(env_filter),
+            )
+            .failed("Failed to set subscriber");
+
+            Ok(None)
+        }
         _ => Ok(None),
     };
 
