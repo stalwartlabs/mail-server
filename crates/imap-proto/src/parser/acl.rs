@@ -22,8 +22,12 @@
 */
 
 use crate::{
-    protocol::acl::{self, ModRights, ModRightsOp, Rights},
+    protocol::{
+        acl::{self, ModRights, ModRightsOp, Rights},
+        ProtocolVersion,
+    },
     receiver::Request,
+    utf7::utf7_maybe_decode,
     Command,
 };
 
@@ -45,7 +49,7 @@ use super::PushUnique;
 */
 
 impl Request<Command> {
-    pub fn parse_acl(self) -> crate::Result<acl::Arguments> {
+    pub fn parse_acl(self, version: ProtocolVersion) -> crate::Result<acl::Arguments> {
         let (has_identifier, has_mod_rights) = match self.command {
             Command::SetAcl => (true, true),
             Command::DeleteAcl | Command::ListRights => (true, false),
@@ -53,11 +57,14 @@ impl Request<Command> {
             _ => unreachable!(),
         };
         let mut tokens = self.tokens.into_iter();
-        let mailbox_name = tokens
-            .next()
-            .ok_or((self.tag.as_str(), "Missing mailbox name."))?
-            .unwrap_string()
-            .map_err(|v| (self.tag.as_str(), v))?;
+        let mailbox_name = utf7_maybe_decode(
+            tokens
+                .next()
+                .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                .unwrap_string()
+                .map_err(|v| (self.tag.as_str(), v))?,
+            version,
+        );
         let identifier = if has_identifier {
             tokens
                 .next()
@@ -138,7 +145,10 @@ impl ModRights {
 mod tests {
 
     use crate::{
-        protocol::acl::{self, ModRights, ModRightsOp, Rights},
+        protocol::{
+            acl::{self, ModRights, ModRightsOp, Rights},
+            ProtocolVersion,
+        },
         receiver::Receiver,
     };
 
@@ -222,7 +232,7 @@ mod tests {
                 receiver
                     .parse(&mut command.as_bytes().iter())
                     .unwrap()
-                    .parse_acl()
+                    .parse_acl(ProtocolVersion::Rev1)
                     .unwrap(),
                 arguments,
                 "{:?}",

@@ -24,9 +24,10 @@
 use crate::{
     protocol::{
         append::{self, Message},
-        Flag,
+        Flag, ProtocolVersion,
     },
     receiver::{Request, Token},
+    utf7::utf7_maybe_decode,
     Command,
 };
 
@@ -40,17 +41,20 @@ enum State {
 }
 
 impl Request<Command> {
-    pub fn parse_append(self) -> crate::Result<append::Arguments> {
+    pub fn parse_append(self, version: ProtocolVersion) -> crate::Result<append::Arguments> {
         match self.tokens.len() {
             0 | 1 => Err(self.into_error("Missing arguments.")),
             _ => {
                 // Obtain mailbox name
                 let mut tokens = self.tokens.into_iter().peekable();
-                let mailbox_name = tokens
-                    .next()
-                    .unwrap()
-                    .unwrap_string()
-                    .map_err(|v| (self.tag.as_str(), v))?;
+                let mailbox_name = utf7_maybe_decode(
+                    tokens
+                        .next()
+                        .unwrap()
+                        .unwrap_string()
+                        .map_err(|v| (self.tag.as_str(), v))?,
+                    version,
+                );
                 let mut messages = Vec::new();
 
                 while tokens.peek().is_some() {
@@ -166,7 +170,7 @@ mod tests {
     use crate::{
         protocol::{
             append::{self, Message},
-            Flag,
+            Flag, ProtocolVersion,
         },
         receiver::{Error, Receiver},
     };
@@ -265,7 +269,7 @@ mod tests {
                 receiver
                     .parse(&mut command.as_bytes().iter())
                     .expect(command)
-                    .parse_append()
+                    .parse_append(ProtocolVersion::Rev1)
                     .expect(command),
                 arguments,
                 "{:?}",
@@ -298,7 +302,7 @@ mod tests {
             match receiver.parse(&mut line.as_bytes().iter()) {
                 Ok(request) => {
                     assert_eq!(
-                        request.parse_append().unwrap(),
+                        request.parse_append(ProtocolVersion::Rev1).unwrap(),
                         append::Arguments {
                             tag: "A003".to_string(),
                             mailbox_name: "saved-messages".to_string(),

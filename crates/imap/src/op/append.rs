@@ -36,7 +36,7 @@ use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_append(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_append() {
+        match request.parse_append(self.version) {
             Ok(arguments) => {
                 let (data, selected_mailbox) = self.state.session_mailbox_state();
 

@@ -48,7 +48,7 @@ impl<T: AsyncRead> Session<T> {
         is_move: bool,
         is_uid: bool,
     ) -> crate::OpResult {
-        match request.parse_copy_move() {
+        match request.parse_copy_move(self.version) {
             Ok(arguments) => {
                 let (data, src_mailbox) = self.state.mailbox_state();
 

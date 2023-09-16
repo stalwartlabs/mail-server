@@ -51,7 +51,7 @@ use crate::core::{MailboxId, Session, SessionData};
 
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_get_acl(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_acl() {
+        match request.parse_acl(self.version) {
             Ok(arguments) => {
                 let data = self.state.session_data();
                 let is_rev2 = self.version.is_rev2();
@@ -165,7 +165,7 @@ impl<T: AsyncRead> Session<T> {
     }
 
     pub async fn handle_my_rights(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_acl() {
+        match request.parse_acl(self.version) {
             Ok(arguments) => {
                 let data = self.state.session_data();
                 let is_rev2 = self.version.is_rev2();
@@ -265,7 +265,7 @@ impl<T: AsyncRead> Session<T> {
 
     pub async fn handle_set_acl(&mut self, request: Request<Command>) -> crate::OpResult {
         let command = request.command;
-        match request.parse_acl() {
+        match request.parse_acl(self.version) {
             Ok(arguments) => {
                 let data = self.state.session_data();
 
@@ -489,7 +489,7 @@ impl<T: AsyncRead> Session<T> {
     }
 
     pub async fn handle_list_rights(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_acl() {
+        match request.parse_acl(self.version) {
             Ok(arguments) => {
                 self.write_bytes(
                     StatusResponse::completed(Command::ListRights)
