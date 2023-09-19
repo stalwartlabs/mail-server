@@ -750,6 +750,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                                 "learn" => {TestFlag::Learn}
                                 "noautolearn" => {TestFlag::NoAutoLearn}
                                 "publish" => {TestFlag::Publish}
+                                "nopublish" => {TestFlag::NoPublish}
                                 "multiple" => {TestFlag::Multiple}
                                 "notrim" => {TestFlag::NoTrim}
                                 "domains_only" => {TestFlag::DomainsOnly}
@@ -986,7 +987,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
     //println!("description: {:#?}", descriptions);
     //println!("scores: {:#?}", ifs);
 
-    for test_name in replace_rules {
+    /*for test_name in replace_rules {
         if let Some(rule) = rules.get_mut(&test_name) {
             match rule.t.pattern() {
                 Some(pattern) if !pattern.is_empty() => {
@@ -999,13 +1000,16 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         } else {
             eprintln!("Warning: Test {test_name:?} not found for replace_rules command.",);
         }
-    }
+    }*/
 
     let mut var_to_rule: HashMap<String, String> = HashMap::new();
     let mut rules = rules
         .into_iter()
         .flat_map(|(name, mut rule)| {
             let mut result = vec![];
+            if name.starts_with("T_") {
+                return vec![];
+            }
             rule.name = name;
 
             match &mut rule.t {
@@ -1410,12 +1414,14 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
                 eprintln!("Warning: Test {} is never linked to.", rule.name);
             }
             continue;
-        } else if !processed_rules.contains(&rule.name) {
+        } else if !rule.flags.contains(&TestFlag::NoPublish)
+            && !processed_rules.contains(&rule.name)
+        {
             write!(&mut script, "{rule}").unwrap();
         }
     }
 
-    for (lang, texts) in descriptions {
+    /*for (lang, texts) in descriptions {
         let mut file = fs::File::create(format!(
             "/Users/me/code/mail-server/_ignore/descriptions_{}.txt",
             lang
@@ -1424,7 +1430,7 @@ pub fn import_spamassassin(path: PathBuf, extension: String, do_warn: bool) {
         for (name, text) in texts {
             //file.write_all(format!("set {:?} {:?}", name, text).as_bytes());
         }
-    }
+    }*/
 
     fs::write(
         "/Users/me/code/mail-server/_ignore/script.sieve",
@@ -1574,6 +1580,11 @@ impl Display for Rule {
                 write!(f, "if match_uri {:?}", pattern)?;
             }
             RuleType::Eval { function, params } => {
+                write!(f, "if eval {function} {params:?}")?;
+                self.fmt_match(f, 1)?;
+                f.write_str("}\n\n");
+                return Ok(());
+
                 match function.as_str() {
                     "check_from_in_auto_welcomelist" | "check_from_in_auto_whitelist" => {
                         f.write_str(concat!(

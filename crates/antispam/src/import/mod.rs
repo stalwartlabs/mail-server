@@ -72,6 +72,7 @@ enum TestFlag {
     Learn,
     NoAutoLearn,
     Publish,
+    NoPublish,
     Multiple,
     NoTrim,
     DomainsOnly,

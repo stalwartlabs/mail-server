@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.8] - 2023-09-19
+
+## Added
+- Journal logging support
+- IMAP support for UTF8 APPEND
+
+### Changed
+- Replaced `rpgp` with `sequoia-pgp` due to rpgp bug.
+
+### Fixed
+- Fix: IMAP folders that contain a & can't be used (#90) 
+- Fix: Ignore empty lines in IMAP requests
+
 ## [0.3.7] - 2023-09-05
 
 ## Added

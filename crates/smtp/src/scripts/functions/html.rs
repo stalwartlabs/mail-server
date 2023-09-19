@@ -48,7 +48,7 @@ pub fn fn_html_has_tag<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable
         .into()
 }
 
-pub fn fn_html_attr_int<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_attr_size<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
     let t = v[0].to_cow();
     let mut dimension = None;
 

@@ -93,9 +93,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "1.0.5"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c378d78423fdad8089616f827526ee33c19f2fddbd5de1629152c9593ba4783"
+checksum = "0f2135563fb5c609d2b2b87c1e8ce7bc41b0b45430fa9661f457981503dd5bf0"
 dependencies = [
  "memchr",
 ]
@@ -262,7 +262,7 @@ checksum = "5fd55a5ba1179988837d24ab4c7cc8ed6efdeff578ede0416b4225a5fca35bd0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -284,7 +284,7 @@ checksum = "16e62a023e7c117e27523144c5d2459f4397fcc3cab0085af8e2224f643a0193"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -295,7 +295,7 @@ checksum = "bc00ceb34980c03614e35a3a4e218276a0a824e911d07651cd0d858a51e8c0f0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -506,7 +506,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex",
- "syn 2.0.33",
+ "syn 2.0.37",
  "which",
 ]
 
@@ -805,9 +805,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.4.3"
+version = "4.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84ed82781cea27b43c9b106a979fe450a13a31aab0500595fb3fc06616de08e6"
+checksum = "b1d7b8d5ec32af0fadc644bf1fd509a688c2103b185644bb1e29d164e0703136"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -815,9 +815,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.4.2"
+version = "4.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bb9faaa7c2ef94b2743a21f5a29e6f0010dff4caa69ac8e9d6cf8b6fa74da08"
+checksum = "5179bb514e4d7c2051749d8fcefa2ed6d06a9f4e6d69faf3805f5d80b8cf8d56"
 dependencies = [
  "anstream",
  "anstyle",
@@ -834,7 +834,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1285,7 +1285,7 @@ checksum = "487585f4d0c6655fe74905e2504d8ad6908e4db67f744eb140876906c2f3175d"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1308,9 +1308,9 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dyn-clone"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbfc4744c1b8f2a09adc0e55242f60b1af195d88596bd8700be74418c056c555"
+checksum = "23d2f3407d9a573d666de4b5bdf10569d73ca9478087346697dcbae6244bfbcd"
 
 [[package]]
 name = "eax"
@@ -1457,7 +1457,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -1685,7 +1685,7 @@ checksum = "83c8d52fe8b46ab822b4decdcc0d6d85aeedfc98f0d52ba2bd4aec4a97807516"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
  "try_map",
 ]
 
@@ -1771,7 +1771,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -2146,11 +2146,13 @@ dependencies = [
 [[package]]
 name = "hyper-util"
 version = "0.0.0"
-source = "git+https://github.com/hyperium/hyper-util#229757e565e0935a7a3b1d0f9e9ab88d9310e779"
+source = "git+https://github.com/hyperium/hyper-util#450cca83f141b263a4add02938ffeb5518cbddc2"
 dependencies = [
+ "bytes",
  "futures-channel",
  "futures-util",
  "http",
+ "http-body 1.0.0-rc.2",
  "hyper 1.0.0-rc.4",
  "once_cell",
  "pin-project-lite",
@@ -2221,7 +2223,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imap"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -2395,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2735,7 +2737,7 @@ dependencies = [
 [[package]]
 name = "mail-parser"
 version = "0.9.0"
-source = "git+https://github.com/stalwartlabs/mail-parser#e5a4e65112fd8aa4c527d37b87413d939f1259a1"
+source = "git+https://github.com/stalwartlabs/mail-parser#816d944f2e29e024e93eca8b0980e50ecb54aa4b"
 dependencies = [
  "encoding_rs",
  "serde",
@@ -2758,7 +2760,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "directory",
  "imap",
@@ -3110,7 +3112,7 @@ checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3121,9 +3123,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-src"
-version = "300.1.3+3.1.2"
+version = "300.1.4+3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd2c101a165fff9935e34def4669595ab1c7847943c42be86e21503e482be107"
+checksum = "80b6658b21fe1eba923af26cfe9c57a1a075a8190df2cd869a9bcd730093ffa2"
 dependencies = [
  "cc",
 ]
@@ -3428,7 +3430,7 @@ dependencies = [
  "phf_shared 0.11.2",
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3466,7 +3468,7 @@ checksum = "4359fd9c9171ec6e8c62926d6faaf553a8dc3f64e1507e76da7911b4f6a04405"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -3545,7 +3547,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae005bd773ab59b4725093fd7df83fd7892f7d8eafb48dbd7de6e024e4215f9d"
 dependencies = [
  "proc-macro2",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4406,7 +4408,7 @@ checksum = "4eca7ac642d82aa35b60049a6eccb4be6be75e599bd2e9adb5f875a737654af2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4454,7 +4456,7 @@ checksum = "91d129178576168c589c9ec973feedf7d3126c01ac2bf08795109aa35b69fb8f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -4550,7 +4552,7 @@ checksum = "a7cee0529a6d40f580e7a5e6c495c8fbfe21b7b52795ed4bb5e62cdf92bc6380"
 [[package]]
 name = "sieve-rs"
 version = "0.3.1"
-source = "git+https://github.com/stalwartlabs/sieve#d3f4c738e032707c5dbfcf0236fe57f0a49fbbb7"
+source = "git+https://github.com/stalwartlabs/sieve#0392401321ec961a54c4b1a3235a1c2d02b45972"
 dependencies = [
  "ahash 0.8.3",
  "bincode",
@@ -4609,7 +4611,7 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 
 [[package]]
 name = "smtp"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "ahash 0.8.3",
  "blake3",
@@ -4934,7 +4936,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "clap",
  "console",
@@ -4956,7 +4958,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-install"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "base64 0.21.4",
  "clap",
@@ -5069,9 +5071,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.33"
+version = "2.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9caece70c63bfba29ec2fed841a09851b14a235c60010fa4de58089b6c025668"
+checksum = "7303ef2c05cd654186cb250d29049a24840ca25d2747c25c0381c8d9e2f582e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5202,7 +5204,7 @@ checksum = "49922ecae66cc8a249b77e68d1d0623c1b2c514f0060c27cdc68bd62a1219d35"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -5314,7 +5316,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -5471,7 +5473,7 @@ checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]
@@ -5768,7 +5770,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -5860,7 +5862,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
  "wasm-bindgen-shared",
 ]
 
@@ -5894,7 +5896,7 @@ checksum = "54681b18a46765f095758388f2d0cf16eb8d4169b639ab575a8f5693af210c7b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -6254,7 +6256,7 @@ checksum = "ce36e65b0d2999d2aafac989fb249189a141aee1f53c612c1f37d72631959f69"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.33",
+ "syn 2.0.37",
 ]
 
 [[package]]

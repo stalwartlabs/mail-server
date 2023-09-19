@@ -29,6 +29,14 @@ pub fn fn_trim<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].transform(|s| Some(s.trim()))
 }
 
+pub fn fn_trim_end<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].transform(|s| Some(s.trim_end()))
+}
+
+pub fn fn_trim_start<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].transform(|s| Some(s.trim_start()))
+}
+
 pub fn fn_len<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
     match &v[0] {
         Variable::String(s) => s.len(),
@@ -213,6 +221,16 @@ pub fn fn_substring<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x
         .take(v[2].to_usize())
         .collect::<String>()
         .into()
+}
+
+pub fn fn_strip_prefix<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    let prefix = v[1].to_cow();
+    v[0].transform(|s| s.strip_prefix(prefix.as_ref()))
+}
+
+pub fn fn_strip_suffix<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    let suffix = v[1].to_cow();
+    v[0].transform(|s| s.strip_suffix(suffix.as_ref()))
 }
 
 pub fn fn_split<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {

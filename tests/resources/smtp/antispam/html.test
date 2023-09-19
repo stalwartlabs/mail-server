@@ -1,0 +1,239 @@
+expect MIME_HTML_ONLY
+
+Message-Id: <4.2.0.58.20000519002557.00a88870@pop.example.com>
+X-Sender: dwsauder@pop.example.com (Unverified)
+X-Mailer: QUALCOMM Windows Eudora Pro Version 4.2.0.58 
+X-Priority: 2 (High)
+Date: Fri, 19 May 2000 00:29:55 -0400
+To: Heinz =?iso-8859-1?Q?M=FCller?= <mueller@example.com>
+From: Doug Sauder <dwsauder@example.com>
+Subject: =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche?=
+Mime-Version: 1.0
+Content-Type: text/html; charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<font face=3D"Arial, Helvetica" size=3D5 color=3D"#0000FF"><b>Die Hasen und =
+die
+Fr=F6sche<br>
+<br>
+</font></b><font face=3D"Arial, Helvetica">Die Hasen klagten einst =FCber
+ihre mi=DFliche Lage; &quot;wir leben&quot;, sprach ein Redner, &quot;in
+steter Furcht vor Menschen und Tieren, eine Beute der Hunde, der Adler,
+ja fast aller Raubtiere! Unsere stete Angst ist =E4rger als der Tod selbst.
+Auf, la=DFt uns ein f=FCr allemal sterben.&quot; <br>
+<br>
+In einem nahen Teich wollten sie sich nun ers=E4ufen; sie eilten ihm zu;
+allein das au=DFerordentliche Get=F6se und ihre wunderbare Gestalt
+erschreckte eine Menge Fr=F6sche, die am Ufer sa=DFen, so sehr, da=DF sie au=
+fs
+schnellste untertauchten. <br>
+<br>
+&quot;Halt&quot;, rief nun eben dieser Sprecher, &quot;wir wollen das
+Ers=E4ufen noch ein wenig aufschieben, denn auch uns f=FCrchten, wie ihr
+seht, einige Tiere, welche also wohl noch ungl=FCcklicher sein m=FCssen als
+wir.&quot; <br>
+<br>
+</font></html>
+<!-- NEXT TEST -->
+expect HTTP_TO_HTTPS
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+<a href="http://mydomain.com">https://mydomain.com</a>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTTP_TO_IP
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head>
+<body>
+<p>some text</p>
+<a href="https://8.8.8.8/phisherino.php">https://mydomain.com</a>
+</body>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect EXT_CSS
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<link href="https://domain.com/external.css#test">
+<p>some text</p>
+<a href="https://mydomain.com">https://mydomain.com</a>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect EXT_CSS
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<link rel="stylesheet" href="https://domain.com/external">
+<p>some text</p>
+<a href="https://mydomain.com">https://mydomain.com</a>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTML_UNBALANCED_TAG
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<link rel="unknown" href="https://domain.com/external">
+<head>hello
+<a href="https://mydomain.com">https://mydomain.com</a>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTML_UNBALANCED_TAG
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+https://mydomain.com
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<link rel="unknown" href="https://domain.com/external">
+<body>hello
+<a href="https://mydomain.com">https://mydomain.com</a>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTML_SHORT_LINK_IMG_1
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Testing
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html>
+<head><title>Test</title></head>
+<body>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam</p>
+<a href="https://herrspammer.com"><img src="cid:spammimg" width="200" height="200"></a>
+</body>
+</html>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect BODY_URI_ONLY
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Testing
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html>
+<head><title>Test</title></head>
+<body>
+<p>http://myurl.com</>
+</body>
+</html>
+
+--=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTML_TEXT_IMG_RATIO
+
+Content-Type: multipart/alternative;
+	boundary="=====================_714967308==_.ALT"
+
+--=====================_714967308==_.ALT
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Testing
+
+--=====================_714967308==_.ALT
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<html>
+<head><title>Test</title></head>
+<body>
+<a<img src="cid:spammimg1" width="200" height="200">
+<img src="cid:spammimg2" width="200" height="200">
+<img src="cid:spammimg3" width="200" height="200">
+</body>
+</html>
+
+--=====================_714967308==_.ALT--

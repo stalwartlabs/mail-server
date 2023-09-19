@@ -34,6 +34,7 @@ from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
+no-capability-check = true
 
 [sieve.limits]
 redirects = 3
@@ -44,7 +45,6 @@ nested-includes = 5
 duplicate-expiry = "7d"
 
 [sieve.scripts]
-data = "file://%CFG_PATH%/config/sieve/antispam.sieve"
 "#;
 
 #[tokio::test]
@@ -55,49 +55,45 @@ async fn antispam() {
             .finish(),
     )
     .unwrap();*/
-
-    // Parse config
+    // Prepare config
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
-    let config = Config::parse(
-        &CONFIG
-            .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
-            .replace(
-                "%CFG_PATH%",
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .unwrap()
-                    .to_path_buf()
-                    .join("resources")
-                    .as_path()
-                    .to_str()
-                    .unwrap(),
-            ),
-    )
-    .unwrap();
+    let mut config = CONFIG.replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap());
+    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
+        .join("resources")
+        .join("config")
+        .join("sieve")
+        .to_str()
+        .unwrap()
+        .to_string();
+    for test_name in ["html", "subject"] {
+        config.push_str(&format!(
+            "{test_name} = \"file://{base_path}/{test_name}.sieve\"\n"
+        ));
+    }
+
+    // Parse config
+    let config = Config::parse(&config).unwrap();
     let mut ctx = ConfigContext::new(&[]);
     ctx.directory = config.parse_directory().unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
     let core = Arc::new(core);
-    let script = ctx.scripts.get("data").unwrap().clone();
 
     // Run tests
+    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("smtp")
+        .join("antispam");
     let span = tracing::info_span!("sieve_antispam");
-    for file_name in fs::read_dir(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join("smtp")
-            .join("antispam"),
-    )
-    .unwrap()
-    {
-        let file_name = file_name.unwrap().path();
+    for (test_name, script) in ctx.scripts {
+        println!("===== {test_name} =====");
 
-        println!("===== {} =====", file_name.display());
-
-        let contents = fs::read_to_string(&file_name).unwrap();
+        let contents = fs::read_to_string(base_path.join(format!("{test_name}.test"))).unwrap();
         let mut lines = contents.lines();
         let mut has_more = true;
 

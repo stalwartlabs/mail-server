@@ -26,15 +26,18 @@ mod email;
 mod header;
 pub mod html;
 mod image;
+mod misc;
 mod text;
 
-use sieve::{runtime::Variable, Context, FunctionMap};
+use sieve::{runtime::Variable, FunctionMap};
 
-use self::{array::*, email::*, header::*, html::*, image::*, text::*};
+use self::{array::*, email::*, header::*, html::*, image::*, misc::*, text::*};
 
 pub fn register_functions() -> FunctionMap {
     FunctionMap::new()
         .with_function("trim", fn_trim)
+        .with_function("trim_start", fn_trim_start)
+        .with_function("trim_end", fn_trim_end)
         .with_function("len", fn_len)
         .with_function("count", fn_count)
         .with_function("is_empty", fn_is_empty)
@@ -59,6 +62,7 @@ pub fn register_functions() -> FunctionMap {
         .with_function("is_header_utf8_valid", fn_is_header_utf8_valid)
         .with_function("img_metadata", fn_img_metadata)
         .with_function("sort", fn_sort)
+        .with_function("is_ip_addr", fn_is_ip_addr)
         .with_function_args("email_part", fn_email_part, 2)
         .with_function_args("eq_ignore_case", fn_eq_ignore_case, 2)
         .with_function_args("contains", fn_contains, 2)
@@ -71,34 +75,17 @@ pub fn register_functions() -> FunctionMap {
         .with_function_args("levenshtein_distance", fn_levenshtein_distance, 2)
         .with_function_args("html_has_tag", fn_html_has_tag, 2)
         .with_function_args("html_attr", fn_html_attr, 2)
-        .with_function_args("html_attr_int", fn_html_attr_int, 3)
+        .with_function_args("html_attr_size", fn_html_attr_size, 3)
         .with_function_args("uri_part", fn_uri_part, 2)
         .with_function_args("substring", fn_substring, 3)
         .with_function_args("split", fn_split, 2)
+        .with_function_args("strip_prefix", fn_strip_prefix, 2)
+        .with_function_args("strip_suffix", fn_strip_suffix, 2)
         .with_function_no_args("is_encoding_problem", fn_is_encoding_problem)
         .with_function_no_args("is_attachment", fn_is_attachment)
         .with_function_no_args("is_body", fn_is_body)
         .with_function_no_args("var_names", fn_is_var_names)
         .with_function_no_args("attachment_name", fn_attachment_name)
-}
-
-pub fn fn_is_empty<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::String(s) => s.is_empty(),
-        Variable::StringRef(s) => s.is_empty(),
-        Variable::Integer(_) | Variable::Float(_) => false,
-        Variable::Array(a) => a.is_empty(),
-        Variable::ArrayRef(a) => a.is_empty(),
-    }
-    .into()
-}
-
-pub fn fn_is_var_names<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
-    Variable::Array(
-        ctx.global_variable_names()
-            .map(|v| Variable::from(v.to_string()))
-            .collect(),
-    )
 }
 
 pub trait ApplyString<'x> {

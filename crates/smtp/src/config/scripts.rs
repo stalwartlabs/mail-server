@@ -52,6 +52,9 @@ impl ConfigSieve for Config {
             .with_max_local_variables(8192)
             .with_max_header_size(10240)
             .with_max_includes(10)
+            .with_no_capability_check(
+                self.property_or_static("sieve.no-capability-check", "false")?,
+            )
             .register_plugins()
             .register_functions(&mut fnc_map);
 

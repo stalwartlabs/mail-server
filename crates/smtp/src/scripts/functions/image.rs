@@ -64,6 +64,9 @@ pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variab
                 "area" => imagesize::blob_size(bytes)
                     .ok()
                     .map(|s| Variable::Integer(s.width.saturating_mul(s.height) as i64)),
+                "dimension" => imagesize::blob_size(bytes)
+                    .ok()
+                    .map(|s| Variable::Integer(s.width.saturating_add(s.height) as i64)),
                 _ => None,
             }
         })

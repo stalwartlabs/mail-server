@@ -348,7 +348,9 @@ impl SMTP {
         #[cfg(feature = "test_mode")]
         if let Some(expected_variables) = params.expected_variables {
             for var_name in instance.global_variable_names() {
-                if !expected_variables.contains_key(var_name) {
+                if instance.global_variable(var_name).unwrap().to_bool()
+                    && !expected_variables.contains_key(var_name)
+                {
                     panic!(
                         "Unexpected variable {var_name:?} with value {:?}\nExpected {:?}\nFound: {:?}",
                         instance.global_variable(var_name).unwrap(),
