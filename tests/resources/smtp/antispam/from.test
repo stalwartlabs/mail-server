@@ -1,0 +1,160 @@
+expect MISSING_FROM
+
+X-From: hello@world.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@world.com
+expect MULTIPLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
+
+From: hello@world.com
+From: hello@world.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from test
+expect FROM_INVALID ENVFROM_INVALID
+
+From: test
+
+Test
+<!-- NEXT TEST -->
+envelope_from www-data@domain.com
+expect FROM_SERVICE_ACCT ENVFROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENVFROM
+
+From: "WWW DATA" <www-data@domain.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@world.com
+expect FROM_DN_EQ_ADDR FROM_EQ_ENVFROM
+
+From: "hello@world.com" <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@world.com
+expect SPOOF_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "hello@otherworld.com" <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@world.co.uk
+expect FROM_NEQ_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "hello@other.world.co.uk" <hello@world.co.uk>
+
+Test
+<!-- NEXT TEST -->
+helo_domain mx.world.co.uk
+expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN
+
+From: "postmaster@mx.world.co.uk" <postmaster@world.co.uk>
+
+Test
+<!-- NEXT TEST -->
+helo_domain mx.world.co.uk
+expect FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Mailer Daemon" <MAILER-DAEMON@world.co.uk>
+
+Test
+<!-- NEXT TEST -->
+envelope_from mrspammer@domain.com
+expect FROM_NAME_HAS_TITLE FROM_NAME_EXCESS_SPACE FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Mr. Money   Maker" <mrspammer@domain.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello+world@domain.org
+expect TAGGED_FROM FROM_EQ_ENVFROM FROM_NO_DN
+
+From: hello+world@domain.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect TO_EQ_FROM FROM_EQ_ENVFROM FROM_NO_DN
+
+From: hello@domain.org
+To: hello@domain.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_EQ_ENVFROM FROM_NO_DN
+
+From: hello@domain.org
+To: hello@domain.org, bye@domain.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_NEEDS_ENCODING FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hélló" <hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+param.smtputf8 1
+envelope_from hello@domain.org
+expect FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hélló" <hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_EXCESS_QP FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_EXCESS_BASE64 FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "=?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche?=" <hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect R_NO_SPACE_IN_FROM FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hello"<hello@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect HEADER_RCONFIRM_MISMATCH FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hello" <hello@domain.org>
+X-Confirm-Reading-To: <bye@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect HEADER_FORGED_MDN FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hello" <hello@domain.org>
+Disposition-Notification-To: <bye@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.org
+expect FROM_SERVICE_ACCT WWW_DOT_DOMAIN FROM_EQ_ENVFROM FROM_HAS_DN
+
+From: "Hello" <hello@domain.org>
+Sender: <info@www.domain.org>
+Reply-to: <guest@domain.org>
+
+Test

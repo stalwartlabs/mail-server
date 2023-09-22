@@ -56,6 +56,15 @@ async fn antispam() {
     )
     .unwrap();*/
     // Prepare config
+    let tests = [
+        "html",
+        "subject",
+        "bounce",
+        "received",
+        "messageid",
+        "date",
+        "from",
+    ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
     let mut config = CONFIG.replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap());
@@ -69,7 +78,7 @@ async fn antispam() {
         .to_str()
         .unwrap()
         .to_string();
-    for test_name in ["html", "subject"] {
+    for test_name in tests {
         config.push_str(&format!(
             "{test_name} = \"file://{base_path}/{test_name}.sieve\"\n"
         ));
@@ -90,8 +99,9 @@ async fn antispam() {
         .join("smtp")
         .join("antispam");
     let span = tracing::info_span!("sieve_antispam");
-    for (test_name, script) in ctx.scripts {
+    for test_name in tests {
         println!("===== {test_name} =====");
+        let script = ctx.scripts.remove(test_name).unwrap();
 
         let contents = fs::read_to_string(base_path.join(format!("{test_name}.test"))).unwrap();
         let mut lines = contents.lines();
@@ -123,19 +133,19 @@ async fn antispam() {
                         "authenticated_as" => {
                             session.data.authenticated_as = value.to_string();
                         }
-                        "spf_result" | "spf_ehlo_result" => {
+                        "spf.result" | "spf_ehlo.result" => {
                             variables.insert(
                                 param.to_string(),
                                 SpfResult::from_str(value).as_str().to_string(),
                             );
                         }
-                        "iprev_result" => {
+                        "iprev.result" => {
                             variables.insert(
                                 param.to_string(),
                                 IprevResult::from_str(value).as_str().to_string(),
                             );
                         }
-                        "dkim_result" | "arc_result" => {
+                        "dkim.result" | "arc.result" => {
                             variables.insert(
                                 param.to_string(),
                                 DkimResult::from_str(value).as_str().to_string(),
@@ -144,16 +154,16 @@ async fn antispam() {
                         "envelope_from" => {
                             session.data.mail_from = Some(SessionAddress::new(value.to_string()));
                         }
-                        "iprev_ptr" | "dmarc_from" => {
+                        "iprev.ptr" | "dmarc.from" => {
                             variables.insert(param.to_string(), value.to_string());
                         }
-                        "dmarc_result" => {
+                        "dmarc.result" => {
                             variables.insert(
                                 param.to_string(),
                                 DmarcResult::from_str(value).as_str().to_string(),
                             );
                         }
-                        "dmarc_policy" => {
+                        "dmarc.policy" => {
                             variables.insert(
                                 param.to_string(),
                                 Policy::from_str(value).as_str().to_string(),
@@ -174,6 +184,9 @@ async fn antispam() {
                                     })
                                     .unwrap_or((v.to_lowercase(), Variable::Integer(1)))
                             }));
+                        }
+                        _ if param.starts_with("param.") | param.starts_with("tls.") => {
+                            variables.insert(param.to_string(), value.to_string());
                         }
                         _ => panic!("Invalid parameter {param:?}"),
                     }

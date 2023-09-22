@@ -23,19 +23,23 @@
 
 use std::{sync::Arc, time::SystemTime};
 
-use sieve::{Envelope, Sieve};
-use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_RET_FULL, MAIL_RET_HDRS};
+use sieve::{runtime::Variable, Envelope, Sieve};
+use smtp_proto::*;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     runtime::Handle,
 };
 
-use crate::{core::Session, inbound::AuthResult};
+use crate::{
+    core::Session,
+    inbound::{AuthResult, IsTls},
+};
 
 use super::{ScriptParameters, ScriptResult};
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
     pub fn build_script_parameters(&self) -> ScriptParameters {
+        let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         let mut params = ScriptParameters::new()
             .set_variable("remote_ip", self.data.remote_ip.to_string())
             .set_variable("helo_domain", self.data.helo_domain.to_lowercase())
@@ -50,7 +54,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .map_or(0, |d| d.as_secs()),
             )
             .set_variable(
-                "spf_result",
+                "spf.result",
                 self.data
                     .spf_mail_from
                     .as_ref()
@@ -58,17 +62,19 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .unwrap_or_default(),
             )
             .set_variable(
-                "spf_ehlo_result",
+                "spf_ehlo.result",
                 self.data
                     .spf_ehlo
                     .as_ref()
                     .map(|r| r.result().as_str())
                     .unwrap_or_default(),
-            );
+            )
+            .set_variable("tls.version", tls_version)
+            .set_variable("tls.cipher", tls_cipher);
         if let Some(ip_rev) = &self.data.iprev {
-            params = params.set_variable("iprev_result", ip_rev.result().as_str());
+            params = params.set_variable("iprev.result", ip_rev.result().as_str());
             if let Some(ptr) = ip_rev.ptr.as_ref().and_then(|addrs| addrs.first()) {
-                params = params.set_variable("iprev_ptr", ptr.to_lowercase());
+                params = params.set_variable("iprev.ptr", ptr.to_lowercase());
             }
         }
 
@@ -100,6 +106,21 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 params.envelope.push((Envelope::ByMode, "N".into()));
             } else if (mail_from.flags & MAIL_BY_RETURN) != 0 {
                 params.envelope.push((Envelope::ByMode, "R".into()));
+            }
+
+            if (mail_from.flags & MAIL_BODY_7BIT) != 0 {
+                params = params.set_variable("param.body", "7bit");
+            } else if (mail_from.flags & MAIL_BODY_8BITMIME) != 0 {
+                params = params.set_variable("param.body", "8bitmime");
+            } else if (mail_from.flags & MAIL_BODY_BINARYMIME) != 0 {
+                params = params.set_variable("param.body", "binarymime");
+            }
+
+            if (mail_from.flags & MAIL_SMTPUTF8) != 0 {
+                params = params.set_variable("param.smtputf8", Variable::Integer(1));
+            }
+            if (mail_from.flags & MAIL_REQUIRETLS) != 0 {
+                params = params.set_variable("param.requiretls", Variable::Integer(1));
             }
         }
 

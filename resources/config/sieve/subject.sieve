@@ -14,12 +14,12 @@ if eval "count_chars(thread_name) > 200" {
     set "t.SUBJ_VERY_LONG" "1";
 }
 
-if eval "contains(subject_lcase, 'http://') || contains(subject_lcase, 'http://')" {
+if eval "contains(subject_lcase, 'http://') || contains(subject_lcase, 'https://')" {
     # Subject contains a URL
     set "t.URL_IN_SUBJECT" "1";
 }
 
-if eval "!is_ascii(raw_subject_lcase)" {
+if eval "!is_ascii(raw_subject_lcase) && !env.param.smtputf8 && env.param.body != '8bitmime' && env.param.body != 'binarymime'" {
     # Subject needs encoding
     set "t.SUBJECT_NEEDS_ENCODING" "1";
 }
@@ -27,9 +27,7 @@ if eval "!is_ascii(raw_subject_lcase)" {
 if not exists "Subject" {
     # Missing subject header
     set "t.MISSING_SUBJECT" "1";
-}
-
-if eval "is_empty(trim(subject_lcase))" {
+} elsif eval "is_empty(trim(subject_lcase))" {
     # Subject is empty
     set "t.EMPTY_SUBJECT" "1";
 }
@@ -44,7 +42,7 @@ if eval "is_ascii(subject_lcase) && contains(raw_subject_lcase, '=?') && contain
     }
 }
 
-if eval "starts_with(subject_lcase, 're:') && is_empty(header.reply-to) && is_empty(header.references)" {
+if eval "starts_with(subject_lcase, 're:') && is_empty(header.in-reply-to) && is_empty(header.references)" {
     # Fake reply
     set "t.FAKE_REPLY" "1";
 }
@@ -80,4 +78,3 @@ if eval "contains(subject_lcase_trim, '?')" {
     # Subject contains a question mark
     set "t.SUBJECT_HAS_QUESTION" "1";
 }
-

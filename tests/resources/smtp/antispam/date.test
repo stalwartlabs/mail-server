@@ -1,0 +1,23 @@
+expect MISSING_DATE
+
+X-Date: Tue, 1 Jul 2003 10:52:37 +0200
+
+Test
+<!-- NEXT TEST -->
+expect INVALID_DATE
+
+Date: blah blah blah
+
+Test
+<!-- NEXT TEST -->
+expect DATE_IN_PAST
+
+Date: Tue, 1 Jul 2003 10:52:37 +0200
+
+Test
+<!-- NEXT TEST -->
+expect DATE_IN_FUTURE
+
+Date: Tue, 1 Jul 2999 10:52:37 +0200
+
+Test

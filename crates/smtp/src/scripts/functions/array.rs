@@ -32,7 +32,13 @@ pub fn fn_count<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
     match &v[0] {
         Variable::Array(a) => a.len(),
         Variable::ArrayRef(a) => a.len(),
-        _ => 1,
+        v => {
+            if !v.is_empty() {
+                1
+            } else {
+                0
+            }
+        }
     }
     .into()
 }
@@ -134,4 +140,39 @@ pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Va
         0.0
     }
     .into()
+}
+
+pub fn fn_is_intersect<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    match (&v[0], &v[1]) {
+        (Variable::Array(a), Variable::Array(b)) => a.iter().any(|x| b.contains(x)),
+        (Variable::ArrayRef(a), Variable::ArrayRef(b)) => a.iter().any(|x| b.contains(x)),
+        (Variable::Array(a), Variable::ArrayRef(b))
+        | (Variable::ArrayRef(b), Variable::Array(a)) => a.iter().any(|x| b.contains(x)),
+        (Variable::Array(a), item) | (item, Variable::Array(a)) => a.contains(item),
+        (Variable::ArrayRef(a), item) | (item, Variable::ArrayRef(a)) => a.contains(item),
+        _ => false,
+    }
+    .into()
+}
+
+pub fn fn_winnow<'x>(_: &'x Context<'x>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+    match v.remove(0) {
+        Variable::Array(a) => a
+            .into_iter()
+            .filter(|i| !i.is_empty())
+            .collect::<Vec<_>>()
+            .into(),
+        Variable::ArrayRef(a) => a
+            .iter()
+            .filter_map(|i| {
+                if !i.is_empty() {
+                    i.to_owned().into()
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        v => v,
+    }
 }

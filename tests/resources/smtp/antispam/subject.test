@@ -3,3 +3,115 @@ expect SUBJ_ALL_CAPS
 Subject: HELLO WORLD
 
 Test
+<!-- NEXT TEST -->
+expect SUBJ_VERY_LONG
+
+Subject: this is an extremely long subject line that 
+    should be truncated to 80 characters and folded
+    in order to be RFC compliant and avoid the SPAM filter
+    that is looking for long subject lines like this one
+    which by the way, it is ridiculously long 
+
+Test
+<!-- NEXT TEST -->
+expect SUBJECT_NEEDS_ENCODING
+
+Subject: thís líné shóúld bé éncódéd
+
+Test
+<!-- NEXT TEST -->
+param.smtputf8 1
+expect 
+
+Subject: thís líné shóúld bé éncódéd
+
+Test
+<!-- NEXT TEST -->
+param.body 8bitmime
+expect 
+
+Subject: thís líné shóúld bé éncódéd
+
+Test
+<!-- NEXT TEST -->
+expect 
+
+Subject: =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche?=
+
+Test
+<!-- NEXT TEST -->
+expect URL_IN_SUBJECT
+
+Subject: check out my url HTTPS://SPAMMER.COM
+
+Test
+<!-- NEXT TEST -->
+expect URL_IN_SUBJECT
+
+Subject: check out my url HTTP://SPAMMER.COM
+
+Test
+<!-- NEXT TEST -->
+expect MISSING_SUBJECT
+
+X-Subject: missing subject
+
+Test
+<!-- NEXT TEST -->
+expect EMPTY_SUBJECT
+
+Subject: 
+
+Test
+<!-- NEXT TEST -->
+expect SUBJ_EXCESS_QP
+
+Subject: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?=
+
+Test
+<!-- NEXT TEST -->
+expect SUBJ_EXCESS_BASE64
+
+Subject: =?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=
+
+Test
+<!-- NEXT TEST -->
+expect FAKE_REPLY
+
+Subject: Re: about your question
+
+Test
+<!-- NEXT TEST -->
+expect 
+
+In-Reply-To: <id@domain>
+Subject: Re: about your question
+
+Test
+<!-- NEXT TEST -->
+expect 
+
+References: <id@domain>
+Subject: Re: about your question
+
+Test
+<!-- NEXT TEST -->
+expect SUBJECT_ENDS_SPACES
+
+Subject: =?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche_?=
+
+Test
+<!-- NEXT TEST -->
+param.smtputf8 1
+expect SUBJECT_HAS_CURRENCY SUBJECT_ENDS_EXCLAIM SUBJECT_HAS_EXCLAIM
+
+Subject: You have won £200!
+
+Test
+<!-- NEXT TEST -->
+param.smtputf8 1
+expect SUBJECT_HAS_CURRENCY SUBJECT_HAS_QUESTION SUBJECT_ENDS_QUESTION
+
+Subject: Have you won $200?
+
+Test

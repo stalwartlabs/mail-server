@@ -67,12 +67,40 @@ pub fn fn_is_ascii<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x>
     .into()
 }
 
-pub fn fn_to_lowercase<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow().to_lowercase().to_string().into()
+pub fn fn_to_lowercase<'x>(_: &'x Context<'x>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+    match v.remove(0) {
+        Variable::String(s) => s.to_lowercase().into(),
+        Variable::StringRef(s) => s.to_lowercase().into(),
+        Variable::Array(a) => a
+            .iter()
+            .map(|v| v.to_cow().to_lowercase().into())
+            .collect::<Vec<_>>()
+            .into(),
+        Variable::ArrayRef(a) => a
+            .iter()
+            .map(|v| v.to_cow().to_lowercase().into())
+            .collect::<Vec<_>>()
+            .into(),
+        v => v,
+    }
 }
 
-pub fn fn_to_uppercase<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow().to_uppercase().to_string().into()
+pub fn fn_to_uppercase<'x>(_: &'x Context<'x>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+    match v.remove(0) {
+        Variable::String(s) => s.to_uppercase().into(),
+        Variable::StringRef(s) => s.to_uppercase().into(),
+        Variable::Array(a) => a
+            .iter()
+            .map(|v| v.to_cow().to_uppercase().into())
+            .collect::<Vec<_>>()
+            .into(),
+        Variable::ArrayRef(a) => a
+            .iter()
+            .map(|v| v.to_cow().to_uppercase().into())
+            .collect::<Vec<_>>()
+            .into(),
+        v => v,
+    }
 }
 
 pub fn fn_is_uppercase<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {

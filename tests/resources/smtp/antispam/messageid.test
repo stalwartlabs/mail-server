@@ -1,0 +1,98 @@
+expect MISSING_MID
+
+X-Message-ID: <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_IP_LITERAL
+
+Message-ID: <hello@[127.0.0.1]>
+
+Test
+<!-- NEXT TEST -->
+expect MID_BARE_IP
+
+Message-ID: <hello@127.0.0.1>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_NOT_FQDN
+
+Message-ID: <hello@domain>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_WWW
+
+Message-ID: <hello@www.domain.com>
+
+Test
+<!-- NEXT TEST -->
+expect INVALID_MSGID
+
+Message-ID: <@domain.com>
+
+Test
+<!-- NEXT TEST -->
+expect INVALID_MSGID
+
+Message-ID: <hélló@domain.com>
+
+Test
+
+<!-- NEXT TEST -->
+expect INVALID_MSGID
+
+Message-ID: <hello@domain.com> (hello world)
+
+Test
+<!-- NEXT TEST -->
+expect MID_MISSING_BRACKETS
+
+Message-ID: hello@domain.com
+
+Test
+<!-- NEXT TEST -->
+expect MID_CONTAINS_FROM
+
+From: <HELLO@DOMAIN.COM>
+Message-ID: <hello@DOMAIN.com>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_MATCH_FROM
+
+From: <HELLOWORLD@DOMAIN.COM>
+Message-ID: <hello@DOMAIN.com>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_MATCH_FROMTLD
+
+From: <hello@domain.co.uk>
+Message-ID: <1234@host.domain.co.uk>
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@domain.co.uk
+expect MID_RHS_MATCH_FROMTLD
+
+Message-ID: <1234@host.domain.co.uk>
+
+Test
+<!-- NEXT TEST -->
+expect MID_CONTAINS_TO
+
+To: User <user@domain.com>
+Message-ID: <user@domain.com>
+
+Test
+<!-- NEXT TEST -->
+expect MID_RHS_MATCH_TO
+
+From: Myself <me@otherdomain.com>
+To: User <user@domain.com>
+Cc: John <john@doe.com>, Jane <jane@doe.com>, Bill <bill@foobar.org>
+Message-ID: <user@foobar.org>
+
+Test

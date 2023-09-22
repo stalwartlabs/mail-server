@@ -1,0 +1,96 @@
+expect SUBJ_BOUNCE_WORDS
+
+Subject: Delivery Status Notification (Failure)
+
+Test
+<!-- NEXT TEST -->
+expect BOUNCE
+
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e"
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message could not be delivered.
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e--
+<!-- NEXT TEST -->
+envelope_from spammer@domain.com
+expect 
+
+Content-Type: multipart/report; report-type="delivery-status"; 
+	boundary="176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e"
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message could not be delivered.
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e--
+<!-- NEXT TEST -->
+expect BOUNCE
+
+From: MDaemon <dm@domain.com>
+X-MDDSN-Message: True
+Subject: Something went wrong
+
+Your message could not be delivered.
+
+<!-- NEXT TEST -->
+expect BOUNCE SUBJ_BOUNCE_WORDS
+
+From: Automated <MAILER-DAEMON@domain.com>
+Subject: Delivery failure
+
+Your message could not be delivered.
+
+<!-- NEXT TEST -->
+expect BOUNCE
+
+From: Automated <POSTMASTER@domain.com>
+Subject: Something unexpected happened
+Content-Type: multipart/mixed; 
+	boundary="176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e"
+
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+Your message could not be delivered to the following recipients:
+
+<user@test.com> (TLS error from 'inc.test.com': STARTTLS not advertised by host.)
+
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e
+Content-Type: message/delivery-status
+Content-Transfer-Encoding: 7bit
+
+Reporting-MTA: dns;mail.stalw.art
+Arrival-Date: Mon, 3 Jul 2023 16:11:29 +0000
+
+Final-Recipient: rfc822;user@test.com
+Action: failed
+Status: 5.0.0
+Remote-MTA: dns;inc.test.com
+
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 7bit
+
+From: Test <test@domain.com>
+Content-Type: text/plain;
+	charset=us-ascii
+Content-Transfer-Encoding: quoted-printable
+Mime-Version: 1.0 (Mac OS X Mail 16.0 \(3731.600.7\))
+Subject: Re: Test
+Date: Mon, 3 Jul 2023 18:11:18 +0200
+References: <86a9efeb-1cd4-2aee-fdc4-10dc133d4c1e@test.com>
+To: test <test@test.com>
+In-Reply-To: <86a9efeb-1cd4-2aee-fdc4-10dc133d4c1e@test.com>
+
+--176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e--

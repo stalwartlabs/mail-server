@@ -415,16 +415,16 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             let params = self
                 .build_script_parameters()
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
-                .set_variable("dmarc_from", auth_message.from().to_string())
+                .set_variable("dmarc.from", auth_message.from().to_string())
                 .set_variable(
-                    "arc_result",
+                    "arc.result",
                     arc_output
                         .as_ref()
                         .map(|a| a.result().as_str())
                         .unwrap_or_default(),
                 )
                 .set_variable(
-                    "dkim_result",
+                    "dkim.result",
                     dkim_output
                         .iter()
                         .find(|r| matches!(r.result(), DkimResult::Pass))
@@ -433,14 +433,14 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         .unwrap_or_default(),
                 )
                 .set_variable(
-                    "dmarc_result",
+                    "dmarc.result",
                     dmarc_result
                         .as_ref()
                         .map(|a| a.as_str())
                         .unwrap_or_default(),
                 )
                 .set_variable(
-                    "dmarc_policy",
+                    "dmarc.policy",
                     dmarc_policy
                         .as_ref()
                         .map(|a| a.as_str())

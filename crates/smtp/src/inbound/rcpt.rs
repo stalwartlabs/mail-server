@@ -32,7 +32,9 @@ use crate::{
     scripts::ScriptResult,
 };
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+use super::IsTls;
+
+impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
     pub async fn handle_rcpt_to(&mut self, to: RcptTo<String>) -> Result<(), ()> {
         #[cfg(feature = "test_mode")]
         if self.instance.id.ends_with("-debug") {
