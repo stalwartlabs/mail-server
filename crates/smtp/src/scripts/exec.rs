@@ -38,7 +38,7 @@ use crate::{
 use super::{ScriptParameters, ScriptResult};
 
 impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
-    pub fn build_script_parameters(&self) -> ScriptParameters {
+    pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters {
         let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         let mut params = ScriptParameters::new()
             .set_variable("remote_ip", self.data.remote_ip.to_string())
@@ -70,7 +70,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                     .unwrap_or_default(),
             )
             .set_variable("tls.version", tls_version)
-            .set_variable("tls.cipher", tls_cipher);
+            .set_variable("tls.cipher", tls_cipher)
+            .set_variable("stage", stage);
         if let Some(ip_rev) = &self.data.iprev {
             params = params.set_variable("iprev.result", ip_rev.result().as_str());
             if let Some(ptr) = ip_rev.ptr.as_ref().and_then(|addrs| addrs.first()) {
@@ -87,16 +88,27 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                     .envelope
                     .push((Envelope::Envid, env_id.to_lowercase().into()));
             }
-            if let Some(rcpt) = self.data.rcpt_to.last() {
-                params
-                    .envelope
-                    .push((Envelope::To, rcpt.address_lcase.to_string().into()));
-                if let Some(orcpt) = &rcpt.dsn_info {
+
+            if stage != "data" {
+                if let Some(rcpt) = self.data.rcpt_to.last() {
                     params
                         .envelope
-                        .push((Envelope::Orcpt, orcpt.to_lowercase().into()));
+                        .push((Envelope::To, rcpt.address_lcase.to_string().into()));
+                    if let Some(orcpt) = &rcpt.dsn_info {
+                        params
+                            .envelope
+                            .push((Envelope::Orcpt, orcpt.to_lowercase().into()));
+                    }
                 }
+            } else {
+                // Build recipients list
+                let mut recipients = vec![];
+                for rcpt in &self.data.rcpt_to {
+                    recipients.push(Variable::String(rcpt.address_lcase.to_string()));
+                }
+                params.envelope.push((Envelope::To, recipients.into()));
             }
+
             if (mail_from.flags & MAIL_RET_FULL) != 0 {
                 params.envelope.push((Envelope::Ret, "FULL".into()));
             } else if (mail_from.flags & MAIL_RET_HDRS) != 0 {

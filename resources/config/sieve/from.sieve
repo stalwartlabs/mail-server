@@ -51,14 +51,18 @@ if eval "from_count > 0" {
         }
     }
 
+    if eval "is_empty(envelope.from) && 
+             (from_local == 'postmaster' || 
+              from_local == 'mailer-daemon' || 
+              from_local == 'root')" {
+        set "t.HFILTER_FROM_BOUNCE" "1";
+    }
+
     if eval "(!is_empty(envelope.from) && 
                eq_ignore_case(from_addr, envelope.from)) ||
-             (is_empty(envelope.from) && 
+             (t.HFILTER_FROM_BOUNCE && 
               !is_empty(from_domain) && 
-              domain_part(from_domain, 'sld') == domain_part(env.helo_domain, 'sld') && 
-              ( from_local == 'postmaster' || 
-                from_local == 'mailer-daemon' || 
-                from_local == 'root'))" {
+              domain_part(from_domain, 'sld') == domain_part(env.helo_domain, 'sld'))" {
         set "t.FROM_EQ_ENVFROM" "1";
     } elsif eval "!t.FROM_INVALID" {
         set "t.FORGED_SENDER" "1";
@@ -69,11 +73,11 @@ if eval "from_count > 0" {
         set "t.TAGGED_FROM" "1";
     }
 
-    set "to" "%{header.to[*].addr[*]}";
+    set "to" "%{header.to:cc[*].addr[*]}";
     if eval "count(to) == 1" {
-        if eval "eq_ignore_case(to, from_addr)" {
+        if eval "eq_ignore_case(to[0], from_addr)" {
             set "t.TO_EQ_FROM" "1";
-        } elsif eval "eq_ignore_case(email_part(to, 'domain'), from_domain)" {
+        } elsif eval "eq_ignore_case(email_part(to[0], 'domain'), from_domain)" {
             set "t.TO_DOM_EQ_FROM_DOM" "1";
         }
     }

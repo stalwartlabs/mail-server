@@ -42,7 +42,7 @@ if eval "!is_empty(mid_raw)" {
         }
 
         # To/Cc addresses present in Message-ID checks
-        set "recipients" "%{winnow(header.to:cc[*].addr[*])}";
+        set "recipients" "%{winnow(header.to:cc:bcc[*].addr[*])}";
         set "recipients_len" "%{count(recipients)}";        
         set "i" "0";
 

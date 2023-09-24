@@ -141,7 +141,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
         // Sieve filtering
         if let Some(script) = self.core.session.config.mail.script.eval(self).await {
             match self
-                .run_script(script.clone(), self.build_script_parameters())
+                .run_script(script.clone(), self.build_script_parameters("mail"))
                 .await
             {
                 ScriptResult::Accept { modifications } => {

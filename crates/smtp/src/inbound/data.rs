@@ -413,7 +413,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         // Sieve filtering
         if let Some(script) = dc.script.eval(self).await {
             let params = self
-                .build_script_parameters()
+                .build_script_parameters("data")
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
                 .set_variable("dmarc.from", auth_message.from().to_string())
                 .set_variable(

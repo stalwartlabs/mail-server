@@ -282,6 +282,26 @@ pub fn fn_split<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
     }
 }
 
+pub fn fn_tokenize_url<'x>(_: &'x Context<'x>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+    match v.remove(0) {
+        Variable::StringRef(text) => linkify::LinkFinder::new()
+            .url_must_have_scheme(false)
+            .links(text.as_ref())
+            .map(|s| Variable::from(s.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
+            linkify::LinkFinder::new()
+                .url_must_have_scheme(false)
+                .links(v.to_cow().as_ref())
+                .map(|s| Variable::from(s.as_str().to_string()))
+                .collect::<Vec<_>>()
+                .into()
+        }
+        v => v,
+    }
+}
+
 /**
  * `levenshtein-rs` - levenshtein
  *

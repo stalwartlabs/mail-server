@@ -50,6 +50,7 @@ lazy_static = "1.4"
 whatlang = "0.16"
 imagesize = "0.12"
 phf = "0.11"
+linkify = "0.10"
 
 [features]
 test_mode = []

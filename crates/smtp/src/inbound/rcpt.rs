@@ -92,7 +92,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
             // Sieve filtering
             if let Some(script) = rcpt_script {
                 match self
-                    .run_script(script.clone(), self.build_script_parameters())
+                    .run_script(script.clone(), self.build_script_parameters("rcpt"))
                     .await
                 {
                     ScriptResult::Accept { modifications } => {

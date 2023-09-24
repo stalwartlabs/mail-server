@@ -44,7 +44,7 @@ if eval "!is_empty(env.iprev.ptr) && !eq_ignore_case(env.helo_domain, env.iprev.
 }
 
 set "i" "0";
-set "recipients" "%{header.to[*].addr[*]}";
+set "recipients" "%{header.to:cc:bcc[*].addr[*]}";
 set "tls_count" "0";
 while "i < rcvd_count" {
     set "i" "%{i + 1}";

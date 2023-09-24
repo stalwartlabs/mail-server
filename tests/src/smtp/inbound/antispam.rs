@@ -64,6 +64,8 @@ async fn antispam() {
         "messageid",
         "date",
         "from",
+        "replyto",
+        "recipient",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
@@ -154,6 +156,12 @@ async fn antispam() {
                         "envelope_from" => {
                             session.data.mail_from = Some(SessionAddress::new(value.to_string()));
                         }
+                        "envelope_to" => {
+                            session
+                                .data
+                                .rcpt_to
+                                .push(SessionAddress::new(value.to_string()));
+                        }
                         "iprev.ptr" | "dmarc.from" => {
                             variables.insert(param.to_string(), value.to_string());
                         }
@@ -210,7 +218,7 @@ async fn antispam() {
             expected.sort_unstable_by(|a, b| b.cmp(a));
             println!("Testing tags {:?}", expected);
             let mut params = session
-                .build_script_parameters()
+                .build_script_parameters("data")
                 .with_expected_variables(expected_variables)
                 .with_message(Arc::new(message.into_bytes()));
             for (name, value) in variables {

@@ -158,7 +158,7 @@ async fn sieve_scripts() {
         }
         let script = script.clone();
         let params = session
-            .build_script_parameters()
+            .build_script_parameters("data")
             .set_variable("from", "john.doe@example.org");
         let handle = Handle::current();
         let span = span.clone();

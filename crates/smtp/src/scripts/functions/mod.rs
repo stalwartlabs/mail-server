@@ -52,6 +52,7 @@ pub fn register_functions() -> FunctionMap {
         .with_function("is_lowercase", fn_is_lowercase)
         .with_function("tokenize_words", fn_tokenize_words)
         .with_function("tokenize_html", fn_tokenize_html)
+        .with_function("tokenize_url", fn_tokenize_url)
         .with_function("max_line_len", fn_max_line_len)
         .with_function("count_spaces", fn_count_spaces)
         .with_function("count_uppercase", fn_count_uppercase)

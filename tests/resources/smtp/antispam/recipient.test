@@ -1,0 +1,109 @@
+expect MISSING_TO RCPT_COUNT_ZERO
+
+X-To: hello@world.com
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_COUNT_ONE TO_DN_ALL
+
+To: "Hello World" <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_COUNT_ONE TO_DN_NONE TAGGED_RCPT
+
+To: hello+there@world.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from user@domain.org
+expect TO_DN_RECIPIENTS RCPT_COUNT_TWO TO_DN_SOME
+
+To: "recipients" <user@domain.org>
+Cc: other@user.org
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_ADDR_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
+
+To: hello@world.com
+Subject: Special offer for HELLO@world.com
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_LOCAL_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
+
+To: hello@world.com
+Subject: Special offer for hello
+
+Test
+<!-- NEXT TEST -->
+envelope_from 
+envelope_to hello@world.com
+envelope_to goodbye@world.com
+expect HFILTER_RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE RCPT_COUNT_TWO
+
+To: hello@world.com
+Cc: goodbye@world.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from postmaster@domain.org
+envelope_to hello@world.com
+envelope_to goodbye@world.com
+expect HFILTER_RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_SOME TO_DN_NONE RCPT_COUNT_THREE
+
+To: hello@world.com, test@domain.com
+Cc: goodbye@world.com
+
+Test
+<!-- NEXT TEST -->
+expect RCPT_COUNT_ZERO R_UNDISC_RCPT
+
+To: Undisclosed recipients:;
+
+Test
+<!-- NEXT TEST -->
+envelope_from list@domain.org
+envelope_to hello@world.com
+expect TO_DN_ALL RCPT_COUNT_ONE
+
+List-Id: <list.domain.org>
+To: "Mailing List" <list@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from spammer@domain.org
+envelope_to hello@world.com
+expect FORGED_RECIPIENTS TO_NEEDS_ENCODING TO_DN_ALL RCPT_COUNT_ONE
+
+To: "Thé Spámmer" <spammer@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from user@domain.org
+envelope_to hello@world.com
+envelope_to user@domain.org
+expect TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
+
+To: "Hello World" <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from user@domain.org
+envelope_to hello@world.com
+envelope_to user@domain.org
+expect TO_EXCESS_QP TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
+
+To: "=?iso-8859-1?Q?Die_Hasen_und_die_Froesche?=" <hello@world.com>
+
+Test
+<!-- NEXT TEST -->
+envelope_from user@domain.org
+envelope_to hello@world.com
+envelope_to user@domain.org
+expect TO_EXCESS_BASE64 TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
+
+To: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@world.com>
+
+Test

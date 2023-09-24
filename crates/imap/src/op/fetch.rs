@@ -733,9 +733,8 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
             extension.body_disposition = part
                 .headers
                 .header_value(&HeaderName::ContentDisposition)
+                .and_then(|cd| cd.as_content_type())
                 .map(|cd| {
-                    let cd = cd.content_type();
-
                     (
                         cd.c_type.as_ref().into(),
                         cd.attributes

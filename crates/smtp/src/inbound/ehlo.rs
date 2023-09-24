@@ -98,7 +98,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             // Sieve filtering
             if let Some(script) = self.core.session.config.ehlo.script.eval(self).await {
                 if let ScriptResult::Reject(message) = self
-                    .run_script(script.clone(), self.build_script_parameters())
+                    .run_script(script.clone(), self.build_script_parameters("ehlo"))
                     .await
                 {
                     tracing::debug!(parent: &self.span,
