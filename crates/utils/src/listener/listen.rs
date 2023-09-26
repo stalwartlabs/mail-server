@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -88,14 +88,25 @@ impl Server {
                         stream = listener.accept() => {
                             match stream {
                                 Ok((stream, remote_addr)) => {
+                                    // Convert mapped IPv6 addresses to IPv4
+                                    let remote_ip = match remote_addr.ip() {
+                                        IpAddr::V6(ip) => {
+                                            ip.to_ipv4_mapped()
+                                            .map(IpAddr::V4)
+                                            .unwrap_or(IpAddr::V6(ip))
+                                        }
+                                        remote_ip => remote_ip,
+                                    };
+                                    let remote_port = remote_addr.port();
+
                                     // Enforce concurrency
                                     if let Some(in_flight) = instance.limiter.is_allowed() {
                                         let span = tracing::info_span!(
                                             "session",
                                             instance = instance.id,
                                             protocol = ?instance.protocol,
-                                            remote.ip = remote_addr.ip().to_string(),
-                                            remote.port = remote_addr.port(),
+                                            remote.ip = remote_ip.to_string(),
+                                            remote.port = remote_port,
                                         );
 
                                         // Set TCP options
@@ -132,8 +143,8 @@ impl Server {
                                         manager.spawn(SessionData {
                                             stream,
                                             local_ip,
-                                            remote_ip: remote_addr.ip(),
-                                            remote_port: remote_addr.port(),
+                                            remote_ip,
+                                            remote_port,
                                             span,
                                             in_flight,
                                             instance: instance.clone(),
@@ -144,8 +155,8 @@ impl Server {
                                             event = "too-many-requests",
                                             instance = instance.id,
                                             protocol = ?instance.protocol,
-                                            remote.ip = remote_addr.ip().to_string(),
-                                            remote.port = remote_addr.port(),
+                                            remote.ip = remote_ip.to_string(),
+                                            remote.port = remote_port,
                                             max_concurrent = instance.limiter.max_concurrent,
                                             "Too many concurrent connections."
                                         );
