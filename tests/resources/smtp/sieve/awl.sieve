@@ -1,9 +1,9 @@
-require ["variables", "include", "vnd.stalwart.plugins", "reject"];
+require ["variables", "include", "vnd.stalwart.expressions", "reject"];
 
 global "score";
 
 # Create AWL table
-if not query :use "sql" "CREATE TABLE awl (score FLOAT, count INT, sender TEXT NOT NULL, ip TEXT NOT NULL, PRIMARY KEY (sender, ip))" [] {
+if eval "!query('sql', 'CREATE TABLE awl (score FLOAT, count INT, sender TEXT NOT NULL, ip TEXT NOT NULL, PRIMARY KEY (sender, ip))' , [])" {
     reject "create table query failed";
     stop;
 }

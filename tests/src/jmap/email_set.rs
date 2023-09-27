@@ -54,7 +54,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 async fn create(client: &mut Client, mailbox_id: &str) {
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_dir.push("resources");
-    test_dir.push("jmap_mail_set");
+    test_dir.push("jmap");
+    test_dir.push("email_set");
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();

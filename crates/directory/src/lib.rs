@@ -28,6 +28,7 @@ use bb8::RunError;
 use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
+use sieve::runtime::tests::glob::GlobPattern;
 use utils::config::DynValue;
 
 pub mod cache;
@@ -105,9 +106,63 @@ pub enum Lookup {
         query: String,
     },
     List {
-        list: AHashSet<String>,
+        list: LookupList,
     },
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LookupList {
+    pub set: AHashSet<String>,
+    pub matches: Vec<MatchType>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MatchType {
+    StartsWith(String),
+    EndsWith(String),
+    Glob(GlobPattern),
+    Regex(regex::Regex),
+}
+
+impl LookupList {
+    pub fn contains(&self, value: &str) -> bool {
+        if self.set.contains(value) {
+            true
+        } else {
+            for match_type in &self.matches {
+                let result = match match_type {
+                    MatchType::StartsWith(s) => value.starts_with(s),
+                    MatchType::EndsWith(s) => value.ends_with(s),
+                    MatchType::Glob(g) => g.matches(value),
+                    MatchType::Regex(r) => r.is_match(value),
+                };
+                if result {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.set.extend(other.set);
+        self.matches.extend(other.matches);
+    }
+}
+
+impl PartialEq for MatchType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::StartsWith(l0), Self::StartsWith(r0)) => l0 == r0,
+            (Self::EndsWith(l0), Self::EndsWith(r0)) => l0 == r0,
+            (Self::Glob(l0), Self::Glob(r0)) => l0 == r0,
+            (Self::Regex(_), Self::Regex(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for MatchType {}
 
 impl Lookup {
     pub async fn contains(&self, item: &str) -> Option<bool> {

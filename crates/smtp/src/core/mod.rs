@@ -49,7 +49,8 @@ use utils::{
 
 use crate::{
     config::{
-        DkimSigner, MailAuthConfig, QueueConfig, ReportConfig, SessionConfig, VerifyStrategy,
+        scripts::SieveContext, DkimSigner, MailAuthConfig, QueueConfig, ReportConfig,
+        SessionConfig, VerifyStrategy,
     },
     inbound::auth::SaslToken,
     outbound::{
@@ -103,7 +104,7 @@ pub struct SMTP {
 }
 
 pub struct SieveCore {
-    pub runtime: Runtime,
+    pub runtime: Runtime<SieveContext>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
     pub lookup: AHashMap<String, Arc<Lookup>>,
     pub config: SieveConfig,

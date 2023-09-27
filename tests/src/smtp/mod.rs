@@ -38,12 +38,13 @@ use tokio::sync::mpsc;
 
 use smtp::{
     config::{
-        if_block::ConfigIf, queue::ConfigQueue, session::ConfigSession, throttle::ConfigThrottle,
-        AggregateReport, ArcAuthConfig, Auth, ConfigContext, Connect, Data, DkimAuthConfig,
-        DmarcAuthConfig, DnsBlConfig, Dsn, Ehlo, EnvelopeKey, Extensions, IfBlock, IpRevAuthConfig,
-        Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp, QueueOutboundTimeout,
-        QueueOutboundTls, QueueQuotas, QueueThrottle, Rcpt, Report, ReportAnalysis, ReportConfig,
-        SessionConfig, SessionThrottle, SpfAuthConfig, Throttle, VerifyStrategy,
+        if_block::ConfigIf, queue::ConfigQueue, scripts::SieveContext, session::ConfigSession,
+        throttle::ConfigThrottle, AggregateReport, ArcAuthConfig, Auth, ConfigContext, Connect,
+        Data, DkimAuthConfig, DmarcAuthConfig, DnsBlConfig, Dsn, Ehlo, EnvelopeKey, Extensions,
+        IfBlock, IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp,
+        QueueOutboundTimeout, QueueOutboundTls, QueueQuotas, QueueThrottle, Rcpt, Report,
+        ReportAnalysis, ReportConfig, SessionConfig, SessionThrottle, SpfAuthConfig, Throttle,
+        VerifyStrategy,
     },
     core::{
         throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
@@ -434,7 +435,7 @@ impl TestConfig for AggregateReport {
 impl TestConfig for SieveCore {
     fn test() -> Self {
         SieveCore {
-            runtime: Runtime::new(),
+            runtime: Runtime::new_with_context(SieveContext::default()),
             scripts: AHashMap::new(),
             lookup: AHashMap::new(),
             config: SieveConfig {

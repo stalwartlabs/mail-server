@@ -24,9 +24,14 @@
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue, MimeHeaders};
 use sieve::{compiler::ReceivedPart, runtime::Variable, Context};
 
+use crate::config::scripts::SieveContext;
+
 use super::ApplyString;
 
-pub fn fn_received_part<'x>(ctx: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_received_part<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
     if let (Ok(part), Some(HeaderValue::Received(rcvd))) = (
         ReceivedPart::try_from(v[1].to_cow().as_ref()),
         ctx.message()
@@ -45,7 +50,10 @@ pub fn fn_received_part<'x>(ctx: &'x Context<'x>, v: Vec<Variable<'x>>) -> Varia
     }
 }
 
-pub fn fn_is_encoding_problem<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_encoding_problem<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    _: Vec<Variable<'x>>,
+) -> Variable<'x> {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.is_encoding_problem)
@@ -53,16 +61,22 @@ pub fn fn_is_encoding_problem<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) ->
         .into()
 }
 
-pub fn fn_is_attachment<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_attachment<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    _: Vec<Variable<'x>>,
+) -> Variable<'x> {
     ctx.message().attachments.contains(&ctx.part()).into()
 }
 
-pub fn fn_is_body<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_body<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable<'x>>) -> Variable<'x> {
     (ctx.message().text_body.contains(&ctx.part()) || ctx.message().html_body.contains(&ctx.part()))
         .into()
 }
 
-pub fn fn_attachment_name<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_attachment_name<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    _: Vec<Variable<'x>>,
+) -> Variable<'x> {
     ctx.message()
         .part(ctx.part())
         .and_then(|p| p.attachment_name())
@@ -70,11 +84,14 @@ pub fn fn_attachment_name<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Var
         .into()
 }
 
-pub fn fn_thread_name<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_thread_name<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].transform(|s| thread_name(s).into())
 }
 
-pub fn fn_is_header_utf8_valid<'x>(ctx: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_header_utf8_valid<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
     ctx.message()
         .part(ctx.part())
         .map(|p| {

@@ -107,3 +107,20 @@ expect TO_EXCESS_BASE64 TO_DN_ALL TO_MATCH_ENVRCPT_ALL RCPT_COUNT_ONE
 To: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@world.com>
 
 Test
+<!-- NEXT TEST -->
+envelope_from test@test.com
+expect FREEMAIL_TO DISPOSABLE_CC RCPT_COUNT_TWO TO_DN_NONE
+
+To: user@gmail.com
+Cc: otheruser@guerrillamail.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from test@test.com
+expect FREEMAIL_CC DISPOSABLE_TO RCPT_COUNT_THREE TO_DN_NONE
+
+To: otheruser@guerrillamail.com
+Cc: user@gmail.com
+Bcc: some@guerrillamail.com
+
+Test

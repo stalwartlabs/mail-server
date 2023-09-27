@@ -21,8 +21,11 @@
  * for more details.
 */
 
+use std::io::Read;
+
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
+    flate2::read::GzDecoder,
     trust_dns_resolver::{
         config::{ResolverConfig, ResolverOpts},
         system_conf::read_system_conf,
@@ -33,8 +36,11 @@ use mail_auth::{
 use crate::{core::Resolvers, outbound::dane::DnssecResolver};
 use utils::config::Config;
 
+use super::PublicSuffix;
+
 pub trait ConfigResolver {
     fn build_resolvers(&self) -> super::Result<Resolvers>;
+    fn parse_public_suffix(&self) -> super::Result<PublicSuffix>;
 }
 
 impl ConfigResolver for Config {
@@ -99,5 +105,111 @@ impl ConfigResolver for Config {
                 ),
             },
         })
+    }
+
+    fn parse_public_suffix(&self) -> super::Result<PublicSuffix> {
+        let mut ps = PublicSuffix::default();
+
+        for (_, value) in self.values("resolver.public-suffix") {
+            let bytes = if value.starts_with("https://") || value.starts_with("http://") {
+                match tokio::task::block_in_place(|| {
+                    reqwest::blocking::get(value).and_then(|r| {
+                        if r.status().is_success() {
+                            r.bytes().map(Ok)
+                        } else {
+                            Ok(Err(r))
+                        }
+                    })
+                }) {
+                    Ok(Ok(bytes)) => bytes.to_vec(),
+                    Ok(Err(response)) => {
+                        tracing::warn!(
+                            "Failed to fetch public suffixes from {value:?}: Status {status}",
+                            value = value,
+                            status = response.status()
+                        );
+                        continue;
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to fetch public suffixes from {value:?}: {err}",
+                            value = value,
+                            err = err
+                        );
+                        continue;
+                    }
+                }
+            } else if let Some(filename) = value.strip_prefix("file://") {
+                match std::fs::read(filename) {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to read public suffixes from {value:?}: {err}",
+                            value = value,
+                            err = err
+                        );
+                        continue;
+                    }
+                }
+            } else {
+                return Err(format!("Invalid public suffix file {value:?}"));
+            };
+            let bytes = if value.ends_with(".gz") {
+                match GzDecoder::new(&bytes[..])
+                    .bytes()
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to decompress public suffixes from {value:?}: {err}",
+                            value = value,
+                            err = err
+                        );
+                        continue;
+                    }
+                }
+            } else {
+                bytes
+            };
+
+            match String::from_utf8(bytes) {
+                Ok(list) => {
+                    for line in list.lines() {
+                        let line = line.trim().to_lowercase();
+                        if !line.starts_with("//") {
+                            if let Some(domain) = line.strip_prefix('*') {
+                                ps.wildcards.push(domain.to_string());
+                            } else if let Some(domain) = line.strip_prefix('!') {
+                                ps.exceptions.insert(domain.to_string());
+                            } else {
+                                ps.suffixes.insert(line.to_string());
+                            }
+                        }
+                    }
+
+                    return Ok(ps);
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to parse public suffixes from {value:?}: {err}",
+                        value = value,
+                        err = err
+                    );
+                }
+            }
+        }
+
+        tracing::warn!("Failed to parse public suffixes from any source.");
+
+        Ok(ps)
+    }
+}
+
+impl PublicSuffix {
+    pub fn contains(&self, suffix: &str) -> bool {
+        self.suffixes.contains(suffix)
+            || (!self.exceptions.contains(suffix)
+                && self.wildcards.iter().any(|w| suffix.ends_with(w)))
     }
 }

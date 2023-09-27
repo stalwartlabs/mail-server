@@ -44,6 +44,22 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
+[directory."spam"]
+type = "memory"
+
+[directory."spam".lookup."free-domains"]
+type = "glob"
+comment = '#'
+values = ["file://%LIST_PATH%/free-domains.txt"]
+
+[directory."spam".lookup."disposable-domains"]
+type = "glob"
+comment = '#'
+values = ["file://%LIST_PATH%/disposable-domains.txt"]
+
+[resolver]
+public-suffix = "file://%LIST_PATH%/public-suffix.dat"
+
 [sieve.scripts]
 "#;
 
@@ -55,6 +71,7 @@ async fn antispam() {
             .finish(),
     )
     .unwrap();*/
+
     // Prepare config
     let tests = [
         "html",
@@ -69,7 +86,17 @@ async fn antispam() {
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
-    let mut config = CONFIG.replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap());
+    let mut config = CONFIG
+        .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
+        .replace(
+            "%LIST_PATH%",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources")
+                .join("smtp")
+                .join("lists")
+                .to_str()
+                .unwrap(),
+        );
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()

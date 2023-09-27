@@ -493,7 +493,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 fn get_script(name: &str) -> Vec<u8> {
     let mut script_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     script_path.push("resources");
-    script_path.push("jmap_sieve");
+    script_path.push("jmap");
+    script_path.push("sieve");
     script_path.push(format!("{}.sieve", name));
     fs::read(script_path).unwrap()
 }

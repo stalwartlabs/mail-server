@@ -89,3 +89,24 @@ From: hello@domain.org
 Reply-to: "Mr. Hello" <hello@domain.org>
 
 Test
+<!-- NEXT TEST -->
+expect FREEMAIL_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+
+From: hello@gmail.com
+Reply-to: hello@gmail.com
+
+Test
+<!-- NEXT TEST -->
+expect DISPOSABLE_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+
+From: hello@custom.disposable.org
+Reply-to: hello@custom.disposable.org
+
+Test
+<!-- NEXT TEST -->
+expect FREEMAIL_REPLYTO_NEQ_FROM_DOM FREEMAIL_REPLYTO REPLYTO_DOM_NEQ_FROM_DOM SPOOF_REPLYTO HAS_REPLYTO 
+
+From: hello@gmail.com
+Reply-to: hello@yahoomail.com
+
+Test

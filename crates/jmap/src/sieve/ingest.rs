@@ -382,7 +382,7 @@ impl JMAP {
                         }
                     }
                     Event::ListContains { .. }
-                    | Event::Plugin { .. }
+                    | Event::Function { .. }
                     | Event::Notify { .. }
                     | Event::SetEnvelope { .. } => {
                         // Not allowed

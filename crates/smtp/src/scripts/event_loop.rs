@@ -118,7 +118,7 @@ impl SMTP {
                             }
                         }
                     }
-                    Event::Plugin { id, arguments } => {
+                    Event::Function { id, arguments } => {
                         input = self.run_plugin_blocking(
                             id,
                             PluginContext {
@@ -172,7 +172,7 @@ impl SMTP {
                                 if let Some(list) = self.sieve.lookup.get(&list) {
                                     match list.as_ref() {
                                         Lookup::List { list } => {
-                                            for rcpt in list {
+                                            for rcpt in &list.set {
                                                 handle.block_on(
                                                     message.add_recipient(rcpt, &self.queue.config),
                                                 );

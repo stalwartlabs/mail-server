@@ -1,0 +1,10 @@
+co.uk
+org.uk
+com
+net
+org
+info
+biz
+*.wildcard
+!test.wildcard
+disposable.org

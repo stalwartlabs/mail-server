@@ -25,15 +25,20 @@ use hyper::Uri;
 use mail_parser::decoders::html::{add_html_token, html_to_text};
 use sieve::{runtime::Variable, Context};
 
-pub fn fn_html_to_text<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+use crate::config::scripts::SieveContext;
+
+pub fn fn_html_to_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     html_to_text(v[0].to_cow().as_ref()).into()
 }
 
-pub fn fn_tokenize_html<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_tokenize_html<'x>(
+    _: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
     html_to_tokens(v[0].to_cow().as_ref()).into()
 }
 
-pub fn fn_html_has_tag<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_has_tag<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].as_array()
         .map(|arr| {
             let token = v[1].to_cow();
@@ -48,7 +53,10 @@ pub fn fn_html_has_tag<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable
         .into()
 }
 
-pub fn fn_html_attr_size<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_attr_size<'x>(
+    _: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
     let t = v[0].to_cow();
     let mut dimension = None;
 
@@ -66,7 +74,7 @@ pub fn fn_html_attr_size<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variab
     dimension.map(Variable::Integer).unwrap_or_default()
 }
 
-pub fn fn_html_attr<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_attr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     get_attribute(v[0].to_cow().as_ref(), v[1].to_cow().as_ref())
         .map(|s| Variable::String(s.to_string()))
         .unwrap_or_default()
@@ -253,7 +261,7 @@ pub fn html_img_area(arr: &[Variable<'_>]) -> u32 {
         .sum::<u32>()
 }
 
-pub fn fn_uri_part<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_uri_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].to_cow()
         .parse::<Uri>()
         .ok()

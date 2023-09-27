@@ -1,0 +1,5 @@
+# Free domains
+gmail.com
+googlemail.com
+yahoomail.com
+*.freemail.org

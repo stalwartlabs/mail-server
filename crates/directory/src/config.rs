@@ -23,24 +23,33 @@
 
 use bb8::{ManageConnection, Pool};
 use regex::Regex;
+use sieve::runtime::tests::glob::GlobPattern;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     sync::Arc,
     time::Duration,
 };
-use utils::config::{utils::AsKey, Config};
+use utils::config::{
+    utils::{AsKey, ParseValue},
+    Config,
+};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 
 use crate::{
     imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, Lookup,
+    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, Lookup, LookupList,
+    MatchType,
 };
 
 pub trait ConfigDirectory {
     fn parse_directory(&self) -> utils::config::Result<DirectoryConfig>;
-    fn parse_lookup_list(&self, key: impl AsKey) -> utils::config::Result<AHashSet<String>>;
+    fn parse_lookup_list(
+        &self,
+        key: impl AsKey,
+        format: LookupFormat,
+    ) -> utils::config::Result<LookupList>;
 }
 
 impl ConfigDirectory for Config {
@@ -92,9 +101,25 @@ impl ConfigDirectory for Config {
                             .to_string(),
                     }
                 } else {
-                    Lookup::List {
-                        list: self.parse_lookup_list(("directory", id, "lookup", lookup_id))?,
-                    }
+                    let key = ("directory", id, "lookup", lookup_id).as_key();
+                    let list = match self.property::<LookupType>((&key, "type"))? {
+                        Some(lookup_type) => self.parse_lookup_list(
+                            (&key, "values"),
+                            LookupFormat {
+                                lookup_type,
+                                comment: self.value((&key, "comment")).map(|s| s.to_string()),
+                            },
+                        )?,
+                        None => self.parse_lookup_list(
+                            key,
+                            LookupFormat {
+                                lookup_type: LookupType::List,
+                                comment: None,
+                            },
+                        )?,
+                    };
+
+                    Lookup::List { list }
                 };
                 config
                     .lookups
@@ -107,34 +132,157 @@ impl ConfigDirectory for Config {
         Ok(config)
     }
 
-    fn parse_lookup_list(&self, key: impl AsKey) -> utils::config::Result<AHashSet<String>> {
-        let mut list = AHashSet::new();
-        for (_, value) in self.values(key.clone()) {
-            if let Some(path) = value.strip_prefix("file://") {
-                for line in BufReader::new(File::open(path).map_err(|err| {
-                    format!(
-                        "Failed to read file {path:?} for list {}: {err}",
-                        key.as_key()
-                    )
-                })?)
-                .lines()
-                {
-                    let line_ = line.map_err(|err| {
+    fn parse_lookup_list(
+        &self,
+        key: impl AsKey,
+        format: LookupFormat,
+    ) -> utils::config::Result<LookupList> {
+        let mut list = LookupList::default();
+        let mut last_failed = false;
+        for (_, mut value) in self.values(key.clone()) {
+            if let Some(new_value) = value.strip_prefix("fallback+") {
+                if last_failed {
+                    value = new_value;
+                } else {
+                    continue;
+                }
+            }
+            last_failed = false;
+
+            if value.starts_with("https://") || value.starts_with("http://") {
+                match tokio::task::block_in_place(|| {
+                    reqwest::blocking::get(value).and_then(|r| {
+                        if r.status().is_success() {
+                            r.bytes().map(Ok)
+                        } else {
+                            Ok(Err(r))
+                        }
+                    })
+                }) {
+                    Ok(Ok(bytes)) => {
+                        match list.insert_lines(&*bytes, &format, value.ends_with(".gz")) {
+                            Ok(_) => continue,
+                            Err(err) => {
+                                tracing::warn!(
+                                    "Failed to read list {key:?} from {value:?}: {err}",
+                                    key = key.as_key(),
+                                    value = value,
+                                    err = err
+                                );
+                            }
+                        }
+                    }
+                    Ok(Err(response)) => {
+                        tracing::warn!(
+                            "Failed to fetch list {key:?} from {value:?}: Status {status}",
+                            key = key.as_key(),
+                            value = value,
+                            status = response.status()
+                        );
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "Failed to fetch list {key:?} from {value:?}: {err}",
+                            key = key.as_key(),
+                            value = value,
+                            err = err
+                        );
+                    }
+                }
+                last_failed = true;
+            } else if let Some(path) = value.strip_prefix("file://") {
+                list.insert_lines(
+                    File::open(path).map_err(|err| {
                         format!(
                             "Failed to read file {path:?} for list {}: {err}",
                             key.as_key()
                         )
-                    })?;
-                    let line = line_.trim();
-                    if !line.is_empty() {
-                        list.insert(line.to_string());
-                    }
-                }
+                    })?,
+                    &format,
+                    value.ends_with(".gz"),
+                )
+                .map_err(|err| {
+                    format!(
+                        "Failed to read file {path:?} for list {}: {err}",
+                        key.as_key()
+                    )
+                })?;
             } else {
-                list.insert(value.to_string());
+                list.insert(value.to_string(), format.lookup_type);
             }
         }
         Ok(list)
+    }
+}
+
+impl LookupList {
+    pub fn insert(&mut self, entry: String, format: LookupType) {
+        match format {
+            LookupType::List => {
+                self.set.insert(entry);
+            }
+            LookupType::Glob => {
+                let n_wildcards = entry
+                    .as_bytes()
+                    .iter()
+                    .filter(|&&ch| ch == b'*' || ch == b'?')
+                    .count();
+                if n_wildcards > 0 {
+                    if n_wildcards == 1 {
+                        if let Some(s) = entry.strip_prefix('*') {
+                            if !s.is_empty() {
+                                self.matches.push(MatchType::EndsWith(s.to_string()));
+                            }
+                            return;
+                        } else if let Some(s) = entry.strip_suffix('*') {
+                            if !s.is_empty() {
+                                self.matches.push(MatchType::StartsWith(s.to_string()));
+                            }
+                            return;
+                        }
+                    }
+                    self.matches
+                        .push(MatchType::Glob(GlobPattern::compile(&entry, false)));
+                } else {
+                    self.set.insert(entry);
+                }
+            }
+            LookupType::Regex => match regex::Regex::new(&entry) {
+                Ok(regex) => {
+                    self.matches.push(MatchType::Regex(regex));
+                }
+                Err(err) => {
+                    tracing::warn!("Invalid regular expression {:?}: {}", entry, err);
+                }
+            },
+        }
+    }
+
+    pub fn insert_lines<R: Sized + std::io::Read>(
+        &mut self,
+        reader: R,
+        format: &LookupFormat,
+        decompress: bool,
+    ) -> Result<(), std::io::Error> {
+        let reader: Box<dyn std::io::Read> = if decompress {
+            Box::new(flate2::read::GzDecoder::new(reader))
+        } else {
+            Box::new(reader)
+        };
+
+        for line in BufReader::new(reader).lines() {
+            let line_ = line?;
+            let line = line_.trim();
+            if !line.is_empty()
+                && format
+                    .comment
+                    .as_ref()
+                    .map_or(true, |c| !line.starts_with(c))
+            {
+                self.insert(line.to_string(), format.lookup_type);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -206,4 +354,41 @@ pub(crate) fn build_pool<M: ManageConnection>(
         .connection_timeout(config.property_or_static((prefix, "pool.connect-timeout"), "30s")?)
         .test_on_check_out(true)
         .build_unchecked(manager))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookupType {
+    List,
+    Glob,
+    Regex,
+}
+
+#[derive(Debug, Clone)]
+pub struct LookupFormat {
+    pub lookup_type: LookupType,
+    pub comment: Option<String>,
+}
+
+impl Default for LookupFormat {
+    fn default() -> Self {
+        Self {
+            lookup_type: LookupType::Glob,
+            comment: Default::default(),
+        }
+    }
+}
+
+impl ParseValue for LookupType {
+    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+        match value {
+            "list" => Ok(LookupType::List),
+            "glob" => Ok(LookupType::Glob),
+            "regex" => Ok(LookupType::Regex),
+            _ => Err(format!(
+                "Invalid value for lookup type {key:?}: {value:?}",
+                key = key.as_key(),
+                value = value
+            )),
+        }
+    }
 }

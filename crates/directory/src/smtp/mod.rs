@@ -25,16 +25,17 @@ pub mod config;
 pub mod lookup;
 pub mod pool;
 
-use ahash::AHashSet;
 use bb8::Pool;
 use mail_send::SmtpClientBuilder;
 use smtp_proto::EhloResponse;
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 
+use crate::LookupList;
+
 pub struct SmtpDirectory {
     pool: Pool<SmtpConnectionManager>,
-    domains: AHashSet<String>,
+    domains: LookupList,
 }
 
 pub struct SmtpConnectionManager {

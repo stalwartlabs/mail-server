@@ -30,7 +30,7 @@ use directory::{config::ConfigDirectory, AddressMapping, DirectoryConfig};
 use mail_send::Credentials;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
-use std::{borrow::Cow, io::BufReader, sync::Arc};
+use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
 use tokio_rustls::TlsAcceptor;
 
 const CONFIG: &str = r#"
@@ -387,6 +387,87 @@ impl core::fmt::Debug for Item {
             Self::Expand(arg0) => f.debug_tuple("Expn").field(arg0).finish(),
             Self::Verify(arg0) => f.debug_tuple("Vrfy").field(arg0).finish(),
         }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn lookup_local() {
+    const LOOKUP_CONFIG: &str = r#"
+    [directory."local"]
+    type = "memory"
+    
+    [directory."local".lookup."regex"]
+    type = "regex"
+    values = ["^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+             "^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"]
+    
+    [directory."local".lookup."glob"]
+    type = "glob"
+    values = ["*@example.org", "test@*", "localhost", "*+*@*.domain.net"]
+    
+    [directory."local".lookup."list"]
+    type = "list"
+    values = ["abc", "xyz", "123"]
+
+    [directory."local".lookup."suffix"]
+    type = "glob"
+    comment = "//"
+    values = ["https://publicsuffix.org/list/public_suffix_list.dat", "fallback+file://%PATH%/public_suffix_list.dat.gz"]
+    "#;
+
+    /*tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+
+    let lookups = utils::config::Config::parse(
+        &LOOKUP_CONFIG.replace(
+            "%PATH%",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .to_path_buf()
+                .join("resources")
+                .join("config")
+                .join("lists")
+                .to_str()
+                .unwrap(),
+        ),
+    )
+    .unwrap()
+    .parse_directory()
+    .unwrap()
+    .lookups;
+
+    for (lookup, item, expect) in [
+        ("glob", "user@example.org", true),
+        ("glob", "test@otherdomain.org", true),
+        ("glob", "localhost", true),
+        ("glob", "john+doe@doefamily.domain.net", true),
+        ("glob", "john@domain.net", false),
+        ("glob", "example.org", false),
+        ("list", "abc", true),
+        ("list", "xyz", true),
+        ("list", "zzz", false),
+        ("regex", "user@domain.com", true),
+        ("regex", "127.0.0.1", true),
+        ("regex", "hello", false),
+        ("suffix", "co.uk", true),
+        ("suffix", "coco", false),
+    ] {
+        assert_eq!(
+            lookups
+                .get(&format!("local/{lookup}"))
+                .unwrap()
+                .contains(item)
+                .await
+                .unwrap(),
+            expect,
+            "failed for {lookup}, item {item}"
+        );
     }
 }
 

@@ -21,19 +21,18 @@
  * for more details.
 */
 
-pub mod detect_lang;
 pub mod exec;
 pub mod query;
 
 use ahash::AHashMap;
 use mail_parser::Message;
-use sieve::{compiler::Number, Compiler, Input, PluginArgument};
+use sieve::{runtime::Variable, FunctionMap, Input};
 use tokio::runtime::Handle;
 
-use crate::core::SMTP;
+use crate::{config::scripts::SieveContext, core::SMTP};
 
-type RegisterPluginFnc = fn(u32, &mut Compiler) -> ();
-type ExecPluginFnc = fn(PluginContext<'_>) -> Input;
+type RegisterPluginFnc = fn(u32, &mut FunctionMap<SieveContext>) -> ();
+type ExecPluginFnc = fn(PluginContext<'_>) -> Variable<'static>;
 
 pub struct PluginContext<'x> {
     pub span: &'x tracing::Span,
@@ -41,24 +40,21 @@ pub struct PluginContext<'x> {
     pub core: &'x SMTP,
     pub data: &'x mut AHashMap<String, String>,
     pub message: &'x Message<'x>,
-    pub arguments: Vec<PluginArgument<String, Number>>,
+    pub arguments: Vec<Variable<'static>>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 3] = [query::exec, exec::exec, detect_lang::exec];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 3] =
-    [query::register, exec::register, detect_lang::register];
+const PLUGINS_EXEC: [ExecPluginFnc; 2] = [query::exec, exec::exec];
+const PLUGINS_REGISTER: [RegisterPluginFnc; 2] = [query::register, exec::register];
 
 pub trait RegisterSievePlugins {
     fn register_plugins(self) -> Self;
 }
 
-impl RegisterSievePlugins for Compiler {
+impl RegisterSievePlugins for FunctionMap<SieveContext> {
     fn register_plugins(mut self) -> Self {
         #[cfg(feature = "test_mode")]
         {
-            self.register_plugin("print")
-                .with_id(PLUGINS_EXEC.len() as u32)
-                .with_string_argument();
+            self.set_external_function("print", PLUGINS_EXEC.len() as u32, 1)
         }
 
         for (i, fnc) in PLUGINS_REGISTER.iter().enumerate() {
@@ -78,19 +74,13 @@ impl SMTP {
         PLUGINS_EXEC
             .get(id as usize)
             .map(|fnc| fnc(ctx))
-            .unwrap_or(false.into())
+            .unwrap_or_default()
+            .into()
     }
 }
 
 #[cfg(feature = "test_mode")]
 pub fn test_print(ctx: PluginContext<'_>) -> Input {
-    println!(
-        "{}",
-        ctx.arguments
-            .into_iter()
-            .next()
-            .and_then(|a| a.unwrap_string())
-            .unwrap()
-    );
+    println!("{}", ctx.arguments[0].to_cow());
     Input::True
 }

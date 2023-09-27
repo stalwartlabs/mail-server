@@ -38,7 +38,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_dir.push("resources");
-    test_dir.push("jmap_mail_parse");
+    test_dir.push("jmap");
+    test_dir.push("email_parse");
 
     let mailbox_id = client
         .set_default_account_id(Id::new(1).to_string())

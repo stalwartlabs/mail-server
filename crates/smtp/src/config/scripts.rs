@@ -31,16 +31,24 @@ use crate::{
 };
 use utils::config::{utils::AsKey, Config};
 
-use super::ConfigContext;
+use super::{resolver::ConfigResolver, ConfigContext, PublicSuffix};
 
 pub trait ConfigSieve {
     fn parse_sieve(&self, ctx: &mut ConfigContext) -> super::Result<SieveCore>;
 }
 
+#[derive(Clone, Default)]
+pub struct SieveContext {
+    pub psl: PublicSuffix,
+}
+
 impl ConfigSieve for Config {
     fn parse_sieve(&self, ctx: &mut ConfigContext) -> super::Result<SieveCore> {
         // Register functions
-        let mut fnc_map = register_functions();
+        let mut fnc_map = register_functions().register_plugins();
+        let sieve_ctx = SieveContext {
+            psl: self.parse_public_suffix()?,
+        };
 
         // Allocate compiler and runtime
         let compiler = Compiler::new()
@@ -55,10 +63,9 @@ impl ConfigSieve for Config {
             .with_no_capability_check(
                 self.property_or_static("sieve.no-capability-check", "false")?,
             )
-            .register_plugins()
             .register_functions(&mut fnc_map);
 
-        let mut runtime = Runtime::new()
+        let mut runtime = Runtime::new_with_context(sieve_ctx)
             .without_capabilities([
                 Capability::FileInto,
                 Capability::Vacation,
@@ -71,9 +78,8 @@ impl ConfigSieve for Config {
                 Capability::ImapSieve,
                 Capability::Duplicate,
             ])
-            .with_capability(Capability::Plugins)
+            .with_capability(Capability::Expressions)
             .with_capability(Capability::While)
-            .with_capability(Capability::Eval)
             .with_max_variable_size(102400)
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")

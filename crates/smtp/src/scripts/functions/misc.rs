@@ -23,7 +23,9 @@
 
 use sieve::{runtime::Variable, Context};
 
-pub fn fn_is_empty<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+use crate::config::scripts::SieveContext;
+
+pub fn fn_is_empty<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     match &v[0] {
         Variable::String(s) => s.is_empty(),
         Variable::StringRef(s) => s.is_empty(),
@@ -34,11 +36,14 @@ pub fn fn_is_empty<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x>
     .into()
 }
 
-pub fn fn_is_ip_addr<'x>(_: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_ip_addr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].to_cow().parse::<std::net::IpAddr>().is_ok().into()
 }
 
-pub fn fn_is_var_names<'x>(ctx: &'x Context<'x>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_var_names<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    _: Vec<Variable<'x>>,
+) -> Variable<'x> {
     Variable::Array(
         ctx.global_variable_names()
             .map(|v| Variable::from(v.to_string()))

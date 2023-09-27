@@ -25,7 +25,10 @@ use std::sync::Arc;
 
 use utils::config::{utils::AsKey, Config};
 
-use crate::{config::ConfigDirectory, Directory, DirectoryOptions, Principal, Type};
+use crate::{
+    config::{ConfigDirectory, LookupFormat},
+    Directory, DirectoryOptions, Principal, Type,
+};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -103,9 +106,9 @@ impl MemoryDirectory {
             directory.parse_emails(config, (prefix.as_str(), "groups", lookup_id), name)?;
         }
 
-        directory
-            .domains
-            .extend(config.parse_lookup_list((&prefix, "lookup.domains"))?);
+        directory.domains.extend(
+            config.parse_lookup_list((&prefix, "lookup.domains"), LookupFormat::default())?,
+        );
 
         Ok(Arc::new(directory))
     }
@@ -132,7 +135,7 @@ impl MemoryDirectory {
                 });
 
             if let Some((_, domain)) = email.rsplit_once('@') {
-                self.domains.insert(domain.to_lowercase());
+                self.domains.set.insert(domain.to_lowercase());
             }
 
             emails.push(if pos > 0 {
@@ -147,7 +150,7 @@ impl MemoryDirectory {
                 .or_default()
                 .push(EmailType::List(name.clone()));
             if let Some((_, domain)) = email.rsplit_once('@') {
-                self.domains.insert(domain.to_lowercase());
+                self.domains.set.insert(domain.to_lowercase());
             }
             emails.push(EmailType::List(email.to_lowercase()));
         }

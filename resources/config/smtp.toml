@@ -4,7 +4,7 @@
 
 [server.listener."smtp"]
 bind = ["[::]:25"]
-greeting = "Stalwart SMTP at your service"
+#greeting = "Stalwart SMTP at your service"
 protocol = "smtp"
 
 [server.listener."submission"]
@@ -228,6 +228,8 @@ concurrency = 2
 timeout = "5s"
 attempts = 2
 try-tcp-on-error = true
+public-suffix = ["https://publicsuffix.org/list/public_suffix_list.dat", 
+                 "file://__PATH__/etc/lists/public-suffix-list.dat.gz"]
 
 [resolver.cache]
 txt = 2048
@@ -362,12 +364,12 @@ mail = '''
     }
 '''
 rcpt = '''
-    require ["variables", "vnd.stalwart.plugins", "envelope", "reject"];
+    require ["variables", "vnd.stalwart.expressions", "envelope", "reject"];
 
     set "triplet" "${env.remote_ip}.${envelope.from}.${envelope.to}";
 
-    if not query "SELECT EXISTS(SELECT 1 FROM greylist WHERE addr=? LIMIT 1)" ["${triplet}"] {
-        query "INSERT INTO greylist (addr) VALUES (?)" ["${triplet}"];
+    if eval "!query('sql', 'SELECT 1 FROM greylist WHERE addr=? LIMIT 1', [triplet])" {
+        eval "query('sql', 'INSERT INTO greylist (addr) VALUES (?)', [triplet])";
         reject "422 4.2.2 Greylisted, please try again in a few moments.";
     }
 '''

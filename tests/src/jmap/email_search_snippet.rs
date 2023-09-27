@@ -40,7 +40,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_dir.push("resources");
-    test_dir.push("jmap_mail_snippet");
+    test_dir.push("jmap");
+    test_dir.push("email_snippet");
 
     // Import test messages
     for email_name in [

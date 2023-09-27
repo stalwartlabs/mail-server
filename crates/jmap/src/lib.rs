@@ -98,7 +98,7 @@ pub struct JMAP {
     pub smtp: Arc<SMTP>,
 
     pub sieve_compiler: Compiler,
-    pub sieve_runtime: Runtime,
+    pub sieve_runtime: Runtime<()>,
 }
 
 pub struct Config {

@@ -31,9 +31,11 @@ mod text;
 
 use sieve::{runtime::Variable, FunctionMap};
 
+use crate::config::scripts::SieveContext;
+
 use self::{array::*, email::*, header::*, html::*, image::*, misc::*, text::*};
 
-pub fn register_functions() -> FunctionMap {
+pub fn register_functions() -> FunctionMap<SieveContext> {
     FunctionMap::new()
         .with_function("trim", fn_trim)
         .with_function("trim_start", fn_trim_start)
@@ -52,7 +54,6 @@ pub fn register_functions() -> FunctionMap {
         .with_function("is_lowercase", fn_is_lowercase)
         .with_function("tokenize_words", fn_tokenize_words)
         .with_function("tokenize_html", fn_tokenize_html)
-        .with_function("tokenize_url", fn_tokenize_url)
         .with_function("max_line_len", fn_max_line_len)
         .with_function("count_spaces", fn_count_spaces)
         .with_function("count_uppercase", fn_count_uppercase)
@@ -65,6 +66,7 @@ pub fn register_functions() -> FunctionMap {
         .with_function("sort", fn_sort)
         .with_function("is_ip_addr", fn_is_ip_addr)
         .with_function("winnow", fn_winnow)
+        .with_function_args("tokenize_url", fn_tokenize_url, 2)
         .with_function_args("email_part", fn_email_part, 2)
         .with_function_args("domain_part", fn_domain_part, 2)
         .with_function_args("eq_ignore_case", fn_eq_ignore_case, 2)

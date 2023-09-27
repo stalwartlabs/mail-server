@@ -1,5 +1,5 @@
 
-set "subject" "%{to_lowercase(header.subject)}";
+let "subject" "to_lowercase(header.subject)";
 
 if eval "(contains(subject, 'delivery') && 
             (contains(subject, 'failed') || 
@@ -19,29 +19,29 @@ if eval "(contains(subject, 'delivery') &&
          contains(subject, 'undeliverable') || 
          contains(subject, 'undelivered')" {
     # Subject contains words or phrases typical for DSN
-    set "t.SUBJ_BOUNCE_WORDS" "1";
+    let "t.SUBJ_BOUNCE_WORDS" "1";
 }
 
 if eval "is_empty(envelope.from)" {
     if eval "eq_ignore_case(header.content-type, 'multipart/report') && 
              ( eq_ignore_case(header.content-type.attr.report-type, 'delivery-status') ||
                eq_ignore_case(header.content-type.attr.report-type, 'disposition-notification'))" {
-        set "t.BOUNCE" "1";
+        let "t.BOUNCE" "1";
     } else {
-        set "from" "%{to_lowercase(header.from)}";
+        let "from" "to_lowercase(header.from)";
 
         if eval "contains(from, 'mdaemon') && !is_empty(header.X-MDDSN-Message)" {
-            set "t.BOUNCE" "1";
+            let "t.BOUNCE" "1";
         } elsif eval "contains(from, 'postmaster') || contains(from, 'mailer-daemon')" {
             if eval "t.SUBJ_BOUNCE_WORDS" {
-                set "t.BOUNCE" "1";
+                let "t.BOUNCE" "1";
             } else {
                 foreverypart {
                     if eval "(eq_ignore_case(header.content-type.type, 'message') ||
                               eq_ignore_case(header.content-type.type, 'text')) &&
                              (eq_ignore_case(header.content-type.subtype, 'rfc822-headers') ||
                               eq_ignore_case(header.content-type.subtype, 'rfc822'))" {
-                        set "t.BOUNCE" "1";
+                        let "t.BOUNCE" "1";
                         break;
                     }
                 }

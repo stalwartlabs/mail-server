@@ -23,7 +23,12 @@
 
 use sieve::{runtime::Variable, Context};
 
-pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable<'x>>) -> Variable<'x> {
+use crate::config::scripts::SieveContext;
+
+pub fn fn_img_metadata<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.contents())

@@ -34,8 +34,8 @@ use tokio::net::TcpSocket;
 
 use utils::config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol};
 
-use ahash::{AHashMap, AHashSet};
-use directory::{config::ConfigDirectory, Lookup};
+use ahash::AHashMap;
+use directory::{config::ConfigDirectory, Lookup, LookupList};
 
 use smtp::config::{
     condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
@@ -75,7 +75,7 @@ fn parse_conditions() {
     }];
     let mut context = ConfigContext::new(&servers);
     let list = Arc::new(Lookup::List {
-        list: AHashSet::new(),
+        list: LookupList::default(),
     });
     context
         .directory

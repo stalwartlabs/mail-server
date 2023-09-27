@@ -21,9 +21,9 @@
  * for more details.
 */
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 
-use crate::{DirectoryOptions, Principal};
+use crate::{DirectoryOptions, LookupList, Principal};
 
 pub mod config;
 pub mod lookup;
@@ -33,7 +33,7 @@ pub struct MemoryDirectory {
     principals: AHashMap<String, Principal>,
     emails_to_names: AHashMap<String, Vec<EmailType>>,
     names_to_email: AHashMap<String, Vec<EmailType>>,
-    domains: AHashSet<String>,
+    domains: LookupList,
     opt: DirectoryOptions,
 }
 

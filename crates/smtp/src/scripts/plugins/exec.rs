@@ -23,31 +23,29 @@
 
 use std::process::Command;
 
-use sieve::{Compiler, Input};
+use sieve::{runtime::Variable, FunctionMap};
+
+use crate::config::scripts::SieveContext;
 
 use super::PluginContext;
 
-pub fn register(plugin_id: u32, compiler: &mut Compiler) {
-    compiler
-        .register_plugin("exec")
-        .with_id(plugin_id)
-        .with_string_argument()
-        .with_string_array_argument();
+pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("exec", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Input {
+pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
     let span = ctx.span;
     let mut arguments = ctx.arguments.into_iter();
     match Command::new(
         arguments
             .next()
-            .and_then(|a| a.unwrap_string())
+            .map(|a| a.into_string())
             .unwrap_or_default(),
     )
     .args(
         arguments
             .next()
-            .and_then(|a| a.unwrap_string_array())
+            .map(|a| a.into_string_array())
             .unwrap_or_default(),
     )
     .output()

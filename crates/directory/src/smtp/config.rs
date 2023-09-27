@@ -28,7 +28,7 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::{
     cache::CachedDirectory,
-    config::{build_pool, ConfigDirectory},
+    config::{build_pool, ConfigDirectory, LookupFormat},
     smtp::SmtpConnectionManager,
     Directory,
 };
@@ -72,7 +72,8 @@ impl SmtpDirectory {
             &prefix,
             SmtpDirectory {
                 pool: build_pool(config, &prefix, manager)?,
-                domains: config.parse_lookup_list((&prefix, "lookup.domains"))?,
+                domains: config
+                    .parse_lookup_list((&prefix, "lookup.domains"), LookupFormat::default())?,
             },
         )
     }
