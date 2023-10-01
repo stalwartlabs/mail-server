@@ -1,4 +1,4 @@
-if eval "!is_empty(header.date.raw)" {
+if eval "header.date.exists" {
     let "date" "header.date.date";
 
     if eval "date != 0" {

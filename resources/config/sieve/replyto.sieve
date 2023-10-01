@@ -49,13 +49,12 @@ if eval "!is_empty(rto_raw)" {
             }
         }
 
-        if string :list "${rto_domain}" "spam/free-domains" {
+        if eval "lookup('spam/free-domains', rto_domain)" {
             let "t.FREEMAIL_REPLYTO" "1";
-            if allof(eval "rto_domain != from_domain", string :list "${from_domain}" "spam/free-domains") {
+            if eval "rto_domain != from_domain && lookup('spam/free-domains', from_domain)" {
                 let "t.FREEMAIL_REPLYTO_NEQ_FROM_DOM" "1";
             }
-
-        } elsif string :list "${rto_domain}" "spam/disposable-domains" {
+        } elsif eval "lookup('spam/disposable-domains', rto_domain)" {
             let "t.DISPOSABLE_REPLYTO" "1";
         }
 

@@ -694,6 +694,15 @@ impl DeliveryAttempt {
                                 .await
                                 {
                                     StartTlsResult::Success { smtp_client } => {
+                                        tracing::debug!(
+                                            parent: &span,
+                                            context = "tls",
+                                            event = "success",
+                                            mx = envelope.mx,
+                                            protocol = ?smtp_client.tls_connection().protocol_version(),
+                                            cipher = ?smtp_client.tls_connection().negotiated_cipher_suite(),
+                                        );
+
                                         // Verify DANE
                                         if let Some(dane_policy) = &dane_policy {
                                             if let Err(status) = dane_policy.verify(

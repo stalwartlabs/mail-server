@@ -17,8 +17,9 @@ if eval "!is_empty(to_raw)" {
     let "t.MISSING_TO" "1";
 }
 
-let "rcpt_addr" "to_lowercase(header.to:cc:bcc[*].addr[*])";
-let "rcpt_count" "count(winnow(rcpt_addr))";
+let "rcpt_addr" "dedup(to_lowercase(header.to:cc:bcc[*].addr[*]))";
+let "rcpt_addr_clean" "winnow(rcpt_addr)";
+let "rcpt_count" "count(rcpt_addr_clean)";
 
 if eval "rcpt_count > 0" {
     if eval "rcpt_count == 1" {
@@ -80,16 +81,24 @@ if eval "rcpt_count > 0" {
                 }
             }
 
+            # Check if it is an into to info 
+            if eval "!t.INFO_TO_INFO_LU && 
+                     local_part == 'info' && 
+                     eq_ignore_case(email_part(header.from.addr, 'local'), 'info') && 
+                     header.List-Unsubscribe.exists" {
+                let "t.INFO_TO_INFO_LU" "1";
+            }
+
             # Check for freemail or disposable domains
             let "domain" "domain_part(email_part(addr, 'domain'), 'sld')";
             if eval "!is_empty(domain)" {
-                if string :list "${domain}" "spam/free-domains" {
+                if eval "lookup('spam/free-domains', domain)" {
                     if eval "!t.FREEMAIL_TO && contains_ignore_case(header.to[*].addr[*], addr)" {
                         let "t.FREEMAIL_TO" "1";
                     } elsif eval "!t.FREEMAIL_CC && contains_ignore_case(header.cc[*].addr[*], addr)" {
                         let "t.FREEMAIL_CC" "1";
                     }
-                } elsif string :list "${domain}" "spam/disposable-domains" {
+                } elsif eval "lookup('spam/disposable-domains', domain)" {
                     if eval "!t.DISPOSABLE_TO && contains_ignore_case(header.to[*].addr[*], addr)" {
                         let "t.DISPOSABLE_TO" "1";
                     } elsif eval "!t.DISPOSABLE_CC && contains_ignore_case(header.cc[*].addr[*], addr)" {
@@ -142,6 +151,58 @@ if eval "rcpt_count > 0" {
               starts_with(envelope.from, 'mailer-daemon@'))" {
         let "t.HFILTER_RCPT_BOUNCEMOREONE" "1";
     }
+
+    # Check for sorted recipients
+    if eval "rcpt_count >= 7 && sort(rcpt_addr_clean, false) == rcpt_addr_clean" {
+        let "t.SORTED_RECIPS" "1";
+    }
+
+    # Check for suspiciously similar recipients
+    if eval "!t.SORTED_RECIPS && rcpt_count => 5" {
+        let "i" "rcpt_count";
+        let "hits" "0";
+        let "combinations" "0";
+
+        while "i" {
+            let "i" "i - 1";
+            let "j" "i";
+            while "j" {
+                let "j" "j - 1";
+                let "a" "rcpt_addr_clean[i]";
+                let "b" "rcpt_addr_clean[j]";
+
+                if eval "levenshtein_distance(email_part(a, 'local'), email_part(b, 'local')) < 3" {
+                    let "hits" "hits + 1";
+                }
+
+                let "a" "email_part(a, 'domain')";
+                let "b" "email_part(b, 'domain')";
+
+                if eval "a != b && levenshtein_distance(a, b) < 4" {
+                    let "hits" "hits + 1";
+                }
+
+                let "combinations" "combinations + 1";
+            }
+        }
+
+        if eval "hits / combinations > 0.65" {
+            let "t.SUSPICIOUS_RECIPS" "1";
+        }
+    }
+
+    # Check for spaces in recipient addresses
+    let "raw_to" "header.to:cc[*].raw";
+    let "i" "len(raw_to)";
+    while "i != 0" {
+        let "i" "i - 1";
+        let "raw_addr" "rsplit(raw_to[i], '<')[0]";
+        if eval "contains(raw_addr, '>') && (starts_with(raw_addr, ' ' ) || ends_with(raw_addr, ' >'))" {
+            let "t.TO_WRAPPED_IN_SPACES" "1";
+            break;
+        }
+    }
+
 } else {
     let "t.RCPT_COUNT_ZERO" "1";
 

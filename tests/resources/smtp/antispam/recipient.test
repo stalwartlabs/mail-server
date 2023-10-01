@@ -124,3 +124,68 @@ Cc: user@gmail.com
 Bcc: some@guerrillamail.com
 
 Test
+<!-- NEXT TEST -->
+envelope_from test@test.com
+expect SORTED_RECIPS RCPT_COUNT_SEVEN TO_DN_NONE
+
+To: a@domain.com, b@domain.com, c@domain.com, d@domain.com
+Cc: e@domain.com, f@domain.com, g@domain.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from test@test.com
+expect RCPT_COUNT_SEVEN TO_DN_NONE
+
+To: tom@domain.com, mark@domain.com, bill@domain.com, peter@domain.com
+Cc: jane@domain.com, mary@domain.com, lucy@domain.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from test@test.com
+expect SUSPICIOUS_RECIPS RCPT_COUNT_SEVEN TO_DN_NONE
+
+To: tim@domain.com, tom@domain.com, tum@domain.com, tem@domain.com
+Cc: tam@domain.com, tron@domain.com, tym@domain.com
+
+Test
+<!-- NEXT TEST -->
+envelope_from info@notalist.org
+envelope_to info@notalist.org
+expect INFO_TO_INFO_LU RCPT_COUNT_ONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE
+
+From: info@notalist.org
+To: info@notalist.org
+List-Unsubscribe: <info@notalist.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from info@notalist.org
+envelope_to info@notalist.org
+expect RCPT_COUNT_ONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE
+
+From: info@notalist.org
+To: info@notalist.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@test.org
+envelope_to user@test.org
+envelope_to test@test.org
+expect TO_WRAPPED_IN_SPACES RCPT_COUNT_TWO TO_MATCH_ENVRCPT_ALL TO_DN_NONE
+
+From: hello@test.org
+To: < user@test.org >
+Cc: test@test.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@test.org
+envelope_to user@test.org
+envelope_to test@test.org
+expect TO_WRAPPED_IN_SPACES RCPT_COUNT_TWO TO_MATCH_ENVRCPT_ALL TO_DN_SOME
+
+From: hello@test.org
+To: user@test.org
+Cc: "Test" <test@test.org >
+
+Test

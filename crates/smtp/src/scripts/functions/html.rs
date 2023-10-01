@@ -21,7 +21,8 @@
  * for more details.
 */
 
-use hyper::Uri;
+use std::borrow::Cow;
+
 use mail_parser::decoders::html::{add_html_token, html_to_text};
 use sieve::{runtime::Variable, Context};
 
@@ -72,6 +73,15 @@ pub fn fn_html_attr_size<'x>(
     }
 
     dimension.map(Variable::Integer).unwrap_or_default()
+}
+
+pub fn fn_html_attrs<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    html_attr_tokens(
+        v[0].to_cow().as_ref(),
+        v[1].to_cow().as_ref(),
+        v[2].to_string_array(),
+    )
+    .into()
 }
 
 pub fn fn_html_attr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
@@ -232,6 +242,102 @@ pub fn html_to_tokens(input: &str) -> Vec<Variable<'static>> {
     tags
 }
 
+pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Variable<'static>> {
+    let input = input.as_bytes();
+    let mut iter = input.iter().enumerate().peekable();
+    let mut tags = vec![];
+
+    while let Some((mut pos, &ch)) = iter.next() {
+        if ch == b'<' {
+            if !matches!(input.get(pos + 1..pos + 4), Some(b"!--")) {
+                let mut in_quote = false;
+                let mut last_ch_pos: usize = 0;
+
+                while matches!(iter.peek(), Some((_, &ch)) if ch.is_ascii_whitespace()) {
+                    pos += 1;
+                    iter.next();
+                }
+
+                let found_tag = tag.is_empty()
+                    || (matches!(input.get(pos + 1..pos + tag.len() + 1), Some(t) if t.eq_ignore_ascii_case(tag.as_bytes()))
+                        && matches!(input.get(pos + tag.len() + 1), Some(ch) if ch.is_ascii_whitespace()));
+
+                'outer: while let Some((pos, &ch)) = iter.next() {
+                    match ch {
+                        b'>' if !in_quote => {
+                            break;
+                        }
+                        b'"' => {
+                            in_quote = !in_quote;
+                        }
+                        b'=' if found_tag
+                            && !in_quote
+                            && attrs.iter().any(|attr| matches!(input.get(last_ch_pos.saturating_sub(attr.len()) + 1..last_ch_pos + 1), Some(a) if a.eq_ignore_ascii_case(attr.as_bytes())))
+                            && matches!(input.get(last_ch_pos + 1), Some(ch) if ch.is_ascii_whitespace() || *ch == b'=') =>
+                        {
+                            while matches!(iter.peek(), Some((_, &ch)) if ch.is_ascii_whitespace())
+                            {
+                                iter.next();
+                            }
+                            let mut tag = vec![];
+
+                            for (_, &ch) in iter.by_ref() {
+                                match ch {
+                                    b'>' if !in_quote => {
+                                        if !tag.is_empty() {
+                                            tags.push(Variable::String(
+                                                String::from_utf8(tag).unwrap_or_default(),
+                                            ));
+                                        }
+                                        break 'outer;
+                                    }
+                                    b'"' => {
+                                        if in_quote {
+                                            in_quote = false;
+                                            break;
+                                        } else {
+                                            in_quote = true;
+                                        }
+                                    }
+                                    b' ' | b'\t' | b'\r' | b'\n' if !in_quote => {
+                                        break;
+                                    }
+                                    _ => {
+                                        tag.push(ch);
+                                    }
+                                }
+                            }
+
+                            if !tag.is_empty() {
+                                tags.push(Variable::String(
+                                    String::from_utf8(tag).unwrap_or_default(),
+                                ));
+                            }
+                        }
+                        b' ' | b'\t' | b'\r' | b'\n' => {}
+                        _ => {
+                            last_ch_pos = pos;
+                        }
+                    }
+                }
+            } else {
+                let mut last_ch: u8 = 0;
+                let mut before_last_ch: u8 = 0;
+
+                for (_, &ch) in iter.by_ref() {
+                    if ch == b'>' && last_ch == b'-' && before_last_ch == b'-' {
+                        break;
+                    }
+                    before_last_ch = last_ch;
+                    last_ch = ch;
+                }
+            }
+        }
+    }
+
+    tags
+}
+
 pub fn html_img_area(arr: &[Variable<'_>]) -> u32 {
     arr.iter()
         .filter_map(|v| {
@@ -259,29 +365,6 @@ pub fn html_img_area(arr: &[Variable<'_>]) -> u32 {
             }
         })
         .sum::<u32>()
-}
-
-pub fn fn_uri_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
-        .parse::<Uri>()
-        .ok()
-        .and_then(|uri| match v[1].to_cow().as_ref() {
-            "scheme" => uri.scheme_str().map(|s| Variable::String(s.to_lowercase())),
-            "host" => uri.host().map(|s| Variable::String(s.to_lowercase())),
-            "scheme_host" => uri
-                .scheme_str()
-                .and_then(|s| (s, uri.host()?).into())
-                .map(|(s, h)| Variable::String(format!("{}://{}", s, h))),
-            "path" => Variable::String(uri.path().to_string()).into(),
-            "port" => uri.port_u16().map(|port| Variable::Integer(port as i64)),
-            "query" => uri.query().map(|s| Variable::String(s.to_string())),
-            "path_query" => uri
-                .path_and_query()
-                .map(|s| Variable::String(s.to_string())),
-            "authority" => uri.authority().map(|s| Variable::String(s.to_string())),
-            _ => None,
-        })
-        .unwrap_or_default()
 }
 
 pub fn get_attribute<'x>(tag: &'x str, attr_name: &str) -> Option<&'x str> {

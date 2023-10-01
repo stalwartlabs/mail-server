@@ -1015,9 +1015,9 @@ wurl.in
 wurl.us
 wuw.su
 ww.tl
-www.clickmeeting.com
-www.grandstreamnetworks.ru
-www.reg.ru
+clickmeeting.com
+grandstreamnetworks.ru
+reg.ru
 wz.ae
 x2t.com
 xaa.su

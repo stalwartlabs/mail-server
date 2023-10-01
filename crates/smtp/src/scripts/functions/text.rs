@@ -50,25 +50,6 @@ pub fn fn_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Var
     .into()
 }
 
-pub fn fn_is_ascii<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-        Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
-        Variable::Integer(_) | Variable::Float(_) => true,
-        Variable::Array(a) => a.iter().all(|v| match v {
-            Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-            Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
-            _ => true,
-        }),
-        Variable::ArrayRef(a) => a.iter().all(|v| match v {
-            Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-            Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
-            _ => true,
-        }),
-    }
-    .into()
-}
-
 pub fn fn_to_lowercase<'x>(
     _: &'x Context<'x, SieveContext>,
     mut v: Vec<Variable<'x>>,
@@ -126,6 +107,14 @@ pub fn fn_is_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
         .chars()
         .filter(|c| c.is_alphabetic())
         .all(|c| c.is_lowercase())
+        .into()
+}
+
+pub fn fn_has_digits<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].to_cow()
+        .as_ref()
+        .chars()
+        .any(|c| c.is_ascii_digit())
         .into()
 }
 
@@ -305,52 +294,24 @@ pub fn fn_split<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> V
     }
 }
 
-pub fn fn_tokenize_url<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let must_have_scheme = v[1].to_bool();
-    let filter_url = |url: &str| -> bool {
-        if must_have_scheme || url.contains("://") {
-            true
-        } else {
-            // Filter out possible URLs without a valid TLD
-            let url = url.split_once('/').map_or(url, |(f, _)| f);
-            let tld = url.rsplit_once('.').map_or(url, |(_, tld)| tld);
-            ctx.context().psl.contains(tld)
-        }
-    };
-
-    match v.remove(0) {
-        Variable::StringRef(text) => linkify::LinkFinder::new()
-            .url_must_have_scheme(must_have_scheme)
-            .links(text.as_ref())
-            .filter_map(|url| {
-                let url = url.as_str();
-                if filter_url(url) {
-                    Some(Variable::from(url.to_string()))
-                } else {
-                    None
-                }
-            })
+pub fn fn_rsplit<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    match &v[0] {
+        Variable::StringRef(s) => s
+            .rsplit(v[1].to_cow().as_ref())
+            .map(Variable::from)
             .collect::<Vec<_>>()
             .into(),
-        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
-            linkify::LinkFinder::new()
-                .url_must_have_scheme(must_have_scheme)
-                .links(v.to_cow().as_ref())
-                .filter_map(|url| {
-                    let url = url.as_str();
-                    if filter_url(url) {
-                        Some(Variable::from(url.to_string()))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .into()
-        }
-        v => v,
+        Variable::String(s) => s
+            .rsplit(v[1].to_cow().as_ref())
+            .map(|s| Variable::String(s.to_string()))
+            .collect::<Vec<_>>()
+            .into(),
+        val => val
+            .to_string()
+            .rsplit(v[1].to_cow().as_ref())
+            .map(|s| Variable::String(s.to_string()))
+            .collect::<Vec<_>>()
+            .into(),
     }
 }
 

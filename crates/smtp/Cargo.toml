@@ -50,6 +50,9 @@ lazy_static = "1.4"
 whatlang = "0.16"
 imagesize = "0.12"
 linkify = "0.10"
+idna = "0.4"
+decancer = "1.6.1"
+unicode-security = "0.1.0"
 
 [features]
 test_mode = []

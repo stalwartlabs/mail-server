@@ -1,0 +1,354 @@
+expect MISSING_MIME_VERSION
+
+Content-Type: text/plain; charset="us-ascii"
+
+Test
+<!-- NEXT TEST -->
+expect MV_CASE
+
+Content-Type: text/plain; charset="us-ascii"
+Mime-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect CTE_CASE CT_EXTRA_SEMI
+
+Content-Type: text/plain; charset="us-ascii"; 
+Content-Transfer-Encoding: 7Bit
+MIME-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect BROKEN_CONTENT_TYPE
+
+Content-Type: ; tag=1
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect MIME_HEADER_CTYPE_ONLY MISSING_MIME_VERSION
+
+Content-Type: text/html; charset="us-ascii"
+
+Test
+<!-- NEXT TEST -->
+expect R_BAD_CTE_7BIT
+
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Téstíng
+<!-- NEXT TEST -->
+expect R_MISSING_CHARSET
+
+Content-Type: text/plain
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect MIME_BASE64_TEXT_BOGUS MIME_BASE64_TEXT
+
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: base64
+MIME-Version: 1.0
+
+aGVsbG8gd29ybGQK
+
+<!-- NEXT TEST -->
+expect MIME_BASE64_TEXT
+
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: base64
+MIME-Version: 1.0
+
+aMOpbGzDsyB3w7NybGQK
+
+<!-- NEXT TEST -->
+expect 
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. 
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+<p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.</p>
+</html>
+
+--boundary--
+<!-- NEXT TEST -->
+expect MIME_MA_MISSING_TEXT
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+<p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.</p>
+</html>
+
+--boundary--
+<!-- NEXT TEST -->
+expect MIME_MA_MISSING_HTML
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. 
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.
+
+--boundary--
+<!-- NEXT TEST -->
+expect R_PARTS_DIFFER
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Lorem ipsum dolor sit amet, Rcnsectetur Radipiscing elit, Rsed do Reiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. 
+Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor 
+incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud 
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+<p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore 
+eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in 
+culpa qui officia deserunt mollit anim id est laborum.</p>
+</html>
+--boundary--
+<!-- NEXT TEST -->
+expect URI_COUNT_ODD
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Find me at http://www.example.com or http://www.example.org
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>Find me at http://www.example.com or</p>
+</html>
+--boundary--
+<!-- NEXT TEST -->
+expect 
+
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Find me at http://www.example.com or http://www.example.org
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>Find me at http://www.example.com or http://example.org</p>
+</html>
+--boundary--
+<!-- NEXT TEST -->
+expect CTYPE_MIXED_BOGUS
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>this is a test</p>
+</html>
+--boundary--
+<!-- NEXT TEST -->
+expect 
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+another test
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+last test
+
+--boundary--
+<!-- NEXT TEST -->
+expect HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: application/octet-stream
+Content-Disposition: attachment
+Content-Transfer-Encoding: 7bit
+
+<html>
+<p>this is a test</p>
+</html>
+--boundary--
+<!-- NEXT TEST -->
+expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT
+
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect ENCRYPTED_PGP ENCRYPTED_SMIME SIGNED_PGP SIGNED_SMIME HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/encrypted;
+	boundary="boundary"
+
+--boundary
+Content-Type: application/pkcs7-mime
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: application/pkcs7-signature
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: application/pgp-encrypted
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: application/pgp-signature
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary--
+<!-- NEXT TEST -->
+expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT
+
+Content-Type: application/octet-stream
+MIME-Version: 1.0
+
+Test
+<!-- NEXT TEST -->
+expect BOGUS_ENCRYPTED_AND_TEXT ENCRYPTED_SMIME 
+
+MIME-Version: 1.0
+Content-Type: multipart/encrypted;
+	boundary="boundary"
+
+--boundary
+Content-Type: application/pkcs7-mime
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary
+Content-Type: text/html
+Content-Transfer-Encoding: 7bit
+
+this is a test
+
+--boundary--

@@ -21,7 +21,10 @@
  * for more details.
 */
 
+pub mod dns;
 pub mod exec;
+pub mod http;
+pub mod lookup;
 pub mod query;
 
 use ahash::AHashMap;
@@ -43,8 +46,22 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable<'static>>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 2] = [query::exec, exec::exec];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 2] = [query::register, exec::register];
+const PLUGINS_EXEC: [ExecPluginFnc; 6] = [
+    query::exec,
+    exec::exec,
+    lookup::exec,
+    dns::exec,
+    dns::exec_exists,
+    http::exec_header,
+];
+const PLUGINS_REGISTER: [RegisterPluginFnc; 6] = [
+    query::register,
+    exec::register,
+    lookup::register,
+    dns::register,
+    dns::register_exists,
+    http::register_header,
+];
 
 pub trait RegisterSievePlugins {
     fn register_plugins(self) -> Self;

@@ -1,4 +1,11 @@
-use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::smtp::session::TestSession;
 use ahash::AHashMap;
@@ -10,7 +17,7 @@ use smtp::{
     core::{Session, SessionAddress, SMTP},
     inbound::AuthResult,
     scripts::{
-        functions::html::{get_attribute, html_img_area, html_to_tokens},
+        functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
         ScriptResult,
     },
 };
@@ -57,13 +64,18 @@ type = "glob"
 comment = '#'
 values = ["file://%LIST_PATH%/disposable-domains.txt"]
 
+[directory."spam".lookup."redirectors"]
+type = "glob"
+comment = '#'
+values = ["file://%LIST_PATH%/redirectors.txt"]
+
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
 
 [sieve.scripts]
 "#;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
@@ -83,6 +95,9 @@ async fn antispam() {
         "from",
         "replyto",
         "recipient",
+        "mime",
+        "headers",
+        "url",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
@@ -120,6 +135,19 @@ async fn antispam() {
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
+
+    // Add mock DNS entries
+    core.resolvers.dns.ipv4_add(
+        "bank.com",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + Duration::from_secs(100),
+    );
+    core.resolvers.dns.ipv4_add(
+        "apple.com",
+        vec!["127.0.0.1".parse().unwrap()],
+        Instant::now() + Duration::from_secs(100),
+    );
+
     let core = Arc::new(core);
 
     // Run tests
@@ -402,6 +430,69 @@ fn html_tokens() {
         ),
     ] {
         assert_eq!(html_to_tokens(input), expected, "Failed for '{:?}'", input);
+    }
+
+    for (input, expected) in [
+        (
+            concat!(
+                "<a href=\"a\">text</a>",
+                "<a href =\"b\">text</a>",
+                "<a href= \"c\">text</a>",
+                "<a href = \"d\">text</a>",
+                "<  a href = \"e\" >text</a>",
+                "<a hrefer = \"ignore\" >text</a>",
+                "< anchor href = \"x\">text</a>",
+            ),
+            vec![
+                Variable::String("a".to_string()),
+                Variable::String("b".to_string()),
+                Variable::String("c".to_string()),
+                Variable::String("d".to_string()),
+                Variable::String("e".to_string()),
+            ],
+        ),
+        (
+            concat!(
+                "<a href=a>text</a>",
+                "<a href =b>text</a>",
+                "<a href= c>text</a>",
+                "<a href = d>text</a>",
+                "< a href  =  e >text</a>",
+                "<a hrefer = ignore>text</a>",
+                "<anchor href=x>text</a>",
+            ),
+            vec![
+                Variable::String("a".to_string()),
+                Variable::String("b".to_string()),
+                Variable::String("c".to_string()),
+                Variable::String("d".to_string()),
+                Variable::String("e".to_string()),
+            ],
+        ),
+        (
+            concat!(
+                "<!-- <a href=a>text</a>",
+                "<a href =b>text</a>",
+                "<a href= c>--text</a>-->",
+                "<a href = \"hello world\">text</a>",
+                "< a href  =  test ignore>text</a>",
+                "< a href  =  fudge href ignore>text</a>",
+                "<a href=foobar> a href = \"unknown\" </a>",
+            ),
+            vec![
+                Variable::String("hello world".to_string()),
+                Variable::String("test".to_string()),
+                Variable::String("fudge".to_string()),
+                Variable::String("foobar".to_string()),
+            ],
+        ),
+    ] {
+        assert_eq!(
+            html_attr_tokens(input, "a", vec![Cow::from("href")]),
+            expected,
+            "Failed for '{:?}'",
+            input
+        );
     }
 
     for (tag, attr_name, expected) in [

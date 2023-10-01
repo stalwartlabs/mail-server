@@ -21,9 +21,9 @@ if eval "from_count > 0" {
             let "t.WWW_DOT_DOMAIN" "1";
         }
 
-        if string :list "${from_domain_sld}" "spam/free-domains" {
+        if eval "lookup('spam/free-domains', from_domain_sld)" {
             let "t.FREEMAIL_FROM" "1";
-        } elsif string :list "${from_domain_sld}" "spam/disposable-domains" {
+        } elsif eval "lookup('spam/disposable-domains', from_domain_sld)" {
             let "t.DISPOSABLE_FROM" "1";
         }
     } else {
@@ -132,9 +132,9 @@ if eval "!is_empty(envelope.from)" {
 
     let "envfrom_domain_sld" "domain_part(email_part(envelope.from, 'domain'), 'sld')";
     if eval "!is_empty(envfrom_domain_sld)" {
-        if string :list "${envfrom_domain_sld}" "spam/free-domains" {
+        if eval "lookup('spam/free-domains', envfrom_domain_sld)" {
             let "t.FREEMAIL_ENVFROM" "1";
-        } elsif string :list "${envfrom_domain_sld}" "spam/disposable-domains" {
+        } elsif eval "lookup('spam/disposable-domains', envfrom_domain_sld)" {
             let "t.DISPOSABLE_ENVFROM" "1";
         }
     }

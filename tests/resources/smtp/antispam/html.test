@@ -74,7 +74,7 @@ Content-Transfer-Encoding: 8bit
 <head></head>
 <body>
 <p>some text</p>
-<a href="https://8.8.8.8/phisherino.php">https://mydomain.com</a>
+<a href="https://8.8.8.8/phisherino.php">https://8.8.8.8</a>
 </body>
 
 --=====================_714967308==_.ALT--
@@ -237,3 +237,99 @@ Content-Transfer-Encoding: 8bit
 </html>
 
 --=====================_714967308==_.ALT--
+<!-- NEXT TEST -->
+expect HTML_META_REFRESH_URL MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head>
+<meta http-equiv="refresh" content="5; url=https://example.com/">
+</head>
+<body>
+<p>some text</p>
+</body>
+<!-- NEXT TEST -->
+expect MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head>
+<meta http-equiv="refresh" content="5">
+</head>
+<body>
+<p>some text</p>
+</body>
+<!-- NEXT TEST -->
+expect HAS_DATA_URI DATA_URI_OBFU MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head>
+<meta http-equiv="refresh" content="5">
+</head>
+<body>
+<p>some text</p>
+<a href="data:text/plain;base64,SGVsbG8sIHdvcmxkIQ==">Click me for a hello message</a>
+</body>
+<!-- NEXT TEST -->
+expect HAS_DATA_URI MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head>
+<meta http-equiv="refresh" content="5">
+</head>
+<body>
+<p>some text</p>
+<img src="data:image/png;base64,iVBORw0KGg...." alt="Red dot" />
+<a href="data:other">Click me for a hello message</a>
+</body>
+<!-- NEXT TEST -->
+expect PHISHING MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head><body><p>some text</p>
+<a href="https://domain1.com/query">https://domain2.com/otherquery</a>
+</body>
+<!-- NEXT TEST -->
+expect MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head><body><p>some text</p>
+<a href="https://domain1.co.uk/query">https://subdomain.domain1.co.uk/otherquery</a>
+</body>
+<!-- NEXT TEST -->
+expect PHISHING MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head><body><p>some text</p>
+<a href="https://domain1.com/query">domain2.com/otherquery</a>
+</body>
+<!-- NEXT TEST -->
+expect MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head><body><p>some text</p>
+<a href="https://domain1.co.uk/query">subdomain.domain1.co.uk/otherquery</a>
+</body>
+<!-- NEXT TEST -->
+expect MIME_HTML_ONLY
+
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+<head></head><body><p>some text</p>
+<a href="https://domain1.co.uk/query">normal text</a>
+</body>

@@ -28,12 +28,16 @@ pub mod html;
 mod image;
 mod misc;
 mod text;
+mod unicode;
+mod url;
 
 use sieve::{runtime::Variable, FunctionMap};
 
 use crate::config::scripts::SieveContext;
 
-use self::{array::*, email::*, header::*, html::*, image::*, misc::*, text::*};
+use self::{
+    array::*, email::*, header::*, html::*, image::*, misc::*, text::*, unicode::*, url::*,
+};
 
 pub fn register_functions() -> FunctionMap<SieveContext> {
     FunctionMap::new()
@@ -52,6 +56,7 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("html_to_text", fn_html_to_text)
         .with_function("is_uppercase", fn_is_uppercase)
         .with_function("is_lowercase", fn_is_lowercase)
+        .with_function("has_digits", fn_has_digits)
         .with_function("tokenize_words", fn_tokenize_words)
         .with_function("tokenize_html", fn_tokenize_html)
         .with_function("max_line_len", fn_max_line_len)
@@ -63,9 +68,15 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("lines", fn_lines)
         .with_function("is_header_utf8_valid", fn_is_header_utf8_valid)
         .with_function("img_metadata", fn_img_metadata)
-        .with_function("sort", fn_sort)
         .with_function("is_ip_addr", fn_is_ip_addr)
         .with_function("winnow", fn_winnow)
+        .with_function("has_zwsp", fn_has_zwsp)
+        .with_function("has_obscured", fn_has_obscured)
+        .with_function("is_single_script", fn_is_single_script)
+        .with_function("puny_decode", fn_puny_decode)
+        .with_function("unicode_skeleton", fn_unicode_skeleton)
+        .with_function("cure_text", fn_cure_text)
+        .with_function_args("sort", fn_sort, 2)
         .with_function_args("tokenize_url", fn_tokenize_url, 2)
         .with_function_args("email_part", fn_email_part, 2)
         .with_function_args("domain_part", fn_domain_part, 2)
@@ -80,10 +91,12 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function_args("levenshtein_distance", fn_levenshtein_distance, 2)
         .with_function_args("html_has_tag", fn_html_has_tag, 2)
         .with_function_args("html_attr", fn_html_attr, 2)
+        .with_function_args("html_attrs", fn_html_attrs, 3)
         .with_function_args("html_attr_size", fn_html_attr_size, 3)
         .with_function_args("uri_part", fn_uri_part, 2)
         .with_function_args("substring", fn_substring, 3)
         .with_function_args("split", fn_split, 2)
+        .with_function_args("rsplit", fn_rsplit, 2)
         .with_function_args("strip_prefix", fn_strip_prefix, 2)
         .with_function_args("strip_suffix", fn_strip_suffix, 2)
         .with_function_args("is_intersect", fn_is_intersect, 2)

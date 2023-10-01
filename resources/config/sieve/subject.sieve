@@ -14,7 +14,7 @@ if eval "count_chars(thread_name) > 200" {
     let "t.SUBJ_VERY_LONG" "1";
 }
 
-if eval "contains(subject_lcase, 'http://') || contains(subject_lcase, 'https://')" {
+if eval "!is_empty(tokenize_url(subject_lcase, true))" {
     # Subject contains a URL
     let "t.URL_IN_SUBJECT" "1";
 }

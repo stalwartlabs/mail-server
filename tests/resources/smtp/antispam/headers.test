@@ -1,0 +1,58 @@
+expect HAS_X_PRIO_ONE
+
+X-Priority: 1
+From: test@test.com
+To: test@test.com
+
+Test
+<!-- NEXT TEST -->
+expect MULTIPLE_UNIQUE_HEADERS HAS_X_PRIO_TWO
+
+X-Mailer: my mailer 1
+X-Priority: 2
+From: test@test.com
+From: test@test.com
+To: test@test.com
+
+Test
+<!-- NEXT TEST -->
+expect XM_CASE HAS_LIST_UNSUB HAS_XOIP HAS_ORG_HEADER PRECEDENCE_BULK MULTIPLE_UNIQUE_HEADERS
+
+X-mailer: my mailer 1
+X-Originating-IP: 127.0.0.1
+List-Unsubscribe: <unsub@list.org>
+Precedence: bulk
+Organization: my org
+Subject: first subject
+Subject: second subject
+
+Test
+<!-- NEXT TEST -->
+expect KLMS_SPAM UNITEDINTERNET_SPAM SPAM_FLAG XM_UA_NO_VERSION
+
+X-Mailer: my mailer
+X-KLMS-AntiSpam-Status: spam
+X-Spam: Yes
+X-UI-Filterresults: JUNK
+Subject: test
+
+Test
+<!-- NEXT TEST -->
+expect X_PHP_EVAL HAS_X_POS HAS_X_SOURCE HAS_X_PHP_SCRIPT PHP_XPS_PATTERN HIDDEN_SOURCE_OBJ HAS_X_GMSV HAS_X_ANTIABUSE HAS_X_AS HAS_XAW
+
+X-PHP-Script: sendmail.php
+X-PHP-Originating-Script: eval()
+X-Source-Args: ../script
+X-Authenticated-Sender: sender: test@test.org
+X-Get-Message-Sender-Via: authenticated_id: 123
+X-AntiAbuse: 1
+X-Authentication-Warning: 1
+Subject: test
+
+Test
+<!-- NEXT TEST -->
+expect HEADER_EMPTY_DELIMITER
+
+Subject:test
+
+Test
