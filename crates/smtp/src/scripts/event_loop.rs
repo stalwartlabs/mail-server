@@ -178,7 +178,7 @@ impl SMTP {
                                                 );
                                             }
                                         }
-                                        Lookup::Directory { .. } => {
+                                        Lookup::Directory { .. } | Lookup::Map { .. } => {
                                             // Not implemented
                                         }
                                     }

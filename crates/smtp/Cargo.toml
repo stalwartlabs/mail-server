@@ -32,6 +32,7 @@ http-body-util = "0.1.0-rc.3"
 form_urlencoded = "1.1.0"
 sha1 = "0.10"
 sha2 = "0.10.6"
+md5 = "0.7.0"
 rayon = "1.5"
 tracing = "0.1"
 parking_lot = "0.12"
@@ -53,6 +54,7 @@ linkify = "0.10"
 idna = "0.4"
 decancer = "1.6.1"
 unicode-security = "0.1.0"
+infer = "0.15.0"
 
 [features]
 test_mode = []

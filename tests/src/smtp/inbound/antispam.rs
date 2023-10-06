@@ -10,7 +10,7 @@ use std::{
 use crate::smtp::session::TestSession;
 use ahash::AHashMap;
 use directory::config::ConfigDirectory;
-use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult};
+use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
     config::{scripts::ConfigSieve, ConfigContext, IfBlock},
@@ -57,17 +57,48 @@ type = "memory"
 [directory."spam".lookup."free-domains"]
 type = "glob"
 comment = '#'
-values = ["file://%LIST_PATH%/free-domains.txt"]
+values = ["gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"]
 
 [directory."spam".lookup."disposable-domains"]
 type = "glob"
 comment = '#'
-values = ["file://%LIST_PATH%/disposable-domains.txt"]
+values = ["guerrillamail.com", "*.disposable.org"]
 
 [directory."spam".lookup."redirectors"]
 type = "glob"
 comment = '#'
-values = ["file://%LIST_PATH%/redirectors.txt"]
+values = ["bit.ly", "redirect.io", "redirect.me", "redirect.org",
+ "redirect.com", "redirect.net", "t.ly", "tinyurl.com"]
+
+[directory."spam".lookup."dmarc-allow"]
+type = "glob"
+comment = '#'
+values = ["dmarc-allow.org"]
+
+[directory."spam".lookup."spf-dkim-allow"]
+type = "glob"
+comment = '#'
+values = ["spf-dkim-allow.org"]
+
+[directory."spam".lookup."mime-types"]
+type = "map"
+comment = '#'
+values = ["html text/html|BAD", 
+          "pdf application/pdf|NZ", 
+          "txt text/plain|message/disposition-notification|text/rfc822-headers", 
+          "zip AR", 
+          "js BAD|NZ", 
+          "hta BAD|NZ"]
+
+[directory."spam".lookup."phishing-open"]
+type = "glob"
+comment = '#'
+values = ["*://phishing-open.org", "*://phishing-open.com"]
+
+[directory."spam".lookup."phishing-tank"]
+type = "glob"
+comment = '#'
+values = ["*://phishing-tank.com", "*://phishing-tank.org"]
 
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
@@ -98,6 +129,10 @@ async fn antispam() {
         "mime",
         "headers",
         "url",
+        "dmarc",
+        "ip",
+        "helo",
+        "rbl",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
@@ -118,14 +153,11 @@ async fn antispam() {
         .to_path_buf()
         .join("resources")
         .join("config")
-        .join("sieve")
-        .to_str()
-        .unwrap()
-        .to_string();
+        .join("sieve");
+    let prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     for test_name in tests {
-        config.push_str(&format!(
-            "{test_name} = \"file://{base_path}/{test_name}.sieve\"\n"
-        ));
+        let script = fs::read_to_string(base_path.join(format!("{test_name}.sieve"))).unwrap();
+        config.push_str(&format!("{test_name} = '''{prelude}\n{script}\n'''\n"));
     }
 
     // Parse config
@@ -137,16 +169,28 @@ async fn antispam() {
     config.rcpt.relay = IfBlock::new(true);
 
     // Add mock DNS entries
-    core.resolvers.dns.ipv4_add(
-        "bank.com",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(100),
-    );
-    core.resolvers.dns.ipv4_add(
-        "apple.com",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(100),
-    );
+    for domain in ["bank.com", "apple.com", "youtube.com", "twitter.com"] {
+        core.resolvers.dns.ipv4_add(
+            domain,
+            vec!["127.0.0.1".parse().unwrap()],
+            Instant::now() + Duration::from_secs(100),
+        );
+    }
+    for mx in [
+        "domain.org",
+        "domain.co.uk",
+        "gmail.com",
+        "custom.disposable.org",
+    ] {
+        core.resolvers.dns.mx_add(
+            mx,
+            vec![MX {
+                exchanges: vec!["127.0.0.1".parse().unwrap()],
+                preference: 10,
+            }],
+            Instant::now() + Duration::from_secs(100),
+        );
+    }
 
     let core = Arc::new(core);
 
@@ -167,7 +211,7 @@ async fn antispam() {
         while has_more {
             let mut message = String::new();
             let mut in_params = true;
-            let mut variables = HashMap::new();
+            let mut variables: HashMap<String, Variable<'_>> = HashMap::new();
             let mut expected_variables = AHashMap::new();
 
             // Build session
@@ -193,19 +237,29 @@ async fn antispam() {
                         "spf.result" | "spf_ehlo.result" => {
                             variables.insert(
                                 param.to_string(),
-                                SpfResult::from_str(value).as_str().to_string(),
+                                SpfResult::from_str(value).as_str().to_string().into(),
                             );
                         }
                         "iprev.result" => {
                             variables.insert(
                                 param.to_string(),
-                                IprevResult::from_str(value).as_str().to_string(),
+                                IprevResult::from_str(value).as_str().to_string().into(),
                             );
                         }
                         "dkim.result" | "arc.result" => {
                             variables.insert(
                                 param.to_string(),
-                                DkimResult::from_str(value).as_str().to_string(),
+                                DkimResult::from_str(value).as_str().to_string().into(),
+                            );
+                        }
+                        "dkim.domains" => {
+                            variables.insert(
+                                param.to_string(),
+                                value
+                                    .split_ascii_whitespace()
+                                    .map(|s| Variable::String(s.to_string()))
+                                    .collect::<Vec<_>>()
+                                    .into(),
                             );
                         }
                         "envelope_from" => {
@@ -218,18 +272,18 @@ async fn antispam() {
                                 .push(SessionAddress::new(value.to_string()));
                         }
                         "iprev.ptr" | "dmarc.from" => {
-                            variables.insert(param.to_string(), value.to_string());
+                            variables.insert(param.to_string(), value.to_string().into());
                         }
                         "dmarc.result" => {
                             variables.insert(
                                 param.to_string(),
-                                DmarcResult::from_str(value).as_str().to_string(),
+                                DmarcResult::from_str(value).as_str().to_string().into(),
                             );
                         }
                         "dmarc.policy" => {
                             variables.insert(
                                 param.to_string(),
-                                Policy::from_str(value).as_str().to_string(),
+                                Policy::from_str(value).as_str().to_string().into(),
                             );
                         }
                         "expect" => {
@@ -249,7 +303,7 @@ async fn antispam() {
                             }));
                         }
                         _ if param.starts_with("param.") | param.starts_with("tls.") => {
-                            variables.insert(param.to_string(), value.to_string());
+                            variables.insert(param.to_string(), value.to_string().into());
                         }
                         _ => panic!("Invalid parameter {param:?}"),
                     }

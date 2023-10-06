@@ -30,10 +30,11 @@ use std::{
 };
 
 use mail_auth::{
-    common::headers::HeaderWriter, dmarc, AuthenticatedMessage, AuthenticationResults, DkimResult,
-    DmarcResult, ReceivedSpf,
+    common::{headers::HeaderWriter, verify::VerifySignature},
+    dmarc, AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
+use sieve::runtime::Variable;
 use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
@@ -431,6 +432,20 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         .or_else(|| dkim_output.first())
                         .map(|r| r.result().as_str())
                         .unwrap_or_default(),
+                )
+                .set_variable(
+                    "dkim.domains",
+                    dkim_output
+                        .iter()
+                        .filter_map(|r| {
+                            if matches!(r.result(), DkimResult::Pass) {
+                                r.signature()
+                                    .map(|s| Variable::String(s.domain().to_lowercase()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>(),
                 )
                 .set_variable(
                     "dmarc.result",

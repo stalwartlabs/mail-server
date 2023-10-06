@@ -28,24 +28,9 @@ if eval "!is_ascii(rcvd_raw)" {
     let "t.RCVD_ILLEGAL_CHARS" "1";
 }
 
-# HELO contains 'user'
-if eval "eq_ignore_case(env.helo_domain, 'user')" {
-    let "t.RCVD_HELO_USER" "1";
-}
-
-# Received from an IP address rather than a FQDN
-if eval "is_ip_addr(env.helo_domain)" {
-    let "t.RCVD_IP_SPAM" "1";
-}
-
-# Received: HELO and IP do not match, but should
-if eval "!is_empty(env.iprev.ptr) && !eq_ignore_case(env.helo_domain, env.iprev.ptr)" {
-    let "t.RCVD_HELO_IP_MISMATCH" "1";
-}
-
 let "i" "0";
-let "recipients" "header.to:cc:bcc[*].addr[*]";
 let "tls_count" "0";
+let "rcvd_from_ip" "0";
 while "i < rcvd_count" {
     let "i" "i + 1";
     let "helo_domain" "received_part(i, 'from')";
@@ -72,14 +57,29 @@ while "i < rcvd_count" {
         let "t.RCVD_HELO_USER" "1";
     }
 
-    if eval "!t.RCVD_IP_SPAM && !is_empty(received_part(i, 'from.ip'))" {
+    if eval "!is_empty(received_part(i, 'from.ip'))" {
         # Received from an IP address rather than a FQDN
-        let "t.RCVD_IP_SPAM" "1";
+        let "rcvd_from_ip" "rcvd_from_ip + 1";
     }
 
     if eval "!is_empty(received_part(i, 'tls'))" {
         # Received with TLS
         let "tls_count" "tls_count + 1";
+    }
+}
+
+if eval "rcvd_from_ip >= 2 || (rcvd_from_ip == 1 && is_ip_addr(env.helo_domain))" {
+    # Has two or more Received headers containing bare IP addresses
+    let "t.RCVD_DOUBLE_IP_SPAM" "1";
+}
+
+if eval "rcvd_count == 0" {
+    # One received header in a message (currently zero but one header will be added later by the MTA)
+    let "t.ONCE_RECEIVED" "1";
+    
+    # Message has been directly delivered from MUA to local MX
+    if eval "header.User-Agent.exists || header.X-Mailer.exists" {
+        let "t.DIRECT_TO_MX" "1";
     }
 }
 

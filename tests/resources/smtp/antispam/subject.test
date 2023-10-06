@@ -4,7 +4,7 @@ Subject: HELLO WORLD
 
 Test
 <!-- NEXT TEST -->
-expect SUBJ_VERY_LONG
+expect LONG_SUBJ
 
 Subject: this is an extremely long subject line that 
     should be truncated to 80 characters and folded

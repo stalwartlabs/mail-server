@@ -28,7 +28,8 @@ use bb8::RunError;
 use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
-use sieve::runtime::tests::glob::GlobPattern;
+use sieve::runtime::{tests::glob::GlobPattern, Variable};
+use smtp_proto::IntoString;
 use utils::config::DynValue;
 
 pub mod cache;
@@ -108,6 +109,9 @@ pub enum Lookup {
     List {
         list: LookupList,
     },
+    Map {
+        map: AHashMap<String, Variable<'static>>,
+    },
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -174,6 +178,36 @@ impl Lookup {
                 }
             }
             Lookup::List { list } => list.contains(item).into(),
+            Lookup::Map { map } => map.contains_key(item).into(),
+        }
+    }
+
+    pub async fn lookup(&self, item: &str) -> Option<Variable<'static>> {
+        match self {
+            Lookup::Directory { directory, query } => match directory.query(query, &[item]).await {
+                Ok(mut result) => match result.len() {
+                    1 => result.pop().map(Variable::from).unwrap(),
+                    0 => Variable::default(),
+                    _ => Variable::Array(result.into_iter().map(Variable::from).collect()),
+                }
+                .into(),
+                Err(_) => None,
+            },
+            Lookup::List { list } => Some(list.contains(item).into()),
+            Lookup::Map { map } => map.get(item).cloned(),
+        }
+    }
+}
+
+impl From<QueryColumn> for Variable<'static> {
+    fn from(value: QueryColumn) -> Self {
+        match value {
+            QueryColumn::Integer(v) => Variable::Integer(v),
+            QueryColumn::Bool(v) => Variable::Integer(i64::from(v)),
+            QueryColumn::Float(v) => Variable::Float(v),
+            QueryColumn::Text(v) => Variable::String(v),
+            QueryColumn::Blob(v) => Variable::String(v.into_string()),
+            QueryColumn::Null => Variable::StringRef(""),
         }
     }
 }
@@ -221,6 +255,7 @@ impl Debug for Lookup {
                 f.debug_struct("Directory").field("query", query).finish()
             }
             Self::List { list } => f.debug_struct("List").field("list", list).finish(),
+            Self::Map { map } => f.debug_struct("Map").field("map", &map.keys()).finish(),
         }
     }
 }

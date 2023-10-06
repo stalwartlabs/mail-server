@@ -10,6 +10,7 @@ let "has_text_part" "0";
 let "is_encrypted" "0";
 
 foreverypart {
+    let "content_type" "to_lowercase(header.content-type)";
     let "type" "to_lowercase(header.content-type.type)";
     let "subtype" "to_lowercase(header.content-type.subtype)";
     let "cte" "header.content-transfer-encoding";
@@ -41,13 +42,13 @@ foreverypart {
 
                 if eval "!has_plain_part && ma_ct == 'text/plain'" {
                     let "text_part" "part.text";
-                    let "text_part_words" "tokenize_words(text_part)";
-                    let "text_part_uris" "count(tokenize_url(text_part, true))";
+                    let "text_part_words" "tokenize(text_part, 'words')";
+                    let "text_part_uris" "count(tokenize(text_part, 'uri_strict'))";
                     let "has_plain_part" "1";
                 } elsif eval "!has_html_part && ma_ct == 'text/html'" {
                     let "html_part" "html_to_text(part.text)";
-                    let "html_part_words" "tokenize_words(html_part)";
-                    let "html_part_uris" "count(tokenize_url(html_part, true))";
+                    let "html_part_words" "tokenize(html_part, 'words')";
+                    let "html_part_uris" "count(tokenize(html_part, 'uri_strict'))";
                     let "has_html_part" "1";
                 }
             }
@@ -149,9 +150,61 @@ foreverypart {
     if eval "part_is_attachment" {
         # Has a MIME attachment
         let "t.HAS_ATTACHMENT" "1";
+
+        # Detect and compare mime type
+        let "detected_mime_type" "detect_file_type('mime')";
+        if eval "!is_empty(detected_mime_type)" {
+            if eval "detected_mime_type == content_type" {
+                # Known content-type
+                let "t.MIME_GOOD" "1";
+            } elsif eval "content_type != 'application/octet-stream'" {
+                # Known bad content-type
+                let "t.MIME_BAD" "1";
+            }
+        }
     }
+
+    # Analyze attachment name
+    let "attach_name" "attachment_name()";
+    if eval "!is_empty(attach_name)" {
+        if eval "has_obscured(attach_name)" {
+            let "t.MIME_BAD_UNICODE" "1";
+        }
+        let "name_parts" "rsplit(to_lowercase(attach_name), '.')";
+        if eval "count(name_parts) > 1" {
+            let "ext_type" "lookup_map('spam/mime-types', name_parts[0])";
+            if eval "!is_empty(ext_type)" {
+                let "ext_type_double" "lookup_map('spam/mime-types', name_parts[1])";
+                if eval "contains(ext_type, 'BAD')" {
+                    # Bad extension
+                    if eval "contains(ext_type_double, 'BAD')" {
+                        let "t.MIME_DOUBLE_BAD_EXTENSION" "1";
+                    } else {
+                        let "t.MIME_BAD_EXTENSION" "1";
+                    }
+                }
+                if eval "contains(ext_type, 'AR') && contains(ext_type_double, 'AR')" {
+                    # Archive in archive
+                    let "t.MIME_ARCHIVE_IN_ARCHIVE" "1";
+                }
+
+                if eval "contains(ext_type, '/') && 
+                            content_type != 'application/octet-stream' && 
+                            !contains(split(ext_type, '|'), content_type)" {
+                    # Invalid attachment mime type
+                    let "t.MIME_BAD_ATTACHMENT" "1";
+                }
+            }
+        }
+    }
+
 }
 
 if eval "has_text_part && (t.ENCRYPTED_SMIME || t.SIGNED_SMIME || t.ENCRYPTED_PGP || t.SIGNED_PGP)" {
     let "t.BOGUS_ENCRYPTED_AND_TEXT" "1";
+}
+
+# Check for mixed script in body
+if eval "!is_single_script(text_body)" {
+    let "t.R_MIXED_CHARSET" "1";
 }

@@ -46,18 +46,20 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable<'static>>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 6] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 7] = [
     query::exec,
     exec::exec,
     lookup::exec,
+    lookup::exec_map,
     dns::exec,
     dns::exec_exists,
     http::exec_header,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 6] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 7] = [
     query::register,
     exec::register,
     lookup::register,
+    lookup::register_map,
     dns::register,
     dns::register_exists,
     http::register_header,

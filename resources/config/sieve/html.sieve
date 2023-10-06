@@ -8,7 +8,7 @@ foreverypart {
     if eval "eq_ignore_case(header.content-type, 'text/html')" {
         # Tokenize HTML
         let "is_body_part" "is_body()";
-        let "html_tokens" "tokenize_html(part.text)";
+        let "html_tokens" "tokenize(part.text, 'html')";
         let "html_tokens_len" "len(html_tokens)";
         let "html_char_count" "0";
         let "html_space_count" "0";
@@ -35,9 +35,9 @@ foreverypart {
                     let "html_space_count" "html_space_count + count_spaces(token)";
 
                     let "text" "to_lowercase(trim(strip_prefix(token, '_')))";
-                    let "html_words" "html_words + len(tokenize_words(text))";
+                    let "html_words" "html_words + len(tokenize(text, 'words'))";
 
-                    let "uris" "tokenize_url(text, false)";
+                    let "uris" "tokenize(text, 'uri')";
 
                     if eval "!is_empty(uris)" {
                         let "has_uri" "1";

@@ -56,3 +56,24 @@ expect HEADER_EMPTY_DELIMITER
 Subject:test
 
 Test
+<!-- NEXT TEST -->
+expect MAILLIST
+
+List-Archive: 1
+List-Owner: 1
+List-Help: 1
+List-Post: 1
+X-Loop: 1
+List-Id: 1
+Subject: test
+
+Test
+<!-- NEXT TEST -->
+expect MAILLIST HAS_LIST_UNSUB
+
+List-Id: 1
+List-Subscribe: 1
+List-Unsubscribe: 1
+Subject: test
+
+Test

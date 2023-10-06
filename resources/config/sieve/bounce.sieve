@@ -1,23 +1,21 @@
 
-let "subject" "to_lowercase(header.subject)";
-
-if eval "(contains(subject, 'delivery') && 
-            (contains(subject, 'failed') || 
-             contains(subject, 'report') || 
-             contains(subject, 'status') || 
-             contains(subject, 'warning'))) ||
-         (contains(subject, 'failure') && 
-            (contains(subject, 'delivery') || 
-             contains(subject, 'notice') || 
-             contains(subject, 'mail') )) ||
-         (contains(subject, 'delivered') &&
-            (contains(subject, 'couldn\\'t be') || 
-             contains(subject, 'could not be') || 
-             contains(subject, 'hasn\\'t been') || 
-             contains(subject, 'has not been'))) ||
-         contains(subject, 'returned mail') ||
-         contains(subject, 'undeliverable') || 
-         contains(subject, 'undelivered')" {
+if eval "(contains(subject_lc, 'delivery') && 
+            (contains(subject_lc, 'failed') || 
+             contains(subject_lc, 'report') || 
+             contains(subject_lc, 'status') || 
+             contains(subject_lc, 'warning'))) ||
+         (contains(subject_lc, 'failure') && 
+            (contains(subject_lc, 'delivery') || 
+             contains(subject_lc, 'notice') || 
+             contains(subject_lc, 'mail') )) ||
+         (contains(subject_lc, 'delivered') &&
+            (contains(subject_lc, 'couldn\\'t be') || 
+             contains(subject_lc, 'could not be') || 
+             contains(subject_lc, 'hasn\\'t been') || 
+             contains(subject_lc, 'has not been'))) ||
+         contains(subject_lc, 'returned mail') ||
+         contains(subject_lc, 'undeliverable') || 
+         contains(subject_lc, 'undelivered')" {
     # Subject contains words or phrases typical for DSN
     let "t.SUBJ_BOUNCE_WORDS" "1";
 }

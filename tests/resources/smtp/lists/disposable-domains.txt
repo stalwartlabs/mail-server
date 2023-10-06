@@ -1,3 +1,0 @@
-# Disposable domains
-guerrillamail.com
-*.disposable.org

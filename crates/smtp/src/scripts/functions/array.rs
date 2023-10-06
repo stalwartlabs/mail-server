@@ -174,7 +174,7 @@ pub fn fn_winnow<'x>(_: &'x Context<'x, SieveContext>, mut v: Vec<Variable<'x>>)
             .iter()
             .filter_map(|i| {
                 if !i.is_empty() {
-                    i.to_owned().into()
+                    i.clone().into()
                 } else {
                     None
                 }

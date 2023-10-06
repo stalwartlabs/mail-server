@@ -22,15 +22,15 @@ if eval "!is_empty(mid_raw)" {
         }
 
         # From address present in Message-ID checks
-        let "from_lcase" "to_lowercase(header.from.addr)";
-        if eval "is_empty(from_lcase)" {
-            let "from_lcase" "envelope.from";
+        let "sender" "from_addr";
+        if eval "is_empty(sender)" {
+            let "sender" "envelope.from";
         }
-        if eval "!is_empty(from_lcase)" {
-            if eval "contains(mid_lcase, from_lcase)" {
+        if eval "!is_empty(sender)" {
+            if eval "contains(mid_lcase, sender)" {
                 let "t.MID_CONTAINS_FROM" "1";
             } else {
-                let "from_domain" "email_part(from_lcase, 'domain')";
+                let "from_domain" "email_part(sender, 'domain')";
                 let "mid_sld" "domain_part(mid_rhs, 'sld')";
 
                 if eval "mid_rhs == from_domain" {
@@ -42,12 +42,11 @@ if eval "!is_empty(mid_raw)" {
         }
 
         # To/Cc addresses present in Message-ID checks
-        let "recipients" "winnow(header.to:cc:bcc[*].addr[*])";
         let "recipients_len" "count(recipients)";        
         let "i" "0";
 
         while "i < recipients_len" {
-            let "rcpt" "to_lowercase(recipients[i])";
+            let "rcpt" "recipients[i]";
             let "i" "i + 1";
             if eval "contains(mid_lcase, rcpt)" {
                 let "t.MID_CONTAINS_TO" "1";

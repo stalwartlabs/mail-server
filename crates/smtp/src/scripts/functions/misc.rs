@@ -21,9 +21,16 @@
  * for more details.
 */
 
+use std::net::IpAddr;
+
+use mail_auth::common::resolver::ToReverseName;
+use sha1::Sha1;
+use sha2::{Sha256, Sha512};
 use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
+
+use super::ApplyString;
 
 pub fn fn_is_empty<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     match &v[0] {
@@ -38,6 +45,76 @@ pub fn fn_is_empty<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -
 
 pub fn fn_is_ip_addr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].to_cow().parse::<std::net::IpAddr>().is_ok().into()
+}
+
+pub fn fn_is_ipv4_addr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].to_cow()
+        .parse::<std::net::IpAddr>()
+        .map_or(false, |ip| matches!(ip, IpAddr::V4(_)))
+        .into()
+}
+
+pub fn fn_is_ipv6_addr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].to_cow()
+        .parse::<std::net::IpAddr>()
+        .map_or(false, |ip| matches!(ip, IpAddr::V6(_)))
+        .into()
+}
+
+pub fn fn_ip_reverse_name<'x>(
+    _: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
+    v[0].to_cow()
+        .parse::<std::net::IpAddr>()
+        .map(|ip| ip.to_reverse_name())
+        .unwrap_or_default()
+        .into()
+}
+
+pub fn fn_detect_file_type<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    v: Vec<Variable<'x>>,
+) -> Variable<'x> {
+    ctx.message()
+        .part(ctx.part())
+        .and_then(|p| infer::get(p.contents()))
+        .map(|t| {
+            Variable::String(
+                if v[0].to_cow() != "ext" {
+                    t.mime_type()
+                } else {
+                    t.extension()
+                }
+                .to_string(),
+            )
+        })
+        .unwrap_or_default()
+}
+
+pub fn fn_hash<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    use sha1::Digest;
+    let hash = v[1].to_cow();
+
+    v[0].transform(|value| match hash.as_ref() {
+        "md5" => format!("{:x}", md5::compute(value.as_bytes())).into(),
+        "sha1" => {
+            let mut hasher = Sha1::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha256" => {
+            let mut hasher = Sha256::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha512" => {
+            let mut hasher = Sha512::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        _ => Variable::default(),
+    })
 }
 
 pub fn fn_is_var_names<'x>(

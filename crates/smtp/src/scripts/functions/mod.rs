@@ -57,9 +57,6 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("is_uppercase", fn_is_uppercase)
         .with_function("is_lowercase", fn_is_lowercase)
         .with_function("has_digits", fn_has_digits)
-        .with_function("tokenize_words", fn_tokenize_words)
-        .with_function("tokenize_html", fn_tokenize_html)
-        .with_function("max_line_len", fn_max_line_len)
         .with_function("count_spaces", fn_count_spaces)
         .with_function("count_uppercase", fn_count_uppercase)
         .with_function("count_lowercase", fn_count_lowercase)
@@ -69,6 +66,9 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("is_header_utf8_valid", fn_is_header_utf8_valid)
         .with_function("img_metadata", fn_img_metadata)
         .with_function("is_ip_addr", fn_is_ip_addr)
+        .with_function("is_ipv4_addr", fn_is_ipv4_addr)
+        .with_function("is_ipv6_addr", fn_is_ipv6_addr)
+        .with_function("ip_reverse_name", fn_ip_reverse_name)
         .with_function("winnow", fn_winnow)
         .with_function("has_zwsp", fn_has_zwsp)
         .with_function("has_obscured", fn_has_obscured)
@@ -76,8 +76,9 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("puny_decode", fn_puny_decode)
         .with_function("unicode_skeleton", fn_unicode_skeleton)
         .with_function("cure_text", fn_cure_text)
+        .with_function("detect_file_type", fn_detect_file_type)
         .with_function_args("sort", fn_sort, 2)
-        .with_function_args("tokenize_url", fn_tokenize_url, 2)
+        .with_function_args("tokenize", fn_tokenize, 2)
         .with_function_args("email_part", fn_email_part, 2)
         .with_function_args("domain_part", fn_domain_part, 2)
         .with_function_args("eq_ignore_case", fn_eq_ignore_case, 2)
@@ -97,9 +98,12 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function_args("substring", fn_substring, 3)
         .with_function_args("split", fn_split, 2)
         .with_function_args("rsplit", fn_rsplit, 2)
+        .with_function_args("split_once", fn_split_once, 2)
+        .with_function_args("rsplit_once", fn_rsplit_once, 2)
         .with_function_args("strip_prefix", fn_strip_prefix, 2)
         .with_function_args("strip_suffix", fn_strip_suffix, 2)
         .with_function_args("is_intersect", fn_is_intersect, 2)
+        .with_function_args("hash", fn_hash, 2)
         .with_function_no_args("is_encoding_problem", fn_is_encoding_problem)
         .with_function_no_args("is_attachment", fn_is_attachment)
         .with_function_no_args("is_body", fn_is_body)
@@ -108,36 +112,33 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
 }
 
 pub trait ApplyString<'x> {
-    fn transform(&self, f: impl Fn(&str) -> Option<&str>) -> Variable<'x>;
-    fn transform_string<T: Into<Variable<'x>>>(
-        &self,
-        f: impl Fn(&str) -> T,
-    ) -> Option<Variable<'x>>;
+    fn transform(&self, f: impl Fn(&'_ str) -> Variable<'_>) -> Variable<'x>;
 }
 
 impl<'x> ApplyString<'x> for Variable<'x> {
-    fn transform(&self, f: impl Fn(&str) -> Option<&str>) -> Variable<'x> {
+    fn transform(&self, f: impl Fn(&'_ str) -> Variable<'_>) -> Variable<'x> {
         match self {
-            Variable::String(s) => {
-                f(s).map_or(Variable::default(), |s| Variable::from(s.to_string()))
-            }
-            Variable::StringRef(s) => f(s).map_or(Variable::default(), Variable::from),
-            v => f(v.to_string().as_str())
-                .map_or(Variable::default(), |s| Variable::from(s.to_string())),
-        }
-    }
-
-    fn transform_string<T: Into<Variable<'x>>>(
-        &self,
-        f: impl Fn(&str) -> T,
-    ) -> Option<Variable<'x>> {
-        match self {
-            Variable::String(s) => Some(f(s).into()),
-            Variable::StringRef(s) => Some(f(s).into()),
-            Variable::Integer(_)
-            | Variable::Float(_)
-            | Variable::Array(_)
-            | Variable::ArrayRef(_) => None,
+            Variable::StringRef(s) => f(s),
+            Variable::String(s) => f(s).into_owned(),
+            Variable::ArrayRef(list) => list
+                .iter()
+                .map(|v| match v {
+                    Variable::String(s) => f(s),
+                    Variable::StringRef(s) => f(s),
+                    v => f(v.to_cow().as_ref()).into_owned(),
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            Variable::Array(list) => list
+                .iter()
+                .map(|v| match v {
+                    Variable::StringRef(s) => f(s),
+                    Variable::String(s) => f(s).into_owned(),
+                    v => f(v.to_cow().as_ref()).into_owned(),
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            v => f(v.to_cow().as_ref()).into_owned(),
         }
     }
 }

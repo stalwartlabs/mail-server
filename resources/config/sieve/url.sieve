@@ -1,9 +1,4 @@
-let "text_body" "body.to_text";
-let "body_urls" "tokenize_url(text_body, false)";
-let "html_body_urls" "html_attrs(body.html, '', ['href', 'src'])";
-let "urls" "dedup(tokenize_url(header.subject, false) + body_urls + html_body_urls)";
-
-if eval "(count(body_urls) == 1 || count(html_body_urls) == 1) && count(tokenize_words(text_body)) == 0" {
+if eval "(count(body_urls) == 1 || count(html_body_urls) == 1) && count(tokenize(text_body, 'words')) == 0" {
     let "t.HFILTER_URL_ONLY" "1";
 }
 
@@ -62,12 +57,8 @@ while "i > 0" {
         if eval "!is_ip" {
             if eval "!is_ascii(host)" {
                 let "host_cured" "cure_text(host)";
-                if eval "host_lc != host_cured" {
-                    if eval "dns_exists(host_cured, 'ip')" {
-                        let "t.OMOGRAPH_URL" "1";
-                    } else {
-                        let "t.CONFUSABLE_URL" "1";
-                    }
+                if eval "host_lc != host_cured && dns_exists(host_cured, 'ip')" {
+                    let "t.OMOGRAPH_URL" "1";
                 }
 
                 if eval "!is_single_script(host)" {
@@ -106,6 +97,15 @@ while "i > 0" {
             # Message contains URI with a hidden path
             let "t.URI_HIDDEN_PATH" "1";
         }
+
+        # Phishing checks
+        if eval "lookup('spam/phishing-open', url)" {
+            let "t.PHISHED_OPENPHISH" "1";
+        }
+        if eval "lookup('spam/phishing-tank', url)" {
+            let "t.PHISHED_PHISHTANK" "1";
+        }
+
     } else {
         # URL could not be parsed
         let "t.R_SUSPICIOUS_URL" "1";

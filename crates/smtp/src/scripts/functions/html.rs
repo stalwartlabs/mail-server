@@ -32,13 +32,6 @@ pub fn fn_html_to_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
     html_to_text(v[0].to_cow().as_ref()).into()
 }
 
-pub fn fn_tokenize_html<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    html_to_tokens(v[0].to_cow().as_ref()).into()
-}
-
 pub fn fn_html_has_tag<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].as_array()
         .map(|arr| {

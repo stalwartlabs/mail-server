@@ -23,7 +23,7 @@
 
 use std::net::IpAddr;
 
-use mail_auth::IpLookupStrategy;
+use mail_auth::{Error, IpLookupStrategy};
 use sieve::{runtime::Variable, FunctionMap};
 
 use crate::config::scripts::SieveContext;
@@ -71,6 +71,21 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
                 .into(),
             Err(err) => err.short_error().into(),
         }
+    } else if record_type.eq_ignore_ascii_case("txt") {
+        #[cfg(feature = "test_mode")]
+        {
+            if entry.contains("origin") {
+                return Variable::String("23028|US|arin|2002-01-04".to_string());
+            }
+        }
+
+        match ctx
+            .handle
+            .block_on(ctx.core.resolvers.dns.txt_raw_lookup(entry.as_ref()))
+        {
+            Ok(result) => Variable::String(String::from_utf8(result).unwrap_or_default()),
+            Err(err) => err.short_error().into(),
+        }
     } else if record_type.eq_ignore_ascii_case("ptr") {
         if let Ok(addr) = entry.parse::<IpAddr>() {
             match ctx.handle.block_on(ctx.core.resolvers.dns.ptr_lookup(addr)) {
@@ -85,6 +100,14 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
             Variable::default()
         }
     } else if record_type.eq_ignore_ascii_case("ipv4") {
+        #[cfg(feature = "test_mode")]
+        {
+            if entry.contains(".168.192.") {
+                let parts = entry.split('.').collect::<Vec<_>>();
+                return vec![Variable::String(format!("127.0.{}.{}", parts[1], parts[0]))].into();
+            }
+        }
+
         match ctx
             .handle
             .block_on(ctx.core.resolvers.dns.ipv4_lookup(entry.as_ref()))
@@ -123,44 +146,56 @@ pub fn exec_exists(ctx: PluginContext<'_>) -> Variable<'static> {
             IpLookupStrategy::Ipv4thenIpv6,
             10,
         )) {
-            Ok(result) => !result.is_empty(),
-            Err(_) => false,
+            Ok(result) => i64::from(!result.is_empty()),
+            Err(Error::DnsRecordNotFound(_)) => 0,
+            Err(_) => -1,
         }
     } else if record_type.eq_ignore_ascii_case("mx") {
         match ctx
             .handle
             .block_on(ctx.core.resolvers.dns.mx_lookup(entry.as_ref()))
         {
-            Ok(result) => result.iter().any(|mx| !mx.exchanges.is_empty()),
-            Err(_) => false,
+            Ok(result) => i64::from(result.iter().any(|mx| !mx.exchanges.is_empty())),
+            Err(Error::DnsRecordNotFound(_)) => 0,
+            Err(_) => -1,
         }
     } else if record_type.eq_ignore_ascii_case("ptr") {
         if let Ok(addr) = entry.parse::<IpAddr>() {
             match ctx.handle.block_on(ctx.core.resolvers.dns.ptr_lookup(addr)) {
-                Ok(result) => !result.is_empty(),
-                Err(_) => false,
+                Ok(result) => i64::from(!result.is_empty()),
+                Err(Error::DnsRecordNotFound(_)) => 0,
+                Err(_) => -1,
             }
         } else {
-            false
+            -1
         }
     } else if record_type.eq_ignore_ascii_case("ipv4") {
+        #[cfg(feature = "test_mode")]
+        {
+            if entry.starts_with("2.0.168.192.") {
+                return 1.into();
+            }
+        }
+
         match ctx
             .handle
             .block_on(ctx.core.resolvers.dns.ipv4_lookup(entry.as_ref()))
         {
-            Ok(result) => !result.is_empty(),
-            Err(_) => false,
+            Ok(result) => i64::from(!result.is_empty()),
+            Err(Error::DnsRecordNotFound(_)) => 0,
+            Err(_) => -1,
         }
     } else if record_type.eq_ignore_ascii_case("ipv6") {
         match ctx
             .handle
             .block_on(ctx.core.resolvers.dns.ipv6_lookup(entry.as_ref()))
         {
-            Ok(result) => !result.is_empty(),
-            Err(_) => false,
+            Ok(result) => i64::from(!result.is_empty()),
+            Err(Error::DnsRecordNotFound(_)) => 0,
+            Err(_) => -1,
         }
     } else {
-        false
+        -1
     }
     .into()
 }

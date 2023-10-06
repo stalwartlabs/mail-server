@@ -23,20 +23,20 @@
 
 use sieve::{runtime::Variable, Context};
 
-use crate::config::scripts::SieveContext;
+use crate::{config::scripts::SieveContext, scripts::functions::url::tokenize_email};
 
-use super::ApplyString;
+use super::{html::html_to_tokens, url::tokenize_url, ApplyString};
 
 pub fn fn_trim<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Some(s.trim()))
+    v[0].transform(|s| Variable::StringRef(s.trim()))
 }
 
 pub fn fn_trim_end<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Some(s.trim_end()))
+    v[0].transform(|s| Variable::StringRef(s.trim_end()))
 }
 
 pub fn fn_trim_start<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Some(s.trim_start()))
+    v[0].transform(|s| Variable::StringRef(s.trim_start()))
 }
 
 pub fn fn_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
@@ -50,79 +50,38 @@ pub fn fn_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Var
     .into()
 }
 
-pub fn fn_to_lowercase<'x>(
-    _: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    match v.remove(0) {
-        Variable::String(s) => s.to_lowercase().into(),
-        Variable::StringRef(s) => s.to_lowercase().into(),
-        Variable::Array(a) => a
-            .iter()
-            .map(|v| v.to_cow().to_lowercase().into())
-            .collect::<Vec<_>>()
-            .into(),
-        Variable::ArrayRef(a) => a
-            .iter()
-            .map(|v| v.to_cow().to_lowercase().into())
-            .collect::<Vec<_>>()
-            .into(),
-        v => v,
-    }
+pub fn fn_to_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].transform(|s| Variable::String(s.to_lowercase()))
 }
 
-pub fn fn_to_uppercase<'x>(
-    _: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    match v.remove(0) {
-        Variable::String(s) => s.to_uppercase().into(),
-        Variable::StringRef(s) => s.to_uppercase().into(),
-        Variable::Array(a) => a
-            .iter()
-            .map(|v| v.to_cow().to_uppercase().into())
-            .collect::<Vec<_>>()
-            .into(),
-        Variable::ArrayRef(a) => a
-            .iter()
-            .map(|v| v.to_cow().to_uppercase().into())
-            .collect::<Vec<_>>()
-            .into(),
-        v => v,
-    }
+pub fn fn_to_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].transform(|s| Variable::String(s.to_uppercase()))
 }
 
 pub fn fn_is_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
-        .as_ref()
-        .chars()
-        .filter(|c| c.is_alphabetic())
-        .all(|c| c.is_uppercase())
-        .into()
+    v[0].transform(|s| {
+        s.chars()
+            .filter(|c| c.is_alphabetic())
+            .all(|c| c.is_uppercase())
+            .into()
+    })
 }
 
 pub fn fn_is_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
-        .as_ref()
-        .chars()
-        .filter(|c| c.is_alphabetic())
-        .all(|c| c.is_lowercase())
-        .into()
+    v[0].transform(|s| {
+        s.chars()
+            .filter(|c| c.is_alphabetic())
+            .all(|c| c.is_lowercase())
+            .into()
+    })
 }
 
 pub fn fn_has_digits<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
-        .as_ref()
-        .chars()
-        .any(|c| c.is_ascii_digit())
-        .into()
+    v[0].transform(|s| s.chars().any(|c| c.is_ascii_digit()).into())
 }
 
-pub fn fn_tokenize_words<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    match &v[0] {
+pub fn tokenize_words<'x>(v: &Variable<'x>) -> Variable<'x> {
+    match v {
         Variable::StringRef(s) => s
             .split_whitespace()
             .filter(|word| word.chars().all(|c| c.is_alphanumeric()))
@@ -143,15 +102,18 @@ pub fn fn_tokenize_words<'x>(
     .into()
 }
 
-pub fn fn_max_line_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::String(s) => s.lines().map(|l| l.len()).max().unwrap_or(0),
-        Variable::StringRef(s) => s.lines().map(|l| l.len()).max().unwrap_or(0),
-        Variable::Integer(_) | Variable::Float(_) => 0,
-        Variable::Array(a) => a.iter().map(|v| v.to_cow().len()).max().unwrap_or(0),
-        Variable::ArrayRef(a) => a.iter().map(|v| v.to_cow().len()).max().unwrap_or(0),
+pub fn fn_tokenize<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    mut v: Vec<Variable<'x>>,
+) -> Variable<'x> {
+    match v[1].to_cow().as_ref() {
+        "html" => html_to_tokens(v[0].to_cow().as_ref()).into(),
+        "words" => tokenize_words(&v[0]),
+        "uri" | "url" => tokenize_url(ctx, v.remove(0), false),
+        "uri_strict" | "url_strict" => tokenize_url(ctx, v.remove(0), true),
+        "email" => tokenize_email(v.remove(0)),
+        _ => Variable::default(),
     }
-    .into()
 }
 
 pub fn fn_count_spaces<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
@@ -265,12 +227,20 @@ pub fn fn_substring<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) 
 
 pub fn fn_strip_prefix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     let prefix = v[1].to_cow();
-    v[0].transform(|s| s.strip_prefix(prefix.as_ref()))
+    v[0].transform(|s| {
+        s.strip_prefix(prefix.as_ref())
+            .map(Variable::StringRef)
+            .unwrap_or_default()
+    })
 }
 
 pub fn fn_strip_suffix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     let suffix = v[1].to_cow();
-    v[0].transform(|s| s.strip_suffix(suffix.as_ref()))
+    v[0].transform(|s| {
+        s.strip_suffix(suffix.as_ref())
+            .map(Variable::StringRef)
+            .unwrap_or_default()
+    })
 }
 
 pub fn fn_split<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
@@ -312,6 +282,62 @@ pub fn fn_rsplit<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> 
             .map(|s| Variable::String(s.to_string()))
             .collect::<Vec<_>>()
             .into(),
+    }
+}
+
+pub fn fn_split_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    match &v[0] {
+        Variable::StringRef(s) => s
+            .split_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| Variable::Array(vec![Variable::StringRef(a), Variable::StringRef(b)]))
+            .unwrap_or_default(),
+        Variable::String(s) => s
+            .split_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| {
+                Variable::Array(vec![
+                    Variable::String(a.to_string()),
+                    Variable::String(b.to_string()),
+                ])
+            })
+            .unwrap_or_default(),
+        val => val
+            .to_string()
+            .split_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| {
+                Variable::Array(vec![
+                    Variable::String(a.to_string()),
+                    Variable::String(b.to_string()),
+                ])
+            })
+            .unwrap_or_default(),
+    }
+}
+
+pub fn fn_rsplit_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    match &v[0] {
+        Variable::StringRef(s) => s
+            .rsplit_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| Variable::Array(vec![Variable::StringRef(a), Variable::StringRef(b)]))
+            .unwrap_or_default(),
+        Variable::String(s) => s
+            .rsplit_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| {
+                Variable::Array(vec![
+                    Variable::String(a.to_string()),
+                    Variable::String(b.to_string()),
+                ])
+            })
+            .unwrap_or_default(),
+        val => val
+            .to_string()
+            .rsplit_once(v[1].to_cow().as_ref())
+            .map(|(a, b)| {
+                Variable::Array(vec![
+                    Variable::String(a.to_string()),
+                    Variable::String(b.to_string()),
+                ])
+            })
+            .unwrap_or_default(),
     }
 }
 

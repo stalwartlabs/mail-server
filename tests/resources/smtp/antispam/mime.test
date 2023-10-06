@@ -352,3 +352,146 @@ Content-Transfer-Encoding: 7bit
 this is a test
 
 --boundary--
+<!-- NEXT TEST -->
+expect R_MIXED_CHARSET
+
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+Tést 孔子
+
+<!-- NEXT TEST -->
+expect MIME_BAD_EXTENSION MIME_GOOD HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Disposition: attachment; filename="test.html"
+Content-Transfer-Encoding: 8bit
+
+<html>
+<p>hello world</p>
+</html>
+--boundary--
+
+<!-- NEXT TEST -->
+expect MIME_BAD_ATTACHMENT HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: text/x-plain; charset="utf-8"
+Content-Disposition: attachment; filename="test.txt"
+Content-Transfer-Encoding: 8bit
+
+hello world
+--boundary--
+
+<!-- NEXT TEST -->
+expect HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Disposition: attachment; filename="test.txt"
+Content-Transfer-Encoding: 8bit
+
+hello world
+--boundary--
+
+<!-- NEXT TEST -->
+expect MIME_DOUBLE_BAD_EXTENSION MIME_GOOD HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: text/html; charset="utf-8"
+Content-Disposition: attachment; filename="test.html.html"
+Content-Transfer-Encoding: 8bit
+
+<html>
+<p>hello world</p>
+</html>
+--boundary--
+
+<!-- NEXT TEST -->
+expect MIME_ARCHIVE_IN_ARCHIVE MIME_GOOD HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: application/zip
+Content-Disposition: attachment; filename="test.zip.zip"
+Content-Transfer-Encoding: base64
+
+UEsDBAoAAAAAALN6RlcAAAAAAAAAAAAAAAAIABwAdGVzdC5iaW5VVAkAA+IJI
+GXiCSBldXgLAAEE9QEAAAQUAAAAUEsBAh4DCgAAAAAAs3pGVwAAAAAAAAAAAA
+AAAAgAGAAAAAAAAAAAAKSBAAAAAHRlc3QuYmluVVQFAAPiCSBldXgLAAEE9QE
+AAAQUAAAAUEsFBgAAAAABAAEATgAAAEIAAAAAAA==
+--boundary--
+<!-- NEXT TEST -->
+expect MIME_BAD HAS_ATTACHMENT
+
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+	boundary="boundary"
+
+--boundary
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+simple text
+
+--boundary
+Content-Type: image/png
+Content-Disposition: attachment; filename="test.png"
+Content-Transfer-Encoding: base64
+
+UEsDBAoAAAAAALN6RlcAAAAAAAAAAAAAAAAIABwAdGVzdC5iaW5VVAkAA+IJI
+GXiCSBldXgLAAEE9QEAAAQUAAAAUEsBAh4DCgAAAAAAs3pGVwAAAAAAAAAAAA
+AAAAgAGAAAAAAAAAAAAKSBAAAAAHRlc3QuYmluVVQFAAPiCSBldXgLAAEE9QE
+AAAQUAAAAUEsFBgAAAAABAAEATgAAAEIAAAAAAA==
+--boundary--

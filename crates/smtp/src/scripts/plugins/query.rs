@@ -21,11 +21,8 @@
  * for more details.
 */
 
-use directory::QueryColumn;
-use sieve::{runtime::Variable, FunctionMap};
-use smtp_proto::IntoString;
-
 use crate::config::scripts::SieveContext;
+use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
 
@@ -73,23 +70,15 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        if let Ok(query_columns) = ctx.handle.block_on(directory.query(
+        if let Ok(mut query_columns) = ctx.handle.block_on(directory.query(
             &query,
             &parameters.iter().map(String::as_str).collect::<Vec<_>>(),
         )) {
-            let mut result = Vec::with_capacity(query_columns.len());
-            for column in query_columns {
-                result.push(match column {
-                    QueryColumn::Integer(v) => Variable::Integer(v),
-                    QueryColumn::Bool(v) => Variable::Integer(i64::from(v)),
-                    QueryColumn::Float(v) => Variable::Float(v),
-                    QueryColumn::Text(v) => Variable::String(v),
-                    QueryColumn::Blob(v) => Variable::String(v.into_string()),
-                    QueryColumn::Null => Variable::StringRef(""),
-                });
+            match query_columns.len() {
+                1 => query_columns.pop().map(Variable::from).unwrap(),
+                0 => Variable::default(),
+                _ => Variable::Array(query_columns.into_iter().map(Variable::from).collect()),
             }
-
-            result.into()
         } else {
             false.into()
         }

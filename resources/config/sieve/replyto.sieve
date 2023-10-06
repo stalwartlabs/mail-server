@@ -1,4 +1,3 @@
-
 let "rto_raw" "to_lowercase(header.reply-to.raw)";
 if eval "!is_empty(rto_raw)" {
     let "rto_addr" "to_lowercase(header.reply-to.addr)";
@@ -6,18 +5,16 @@ if eval "!is_empty(rto_raw)" {
 
     if eval "is_email(rto_addr)" {
         let "t.HAS_REPLYTO" "1";
-        let "rto_domain" "domain_part(email_part(rto_addr, 'domain'), 'sld')";
-        let "from_addr" "to_lowercase(header.from.addr)";
-        let "from_domain" "domain_part(email_part(from_addr, 'domain'), 'sld')";
+        let "rto_domain_sld" "domain_part(email_part(rto_addr, 'domain'), 'sld')";
 
         if eval "eq_ignore_case(header.reply-to, header.from)" {
             let "t.REPLYTO_EQ_FROM" "1";
         } else {
-            if eval "rto_domain == from_domain" {
+            if eval "rto_domain_sld == from_domain_sld" {
                 let "t.REPLYTO_DOM_EQ_FROM_DOM" "1";
             } else {
                 let "is_from_list" "!is_empty(header.List-Unsubscribe:List-Id:X-To-Get-Off-This-List:X-List:Auto-Submitted[*])";
-                if eval "!is_from_list && contains_ignore_case(header.to:cc:bcc[*].addr[*], rto_addr)"  {
+                if eval "!is_from_list && contains_ignore_case(recipients_clean, rto_addr)"  {
                     let "t.REPLYTO_EQ_TO_ADDR" "1";
                 } else {
                     let "t.REPLYTO_DOM_NEQ_FROM_DOM" "1";
@@ -32,7 +29,7 @@ if eval "!is_empty(rto_raw)" {
                     while "i != 0" {
                         let "i" "i - 1";
 
-                        if eval "domain_part(email_part(envelope.to[i], 'domain'), 'sld') == from_domain" {
+                        if eval "domain_part(email_part(envelope.to[i], 'domain'), 'sld') == from_domain_sld" {
                             let "found_domain" "1";
                             break;
                         }
@@ -49,12 +46,12 @@ if eval "!is_empty(rto_raw)" {
             }
         }
 
-        if eval "lookup('spam/free-domains', rto_domain)" {
+        if eval "lookup('spam/free-domains', rto_domain_sld)" {
             let "t.FREEMAIL_REPLYTO" "1";
-            if eval "rto_domain != from_domain && lookup('spam/free-domains', from_domain)" {
+            if eval "rto_domain_sld != from_domain_sld && lookup('spam/free-domains', from_domain_sld)" {
                 let "t.FREEMAIL_REPLYTO_NEQ_FROM_DOM" "1";
             }
-        } elsif eval "lookup('spam/disposable-domains', rto_domain)" {
+        } elsif eval "lookup('spam/disposable-domains', rto_domain_sld)" {
             let "t.DISPOSABLE_REPLYTO" "1";
         }
 

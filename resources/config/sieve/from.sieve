@@ -2,11 +2,6 @@ let "from_count" "count(header.from[*].raw)";
 let "service_accounts" "['www-data', 'anonymous', 'ftp', 'apache', 'nobody', 'guest', 'nginx', 'web', 'www']";
 
 if eval "from_count > 0" {
-    let "from_name" "to_lowercase(trim(header.from.name))";
-    let "from_addr" "to_lowercase(trim(header.from.addr))";
-    let "from_local" "email_part(from_addr, 'local')";
-    let "from_domain" "email_part(from_addr, 'domain')";
-    let "from_domain_sld" "domain_part(from_domain, 'sld')";
     let "from_raw" "to_lowercase(header.from.raw)";
 
     if eval "from_count > 1" {
@@ -42,8 +37,8 @@ if eval "from_count > 0" {
         if eval "is_email(from_name)" {
             let "from_name_sld" "domain_part(email_part(from_name, 'domain'), 'sld')";
             if eval "(!t.FROM_INVALID && from_domain_sld != from_name_sld) ||
-                     (!is_empty(envelope.from) && domain_part(email_part(envelope.from, 'domain'), 'sld') != from_name_sld) ||
-                     (is_empty(envelope.from) && domain_part(env.helo_domain, 'sld') != from_name_sld)" {
+                     (!is_empty(envelope.from) && envfrom_domain_sld != from_name_sld) ||
+                     (is_empty(envelope.from) && helo_domain_sld != from_name_sld)" {
                 let "t.SPOOF_DISPLAY_NAME" "1";
             } else {
                 let "t.FROM_NEQ_DISPLAY_NAME" "1";
@@ -69,7 +64,7 @@ if eval "from_count > 0" {
                eq_ignore_case(from_addr, envelope.from)) ||
              (t.HFILTER_FROM_BOUNCE && 
               !is_empty(from_domain) && 
-              domain_part(from_domain, 'sld') == domain_part(env.helo_domain, 'sld'))" {
+              from_domain_sld == helo_domain_sld)" {
         let "t.FROM_EQ_ENVFROM" "1";
     } elsif eval "!t.FROM_INVALID" {
         let "t.FORGED_SENDER" "1";
@@ -80,11 +75,10 @@ if eval "from_count > 0" {
         let "t.TAGGED_FROM" "1";
     }
 
-    let "to" "header.to:cc[*].addr[*]";
-    if eval "count(to) == 1" {
-        if eval "eq_ignore_case(to[0], from_addr)" {
+    if eval "count(recipients_to) + count(recipients_cc) == 1" {
+        if eval "eq_ignore_case(recipients_to[0], from_addr)" {
             let "t.TO_EQ_FROM" "1";
-        } elsif eval "eq_ignore_case(email_part(to[0], 'domain'), from_domain)" {
+        } elsif eval "eq_ignore_case(email_part(recipients_to[0], 'domain'), from_domain)" {
             let "t.TO_DOM_EQ_FROM_DOM" "1";
         }
     }
@@ -123,20 +117,24 @@ if eval "from_count > 0" {
 
 if eval "!is_empty(envelope.from)" {
     if eval "is_email(envelope.from)" {
-        if eval "contains(service_accounts, email_part(envelope.from, 'local'))" {
+        if eval "contains(service_accounts, envfrom_local)" {
             let "t.ENVFROM_SERVICE_ACCT" "1";
         }
     } else {
         let "t.ENVFROM_INVALID" "1";
     }
 
-    let "envfrom_domain_sld" "domain_part(email_part(envelope.from, 'domain'), 'sld')";
     if eval "!is_empty(envfrom_domain_sld)" {
         if eval "lookup('spam/free-domains', envfrom_domain_sld)" {
             let "t.FREEMAIL_ENVFROM" "1";
         } elsif eval "lookup('spam/disposable-domains', envfrom_domain_sld)" {
             let "t.DISPOSABLE_ENVFROM" "1";
         }
+
+        # Mail from no resolve to A or MX
+        if eval "!dns_exists(envfrom_domain, 'mx') && !dns_exists(envfrom_domain, 'ip')" {
+            let "t.HFILTER_FROMHOST_NORES_A_OR_MX" "1";
+        }        
     }
 
     # Read confirmation address is different to return path

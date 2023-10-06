@@ -24,19 +24,22 @@
 use std::net::IpAddr;
 
 use hyper::Uri;
+use linkify::LinkKind;
 use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
 
-pub fn fn_tokenize_url<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let must_have_scheme = v[1].to_bool();
+use super::ApplyString;
 
-    match v.remove(0) {
+pub fn tokenize_url<'x>(
+    ctx: &'x Context<'x, SieveContext>,
+    v: Variable<'x>,
+    must_have_scheme: bool,
+) -> Variable<'x> {
+    match v {
         Variable::StringRef(text) => linkify::LinkFinder::new()
             .url_must_have_scheme(must_have_scheme)
+            .kinds(&[LinkKind::Url])
             .links(text.as_ref())
             .filter_map(|url| filter_url(url.as_str(), must_have_scheme, ctx))
             .collect::<Vec<_>>()
@@ -44,10 +47,33 @@ pub fn fn_tokenize_url<'x>(
         v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
             linkify::LinkFinder::new()
                 .url_must_have_scheme(must_have_scheme)
+                .kinds(&[LinkKind::Url])
                 .links(v.to_cow().as_ref())
                 .filter_map(|url| {
                     filter_url(url.as_str(), must_have_scheme, ctx).map(|v| v.into_owned())
                 })
+                .collect::<Vec<_>>()
+                .into()
+        }
+        v => v,
+    }
+}
+
+pub fn tokenize_email(v: Variable<'_>) -> Variable<'_> {
+    match v {
+        Variable::StringRef(text) => linkify::LinkFinder::new()
+            .email_domain_must_have_dot(true)
+            .kinds(&[LinkKind::Email])
+            .links(text.as_ref())
+            .map(|email| Variable::StringRef(email.as_str()))
+            .collect::<Vec<_>>()
+            .into(),
+        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
+            linkify::LinkFinder::new()
+                .email_domain_must_have_dot(true)
+                .kinds(&[LinkKind::Email])
+                .links(v.to_cow().as_ref())
+                .map(|email| Variable::String(email.as_str().to_string()))
                 .collect::<Vec<_>>()
                 .into()
         }
@@ -84,51 +110,51 @@ fn filter_url<'x, 'y>(
 }
 
 pub fn fn_uri_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
-        .parse::<Uri>()
-        .ok()
-        .and_then(|uri| match v[1].to_cow().as_ref() {
-            "scheme" => uri.scheme_str().map(|s| Variable::String(s.to_lowercase())),
-            "host" => uri.host().map(|s| Variable::String(s.to_lowercase())),
-            "scheme_host" => uri
-                .scheme_str()
-                .and_then(|s| (s, uri.host()?).into())
-                .map(|(s, h)| Variable::String(format!("{}://{}", s, h))),
-            "path" => Variable::String(uri.path().to_string()).into(),
-            "port" => uri.port_u16().map(|port| Variable::Integer(port as i64)),
-            "query" => uri.query().map(|s| Variable::String(s.to_string())),
-            "path_query" => uri
-                .path_and_query()
-                .map(|s| Variable::String(s.to_string())),
-            "authority" => uri.authority().map(|s| Variable::String(s.to_string())),
-            _ => None,
-        })
-        .unwrap_or_default()
+    let part = v[1].to_cow();
+    v[0].transform(|uri| {
+        uri.parse::<Uri>()
+            .ok()
+            .and_then(|uri| match part.as_ref() {
+                "scheme" => uri.scheme_str().map(|s| Variable::String(s.to_string())),
+                "host" => uri.host().map(|s| Variable::String(s.to_string())),
+                "scheme_host" => uri
+                    .scheme_str()
+                    .and_then(|s| (s, uri.host()?).into())
+                    .map(|(s, h)| Variable::String(format!("{}://{}", s, h))),
+                "path" => Variable::String(uri.path().to_string()).into(),
+                "port" => uri.port_u16().map(|port| Variable::Integer(port as i64)),
+                "query" => uri.query().map(|s| Variable::String(s.to_string())),
+                "path_query" => uri
+                    .path_and_query()
+                    .map(|s| Variable::String(s.to_string())),
+                "authority" => uri.authority().map(|s| Variable::String(s.to_string())),
+                _ => None,
+            })
+            .unwrap_or_default()
+    })
 }
 
-pub fn fn_puny_decode<'x>(
-    _: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let domain = v[0].to_cow();
-    if domain.contains("xn--") {
-        let mut decoded = String::with_capacity(domain.len());
-        for part in domain.split('.') {
-            if !decoded.is_empty() {
-                decoded.push('.');
-            }
+pub fn fn_puny_decode<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+    v[0].transform(|domain| {
+        if domain.contains("xn--") {
+            let mut decoded = String::with_capacity(domain.len());
+            for part in domain.split('.') {
+                if !decoded.is_empty() {
+                    decoded.push('.');
+                }
 
-            if let Some(puny) = part
-                .strip_prefix("xn--")
-                .and_then(idna::punycode::decode_to_string)
-            {
-                decoded.push_str(&puny);
-            } else {
-                decoded.push_str(part);
+                if let Some(puny) = part
+                    .strip_prefix("xn--")
+                    .and_then(idna::punycode::decode_to_string)
+                {
+                    decoded.push_str(&puny);
+                } else {
+                    decoded.push_str(part);
+                }
             }
+            decoded.into()
+        } else {
+            domain.into()
         }
-        decoded.into()
-    } else {
-        v.remove(0)
-    }
+    })
 }

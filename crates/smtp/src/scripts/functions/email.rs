@@ -100,67 +100,71 @@ pub fn fn_is_email<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -
 pub fn fn_email_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].transform(|s| {
         s.rsplit_once('@')
-            .and_then(|(u, d)| match v[1].to_cow().as_ref() {
-                "local" => u.trim().into(),
-                "domain" => d.trim().into(),
-                _ => None,
+            .map(|(u, d)| match v[1].to_cow().as_ref() {
+                "local" => Variable::StringRef(u.trim()),
+                "domain" => Variable::StringRef(d.trim()),
+                _ => Variable::default(),
             })
+            .unwrap_or_default()
     })
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum MatchPart {
+    Sld,
+    Tld,
+    Host,
 }
 
 pub fn fn_domain_part<'x>(
     ctx: &'x Context<'x, SieveContext>,
     v: Vec<Variable<'x>>,
 ) -> Variable<'x> {
-    #[derive(PartialEq, Eq)]
-    enum MatchPart {
-        Sld,
-        Tld,
-        Host,
-    }
-    let domain = v[0].to_cow();
     let match_part = match v[1].to_cow().as_ref() {
         "sld" => MatchPart::Sld,
         "tld" => MatchPart::Tld,
         "host" => MatchPart::Host,
         _ => return Variable::default(),
     };
-    let d = domain.trim().to_lowercase();
-    let mut seen_dot = false;
-    for (pos, ch) in d.as_bytes().iter().enumerate().rev() {
-        if *ch == b'.' {
-            if seen_dot {
-                let maybe_domain =
-                    std::str::from_utf8(&d.as_bytes()[pos + 1..]).unwrap_or_default();
-                if !ctx.context().psl.contains(maybe_domain) {
-                    return if match_part == MatchPart::Sld {
-                        maybe_domain
-                    } else {
-                        std::str::from_utf8(&d.as_bytes()[..pos]).unwrap_or_default()
+
+    v[0].transform(|domain| {
+        let d = domain.trim().to_lowercase();
+        let mut seen_dot = false;
+        for (pos, ch) in d.as_bytes().iter().enumerate().rev() {
+            if *ch == b'.' {
+                if seen_dot {
+                    let maybe_domain =
+                        std::str::from_utf8(&d.as_bytes()[pos + 1..]).unwrap_or_default();
+                    if !ctx.context().psl.contains(maybe_domain) {
+                        return if match_part == MatchPart::Sld {
+                            maybe_domain
+                        } else {
+                            std::str::from_utf8(&d.as_bytes()[..pos]).unwrap_or_default()
+                        }
+                        .to_string()
+                        .into();
                     }
-                    .to_string()
-                    .into();
+                } else if match_part == MatchPart::Tld {
+                    return std::str::from_utf8(&d.as_bytes()[pos + 1..])
+                        .unwrap_or_default()
+                        .to_string()
+                        .into();
+                } else {
+                    seen_dot = true;
                 }
-            } else if match_part == MatchPart::Tld {
-                return std::str::from_utf8(&d.as_bytes()[pos + 1..])
-                    .unwrap_or_default()
-                    .to_string()
-                    .into();
-            } else {
-                seen_dot = true;
             }
         }
-    }
 
-    if seen_dot {
-        if match_part == MatchPart::Sld {
+        if seen_dot {
+            if match_part == MatchPart::Sld {
+                d.into()
+            } else {
+                Variable::default()
+            }
+        } else if match_part == MatchPart::Host {
             d.into()
         } else {
             Variable::default()
         }
-    } else if match_part == MatchPart::Host {
-        d.into()
-    } else {
-        Variable::default()
-    }
+    })
 }

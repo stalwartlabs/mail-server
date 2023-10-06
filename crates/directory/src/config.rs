@@ -23,7 +23,7 @@
 
 use bb8::{ManageConnection, Pool};
 use regex::Regex;
-use sieve::runtime::tests::glob::GlobPattern;
+use sieve::runtime::{tests::glob::GlobPattern, Variable};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -45,11 +45,11 @@ use crate::{
 
 pub trait ConfigDirectory {
     fn parse_directory(&self) -> utils::config::Result<DirectoryConfig>;
-    fn parse_lookup_list(
+    fn parse_lookup_list<K: AsKey, T: InsertLine>(
         &self,
-        key: impl AsKey,
+        key: K,
         format: LookupFormat,
-    ) -> utils::config::Result<LookupList>;
+    ) -> utils::config::Result<T>;
 }
 
 impl ConfigDirectory for Config {
@@ -102,25 +102,42 @@ impl ConfigDirectory for Config {
                     }
                 } else {
                     let key = ("directory", id, "lookup", lookup_id).as_key();
-                    let list = match self.property::<LookupType>((&key, "type"))? {
-                        Some(lookup_type) => self.parse_lookup_list(
-                            (&key, "values"),
-                            LookupFormat {
-                                lookup_type,
-                                comment: self.value((&key, "comment")).map(|s| s.to_string()),
-                            },
-                        )?,
-                        None => self.parse_lookup_list(
-                            key,
-                            LookupFormat {
-                                lookup_type: LookupType::List,
-                                comment: None,
-                            },
-                        )?,
-                    };
-
-                    Lookup::List { list }
+                    match self.property::<LookupType>((&key, "type"))? {
+                        Some(LookupType::Map) => Lookup::Map {
+                            map: self.parse_lookup_list(
+                                (&key, "values"),
+                                LookupFormat {
+                                    lookup_type: LookupType::Map,
+                                    comment: self.value((&key, "comment")).map(|s| s.to_string()),
+                                    separator: self
+                                        .value((&key, "separator"))
+                                        .map(|s| s.to_string()),
+                                },
+                            )?,
+                        },
+                        Some(lookup_type) => Lookup::List {
+                            list: self.parse_lookup_list(
+                                (&key, "values"),
+                                LookupFormat {
+                                    lookup_type,
+                                    comment: self.value((&key, "comment")).map(|s| s.to_string()),
+                                    separator: None,
+                                },
+                            )?,
+                        },
+                        None => Lookup::List {
+                            list: self.parse_lookup_list(
+                                key,
+                                LookupFormat {
+                                    lookup_type: LookupType::List,
+                                    comment: None,
+                                    separator: None,
+                                },
+                            )?,
+                        },
+                    }
                 };
+
                 config
                     .lookups
                     .insert(format!("{id}/{lookup_id}"), Arc::new(lookup));
@@ -132,12 +149,12 @@ impl ConfigDirectory for Config {
         Ok(config)
     }
 
-    fn parse_lookup_list(
+    fn parse_lookup_list<K: AsKey, T: InsertLine>(
         &self,
-        key: impl AsKey,
+        key: K,
         format: LookupFormat,
-    ) -> utils::config::Result<LookupList> {
-        let mut list = LookupList::default();
+    ) -> utils::config::Result<T> {
+        let mut list = T::default();
         let mut last_failed = false;
         for (_, mut value) in self.values(key.clone()) {
             if let Some(new_value) = value.strip_prefix("fallback+") {
@@ -208,16 +225,46 @@ impl ConfigDirectory for Config {
                     )
                 })?;
             } else {
-                list.insert(value.to_string(), format.lookup_type);
+                list.insert(value.to_string(), &format);
             }
         }
         Ok(list)
     }
 }
 
-impl LookupList {
-    pub fn insert(&mut self, entry: String, format: LookupType) {
-        match format {
+pub trait InsertLine: Default {
+    fn insert(&mut self, entry: String, format: &LookupFormat);
+    fn insert_lines<R: Sized + std::io::Read>(
+        &mut self,
+        reader: R,
+        format: &LookupFormat,
+        decompress: bool,
+    ) -> Result<(), std::io::Error> {
+        let reader: Box<dyn std::io::Read> = if decompress {
+            Box::new(flate2::read::GzDecoder::new(reader))
+        } else {
+            Box::new(reader)
+        };
+
+        for line in BufReader::new(reader).lines() {
+            let line_ = line?;
+            let line = line_.trim();
+            if !line.is_empty()
+                && format
+                    .comment
+                    .as_ref()
+                    .map_or(true, |c| !line.starts_with(c))
+            {
+                self.insert(line.to_string(), format);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl InsertLine for LookupList {
+    fn insert(&mut self, entry: String, format: &LookupFormat) {
+        match format.lookup_type {
             LookupType::List => {
                 self.set.insert(entry);
             }
@@ -255,34 +302,52 @@ impl LookupList {
                     tracing::warn!("Invalid regular expression {:?}: {}", entry, err);
                 }
             },
+            LookupType::Map => unreachable!(),
         }
     }
+}
 
-    pub fn insert_lines<R: Sized + std::io::Read>(
-        &mut self,
-        reader: R,
-        format: &LookupFormat,
-        decompress: bool,
-    ) -> Result<(), std::io::Error> {
-        let reader: Box<dyn std::io::Read> = if decompress {
-            Box::new(flate2::read::GzDecoder::new(reader))
-        } else {
-            Box::new(reader)
-        };
+impl InsertLine for AHashMap<String, Variable<'static>> {
+    fn insert(&mut self, entry: String, format: &LookupFormat) {
+        let (key, value) = entry
+            .split_once(format.separator.as_deref().unwrap_or(" "))
+            .unwrap_or((entry.as_str(), ""));
+        let key = key.trim();
+        if key.is_empty() {
+            return;
+        } else if value.is_empty() {
+            self.insert(key.to_string(), Variable::default());
+            return;
+        }
+        let mut has_digit = false;
+        let mut has_dots = false;
+        let mut has_other = false;
 
-        for line in BufReader::new(reader).lines() {
-            let line_ = line?;
-            let line = line_.trim();
-            if !line.is_empty()
-                && format
-                    .comment
-                    .as_ref()
-                    .map_or(true, |c| !line.starts_with(c))
-            {
-                self.insert(line.to_string(), format.lookup_type);
+        for (pos, ch) in value.bytes().enumerate() {
+            if ch.is_ascii_digit() {
+                has_digit = true;
+            } else if ch == b'.' {
+                has_dots = true;
+            } else if pos > 0 || ch != b'-' {
+                has_other = true;
             }
         }
-        Ok(())
+
+        let value = if has_other || !has_digit {
+            Variable::String(value.to_string())
+        } else if has_dots {
+            value
+                .parse()
+                .map(Variable::Float)
+                .unwrap_or_else(|_| Variable::String(value.to_string()))
+        } else {
+            value
+                .parse()
+                .map(Variable::Integer)
+                .unwrap_or_else(|_| Variable::String(value.to_string()))
+        };
+
+        self.insert(key.to_string(), value);
     }
 }
 
@@ -361,12 +426,14 @@ pub enum LookupType {
     List,
     Glob,
     Regex,
+    Map,
 }
 
 #[derive(Debug, Clone)]
 pub struct LookupFormat {
     pub lookup_type: LookupType,
     pub comment: Option<String>,
+    pub separator: Option<String>,
 }
 
 impl Default for LookupFormat {
@@ -374,6 +441,7 @@ impl Default for LookupFormat {
         Self {
             lookup_type: LookupType::Glob,
             comment: Default::default(),
+            separator: Default::default(),
         }
     }
 }
@@ -384,6 +452,7 @@ impl ParseValue for LookupType {
             "list" => Ok(LookupType::List),
             "glob" => Ok(LookupType::Glob),
             "regex" => Ok(LookupType::Regex),
+            "map" => Ok(LookupType::Map),
             _ => Err(format!(
                 "Invalid value for lookup type {key:?}: {value:?}",
                 key = key.as_key(),

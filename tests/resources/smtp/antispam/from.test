@@ -1,14 +1,14 @@
 expect MISSING_FROM
 
-X-From: hello@world.com
+X-From: hello@domain.org
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@world.com
+envelope_from hello@domain.org
 expect MULTIPLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
 
-From: hello@world.com
-From: hello@world.com
+From: hello@domain.org
+From: hello@domain.org
 
 Test
 <!-- NEXT TEST -->
@@ -19,52 +19,52 @@ From: test
 
 Test
 <!-- NEXT TEST -->
-envelope_from www-data@domain.com
+envelope_from www-data@domain.org
 expect FROM_SERVICE_ACCT ENVFROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENVFROM
 
-From: "WWW DATA" <www-data@domain.com>
+From: "WWW DATA" <www-data@domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@world.com
+envelope_from hello@domain.org
 expect FROM_DN_EQ_ADDR FROM_EQ_ENVFROM
 
-From: "hello@world.com" <hello@world.com>
+From: "hello@domain.org" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@world.com
+envelope_from hello@domain.org
 expect SPOOF_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
 
-From: "hello@otherworld.com" <hello@world.com>
+From: "hello@otherdomain.org" <hello@domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@world.co.uk
+envelope_from hello@domain.co.uk
 expect FROM_NEQ_DISPLAY_NAME FROM_EQ_ENVFROM FROM_HAS_DN
 
-From: "hello@other.world.co.uk" <hello@world.co.uk>
+From: "hello@other.domain.co.uk" <hello@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
-helo_domain mx.world.co.uk
+helo_domain mx.domain.co.uk
 expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN HFILTER_FROM_BOUNCE
 
-From: "postmaster@mx.world.co.uk" <postmaster@world.co.uk>
+From: "postmaster@mx.domain.co.uk" <postmaster@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
-helo_domain mx.world.co.uk
+helo_domain mx.domain.co.uk
 expect FROM_EQ_ENVFROM FROM_HAS_DN HFILTER_FROM_BOUNCE
 
-From: "Mailer Daemon" <MAILER-DAEMON@world.co.uk>
+From: "Mailer Daemon" <MAILER-DAEMON@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
-envelope_from mrspammer@domain.com
+envelope_from mrspammer@domain.org
 expect FROM_NAME_HAS_TITLE FROM_NAME_EXCESS_SPACE FROM_EQ_ENVFROM FROM_HAS_DN
 
-From: "Mr. Money   Maker" <mrspammer@domain.com>
+From: "Mr. Money   Maker" <mrspammer@domain.org>
 
 Test
 <!-- NEXT TEST -->
@@ -170,5 +170,12 @@ envelope_from hello@custom.disposable.org
 expect DISPOSABLE_ENVFROM DISPOSABLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
 
 From: hello@custom.disposable.org
+
+Test
+<!-- NEXT TEST -->
+envelope_from hello@nomx.org
+expect HFILTER_FROMHOST_NORES_A_OR_MX FROM_EQ_ENVFROM FROM_NO_DN
+
+From: hello@nomx.org
 
 Test

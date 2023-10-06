@@ -16,13 +16,13 @@ Subject: test
 
 my site is https://192.168.1.1
 <!-- NEXT TEST -->
-expect CONFUSABLE_URL
+expect OMOGRAPH_URL
 
 Subject: test
 
 my site is https://xn--youtue-tg7b.com
 <!-- NEXT TEST -->
-expect R_MIXED_CHARSET_URL CONFUSABLE_URL
+expect R_MIXED_CHARSET_URL
 
 Subject: test
 
@@ -40,9 +40,9 @@ Subject: nested redirect
 
 login to https://redirect.com/?https://redirect.org/?https://redirect.net/?https://redirect.io/?https://redirect.me/?https://redirect.com
 <!-- NEXT TEST -->
-expect REDIRECTOR_URL CONFUSABLE_URL
+expect REDIRECTOR_URL OMOGRAPH_URL
 
-Subject: redirect to confusable
+Subject: redirect to omograph
 
 login to https://www.redirect.com/?https://xn--twiter-507b.com
 <!-- NEXT TEST -->
@@ -73,9 +73,12 @@ Subject: plain test
 
 http://url.com/Well-known/../assetlinks.json
 http://wp.com/WP-content/content.pdf
+
 <!-- NEXT TEST -->
-expect REDIRECTOR_URL
+expect PHISHED_OPENPHISH PHISHED_PHISHTANK
 
-Subject: test
+Subject: plain test
 
-go to my site https://tinyurl.com/4fbkcb6m
+https://phishing-open.org
+https://phishing-tank.com
+

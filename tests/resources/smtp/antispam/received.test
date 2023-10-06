@@ -29,39 +29,10 @@ Received: from BAY0-HMR08.bay0.hótmail.com (bay0-hmr08.bay0.hótmail.com [65.54
           with ESMTP id h2DBpvs24047 for <webmaster@efi.ie>; Thu, 13 Mar 2003 11:51:57 GMT
 
 test
-<!-- NEXT TEST -->
-helo_domain user
-expect RCVD_HELO_USER RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
 
-Subject: test
-
-test
-<!-- NEXT TEST -->
-helo_domain 100.21.30.40
-expect RCVD_IP_SPAM RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
-
-Subject: test
-
-test
-<!-- NEXT TEST -->
-iprev.ptr host.otherdomain.com
-helo_domain HOST.DOMAIN.COM
-expect RCVD_HELO_IP_MISMATCH RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
-
-Subject: test
-
-test
-<!-- NEXT TEST -->
-iprev.ptr host.domain.com
-helo_domain HOST.DOMAIN.COM
-expect RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
-
-Subject: test
-
-test
 <!-- NEXT TEST -->
 tls.version TLVv1.3
-expect RCVD_TLS_ALL RCVD_HELO_USER RCVD_IP_SPAM FORGED_RCVD_TRAIL PREVIOUSLY_DELIVERED RCVD_COUNT_FIVE
+expect RCVD_TLS_ALL RCVD_HELO_USER RCVD_DOUBLE_IP_SPAM FORGED_RCVD_TRAIL PREVIOUSLY_DELIVERED RCVD_COUNT_FIVE
 
 Received: from Agni (localhost [::ffff:127.0.0.1]) (TLS: TLSv1/SSLv3, 168bits,DES-CBC3-SHA) by agni.forevermore.net 
           with esmtp; Mon, 28 Oct 2002 14:48:52 -0800
@@ -69,9 +40,18 @@ Received: from [10.231.252.223] (79.sub-174-252-72.myvzw.com [174.252.72.79]) by
           with ESMTPS id m16sm345129qck.28.2011.06.15.07.42.02 (version=TLSv1/SSLv3 cipher=OTHER); Wed, 15 Jun 2011 07:42:08 -0700 (PDT)
 Received: from user (10.175.233.33) by DB6PR07MB3384.eurprd07.prod.outlook.com (10.175.234.11) 
           with Microsoft SMTP Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.1143.11; Thu, 13 Sep 2018 14:47:44 +0000
-Received: from wmail.tana.it (wmail.tana.it [94.198.96.74]) (using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits) key-exchange ECDHE (P-256) server-signature RSA-PSS (2048 bits) server-digest SHA256) (No client certificate requested) 
+Received: from [94.198.96.74] (using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits) key-exchange ECDHE (P-256) server-signature RSA-PSS (2048 bits) server-digest SHA256) (No client certificate requested) 
           by ietfa.amsl.com (Postfix) with ESMTPS id 10B7AC151535 for <user@domain.com>; Mon, 28 Aug 2023 02:21:23 -0700 (PDT)
 To: user@domain.com
+Subject: test
+
+test
+
+<!-- NEXT TEST -->
+expect DIRECT_TO_MX ONCE_RECEIVED RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
+
+To: user@domain.com
+X-Mailer: MUA
 Subject: test
 
 test

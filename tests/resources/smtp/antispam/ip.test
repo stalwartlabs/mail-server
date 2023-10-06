@@ -1,0 +1,17 @@
+remote_ip 8.8.8.8
+iprev.result temperror
+expect RDNS_DNSFAIL
+
+Subject: test
+
+Test
+
+<!-- NEXT TEST -->
+remote_ip 8.8.8.8
+iprev.result fail
+expect RDNS_NONE
+
+Subject: test
+
+Test
+

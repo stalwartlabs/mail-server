@@ -31,6 +31,10 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("lookup", plugin_id, 2);
 }
 
+pub fn register_map(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("lookup_map", plugin_id, 2);
+}
+
 pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
     let lookup_id = ctx.arguments[0].to_cow();
     let item = ctx.arguments[1].to_cow();
@@ -55,4 +59,29 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
     }
 
     false.into()
+}
+
+pub fn exec_map(ctx: PluginContext<'_>) -> Variable<'static> {
+    let lookup_id = ctx.arguments[0].to_cow();
+    let item = ctx.arguments[1].to_cow();
+    let span = ctx.span;
+
+    if !lookup_id.is_empty() && !item.is_empty() {
+        if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
+            return ctx
+                .handle
+                .block_on(lookup.lookup(item.as_ref()))
+                .unwrap_or_default();
+        } else {
+            tracing::warn!(
+                parent: span,
+                context = "sieve:lookup",
+                event = "failed",
+                reason = "Unknown lookup id",
+                lookup_id = %lookup_id,
+            );
+        }
+    }
+
+    Variable::default()
 }

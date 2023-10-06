@@ -1,5 +1,22 @@
+# Mailing list scores
+let "ml_score" "count(header.List-Id:List-Archive:List-Owner:List-Help:List-Post:X-Loop:List-Subscribe:List-Unsubscribe[*].exists) * 0.125";
+eval "print('ml_score: ' + ml_score)";
+if eval "ml_score < 1" {
+    if eval "header.List-Id.exists" {
+        let "ml_score" "ml_score + 0.50";
+    }
+    if eval "header.List-Subscribe.exists && header.List-Unsubscribe.exists" {
+        let "ml_score" "ml_score + 0.25";
+    }
+    if eval "header.Precedence.exists && (eq_ignore_case(header.Precedence, 'list') || eq_ignore_case(header.Precedence, 'bulk'))" {
+        let "ml_score" "ml_score + 0.25";
+    }
+}
+if eval "ml_score >= 1" {
+    let "t.MAILLIST" "1";
+}
 
-
+# X-Priority
 if eval "header.x-priority.exists" {
     let "xp" "header.x-priority";
     if eval "xp == 0" {
