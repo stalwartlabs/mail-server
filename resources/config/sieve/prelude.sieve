@@ -27,6 +27,9 @@ let "from_local" "email_part(from_addr, 'local')";
 let "from_domain" "email_part(from_addr, 'domain')";
 let "from_domain_sld" "domain_part(from_domain, 'sld')";
 
+# Obtain Reply-To address
+let "rto_addr" "to_lowercase(header.reply-to.addr)";
+
 # Obtain Envelope From parts
 let "envfrom_local" "email_part(envelope.from, 'local')";
 let "envfrom_domain" "email_part(envelope.from, 'domain')";

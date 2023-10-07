@@ -2241,7 +2241,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imap"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -2424,7 +2424,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2628,9 +2628,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.148"
+version = "0.2.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cdc71e17332e86d2e1d38c1f99edcb6288ee11b815fb1a4b049eaa2114d369b"
+checksum = "a08173bc88b7955d1b3145aa561539096c421ac8debde8cbc3612ec635fee29b"
 
 [[package]]
 name = "libloading"
@@ -2754,7 +2754,7 @@ dependencies = [
  "mail-parser",
  "parking_lot",
  "quick-xml 0.30.0",
- "ring 0.17.0",
+ "ring 0.17.2",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -2796,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "directory",
  "imap",
@@ -3791,9 +3791,9 @@ dependencies = [
 
 [[package]]
 name = "rasn"
-version = "0.9.5"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbe5ce12835340cdd47a8abf36aabc02ce2d2a1d88e29d6c5126b5e7bf95eb53"
+checksum = "2cf5174961dbfd4f03b57e71e5a11b034f564d5f0b133d63e39d703ac3d2876b"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -3813,9 +3813,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-cms"
-version = "0.9.5"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ae05ee5eb8b58bcbbb7d5d28270281b9aa305b9a6aa271cac54f3a967f11fa2"
+checksum = "56517898cf38bb50fdb6479049ed476510bf59ae7d329b35129dc8a8b309697f"
 dependencies = [
  "rasn",
  "rasn-pkix",
@@ -3823,9 +3823,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-derive"
-version = "0.9.5"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43c8ad6b5a6cd2f18516cde588b72797c56b884f0bd2dfdd82eb392781b85507"
+checksum = "8def4ce07f970be91bad36c3090af419dcd9e696897ada3cf74bd480e0101d61"
 dependencies = [
  "either",
  "itertools 0.10.5",
@@ -3838,9 +3838,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-pkix"
-version = "0.9.5"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57b82b75a434efa7dbb6ff898c9504586e3adffa9e445336edd9c0431c27b4c2"
+checksum = "ebdeef45b70d4c20ce34725707b2784c761eacaaa4d841eab46f9f9c6dc10dd3"
 dependencies = [
  "rasn",
 ]
@@ -4024,9 +4024,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.17.0"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb9d44f9bf6b635117787f72416783eb7e4227aaf255e5ce739563d817176a7e"
+checksum = "911b295d2d302948838c8ac142da1ee09fa7863163b44e6715bc9357905878b8"
 dependencies = [
  "cc",
  "getrandom 0.2.10",
@@ -4661,7 +4661,7 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 
 [[package]]
 name = "smtp"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "ahash 0.8.3",
  "blake3",
@@ -4992,7 +4992,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "clap",
  "console",
@@ -5014,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-install"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "base64 0.21.4",
  "clap",
@@ -5878,7 +5878,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",

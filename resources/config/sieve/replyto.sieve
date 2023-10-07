@@ -1,6 +1,5 @@
 let "rto_raw" "to_lowercase(header.reply-to.raw)";
 if eval "!is_empty(rto_raw)" {
-    let "rto_addr" "to_lowercase(header.reply-to.addr)";
     let "rto_name" "to_lowercase(header.reply-to.name)";
 
     if eval "is_email(rto_addr)" {

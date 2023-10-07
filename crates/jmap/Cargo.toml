@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 resolver = "2"
 
@@ -44,9 +44,9 @@ aes = "0.8.3"
 cbc = { version = "0.1.2", features = ["alloc"] }
 sequoia-openpgp = { version = "1.16", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
 rand = "0.8.5"
-rasn = "0.9.5"
-rasn-cms = "0.9.5"
-rasn-pkix = "0.9.5"
+rasn = "0.10"
+rasn-cms = "0.10"
+rasn-pkix = "0.10"
 rsa = "0.9.2"
 async-trait = "0.1.68"
 

@@ -143,7 +143,7 @@ while "i < ip_addresses_len" {
 
     # Query DNSWL
     let "result" "rsplit_once(dns_query(ip_reverse + '.list.dnswl.org', 'ipv4')[0], '.')";
-    if eval "starts_with(result[0], '127.0.')" {
+    if eval "starts_with(result[0], '127.')" {
         let "result" "result[1]";
 
         if eval "result == 0" {
@@ -161,7 +161,7 @@ while "i < ip_addresses_len" {
 }
 
 # Validate domain names
-let "emails" "dedup(winnow(to_lowercase([header.from, header.reply-to, envelope.from] + tokenize(text_body, 'email'))))";
+let "emails" "dedup(winnow(to_lowercase([from_addr, rto_addr, envelope.from] + tokenize(text_body, 'email'))))";
 let "emails_len" "count(emails)";
 let "domains" "dedup(winnow(to_lowercase([ env.helo_domain, env.iprev.ptr ] + email_part(emails, 'domain') + puny_decode(uri_part(urls, 'host')))))";
 let "domains_len" "count(domains)";
@@ -263,7 +263,7 @@ while "i > 0" {
 
     # Query DNSWL
     let "result" "rsplit_once(dns_query(env.dkim.domains[i] + '.dwl.dnswl.org', 'ipv4')[0], '.')";
-    if eval "result[0] == '127.0.0'" {
+    if eval "starts_with(result[0], '127.')" {
         let "result" "result[1]";
 
         if eval "result == 0" {

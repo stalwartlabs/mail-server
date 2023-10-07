@@ -169,10 +169,41 @@ async fn antispam() {
     config.rcpt.relay = IfBlock::new(true);
 
     // Add mock DNS entries
-    for domain in ["bank.com", "apple.com", "youtube.com", "twitter.com"] {
+    for (domain, ip) in [
+        ("bank.com", "127.0.0.1"),
+        ("apple.com", "127.0.0.1"),
+        ("youtube.com", "127.0.0.1"),
+        ("twitter.com", "127.0.0.3"),
+        ("dkimtrusted.org.dwl.dnswl.org", "127.0.0.3"),
+        ("sh-malware.com.dbl.spamhaus.org", "127.0.0.5"),
+        ("surbl-abuse.com.multi.surbl.org", "127.0.0.64"),
+        ("uribl-grey.com.multi.uribl.com", "127.0.0.4"),
+        ("sem-uribl.com.uribl.spameatingmonkey.net", "127.0.0.2"),
+        ("sem-fresh15.com.fresh15.spameatingmonkey.net", "127.0.0.2"),
+        (
+            "b4a64d60f67529b0b18df66ea2f292e09e43c975.ebl.msbl.org",
+            "127.0.0.2",
+        ),
+        (
+            "a95bd658068a8315dc1864d6bb79632f47692621.ebl.msbl.org",
+            "127.0.1.3",
+        ),
+        (
+            "94c57fe69a113e875f772bdea55bf2c3.hashbl.surbl.org",
+            "127.0.0.16",
+        ),
+        (
+            "64aca53deb83db2ba30a59604ada2d80.hashbl.surbl.org",
+            "127.0.0.64",
+        ),
+        (
+            "02159eed92622b2fb8c83c659f269007.hashbl.surbl.org",
+            "127.0.0.8",
+        ),
+    ] {
         core.resolvers.dns.ipv4_add(
             domain,
-            vec!["127.0.0.1".parse().unwrap()],
+            vec![ip.parse().unwrap()],
             Instant::now() + Duration::from_secs(100),
         );
     }

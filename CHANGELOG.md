@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.3.9] - 2023-10-07
+
+## Added
+- Support for reading environment variables from configuration file using the `!ENV_VAR_NAME` special keyword.
+
+### Changed
+- Querying directories from a Sieve script is now done using the `query()` method from `eval`. Your scripts will need to be updated, please refer to the [new syntax](https://stalw.art/docs/smtp/filter/sieve#directory-queries).
+
+### Fixed
+- IPrev lookups of IPv4 mapped to IPv6 addresses.
+
 ## [0.3.8] - 2023-09-19
 
 ## Added

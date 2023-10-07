@@ -186,7 +186,9 @@ impl Lookup {
         match self {
             Lookup::Directory { directory, query } => match directory.query(query, &[item]).await {
                 Ok(mut result) => match result.len() {
-                    1 => result.pop().map(Variable::from).unwrap(),
+                    1 if !matches!(result.first(), Some(QueryColumn::Null)) => {
+                        result.pop().map(Variable::from).unwrap()
+                    }
                     0 => Variable::default(),
                     _ => Variable::Array(result.into_iter().map(Variable::from).collect()),
                 }

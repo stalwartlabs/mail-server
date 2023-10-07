@@ -378,6 +378,35 @@ impl<'x> TomlParser<'x> {
                     }
                 }
             }
+            '!' => {
+                let mut value = String::with_capacity(4);
+                while let Some(ch) = self.iter.peek() {
+                    if ch.is_alphanumeric() || ['_', '-'].contains(ch) {
+                        value.push(self.next_char(true, false)?);
+                    } else {
+                        break;
+                    }
+                }
+                let value = match std::env::var(value.as_str()) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        tracing::warn!("Failed to get environment variable {value:?}");
+                        String::new()
+                    }
+                };
+                match self.keys.entry(key) {
+                    Entry::Vacant(e) => {
+                        e.insert(value);
+                    }
+                    Entry::Occupied(e) => {
+                        return Err(format!(
+                            "Duplicate key {:?} at line {}.",
+                            e.key(),
+                            self.line
+                        ));
+                    }
+                }
+            }
             ch => {
                 return if stop_chars.contains(&ch) {
                     Ok(ch)
@@ -421,11 +450,17 @@ mod tests {
 
     #[test]
     fn toml_parse() {
-        let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        file.push("resources");
-        file.push("tests");
-        file.push("config");
-        file.push("toml-parser.toml");
+        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf()
+            .join("tests")
+            .join("resources")
+            .join("smtp")
+            .join("config")
+            .join("toml-parser.toml");
 
         let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
         assert_eq!(
@@ -539,6 +574,8 @@ mod tests {
                     "strings.my \"string\" test.str3".to_string(),
                     "Name\tTabs\nNew Line.".to_string()
                 ),
+                ("env.var1".to_string(), "utils".to_string()),
+                ("env.var2".to_string(), "utils".to_string()),
             ])
         );
     }

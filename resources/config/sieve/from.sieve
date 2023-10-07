@@ -145,13 +145,13 @@ if eval "!is_empty(envelope.from)" {
 }
 
 if eval "!t.FROM_SERVICE_ACCT && 
-         (contains_ignore_case(service_accounts, email_part(header.reply-to.addr, 'local')) || 
+         (contains_ignore_case(service_accounts, email_part(rto_addr, 'local')) || 
           contains_ignore_case(service_accounts, email_part(header.sender.addr, 'local')))" {
     let "t.FROM_SERVICE_ACCT" "1";
 }
 
 if eval "!t.WWW_DOT_DOMAIN && 
-         (contains_ignore_case(header.reply-to.addr, '@www.') || 
+         (contains_ignore_case(rto_addr, '@www.') || 
           contains_ignore_case(header.sender.addr, '@www.'))" {
     let "t.WWW_DOT_DOMAIN" "1";
 }

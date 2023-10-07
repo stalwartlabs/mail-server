@@ -22,6 +22,7 @@
 */
 
 use crate::config::scripts::SieveContext;
+use directory::QueryColumn;
 use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
@@ -75,7 +76,9 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
             &parameters.iter().map(String::as_str).collect::<Vec<_>>(),
         )) {
             match query_columns.len() {
-                1 => query_columns.pop().map(Variable::from).unwrap(),
+                1 if !matches!(query_columns.first(), Some(QueryColumn::Null)) => {
+                    query_columns.pop().map(Variable::from).unwrap()
+                }
                 0 => Variable::default(),
                 _ => Variable::Array(query_columns.into_iter().map(Variable::from).collect()),
             }
