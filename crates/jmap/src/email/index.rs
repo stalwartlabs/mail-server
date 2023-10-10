@@ -37,11 +37,9 @@ use mail_parser::{
     parsers::{fields::thread::thread_name, preview::preview_text},
     Addr, Address, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType,
 };
+use nlp::language::Language;
 use store::{
-    fts::{
-        builder::{FtsIndexBuilder, MAX_TOKEN_LENGTH},
-        Language,
-    },
+    fts::builder::{FtsIndexBuilder, MAX_TOKEN_LENGTH},
     write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
 };
 

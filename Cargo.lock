@@ -170,13 +170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "antispam"
-version = "0.1.0"
-dependencies = [
- "fancy-regex",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1487,23 +1480,12 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "add4f07d43996f76ef320709726a556a9d4f965d9410d8d0271132d2f8293480"
+checksum = "ac3e13f66a2f95e32a39eaa81f6b95d42878ca0e1db0c7543723dfe12557e860"
 dependencies = [
- "errno-dragonfly",
  "libc",
  "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "errno-dragonfly"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa68f1b12764fab894d2755d2518754e71b4fd80ecfb822714a1206c2aab39bf"
-dependencies = [
- "cc",
- "libc",
 ]
 
 [[package]]
@@ -2252,6 +2234,7 @@ dependencies = [
  "mail-parser",
  "mail-send",
  "md5",
+ "nlp",
  "parking_lot",
  "rustls 0.21.7",
  "rustls-pemfile",
@@ -2450,6 +2433,7 @@ dependencies = [
  "mail-parser",
  "mail-send",
  "mime",
+ "nlp",
  "p256",
  "rand 0.8.5",
  "rasn",
@@ -2510,9 +2494,9 @@ dependencies = [
 
 [[package]]
 name = "jobserver"
-version = "0.1.26"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "936cfd212a0155903bcbc060e316fb6cc7cbf2e1907329391ebadc1fe0ce77c2"
+checksum = "8c37f63953c4c63420ed5fd3d6d398c719489b9f872b9fa683262f8edd363c7d"
 dependencies = [
  "libc",
 ]
@@ -2703,9 +2687,9 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.4.8"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3852614a3bd9ca9804678ba6be5e3b8ce76dfc902cae004e3e0c44051b6e88db"
+checksum = "da2479e8c062e40bf0066ffa0bc823de0a9368974af99c9f6df941d2c231e03f"
 
 [[package]]
 name = "lock_api"
@@ -2754,7 +2738,7 @@ dependencies = [
  "mail-parser",
  "parking_lot",
  "quick-xml 0.30.0",
- "ring 0.17.2",
+ "ring 0.17.3",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -3002,6 +2986,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nlp"
+version = "0.3.9"
+dependencies = [
+ "ahash 0.8.3",
+ "bincode",
+ "farmhash",
+ "jieba-rs",
+ "lazy_static",
+ "nohash",
+ "rust-stemmers",
+ "serde",
+ "siphasher 1.0.0",
+ "tinysegmenter",
+ "whatlang",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "nohash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0f889fb66f7acdf83442c35775764b51fed3c606ab9cee51500dbde2cf528ca"
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3072,9 +3080,9 @@ dependencies = [
 
 [[package]]
 name = "num-traits"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f30b0abd723be7e2ffca1272140fac1a2f084c77ec3e123c192b66af1ee9e6c2"
+checksum = "39e3200413f237f41ab11ad6d161bc7239c84dcb631773ccd7de3dfe4b5c267c"
 dependencies = [
  "autocfg",
  "libm",
@@ -3476,7 +3484,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6796ad771acdc0123d2a88dc428b5e38ef24456743ddb1744ed628f9815c096"
 dependencies = [
- "siphasher",
+ "siphasher 0.3.11",
 ]
 
 [[package]]
@@ -3485,7 +3493,7 @@ version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90fcb95eef784c2ac79119d1dd819e162b5da872ce6f3c3abe1e8ca1c082f72b"
 dependencies = [
- "siphasher",
+ "siphasher 0.3.11",
 ]
 
 [[package]]
@@ -3791,9 +3799,9 @@ dependencies = [
 
 [[package]]
 name = "rasn"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cf5174961dbfd4f03b57e71e5a11b034f564d5f0b133d63e39d703ac3d2876b"
+checksum = "4addd1a49756bcb131c2f686c6c833d2b63e4da7a0df07efd8c3de04b7efbdb2"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -3813,9 +3821,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-cms"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56517898cf38bb50fdb6479049ed476510bf59ae7d329b35129dc8a8b309697f"
+checksum = "e269b4df6eea0f54abd46afacd759b1c13a27e98da98a47ef3c405ef3568b0f5"
 dependencies = [
  "rasn",
  "rasn-pkix",
@@ -3823,9 +3831,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-derive"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8def4ce07f970be91bad36c3090af419dcd9e696897ada3cf74bd480e0101d61"
+checksum = "ba8242a16e3461b81333516ad8457906f52fdf21d087417fb59262c9ab406618"
 dependencies = [
  "either",
  "itertools 0.10.5",
@@ -3838,9 +3846,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-pkix"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebdeef45b70d4c20ce34725707b2784c761eacaaa4d841eab46f9f9c6dc10dd3"
+checksum = "06179c947a63fe9f9f5d73a539dcb13d90c6bdaeb03bd28b90ad796aff9fe6a8"
 dependencies = [
  "rasn",
 ]
@@ -4024,9 +4032,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.17.2"
+version = "0.17.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "911b295d2d302948838c8ac142da1ee09fa7863163b44e6715bc9357905878b8"
+checksum = "9babe80d5c16becf6594aa32ad2be8fe08498e7ae60b77de8df700e67f191d7e"
 dependencies = [
  "cc",
  "getrandom 0.2.10",
@@ -4198,9 +4206,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.17"
+version = "0.38.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f25469e9ae0f3d0047ca8b93fc56843f38e6774f0914a107ff8b41be8be8e0b7"
+checksum = "5a74ee2d7c2581cd139b42447d7d9389b889bdaad3a73f1ebb16f2a3237bb19c"
 dependencies = [
  "bitflags 2.4.0",
  "errno",
@@ -4645,6 +4653,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
+name = "siphasher"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54ac45299ccbd390721be55b412d41931911f654fa99e2cb8bfb57184b2061fe"
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5048,10 +5062,10 @@ dependencies = [
  "farmhash",
  "foundationdb",
  "futures",
- "jieba-rs",
  "lazy_static",
  "lru-cache",
  "maybe-async 0.2.7",
+ "nlp",
  "num_cpus",
  "parking_lot",
  "r2d2",
@@ -5061,14 +5075,11 @@ dependencies = [
  "rocksdb",
  "rusqlite",
  "rust-s3",
- "rust-stemmers",
  "serde",
- "siphasher",
- "tinysegmenter",
+ "siphasher 1.0.0",
  "tokio",
  "tracing",
  "utils",
- "whatlang",
  "xxhash-rust",
 ]
 
@@ -5244,6 +5255,7 @@ dependencies = [
  "mail-parser",
  "mail-send",
  "managesieve",
+ "nlp",
  "num_cpus",
  "rayon",
  "reqwest",
@@ -5358,9 +5370,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.32.0"
+version = "1.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17ed6077ed6cd6c74735e21f37eb16dc3935f96878b1fe961074089cc80893f9"
+checksum = "4f38200e3ef7995e5ef13baec2f432a6da0aa9ac495b2c0e8f3b7eec2c92d653"
 dependencies = [
  "backtrace",
  "bytes",
@@ -6040,12 +6052,12 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.22.2"
+version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ecc0cd7cac091bf682ec5efa18b1cff79d617b84181f38b3951dbe135f607f"
+checksum = "ed63aea5ce73d0ff405984102c42de94fc55a6b75765d621c65262469b3c9b53"
 dependencies = [
- "ring 0.16.20",
- "untrusted 0.7.1",
+ "ring 0.17.3",
+ "untrusted 0.9.0",
 ]
 
 [[package]]

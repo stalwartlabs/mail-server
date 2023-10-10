@@ -24,12 +24,10 @@
 use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
 use ahash::HashSet;
+use nlp::tokenizers::space::SpaceTokenizer;
 use roaring::RoaringBitmap;
 
-use crate::{
-    fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
-    BitmapKey, ReadTransaction, Store,
-};
+use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ReadTransaction, Store};
 
 use super::{Filter, ResultSet, TextMatch};
 

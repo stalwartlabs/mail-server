@@ -26,11 +26,10 @@ pub mod get;
 pub mod log;
 pub mod sort;
 
+use nlp::language::Language;
 use roaring::RoaringBitmap;
 
-use crate::{
-    fts::Language, write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS,
-};
+use crate::{write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {

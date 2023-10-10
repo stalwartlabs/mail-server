@@ -134,12 +134,10 @@ pub fn generate_snippet(terms: &[Term], text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
 
+    use nlp::language::Language;
+
     use crate::{
-        fts::{
-            term_index::{TermIndex, TermIndexBuilder},
-            tokenizers::Tokenizer,
-            Language,
-        },
+        fts::term_index::{TermIndex, TermIndexBuilder},
         Deserialize, Serialize,
     };
 
@@ -242,7 +240,7 @@ mod tests {
 
             for (field_num, part) in parts.iter().enumerate() {
                 let mut terms = Vec::new();
-                for token in Tokenizer::new(part, Language::English, 40) {
+                for token in Language::English.tokenize_text(part, 40) {
                     terms.push(builder.add_token(token));
                 }
                 builder.add_terms(field_num as u8, 0, terms);

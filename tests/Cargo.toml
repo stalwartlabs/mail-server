@@ -12,6 +12,7 @@ foundationdb = ["store/foundation"]
 
 [dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
+nlp = { path = "../crates/nlp" }
 directory = { path = "../crates/directory" }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }

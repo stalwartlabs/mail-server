@@ -34,8 +34,9 @@ use imap_proto::{
 
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::HeaderName;
+use nlp::language::Language;
 use store::{
-    fts::{builder::MAX_TOKEN_LENGTH, Language},
+    fts::builder::MAX_TOKEN_LENGTH,
     query::{self, log::Query, sort::Pagination, ResultSet},
     roaring::RoaringBitmap,
     write::now,

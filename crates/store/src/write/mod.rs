@@ -23,11 +23,11 @@
 
 use std::{collections::HashSet, slice::Iter, time::SystemTime};
 
+use nlp::tokenizers::space::SpaceTokenizer;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::{
-    fts::{builder::MAX_TOKEN_LENGTH, tokenizers::space::SpaceTokenizer},
-    Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC,
+    fts::builder::MAX_TOKEN_LENGTH, Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC,
 };
 
 use self::assert::AssertValue;

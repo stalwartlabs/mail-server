@@ -40,6 +40,7 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
+use nlp::language::Language;
 use services::{
     delivery::spawn_delivery_manager,
     housekeeper::{self, init_housekeeper, spawn_housekeeper},
@@ -47,7 +48,6 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    fts::Language,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,

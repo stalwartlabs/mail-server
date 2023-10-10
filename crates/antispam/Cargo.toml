@@ -1,7 +1,0 @@
-[package]
-name = "antispam"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-fancy-regex = "0.11.0"

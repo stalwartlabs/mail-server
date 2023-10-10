@@ -24,6 +24,14 @@
 use std::{borrow::Cow, collections::HashSet};
 
 use ahash::AHashSet;
+use nlp::{
+    language::{
+        detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
+        stemmer::Stemmer,
+        Language,
+    },
+    tokenizers::{space::SpaceTokenizer, Token},
+};
 use utils::map::vec_map::VecMap;
 
 use crate::{
@@ -32,13 +40,7 @@ use crate::{
     Serialize, HASH_EXACT, HASH_STEMMED,
 };
 
-use super::{
-    lang::{LanguageDetector, MIN_LANGUAGE_SCORE},
-    stemmer::Stemmer,
-    term_index::{TermIndexBuilder, TokenIndex},
-    tokenizers::{space::SpaceTokenizer, Token},
-    Language,
-};
+use super::term_index::{TermIndexBuilder, TokenIndex};
 
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
@@ -138,8 +140,8 @@ impl<'x> IntoOperations for FtsIndexBuilder<'x> {
                 ops.insert(Operation::hash(&token, HASH_EXACT, field, true));
                 terms.push(term_index.add_token(Token {
                     word: token.into(),
-                    offset: 0,
-                    len: 0,
+                    from: 0,
+                    to: 0,
                 }));
             }
             term_index.add_terms(field, 0, terms);

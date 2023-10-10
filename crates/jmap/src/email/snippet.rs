@@ -30,14 +30,12 @@ use jmap_proto::{
     types::{acl::Acl, collection::Collection},
 };
 use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
+use nlp::language::{stemmer::Stemmer, Language};
 use store::{
     fts::{
         builder::MAX_TOKEN_LENGTH,
         search_snippet::generate_snippet,
-        stemmer::Stemmer,
         term_index::{self, TermIndex},
-        tokenizers::Tokenizer,
-        Language,
     },
     BlobKind,
 };
@@ -66,7 +64,8 @@ impl JMAP {
                             || (text.starts_with('\'') && text.ends_with('\''))
                         {
                             terms.push(
-                                Tokenizer::new(&text, language, MAX_TOKEN_LENGTH)
+                                language
+                                    .tokenize_text(&text, MAX_TOKEN_LENGTH)
                                     .map(|token| (token.word.into_owned(), None))
                                     .collect::<Vec<_>>(),
                             );

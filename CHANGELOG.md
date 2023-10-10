@@ -5,7 +5,8 @@ All notable changes to this project will be documented in this file. This projec
 ## [0.3.9] - 2023-10-07
 
 ## Added
-- Support for reading environment variables from configuration file using the `!ENV_VAR_NAME` special keyword.
+- Support for reading environment variables from the configuration file using the `!ENV_VAR_NAME` special keyword.
+- Option to disable ANSI color codes in logs.
 
 ### Changed
 - Querying directories from a Sieve script is now done using the `query()` method from `eval`. Your scripts will need to be updated, please refer to the [new syntax](https://stalw.art/docs/smtp/filter/sieve#directory-queries).

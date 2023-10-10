@@ -23,10 +23,8 @@
 
 use std::{str::FromStr, time::Duration};
 
-use store::{
-    fts::Language,
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
-};
+use nlp::language::Language;
+use store::rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 use super::session::BaseCapabilities;
 

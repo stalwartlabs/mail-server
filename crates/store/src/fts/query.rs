@@ -21,14 +21,14 @@
  * for more details.
 */
 
+use nlp::language::{stemmer::Stemmer, Language};
 use roaring::RoaringBitmap;
 
 use crate::{
-    fts::{builder::MAX_TOKEN_LENGTH, stemmer::Stemmer, tokenizers::Tokenizer},
-    BitmapKey, ReadTransaction, ValueKey, HASH_EXACT, HASH_STEMMED,
+    fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ReadTransaction, ValueKey, HASH_EXACT, HASH_STEMMED,
 };
 
-use super::{term_index::TermIndex, Language};
+use super::term_index::TermIndex;
 
 impl ReadTransaction<'_> {
     #[maybe_async::maybe_async]
@@ -44,7 +44,7 @@ impl ReadTransaction<'_> {
         if match_phrase {
             let mut phrase = Vec::new();
             let mut bit_keys = Vec::new();
-            for token in Tokenizer::new(text, language, MAX_TOKEN_LENGTH) {
+            for token in language.tokenize_text(text, MAX_TOKEN_LENGTH) {
                 let key = BitmapKey::hash(
                     token.word.as_ref(),
                     account_id,

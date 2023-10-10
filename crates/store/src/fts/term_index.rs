@@ -21,14 +21,13 @@
  * for more details.
 */
 
-use std::convert::TryInto;
+use std::{borrow::Cow, convert::TryInto};
 
 use crate::{Deserialize, Serialize};
 
-use super::{stemmer::StemmedToken, tokenizers::Token};
-
 use ahash::{AHashMap, AHashSet};
 use bitpacking::{BitPacker, BitPacker1x, BitPacker4x, BitPacker8x};
+use nlp::{language::stemmer::StemmedToken, tokenizers::Token};
 use utils::codec::leb128::{Leb128Reader, Leb128Vec};
 
 #[derive(Debug)]
@@ -227,7 +226,7 @@ impl TermIndexBuilder {
         }
     }
 
-    pub fn add_token(&mut self, token: Token) -> Term {
+    pub fn add_token(&mut self, token: Token<Cow<str>>) -> Term {
         let id = self.terms.len() as u32;
         let id = self
             .terms
@@ -236,8 +235,8 @@ impl TermIndexBuilder {
         Term {
             id: *id,
             id_stemmed: *id,
-            offset: token.offset,
-            len: token.len,
+            offset: token.from as u32,
+            len: (token.to - token.from) as u8,
         }
     }
 
@@ -259,8 +258,8 @@ impl TermIndexBuilder {
         Term {
             id,
             id_stemmed,
-            offset: token.offset,
-            len: token.len,
+            offset: token.from as u32,
+            len: (token.to - token.from) as u8,
         }
     }
 
@@ -775,13 +774,10 @@ impl TokenIndex {
 mod tests {
 
     use ahash::AHashMap;
+    use nlp::language::{stemmer::Stemmer, Language};
 
     use crate::{
-        fts::{
-            stemmer::Stemmer,
-            term_index::{TermIndexBuilder, TokenIndex},
-            Language,
-        },
+        fts::term_index::{TermIndexBuilder, TokenIndex},
         Deserialize, Serialize,
     };
 

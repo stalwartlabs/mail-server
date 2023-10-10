@@ -27,9 +27,9 @@ use jmap_proto::{
     object::{mailbox::QueryArguments, Object},
     types::{acl::Acl, collection::Collection, property::Property, value::Value},
 };
+use nlp::language::Language;
 use store::{
     ahash::{AHashMap, AHashSet},
-    fts::Language,
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
 };

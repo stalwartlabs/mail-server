@@ -27,10 +27,11 @@ use std::{
 };
 
 use jmap_proto::types::keyword::Keyword;
+use nlp::language::Language;
 use store::{ahash::AHashMap, query::sort::Pagination};
 
 use store::{
-    fts::{builder::FtsIndexBuilder, Language},
+    fts::builder::FtsIndexBuilder,
     query::{Comparator, Filter},
     write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
     Store, ValueKey,

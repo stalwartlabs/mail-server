@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 store = { path = "../store" }
+nlp = { path = "../nlp" }
 jmap_proto = { path = "../jmap-proto" }
 smtp = { path =  "../smtp" }
 utils = { path =  "../utils" }

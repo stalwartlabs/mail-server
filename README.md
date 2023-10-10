@@ -38,6 +38,7 @@ Key features:
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Access Control Lists (ACLs).
   - Rate limiting.
+  - Security audited (read the [report](https://stalw.art/blog/security-audit)).
 - **Robust and scalable**:
   - **FoundationDB** or **SQLite** database backends.
   - **S3-compatible** blob storage support.

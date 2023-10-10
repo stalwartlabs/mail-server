@@ -25,25 +25,25 @@ use std::borrow::Cow;
 
 use rust_stemmers::Algorithm;
 
-use super::{tokenizers::Tokenizer, Language};
+use super::{Language, LanguageTokenizer};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StemmedToken<'x> {
     pub word: Cow<'x, str>,
     pub stemmed_word: Option<Cow<'x, str>>,
-    pub offset: u32, // Word offset in the text part
-    pub len: u8,     // Word length
+    pub from: usize, // Word offset in the text part
+    pub to: usize,   // Word length
 }
 
 pub struct Stemmer<'x> {
     stemmer: Option<rust_stemmers::Stemmer>,
-    tokenizer: Tokenizer<'x>,
+    tokenizer: LanguageTokenizer<'x>,
 }
 
 impl<'x> Stemmer<'x> {
     pub fn new(text: &'x str, language: Language, max_token_length: usize) -> Stemmer<'x> {
         Stemmer {
-            tokenizer: Tokenizer::new(text, language, max_token_length),
+            tokenizer: language.tokenize_text(text, max_token_length),
             stemmer: STEMMER_MAP[language as usize].map(rust_stemmers::Stemmer::create),
         }
     }
@@ -57,15 +57,15 @@ impl<'x> Iterator for Stemmer<'x> {
         Some(StemmedToken {
             stemmed_word: self.stemmer.as_ref().and_then(|stemmer| {
                 match stemmer.stem(&token.word) {
-                    Cow::Owned(text) if text.len() != token.len as usize || text != token.word => {
+                    Cow::Owned(text) if text.len() != token.word.len() || text != token.word => {
                         Some(text.into())
                     }
                     _ => None,
                 }
             }),
             word: token.word,
-            offset: token.offset,
-            len: token.len,
+            from: token.from,
+            to: token.to,
         })
     }
 }

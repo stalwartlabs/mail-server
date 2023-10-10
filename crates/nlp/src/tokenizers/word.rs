@@ -21,19 +21,19 @@
  * for more details.
 */
 
-use std::str::CharIndices;
+use std::{borrow::Cow, str::CharIndices};
 
 use super::Token;
 
-pub struct IndoEuropeanTokenizer<'x> {
+pub struct WordTokenizer<'x> {
     max_token_length: usize,
     text: &'x str,
     iterator: CharIndices<'x>,
 }
 
-impl<'x> IndoEuropeanTokenizer<'x> {
-    pub fn new(text: &str, max_token_length: usize) -> IndoEuropeanTokenizer {
-        IndoEuropeanTokenizer {
+impl<'x> WordTokenizer<'x> {
+    pub fn new(text: &str, max_token_length: usize) -> WordTokenizer {
+        WordTokenizer {
             max_token_length,
             text,
             iterator: text.char_indices(),
@@ -42,8 +42,8 @@ impl<'x> IndoEuropeanTokenizer<'x> {
 }
 
 /// Parses indo-european text into lowercase tokens.
-impl<'x> Iterator for IndoEuropeanTokenizer<'x> {
-    type Item = Token<'x>;
+impl<'x> Iterator for WordTokenizer<'x> {
+    type Item = Token<Cow<'x, str>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((token_start, ch)) = self.iterator.next() {
@@ -159,7 +159,7 @@ mod tests {
         ];
 
         for (input, tokens) in inputs.iter() {
-            for (pos, token) in IndoEuropeanTokenizer::new(input, 40).enumerate() {
+            for (pos, token) in WordTokenizer::new(input, 40).enumerate() {
                 assert_eq!(token, tokens[pos]);
             }
         }

@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 utils = { path = "../utils" }
+nlp = { path = "../nlp" }
 maybe-async = { path = "../maybe-async" }
 rocksdb = { version = "0.20.1", optional = true }
 foundationdb = { version = "0.8.0", features = ["embedded-fdb-include"], optional = true }
@@ -21,13 +22,9 @@ serde = { version = "1.0", features = ["derive"]}
 ahash = { version = "0.8.0", features = ["serde"] }
 bitpacking = "0.8.4"
 lazy_static = "1.4"
-whatlang = "0.16" # Language detection
-rust-stemmers = "1.2" # Stemmers
-tinysegmenter = "0.1" # Japanese tokenizer
-jieba-rs = "0.6" # Chinese stemmer
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 farmhash = "1.1.5"
-siphasher = "0.3"
+siphasher = "1.0"
 parking_lot = "0.12.1"
 lru-cache = { version = "0.1.2", optional = true }
 num_cpus = { version = "1.15.0", optional = true }

@@ -28,10 +28,8 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
-use store::{
-    fts::Language,
-    query::{self},
-};
+use nlp::language::Language;
+use store::query::{self};
 
 use crate::JMAP;
 

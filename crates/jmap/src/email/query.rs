@@ -28,8 +28,9 @@ use jmap_proto::{
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
 use mail_parser::HeaderName;
+use nlp::language::Language;
 use store::{
-    fts::{builder::MAX_TOKEN_LENGTH, Language},
+    fts::builder::MAX_TOKEN_LENGTH,
     query::{self},
     roaring::RoaringBitmap,
     ValueKey,

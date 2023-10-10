@@ -27,12 +27,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use nlp::{language::stemmer::StemmedToken, tokenizers::Token};
 use roaring::RoaringBitmap;
 use utils::codec::leb128::{Leb128Reader, Leb128Vec};
 
 use crate::{Deserialize, Error, Serialize};
-
-use super::{stemmer::StemmedToken, tokenizers::Token};
 
 pub struct BloomFilter {
     m: u64,
@@ -204,8 +203,8 @@ impl From<Cow<'_, str>> for BloomHash {
     }
 }
 
-impl From<Token<'_>> for BloomHashGroup {
-    fn from(t: Token<'_>) -> Self {
+impl From<Token<Cow<'_, str>>> for BloomHashGroup {
+    fn from(t: Token<Cow<'_, str>>) -> Self {
         Self {
             h1: BloomHash::hash(t.word.as_ref()),
             h2: None,
