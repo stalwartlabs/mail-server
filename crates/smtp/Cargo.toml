@@ -13,6 +13,7 @@ resolver = "2"
 
 [dependencies]
 utils = { path =  "../utils" }
+nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
@@ -50,7 +51,6 @@ num_cpus = "1.15.0"
 lazy_static = "1.4"
 whatlang = "0.16"
 imagesize = "0.12"
-linkify = "0.10"
 idna = "0.4"
 decancer = "1.6.1"
 unicode-security = "0.1.0"

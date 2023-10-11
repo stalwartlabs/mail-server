@@ -26,8 +26,11 @@ use std::{collections::HashMap, hash::BuildHasherDefault};
 use nohash::NoHashHasher;
 use serde::{Deserialize, Serialize};
 
-pub mod bloom;
+use crate::tokenizers::osb::Gram;
+
+pub mod cache;
 pub mod classify;
+pub mod tokenize;
 pub mod train;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -37,7 +40,7 @@ pub struct BayesModel {
     pub ham_learns: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BayesClassifier {
     pub min_token_hits: u32,
     pub min_tokens: u32,
@@ -47,14 +50,14 @@ pub struct BayesClassifier {
 
 #[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq)]
 pub struct TokenHash {
-    h1: u64,
-    h2: u64,
+    pub h1: u64,
+    pub h2: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Copy, Clone)]
 pub struct Weights {
-    spam: u32,
-    ham: u32,
+    pub spam: u32,
+    pub ham: u32,
 }
 
 impl BayesClassifier {
@@ -73,3 +76,32 @@ impl Default for BayesClassifier {
         Self::new()
     }
 }
+
+impl From<Gram<'_>> for TokenHash {
+    fn from(value: Gram<'_>) -> Self {
+        match value {
+            Gram::Uni { t1 } => TokenHash {
+                h1: xxhash_rust::xxh3::xxh3_64(t1.as_bytes()),
+                h2: farmhash::hash64(t1.as_bytes()),
+            },
+            Gram::Bi { t1, t2, .. } => {
+                let mut buf = Vec::with_capacity(t1.len() + t2.len() + 1);
+                buf.extend_from_slice(t1.as_bytes());
+                buf.push(b' ');
+                buf.extend_from_slice(t2.as_bytes());
+                TokenHash {
+                    h1: xxhash_rust::xxh3::xxh3_64(&buf),
+                    h2: farmhash::hash64(&buf),
+                }
+            }
+        }
+    }
+}
+
+impl std::hash::Hash for TokenHash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.h1 ^ self.h2);
+    }
+}
+
+impl nohash::IsEnabled for TokenHash {}

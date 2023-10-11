@@ -30,6 +30,7 @@ pub mod config;
 pub mod ipc;
 pub mod listener;
 pub mod map;
+pub mod suffixlist;
 
 use opentelemetry::{
     sdk::{

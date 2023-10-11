@@ -39,7 +39,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use directory::{Directory, DirectoryConfig, Lookup};
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
@@ -539,13 +539,6 @@ pub enum VerifyStrategy {
     Relaxed,
     Strict,
     Disable,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct PublicSuffix {
-    pub suffixes: AHashSet<String>,
-    pub exceptions: AHashSet<String>,
-    pub wildcards: Vec<String>,
 }
 
 #[derive(Default)]

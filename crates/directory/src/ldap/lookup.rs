@@ -24,7 +24,7 @@
 use ldap3::{ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{Directory, Principal, QueryColumn, Type};
+use crate::{DatabaseColumn, Directory, Principal, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -239,13 +239,17 @@ impl Directory for LdapDirectory {
         Ok(emails)
     }
 
-    async fn lookup(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+    async fn lookup(&self, query: &str, params: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
         self.query_(query, params)
             .await
             .map(|entry| entry.is_some())
     }
 
-    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
+    async fn query(
+        &self,
+        query: &str,
+        params: &[DatabaseColumn<'_>],
+    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
         self.query_(query, params).await.map(|entry| {
             if let Some(entry) = entry {
                 let mut object = String::new();
@@ -257,7 +261,7 @@ impl Directory for LdapDirectory {
                         object.push('\n');
                     }
                 }
-                vec![QueryColumn::Text(object)]
+                vec![DatabaseColumn::Text(object.into())]
             } else {
                 vec![]
             }
@@ -283,7 +287,11 @@ impl Directory for LdapDirectory {
 }
 
 impl LdapDirectory {
-    async fn query_(&self, query: &str, params: &[&str]) -> crate::Result<Option<ResultEntry>> {
+    async fn query_(
+        &self,
+        query: &str,
+        params: &[DatabaseColumn<'_>],
+    ) -> crate::Result<Option<ResultEntry>> {
         let mut conn = self.pool.get().await?;
         tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
 
@@ -292,7 +300,7 @@ impl LdapDirectory {
             for (pos, item) in query.split('?').enumerate() {
                 if pos > 0 {
                     if let Some(param) = params.get(pos - 1) {
-                        expanded_query.push_str(param);
+                        expanded_query.push_str(param.as_str());
                     }
                 }
                 expanded_query.push_str(item);

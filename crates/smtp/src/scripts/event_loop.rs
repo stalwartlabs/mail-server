@@ -24,7 +24,6 @@
 use core::panic;
 use std::{sync::Arc, time::Duration};
 
-use ahash::AHashMap;
 use directory::Lookup;
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
@@ -67,8 +66,6 @@ impl SMTP {
         let mut reject_reason = None;
         let mut modifications = vec![];
         let mut keep_id = usize::MAX;
-
-        let mut plugin_data = AHashMap::new();
 
         // Start event loop
         while let Some(result) = instance.run(input) {
@@ -125,7 +122,6 @@ impl SMTP {
                                 span: &span,
                                 handle: &handle,
                                 core: self,
-                                data: &mut plugin_data,
                                 message: instance.message(),
                                 arguments,
                             },

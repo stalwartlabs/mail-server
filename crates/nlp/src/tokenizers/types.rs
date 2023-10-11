@@ -23,7 +23,7 @@
 
 use std::str::CharIndices;
 
-use crate::PublicSuffix;
+use utils::suffixlist::PublicSuffix;
 
 use super::Token;
 
@@ -31,35 +31,39 @@ pub struct TypesTokenizer<'x, 'y> {
     text: &'x str,
     suffixes: &'y PublicSuffix,
     iter: CharIndices<'x>,
-    tokens: Vec<Token<TokenType<'x>>>,
+    tokens: Vec<Token<TokenType<&'x str>>>,
     peek_pos: usize,
     last_ch_is_space: bool,
     last_token_is_dot: bool,
     eof: bool,
+    tokenize_urls: bool,
+    tokenize_urls_without_scheme: bool,
+    tokenize_emails: bool,
+    tokenize_numbers: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenType<'x> {
-    Alphabetic(&'x str),
-    Integer(&'x str),
-    Alphanumeric(&'x str),
-    Hexadecimal(&'x str),
+pub enum TokenType<T> {
+    Alphabetic(T),
+    Integer(T),
+    Alphanumeric(T),
+    Hexadecimal(T),
     Other(char),
     Punctuation(char),
     Space,
 
     // Detected types
-    Url(&'x str),
-    UrlNoScheme(&'x str),
-    UrlNoHost(&'x str),
-    Email(&'x str),
-    Float(&'x str),
+    Url(T),
+    UrlNoScheme(T),
+    UrlNoHost(T),
+    Email(T),
+    Float(T),
 }
 
-impl Copy for Token<TokenType<'_>> {}
+impl Copy for Token<TokenType<&'_ str>> {}
 
 impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
-    type Item = Token<TokenType<'x>>;
+    type Item = Token<TokenType<&'x str>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let token = self.peek()?;
@@ -67,7 +71,8 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         self.last_token_is_dot = matches!(token.word, TokenType::Punctuation('.'));
 
         // Try parsing URL with scheme
-        if matches!(
+        if self.tokenize_urls
+            && matches!(
             token.word,
             TokenType::Alphabetic(t) | TokenType::Hexadecimal(t)
             if t.len() <= 8 && t.chars().all(|c| c.is_ascii()))
@@ -82,7 +87,8 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         }
 
         // Try parsing email
-        if token.word.is_email_atom()
+        if self.tokenize_emails
+            && token.word.is_email_atom()
             && self.peek_has_tokens(
                 &[TokenType::Punctuation('@'), TokenType::Punctuation('.')],
                 TokenType::Space,
@@ -97,7 +103,8 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         }
 
         // Try parsing URL without scheme
-        if token.word.is_domain_atom(true)
+        if self.tokenize_urls_without_scheme
+            && token.word.is_domain_atom(true)
             && self.peek_has_tokens(&[TokenType::Punctuation('.')], TokenType::Space)
         {
             if let Some(url) = self.try_parse_url(None) {
@@ -109,7 +116,7 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         }
 
         // Try parsing currencies and floating point numbers
-        if !last_is_dot {
+        if self.tokenize_numbers && !last_is_dot {
             if let Some(num) = self.try_parse_number() {
                 self.peek_advance();
                 return Some(num);
@@ -132,7 +139,31 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
             suffixes,
             last_ch_is_space: false,
             last_token_is_dot: false,
+            tokenize_urls: true,
+            tokenize_urls_without_scheme: true,
+            tokenize_emails: true,
+            tokenize_numbers: true,
         }
+    }
+
+    pub fn tokenize_urls(mut self, tokenize: bool) -> Self {
+        self.tokenize_urls = tokenize;
+        self
+    }
+
+    pub fn tokenize_urls_without_scheme(mut self, tokenize: bool) -> Self {
+        self.tokenize_urls_without_scheme = tokenize;
+        self
+    }
+
+    pub fn tokenize_emails(mut self, tokenize: bool) -> Self {
+        self.tokenize_emails = tokenize;
+        self
+    }
+
+    pub fn tokenize_numbers(mut self, tokenize: bool) -> Self {
+        self.tokenize_numbers = tokenize;
+        self
     }
 
     fn consume(&mut self) -> bool {
@@ -212,7 +243,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         }
     }
 
-    fn next_(&mut self) -> Option<Token<TokenType<'x>>> {
+    fn next_(&mut self) -> Option<Token<TokenType<&'x str>>> {
         if self.tokens.is_empty() && !self.eof {
             self.consume();
         }
@@ -223,7 +254,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         }
     }
 
-    fn peek(&mut self) -> Option<Token<TokenType<'x>>> {
+    fn peek(&mut self) -> Option<Token<TokenType<&'x str>>> {
         while self.tokens.len() <= self.peek_pos && !self.eof {
             self.consume();
         }
@@ -244,7 +275,11 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         self.peek_pos = 0;
     }
 
-    fn peek_has_tokens(&mut self, tokens: &[TokenType<'_>], stop_token: TokenType<'_>) -> bool {
+    fn peek_has_tokens(
+        &mut self,
+        tokens: &[TokenType<&'_ str>],
+        stop_token: TokenType<&'_ str>,
+    ) -> bool {
         let mut tokens = tokens.iter().copied();
         let mut token = tokens.next().unwrap();
         while let Some(t) = self.peek() {
@@ -266,8 +301,8 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
 
     fn try_parse_url(
         &mut self,
-        scheme_token: Option<Token<TokenType<'_>>>,
-    ) -> Option<Token<TokenType<'x>>> {
+        scheme_token: Option<Token<TokenType<&'_ str>>>,
+    ) -> Option<Token<TokenType<&'x str>>> {
         let (has_scheme, allow_blank_host) = scheme_token.as_ref().map_or((false, false), |t| {
             (
                 true,
@@ -480,7 +515,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         .into()
     }
 
-    fn try_parse_email(&mut self) -> Option<Token<TokenType<'x>>> {
+    fn try_parse_email(&mut self) -> Option<Token<TokenType<&'x str>>> {
         // Start token is a valid local part atom
         let start_token = self.peek()?;
         let mut last_is_dot = false;
@@ -615,7 +650,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
         None
     }
 
-    fn try_parse_number(&mut self) -> Option<Token<TokenType<'x>>> {
+    fn try_parse_number(&mut self) -> Option<Token<TokenType<&'x str>>> {
         self.peek_rewind();
         let mut start_pos = usize::MAX;
         let mut end_pos = usize::MAX;
@@ -698,7 +733,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
     }
 }
 
-impl<'x> TokenType<'x> {
+impl<T> TokenType<T> {
     fn is_email_atom(&self) -> bool {
         matches!(
             self,
@@ -744,7 +779,8 @@ impl<'x> TokenType<'x> {
 
 #[cfg(test)]
 mod test {
-    use crate::PublicSuffix;
+
+    use utils::suffixlist::PublicSuffix;
 
     use super::{TokenType, TypesTokenizer};
 

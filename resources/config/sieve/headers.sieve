@@ -1,6 +1,5 @@
 # Mailing list scores
 let "ml_score" "count(header.List-Id:List-Archive:List-Owner:List-Help:List-Post:X-Loop:List-Subscribe:List-Unsubscribe[*].exists) * 0.125";
-eval "print('ml_score: ' + ml_score)";
 if eval "ml_score < 1" {
     if eval "header.List-Id.exists" {
         let "ml_score" "ml_score + 0.50";

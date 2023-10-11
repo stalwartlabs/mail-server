@@ -24,7 +24,7 @@
 use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::Severity;
 
-use crate::{Directory, DirectoryError, Principal, QueryColumn};
+use crate::{DatabaseColumn, Directory, DirectoryError, Principal};
 
 use super::{SmtpClient, SmtpDirectory};
 
@@ -93,11 +93,15 @@ impl Directory for SmtpDirectory {
             .await
     }
 
-    async fn lookup(&self, _query: &str, _params: &[&str]) -> crate::Result<bool> {
+    async fn lookup(&self, _: &str, _: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
         Err(DirectoryError::unsupported("smtp", "lookup"))
     }
 
-    async fn query(&self, _query: &str, _params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
+    async fn query(
+        &self,
+        _: &str,
+        _: &[DatabaseColumn<'_>],
+    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
         Err(DirectoryError::unsupported("smtp", "query"))
     }
 

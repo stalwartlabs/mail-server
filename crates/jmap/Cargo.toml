@@ -37,8 +37,8 @@ p256 = { version = "0.13", features = ["ecdh"] }
 hkdf = "0.12.3"
 sha2 = "0.10.1"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"]}
-tokio-tungstenite = "0.20.0"
-tungstenite = "0.20.0"
+tokio-tungstenite = "0.20"
+tungstenite = "0.20"
 chrono = "0.4"
 dashmap = "5.4"
 aes = "0.8.3"

@@ -21,11 +21,12 @@
  * for more details.
 */
 
+use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sieve::{runtime::Variable, Context};
 
-use crate::{config::scripts::SieveContext, scripts::functions::url::tokenize_email};
+use crate::config::scripts::SieveContext;
 
-use super::{html::html_to_tokens, url::tokenize_url, ApplyString};
+use super::{html::html_to_tokens, ApplyString};
 
 pub fn fn_trim<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     v[0].transform(|s| Variable::StringRef(s.trim()))
@@ -106,13 +107,49 @@ pub fn fn_tokenize<'x>(
     ctx: &'x Context<'x, SieveContext>,
     mut v: Vec<Variable<'x>>,
 ) -> Variable<'x> {
-    match v[1].to_cow().as_ref() {
-        "html" => html_to_tokens(v[0].to_cow().as_ref()).into(),
-        "words" => tokenize_words(&v[0]),
-        "uri" | "url" => tokenize_url(ctx, v.remove(0), false),
-        "uri_strict" | "url_strict" => tokenize_url(ctx, v.remove(0), true),
-        "email" => tokenize_email(v.remove(0)),
-        _ => Variable::default(),
+    let (urls, urls_without_scheme, emails) = match v[1].to_cow().as_ref() {
+        "html" => return html_to_tokens(v[0].to_cow().as_ref()).into(),
+        "words" => return tokenize_words(&v[0]),
+        "uri" | "url" => (true, true, true),
+        "uri_strict" | "url_strict" => (true, false, false),
+        "email" => (false, false, true),
+        _ => return Variable::default(),
+    };
+
+    match v.remove(0) {
+        Variable::StringRef(text) => TypesTokenizer::new(text, &ctx.context().psl)
+            .tokenize_numbers(false)
+            .tokenize_urls(urls)
+            .tokenize_urls_without_scheme(urls_without_scheme)
+            .tokenize_emails(emails)
+            .filter_map(|t| match t.word {
+                TokenType::Url(text) if urls => Variable::StringRef(text).into(),
+                TokenType::UrlNoScheme(text) if urls_without_scheme => {
+                    Variable::String(format!("https://{text}")).into()
+                }
+                TokenType::Email(text) if emails => Variable::StringRef(text).into(),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
+            TypesTokenizer::new(v.to_cow().as_ref(), &ctx.context().psl)
+                .tokenize_numbers(false)
+                .tokenize_urls(urls)
+                .tokenize_urls_without_scheme(urls_without_scheme)
+                .tokenize_emails(emails)
+                .filter_map(|t| match t.word {
+                    TokenType::Url(text) if urls => Variable::String(text.to_string()).into(),
+                    TokenType::UrlNoScheme(text) if urls_without_scheme => {
+                        Variable::String(format!("https://{text}")).into()
+                    }
+                    TokenType::Email(text) if emails => Variable::String(text.to_string()).into(),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .into()
+        }
+        v => v,
     }
 }
 

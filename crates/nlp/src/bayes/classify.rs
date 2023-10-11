@@ -21,13 +21,14 @@
  * for more details.
 */
 
-use crate::transformers::osb::OsbToken;
+use crate::tokenizers::osb::OsbToken;
 
 use super::{BayesClassifier, Weights};
 
 // Position 0 represents Unigram weights
 const FEATURE_WEIGHT: [f64; 8] = [1.0, 3125.0, 256.0, 27.0, 1.0, 0.0, 0.0, 0.0];
 
+// Credits: ported from RSpamd
 impl BayesClassifier {
     pub fn classify<T>(&self, tokens: T, ham_learns: u32, spam_learns: u32) -> Option<f64>
     where

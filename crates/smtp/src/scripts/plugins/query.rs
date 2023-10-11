@@ -22,7 +22,7 @@
 */
 
 use crate::config::scripts::SieveContext;
-use directory::QueryColumn;
+use directory::DatabaseColumn;
 use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
@@ -62,8 +62,12 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         return false.into();
     }
 
-    // Obtain parameters
-    let parameters = arguments.next().unwrap().into_string_array();
+    // Obtain arguments
+    let arguments = match arguments.next().unwrap() {
+        Variable::Array(l) => l.into_iter().map(DatabaseColumn::from).collect(),
+        Variable::ArrayRef(l) => l.iter().map(DatabaseColumn::from).collect(),
+        v => vec![DatabaseColumn::from(v)],
+    };
 
     // Run query
     if query
@@ -71,12 +75,9 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        if let Ok(mut query_columns) = ctx.handle.block_on(directory.query(
-            &query,
-            &parameters.iter().map(String::as_str).collect::<Vec<_>>(),
-        )) {
+        if let Ok(mut query_columns) = ctx.handle.block_on(directory.query(&query, &arguments)) {
             match query_columns.len() {
-                1 if !matches!(query_columns.first(), Some(QueryColumn::Null)) => {
+                1 if !matches!(query_columns.first(), Some(DatabaseColumn::Null)) => {
                     query_columns.pop().map(Variable::from).unwrap()
                 }
                 0 => Variable::default(),
@@ -87,10 +88,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         }
     } else {
         ctx.handle
-            .block_on(directory.lookup(
-                &query,
-                &parameters.iter().map(String::as_str).collect::<Vec<_>>(),
-            ))
+            .block_on(directory.lookup(&query, &arguments))
             .is_ok()
             .into()
     }

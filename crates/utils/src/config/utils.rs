@@ -298,6 +298,18 @@ impl ParseValue for u64 {
     }
 }
 
+impl ParseValue for f64 {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        value.parse().map_err(|_| {
+            format!(
+                "Invalid floating point value {:?} for property {:?}.",
+                value,
+                key.as_key()
+            )
+        })
+    }
+}
+
 impl ParseValue for u16 {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         value.parse().map_err(|_| {

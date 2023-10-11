@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use crate::transformers::osb::OsbToken;
+use crate::tokenizers::osb::OsbToken;
 
 use super::{BayesModel, TokenHash};
 

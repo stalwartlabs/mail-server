@@ -21,13 +21,13 @@
  * for more details.
 */
 
+pub mod bayes;
 pub mod dns;
 pub mod exec;
 pub mod http;
 pub mod lookup;
 pub mod query;
 
-use ahash::AHashMap;
 use mail_parser::Message;
 use sieve::{runtime::Variable, FunctionMap, Input};
 use tokio::runtime::Handle;
@@ -41,12 +41,11 @@ pub struct PluginContext<'x> {
     pub span: &'x tracing::Span,
     pub handle: &'x Handle,
     pub core: &'x SMTP,
-    pub data: &'x mut AHashMap<String, String>,
     pub message: &'x Message<'x>,
     pub arguments: Vec<Variable<'static>>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 7] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 10] = [
     query::exec,
     exec::exec,
     lookup::exec,
@@ -54,8 +53,11 @@ const PLUGINS_EXEC: [ExecPluginFnc; 7] = [
     dns::exec,
     dns::exec_exists,
     http::exec_header,
+    bayes::exec_train,
+    bayes::exec_untrain,
+    bayes::exec_classify,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 7] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 10] = [
     query::register,
     exec::register,
     lookup::register,
@@ -63,6 +65,9 @@ const PLUGINS_REGISTER: [RegisterPluginFnc; 7] = [
     dns::register,
     dns::register_exists,
     http::register_header,
+    bayes::register_train,
+    bayes::register_untrain,
+    bayes::register_classify,
 ];
 
 pub trait RegisterSievePlugins {

@@ -23,7 +23,7 @@
 
 use mail_send::Credentials;
 
-use crate::{Directory, Principal, QueryColumn};
+use crate::{DatabaseColumn, Directory, Principal};
 
 use super::CachedDirectory;
 
@@ -71,11 +71,15 @@ impl<T: Directory> Directory for CachedDirectory<T> {
         self.inner.expn(address).await
     }
 
-    async fn lookup(&self, query: &str, params: &[&str]) -> crate::Result<bool> {
+    async fn lookup(&self, query: &str, params: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
         self.inner.lookup(query, params).await
     }
 
-    async fn query(&self, query: &str, params: &[&str]) -> crate::Result<Vec<QueryColumn>> {
+    async fn query(
+        &self,
+        query: &str,
+        params: &[DatabaseColumn<'_>],
+    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
         self.inner.query(query, params).await
     }
 

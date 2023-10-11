@@ -93,9 +93,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "1.1.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea5d730647d4fadd988536d06fecce94b7b4f2a7efdae548f1cf4b63205518ab"
+checksum = "b2969dcb958b36655471fc61f7e416fa76033bdd4bfed0678d8fee1e2d07a1f0"
 dependencies = [
  "memchr",
 ]
@@ -2677,15 +2677,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
-name = "linkify"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1dfa36d52c581e9ec783a7ce2a5e0143da6237be5811a0b3153fedfdbe9f780"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2994,11 +2985,16 @@ dependencies = [
  "farmhash",
  "jieba-rs",
  "lazy_static",
+ "lru-cache",
  "nohash",
+ "parking_lot",
+ "phf",
  "rust-stemmers",
  "serde",
  "siphasher 1.0.0",
  "tinysegmenter",
+ "tokio",
+ "utils",
  "whatlang",
  "xxhash-rust",
 ]
@@ -3294,9 +3290,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "3.9.1"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a54938017eacd63036332b4ae5c8a49fc8c0c1d6d629893057e4f13609edd06"
+checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
 ]
@@ -3630,9 +3626,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b1106fec09662ec6dd98ccac0f81cef56984d0b49f75c92d8cbad76e20c005c"
+checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
 dependencies = [
  "unicode-ident",
 ]
@@ -3799,9 +3795,9 @@ dependencies = [
 
 [[package]]
 name = "rasn"
-version = "0.10.1"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4addd1a49756bcb131c2f686c6c833d2b63e4da7a0df07efd8c3de04b7efbdb2"
+checksum = "c22b7f7ff0508dae62e1be69fe02f32eb88523090b50ac850637947853cf5b6d"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -3821,9 +3817,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-cms"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e269b4df6eea0f54abd46afacd759b1c13a27e98da98a47ef3c405ef3568b0f5"
+checksum = "6ecf9f1bb38cbb2a032014f0329d7fd9c2b08f26c4fc882ad642bb95dfefd74f"
 dependencies = [
  "rasn",
  "rasn-pkix",
@@ -3831,9 +3827,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-derive"
-version = "0.10.1"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba8242a16e3461b81333516ad8457906f52fdf21d087417fb59262c9ab406618"
+checksum = "a1e6ddbc9ada563036d59c322cb0886a9b08b346904eebbcd20af2e01caecee7"
 dependencies = [
  "either",
  "itertools 0.10.5",
@@ -3846,9 +3842,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-pkix"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06179c947a63fe9f9f5d73a539dcb13d90c6bdaeb03bd28b90ad796aff9fe6a8"
+checksum = "b894c903130c4915d79d8d9ce155429b3896b25efa5f81de4d9ab7b1b0f0b7cf"
 dependencies = [
  "rasn",
 ]
@@ -3904,14 +3900,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.9.6"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebee201405406dbf528b8b672104ae6d6d63e6d118cb10e4d51abbc7b58044ff"
+checksum = "d119d7c7ca818f8a53c300863d4f87566aac09943aef5b355bb83969dae75d87"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.3.9",
- "regex-syntax 0.7.5",
+ "regex-automata 0.4.1",
+ "regex-syntax 0.8.0",
 ]
 
 [[package]]
@@ -3925,13 +3921,13 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.9"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59b23e92ee4318893fa3fe3e6fb365258efbfe6ac6ab30f090cdcbb7aa37efa9"
+checksum = "465c6fc0621e4abc4187a2bda0937bfd4f722c2730b29562e19689ea796c9a4b"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.7.5",
+ "regex-syntax 0.8.0",
 ]
 
 [[package]]
@@ -3942,9 +3938,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
-version = "0.7.5"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
+checksum = "c3cbb081b9784b07cceb8824c8583f86db4814d172ab043f3c23f7dc600bf83d"
 
 [[package]]
 name = "reqwest"
@@ -4610,7 +4606,7 @@ checksum = "a7cee0529a6d40f580e7a5e6c495c8fbfe21b7b52795ed4bb5e62cdf92bc6380"
 [[package]]
 name = "sieve-rs"
 version = "0.3.1"
-source = "git+https://github.com/stalwartlabs/sieve#c9288b62815610872e9f278b904e34d46124acb5"
+source = "git+https://github.com/stalwartlabs/sieve#bbb265765ebe92394e429001e90ba2e9b4201f9a"
 dependencies = [
  "ahash 0.8.3",
  "bincode",
@@ -4690,13 +4686,13 @@ dependencies = [
  "imagesize",
  "infer",
  "lazy_static",
- "linkify",
  "lru-cache",
  "mail-auth",
  "mail-builder",
  "mail-parser",
  "mail-send",
  "md5",
+ "nlp",
  "num_cpus",
  "parking_lot",
  "rand 0.8.5",

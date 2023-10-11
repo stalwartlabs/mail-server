@@ -21,7 +21,11 @@
  * for more details.
 */
 
-use std::{borrow::Cow, fmt::Debug, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use bb8::RunError;
@@ -82,8 +86,12 @@ pub trait Directory: Sync + Send {
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
-    async fn lookup(&self, query: &str, params: &[&str]) -> Result<bool>;
-    async fn query(&self, query: &str, params: &[&str]) -> Result<Vec<QueryColumn>>;
+    async fn lookup(&self, query: &str, params: &[DatabaseColumn<'_>]) -> Result<bool>;
+    async fn query(
+        &self,
+        query: &str,
+        params: &[DatabaseColumn<'_>],
+    ) -> Result<Vec<DatabaseColumn<'static>>>;
 
     fn type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
@@ -91,12 +99,12 @@ pub trait Directory: Sync + Send {
 }
 
 #[derive(Clone, Debug)]
-pub enum QueryColumn {
+pub enum DatabaseColumn<'x> {
     Integer(i64),
     Bool(bool),
     Float(f64),
-    Text(String),
-    Blob(Vec<u8>),
+    Text(Cow<'x, str>),
+    Blob(Cow<'x, [u8]>),
     Null,
 }
 
@@ -169,24 +177,24 @@ impl PartialEq for MatchType {
 impl Eq for MatchType {}
 
 impl Lookup {
-    pub async fn contains(&self, item: &str) -> Option<bool> {
+    pub async fn contains(&self, item: impl Into<DatabaseColumn<'_>>) -> Option<bool> {
         match self {
             Lookup::Directory { directory, query } => {
-                match directory.lookup(query, &[item]).await {
+                match directory.lookup(query, &[item.into()]).await {
                     Ok(result) => result.into(),
                     Err(_) => None,
                 }
             }
-            Lookup::List { list } => list.contains(item).into(),
-            Lookup::Map { map } => map.contains_key(item).into(),
+            Lookup::List { list } => list.contains(item.into().as_str()).into(),
+            Lookup::Map { map } => map.contains_key(item.into().as_str()).into(),
         }
     }
 
-    pub async fn lookup(&self, item: &str) -> Option<Variable<'static>> {
+    pub async fn lookup(&self, items: &[DatabaseColumn<'_>]) -> Option<Variable<'static>> {
         match self {
-            Lookup::Directory { directory, query } => match directory.query(query, &[item]).await {
+            Lookup::Directory { directory, query } => match directory.query(query, items).await {
                 Ok(mut result) => match result.len() {
-                    1 if !matches!(result.first(), Some(QueryColumn::Null)) => {
+                    1 if !matches!(result.first(), Some(DatabaseColumn::Null)) => {
                         result.pop().map(Variable::from).unwrap()
                     }
                     0 => Variable::default(),
@@ -195,21 +203,34 @@ impl Lookup {
                 .into(),
                 Err(_) => None,
             },
-            Lookup::List { list } => Some(list.contains(item).into()),
-            Lookup::Map { map } => map.get(item).cloned(),
+            Lookup::List { list } => Some(list.contains(items[0].as_str()).into()),
+            Lookup::Map { map } => map.get(items[0].as_str()).cloned(),
+        }
+    }
+
+    pub async fn query(
+        &self,
+        items: &[DatabaseColumn<'_>],
+    ) -> Option<Vec<DatabaseColumn<'static>>> {
+        match self {
+            Lookup::Directory { directory, query } => match directory.query(query, items).await {
+                Ok(result) => Some(result),
+                Err(_) => None,
+            },
+            _ => None,
         }
     }
 }
 
-impl From<QueryColumn> for Variable<'static> {
-    fn from(value: QueryColumn) -> Self {
+impl<'x> From<DatabaseColumn<'x>> for Variable<'static> {
+    fn from(value: DatabaseColumn) -> Self {
         match value {
-            QueryColumn::Integer(v) => Variable::Integer(v),
-            QueryColumn::Bool(v) => Variable::Integer(i64::from(v)),
-            QueryColumn::Float(v) => Variable::Float(v),
-            QueryColumn::Text(v) => Variable::String(v),
-            QueryColumn::Blob(v) => Variable::String(v.into_string()),
-            QueryColumn::Null => Variable::StringRef(""),
+            DatabaseColumn::Integer(v) => Variable::Integer(v),
+            DatabaseColumn::Bool(v) => Variable::Integer(i64::from(v)),
+            DatabaseColumn::Float(v) => Variable::Float(v),
+            DatabaseColumn::Text(v) => Variable::String(v.into_owned()),
+            DatabaseColumn::Blob(v) => Variable::String(v.into_owned().into_string()),
+            DatabaseColumn::Null => Variable::StringRef(""),
         }
     }
 }
@@ -454,6 +475,118 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Disable => None,
+        }
+    }
+}
+
+impl<'x> DatabaseColumn<'x> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Text(v) => v.as_ref(),
+            _ => "",
+        }
+    }
+}
+
+impl<'x> From<&'x str> for DatabaseColumn<'x> {
+    fn from(value: &'x str) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<String> for DatabaseColumn<'x> {
+    fn from(value: String) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<&'x String> for DatabaseColumn<'x> {
+    fn from(value: &'x String) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<Cow<'x, str>> for DatabaseColumn<'x> {
+    fn from(value: Cow<'x, str>) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl<'x> From<bool> for DatabaseColumn<'x> {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl<'x> From<i64> for DatabaseColumn<'x> {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl<'x> From<u64> for DatabaseColumn<'x> {
+    fn from(value: u64) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl<'x> From<u32> for DatabaseColumn<'x> {
+    fn from(value: u32) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl<'x> From<f64> for DatabaseColumn<'x> {
+    fn from(value: f64) -> Self {
+        Self::Float(value)
+    }
+}
+
+impl<'x> From<&'x [u8]> for DatabaseColumn<'x> {
+    fn from(value: &'x [u8]) -> Self {
+        Self::Blob(value.into())
+    }
+}
+
+impl<'x> From<Vec<u8>> for DatabaseColumn<'x> {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Blob(value.into())
+    }
+}
+
+impl<'x> From<Variable<'x>> for DatabaseColumn<'x> {
+    fn from(value: Variable<'x>) -> Self {
+        match value {
+            Variable::String(v) => Self::Text(v.into()),
+            Variable::StringRef(v) => Self::Text(v.into()),
+            Variable::Integer(v) => Self::Integer(v),
+            Variable::Float(v) => Self::Float(v),
+            v => Self::Text(v.into_string().into()),
+        }
+    }
+}
+
+impl<'x> From<&'x Variable<'x>> for DatabaseColumn<'x> {
+    fn from(value: &'x Variable<'x>) -> Self {
+        match value {
+            Variable::String(v) => Self::Text(v.into()),
+            Variable::StringRef(v) => Self::Text((*v).into()),
+            Variable::Integer(v) => Self::Integer(*v),
+            Variable::Float(v) => Self::Float(*v),
+            v => Self::Text(v.to_string().into()),
+        }
+    }
+}
+
+impl<'x> Display for DatabaseColumn<'x> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatabaseColumn::Text(v) => f.write_str(v.as_ref()),
+            DatabaseColumn::Integer(v) => write!(f, "{}", v),
+            DatabaseColumn::Bool(v) => write!(f, "{}", v),
+            DatabaseColumn::Float(v) => write!(f, "{}", v),
+            DatabaseColumn::Blob(v) => write!(f, "{}", String::from_utf8_lossy(v.as_ref())),
+            DatabaseColumn::Null => write!(f, "NULL"),
         }
     }
 }

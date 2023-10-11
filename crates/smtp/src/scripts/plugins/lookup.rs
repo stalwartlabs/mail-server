@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::DatabaseColumn;
 use sieve::{runtime::Variable, FunctionMap};
 
 use crate::config::scripts::SieveContext;
@@ -62,15 +63,20 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
 }
 
 pub fn exec_map(ctx: PluginContext<'_>) -> Variable<'static> {
-    let lookup_id = ctx.arguments[0].to_cow();
-    let item = ctx.arguments[1].to_cow();
+    let mut arguments = ctx.arguments.into_iter();
+    let lookup_id = arguments.next().unwrap().into_cow();
+    let items = match arguments.next().unwrap() {
+        Variable::Array(l) => l.into_iter().map(DatabaseColumn::from).collect(),
+        Variable::ArrayRef(l) => l.iter().map(DatabaseColumn::from).collect(),
+        v => vec![DatabaseColumn::from(v)],
+    };
     let span = ctx.span;
 
-    if !lookup_id.is_empty() && !item.is_empty() {
+    if !lookup_id.is_empty() && !items.is_empty() {
         if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
             return ctx
                 .handle
-                .block_on(lookup.lookup(item.as_ref()))
+                .block_on(lookup.lookup(&items))
                 .unwrap_or_default();
         } else {
             tracing::warn!(

@@ -21,25 +21,33 @@
  * for more details.
 */
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+use directory::Lookup;
+use nlp::bayes::{cache::BayesTokenCache, BayesClassifier};
 use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
 use crate::{
     core::{SieveConfig, SieveCore},
     scripts::{functions::register_functions, plugins::RegisterSievePlugins},
 };
-use utils::config::{utils::AsKey, Config};
+use utils::{
+    config::{utils::AsKey, Config},
+    suffixlist::PublicSuffix,
+};
 
-use super::{resolver::ConfigResolver, ConfigContext, PublicSuffix};
+use super::{resolver::ConfigResolver, ConfigContext};
 
 pub trait ConfigSieve {
     fn parse_sieve(&self, ctx: &mut ConfigContext) -> super::Result<SieveCore>;
 }
 
-#[derive(Clone, Default)]
 pub struct SieveContext {
     pub psl: PublicSuffix,
+    pub bayes_classify: BayesClassifier,
+    pub bayes_cache: BayesTokenCache,
+    pub lookup_classify: Arc<Lookup>,
+    pub lookup_train: Arc<Lookup>,
 }
 
 impl ConfigSieve for Config {
@@ -48,6 +56,29 @@ impl ConfigSieve for Config {
         let mut fnc_map = register_functions().register_plugins();
         let sieve_ctx = SieveContext {
             psl: self.parse_public_suffix()?,
+            bayes_classify: BayesClassifier {
+                min_token_hits: self.property_or_static("bayes.min-token-hits", "2")?,
+                min_tokens: self.property_or_static("bayes.min-tokens", "11")?,
+                min_prob_strength: self.property_or_static("bayes.min-prob-strength", "0.05")?,
+                min_learns: self.property_or_static("bayes.min-learns", "200")?,
+            },
+            bayes_cache: BayesTokenCache::new(
+                self.property_or_static("bayes.cache.capacity", "8192")?,
+                self.property_or_static("bayes.cache.ttl.positive", "1h")?,
+                self.property_or_static("bayes.cache.ttl.negative", "1h")?,
+            ),
+            lookup_classify: ctx
+                .directory
+                .lookups
+                .get("bayes.tokens.classify")
+                .ok_or("No lookup found for key bayes.tokens.classify.".to_string())?
+                .clone(),
+            lookup_train: ctx
+                .directory
+                .lookups
+                .get("bayes.tokens.train")
+                .ok_or("No lookup found for key bayes.tokens.train.".to_string())?
+                .clone(),
         };
 
         // Allocate compiler and runtime

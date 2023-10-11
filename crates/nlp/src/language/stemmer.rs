@@ -70,7 +70,7 @@ impl<'x> Iterator for Stemmer<'x> {
     }
 }
 
-static STEMMER_MAP: &[Option<Algorithm>] = &[
+pub static STEMMER_MAP: &[Option<Algorithm>] = &[
     None,                        // Esperanto = 0,
     Some(Algorithm::English),    // English = 1,
     Some(Algorithm::Russian),    // Russian = 2,

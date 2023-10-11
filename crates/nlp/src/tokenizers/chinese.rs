@@ -29,7 +29,7 @@ use super::{InnerToken, Token};
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref JIEBA: Jieba = Jieba::new();
+    pub static ref JIEBA: Jieba = Jieba::new();
 }
 
 pub struct ChineseTokenizer<'x, T, I>

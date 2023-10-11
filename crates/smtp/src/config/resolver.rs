@@ -34,9 +34,7 @@ use mail_auth::{
 };
 
 use crate::{core::Resolvers, outbound::dane::DnssecResolver};
-use utils::config::Config;
-
-use super::PublicSuffix;
+use utils::{config::Config, suffixlist::PublicSuffix};
 
 pub trait ConfigResolver {
     fn build_resolvers(&self) -> super::Result<Resolvers>;
@@ -108,9 +106,9 @@ impl ConfigResolver for Config {
     }
 
     fn parse_public_suffix(&self) -> super::Result<PublicSuffix> {
-        let mut ps = PublicSuffix::default();
-
+        let mut has_values = false;
         for (_, value) in self.values("resolver.public-suffix") {
+            has_values = true;
             let bytes = if value.starts_with("https://") || value.starts_with("http://") {
                 match tokio::task::block_in_place(|| {
                     reqwest::blocking::get(value).and_then(|r| {
@@ -175,20 +173,7 @@ impl ConfigResolver for Config {
 
             match String::from_utf8(bytes) {
                 Ok(list) => {
-                    for line in list.lines() {
-                        let line = line.trim().to_lowercase();
-                        if !line.starts_with("//") {
-                            if let Some(domain) = line.strip_prefix('*') {
-                                ps.wildcards.push(domain.to_string());
-                            } else if let Some(domain) = line.strip_prefix('!') {
-                                ps.exceptions.insert(domain.to_string());
-                            } else {
-                                ps.suffixes.insert(line.to_string());
-                            }
-                        }
-                    }
-
-                    return Ok(ps);
+                    return Ok(PublicSuffix::from(list.as_str()));
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -200,16 +185,10 @@ impl ConfigResolver for Config {
             }
         }
 
-        tracing::warn!("Failed to parse public suffixes from any source.");
+        if has_values {
+            tracing::warn!("Failed to parse public suffixes from any source.");
+        }
 
-        Ok(ps)
-    }
-}
-
-impl PublicSuffix {
-    pub fn contains(&self, suffix: &str) -> bool {
-        self.suffixes.contains(suffix)
-            || (!self.exceptions.contains(suffix)
-                && self.wildcards.iter().any(|w| suffix.ends_with(w)))
+        Ok(PublicSuffix::default())
     }
 }

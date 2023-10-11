@@ -21,93 +21,12 @@
  * for more details.
 */
 
-use std::net::IpAddr;
-
 use hyper::Uri;
-use linkify::LinkKind;
 use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
 
 use super::ApplyString;
-
-pub fn tokenize_url<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    v: Variable<'x>,
-    must_have_scheme: bool,
-) -> Variable<'x> {
-    match v {
-        Variable::StringRef(text) => linkify::LinkFinder::new()
-            .url_must_have_scheme(must_have_scheme)
-            .kinds(&[LinkKind::Url])
-            .links(text.as_ref())
-            .filter_map(|url| filter_url(url.as_str(), must_have_scheme, ctx))
-            .collect::<Vec<_>>()
-            .into(),
-        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
-            linkify::LinkFinder::new()
-                .url_must_have_scheme(must_have_scheme)
-                .kinds(&[LinkKind::Url])
-                .links(v.to_cow().as_ref())
-                .filter_map(|url| {
-                    filter_url(url.as_str(), must_have_scheme, ctx).map(|v| v.into_owned())
-                })
-                .collect::<Vec<_>>()
-                .into()
-        }
-        v => v,
-    }
-}
-
-pub fn tokenize_email(v: Variable<'_>) -> Variable<'_> {
-    match v {
-        Variable::StringRef(text) => linkify::LinkFinder::new()
-            .email_domain_must_have_dot(true)
-            .kinds(&[LinkKind::Email])
-            .links(text.as_ref())
-            .map(|email| Variable::StringRef(email.as_str()))
-            .collect::<Vec<_>>()
-            .into(),
-        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
-            linkify::LinkFinder::new()
-                .email_domain_must_have_dot(true)
-                .kinds(&[LinkKind::Email])
-                .links(v.to_cow().as_ref())
-                .map(|email| Variable::String(email.as_str().to_string()))
-                .collect::<Vec<_>>()
-                .into()
-        }
-        v => v,
-    }
-}
-
-fn filter_url<'x, 'y>(
-    url: &'x str,
-    must_have_scheme: bool,
-    ctx: &'y Context<'y, SieveContext>,
-) -> Option<Variable<'x>> {
-    if must_have_scheme || url.contains("://") {
-        Some(Variable::StringRef(url))
-    } else {
-        // Filter out possible URLs without a valid TLD
-        let host = url.split_once('/').map_or(url, |(f, _)| f);
-        if (host
-            .as_bytes()
-            .first()
-            .map_or(true, |ch| ch.is_ascii_hexdigit())
-            && host.parse::<IpAddr>().is_ok())
-            || ctx
-                .context()
-                .psl
-                .contains(host.rsplit_once('.').map_or(host, |(_, tld)| tld))
-            || host.ends_with(".onion")
-        {
-            Some(Variable::String(format!("https://{url}")))
-        } else {
-            None
-        }
-    }
-}
 
 pub fn fn_uri_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
     let part = v[1].to_cow();

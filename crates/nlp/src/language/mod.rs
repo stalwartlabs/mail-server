@@ -21,6 +21,10 @@
  * for more details.
 */
 
+pub mod detect;
+pub mod stemmer;
+pub mod stopwords;
+
 use std::borrow::Cow;
 
 use crate::tokenizers::{
@@ -28,9 +32,6 @@ use crate::tokenizers::{
 };
 
 use self::detect::LanguageDetector;
-
-pub mod detect;
-pub mod stemmer;
 
 pub type LanguageTokenizer<'x> = Box<dyn Iterator<Item = Token<Cow<'x, str>>> + 'x>;
 
@@ -131,57 +132,9 @@ pub enum Language {
 
 impl Language {
     pub fn from_iso_639(code: &str) -> Option<Self> {
-        match code.split_once('-').map(|c| c.0).unwrap_or(code) {
-            "en" => Language::English,
-            "es" => Language::Spanish,
-            "pt" => Language::Portuguese,
-            "it" => Language::Italian,
-            "fr" => Language::French,
-            "de" => Language::German,
-            "ru" => Language::Russian,
-            "zh" => Language::Mandarin,
-            "ja" => Language::Japanese,
-            "ar" => Language::Arabic,
-            "hi" => Language::Hindi,
-            "ko" => Language::Korean,
-            "bn" => Language::Bengali,
-            "he" => Language::Hebrew,
-            "ur" => Language::Urdu,
-            "fa" => Language::Persian,
-            "ml" => Language::Malayalam,
-            "or" => Language::Oriya,
-            "my" => Language::Burmese,
-            "ne" => Language::Nepali,
-            "si" => Language::Sinhalese,
-            "km" => Language::Khmer,
-            "tk" => Language::Turkmen,
-            "am" => Language::Amharic,
-            "az" => Language::Azerbaijani,
-            "id" => Language::Indonesian,
-            "te" => Language::Telugu,
-            "ta" => Language::Tamil,
-            "vi" => Language::Vietnamese,
-            "gu" => Language::Gujarati,
-            "pa" => Language::Punjabi,
-            "uz" => Language::Uzbek,
-            "hy" => Language::Armenian,
-            "ka" => Language::Georgian,
-            "la" => Language::Latin,
-            "sl" => Language::Slovene,
-            "hr" => Language::Croatian,
-            "sr" => Language::Serbian,
-            "mk" => Language::Macedonian,
-            "lt" => Language::Lithuanian,
-            "lv" => Language::Latvian,
-            "et" => Language::Estonian,
-            "tl" => Language::Tagalog,
-            "af" => Language::Afrikaans,
-            "zu" => Language::Zulu,
-            "sn" => Language::Shona,
-            "ak" => Language::Akan,
-            _ => return None,
-        }
-        .into()
+        LANG_ISO
+            .get(code.split_once('-').map(|c| c.0).unwrap_or(code))
+            .copied()
     }
 }
 
@@ -200,3 +153,53 @@ impl Language {
         }
     }
 }
+
+static LANG_ISO: phf::Map<&'static str, Language> = phf::phf_map! {
+    "en" => Language::English,
+    "es" => Language::Spanish,
+    "pt" => Language::Portuguese,
+    "it" => Language::Italian,
+    "fr" => Language::French,
+    "de" => Language::German,
+    "ru" => Language::Russian,
+    "zh" => Language::Mandarin,
+    "ja" => Language::Japanese,
+    "ar" => Language::Arabic,
+    "hi" => Language::Hindi,
+    "ko" => Language::Korean,
+    "bn" => Language::Bengali,
+    "he" => Language::Hebrew,
+    "ur" => Language::Urdu,
+    "fa" => Language::Persian,
+    "ml" => Language::Malayalam,
+    "or" => Language::Oriya,
+    "my" => Language::Burmese,
+    "ne" => Language::Nepali,
+    "si" => Language::Sinhalese,
+    "km" => Language::Khmer,
+    "tk" => Language::Turkmen,
+    "am" => Language::Amharic,
+    "az" => Language::Azerbaijani,
+    "id" => Language::Indonesian,
+    "te" => Language::Telugu,
+    "ta" => Language::Tamil,
+    "vi" => Language::Vietnamese,
+    "gu" => Language::Gujarati,
+    "pa" => Language::Punjabi,
+    "uz" => Language::Uzbek,
+    "hy" => Language::Armenian,
+    "ka" => Language::Georgian,
+    "la" => Language::Latin,
+    "sl" => Language::Slovene,
+    "hr" => Language::Croatian,
+    "sr" => Language::Serbian,
+    "mk" => Language::Macedonian,
+    "lt" => Language::Lithuanian,
+    "lv" => Language::Latvian,
+    "et" => Language::Estonian,
+    "tl" => Language::Tagalog,
+    "af" => Language::Afrikaans,
+    "zu" => Language::Zulu,
+    "sn" => Language::Shona,
+    "ak" => Language::Akan,
+};
