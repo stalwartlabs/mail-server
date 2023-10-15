@@ -28,16 +28,16 @@ use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
 
-pub fn fn_html_to_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    html_to_text(v[0].to_cow().as_ref()).into()
+pub fn fn_html_to_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    html_to_text(v[0].to_string().as_ref()).into()
 }
 
-pub fn fn_html_has_tag<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_has_tag<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].as_array()
         .map(|arr| {
-            let token = v[1].to_cow();
+            let token = v[1].to_string();
             arr.iter().any(|v| {
-                v.to_cow()
+                v.to_string()
                     .as_ref()
                     .strip_prefix('<')
                     .map_or(false, |tag| tag.starts_with(token.as_ref()))
@@ -47,14 +47,11 @@ pub fn fn_html_has_tag<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
         .into()
 }
 
-pub fn fn_html_attr_size<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let t = v[0].to_cow();
+pub fn fn_html_attr_size<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let t = v[0].to_string();
     let mut dimension = None;
 
-    if let Some(value) = get_attribute(t.as_ref(), v[1].to_cow().as_ref()) {
+    if let Some(value) = get_attribute(t.as_ref(), v[1].to_string().as_ref()) {
         let value = value.trim();
         if let Some(pct) = value.strip_suffix('%') {
             if let Ok(pct) = pct.trim().parse::<u32>() {
@@ -68,22 +65,22 @@ pub fn fn_html_attr_size<'x>(
     dimension.map(Variable::Integer).unwrap_or_default()
 }
 
-pub fn fn_html_attrs<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_html_attrs<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     html_attr_tokens(
-        v[0].to_cow().as_ref(),
-        v[1].to_cow().as_ref(),
+        v[0].to_string().as_ref(),
+        v[1].to_string().as_ref(),
         v[2].to_string_array(),
     )
     .into()
 }
 
-pub fn fn_html_attr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    get_attribute(v[0].to_cow().as_ref(), v[1].to_cow().as_ref())
-        .map(|s| Variable::String(s.to_string()))
+pub fn fn_html_attr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    get_attribute(v[0].to_string().as_ref(), v[1].to_string().as_ref())
+        .map(Variable::from)
         .unwrap_or_default()
 }
 
-pub fn html_to_tokens(input: &str) -> Vec<Variable<'static>> {
+pub fn html_to_tokens(input: &str) -> Vec<Variable> {
     let input = input.as_bytes();
     let mut iter = input.iter().enumerate();
     let mut tags = vec![];
@@ -110,7 +107,7 @@ pub fn html_to_tokens(input: &str) -> Vec<Variable<'static>> {
                     is_token_start = true;
                 }
                 if text.len() > 1 {
-                    tags.push(Variable::String(text));
+                    tags.push(Variable::String(text.into()));
                     text = String::from("_");
                 }
 
@@ -174,7 +171,9 @@ pub fn html_to_tokens(input: &str) -> Vec<Variable<'static>> {
                         last_ch = ch;
                     }
                 }
-                tags.push(Variable::String(String::from_utf8(tag).unwrap_or_default()));
+                tags.push(Variable::String(
+                    String::from_utf8(tag).unwrap_or_default().into(),
+                ));
                 continue;
             }
             b' ' | b'\t' | b'\r' | b'\n' => {
@@ -229,13 +228,13 @@ pub fn html_to_tokens(input: &str) -> Vec<Variable<'static>> {
         );
     }
     if text.len() > 1 {
-        tags.push(Variable::String(text));
+        tags.push(Variable::String(text.into()));
     }
 
     tags
 }
 
-pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Variable<'static>> {
+pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Variable> {
     let input = input.as_bytes();
     let mut iter = input.iter().enumerate().peekable();
     let mut tags = vec![];
@@ -279,7 +278,7 @@ pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Var
                                     b'>' if !in_quote => {
                                         if !tag.is_empty() {
                                             tags.push(Variable::String(
-                                                String::from_utf8(tag).unwrap_or_default(),
+                                                String::from_utf8(tag).unwrap_or_default().into(),
                                             ));
                                         }
                                         break 'outer;
@@ -303,7 +302,7 @@ pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Var
 
                             if !tag.is_empty() {
                                 tags.push(Variable::String(
-                                    String::from_utf8(tag).unwrap_or_default(),
+                                    String::from_utf8(tag).unwrap_or_default().into(),
                                 ));
                             }
                         }
@@ -331,10 +330,10 @@ pub fn html_attr_tokens(input: &str, tag: &str, attrs: Vec<Cow<str>>) -> Vec<Var
     tags
 }
 
-pub fn html_img_area(arr: &[Variable<'_>]) -> u32 {
+pub fn html_img_area(arr: &[Variable]) -> u32 {
     arr.iter()
         .filter_map(|v| {
-            let t = v.to_cow();
+            let t = v.to_string();
             if t.starts_with("<img") {
                 let mut dimensions = [200u32, 200u32];
 

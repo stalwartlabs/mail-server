@@ -106,7 +106,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                 // Build recipients list
                 let mut recipients = vec![];
                 for rcpt in &self.data.rcpt_to {
-                    recipients.push(Variable::String(rcpt.address_lcase.to_string()));
+                    recipients.push(Variable::from(rcpt.address_lcase.to_string()));
                 }
                 params.envelope.push((Envelope::To, recipients.into()));
             }

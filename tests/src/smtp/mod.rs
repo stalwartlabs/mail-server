@@ -315,6 +315,7 @@ impl TestConfig for QueueConfig {
                 dane: IfBlock::new(smtp::config::RequireOptional::Optional),
                 mta_sts: IfBlock::new(smtp::config::RequireOptional::Optional),
                 start: IfBlock::new(smtp::config::RequireOptional::Optional),
+                invalid_certs: IfBlock::new(false),
             },
             dsn: Dsn {
                 name: IfBlock::new("Mail Delivery Subsystem".to_string()),

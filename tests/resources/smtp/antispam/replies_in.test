@@ -1,0 +1,24 @@
+expect TRUSTED_REPLY
+
+In-Reply-To: mid1@foobar.org
+Subject: test
+
+test
+
+<!-- NEXT TEST -->
+expect TRUSTED_REPLY
+
+References: <mid2@foobar.org>
+Subject: test
+
+test
+
+<!-- NEXT TEST -->
+expect 
+
+In-Reply-To: mid1@foobar.net
+References: <mid99@foobar.org>
+Subject: test
+
+test
+

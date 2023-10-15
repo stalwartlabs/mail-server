@@ -118,7 +118,7 @@ pub enum Lookup {
         list: LookupList,
     },
     Map {
-        map: AHashMap<String, Variable<'static>>,
+        map: AHashMap<String, Variable>,
     },
 }
 
@@ -190,7 +190,7 @@ impl Lookup {
         }
     }
 
-    pub async fn lookup(&self, items: &[DatabaseColumn<'_>]) -> Option<Variable<'static>> {
+    pub async fn lookup(&self, items: &[DatabaseColumn<'_>]) -> Option<Variable> {
         match self {
             Lookup::Directory { directory, query } => match directory.query(query, items).await {
                 Ok(mut result) => match result.len() {
@@ -198,7 +198,13 @@ impl Lookup {
                         result.pop().map(Variable::from).unwrap()
                     }
                     0 => Variable::default(),
-                    _ => Variable::Array(result.into_iter().map(Variable::from).collect()),
+                    _ => Variable::Array(
+                        result
+                            .into_iter()
+                            .map(Variable::from)
+                            .collect::<Vec<_>>()
+                            .into(),
+                    ),
                 }
                 .into(),
                 Err(_) => None,
@@ -222,15 +228,15 @@ impl Lookup {
     }
 }
 
-impl<'x> From<DatabaseColumn<'x>> for Variable<'static> {
+impl<'x> From<DatabaseColumn<'x>> for Variable {
     fn from(value: DatabaseColumn) -> Self {
         match value {
             DatabaseColumn::Integer(v) => Variable::Integer(v),
             DatabaseColumn::Bool(v) => Variable::Integer(i64::from(v)),
             DatabaseColumn::Float(v) => Variable::Float(v),
-            DatabaseColumn::Text(v) => Variable::String(v.into_owned()),
-            DatabaseColumn::Blob(v) => Variable::String(v.into_owned().into_string()),
-            DatabaseColumn::Null => Variable::StringRef(""),
+            DatabaseColumn::Text(v) => Variable::String(v.into_owned().into()),
+            DatabaseColumn::Blob(v) => Variable::String(v.into_owned().into_string().into()),
+            DatabaseColumn::Null => Variable::default(),
         }
     }
 }
@@ -554,26 +560,24 @@ impl<'x> From<Vec<u8>> for DatabaseColumn<'x> {
     }
 }
 
-impl<'x> From<Variable<'x>> for DatabaseColumn<'x> {
-    fn from(value: Variable<'x>) -> Self {
+impl<'x> From<Variable> for DatabaseColumn<'x> {
+    fn from(value: Variable) -> Self {
         match value {
-            Variable::String(v) => Self::Text(v.into()),
-            Variable::StringRef(v) => Self::Text(v.into()),
+            Variable::String(v) => Self::Text(v.to_string().into()),
             Variable::Integer(v) => Self::Integer(v),
             Variable::Float(v) => Self::Float(v),
-            v => Self::Text(v.into_string().into()),
+            v => Self::Text(v.to_string().into_owned().into()),
         }
     }
 }
 
-impl<'x> From<&'x Variable<'x>> for DatabaseColumn<'x> {
-    fn from(value: &'x Variable<'x>) -> Self {
+impl<'x> From<&'x Variable> for DatabaseColumn<'x> {
+    fn from(value: &'x Variable) -> Self {
         match value {
-            Variable::String(v) => Self::Text(v.into()),
-            Variable::StringRef(v) => Self::Text((*v).into()),
+            Variable::String(v) => Self::Text(v.to_string().into()),
             Variable::Integer(v) => Self::Integer(*v),
             Variable::Float(v) => Self::Float(*v),
-            v => Self::Text(v.to_string().into()),
+            v => Self::Text(v.to_string().into_owned().into()),
         }
     }
 }

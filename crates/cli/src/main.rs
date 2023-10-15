@@ -24,6 +24,7 @@
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
+    time::Duration,
 };
 
 use clap::Parser;
@@ -88,6 +89,7 @@ async fn build_client(url: &str, credentials: Credentials) -> Client {
     Client::new()
         .credentials(credentials)
         .accept_invalid_certs(is_localhost(url))
+        .timeout(Duration::from_secs(60))
         .connect(url)
         .await
         .unwrap_or_else(|err| {

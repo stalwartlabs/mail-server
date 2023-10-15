@@ -27,7 +27,7 @@ use crate::config::scripts::SieveContext;
 
 use super::ApplyString;
 
-pub fn fn_is_email<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_email<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     let mut last_ch = 0;
     let mut in_quote = false;
     let mut at_count = 0;
@@ -35,7 +35,7 @@ pub fn fn_is_email<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -
     let mut lp_len = 0;
     let mut value = 0;
 
-    for ch in v[0].to_cow().bytes() {
+    for ch in v[0].to_string().bytes() {
         match ch {
             b'0'..=b'9'
             | b'a'..=b'z'
@@ -97,12 +97,12 @@ pub fn fn_is_email<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -
     (at_count == 1 && dot_count > 0 && lp_len > 0 && value > 0).into()
 }
 
-pub fn fn_email_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_email_part<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| {
         s.rsplit_once('@')
-            .map(|(u, d)| match v[1].to_cow().as_ref() {
-                "local" => Variable::StringRef(u.trim()),
-                "domain" => Variable::StringRef(d.trim()),
+            .map(|(u, d)| match v[1].to_string().as_ref() {
+                "local" => Variable::from(u.trim()),
+                "domain" => Variable::from(d.trim()),
                 _ => Variable::default(),
             })
             .unwrap_or_default()
@@ -116,11 +116,8 @@ enum MatchPart {
     Host,
 }
 
-pub fn fn_domain_part<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let match_part = match v[1].to_cow().as_ref() {
+pub fn fn_domain_part<'x>(ctx: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let match_part = match v[1].to_string().as_ref() {
         "sld" => MatchPart::Sld,
         "tld" => MatchPart::Tld,
         "host" => MatchPart::Host,

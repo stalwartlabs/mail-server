@@ -33,13 +33,13 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("exec", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
+pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
     let mut arguments = ctx.arguments.into_iter();
     match Command::new(
         arguments
             .next()
-            .map(|a| a.into_string())
+            .map(|a| a.to_string().into_owned())
             .unwrap_or_default(),
     )
     .args(

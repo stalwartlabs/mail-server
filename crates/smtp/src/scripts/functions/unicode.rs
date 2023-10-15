@@ -26,37 +26,23 @@ use unicode_security::MixedScript;
 
 use crate::config::scripts::SieveContext;
 
-pub fn fn_is_ascii<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_ascii<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-        Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
         Variable::Integer(_) | Variable::Float(_) => true,
         Variable::Array(a) => a.iter().all(|v| match v {
             Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-            Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
-            _ => true,
-        }),
-        Variable::ArrayRef(a) => a.iter().all(|v| match v {
-            Variable::String(s) => s.chars().all(|c| c.is_ascii()),
-            Variable::StringRef(s) => s.chars().all(|c| c.is_ascii()),
             _ => true,
         }),
     }
     .into()
 }
 
-pub fn fn_has_zwsp<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_has_zwsp<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::String(s) => s.chars().any(|c| c.is_zwsp()),
-        Variable::StringRef(s) => s.chars().any(|c| c.is_zwsp()),
         Variable::Array(a) => a.iter().any(|v| match v {
             Variable::String(s) => s.chars().any(|c| c.is_zwsp()),
-            Variable::StringRef(s) => s.chars().any(|c| c.is_zwsp()),
-            _ => true,
-        }),
-        Variable::ArrayRef(a) => a.iter().any(|v| match v {
-            Variable::String(s) => s.chars().any(|c| c.is_zwsp()),
-            Variable::StringRef(s) => s.chars().any(|c| c.is_zwsp()),
             _ => true,
         }),
         Variable::Integer(_) | Variable::Float(_) => false,
@@ -64,18 +50,11 @@ pub fn fn_has_zwsp<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -
     .into()
 }
 
-pub fn fn_has_obscured<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_has_obscured<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::String(s) => s.chars().any(|c| c.is_obscured()),
-        Variable::StringRef(s) => s.chars().any(|c| c.is_obscured()),
         Variable::Array(a) => a.iter().any(|v| match v {
             Variable::String(s) => s.chars().any(|c| c.is_obscured()),
-            Variable::StringRef(s) => s.chars().any(|c| c.is_obscured()),
-            _ => true,
-        }),
-        Variable::ArrayRef(a) => a.iter().any(|v| match v {
-            Variable::String(s) => s.chars().any(|c| c.is_obscured()),
-            Variable::StringRef(s) => s.chars().any(|c| c.is_obscured()),
             _ => true,
         }),
         Variable::Integer(_) | Variable::Float(_) => false,
@@ -107,24 +86,18 @@ impl CharUtils for char {
     }
 }
 
-pub fn fn_cure_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    decancer::cure(v[0].to_cow().as_ref()).into_str().into()
+pub fn fn_cure_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    decancer::cure(v[0].to_string().as_ref()).into_str().into()
 }
 
-pub fn fn_unicode_skeleton<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    unicode_security::skeleton(v[0].to_cow().as_ref())
+pub fn fn_unicode_skeleton<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    unicode_security::skeleton(v[0].to_string().as_ref())
         .collect::<String>()
         .into()
 }
 
-pub fn fn_is_single_script<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let text = v[0].to_cow();
+pub fn fn_is_single_script<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let text = v[0].to_string();
     if !text.is_empty() {
         text.as_ref().is_single_script()
     } else {

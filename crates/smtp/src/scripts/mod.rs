@@ -47,10 +47,10 @@ pub enum ScriptResult {
 
 pub struct ScriptParameters {
     message: Option<Arc<Vec<u8>>>,
-    variables: AHashMap<Cow<'static, str>, Variable<'static>>,
-    envelope: Vec<(Envelope, Variable<'static>)>,
+    variables: AHashMap<Cow<'static, str>, Variable>,
+    envelope: Vec<(Envelope, Variable)>,
     #[cfg(feature = "test_mode")]
-    expected_variables: Option<AHashMap<String, Variable<'static>>>,
+    expected_variables: Option<AHashMap<String, Variable>>,
 }
 
 impl ScriptParameters {
@@ -74,7 +74,7 @@ impl ScriptParameters {
     pub fn set_variable(
         mut self,
         name: impl Into<Cow<'static, str>>,
-        value: impl Into<Variable<'static>>,
+        value: impl Into<Variable>,
     ) -> Self {
         self.variables.insert(name.into(), value.into());
         self
@@ -83,7 +83,7 @@ impl ScriptParameters {
     #[cfg(feature = "test_mode")]
     pub fn with_expected_variables(
         mut self,
-        expected_variables: AHashMap<String, Variable<'static>>,
+        expected_variables: AHashMap<String, Variable>,
     ) -> Self {
         self.expected_variables = expected_variables.into();
         self

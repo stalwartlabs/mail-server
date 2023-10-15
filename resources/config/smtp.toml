@@ -191,6 +191,7 @@ ip-strategy = "ipv4-then-ipv6"
 dane = "optional"
 mta-sts = "optional"
 starttls = "require"
+allow-invalid-certs = false
 
 #[queue.outbound.source-ip]
 #v4 = ["10.0.0.10", "10.0.0.11"]

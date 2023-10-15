@@ -440,7 +440,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         .filter_map(|r| {
                             if matches!(r.result(), DkimResult::Pass) {
                                 r.signature()
-                                    .map(|s| Variable::String(s.domain().to_lowercase()))
+                                    .map(|s| Variable::from(s.domain().to_lowercase()))
                             } else {
                                 None
                             }
@@ -478,7 +478,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     edited_message = Arc::new(message).into();
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::debug!(parent: &self.span,
+                    tracing::info!(parent: &self.span,
                         context = "sieve",
                         event = "reject",
                         reason = message);

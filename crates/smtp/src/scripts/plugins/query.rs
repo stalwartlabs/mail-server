@@ -31,27 +31,27 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("query", plugin_id, 3);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
+pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
-    let mut arguments = ctx.arguments.into_iter();
 
     // Obtain directory name
-    let directory = arguments.next().unwrap().into_string();
-    let directory = if let Some(directory_) = ctx.core.sieve.config.directories.get(&directory) {
-        directory_
-    } else {
-        tracing::warn!(
-            parent: span,
-            context = "sieve:query",
-            event = "failed",
-            reason = "Unknown directory",
-            directory = %directory,
-        );
-        return false.into();
-    };
+    let directory = ctx.arguments[0].to_string();
+    let directory =
+        if let Some(directory_) = ctx.core.sieve.config.directories.get(directory.as_ref()) {
+            directory_
+        } else {
+            tracing::warn!(
+                parent: span,
+                context = "sieve:query",
+                event = "failed",
+                reason = "Unknown directory",
+                directory = %directory,
+            );
+            return false.into();
+        };
 
     // Obtain query string
-    let query = arguments.next().unwrap().into_string();
+    let query = ctx.arguments[1].to_string();
     if query.is_empty() {
         tracing::warn!(
             parent: span,
@@ -63,9 +63,8 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
     }
 
     // Obtain arguments
-    let arguments = match arguments.next().unwrap() {
-        Variable::Array(l) => l.into_iter().map(DatabaseColumn::from).collect(),
-        Variable::ArrayRef(l) => l.iter().map(DatabaseColumn::from).collect(),
+    let arguments = match &ctx.arguments[2] {
+        Variable::Array(l) => l.iter().map(DatabaseColumn::from).collect(),
         v => vec![DatabaseColumn::from(v)],
     };
 
@@ -81,7 +80,13 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
                     query_columns.pop().map(Variable::from).unwrap()
                 }
                 0 => Variable::default(),
-                _ => Variable::Array(query_columns.into_iter().map(Variable::from).collect()),
+                _ => Variable::Array(
+                    query_columns
+                        .into_iter()
+                        .map(Variable::from)
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
             }
         } else {
             false.into()

@@ -70,7 +70,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     }
                 }
                 Err(Rejection::Action(action)) => {
-                    tracing::debug!(
+                    tracing::info!(
                         parent: &self.span,
                         milter.host = &milter.hostname,
                         milter.port = &milter.port,

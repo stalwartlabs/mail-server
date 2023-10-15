@@ -54,7 +54,7 @@ pub struct TokenHash {
     pub h2: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct Weights {
     pub spam: u32,
     pub ham: u32,

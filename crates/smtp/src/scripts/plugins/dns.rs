@@ -38,9 +38,9 @@ pub fn register_exists(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) 
     fnc_map.set_external_function("dns_exists", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
-    let entry = ctx.arguments[0].to_cow();
-    let record_type = ctx.arguments[1].to_cow();
+pub fn exec(ctx: PluginContext<'_>) -> Variable {
+    let entry = ctx.arguments[0].to_string();
+    let record_type = ctx.arguments[1].to_string();
 
     if record_type.eq_ignore_ascii_case("ip") {
         match ctx.handle.block_on(ctx.core.resolvers.dns.ip_lookup(
@@ -50,7 +50,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         )) {
             Ok(result) => result
                 .iter()
-                .map(|ip| Variable::String(ip.to_string()))
+                .map(|ip| Variable::from(ip.to_string()))
                 .collect::<Vec<_>>()
                 .into(),
             Err(err) => err.short_error().into(),
@@ -65,7 +65,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
                 .flat_map(|mx| {
                     mx.exchanges
                         .iter()
-                        .map(|host| Variable::String(format!("{} {}", mx.preference, host)))
+                        .map(|host| Variable::from(format!("{} {}", mx.preference, host)))
                 })
                 .collect::<Vec<_>>()
                 .into(),
@@ -75,7 +75,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         #[cfg(feature = "test_mode")]
         {
             if entry.contains("origin") {
-                return Variable::String("23028|US|arin|2002-01-04".to_string());
+                return Variable::from("23028|US|arin|2002-01-04".to_string());
             }
         }
 
@@ -83,7 +83,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
             .handle
             .block_on(ctx.core.resolvers.dns.txt_raw_lookup(entry.as_ref()))
         {
-            Ok(result) => Variable::String(String::from_utf8(result).unwrap_or_default()),
+            Ok(result) => Variable::from(String::from_utf8(result).unwrap_or_default()),
             Err(err) => err.short_error().into(),
         }
     } else if record_type.eq_ignore_ascii_case("ptr") {
@@ -91,7 +91,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
             match ctx.handle.block_on(ctx.core.resolvers.dns.ptr_lookup(addr)) {
                 Ok(result) => result
                     .iter()
-                    .map(|host| Variable::String(host.to_string()))
+                    .map(|host| Variable::from(host.to_string()))
                     .collect::<Vec<_>>()
                     .into(),
                 Err(err) => err.short_error().into(),
@@ -104,7 +104,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         {
             if entry.contains(".168.192.") {
                 let parts = entry.split('.').collect::<Vec<_>>();
-                return vec![Variable::String(format!("127.0.{}.{}", parts[1], parts[0]))].into();
+                return vec![Variable::from(format!("127.0.{}.{}", parts[1], parts[0]))].into();
             }
         }
 
@@ -114,7 +114,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         {
             Ok(result) => result
                 .iter()
-                .map(|ip| Variable::String(ip.to_string()))
+                .map(|ip| Variable::from(ip.to_string()))
                 .collect::<Vec<_>>()
                 .into(),
             Err(err) => err.short_error().into(),
@@ -126,7 +126,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
         {
             Ok(result) => result
                 .iter()
-                .map(|ip| Variable::String(ip.to_string()))
+                .map(|ip| Variable::from(ip.to_string()))
                 .collect::<Vec<_>>()
                 .into(),
             Err(err) => err.short_error().into(),
@@ -136,9 +136,9 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
     }
 }
 
-pub fn exec_exists(ctx: PluginContext<'_>) -> Variable<'static> {
-    let entry = ctx.arguments[0].to_cow();
-    let record_type = ctx.arguments[1].to_cow();
+pub fn exec_exists(ctx: PluginContext<'_>) -> Variable {
+    let entry = ctx.arguments[0].to_string();
+    let record_type = ctx.arguments[1].to_string();
 
     if record_type.eq_ignore_ascii_case("ip") {
         match ctx.handle.block_on(ctx.core.resolvers.dns.ip_lookup(

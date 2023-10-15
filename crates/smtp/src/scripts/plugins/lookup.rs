@@ -36,39 +36,43 @@ pub fn register_map(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("lookup_map", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable<'static> {
-    let lookup_id = ctx.arguments[0].to_cow();
-    let item = ctx.arguments[1].to_cow();
+pub fn exec(ctx: PluginContext<'_>) -> Variable {
+    let lookup_id = ctx.arguments[0].to_string();
     let span = ctx.span;
-
-    if !lookup_id.is_empty() && !item.is_empty() {
-        if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
-            return ctx
-                .handle
-                .block_on(lookup.contains(item.as_ref()))
-                .unwrap_or(false)
-                .into();
-        } else {
-            tracing::warn!(
-                parent: span,
-                context = "sieve:lookup",
-                event = "failed",
-                reason = "Unknown lookup id",
-                lookup_id = %lookup_id,
-            );
+    if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
+        match &ctx.arguments[1] {
+            Variable::Array(items) => {
+                for item in items.iter() {
+                    if !item.is_empty()
+                        && ctx.handle.block_on(lookup.contains(item)).unwrap_or(false)
+                    {
+                        return true.into();
+                    }
+                }
+                false
+            }
+            v if !v.is_empty() => ctx.handle.block_on(lookup.contains(v)).unwrap_or(false),
+            _ => false,
         }
+    } else {
+        tracing::warn!(
+            parent: span,
+            context = "sieve:lookup",
+            event = "failed",
+            reason = "Unknown lookup id",
+            lookup_id = %lookup_id,
+        );
+        false
     }
-
-    false.into()
+    .into()
 }
 
-pub fn exec_map(ctx: PluginContext<'_>) -> Variable<'static> {
-    let mut arguments = ctx.arguments.into_iter();
-    let lookup_id = arguments.next().unwrap().into_cow();
-    let items = match arguments.next().unwrap() {
-        Variable::Array(l) => l.into_iter().map(DatabaseColumn::from).collect(),
-        Variable::ArrayRef(l) => l.iter().map(DatabaseColumn::from).collect(),
-        v => vec![DatabaseColumn::from(v)],
+pub fn exec_map(ctx: PluginContext<'_>) -> Variable {
+    let lookup_id = ctx.arguments[0].to_string();
+    let items = match &ctx.arguments[1] {
+        Variable::Array(l) => l.iter().map(DatabaseColumn::from).collect(),
+        v if !v.is_empty() => vec![DatabaseColumn::from(v)],
+        _ => vec![],
     };
     let span = ctx.span;
 

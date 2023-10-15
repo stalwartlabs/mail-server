@@ -21,19 +21,15 @@
  * for more details.
 */
 
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
 
-pub fn fn_count<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_count<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::Array(a) => a.len(),
-        Variable::ArrayRef(a) => a.len(),
         v => {
             if !v.is_empty() {
                 1
@@ -45,9 +41,9 @@ pub fn fn_count<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> V
     .into()
 }
 
-pub fn fn_sort<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_sort<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     let is_asc = v[1].to_bool();
-    let mut arr = v.into_iter().next().unwrap().into_array();
+    let mut arr = (*v[0].to_array()).clone();
     if is_asc {
         arr.sort_unstable_by(|a, b| b.cmp(a));
     } else {
@@ -56,39 +52,31 @@ pub fn fn_sort<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Va
     arr.into()
 }
 
-pub fn fn_dedup<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    let arr = v.into_iter().next().unwrap().into_array();
+pub fn fn_dedup<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let arr = v[0].to_array();
     let mut result = Vec::with_capacity(arr.len());
 
-    for item in arr {
-        if !result.contains(&item) {
-            result.push(item);
+    for item in arr.iter() {
+        if !result.contains(item) {
+            result.push(item.clone());
         }
     }
 
     result.into()
 }
 
-pub fn fn_cosine_similarity<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let mut word_freq: HashMap<Cow<str>, [u32; 2]> = HashMap::new();
+pub fn fn_cosine_similarity<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let mut word_freq: HashMap<Variable, [u32; 2]> = HashMap::new();
 
     for (idx, var) in v.into_iter().enumerate() {
         match var {
             Variable::Array(l) => {
-                for item in l {
-                    word_freq.entry(item.into_cow()).or_insert([0, 0])[idx] += 1;
-                }
-            }
-            Variable::ArrayRef(l) => {
-                for item in l {
-                    word_freq.entry(item.to_cow()).or_insert([0, 0])[idx] += 1;
+                for item in l.iter() {
+                    word_freq.entry(item.clone()).or_insert([0, 0])[idx] += 1;
                 }
             }
             _ => {
-                for char in var.to_cow().chars() {
+                for char in var.to_string().chars() {
                     word_freq.entry(char.to_string().into()).or_insert([0, 0])[idx] += 1;
                 }
             }
@@ -113,26 +101,18 @@ pub fn fn_cosine_similarity<'x>(
     .into()
 }
 
-pub fn fn_jaccard_similarity<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
+pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     let mut word_freq = [HashSet::new(), HashSet::new()];
 
     for (idx, var) in v.into_iter().enumerate() {
         match var {
             Variable::Array(l) => {
-                for item in l {
-                    word_freq[idx].insert(item.into_cow());
-                }
-            }
-            Variable::ArrayRef(l) => {
-                for item in l {
-                    word_freq[idx].insert(item.to_cow());
+                for item in l.iter() {
+                    word_freq[idx].insert(item.clone());
                 }
             }
             _ => {
-                for char in var.to_cow().chars() {
+                for char in var.to_string().chars() {
                     word_freq[idx].insert(char.to_string().into());
                 }
             }
@@ -150,35 +130,21 @@ pub fn fn_jaccard_similarity<'x>(
     .into()
 }
 
-pub fn fn_is_intersect<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_intersect<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match (&v[0], &v[1]) {
         (Variable::Array(a), Variable::Array(b)) => a.iter().any(|x| b.contains(x)),
-        (Variable::ArrayRef(a), Variable::ArrayRef(b)) => a.iter().any(|x| b.contains(x)),
-        (Variable::Array(a), Variable::ArrayRef(b))
-        | (Variable::ArrayRef(b), Variable::Array(a)) => a.iter().any(|x| b.contains(x)),
         (Variable::Array(a), item) | (item, Variable::Array(a)) => a.contains(item),
-        (Variable::ArrayRef(a), item) | (item, Variable::ArrayRef(a)) => a.contains(item),
         _ => false,
     }
     .into()
 }
 
-pub fn fn_winnow<'x>(_: &'x Context<'x, SieveContext>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_winnow<'x>(_: &'x Context<'x, SieveContext>, mut v: Vec<Variable>) -> Variable {
     match v.remove(0) {
         Variable::Array(a) => a
-            .into_iter()
-            .filter(|i| !i.is_empty())
-            .collect::<Vec<_>>()
-            .into(),
-        Variable::ArrayRef(a) => a
             .iter()
-            .filter_map(|i| {
-                if !i.is_empty() {
-                    i.clone().into()
-                } else {
-                    None
-                }
-            })
+            .filter(|i| !i.is_empty())
+            .cloned()
             .collect::<Vec<_>>()
             .into(),
         v => v,

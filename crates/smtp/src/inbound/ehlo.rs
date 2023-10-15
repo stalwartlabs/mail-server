@@ -41,7 +41,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         if domain != self.data.helo_domain {
             // Reject non-FQDN EHLO domains - simply checks that the hostname has at least one dot
             if self.params.ehlo_reject_non_fqdn && !domain.as_str().has_labels() {
-                tracing::debug!(parent: &self.span,
+                tracing::info!(parent: &self.span,
                     context = "ehlo",
                     event = "reject",
                     reason = "invalid",
@@ -101,7 +101,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     .run_script(script.clone(), self.build_script_parameters("ehlo"))
                     .await
                 {
-                    tracing::debug!(parent: &self.span,
+                    tracing::info!(parent: &self.span,
                         context = "sieve",
                         event = "reject",
                         domain = &self.data.helo_domain,
@@ -242,7 +242,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     })
                     .await
                 {
-                    tracing::debug!(parent: &self.span,
+                    tracing::info!(parent: &self.span,
                         context = context,
                         event = "reject",
                         reason = "dnsbl",
@@ -268,7 +268,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     .is_dns_blocked(self.data.remote_ip.to_dnsbl(dnsbl))
                     .await
                 {
-                    tracing::debug!(parent: &self.span,
+                    tracing::info!(parent: &self.span,
                         context = "connect",
                         event = "reject",
                         reason = "dnsbl",

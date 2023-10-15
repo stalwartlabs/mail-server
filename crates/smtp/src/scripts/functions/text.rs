@@ -28,38 +28,36 @@ use crate::config::scripts::SieveContext;
 
 use super::{html::html_to_tokens, ApplyString};
 
-pub fn fn_trim<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Variable::StringRef(s.trim()))
+pub fn fn_trim<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].transform(|s| Variable::from(s.trim()))
 }
 
-pub fn fn_trim_end<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Variable::StringRef(s.trim_end()))
+pub fn fn_trim_end<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].transform(|s| Variable::from(s.trim_end()))
 }
 
-pub fn fn_trim_start<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Variable::StringRef(s.trim_start()))
+pub fn fn_trim_start<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].transform(|s| Variable::from(s.trim_start()))
 }
 
-pub fn fn_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_len<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::String(s) => s.len(),
-        Variable::StringRef(s) => s.len(),
         Variable::Array(a) => a.len(),
-        Variable::ArrayRef(a) => a.len(),
         v => v.to_string().len(),
     }
     .into()
 }
 
-pub fn fn_to_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Variable::String(s.to_lowercase()))
+pub fn fn_to_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].transform(|s| Variable::from(s.to_lowercase()))
 }
 
-pub fn fn_to_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].transform(|s| Variable::String(s.to_uppercase()))
+pub fn fn_to_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].transform(|s| Variable::from(s.to_uppercase()))
 }
 
-pub fn fn_is_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| {
         s.chars()
             .filter(|c| c.is_alphabetic())
@@ -68,7 +66,7 @@ pub fn fn_is_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
     })
 }
 
-pub fn fn_is_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| {
         s.chars()
             .filter(|c| c.is_alphabetic())
@@ -77,38 +75,22 @@ pub fn fn_is_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
     })
 }
 
-pub fn fn_has_digits<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_has_digits<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| s.chars().any(|c| c.is_ascii_digit()).into())
 }
 
-pub fn tokenize_words<'x>(v: &Variable<'x>) -> Variable<'x> {
-    match v {
-        Variable::StringRef(s) => s
-            .split_whitespace()
-            .filter(|word| word.chars().all(|c| c.is_alphanumeric()))
-            .map(Variable::from)
-            .collect::<Vec<_>>(),
-        Variable::String(s) => s
-            .split_whitespace()
-            .filter(|word| word.chars().all(|c| c.is_alphanumeric()))
-            .map(|word| Variable::from(word.to_string()))
-            .collect::<Vec<_>>(),
-        v => v
-            .to_string()
-            .split_whitespace()
-            .filter(|word| word.chars().all(|c| c.is_alphanumeric()))
-            .map(|word| Variable::from(word.to_string()))
-            .collect::<Vec<_>>(),
-    }
-    .into()
+pub fn tokenize_words(v: &Variable) -> Variable {
+    v.to_string()
+        .split_whitespace()
+        .filter(|word| word.chars().all(|c| c.is_alphanumeric()))
+        .map(|word| Variable::from(word.to_string()))
+        .collect::<Vec<_>>()
+        .into()
 }
 
-pub fn fn_tokenize<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    mut v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let (urls, urls_without_scheme, emails) = match v[1].to_cow().as_ref() {
-        "html" => return html_to_tokens(v[0].to_cow().as_ref()).into(),
+pub fn fn_tokenize<'x>(ctx: &'x Context<'x, SieveContext>, mut v: Vec<Variable>) -> Variable {
+    let (urls, urls_without_scheme, emails) = match v[1].to_string().as_ref() {
+        "html" => return html_to_tokens(v[0].to_string().as_ref()).into(),
         "words" => return tokenize_words(&v[0]),
         "uri" | "url" => (true, true, true),
         "uri_strict" | "url_strict" => (true, false, false),
@@ -117,33 +99,18 @@ pub fn fn_tokenize<'x>(
     };
 
     match v.remove(0) {
-        Variable::StringRef(text) => TypesTokenizer::new(text, &ctx.context().psl)
-            .tokenize_numbers(false)
-            .tokenize_urls(urls)
-            .tokenize_urls_without_scheme(urls_without_scheme)
-            .tokenize_emails(emails)
-            .filter_map(|t| match t.word {
-                TokenType::Url(text) if urls => Variable::StringRef(text).into(),
-                TokenType::UrlNoScheme(text) if urls_without_scheme => {
-                    Variable::String(format!("https://{text}")).into()
-                }
-                TokenType::Email(text) if emails => Variable::StringRef(text).into(),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .into(),
-        v @ (Variable::String(_) | Variable::Array(_) | Variable::ArrayRef(_)) => {
-            TypesTokenizer::new(v.to_cow().as_ref(), &ctx.context().psl)
+        v @ (Variable::String(_) | Variable::Array(_)) => {
+            TypesTokenizer::new(v.to_string().as_ref(), &ctx.context().psl)
                 .tokenize_numbers(false)
                 .tokenize_urls(urls)
                 .tokenize_urls_without_scheme(urls_without_scheme)
                 .tokenize_emails(emails)
                 .filter_map(|t| match t.word {
-                    TokenType::Url(text) if urls => Variable::String(text.to_string()).into(),
+                    TokenType::Url(text) if urls => Variable::from(text.to_string()).into(),
                     TokenType::UrlNoScheme(text) if urls_without_scheme => {
-                        Variable::String(format!("https://{text}")).into()
+                        Variable::from(format!("https://{text}")).into()
                     }
-                    TokenType::Email(text) if emails => Variable::String(text.to_string()).into(),
+                    TokenType::Email(text) if emails => Variable::from(text.to_string()).into(),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -153,8 +120,8 @@ pub fn fn_tokenize<'x>(
     }
 }
 
-pub fn fn_count_spaces<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
+pub fn fn_count_spaces<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
         .as_ref()
         .chars()
         .filter(|c| c.is_whitespace())
@@ -162,11 +129,8 @@ pub fn fn_count_spaces<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>
         .into()
 }
 
-pub fn fn_count_uppercase<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    v[0].to_cow()
+pub fn fn_count_uppercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
         .as_ref()
         .chars()
         .filter(|c| c.is_alphabetic() && c.is_uppercase())
@@ -174,11 +138,8 @@ pub fn fn_count_uppercase<'x>(
         .into()
 }
 
-pub fn fn_count_lowercase<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    v[0].to_cow()
+pub fn fn_count_lowercase<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
         .as_ref()
         .chars()
         .filter(|c| c.is_alphabetic() && c.is_lowercase())
@@ -186,46 +147,31 @@ pub fn fn_count_lowercase<'x>(
         .into()
 }
 
-pub fn fn_count_chars<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow().as_ref().chars().count().into()
+pub fn fn_count_chars<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string().as_ref().chars().count().into()
 }
 
-pub fn fn_eq_ignore_case<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    v[0].to_cow()
-        .eq_ignore_ascii_case(v[1].to_cow().as_ref())
+pub fn fn_eq_ignore_case<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .eq_ignore_ascii_case(v[1].to_string().as_ref())
         .into()
 }
 
-pub fn fn_contains<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_contains<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     match &v[0] {
-        Variable::String(s) => s.contains(v[1].to_cow().as_ref()),
-        Variable::StringRef(s) => s.contains(v[1].to_cow().as_ref()),
+        Variable::String(s) => s.contains(v[1].to_string().as_ref()),
         Variable::Array(arr) => arr.contains(&v[1]),
-        Variable::ArrayRef(arr) => arr.contains(&v[1]),
-        val => val.to_string().contains(v[1].to_cow().as_ref()),
+        val => val.to_string().contains(v[1].to_string().as_ref()),
     }
     .into()
 }
 
-pub fn fn_contains_ignore_case<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let needle = v[1].to_cow();
+pub fn fn_contains_ignore_case<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let needle = v[1].to_string();
     match &v[0] {
         Variable::String(s) => s.to_lowercase().contains(&needle.to_lowercase()),
-        Variable::StringRef(s) => s.to_lowercase().contains(&needle.to_lowercase()),
         Variable::Array(arr) => arr.iter().any(|v| match v {
             Variable::String(s) => s.eq_ignore_ascii_case(needle.as_ref()),
-            Variable::StringRef(s) => s.eq_ignore_ascii_case(needle.as_ref()),
-            _ => false,
-        }),
-        Variable::ArrayRef(arr) => arr.iter().any(|v| match v {
-            Variable::String(s) => s.eq_ignore_ascii_case(needle.as_ref()),
-            Variable::StringRef(s) => s.eq_ignore_ascii_case(needle.as_ref()),
             _ => false,
         }),
         val => val.to_string().contains(needle.as_ref()),
@@ -233,28 +179,29 @@ pub fn fn_contains_ignore_case<'x>(
     .into()
 }
 
-pub fn fn_starts_with<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow().starts_with(v[1].to_cow().as_ref()).into()
+pub fn fn_starts_with<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .starts_with(v[1].to_string().as_ref())
+        .into()
 }
 
-pub fn fn_ends_with<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow().ends_with(v[1].to_cow().as_ref()).into()
+pub fn fn_ends_with<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string().ends_with(v[1].to_string().as_ref()).into()
 }
 
-pub fn fn_lines<'x>(_: &'x Context<'x, SieveContext>, mut v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_lines<'x>(_: &'x Context<'x, SieveContext>, mut v: Vec<Variable>) -> Variable {
     match v.remove(0) {
-        Variable::StringRef(s) => s.lines().map(Variable::from).collect::<Vec<_>>().into(),
         Variable::String(s) => s
             .lines()
-            .map(|s| Variable::String(s.to_string()))
+            .map(|s| Variable::from(s.to_string()))
             .collect::<Vec<_>>()
             .into(),
         val => val,
     }
 }
 
-pub fn fn_substring<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    v[0].to_cow()
+pub fn fn_substring<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
         .chars()
         .skip(v[1].to_usize())
         .take(v[2].to_usize())
@@ -262,120 +209,60 @@ pub fn fn_substring<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) 
         .into()
 }
 
-pub fn fn_strip_prefix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    let prefix = v[1].to_cow();
+pub fn fn_strip_prefix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let prefix = v[1].to_string();
     v[0].transform(|s| {
         s.strip_prefix(prefix.as_ref())
-            .map(Variable::StringRef)
+            .map(Variable::from)
             .unwrap_or_default()
     })
 }
 
-pub fn fn_strip_suffix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    let suffix = v[1].to_cow();
+pub fn fn_strip_suffix<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let suffix = v[1].to_string();
     v[0].transform(|s| {
         s.strip_suffix(suffix.as_ref())
-            .map(Variable::StringRef)
+            .map(Variable::from)
             .unwrap_or_default()
     })
 }
 
-pub fn fn_split<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::StringRef(s) => s
-            .split(v[1].to_cow().as_ref())
-            .map(Variable::from)
-            .collect::<Vec<_>>()
-            .into(),
-        Variable::String(s) => s
-            .split(v[1].to_cow().as_ref())
-            .map(|s| Variable::String(s.to_string()))
-            .collect::<Vec<_>>()
-            .into(),
-        val => val
-            .to_string()
-            .split(v[1].to_cow().as_ref())
-            .map(|s| Variable::String(s.to_string()))
-            .collect::<Vec<_>>()
-            .into(),
-    }
+pub fn fn_split<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .split(v[1].to_string().as_ref())
+        .map(|s| Variable::from(s.to_string()))
+        .collect::<Vec<_>>()
+        .into()
 }
 
-pub fn fn_rsplit<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::StringRef(s) => s
-            .rsplit(v[1].to_cow().as_ref())
-            .map(Variable::from)
-            .collect::<Vec<_>>()
-            .into(),
-        Variable::String(s) => s
-            .rsplit(v[1].to_cow().as_ref())
-            .map(|s| Variable::String(s.to_string()))
-            .collect::<Vec<_>>()
-            .into(),
-        val => val
-            .to_string()
-            .rsplit(v[1].to_cow().as_ref())
-            .map(|s| Variable::String(s.to_string()))
-            .collect::<Vec<_>>()
-            .into(),
-    }
+pub fn fn_rsplit<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .rsplit(v[1].to_string().as_ref())
+        .map(|s| Variable::from(s.to_string()))
+        .collect::<Vec<_>>()
+        .into()
 }
 
-pub fn fn_split_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::StringRef(s) => s
-            .split_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| Variable::Array(vec![Variable::StringRef(a), Variable::StringRef(b)]))
-            .unwrap_or_default(),
-        Variable::String(s) => s
-            .split_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| {
-                Variable::Array(vec![
-                    Variable::String(a.to_string()),
-                    Variable::String(b.to_string()),
-                ])
-            })
-            .unwrap_or_default(),
-        val => val
-            .to_string()
-            .split_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| {
-                Variable::Array(vec![
-                    Variable::String(a.to_string()),
-                    Variable::String(b.to_string()),
-                ])
-            })
-            .unwrap_or_default(),
-    }
+pub fn fn_split_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .split_once(v[1].to_string().as_ref())
+        .map(|(a, b)| {
+            Variable::Array(
+                vec![Variable::from(a.to_string()), Variable::from(b.to_string())].into(),
+            )
+        })
+        .unwrap_or_default()
 }
 
-pub fn fn_rsplit_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
-    match &v[0] {
-        Variable::StringRef(s) => s
-            .rsplit_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| Variable::Array(vec![Variable::StringRef(a), Variable::StringRef(b)]))
-            .unwrap_or_default(),
-        Variable::String(s) => s
-            .rsplit_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| {
-                Variable::Array(vec![
-                    Variable::String(a.to_string()),
-                    Variable::String(b.to_string()),
-                ])
-            })
-            .unwrap_or_default(),
-        val => val
-            .to_string()
-            .rsplit_once(v[1].to_cow().as_ref())
-            .map(|(a, b)| {
-                Variable::Array(vec![
-                    Variable::String(a.to_string()),
-                    Variable::String(b.to_string()),
-                ])
-            })
-            .unwrap_or_default(),
-    }
+pub fn fn_rsplit_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    v[0].to_string()
+        .rsplit_once(v[1].to_string().as_ref())
+        .map(|(a, b)| {
+            Variable::Array(
+                vec![Variable::from(a.to_string()), Variable::from(b.to_string())].into(),
+            )
+        })
+        .unwrap_or_default()
 }
 
 /**
@@ -385,12 +272,9 @@ pub fn fn_rsplit_once<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>
  *
  * Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
  */
-pub fn fn_levenshtein_distance<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    let a = v[0].to_cow();
-    let b = v[1].to_cow();
+pub fn fn_levenshtein_distance<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    let a = v[0].to_string();
+    let b = v[1].to_string();
 
     let mut result = 0;
 
@@ -449,11 +333,8 @@ pub fn fn_levenshtein_distance<'x>(
     result.into()
 }
 
-pub fn fn_detect_language<'x>(
-    _: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
-    whatlang::detect_lang(v[0].to_cow().as_ref())
+pub fn fn_detect_language<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    whatlang::detect_lang(v[0].to_string().as_ref())
         .map(|l| l.code())
         .unwrap_or("unknown")
         .into()

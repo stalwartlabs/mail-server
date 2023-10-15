@@ -192,6 +192,7 @@ impl DeliveryAttempt {
                     mta_sts: *queue_config.tls.mta_sts.eval(&envelope).await,
                     ..Default::default()
                 };
+                let allow_invalid_certs = *queue_config.tls.invalid_certs.eval(&envelope).await;
 
                 // Obtain TLS reporting
                 let tls_report = match core.report.config.tls.send.eval(&envelope).await {
@@ -638,13 +639,12 @@ impl DeliveryAttempt {
                             || (self.message.flags & MAIL_REQUIRETLS) != 0
                             || mta_sts_policy.is_some()
                             || dane_policy.is_some();
-                        let tls_connector = if !is_strict_tls || remote_host.allow_invalid_certs() {
-                            // Many mail servers on the internet have invalid certificates, if TLS is set to optional and
-                            // the remote host does not have a DANE or MTA-STS policy, then we allow invalid certificates.
-                            &core.queue.connectors.dummy_verify
-                        } else {
-                            &core.queue.connectors.pki_verify
-                        };
+                        let tls_connector =
+                            if allow_invalid_certs || remote_host.allow_invalid_certs() {
+                                &core.queue.connectors.dummy_verify
+                            } else {
+                                &core.queue.connectors.pki_verify
+                            };
 
                         let delivery_result = if !remote_host.implicit_tls() {
                             // Read greeting

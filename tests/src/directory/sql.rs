@@ -270,7 +270,7 @@ pub async fn create_test_user(handle: &dyn Directory, login: &str, secret: &str,
     handle
         .query(
             "INSERT OR IGNORE INTO accounts (name, secret, description, type, active) VALUES (?, ?, ?, 'individual', true)",
-            &[login, secret, name],
+            &[login.into(), secret.into(), name.into()],
         )
         .await
         .unwrap();
@@ -290,7 +290,7 @@ pub async fn create_test_group(handle: &dyn Directory, login: &str, name: &str) 
     handle
         .query(
             "INSERT OR IGNORE INTO accounts (name, description, type, active) VALUES (?, ?, 'group', true)",
-            &[login,  name],
+            &[login.into(),  name.into()],
         )
         .await
         .unwrap();
@@ -305,7 +305,7 @@ pub async fn link_test_address(handle: &dyn Directory, login: &str, address: &st
     handle
         .query(
             "INSERT OR IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)",
-            &[login, address, typ],
+            &[login.into(), address.into(), typ.into()],
         )
         .await
         .unwrap();
@@ -315,7 +315,7 @@ pub async fn set_test_quota(handle: &dyn Directory, login: &str, quota: u32) {
     handle
         .query(
             &format!("UPDATE accounts SET quota = {} where name = ?", quota,),
-            &[login],
+            &[login.into()],
         )
         .await
         .unwrap();
@@ -325,7 +325,7 @@ pub async fn add_to_group(handle: &dyn Directory, login: &str, group: &str) {
     handle
         .query(
             "INSERT INTO group_members (name, member_of) VALUES (?, ?)",
-            &[login, group],
+            &[login.into(), group.into()],
         )
         .await
         .unwrap();
@@ -335,7 +335,7 @@ pub async fn remove_from_group(handle: &dyn Directory, login: &str, group: &str)
     handle
         .query(
             "DELETE FROM group_members WHERE name = ? AND member_of = ?",
-            &[login, group],
+            &[login.into(), group.into()],
         )
         .await
         .unwrap();
@@ -345,7 +345,7 @@ pub async fn remove_test_alias(handle: &dyn Directory, login: &str, alias: &str)
     handle
         .query(
             "DELETE FROM emails WHERE name = ? AND address = ?",
-            &[login, alias],
+            &[login.into(), alias.into()],
         )
         .await
         .unwrap();

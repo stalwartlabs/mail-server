@@ -155,7 +155,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                     }
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::debug!(parent: &self.span,
+                    tracing::info!(parent: &self.span,
                         context = "sieve",
                         event = "reject",
                         address = &self.data.mail_from.as_ref().unwrap().address,

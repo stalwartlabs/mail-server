@@ -112,33 +112,22 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
 }
 
 pub trait ApplyString<'x> {
-    fn transform(&self, f: impl Fn(&'_ str) -> Variable<'_>) -> Variable<'x>;
+    fn transform(&self, f: impl Fn(&'_ str) -> Variable) -> Variable;
 }
 
-impl<'x> ApplyString<'x> for Variable<'x> {
-    fn transform(&self, f: impl Fn(&'_ str) -> Variable<'_>) -> Variable<'x> {
+impl<'x> ApplyString<'x> for Variable {
+    fn transform(&self, f: impl Fn(&'_ str) -> Variable) -> Variable {
         match self {
-            Variable::StringRef(s) => f(s),
-            Variable::String(s) => f(s).into_owned(),
-            Variable::ArrayRef(list) => list
-                .iter()
-                .map(|v| match v {
-                    Variable::String(s) => f(s),
-                    Variable::StringRef(s) => f(s),
-                    v => f(v.to_cow().as_ref()).into_owned(),
-                })
-                .collect::<Vec<_>>()
-                .into(),
+            Variable::String(s) => f(s),
             Variable::Array(list) => list
                 .iter()
                 .map(|v| match v {
-                    Variable::StringRef(s) => f(s),
-                    Variable::String(s) => f(s).into_owned(),
-                    v => f(v.to_cow().as_ref()).into_owned(),
+                    Variable::String(s) => f(s),
+                    v => f(v.to_string().as_ref()),
                 })
                 .collect::<Vec<_>>()
                 .into(),
-            v => f(v.to_cow().as_ref()).into_owned(),
+            v => f(v.to_string().as_ref()),
         }
     }
 }

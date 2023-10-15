@@ -27,15 +27,6 @@ use utils::config::Config;
 use crate::smtp::{TestConfig, TestSMTP};
 
 const CONFIG: &str = r#"
-[directory."sql"]
-type = "sql"
-address = "sqlite://%PATH%/test_antispam.db?mode=rwc"
-
-[directory."sql".pool]
-max-connections = 10
-min-connections = 0
-idle-timeout = "5m"
-
 [sieve]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
@@ -50,6 +41,22 @@ received-headers = 50
 cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
+
+[directory."spamdb"]
+type = "sql"
+address = "sqlite://%PATH%/test_antispam.db?mode=rwc"
+
+[directory."spamdb".pool]
+max-connections = 10
+min-connections = 0
+idle-timeout = "5m"
+
+[directory."spamdb".lookup]
+bayes-train = "INSERT INTO bayes_weights (h1, h2, ws, wh) VALUES (?, ?, ?, ?) ON CONFLICT(h1, h2) DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
+bayes-classify = "SELECT ws, wh FROM bayes_weights WHERE h1 = ? AND h2 = ?"
+id-insert = "INSERT INTO id_timestamps (id, timestamp) VALUES (?, CURRENT_TIMESTAMP)"
+id-lookup = "SELECT 1 FROM id_timestamps WHERE id = ?"
+id-cleanup = "DELETE FROM id_timestamps WHERE (strftime('%s', 'now') - strftime('%s', timestamp)) < ?"
 
 [directory."spam"]
 type = "memory"
@@ -100,11 +107,37 @@ type = "glob"
 comment = '#'
 values = ["*://phishing-tank.com", "*://phishing-tank.org"]
 
+[directory."spam".lookup."trap-address"]
+type = "glob"
+comment = '#'
+values = ["spamtrap@*"]
+
+[directory."spam".lookup."options"]
+type = "list"
+values = ["AUTOLEARN_REPLIES"]
+
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
 
+[bayes]
+min-learns = 10
+
 [sieve.scripts]
 "#;
+
+const CREATE_TABLES: &[&str; 2] = &[
+    "CREATE TABLE IF NOT EXISTS bayes_weights (
+h1 INTEGER NOT NULL,
+h2 INTEGER NOT NULL,
+ws INTEGER,
+wh INTEGER,
+PRIMARY KEY (h1, h2)
+)",
+    "CREATE TABLE IF NOT EXISTS id_timestamps (
+    id STRING PRIMARY KEY,
+    timestamp DATETIME NOT NULL
+)",
+];
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
@@ -133,6 +166,10 @@ async fn antispam() {
         "ip",
         "helo",
         "rbl",
+        "replies_out",
+        "replies_in",
+        "spamtrap",
+        "bayes_classify",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
@@ -167,6 +204,12 @@ async fn antispam() {
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
+
+    // Create tables
+    let sdb = ctx.directory.directories.get("spamdb").unwrap();
+    for query in CREATE_TABLES {
+        sdb.query(query, &[]).await.unwrap();
+    }
 
     // Add mock DNS entries
     for (domain, ip) in [
@@ -242,7 +285,7 @@ async fn antispam() {
         while has_more {
             let mut message = String::new();
             let mut in_params = true;
-            let mut variables: HashMap<String, Variable<'_>> = HashMap::new();
+            let mut variables: HashMap<String, Variable> = HashMap::new();
             let mut expected_variables = AHashMap::new();
 
             // Build session
@@ -288,7 +331,7 @@ async fn antispam() {
                                 param.to_string(),
                                 value
                                     .split_ascii_whitespace()
-                                    .map(|s| Variable::String(s.to_string()))
+                                    .map(|s| Variable::from(s.to_string()))
                                     .collect::<Vec<_>>()
                                     .into(),
                             );
@@ -397,40 +440,40 @@ fn html_tokens() {
         (
             "<html>hello<br/>world<br/></html>",
             vec![
-                Variable::String("<html".to_string()),
-                Variable::String("_hello".to_string()),
-                Variable::String("<br/".to_string()),
-                Variable::String("_world".to_string()),
-                Variable::String("<br/".to_string()),
-                Variable::String("</html".to_string()),
+                Variable::from("<html".to_string()),
+                Variable::from("_hello".to_string()),
+                Variable::from("<br/".to_string()),
+                Variable::from("_world".to_string()),
+                Variable::from("<br/".to_string()),
+                Variable::from("</html".to_string()),
             ],
         ),
         (
             "<html>using &lt;><br/></html>",
             vec![
-                Variable::String("<html".to_string()),
-                Variable::String("_using <>".to_string()),
-                Variable::String("<br/".to_string()),
-                Variable::String("</html".to_string()),
+                Variable::from("<html".to_string()),
+                Variable::from("_using <>".to_string()),
+                Variable::from("<br/".to_string()),
+                Variable::from("</html".to_string()),
             ],
         ),
         (
             "test <not br/>tag<br />",
             vec![
-                Variable::String("_test".to_string()),
-                Variable::String("<not br/".to_string()),
-                Variable::String("_ tag".to_string()),
-                Variable::String("<br /".to_string()),
+                Variable::from("_test".to_string()),
+                Variable::from("<not br/".to_string()),
+                Variable::from("_ tag".to_string()),
+                Variable::from("<br /".to_string()),
             ],
         ),
         (
             "<>< ><tag\n/>>hello    world< br \n />",
             vec![
-                Variable::String("<".to_string()),
-                Variable::String("<".to_string()),
-                Variable::String("<tag /".to_string()),
-                Variable::String("_>hello world".to_string()),
-                Variable::String("<br /".to_string()),
+                Variable::from("<".to_string()),
+                Variable::from("<".to_string()),
+                Variable::from("<tag /".to_string()),
+                Variable::from("_>hello world".to_string()),
+                Variable::from("<br /".to_string()),
             ],
         ),
         (
@@ -439,17 +482,17 @@ fn html_tokens() {
                 "<h1>&lt;body&gt;</h1>"
             ),
             vec![
-                Variable::String("<head".to_string()),
-                Variable::String("<title".to_string()),
-                Variable::String("_ignore head".to_string()),
-                Variable::String("</title".to_string()),
-                Variable::String("<not head".to_string()),
-                Variable::String("_xyz".to_string()),
-                Variable::String("</not head".to_string()),
-                Variable::String("</head".to_string()),
-                Variable::String("<h1".to_string()),
-                Variable::String("_<body>".to_string()),
-                Variable::String("</h1".to_string()),
+                Variable::from("<head".to_string()),
+                Variable::from("<title".to_string()),
+                Variable::from("_ignore head".to_string()),
+                Variable::from("</title".to_string()),
+                Variable::from("<not head".to_string()),
+                Variable::from("_xyz".to_string()),
+                Variable::from("</not head".to_string()),
+                Variable::from("</head".to_string()),
+                Variable::from("<h1".to_string()),
+                Variable::from("_<body>".to_string()),
+                Variable::from("</h1".to_string()),
             ],
         ),
         (
@@ -458,12 +501,12 @@ fn html_tokens() {
                 "don&apos;t hurt me.</p>"
             ),
             vec![
-                Variable::String("<p".to_string()),
-                Variable::String("_what is ♥?".to_string()),
-                Variable::String("</p".to_string()),
-                Variable::String("<p".to_string()),
-                Variable::String("_ßĂΒγ don't hurt me.".to_string()),
-                Variable::String("</p".to_string()),
+                Variable::from("<p".to_string()),
+                Variable::from("_what is ♥?".to_string()),
+                Variable::from("</p".to_string()),
+                Variable::from("<p".to_string()),
+                Variable::from("_ßĂΒγ don't hurt me.".to_string()),
+                Variable::from("</p".to_string()),
             ],
         ),
         (
@@ -473,7 +516,7 @@ fn html_tokens() {
                 "this is <!-- <> < < < < ignore  > -> here -->the actual<!--> text"
             ),
             vec![
-                Variable::String(
+                Variable::from(
                     concat!(
                         "<!--[if mso]><style type=\"text/css\">body, table, ",
                         "td, a, p, span, ul, li {font-family: Arial, sans-serif!",
@@ -481,36 +524,36 @@ fn html_tokens() {
                     )
                     .to_string(),
                 ),
-                Variable::String("_this is".to_string()),
-                Variable::String("<!-- <> < < < < ignore  > -> here --".to_string()),
-                Variable::String("_ the actual".to_string()),
-                Variable::String("<!--".to_string()),
-                Variable::String("_ text".to_string()),
+                Variable::from("_this is".to_string()),
+                Variable::from("<!-- <> < < < < ignore  > -> here --".to_string()),
+                Variable::from("_ the actual".to_string()),
+                Variable::from("<!--".to_string()),
+                Variable::from("_ text".to_string()),
             ],
         ),
         (
             "   < p >  hello < / p > < p > world < / p >   !!! < br > ",
             vec![
-                Variable::String("<p ".to_string()),
-                Variable::String("_hello".to_string()),
-                Variable::String("</p ".to_string()),
-                Variable::String("<p ".to_string()),
-                Variable::String("_ world".to_string()),
-                Variable::String("</p ".to_string()),
-                Variable::String("_ !!!".to_string()),
-                Variable::String("<br ".to_string()),
+                Variable::from("<p ".to_string()),
+                Variable::from("_hello".to_string()),
+                Variable::from("</p ".to_string()),
+                Variable::from("<p ".to_string()),
+                Variable::from("_ world".to_string()),
+                Variable::from("</p ".to_string()),
+                Variable::from("_ !!!".to_string()),
+                Variable::from("<br ".to_string()),
             ],
         ),
         (
             " <p>please unsubscribe <a href=#>here</a>.</p> ",
             vec![
-                Variable::String("<p".to_string()),
-                Variable::String("_please unsubscribe".to_string()),
-                Variable::String("<a href=#".to_string()),
-                Variable::String("_ here".to_string()),
-                Variable::String("</a".to_string()),
-                Variable::String("_.".to_string()),
-                Variable::String("</p".to_string()),
+                Variable::from("<p".to_string()),
+                Variable::from("_please unsubscribe".to_string()),
+                Variable::from("<a href=#".to_string()),
+                Variable::from("_ here".to_string()),
+                Variable::from("</a".to_string()),
+                Variable::from("_.".to_string()),
+                Variable::from("</p".to_string()),
             ],
         ),
     ] {
@@ -529,11 +572,11 @@ fn html_tokens() {
                 "< anchor href = \"x\">text</a>",
             ),
             vec![
-                Variable::String("a".to_string()),
-                Variable::String("b".to_string()),
-                Variable::String("c".to_string()),
-                Variable::String("d".to_string()),
-                Variable::String("e".to_string()),
+                Variable::from("a".to_string()),
+                Variable::from("b".to_string()),
+                Variable::from("c".to_string()),
+                Variable::from("d".to_string()),
+                Variable::from("e".to_string()),
             ],
         ),
         (
@@ -547,11 +590,11 @@ fn html_tokens() {
                 "<anchor href=x>text</a>",
             ),
             vec![
-                Variable::String("a".to_string()),
-                Variable::String("b".to_string()),
-                Variable::String("c".to_string()),
-                Variable::String("d".to_string()),
-                Variable::String("e".to_string()),
+                Variable::from("a".to_string()),
+                Variable::from("b".to_string()),
+                Variable::from("c".to_string()),
+                Variable::from("d".to_string()),
+                Variable::from("e".to_string()),
             ],
         ),
         (
@@ -565,10 +608,10 @@ fn html_tokens() {
                 "<a href=foobar> a href = \"unknown\" </a>",
             ),
             vec![
-                Variable::String("hello world".to_string()),
-                Variable::String("test".to_string()),
-                Variable::String("fudge".to_string()),
-                Variable::String("foobar".to_string()),
+                Variable::from("hello world".to_string()),
+                Variable::from("test".to_string()),
+                Variable::from("fudge".to_string()),
+                Variable::from("foobar".to_string()),
             ],
         ),
     ] {

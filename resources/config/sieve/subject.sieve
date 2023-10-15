@@ -2,12 +2,12 @@
 let "raw_subject_lc" "to_lowercase(header.subject.raw)";
 let "is_ascii_subject" "is_ascii(subject_lc)";
 
-if eval "len(thread_name) >= 10 && count(tokenize(thread_name, 'words')) > 1 && is_uppercase(thread_name)" {
+if eval "len(subject_clean) >= 10 && count(tokenize(subject_clean, 'words')) > 1 && is_uppercase(subject_clean)" {
     # Subject contains mostly capital letters
 	let "t.SUBJ_ALL_CAPS" "1";
 }
 
-if eval "count_chars(thread_name) > 200" {
+if eval "count_chars(subject_clean) > 200" {
     # Subject is very long
     let "t.LONG_SUBJ" "1";
 }

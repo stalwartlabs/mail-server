@@ -148,6 +148,13 @@ impl ConfigQueue for Config {
                 start: self
                     .parse_if_block("queue.outbound.tls.starttls", ctx, &mx_envelope_keys)?
                     .unwrap_or_else(|| IfBlock::new(RequireOptional::Optional)),
+                invalid_certs: self
+                    .parse_if_block(
+                        "queue.outbound.tls.allow-invalid-certs",
+                        ctx,
+                        &mx_envelope_keys,
+                    )?
+                    .unwrap_or_else(|| IfBlock::new(false)),
             },
             throttle: self.parse_queue_throttle(ctx)?,
             quota: self.parse_queue_quota(ctx)?,

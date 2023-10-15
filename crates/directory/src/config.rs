@@ -307,7 +307,7 @@ impl InsertLine for LookupList {
     }
 }
 
-impl InsertLine for AHashMap<String, Variable<'static>> {
+impl InsertLine for AHashMap<String, Variable> {
     fn insert(&mut self, entry: String, format: &LookupFormat) {
         let (key, value) = entry
             .split_once(format.separator.as_deref().unwrap_or(" "))
@@ -334,17 +334,17 @@ impl InsertLine for AHashMap<String, Variable<'static>> {
         }
 
         let value = if has_other || !has_digit {
-            Variable::String(value.to_string())
+            Variable::String(value.to_string().into())
         } else if has_dots {
             value
                 .parse()
                 .map(Variable::Float)
-                .unwrap_or_else(|_| Variable::String(value.to_string()))
+                .unwrap_or_else(|_| Variable::String(value.to_string().into()))
         } else {
             value
                 .parse()
                 .map(Variable::Integer)
-                .unwrap_or_else(|_| Variable::String(value.to_string()))
+                .unwrap_or_else(|_| Variable::String(value.to_string().into()))
         };
 
         self.insert(key.to_string(), value);

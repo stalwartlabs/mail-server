@@ -21,9 +21,8 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use directory::Lookup;
 use nlp::bayes::{cache::BayesTokenCache, BayesClassifier};
 use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
@@ -42,12 +41,11 @@ pub trait ConfigSieve {
     fn parse_sieve(&self, ctx: &mut ConfigContext) -> super::Result<SieveCore>;
 }
 
+#[derive(Default)]
 pub struct SieveContext {
     pub psl: PublicSuffix,
     pub bayes_classify: BayesClassifier,
     pub bayes_cache: BayesTokenCache,
-    pub lookup_classify: Arc<Lookup>,
-    pub lookup_train: Arc<Lookup>,
 }
 
 impl ConfigSieve for Config {
@@ -67,18 +65,6 @@ impl ConfigSieve for Config {
                 self.property_or_static("bayes.cache.ttl.positive", "1h")?,
                 self.property_or_static("bayes.cache.ttl.negative", "1h")?,
             ),
-            lookup_classify: ctx
-                .directory
-                .lookups
-                .get("bayes.tokens.classify")
-                .ok_or("No lookup found for key bayes.tokens.classify.".to_string())?
-                .clone(),
-            lookup_train: ctx
-                .directory
-                .lookups
-                .get("bayes.tokens.train")
-                .ok_or("No lookup found for key bayes.tokens.train.".to_string())?
-                .clone(),
         };
 
         // Allocate compiler and runtime

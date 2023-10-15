@@ -417,6 +417,7 @@ pub struct QueueOutboundTls {
     pub dane: IfBlock<RequireOptional>,
     pub mta_sts: IfBlock<RequireOptional>,
     pub start: IfBlock<RequireOptional>,
+    pub invalid_certs: IfBlock<bool>,
 }
 
 pub struct QueueOutboundTimeout {

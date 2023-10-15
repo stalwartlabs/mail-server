@@ -1,0 +1,19 @@
+expect BAYES_SPAM
+
+Subject: save up to NUMBER on life insurance
+
+why spend more than you have to life quote savings ensuring your family s financial security is very important life quote savings makes buying life insurance simple and affordable we provide free access to the very best companies and the lowest rates life quote savings is fast easy and saves you money let us help you get started with the best values in the country on new coverage you can save hundreds or even thousands of dollars by requesting a free quote from lifequote savings our service will take you less than NUMBER minutes to complete shop and compare save up to NUMBER on all types of life insurance hyperlink click here for your free quote protecting your family is the best investment you ll ever make if you are in receipt of this email in error and or wish to be removed from our list hyperlink please click here and type remove if you reside in any state which prohibits e mail solicitations for insurance please disregard this email
+
+<!-- NEXT TEST -->
+expect BAYES_HAM
+
+Subject: can someone explain
+
+what type of operating system solaris is as ive never seen or used it i dont know wheather to get a server from sun or from dell i would prefer a linux based server and sun seems to be the one for that but im not sure if solaris is a distro of linux or a completely different operating system can someone explain kiall mac innes irish linux users group ilug URL URL for un subscription information list maintainer listmaster URL 
+<!-- NEXT TEST -->
+expect 
+
+Subject: classifier test
+
+this is a novel text that the bayes classifier has never seen before, it should be classified as ham or non-ham
+

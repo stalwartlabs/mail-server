@@ -105,3 +105,14 @@ impl BayesTokenCache {
         }
     }
 }
+
+impl Default for BayesTokenCache {
+    fn default() -> Self {
+        Self {
+            positive: Mutex::new(LruCache::with_hasher(1024, Default::default())),
+            negative: Mutex::new(LruCache::with_hasher(1024, Default::default())),
+            ttl_negative: Default::default(),
+            ttl_positive: Default::default(),
+        }
+    }
+}

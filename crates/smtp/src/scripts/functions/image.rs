@@ -25,18 +25,15 @@ use sieve::{runtime::Variable, Context};
 
 use crate::config::scripts::SieveContext;
 
-pub fn fn_img_metadata<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
+pub fn fn_img_metadata<'x>(ctx: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.contents())
         .and_then(|bytes| {
-            let arg = v[1].to_cow();
+            let arg = v[1].to_string();
             match arg.as_ref() {
                 "type" => imagesize::image_type(bytes).ok().map(|t| {
-                    Variable::StringRef(match t {
+                    Variable::from(match t {
                         imagesize::ImageType::Aseprite => "aseprite",
                         imagesize::ImageType::Avif => "avif",
                         imagesize::ImageType::Bmp => "bmp",

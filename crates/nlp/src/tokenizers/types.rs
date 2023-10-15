@@ -45,9 +45,8 @@ pub struct TypesTokenizer<'x, 'y> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType<T> {
     Alphabetic(T),
-    Integer(T),
     Alphanumeric(T),
-    Hexadecimal(T),
+    Integer(T),
     Other(char),
     Punctuation(char),
     Space,
@@ -74,7 +73,7 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
         if self.tokenize_urls
             && matches!(
             token.word,
-            TokenType::Alphabetic(t) | TokenType::Hexadecimal(t)
+            TokenType::Alphabetic(t) | TokenType::Alphanumeric(t)
             if t.len() <= 8 && t.chars().all(|c| c.is_ascii()))
             && self.try_skip_url_scheme()
         {
@@ -169,7 +168,6 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
     fn consume(&mut self) -> bool {
         let mut has_alpha = false;
         let mut has_number = false;
-        let mut has_hex = false;
 
         let mut start_pos = usize::MAX;
         let mut end_pos = usize::MAX;
@@ -178,11 +176,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
 
         for (pos, ch) in self.iter.by_ref() {
             if ch.is_alphabetic() {
-                if ch.is_ascii_hexdigit() {
-                    has_hex = true;
-                } else {
-                    has_alpha = true;
-                }
+                has_alpha = true;
             } else if ch.is_ascii_digit() {
                 has_number = true;
             } else {
@@ -222,8 +216,6 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                     TokenType::Alphanumeric(text)
                 } else if has_alpha {
                     TokenType::Alphabetic(text)
-                } else if has_hex {
-                    TokenType::Hexadecimal(text)
                 } else {
                     TokenType::Integer(text)
                 },
@@ -321,7 +313,6 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                     TokenType::Alphabetic(_)
                     | TokenType::Alphanumeric(_)
                     | TokenType::Integer(_)
-                    | TokenType::Hexadecimal(_)
                     | TokenType::Punctuation(
                         '-' | '.' | '_' | '~' | '!' | '$' | '&' | '\'' | '(' | ')' | '*' | '+'
                         | ',' | ';' | '=' | ':',
@@ -351,9 +342,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
 
             while let Some(token) = self.peek() {
                 match token.word {
-                    TokenType::Alphabetic(text)
-                    | TokenType::Alphanumeric(text)
-                    | TokenType::Hexadecimal(text) => {
+                    TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) => {
                         last_label_is_tld =
                             text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
                         text_count += 1;
@@ -453,7 +442,6 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                     TokenType::Alphabetic(_)
                     | TokenType::Alphanumeric(_)
                     | TokenType::Integer(_)
-                    | TokenType::Hexadecimal(_)
                     | TokenType::Other(_) => {}
                     TokenType::Punctuation('(') => {
                         p_count += 1;
@@ -575,11 +563,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                 TokenType::Punctuation('[') if start_pos == usize::MAX => {
                     return self.try_parse_ipv6(token.from);
                 }
-                TokenType::Alphabetic(text)
-                | TokenType::Alphanumeric(text)
-                | TokenType::Hexadecimal(text)
-                    if text.len() <= 63 =>
-                {
+                TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) if text.len() <= 63 => {
                     last_label_is_tld =
                         text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
                     has_alpha = true;
@@ -630,7 +614,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
 
         while let Some(token) = self.peek() {
             match token.word {
-                TokenType::Integer(_) | TokenType::Hexadecimal(_) => {
+                TokenType::Integer(_) | TokenType::Alphanumeric(_) => {
                     last_ch = 0;
                 }
                 TokenType::Punctuation(':') if last_ch != b'.' => {
@@ -720,7 +704,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                 (TokenType::Punctuation('/'), State::Slash1) => State::Slash2,
                 (TokenType::Punctuation('/'), State::Slash2) => return true,
                 (TokenType::Punctuation('+'), State::None) => State::PlusAlpha,
-                (TokenType::Alphabetic(t) | TokenType::Hexadecimal(t), State::PlusAlpha)
+                (TokenType::Alphabetic(t) | TokenType::Alphanumeric(t), State::PlusAlpha)
                     if t.chars().all(|c| c.is_ascii()) =>
                 {
                     State::Colon
@@ -740,7 +724,6 @@ impl<T> TokenType<T> {
             TokenType::Alphabetic(_)
                 | TokenType::Integer(_)
                 | TokenType::Alphanumeric(_)
-                | TokenType::Hexadecimal(_)
                 | TokenType::Other(_)
                 | TokenType::Punctuation(
                     '!' | '#'
@@ -771,7 +754,6 @@ impl<T> TokenType<T> {
             TokenType::Alphabetic(_)
                 | TokenType::Integer(_)
                 | TokenType::Alphanumeric(_)
-                | TokenType::Hexadecimal(_)
                 | TokenType::Other(_)
         ) || (!is_start && matches!(self, TokenType::Punctuation('-')))
     }
@@ -879,7 +861,7 @@ mod test {
             (
                 "a-b://foo",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('-'),
                     TokenType::UrlNoHost("b://foo"),
                 ],
@@ -887,7 +869,7 @@ mod test {
             (
                 "a.b://foo",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('.'),
                     TokenType::UrlNoHost("b://foo"),
                 ],
@@ -911,7 +893,7 @@ mod test {
             (
                 "ab://",
                 vec![
-                    TokenType::Hexadecimal("ab"),
+                    TokenType::Alphabetic("ab"),
                     TokenType::Punctuation(':'),
                     TokenType::Punctuation('/'),
                     TokenType::Punctuation('/'),
@@ -1722,7 +1704,7 @@ mod test {
                 vec![
                     TokenType::Url("http://example.org/"),
                     TokenType::Punctuation('"'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                 ],
             ),
             (
@@ -1730,7 +1712,7 @@ mod test {
                 vec![
                     TokenType::Url("http://example.org/"),
                     TokenType::Punctuation('"'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('"'),
                 ],
             ),
@@ -1739,7 +1721,7 @@ mod test {
                 vec![
                     TokenType::Url("http://example.org/"),
                     TokenType::Punctuation('`'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                 ],
             ),
             (
@@ -1747,7 +1729,7 @@ mod test {
                 vec![
                     TokenType::Url("http://example.org/"),
                     TokenType::Punctuation('`'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('`'),
                 ],
             ),
@@ -1782,7 +1764,7 @@ mod test {
                 vec![
                     TokenType::UrlNoScheme("example.org/"),
                     TokenType::Punctuation('`'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                 ],
             ),
             (
@@ -1790,7 +1772,7 @@ mod test {
                 vec![
                     TokenType::UrlNoScheme("example.org/"),
                     TokenType::Punctuation('`'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('`'),
                 ],
             ),
@@ -1939,7 +1921,7 @@ mod test {
                     TokenType::Alphabetic("div"),
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Space,
                     TokenType::Alphabetic("href"),
                     TokenType::Punctuation('='),
@@ -1949,7 +1931,7 @@ mod test {
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
                     TokenType::Punctuation('/'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
                     TokenType::Punctuation('/'),
@@ -1964,7 +1946,7 @@ mod test {
                     TokenType::Alphabetic("div"),
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Space,
                     TokenType::Alphabetic("href"),
                     TokenType::Punctuation('='),
@@ -1975,7 +1957,7 @@ mod test {
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
                     TokenType::Punctuation('/'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('>'),
                     TokenType::Punctuation('<'),
                     TokenType::Punctuation('/'),
@@ -2214,7 +2196,7 @@ mod test {
                 vec![
                     TokenType::Alphabetic("example"),
                     TokenType::Punctuation('.'),
-                    TokenType::Hexadecimal("c"),
+                    TokenType::Alphabetic("c"),
                 ],
             ),
             ("example.co", vec![TokenType::UrlNoScheme("example.co")]),
@@ -2225,20 +2207,20 @@ mod test {
                 vec![
                     TokenType::Alphabetic("exampl"),
                     TokenType::Punctuation('.'),
-                    TokenType::Hexadecimal("e"),
+                    TokenType::Alphabetic("e"),
                     TokenType::Punctuation('.'),
-                    TokenType::Hexadecimal("c"),
+                    TokenType::Alphabetic("c"),
                 ],
             ),
             ("exampl.e.co", vec![TokenType::UrlNoScheme("exampl.e.co")]),
             (
                 "e.xample.c",
                 vec![
-                    TokenType::Hexadecimal("e"),
+                    TokenType::Alphabetic("e"),
                     TokenType::Punctuation('.'),
                     TokenType::Alphabetic("xample"),
                     TokenType::Punctuation('.'),
-                    TokenType::Hexadecimal("c"),
+                    TokenType::Alphabetic("c"),
                 ],
             ),
             ("e.xample.co", vec![TokenType::UrlNoScheme("e.xample.co")]),
@@ -2284,7 +2266,7 @@ mod test {
                     TokenType::Space,
                     TokenType::UrlNoScheme("www.foobar.co"),
                     TokenType::Space,
-                    TokenType::Hexadecimal("E"),
+                    TokenType::Alphabetic("E"),
                     TokenType::Punctuation('-'),
                     TokenType::Alphabetic("Mail"),
                     TokenType::Punctuation(':'),
@@ -2462,7 +2444,7 @@ mod test {
             (
                 "a-.com",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('-'),
                     TokenType::Punctuation('.'),
                     TokenType::Alphabetic("com"),
@@ -2471,9 +2453,9 @@ mod test {
             (
                 "a.b-.com",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('.'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                     TokenType::Punctuation('-'),
                     TokenType::Punctuation('.'),
                     TokenType::Alphabetic("com"),
@@ -2586,11 +2568,11 @@ mod test {
             ("@", vec![TokenType::Punctuation('@')]),
             (
                 "a@",
-                vec![TokenType::Hexadecimal("a"), TokenType::Punctuation('@')],
+                vec![TokenType::Alphabetic("a"), TokenType::Punctuation('@')],
             ),
             (
                 "@a",
-                vec![TokenType::Punctuation('@'), TokenType::Hexadecimal("a")],
+                vec![TokenType::Punctuation('@'), TokenType::Alphabetic("a")],
             ),
             (
                 "@@@",
@@ -2715,7 +2697,7 @@ mod test {
             (
                 "a..b@example.com",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('.'),
                     TokenType::Punctuation('.'),
                     TokenType::Email("b@example.com"),
@@ -2731,17 +2713,17 @@ mod test {
             (
                 "a@b",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                 ],
             ),
             (
                 "a@b.",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                     TokenType::Punctuation('.'),
                 ],
             ),
@@ -2760,7 +2742,7 @@ mod test {
             (
                 "a@-foo.com",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
                     TokenType::Punctuation('-'),
                     TokenType::UrlNoScheme("foo.com"),
@@ -2769,9 +2751,9 @@ mod test {
             (
                 "a@b-.",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                     TokenType::Punctuation('-'),
                     TokenType::Punctuation('.'),
                 ],
@@ -2779,17 +2761,17 @@ mod test {
             (
                 "a@b",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                 ],
             ),
             (
                 "a@b.",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("b"),
+                    TokenType::Alphabetic("b"),
                     TokenType::Punctuation('.'),
                 ],
             ),
@@ -2833,9 +2815,9 @@ mod test {
             (
                 "a@a.xyϸ",
                 vec![
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('@'),
-                    TokenType::Hexadecimal("a"),
+                    TokenType::Alphabetic("a"),
                     TokenType::Punctuation('.'),
                     TokenType::Alphabetic("xyϸ"),
                 ],

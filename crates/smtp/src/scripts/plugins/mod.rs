@@ -35,14 +35,14 @@ use tokio::runtime::Handle;
 use crate::{config::scripts::SieveContext, core::SMTP};
 
 type RegisterPluginFnc = fn(u32, &mut FunctionMap<SieveContext>) -> ();
-type ExecPluginFnc = fn(PluginContext<'_>) -> Variable<'static>;
+type ExecPluginFnc = fn(PluginContext<'_>) -> Variable;
 
 pub struct PluginContext<'x> {
     pub span: &'x tracing::Span,
     pub handle: &'x Handle,
     pub core: &'x SMTP,
     pub message: &'x Message<'x>,
-    pub arguments: Vec<Variable<'static>>,
+    pub arguments: Vec<Variable>,
 }
 
 const PLUGINS_EXEC: [ExecPluginFnc; 10] = [
@@ -105,6 +105,6 @@ impl SMTP {
 
 #[cfg(feature = "test_mode")]
 pub fn test_print(ctx: PluginContext<'_>) -> Input {
-    println!("{}", ctx.arguments[0].to_cow());
+    println!("{}", ctx.arguments[0].to_string());
     Input::True
 }

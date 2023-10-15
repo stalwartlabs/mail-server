@@ -67,7 +67,7 @@ impl<'x, 'y> Iterator for BayesTokenizer<'x, 'y> {
             let token = self.tokenizer.next()?;
 
             let word: Cow<str> = match token.word {
-                TokenType::Alphabetic(word) | TokenType::Hexadecimal(word) => {
+                TokenType::Alphabetic(word) => {
                     let word = word.to_lowercase();
                     if self
                         .stop_words
@@ -133,7 +133,8 @@ impl<'x, 'y> Iterator for BayesTokenizer<'x, 'y> {
                         continue;
                     }
                 }
-                TokenType::Integer(word) | TokenType::Float(word) => word.into(),
+                TokenType::Integer(word) => number_to_tag("INTEGER", word).into(),
+                TokenType::Float(word) => number_to_tag("FLOAT", word).into(),
                 TokenType::Punctuation(_) | TokenType::Space => {
                     continue;
                 }
@@ -142,6 +143,19 @@ impl<'x, 'y> Iterator for BayesTokenizer<'x, 'y> {
             return Some(word);
         }
     }
+}
+
+fn number_to_tag(prefix: &str, num: &str) -> String {
+    format!(
+        "{}_{}_{}",
+        prefix,
+        if prefix.starts_with('-') {
+            "NEG"
+        } else {
+            "POS"
+        },
+        num.len()
+    )
 }
 
 pub static SYMBOLS: phf::Set<char> = phf::phf_set! {

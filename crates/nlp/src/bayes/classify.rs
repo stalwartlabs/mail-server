@@ -68,9 +68,7 @@ impl BayesClassifier {
             }
         }
 
-        if processed_tokens == 0
-            || self.min_tokens > 0 && processed_tokens < (self.min_tokens as f64 * 0.1) as u32
-        {
+        if processed_tokens == 0 || self.min_tokens > 0 && processed_tokens < self.min_tokens {
             return None;
         }
 

@@ -28,12 +28,9 @@ use crate::config::scripts::SieveContext;
 
 use super::ApplyString;
 
-pub fn fn_received_part<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
+pub fn fn_received_part<'x>(ctx: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     if let (Ok(part), Some(HeaderValue::Received(rcvd))) = (
-        ReceivedPart::try_from(v[1].to_cow().as_ref()),
+        ReceivedPart::try_from(v[1].to_string().as_ref()),
         ctx.message()
             .part(ctx.part())
             .and_then(|p| {
@@ -52,8 +49,8 @@ pub fn fn_received_part<'x>(
 
 pub fn fn_is_encoding_problem<'x>(
     ctx: &'x Context<'x, SieveContext>,
-    _: Vec<Variable<'x>>,
-) -> Variable<'x> {
+    _: Vec<Variable>,
+) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.is_encoding_problem)
@@ -61,22 +58,16 @@ pub fn fn_is_encoding_problem<'x>(
         .into()
 }
 
-pub fn fn_is_attachment<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    _: Vec<Variable<'x>>,
-) -> Variable<'x> {
+pub fn fn_is_attachment<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable>) -> Variable {
     ctx.message().attachments.contains(&ctx.part()).into()
 }
 
-pub fn fn_is_body<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_is_body<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable>) -> Variable {
     (ctx.message().text_body.contains(&ctx.part()) || ctx.message().html_body.contains(&ctx.part()))
         .into()
 }
 
-pub fn fn_attachment_name<'x>(
-    ctx: &'x Context<'x, SieveContext>,
-    _: Vec<Variable<'x>>,
-) -> Variable<'x> {
+pub fn fn_attachment_name<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .and_then(|p| p.attachment_name())
@@ -84,20 +75,20 @@ pub fn fn_attachment_name<'x>(
         .into()
 }
 
-pub fn fn_thread_name<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable<'x>>) -> Variable<'x> {
+pub fn fn_thread_name<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| thread_name(s).into())
 }
 
 pub fn fn_is_header_utf8_valid<'x>(
     ctx: &'x Context<'x, SieveContext>,
-    v: Vec<Variable<'x>>,
-) -> Variable<'x> {
+    v: Vec<Variable>,
+) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| {
             let raw = ctx.message().raw_message();
             let mut is_valid = true;
-            if let Some(header_name) = HeaderName::parse(v[0].to_cow().as_ref()) {
+            if let Some(header_name) = HeaderName::parse(v[0].to_string().as_ref()) {
                 for header in &p.headers {
                     if header.name == header_name
                         && raw
