@@ -169,7 +169,6 @@ impl Directory for SqlDirectory {
                 for col in row.columns() {
                     let idx = col.ordinal();
                     columns.push(match col.type_info().kind() {
-                        AnyTypeInfoKind::Null => DatabaseColumn::Null,
                         AnyTypeInfoKind::Bool => {
                             DatabaseColumn::Bool(row.try_get(idx).unwrap_or_default())
                         }
@@ -187,6 +186,9 @@ impl Directory for SqlDirectory {
                         AnyTypeInfoKind::Blob => DatabaseColumn::Blob(
                             row.try_get::<Vec<u8>, _>(idx).unwrap_or_default().into(),
                         ),
+                        AnyTypeInfoKind::Null => row
+                            .try_get::<String, _>(idx)
+                            .map_or(DatabaseColumn::Null, DatabaseColumn::from),
                     });
                 }
                 columns

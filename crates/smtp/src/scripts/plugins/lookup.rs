@@ -36,6 +36,10 @@ pub fn register_map(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("lookup_map", plugin_id, 2);
 }
 
+pub fn register_map_many(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("lookup_map_many", plugin_id, 2);
+}
+
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let lookup_id = ctx.arguments[0].to_string();
     let span = ctx.span;
@@ -94,4 +98,40 @@ pub fn exec_map(ctx: PluginContext<'_>) -> Variable {
     }
 
     Variable::default()
+}
+
+pub fn exec_map_many(ctx: PluginContext<'_>) -> Variable {
+    let lookup_id = ctx.arguments[0].to_string();
+    let items = match &ctx.arguments[1] {
+        Variable::Array(l) => l
+            .iter()
+            .filter_map(|i| {
+                if !i.is_empty() {
+                    DatabaseColumn::from(i).into()
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        v if !v.is_empty() => vec![DatabaseColumn::from(v)],
+        _ => vec![],
+    };
+    let span = ctx.span;
+
+    if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
+        items
+            .into_iter()
+            .filter_map(|item| ctx.handle.block_on(lookup.lookup(&[item])))
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        tracing::warn!(
+            parent: span,
+            context = "sieve:lookup",
+            event = "failed",
+            reason = "Unknown lookup id",
+            lookup_id = %lookup_id,
+        );
+        Variable::default()
+    }
 }

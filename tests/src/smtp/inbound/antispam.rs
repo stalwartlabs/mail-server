@@ -45,6 +45,7 @@ duplicate-expiry = "7d"
 [directory."spamdb"]
 type = "sql"
 address = "sqlite://%PATH%/test_antispam.db?mode=rwc"
+#address = "sqlite:///tmp/test_antispam.db?mode=rwc"
 
 [directory."spamdb".pool]
 max-connections = 10
@@ -52,11 +53,17 @@ min-connections = 0
 idle-timeout = "5m"
 
 [directory."spamdb".lookup]
-bayes-train = "INSERT INTO bayes_weights (h1, h2, ws, wh) VALUES (?, ?, ?, ?) ON CONFLICT(h1, h2) DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
-bayes-classify = "SELECT ws, wh FROM bayes_weights WHERE h1 = ? AND h2 = ?"
-id-insert = "INSERT INTO id_timestamps (id, timestamp) VALUES (?, CURRENT_TIMESTAMP)"
+token-insert = "INSERT INTO bayes_tokens (h1, h2, ws, wh) VALUES (?, ?, ?, ?) 
+                ON CONFLICT(h1, h2) 
+                DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
+token-lookup = "SELECT ws, wh FROM bayes_tokens WHERE h1 = ? AND h2 = ?"
+id-insert = "INSERT INTO id_timestamps (id, last_hit) VALUES (?, CURRENT_TIMESTAMP)"
 id-lookup = "SELECT 1 FROM id_timestamps WHERE id = ?"
-id-cleanup = "DELETE FROM id_timestamps WHERE (strftime('%s', 'now') - strftime('%s', timestamp)) < ?"
+id-cleanup = "DELETE FROM id_timestamps WHERE (CURRENT_TIMESTAMP - last_hit) < ?"
+reputation-insert = "INSERT INTO reputation (token, score, count, last_hit) VALUES (?, ?, 1, CURRENT_TIMESTAMP) 
+                     ON CONFLICT(token) 
+                     DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, last_hit = CURRENT_TIMESTAMP"
+reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
 
 [directory."spam"]
 type = "memory"
@@ -125,8 +132,8 @@ min-learns = 10
 [sieve.scripts]
 "#;
 
-const CREATE_TABLES: &[&str; 2] = &[
-    "CREATE TABLE IF NOT EXISTS bayes_weights (
+const CREATE_TABLES: &[&str; 3] = &[
+    "CREATE TABLE IF NOT EXISTS bayes_tokens (
 h1 INTEGER NOT NULL,
 h2 INTEGER NOT NULL,
 ws INTEGER,
@@ -134,8 +141,14 @@ wh INTEGER,
 PRIMARY KEY (h1, h2)
 )",
     "CREATE TABLE IF NOT EXISTS id_timestamps (
-    id STRING PRIMARY KEY,
-    timestamp DATETIME NOT NULL
+    id STRING NOT NULL PRIMARY KEY,
+    last_hit TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)",
+    "CREATE TABLE IF NOT EXISTS reputation (
+token STRING NOT NULL PRIMARY KEY,
+score FLOAT NOT NULL DEFAULT '0',
+count INT(11) NOT NULL DEFAULT '0',
+last_hit TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )",
 ];
 
@@ -170,6 +183,7 @@ async fn antispam() {
         "replies_in",
         "spamtrap",
         "bayes_classify",
+        "reputation",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
@@ -193,7 +207,15 @@ async fn antispam() {
         .join("sieve");
     let prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     for test_name in tests {
-        let script = fs::read_to_string(base_path.join(format!("{test_name}.sieve"))).unwrap();
+        let mut script = fs::read_to_string(base_path.join(format!("{test_name}.sieve"))).unwrap();
+        if test_name == "reputation" {
+            script = "let \"score\" \"env.score\";\n\n".to_string()
+                + script.as_str()
+                + concat!(
+                    "\n\nif eval \"score != env.final_score\" ",
+                    "{let \"t.INVALID_SCORE\" \"score\";}\n"
+                );
+        }
         config.push_str(&format!("{test_name} = '''{prelude}\n{script}\n'''\n"));
     }
 
@@ -208,7 +230,7 @@ async fn antispam() {
     // Create tables
     let sdb = ctx.directory.directories.get("spamdb").unwrap();
     for query in CREATE_TABLES {
-        sdb.query(query, &[]).await.unwrap();
+        sdb.query(query, &[]).await.expect(query);
     }
 
     // Add mock DNS entries
@@ -375,6 +397,10 @@ async fn antispam() {
                                     })
                                     .unwrap_or((v.to_lowercase(), Variable::Integer(1)))
                             }));
+                        }
+                        "score" | "final_score" => {
+                            variables
+                                .insert(param.to_string(), value.parse::<f64>().unwrap().into());
                         }
                         _ if param.starts_with("param.") | param.starts_with("tls.") => {
                             variables.insert(param.to_string(), value.to_string().into());

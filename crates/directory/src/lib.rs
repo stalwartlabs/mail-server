@@ -193,18 +193,20 @@ impl Lookup {
     pub async fn lookup(&self, items: &[DatabaseColumn<'_>]) -> Option<Variable> {
         match self {
             Lookup::Directory { directory, query } => match directory.query(query, items).await {
-                Ok(mut result) => match result.len() {
-                    1 if !matches!(result.first(), Some(DatabaseColumn::Null)) => {
-                        result.pop().map(Variable::from).unwrap()
+                Ok(mut result) => {
+                    match result.len() {
+                        1 if !matches!(result.first(), Some(DatabaseColumn::Null)) => {
+                            result.pop().map(Variable::from).unwrap()
+                        }
+                        0 => Variable::default(),
+                        _ => Variable::Array(
+                            result
+                                .into_iter()
+                                .map(Variable::from)
+                                .collect::<Vec<_>>()
+                                .into(),
+                        ),
                     }
-                    0 => Variable::default(),
-                    _ => Variable::Array(
-                        result
-                            .into_iter()
-                            .map(Variable::from)
-                            .collect::<Vec<_>>()
-                            .into(),
-                    ),
                 }
                 .into(),
                 Err(_) => None,

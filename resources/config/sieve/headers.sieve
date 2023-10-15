@@ -103,6 +103,9 @@ if eval "header.X-PHP-Script.exists" {
         let "t.HIDDEN_SOURCE_OBJ" "1";
     }
 }
+if eval "contains_ignore_case(header.X-Mailer, 'PHPMailer')" {
+    let "t.HAS_PHPMAILER_SIG" "1";
+}
 if eval "header.X-Source:X-Source-Args:X-Source-Dir.exists" {
     let "t.HAS_X_SOURCE" "1";
     if eval "contains(header.X-Source-Args, '../')" {

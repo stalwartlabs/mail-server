@@ -45,11 +45,12 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 10] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 11] = [
     query::exec,
     exec::exec,
     lookup::exec,
     lookup::exec_map,
+    lookup::exec_map_many,
     dns::exec,
     dns::exec_exists,
     http::exec_header,
@@ -57,11 +58,12 @@ const PLUGINS_EXEC: [ExecPluginFnc; 10] = [
     bayes::exec_untrain,
     bayes::exec_classify,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 10] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 11] = [
     query::register,
     exec::register,
     lookup::register,
     lookup::register_map,
+    lookup::register_map_many,
     dns::register,
     dns::register_exists,
     http::register_header,

@@ -1,0 +1,37 @@
+remote_ip 10.0.0.1
+score 1.0
+final_score 1.0
+expect 
+
+From: user@domain.org
+
+Test
+
+<!-- NEXT TEST -->
+remote_ip 10.0.0.1
+score 2.0
+final_score 1.5
+expect 
+
+From: user@domain.org
+
+Test
+
+<!-- NEXT TEST -->
+remote_ip 10.0.0.1
+score 3.0
+final_score 2.2525252525252526
+expect 
+
+From: user@domain.org
+
+Test
+<!-- NEXT TEST -->
+remote_ip 10.0.0.1
+score -5.0
+final_score -1.4949494949494948
+expect 
+
+From: user@domain.org
+
+Test
