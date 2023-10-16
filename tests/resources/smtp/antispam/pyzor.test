@@ -1,0 +1,20 @@
+expect PYZOR
+
+Subject: test
+
+Testa Testb Testc Testd
+
+<!-- NEXT TEST -->
+expect PYZOR
+
+Subject: test
+
+Test1 Test1 Test2 Test3
+
+<!-- NEXT TEST -->
+expect 
+
+Subject: test
+
+TestX TestY TestZ TestW
+

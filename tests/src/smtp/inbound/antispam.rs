@@ -184,6 +184,7 @@ async fn antispam() {
         "spamtrap",
         "bayes_classify",
         "reputation",
+        "pyzor",
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");

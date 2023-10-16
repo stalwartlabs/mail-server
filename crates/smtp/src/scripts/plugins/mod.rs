@@ -26,6 +26,7 @@ pub mod dns;
 pub mod exec;
 pub mod http;
 pub mod lookup;
+pub mod pyzor;
 pub mod query;
 
 use mail_parser::Message;
@@ -45,7 +46,7 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 11] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 12] = [
     query::exec,
     exec::exec,
     lookup::exec,
@@ -57,8 +58,9 @@ const PLUGINS_EXEC: [ExecPluginFnc; 11] = [
     bayes::exec_train,
     bayes::exec_untrain,
     bayes::exec_classify,
+    pyzor::exec,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 11] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 12] = [
     query::register,
     exec::register,
     lookup::register,
@@ -70,6 +72,7 @@ const PLUGINS_REGISTER: [RegisterPluginFnc; 11] = [
     bayes::register_train,
     bayes::register_untrain,
     bayes::register_classify,
+    pyzor::register,
 ];
 
 pub trait RegisterSievePlugins {
