@@ -57,13 +57,19 @@ token-insert = "INSERT INTO bayes_tokens (h1, h2, ws, wh) VALUES (?, ?, ?, ?)
                 ON CONFLICT(h1, h2) 
                 DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
 token-lookup = "SELECT ws, wh FROM bayes_tokens WHERE h1 = ? AND h2 = ?"
-id-insert = "INSERT INTO id_timestamps (id, last_hit) VALUES (?, CURRENT_TIMESTAMP)"
-id-lookup = "SELECT 1 FROM id_timestamps WHERE id = ?"
-id-cleanup = "DELETE FROM id_timestamps WHERE (CURRENT_TIMESTAMP - last_hit) < ?"
+id-insert = "INSERT INTO seen_ids (id, ttl) VALUES (?, datetime('now', ? || ' seconds'))"
+id-lookup = "SELECT 1 FROM seen_ids WHERE id = ? AND ttl > CURRENT_TIMESTAMP"
+id-cleanup = "DELETE FROM seen_ids WHERE ttl < CURRENT_TIMESTAMP"
 reputation-insert = "INSERT INTO reputation (token, score, count, last_hit) VALUES (?, ?, 1, CURRENT_TIMESTAMP) 
                      ON CONFLICT(token) 
                      DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, last_hit = CURRENT_TIMESTAMP"
 reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
+
+[directory."default"]
+type = "memory"
+
+[directory."default".lookup]
+domains = ["local-domain.org"]
 
 [directory."spam"]
 type = "memory"
@@ -119,15 +125,12 @@ type = "glob"
 comment = '#'
 values = ["spamtrap@*"]
 
-[directory."spam".lookup."options"]
-type = "list"
-values = ["AUTOLEARN_REPLIES"]
+[directory."spam".lookup."scores"]
+type = "map"
+values = ["SPAM_TRAP discard"]
 
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
-
-[bayes]
-min-learns = 10
 
 [sieve.scripts]
 "#;
@@ -140,15 +143,15 @@ ws INTEGER,
 wh INTEGER,
 PRIMARY KEY (h1, h2)
 )",
-    "CREATE TABLE IF NOT EXISTS id_timestamps (
+    "CREATE TABLE IF NOT EXISTS seen_ids (
     id STRING NOT NULL PRIMARY KEY,
-    last_hit TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ttl DATETIME NOT NULL
 )",
     "CREATE TABLE IF NOT EXISTS reputation (
 token STRING NOT NULL PRIMARY KEY,
 score FLOAT NOT NULL DEFAULT '0',
 count INT(11) NOT NULL DEFAULT '0',
-last_hit TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+last_hit DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 )",
 ];
 
@@ -156,7 +159,13 @@ last_hit TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 async fn antispam() {
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::builder()
+                    .parse(
+                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug",
+                    )
+                    .unwrap(),
+            )
             .finish(),
     )
     .unwrap();*/
@@ -206,9 +215,15 @@ async fn antispam() {
         .join("resources")
         .join("config")
         .join("sieve");
-    let prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
+    let script_config = fs::read_to_string(base_path.join("config.sieve")).unwrap();
+    let script_prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
+    let mut all_scripts = script_config.clone() + "\n" + script_prelude.as_str();
     for test_name in tests {
         let mut script = fs::read_to_string(base_path.join(format!("{test_name}.sieve"))).unwrap();
+        if !["reputation", "replies_out", "pyzor"].contains(&test_name) {
+            all_scripts = all_scripts + "\n" + script.as_str();
+        }
+
         if test_name == "reputation" {
             script = "let \"score\" \"env.score\";\n\n".to_string()
                 + script.as_str()
@@ -216,9 +231,16 @@ async fn antispam() {
                     "\n\nif eval \"score != env.final_score\" ",
                     "{let \"t.INVALID_SCORE\" \"score\";}\n"
                 );
+        } else if test_name == "bayes_classify" {
+            script = script.replace("200", "10");
         }
-        config.push_str(&format!("{test_name} = '''{prelude}\n{script}\n'''\n"));
+
+        config.push_str(&format!(
+            "{test_name} = '''{script_config}\n{script_prelude}\n{script}\n'''\n"
+        ));
     }
+
+    config.push_str(&format!("combined = '''{all_scripts}\n'''\n"));
 
     // Parse config
     let config = Config::parse(&config).unwrap();
@@ -297,7 +319,10 @@ async fn antispam() {
         .join("smtp")
         .join("antispam");
     let span = tracing::info_span!("sieve_antispam");
-    for test_name in tests {
+    for &test_name in tests.iter().chain(&["combined"]) {
+        /*if test_name != "combined" {
+            continue;
+        }*/
         println!("===== {test_name} =====");
         let script = ctx.scripts.remove(test_name).unwrap();
 

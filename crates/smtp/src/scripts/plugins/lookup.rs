@@ -40,6 +40,10 @@ pub fn register_map_many(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>
     fnc_map.set_external_function("lookup_map_many", plugin_id, 2);
 }
 
+pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("is_local_domain", plugin_id, 2);
+}
+
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let lookup_id = ctx.arguments[0].to_string();
     let span = ctx.span;
@@ -134,4 +138,29 @@ pub fn exec_map_many(ctx: PluginContext<'_>) -> Variable {
         );
         Variable::default()
     }
+}
+
+pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
+    let directory_id = ctx.arguments[0].to_string();
+    let domain = ctx.arguments[0].to_string();
+
+    if !directory_id.is_empty() && !domain.is_empty() {
+        if let Some(dir) = ctx.core.sieve.config.directories.get(directory_id.as_ref()) {
+            return ctx
+                .handle
+                .block_on(dir.is_local_domain(domain.as_ref()))
+                .unwrap_or_default()
+                .into();
+        } else {
+            tracing::warn!(
+                parent: ctx.span,
+                context = "sieve:is_local_domain",
+                event = "failed",
+                reason = "Unknown directory",
+                lookup_id = %directory_id,
+            );
+        }
+    }
+
+    Variable::default()
 }

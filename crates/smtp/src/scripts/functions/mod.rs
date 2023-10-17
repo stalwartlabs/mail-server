@@ -47,6 +47,7 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function("len", fn_len)
         .with_function("count", fn_count)
         .with_function("is_empty", fn_is_empty)
+        .with_function("is_number", fn_is_number)
         .with_function("is_ascii", fn_is_ascii)
         .with_function("to_lowercase", fn_to_lowercase)
         .with_function("to_uppercase", fn_to_uppercase)

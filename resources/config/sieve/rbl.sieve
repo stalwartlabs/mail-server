@@ -171,7 +171,8 @@ while "i < domains_len" {
     let "domain" "domains[i]";
     let "i" "i + 1";
 
-    if eval "!contains(domain, '.') || is_ip_addr(domain)" {
+    # Skip invalid and local domain names
+    if eval "!contains(domain, '.') || is_ip_addr(domain) || is_local_domain(DOMAIN_DIRECTORY, domain_part(domain, 'sld'))" {
         continue;
     }
 
@@ -286,7 +287,8 @@ while "i < emails_len" {
     let "email" "emails[i]";
     let "i" "i + 1";
 
-    if eval "!contains(email, '@')" {
+    # Skip invalid and local e-mail addresses
+    if eval "!contains(email, '@') || is_local_domain(DOMAIN_DIRECTORY, domain_part(email_part(email, 'domain'), 'sld'))" {
         continue;
     }
 
@@ -317,6 +319,11 @@ while "i < urls_len" {
     # Do not check more than 10 URLs
     if eval "i >= 10" {
         break;
+    }
+
+    # Skip URLs pointing to local domains
+    if eval "is_local_domain(DOMAIN_DIRECTORY, domain_part(uri_part(url, 'host'), 'sld'))" {
+        continue;
     }
 
     # Query SURBL HASHBL

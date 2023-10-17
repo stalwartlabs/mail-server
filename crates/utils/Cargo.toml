@@ -1,6 +1,6 @@
 [package]
 name = "utils"
-version = "0.3.9"
+version = "0.3.10"
 edition = "2021"
 resolver = "2"
 

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.x.x] - 2023-xx-xx
+## [0.3.10] - 2023-10-17
 
 ## Added
 - Option to allow invalid certificates on outbound SMTP connections.
@@ -12,7 +12,6 @@ All notable changes to this project will be documented in this file. This projec
 - SMTP reject messages are now logged as `info` rather than `debug`.
 
 ### Fixed
-
 
 ## [0.3.9] - 2023-10-07
 

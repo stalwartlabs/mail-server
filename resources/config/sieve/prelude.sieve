@@ -38,3 +38,6 @@ let "envfrom_domain_sld" "domain_part(envfrom_domain, 'sld')";
 
 # Obtain HELO domain SLD
 let "helo_domain_sld" "domain_part(env.helo_domain, 'sld')";
+
+# Create score variable
+let "score" "0.0";

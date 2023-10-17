@@ -46,32 +46,36 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 12] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 14] = [
     query::exec,
     exec::exec,
     lookup::exec,
     lookup::exec_map,
     lookup::exec_map_many,
+    lookup::exec_local_domain,
     dns::exec,
     dns::exec_exists,
     http::exec_header,
     bayes::exec_train,
     bayes::exec_untrain,
     bayes::exec_classify,
+    bayes::exec_is_balanced,
     pyzor::exec,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 12] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 14] = [
     query::register,
     exec::register,
     lookup::register,
     lookup::register_map,
     lookup::register_map_many,
+    lookup::register_local_domain,
     dns::register,
     dns::register_exists,
     http::register_header,
     bayes::register_train,
     bayes::register_untrain,
     bayes::register_classify,
+    bayes::register_is_balanced,
     pyzor::register,
 ];
 

@@ -341,9 +341,9 @@ dependencies = [
 
 [[package]]
 name = "aws-region"
-version = "0.25.3"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "056557a61427d0e5ba29dd931031c8ffed4ee7a550e7cd55692a9d8deb0a9dba"
+checksum = "42fed2b9fca70f2908268d057a607f2a906f47edbf856ea8587de9038d264e22"
 dependencies = [
  "thiserror",
 ]
@@ -526,9 +526,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
+checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 dependencies = [
  "serde",
 ]
@@ -2147,7 +2147,7 @@ dependencies = [
 [[package]]
 name = "hyper-util"
 version = "0.0.0"
-source = "git+https://github.com/hyperium/hyper-util#63e84bf0603df79bf86b733e7376f1317bf2eefe"
+source = "git+https://github.com/hyperium/hyper-util#9a17089cb5097d3617e30019e5202f181e058eb9"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2166,16 +2166,16 @@ dependencies = [
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.57"
+version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fad5b825842d2b38bd206f3e81d6957625fd7f0a361e345c30e01a0ae2dd613"
+checksum = "8326b86b6cff230b97d0d312a6c40a60726df3332e721f72a1b035f451663b20"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys",
  "iana-time-zone-haiku",
  "js-sys",
  "wasm-bindgen",
- "windows",
+ "windows-core",
 ]
 
 [[package]]
@@ -2224,7 +2224,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imap"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -2408,7 +2408,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2730,7 +2730,7 @@ dependencies = [
  "mail-parser",
  "parking_lot",
  "quick-xml 0.30.0",
- "ring 0.17.3",
+ "ring 0.17.4",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "directory",
  "imap",
@@ -2979,7 +2979,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "ahash 0.8.3",
  "bincode",
@@ -3137,7 +3137,7 @@ version = "0.10.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bac25ee399abb46215765b1cb35bc0212377e58a061560d8b29b024fd0430e7c"
 dependencies = [
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "cfg-if",
  "foreign-types",
  "libc",
@@ -3802,9 +3802,9 @@ dependencies = [
 
 [[package]]
 name = "rasn"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c22b7f7ff0508dae62e1be69fe02f32eb88523090b50ac850637947853cf5b6d"
+checksum = "bb030bce0cb6578f484f4b2f9f0bd038d0562e235c856730cd845947c86fbd82"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -3824,9 +3824,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-cms"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b33fab229bc35b33782880040bfc71ecad5dffb040752e7ceb20f6bddbc33c1"
+checksum = "97180cf43564a824df365b53339e2dc967db608b2aa2b7a247ccb619e723f990"
 dependencies = [
  "rasn",
  "rasn-pkix",
@@ -3834,9 +3834,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-derive"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e6ddbc9ada563036d59c322cb0886a9b08b346904eebbcd20af2e01caecee7"
+checksum = "e6d71113bb47670ae208b1db7308aa35c676db8bb7b7a8f49b0c1e208af5ebf4"
 dependencies = [
  "either",
  "itertools 0.10.5",
@@ -3849,9 +3849,9 @@ dependencies = [
 
 [[package]]
 name = "rasn-pkix"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a96a8f3a9c45f9e76eff1b5d72385296cbfe2c2c22ecaccb8f493f4b60be524d"
+checksum = "cfdf5c1f5213088c8552ed4dc61dc07dc8211cb4aa5e7c49eb9161b32d005a55"
 dependencies = [
  "rasn",
 ]
@@ -3907,13 +3907,13 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.1"
+version = "1.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaac441002f822bc9705a681810a4dd2963094b9ca0ddc41cb963a4c189189ea"
+checksum = "380b951a9c5e80ddfd6136919eef32310721aa4aacd4889a8d39124b026ab343"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.2",
+ "regex-automata 0.4.3",
  "regex-syntax 0.8.2",
 ]
 
@@ -3928,9 +3928,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5011c7e263a695dc8ca064cddb722af1be54e517a280b12a5356f98366899e5d"
+checksum = "5f804c7828047e88b2d32e2d7fe5a105da8ee3264f01902f796c8e067dc2483f"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -4035,9 +4035,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.17.3"
+version = "0.17.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9babe80d5c16becf6594aa32ad2be8fe08498e7ae60b77de8df700e67f191d7e"
+checksum = "fce3045ffa7c981a6ee93f640b538952e155f1ae3a1a02b84547fc7a56b7059a"
 dependencies = [
  "cc",
  "getrandom 0.2.10",
@@ -4126,7 +4126,7 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "549b9d036d571d42e6e85d1c1425e2ac83491075078ca9a15be021c56b1641f2"
 dependencies = [
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "fallible-iterator",
  "fallible-streaming-iterator",
  "hashlink",
@@ -4213,7 +4213,7 @@ version = "0.38.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "745ecfa778e66b2b63c88a61cb36e0eea109e803b0b86bf9879fbc77c70e86ed"
 dependencies = [
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "errno",
  "libc",
  "linux-raw-sys",
@@ -4678,7 +4678,7 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 
 [[package]]
 name = "smtp"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "ahash 0.8.3",
  "blake3",
@@ -4912,7 +4912,7 @@ checksum = "864b869fdf56263f4c95c45483191ea0af340f9f3e3e7b4d57a61c7c87a970db"
 dependencies = [
  "atoi",
  "base64 0.21.4",
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "byteorder",
  "bytes",
  "crc",
@@ -4954,7 +4954,7 @@ checksum = "eb7ae0e6a97fb3ba33b23ac2671a5ce6e3cabe003f451abd5a56e7951d975624"
 dependencies = [
  "atoi",
  "base64 0.21.4",
- "bitflags 2.4.0",
+ "bitflags 2.4.1",
  "byteorder",
  "crc",
  "dotenvy",
@@ -5009,7 +5009,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "clap",
  "console",
@@ -5031,7 +5031,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-install"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "base64 0.21.4",
  "clap",
@@ -5893,7 +5893,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "ahash 0.8.3",
  "dashmap",
@@ -6059,7 +6059,7 @@ version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed63aea5ce73d0ff405984102c42de94fc55a6b75765d621c65262469b3c9b53"
 dependencies = [
- "ring 0.17.3",
+ "ring 0.17.4",
  "untrusted 0.9.0",
 ]
 
@@ -6153,10 +6153,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
-name = "windows"
-version = "0.48.0"
+name = "windows-core"
+version = "0.51.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e686886bc078bc1b0b600cac0147aadb815089b6e4da64016cbd754b6342700f"
+checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets 0.48.5",
 ]

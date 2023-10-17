@@ -9,6 +9,11 @@ if eval "!header.mime-version.exists" {
 let "has_text_part" "0";
 let "is_encrypted" "0";
 
+if eval "header.Content-Type.exists && !header.Content-Disposition:Content-Transfer-Encoding:MIME-Version.exists && !eq_ignore_case(header.Content-Type, 'text/plain')" {
+    # Only Content-Type header without other MIME headers
+    let "t.MIME_HEADER_CTYPE_ONLY" "1";
+}
+
 foreverypart {
     let "content_type" "to_lowercase(header.content-type)";
     let "type" "to_lowercase(header.content-type.type)";
@@ -138,13 +143,8 @@ foreverypart {
         }
     }
 
-    if eval "is_empty(type)" {
-        if eval "header.content-type.exists" {
-            let "t.BROKEN_CONTENT_TYPE" "1";
-        }
-    } elsif eval "!header.Content-Disposition:Content-Transfer-Encoding:MIME-Version.exists && (type != 'text' || subtype != 'plain')" {
-        # Only Content-Type header without other MIME headers
-        let "t.MIME_HEADER_CTYPE_ONLY" "1";
+    if eval "is_empty(type) && header.content-type.exists" {
+        let "t.BROKEN_CONTENT_TYPE" "1";
     }
 
     if eval "part_is_attachment" {

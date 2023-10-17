@@ -41,6 +41,10 @@ pub fn fn_is_empty<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Va
     .into()
 }
 
+pub fn fn_is_number<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
+    matches!(&v[0], Variable::Integer(_) | Variable::Float(_)).into()
+}
+
 pub fn fn_is_ip_addr<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].to_string().parse::<std::net::IpAddr>().is_ok().into()
 }

@@ -23,7 +23,10 @@
 
 use directory::{DatabaseColumn, Lookup};
 use nlp::{
-    bayes::{cache::BayesTokenCache, tokenize::BayesTokenizer, BayesModel, TokenHash, Weights},
+    bayes::{
+        cache::BayesTokenCache, tokenize::BayesTokenizer, BayesClassifier, BayesModel, TokenHash,
+        Weights,
+    },
     tokenizers::osb::{OsbToken, OsbTokenizer},
 };
 use sieve::{runtime::Variable, FunctionMap};
@@ -42,7 +45,11 @@ pub fn register_untrain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>)
 }
 
 pub fn register_classify(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
-    fnc_map.set_external_function("bayes_classify", plugin_id, 2);
+    fnc_map.set_external_function("bayes_classify", plugin_id, 3);
+}
+
+pub fn register_is_balanced(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("bayes_is_balanced", plugin_id, 3);
 }
 
 pub fn exec_train(ctx: PluginContext<'_>) -> Variable {
@@ -150,6 +157,24 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     if text.is_empty() {
         return Variable::default();
     }
+
+    // Create classifier from defaults
+    let mut classifier = BayesClassifier::default();
+    if let Some(params) = ctx.arguments[2].as_array() {
+        if let Some(Variable::Integer(value)) = params.get(0) {
+            classifier.min_token_hits = *value as u32;
+        }
+        if let Some(Variable::Integer(value)) = params.get(1) {
+            classifier.min_tokens = *value as u32;
+        }
+        if let Some(Variable::Float(value)) = params.get(2) {
+            classifier.min_prob_strength = *value;
+        }
+        if let Some(Variable::Integer(value)) = params.get(3) {
+            classifier.min_learns = *value as u32;
+        }
+    }
+
     let handle = ctx.handle;
     let ctx = ctx.core.sieve.runtime.context();
 
@@ -160,16 +185,29 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     {
         (weights.spam, weights.ham)
     } else {
+        tracing::warn!(
+            parent: span,
+            context = "sieve:classify",
+            event = "failed",
+            reason = "Failed to obtain training counts",
+        );
         return Variable::default();
     };
 
     // Make sure we have enough training data
-    if spam_learns < ctx.bayes_classify.min_learns || ham_learns < ctx.bayes_classify.min_learns {
+    if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
+        tracing::debug!(
+            parent: span,
+            context = "sieve:bayes_classify",
+            event = "skip-classify",
+            reason = "Not enough training data",
+            spam_learns = %spam_learns,
+            ham_learns = %ham_learns);
         return Variable::default();
     }
 
     // Classify the text
-    ctx.bayes_classify
+    classifier
         .classify(
             OsbTokenizer::<_, TokenHash>::new(BayesTokenizer::new(text.as_ref(), &ctx.psl), 5)
                 .filter_map(|t| {
@@ -186,6 +224,75 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
         )
         .map(Variable::from)
         .unwrap_or_default()
+}
+
+pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
+    let min_balance = match &ctx.arguments[2] {
+        Variable::Float(n) => *n,
+        Variable::Integer(n) => *n as f64,
+        _ => 0.0,
+    };
+
+    if min_balance == 0.0 {
+        return true.into();
+    }
+
+    let span = ctx.span;
+    let lookup_id = ctx.arguments[0].to_string();
+    let lookup_classify =
+        if let Some(lookup_classify) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
+            lookup_classify
+        } else {
+            tracing::warn!(
+                parent: span,
+                context = "sieve:bayes_is_balanced",
+                event = "failed",
+                reason = "Unknown lookup id",
+                lookup_id = %lookup_id,
+            );
+            return Variable::default();
+        };
+    let learn_spam = ctx.arguments[2].to_bool();
+
+    // Obtain training counts
+    let handle = ctx.handle;
+    let ctx = ctx.core.sieve.runtime.context();
+    let (spam_learns, ham_learns) = if let Some(weights) =
+        ctx.bayes_cache
+            .get_or_update(TokenHash::default(), handle, lookup_classify)
+    {
+        (weights.spam as f64, weights.ham as f64)
+    } else {
+        tracing::warn!(
+            parent: span,
+            context = "sieve:bayes_is_balanced",
+            event = "failed",
+            reason = "Failed to obtain training counts",
+        );
+        return Variable::default();
+    };
+
+    let result = if spam_learns > 0.0 || ham_learns > 0.0 {
+        if learn_spam {
+            (spam_learns / (ham_learns + 1.0)) <= 1.0 / min_balance
+        } else {
+            (ham_learns / (spam_learns + 1.0)) <= 1.0 / min_balance
+        }
+    } else {
+        true
+    };
+
+    tracing::debug!(
+        parent: span,
+        context = "sieve:bayes_is_balanced",
+        event = "result",
+        is_balanced = %result,
+        learn_spam = %learn_spam,
+        min_balance = %min_balance,
+        spam_learns = %spam_learns,
+        ham_learns = %ham_learns);
+
+    result.into()
 }
 
 trait LookupOrInsert {

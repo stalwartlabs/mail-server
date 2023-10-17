@@ -12,6 +12,12 @@ let "i" "count(urls)";
 while "i > 0" {
     let "i" "i - 1";
     let "url" "urls[i]";
+
+    # Skip non-URLs such as 'data:' and 'mailto:'
+    if eval "!contains(url, '://')" {
+        continue;
+    }
+
     let "host" "uri_part(url, 'host')";
 
     if eval "!is_empty(host)" {
@@ -19,6 +25,10 @@ while "i > 0" {
         let "host" "puny_decode(host)";
         let "host_lc" "to_lowercase(host)";
         let "host_sld" "domain_part(host_lc, 'sld')";
+
+        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld)" {
+            continue;
+        }
 
         if eval "!is_ip && 
                  (!t.REDIRECTOR_URL || !t.URL_REDIRECTOR_NESTED) && 
