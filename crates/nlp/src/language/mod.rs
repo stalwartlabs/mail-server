@@ -33,7 +33,7 @@ use crate::tokenizers::{
 
 use self::detect::LanguageDetector;
 
-pub type LanguageTokenizer<'x> = Box<dyn Iterator<Item = Token<Cow<'x, str>>> + 'x>;
+pub type LanguageTokenizer<'x> = Box<dyn Iterator<Item = Token<Cow<'x, str>>> + 'x + Sync + Send>;
 
 impl Language {
     pub fn tokenize_text<'x>(

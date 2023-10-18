@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use core::panic;
 use std::{sync::Arc, time::Duration};
 
 use directory::Lookup;
