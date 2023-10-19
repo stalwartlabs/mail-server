@@ -1,0 +1,31 @@
+#############################################
+# Directory configuration
+#############################################
+
+[directory."lmtp"]
+type = "lmtp"
+address = "127.0.0.1"
+port = 11200
+
+[directory."lmtp".limits]
+auth-errors = 3
+rcpt = 5
+
+[directory."lmtp".pool]
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
+
+[directory."lmtp".tls]
+implicit = false
+allow-invalid-certs = true
+
+[directory."lmtp".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
+
+[directory."lmtp".lookup]
+domains = ["__DOMAIN__"]
+

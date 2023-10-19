@@ -21,13 +21,9 @@
  * for more details.
 */
 
-use std::{net::IpAddr, time::SystemTime};
+use std::time::SystemTime;
 
-use crate::{
-    config::{DNSBL_EHLO, DNSBL_IP},
-    core::Session,
-    scripts::ScriptResult,
-};
+use crate::{core::Session, scripts::ScriptResult};
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -49,16 +45,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 );
 
                 return self.write(b"550 5.5.0 Invalid EHLO domain.\r\n").await;
-            }
-
-            // Check DNSBL
-            if !self
-                .is_domain_dnsbl_allowed(&domain, "ehlo", DNSBL_EHLO)
-                .await
-            {
-                self.write_dnsbl_error().await?;
-                self.reset_dnsbl_error(); // Reset error in case a new EHLO is issued
-                return Ok(());
             }
 
             // SPF check
@@ -222,145 +208,5 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         let mut buf = Vec::with_capacity(64);
         response.write(&mut buf).ok();
         self.write(&buf).await
-    }
-
-    pub async fn is_domain_dnsbl_allowed(
-        &mut self,
-        domain: &str,
-        context: &str,
-        policy_type: u32,
-    ) -> bool {
-        let domain_ = domain.to_lowercase();
-        let is_fqdn = domain.ends_with('.');
-        if (self.params.dnsbl_policy & policy_type) != 0 {
-            for dnsbl in &self.core.mail_auth.dnsbl.domain_lookup {
-                if self
-                    .is_dns_blocked(if is_fqdn {
-                        format!("{domain_}{dnsbl}")
-                    } else {
-                        format!("{domain_}.{dnsbl}")
-                    })
-                    .await
-                {
-                    tracing::info!(parent: &self.span,
-                        context = context,
-                        event = "reject",
-                        reason = "dnsbl",
-                        list = dnsbl,
-                        domain = domain,
-                    );
-                    self.data.dnsbl_error = format!(
-                        "554 5.7.1 Service unavailable; Domain '{domain}' blocked using {dnsbl}\r\n"
-                    )
-                    .into_bytes()
-                    .into();
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    pub async fn verify_ip_dnsbl(&mut self) -> bool {
-        if (self.params.dnsbl_policy & DNSBL_IP) != 0 {
-            for dnsbl in &self.core.mail_auth.dnsbl.ip_lookup {
-                if self
-                    .is_dns_blocked(self.data.remote_ip.to_dnsbl(dnsbl))
-                    .await
-                {
-                    tracing::info!(parent: &self.span,
-                        context = "connect",
-                        event = "reject",
-                        reason = "dnsbl",
-                        list = dnsbl,
-                        ip = self.data.remote_ip.to_string(),
-                    );
-                    self.data.dnsbl_error = format!(
-                        "554 5.7.1 Service unavailable; IP address {} blocked using {}\r\n",
-                        self.data.remote_ip, dnsbl
-                    )
-                    .into_bytes()
-                    .into();
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    async fn is_dns_blocked(&self, domain: String) -> bool {
-        match self.core.resolvers.dns.ipv4_lookup(&domain).await {
-            Ok(ips) => {
-                for ip in ips.iter() {
-                    if ip.octets()[0..2] == [127, 0] {
-                        return true;
-                    }
-                }
-                tracing::debug!(parent: &self.span,
-                    context = "dnsbl",
-                    event = "invalid-reply",
-                    query = domain,
-                    reply = ?ips,
-                );
-            }
-            Err(mail_auth::Error::DnsRecordNotFound(_)) => (),
-            Err(err) => {
-                tracing::debug!(parent: &self.span,
-                    context = "dnsbl",
-                    event = "dnserror",
-                    query = domain,
-                    reson = %err,
-                );
-            }
-        }
-        false
-    }
-
-    pub async fn write_dnsbl_error(&mut self) -> Result<(), ()> {
-        if let Some(error) = &self.data.dnsbl_error {
-            self.write(&error.to_vec()).await
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn has_dnsbl_error(&mut self) -> bool {
-        self.data.dnsbl_error.is_some()
-    }
-
-    pub fn reset_dnsbl_error(&mut self) -> Option<Vec<u8>> {
-        self.data.dnsbl_error.take()
-    }
-}
-
-pub trait ToDnsbl {
-    fn to_dnsbl(&self, host: &str) -> String;
-}
-
-impl ToDnsbl for IpAddr {
-    fn to_dnsbl(&self, dnsbl: &str) -> String {
-        use std::fmt::Write;
-
-        match self {
-            IpAddr::V4(ip) => {
-                let mut host = String::with_capacity(dnsbl.len() + 16);
-                for octet in ip.octets().iter().rev() {
-                    let _ = write!(host, "{octet}.");
-                }
-                host.push_str(dnsbl);
-                host
-            }
-            IpAddr::V6(ip) => {
-                let mut host = Vec::with_capacity(dnsbl.len() + 64);
-                for segment in ip.segments().iter().rev() {
-                    for &p in format!("{segment:04x}").as_bytes().iter().rev() {
-                        host.push(p);
-                        host.push(b'.');
-                    }
-                }
-                host.extend_from_slice(dnsbl.as_bytes());
-                String::from_utf8(host).unwrap_or_default()
-            }
-        }
     }
 }

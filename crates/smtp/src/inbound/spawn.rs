@@ -113,7 +113,6 @@ impl Session<TlsStream<TcpStream>> {
 impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
     pub async fn init_conn(&mut self) -> bool {
         self.eval_session_params().await;
-        self.verify_ip_dnsbl().await;
 
         // Sieve filtering
         if let Some(script) = self.core.session.config.connect.script.eval(self).await {

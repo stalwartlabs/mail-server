@@ -1,0 +1,28 @@
+
+#############################################
+# SMTP DMARC, DKIM, SPF, ARC & IpRev
+#############################################
+
+[auth.iprev]
+verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+           { else = "disable" } ]
+
+[auth.dkim]
+verify = "relaxed"
+sign = [ { if = "listener", ne = "smtp", then = ["rsa"] }, 
+         { else = [] } ]
+
+[auth.spf.verify]
+ehlo = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+         { else = "disable" } ]
+mail-from = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+              { else = "disable" } ]
+
+[auth.arc]
+verify = "relaxed"
+seal = ["rsa"]
+
+[auth.dmarc]
+verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+           { else = "disable" } ]
+

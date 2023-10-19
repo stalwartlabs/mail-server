@@ -1,0 +1,21 @@
+#############################################
+# JMAP Push & EventSource configuration
+#############################################
+
+[jmap.push]
+max-total = 100
+throttle = "1ms"
+
+[jmap.push.attempts]
+interval = "1m"
+max = 3
+
+[jmap.push.retry]
+interval = "1s"
+
+[jmap.push.timeout]
+request = "10s"
+verify = "1s"
+
+[jmap.event-source]
+throttle = "1s"

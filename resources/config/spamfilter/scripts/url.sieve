@@ -26,7 +26,8 @@ while "i > 0" {
         let "host_lc" "to_lowercase(host)";
         let "host_sld" "domain_part(host_lc, 'sld')";
 
-        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld)" {
+        # Skip local and trusted domains
+        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld) || lookup('spam/domains-allow', host_sld)" {
             continue;
         }
 
@@ -108,11 +109,11 @@ while "i > 0" {
             let "t.URI_HIDDEN_PATH" "1";
         }
 
-        # Phishing checks
-        if eval "lookup('spam/phishing-open', url)" {
+        # Phishing checks (refresh OpenPhish every 12 hours, PhishTank every 6 hours)
+        if eval "lookup_remote('https://openphish.com/feed.txt', url, [43200, 'list'])" {
             let "t.PHISHED_OPENPHISH" "1";
         }
-        if eval "lookup('spam/phishing-tank', url)" {
+        if eval "lookup_remote('http://data.phishtank.com/data/online-valid.csv', url, [21600, 'csv', 1, ',', true])" {
             let "t.PHISHED_PHISHTANK" "1";
         }
 

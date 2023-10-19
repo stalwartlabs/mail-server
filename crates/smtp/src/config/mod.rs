@@ -481,7 +481,6 @@ pub struct MailAuthConfig {
     pub spf: SpfAuthConfig,
     pub dmarc: DmarcAuthConfig,
     pub iprev: IpRevAuthConfig,
-    pub dnsbl: DnsBlConfig,
 }
 
 pub enum DkimSigner {
@@ -515,18 +514,6 @@ pub struct DmarcAuthConfig {
 pub struct IpRevAuthConfig {
     pub verify: IfBlock<VerifyStrategy>,
 }
-
-pub struct DnsBlConfig {
-    pub verify: IfBlock<u32>,
-    pub ip_lookup: Vec<String>,
-    pub domain_lookup: Vec<String>,
-}
-
-pub const DNSBL_IP: u32 = 1;
-pub const DNSBL_IPREV: u32 = 1 << 1;
-pub const DNSBL_EHLO: u32 = 1 << 2;
-pub const DNSBL_RETURN_PATH: u32 = 1 << 3;
-pub const DNSBL_FROM: u32 = 1 << 4;
 
 #[derive(Debug, Clone)]
 pub struct DkimCanonicalization {

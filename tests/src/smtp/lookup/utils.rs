@@ -21,10 +21,7 @@
  * for more details.
 */
 
-use std::{
-    net::IpAddr,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use mail_auth::{IpLookupStrategy, MX};
 
@@ -32,7 +29,6 @@ use ::smtp::{config::IfBlock, core::SMTP, outbound::NextHop};
 use mail_parser::DateTime;
 use smtp::{
     config::AggregateFrequency,
-    inbound::ehlo::ToDnsbl,
     outbound::{
         lookup::ToNextHop,
         mta_sts::{Mode, MxPattern, Policy},
@@ -147,25 +143,6 @@ fn to_remote_hosts() {
         preference: 0,
     }];
     assert!(mx.to_remote_hosts("domain", 10).is_none());
-}
-
-#[test]
-fn ip_to_dnsbl() {
-    assert_eq!(
-        "2001:DB8:abc:123::42"
-            .parse::<IpAddr>()
-            .unwrap()
-            .to_dnsbl("zen.spamhaus.org"),
-        "2.4.0.0.0.0.0.0.0.0.0.0.0.0.0.0.3.2.1.0.c.b.a.0.8.b.d.0.1.0.0.2.zen.spamhaus.org"
-    );
-
-    assert_eq!(
-        "1.2.3.4"
-            .parse::<IpAddr>()
-            .unwrap()
-            .to_dnsbl("zen.spamhaus.org"),
-        "4.3.2.1.zen.spamhaus.org"
-    );
 }
 
 #[test]

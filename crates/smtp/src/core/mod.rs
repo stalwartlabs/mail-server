@@ -241,7 +241,6 @@ pub struct SessionParameters {
     pub iprev: VerifyStrategy,
     pub spf_ehlo: VerifyStrategy,
     pub spf_mail_from: VerifyStrategy,
-    pub dnsbl_policy: u32,
 }
 
 impl SessionData {
@@ -439,7 +438,6 @@ impl Session<NullIo> {
                 spf_mail_from: crate::config::VerifyStrategy::Disable,
                 can_expn: false,
                 can_vrfy: false,
-                dnsbl_policy: 0,
             },
             in_flight: vec![],
         }

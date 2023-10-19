@@ -299,7 +299,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
-    let shutdown_tx = servers.spawn(|server, shutdown_rx| {
+    let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {
                 server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)

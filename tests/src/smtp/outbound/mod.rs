@@ -84,15 +84,17 @@ pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch
     servers.bind(&config);
     let smtp_manager = SmtpSessionManager::new(core.clone());
     let smtp_admin_manager = SmtpAdminSessionManager::new(core);
-    servers.spawn(|server, shutdown_rx| {
-        match &server.protocol {
-            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                server.spawn(smtp_manager.clone(), shutdown_rx)
-            }
-            ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
-            ServerProtocol::Imap | ServerProtocol::Jmap | ServerProtocol::ManageSieve => {
-                unreachable!()
-            }
-        };
-    })
+    servers
+        .spawn(|server, shutdown_rx| {
+            match &server.protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => {
+                    server.spawn(smtp_manager.clone(), shutdown_rx)
+                }
+                ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
+                ServerProtocol::Imap | ServerProtocol::Jmap | ServerProtocol::ManageSieve => {
+                    unreachable!()
+                }
+            };
+        })
+        .0
 }

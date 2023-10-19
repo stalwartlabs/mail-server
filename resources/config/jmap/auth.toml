@@ -1,0 +1,10 @@
+#############################################
+# JMAP authentication & session configuration
+#############################################
+
+[jmap]
+directory = "default"
+
+[jmap.session.cache]
+ttl = "1h"
+size = 100

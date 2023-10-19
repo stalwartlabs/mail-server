@@ -1,0 +1,28 @@
+#############################################
+# Server configuration
+#############################################
+
+[server]
+hostname = "__HOST__"
+max-connections = 8192
+
+[server.run-as]
+user = "stalwart-mail"
+group = "stalwart-mail"
+
+[server.socket]
+nodelay = true
+reuse-addr = true
+#reuse-port = true
+backlog = 1024
+#ttl = 3600
+#send-buffer-size = 65535
+#recv-buffer-size = 65535
+#linger = 1
+#tos = 1
+
+[global]
+shared-map = {shard = 32, capacity = 10}
+#thread-pool = 8
+
+

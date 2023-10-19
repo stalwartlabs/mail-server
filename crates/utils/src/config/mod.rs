@@ -22,6 +22,7 @@
 */
 
 pub mod certificate;
+pub mod cron;
 pub mod dynvalue;
 pub mod listener;
 pub mod parser;

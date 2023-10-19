@@ -31,6 +31,7 @@ use std::{
     time::Duration,
 };
 use utils::config::{
+    cron::SimpleCron,
     utils::{AsKey, ParseValue},
     Config,
 };
@@ -39,8 +40,8 @@ use ahash::AHashMap;
 
 use crate::{
     imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, Lookup, LookupList,
-    MatchType,
+    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, DirectorySchedule,
+    Lookup, LookupList, MatchType,
 };
 
 pub trait ConfigDirectory {
@@ -57,6 +58,7 @@ impl ConfigDirectory for Config {
         let mut config = DirectoryConfig {
             directories: AHashMap::new(),
             lookups: AHashMap::new(),
+            schedules: Vec::new(),
         };
         for id in self.sub_keys("directory") {
             // Parse directory
@@ -89,10 +91,31 @@ impl ConfigDirectory for Config {
                         }),
                     );
                 }
+
+                // Parse schedules
+                if let Some(cron) =
+                    self.property::<SimpleCron>(("directory", id, "schedule.frequency"))?
+                {
+                    let mut query = Vec::new();
+                    for (_, value) in self.values(("directory", id, "schedule.query")) {
+                        query.push(value.to_string());
+                    }
+
+                    if !query.is_empty() {
+                        config.schedules.push(DirectorySchedule {
+                            cron,
+                            query,
+                            directory: directory.clone(),
+                        })
+                    } else {
+                        tracing::warn!("No scheduled query specified for directory {id:?}");
+                    }
+                }
             }
 
             // Parse lookups
             for lookup_id in self.sub_keys(("directory", id, "lookup")) {
+                let key = ("directory", id, "lookup", lookup_id).as_key();
                 let lookup = if is_directory {
                     Lookup::Directory {
                         directory: directory.clone(),
@@ -101,39 +124,22 @@ impl ConfigDirectory for Config {
                             .to_string(),
                     }
                 } else {
-                    let key = ("directory", id, "lookup", lookup_id).as_key();
-                    match self.property::<LookupType>((&key, "type"))? {
+                    let lookup_type = self.property::<LookupType>((&key, "type"))?;
+                    let format = LookupFormat {
+                        lookup_type: lookup_type.unwrap_or(LookupType::List),
+                        comment: self.value((&key, "comment")).map(|s| s.to_string()),
+                        separator: self.value((&key, "separator")).map(|s| s.to_string()),
+                    };
+
+                    match lookup_type {
                         Some(LookupType::Map) => Lookup::Map {
-                            map: self.parse_lookup_list(
-                                (&key, "values"),
-                                LookupFormat {
-                                    lookup_type: LookupType::Map,
-                                    comment: self.value((&key, "comment")).map(|s| s.to_string()),
-                                    separator: self
-                                        .value((&key, "separator"))
-                                        .map(|s| s.to_string()),
-                                },
-                            )?,
+                            map: self.parse_lookup_list((&key, "values"), format)?,
                         },
-                        Some(lookup_type) => Lookup::List {
-                            list: self.parse_lookup_list(
-                                (&key, "values"),
-                                LookupFormat {
-                                    lookup_type,
-                                    comment: self.value((&key, "comment")).map(|s| s.to_string()),
-                                    separator: None,
-                                },
-                            )?,
+                        Some(_) => Lookup::List {
+                            list: self.parse_lookup_list((&key, "values"), format)?,
                         },
                         None => Lookup::List {
-                            list: self.parse_lookup_list(
-                                key,
-                                LookupFormat {
-                                    lookup_type: LookupType::List,
-                                    comment: None,
-                                    separator: None,
-                                },
-                            )?,
+                            list: self.parse_lookup_list(key.as_str(), format)?,
                         },
                     }
                 };

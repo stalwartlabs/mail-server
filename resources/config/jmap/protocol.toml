@@ -1,0 +1,48 @@
+#############################################
+# JMAP protocol configuration
+#############################################
+
+[jmap.protocol.get]
+max-objects = 500
+
+[jmap.protocol.set]
+max-objects = 500
+
+[jmap.protocol.request]
+max-concurrent = 4
+max-size = 10000000
+max-calls = 16
+
+[jmap.protocol.query]
+max-results = 5000
+
+[jmap.protocol.upload]
+max-size = 50000000
+max-concurrent = 4
+ttl = "1h"
+
+[jmap.protocol.upload.quota]
+files = 1000
+size = 50000000
+
+[jmap.protocol.changes]
+max-results = 5000
+
+[jmap.mailbox]
+max-depth = 10
+max-name-length = 255
+
+[jmap.email]
+max-attachment-size = 50000000
+max-size = 75000000
+
+[jmap.email.parse]
+max-items = 10
+
+[jmap.principal]
+allow-lookups = true
+
+[jmap.http]
+#headers = ["Access-Control-Allow-Origin: *", 
+#           "Access-Control-Allow-Methods: POST, GET, HEAD, OPTIONS", 
+#           "Access-Control-Allow-Headers: *"]

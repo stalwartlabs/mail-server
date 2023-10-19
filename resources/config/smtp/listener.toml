@@ -1,0 +1,24 @@
+#############################################
+# SMTP server listener configuration
+#############################################
+
+[server.listener."smtp"]
+bind = ["[::]:25"]
+#greeting = "Stalwart SMTP at your service"
+protocol = "smtp"
+
+[server.listener."submission"]
+bind = ["[::]:587"]
+protocol = "smtp"
+
+[server.listener."submissions"]
+bind = ["[::]:465"]
+protocol = "smtp"
+tls.implicit = true
+
+[server.listener."management"]
+bind = ["127.0.0.1:8080"]
+protocol = "http"
+
+[management]
+directory = "default"

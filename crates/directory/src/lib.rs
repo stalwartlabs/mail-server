@@ -34,13 +34,14 @@ use ldap3::LdapError;
 use mail_send::Credentials;
 use sieve::runtime::{tests::glob::GlobPattern, Variable};
 use smtp_proto::IntoString;
-use utils::config::DynValue;
+use utils::config::{cron::SimpleCron, DynValue};
 
 pub mod cache;
 pub mod config;
 pub mod imap;
 pub mod ldap;
 pub mod memory;
+pub mod scheduled;
 pub mod secret;
 pub mod smtp;
 pub mod sql;
@@ -325,6 +326,14 @@ pub enum AddressMapping {
 pub struct DirectoryConfig {
     pub directories: AHashMap<String, Arc<dyn Directory>>,
     pub lookups: AHashMap<String, Arc<Lookup>>,
+    pub schedules: Vec<DirectorySchedule>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DirectorySchedule {
+    pub cron: SimpleCron,
+    pub query: Vec<String>,
+    pub directory: Arc<dyn Directory>,
 }
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;

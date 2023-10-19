@@ -1,0 +1,51 @@
+#############################################
+# Directory configuration
+#############################################
+
+[directory."default"]
+type = "ldap"
+address = "ldap://localhost:3893"
+base-dn = "dc=example,dc=org"
+
+[directory."default".bind]
+dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
+secret = "mysecret"
+
+[directory."default".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
+
+[directory."default".options]
+catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
+subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+superuser-group = "superusers"
+
+[directory."default".pool]
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
+
+[directory."default".filter]
+name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
+email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(mailAlias=?)(mailList=?)))"
+verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(mailAlias=*?*)))"
+expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(mailList=?))"
+domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(mailAlias=*@?)))"
+
+[directory."default".object-classes]
+user = "posixAccount"
+group = "posixGroup"
+
+[directory."default".attributes]
+name = "uid"
+description = ["principalName", "description"]
+secret = "userPassword"
+groups = ["memberOf", "otherGroups"]
+email = "mail"
+email-alias = "mailAlias"
+quota = "diskQuota"
+

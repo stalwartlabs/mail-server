@@ -28,7 +28,6 @@ use smtp_proto::{MailFrom, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
-    config::{DNSBL_IPREV, DNSBL_RETURN_PATH},
     core::{Session, SessionAddress},
     queue::DomainPart,
     scripts::ScriptResult,
@@ -54,12 +53,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
             return self
                 .write(b"503 5.5.1 You must authenticate first.\r\n")
                 .await;
-        } else if self.has_dnsbl_error() {
-            // There was a previous DNSBL error
-            return self.write_dnsbl_error().await;
-        } else if self.data.iprev.is_none()
-            && (self.params.iprev.verify() || (self.params.dnsbl_policy & DNSBL_IPREV) != 0)
-        {
+        } else if self.data.iprev.is_none() && self.params.iprev.verify() {
             let iprev = self
                 .core
                 .resolvers
@@ -73,13 +67,6 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                     result = %iprev.result,
                     ptr = iprev.ptr.as_ref().and_then(|p| p.first()).map(|p| p.as_str()).unwrap_or_default()
             );
-
-            // Validate reverse hostname against DNSBL
-            if let Some(ptr) = iprev.ptr.as_ref().and_then(|l| l.first()) {
-                if !self.is_domain_dnsbl_allowed(ptr, "ptr", DNSBL_IPREV).await {
-                    return self.write_dnsbl_error().await;
-                }
-            }
 
             self.data.iprev = iprev.into();
         }
@@ -116,17 +103,6 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
         } else {
             (String::new(), String::new(), String::new())
         };
-
-        // Validate domain against DNSBL
-        if !domain.is_empty()
-            && !self
-                .is_domain_dnsbl_allowed(&domain, "mail-from", DNSBL_RETURN_PATH)
-                .await
-        {
-            self.write_dnsbl_error().await?;
-            self.reset_dnsbl_error(); // Reset error in case a new MAIL-FROM is issued later
-            return Ok(());
-        }
 
         let has_dsn = from.env_id.is_some();
         self.data.mail_from = SessionAddress {

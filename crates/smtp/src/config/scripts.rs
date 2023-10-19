@@ -21,9 +21,14 @@
  * for more details.
 */
 
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
+use ahash::AHashMap;
 use nlp::bayes::cache::BayesTokenCache;
+use parking_lot::RwLock;
 use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
 use crate::{
@@ -45,6 +50,24 @@ pub trait ConfigSieve {
 pub struct SieveContext {
     pub psl: PublicSuffix,
     pub bayes_cache: BayesTokenCache,
+    pub remote_lists: RemoteLists,
+}
+
+pub struct RemoteLists {
+    pub lists: RwLock<AHashMap<String, RemoteList>>,
+}
+
+pub struct RemoteList {
+    pub entries: HashSet<String>,
+    pub expires: Instant,
+}
+
+impl Default for RemoteLists {
+    fn default() -> Self {
+        Self {
+            lists: RwLock::new(AHashMap::new()),
+        }
+    }
 }
 
 impl ConfigSieve for Config {
@@ -58,6 +81,7 @@ impl ConfigSieve for Config {
                 self.property_or_static("bayes.cache.ttl.positive", "1h")?,
                 self.property_or_static("bayes.cache.ttl.negative", "1h")?,
             ),
+            remote_lists: Default::default(),
         };
 
         // Allocate compiler and runtime

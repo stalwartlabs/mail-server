@@ -1,0 +1,35 @@
+#############################################
+# SMTP Sieve interpreter configuration
+#############################################
+
+[sieve]
+from-name = "Automated Message"
+from-addr = "no-reply@__DOMAIN__"
+return-path = ""
+#hostname = "__HOST__"
+sign = ["rsa"]
+
+[sieve.limits]
+redirects = 3
+out-messages = 5
+received-headers = 50
+cpu = 50000
+nested-includes = 5
+duplicate-expiry = "7d"
+
+[sieve.scripts]
+#connect = '''require ["variables", "extlists", "reject"];
+#    if string :list "${env.remote_ip}" "__SMTP_DIRECTORY__/blocked-ips" {
+#        reject "Your IP '${env.remote_ip}' is not welcomed here.";
+#    }'''
+
+#ehlo = '''require ["variables", "extlists", "reject"];
+#    if string :list "${env.helo_domain}" "__SMTP_DIRECTORY__/blocked-domains" {
+#        reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
+#    }'''
+
+#mail = '''require ["variables", "envelope", "reject"];
+#    if envelope :localpart :is "from" "known_spammer" {
+#        reject "We do not accept SPAM.";
+#    }'''
+

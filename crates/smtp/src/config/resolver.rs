@@ -187,6 +187,8 @@ impl ConfigResolver for Config {
 
         if has_values {
             tracing::warn!("Failed to parse public suffixes from any source.");
+        } else {
+            tracing::warn!("No public suffixes list was specified.");
         }
 
         Ok(PublicSuffix::default())

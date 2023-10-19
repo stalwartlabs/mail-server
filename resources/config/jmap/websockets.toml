@@ -1,0 +1,8 @@
+#############################################
+# JMAP WebSockets server configuration
+#############################################
+
+[jmap.web-sockets]
+throttle = "1s"
+timeout = "10m"
+heartbeat = "1m"

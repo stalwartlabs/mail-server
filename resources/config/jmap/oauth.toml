@@ -1,0 +1,19 @@
+#############################################
+# JMAP OAuth server configuration
+#############################################
+
+[oauth]
+key = "__OAUTH_KEY__"
+
+[oauth.auth]
+max-attempts = 3
+
+[oauth.expiry]
+user-code = "30m"
+auth-code = "10m"
+token = "1h"
+refresh-token = "30d"
+refresh-token-renew = "4d"
+
+[oauth.cache]
+size = 128

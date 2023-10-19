@@ -1,0 +1,13 @@
+
+#############################################
+# JMAP server rate limiter configuration
+#############################################
+
+[jmap.rate-limit]
+account = "1000/1m"
+authentication = "10/1m"
+anonymous = "100/1m"
+use-forwarded = false
+
+[jmap.rate-limit.cache]
+size = 1024

@@ -1,0 +1,53 @@
+#############################################
+# SMTP server queue configuration
+#############################################
+
+[queue]
+path = "__PATH__/queue"
+hash = 64
+
+[queue.schedule]
+retry = ["2m", "5m", "10m", "15m", "30m", "1h", "2h"]
+notify = ["1d", "3d"]
+expire = "5d"
+
+[queue.outbound]
+#hostname = "__HOST__"
+next-hop = [ { if = "rcpt-domain", in-list = "__SMTP_DIRECTORY__/domains", then = "__NEXT_HOP__" }, 
+             { else = false } ]
+ip-strategy = "ipv4-then-ipv6"
+
+[queue.outbound.tls]
+dane = "optional"
+mta-sts = "optional"
+starttls = "require"
+allow-invalid-certs = false
+
+#[queue.outbound.source-ip]
+#v4 = ["10.0.0.10", "10.0.0.11"]
+#v6 = ["a::b", "a::c"]
+
+[queue.outbound.limits]
+mx = 7
+multihomed = 2
+
+[queue.outbound.timeouts]
+connect = "3m"
+greeting = "3m"
+tls = "2m"
+ehlo = "3m"
+mail-from = "3m"
+rcpt-to = "3m"
+data = "10m"
+mta-sts = "2m"
+
+[[queue.quota]]
+#match = {if = "sender-domain", eq = "foobar.org"}
+#key = ["rcpt"]
+messages = 100000
+size = 10737418240 # 10gb
+
+[[queue.throttle]]
+key = ["rcpt-domain"]
+#rate = "100/1h"
+concurrency = 5

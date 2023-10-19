@@ -1,0 +1,21 @@
+#############################################
+# Tracing & logging configuration
+#############################################
+
+#[global.tracing]
+#method = "stdout"
+#level = "trace"
+
+#[global.tracing]
+#method = "open-telemetry"
+#transport = "http"
+#endpoint = "https://127.0.0.1/otel"
+#headers = ["Authorization: <place_auth_here>"]
+#level = "debug"
+
+[global.tracing]
+method = "log"
+path = "__PATH__/logs"
+prefix = "stalwart.log"
+rotate = "daily"
+level = "info"

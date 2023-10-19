@@ -60,10 +60,11 @@ token-lookup = "SELECT ws, wh FROM bayes_tokens WHERE h1 = ? AND h2 = ?"
 id-insert = "INSERT INTO seen_ids (id, ttl) VALUES (?, datetime('now', ? || ' seconds'))"
 id-lookup = "SELECT 1 FROM seen_ids WHERE id = ? AND ttl > CURRENT_TIMESTAMP"
 id-cleanup = "DELETE FROM seen_ids WHERE ttl < CURRENT_TIMESTAMP"
-reputation-insert = "INSERT INTO reputation (token, score, count, last_hit) VALUES (?, ?, 1, CURRENT_TIMESTAMP) 
+reputation-insert = "INSERT INTO reputation (token, score, count, ttl) VALUES (?, ?, 1, datetime('now', '30 days')) 
                      ON CONFLICT(token) 
-                     DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, last_hit = CURRENT_TIMESTAMP"
+                     DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, ttl = excluded.ttl"
 reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
+reputation-cleanup = "DELETE FROM reputation WHERE ttl < CURRENT_TIMESTAMP"
 
 [directory."default"]
 type = "memory"
@@ -100,6 +101,10 @@ type = "glob"
 comment = '#'
 values = ["spf-dkim-allow.org"]
 
+[directory."spam".lookup."domains-allow"]
+type = "glob"
+values = []
+
 [directory."spam".lookup."mime-types"]
 type = "map"
 comment = '#'
@@ -109,16 +114,6 @@ values = ["html text/html|BAD",
           "zip AR", 
           "js BAD|NZ", 
           "hta BAD|NZ"]
-
-[directory."spam".lookup."phishing-open"]
-type = "glob"
-comment = '#'
-values = ["*://phishing-open.org", "*://phishing-open.com"]
-
-[directory."spam".lookup."phishing-tank"]
-type = "glob"
-comment = '#'
-values = ["*://phishing-tank.com", "*://phishing-tank.org"]
 
 [directory."spam".lookup."trap-address"]
 type = "glob"
@@ -151,7 +146,7 @@ PRIMARY KEY (h1, h2)
 token STRING NOT NULL PRIMARY KEY,
 score FLOAT NOT NULL DEFAULT '0',
 count INT(11) NOT NULL DEFAULT '0',
-last_hit DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+ttl DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 )",
 ];
 
@@ -214,7 +209,8 @@ async fn antispam() {
         .to_path_buf()
         .join("resources")
         .join("config")
-        .join("sieve");
+        .join("spamfilter")
+        .join("scripts");
     let script_config = fs::read_to_string(base_path.join("config.sieve")).unwrap();
     let script_prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     let mut all_scripts = script_config.clone() + "\n" + script_prelude.as_str();

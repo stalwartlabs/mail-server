@@ -36,11 +36,11 @@ use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rusqlite::{Connection, OpenFlags};
 
-const CFG_COMMON: &str = include_str!("../../../resources/config/common.toml");
-const CFG_DIRECTORY: &str = include_str!("../../../resources/config/directory.toml");
-const CFG_JMAP: &str = include_str!("../../../resources/config/jmap.toml");
-const CFG_IMAP: &str = include_str!("../../../resources/config/imap.toml");
-const CFG_SMTP: &str = include_str!("../../../resources/config/smtp.toml");
+const CFG_COMMON: &str = "../../../resources/config/common.toml";
+const CFG_DIRECTORY: &str = "../../../resources/config/directory_sql.toml";
+const CFG_JMAP: &str = "../../../resources/config/jmap.toml";
+const CFG_IMAP: &str = "../../../resources/config/imap.toml";
+const CFG_SMTP: &str = "../../../resources/config/smtp.toml";
 
 #[cfg(target_os = "linux")]
 const SERVICE: &str = include_str!("../../../resources/systemd/stalwart-mail.service");

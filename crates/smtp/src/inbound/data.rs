@@ -44,9 +44,8 @@ use tokio::{
 };
 
 use crate::{
-    config::DNSBL_FROM,
     core::{Session, SessionAddress, State},
-    queue::{self, DomainPart, Message, SimpleEnvelope},
+    queue::{self, Message, SimpleEnvelope},
     reporting::analysis::AnalyzeReport,
     scripts::ScriptResult,
 };
@@ -67,17 +66,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
 
             return (&b"550 5.7.7 Failed to parse message.\r\n"[..]).into();
         };
-
-        // Validate DNSBL
-        let from = auth_message.from();
-        let from_domain = from.domain_part();
-        if !from_domain.is_empty()
-            && !self
-                .is_domain_dnsbl_allowed(from_domain, "from", DNSBL_FROM)
-                .await
-        {
-            return self.reset_dnsbl_error().unwrap().into();
-        }
 
         // Loop detection
         let dc = &self.core.session.config.data;

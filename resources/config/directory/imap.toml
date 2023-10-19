@@ -1,0 +1,27 @@
+#############################################
+# Directory configuration
+#############################################
+
+[directory."imap"]
+type = "imap"
+address = "127.0.0.1"
+port = 993
+
+[directory."imap".pool]
+max-connections = 10
+min-connections = 0
+max-lifetime = "30m"
+idle-timeout = "10m"
+connect-timeout = "30s"
+
+[directory."imap".tls]
+implicit = true
+allow-invalid-certs = true
+
+[directory."imap".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}
+
+[directory."imap".lookup]
+domains = ["__DOMAIN__"]
+

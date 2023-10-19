@@ -1,0 +1,18 @@
+#############################################
+# SMTP DKIM & ARC signatures
+#############################################
+
+[signature."rsa"]
+#public-key = "file://__PATH__/etc/dkim/__DOMAIN__.cert"
+private-key = "file://__PATH__/etc/dkim/__DOMAIN__.key"
+domain = "__DOMAIN__"
+selector = "stalwart"
+headers = ["From", "To", "Date", "Subject", "Message-ID"]
+algorithm = "rsa-sha256"
+canonicalization = "relaxed/relaxed"
+#expire = "10d"
+#third-party = ""
+#third-party-algo = ""
+#auid = ""
+set-body-length = false
+report = true

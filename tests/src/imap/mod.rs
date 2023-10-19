@@ -254,7 +254,7 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     let imap: Arc<IMAP> = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");
-    let shutdown_tx = servers.spawn(|server, shutdown_rx| {
+    let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Jmap => {
                 server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)

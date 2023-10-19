@@ -1,0 +1,57 @@
+#############################################
+# SMTP reporting configuration
+#############################################
+
+[report]
+path = "__PATH__/reports"
+hash = 64
+#submitter = "__HOST__"
+
+[report.analysis]
+addresses = ["dmarc@*", "abuse@*", "postmaster@*"]
+forward = true
+#store = "__PATH__/incoming"
+
+[report.dsn]
+from-name = "Mail Delivery Subsystem"
+from-address = "MAILER-DAEMON@__DOMAIN__"
+sign = ["rsa"]
+
+[report.dkim]
+from-name = "Report Subsystem"
+from-address = "noreply-dkim@__DOMAIN__"
+subject = "DKIM Authentication Failure Report"
+sign = ["rsa"]
+send = "1/1d"
+
+[report.spf]
+from-name = "Report Subsystem"
+from-address = "noreply-spf@__DOMAIN__"
+subject = "SPF Authentication Failure Report"
+send = "1/1d"
+sign = ["rsa"]
+
+[report.dmarc]
+from-name = "Report Subsystem"
+from-address = "noreply-dmarc@__DOMAIN__"
+subject = "DMARC Authentication Failure Report"
+send = "1/1d"
+sign = ["rsa"]
+
+[report.dmarc.aggregate]
+from-name = "DMARC Report"
+from-address = "noreply-dmarc@__DOMAIN__"
+org-name = "__DOMAIN__"
+#contact-info = ""
+send = "daily"
+max-size = 26214400 # 25mb
+sign = ["rsa"]
+
+[report.tls.aggregate]
+from-name = "TLS Report"
+from-address = "noreply-tls@__DOMAIN__"
+org-name = "__DOMAIN__"
+#contact-info = ""
+send = "daily"
+max-size = 26214400 # 25 mb
+sign = ["rsa"]

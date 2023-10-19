@@ -35,14 +35,12 @@ use utils::config::{
 
 use super::{
     if_block::ConfigIf, ArcAuthConfig, ArcSealer, ConfigContext, DkimAuthConfig,
-    DkimCanonicalization, DkimSigner, DmarcAuthConfig, DnsBlConfig, EnvelopeKey, IfBlock, IfThen,
-    IpRevAuthConfig, MailAuthConfig, SpfAuthConfig, VerifyStrategy, DNSBL_EHLO, DNSBL_FROM,
-    DNSBL_IP, DNSBL_IPREV, DNSBL_RETURN_PATH,
+    DkimCanonicalization, DkimSigner, DmarcAuthConfig, EnvelopeKey, IfBlock, IpRevAuthConfig,
+    MailAuthConfig, SpfAuthConfig, VerifyStrategy,
 };
 
 pub trait ConfigAuth {
     fn parse_mail_auth(&self, ctx: &ConfigContext) -> super::Result<MailAuthConfig>;
-    fn parse_dnsbl(&self, ctx: &ConfigContext) -> super::Result<DnsBlConfig>;
     fn parse_signatures(&self, ctx: &mut ConfigContext) -> super::Result<()>;
 }
 
@@ -108,63 +106,6 @@ impl ConfigAuth for Config {
                     .parse_if_block("auth.iprev.verify", ctx, &envelope_conn_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
             },
-            dnsbl: self.parse_dnsbl(ctx)?,
-        })
-    }
-
-    fn parse_dnsbl(&self, ctx: &ConfigContext) -> super::Result<DnsBlConfig> {
-        let verify = self
-            .parse_if_block::<Vec<String>>(
-                "auth.dnsbl.verify",
-                ctx,
-                &[EnvelopeKey::RemoteIp, EnvelopeKey::Listener],
-            )?
-            .unwrap_or_default();
-
-        Ok(DnsBlConfig {
-            verify: IfBlock {
-                if_then: {
-                    let mut if_then = Vec::with_capacity(verify.if_then.len());
-                    for cond in verify.if_then {
-                        if_then.push(IfThen {
-                            conditions: cond.conditions,
-                            then: cond.then.into_dnsbl("auth.dnsbl.verify.if")?,
-                        });
-                    }
-                    if_then
-                },
-                default: verify.default.into_dnsbl("auth.dnsbl.verify.else")?,
-            },
-            ip_lookup: self
-                .values("auth.dnsbl.lookup.ip")
-                .filter_map(|(_, v)| {
-                    if !v.is_empty() {
-                        if !v.ends_with('.') {
-                            format!("{v}.")
-                        } else {
-                            v.to_string()
-                        }
-                        .into()
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            domain_lookup: self
-                .values("auth.dnsbl.lookup.domain")
-                .filter_map(|(_, v)| {
-                    if !v.is_empty() {
-                        if !v.ends_with('.') {
-                            format!("{v}.")
-                        } else {
-                            v.to_string()
-                        }
-                        .into()
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
         })
     }
 
@@ -398,33 +339,5 @@ impl Default for DkimCanonicalization {
             headers: Canonicalization::Relaxed,
             body: Canonicalization::Relaxed,
         }
-    }
-}
-
-trait IntoDnsbl {
-    fn into_dnsbl(self, key: impl AsKey) -> super::Result<u32>;
-}
-
-impl IntoDnsbl for Vec<String> {
-    fn into_dnsbl(self, key: impl AsKey) -> super::Result<u32> {
-        let mut dns_bl = 0;
-        for value in self {
-            dns_bl |= match value.as_str() {
-                "ip" => DNSBL_IP,
-                "iprev" => DNSBL_IPREV,
-                "ehlo" | "helo" => DNSBL_EHLO,
-                "return-path" | "sender" | "mail-from" => DNSBL_RETURN_PATH,
-                "from" => DNSBL_FROM,
-                _ => {
-                    return Err(format!(
-                        "Invalid DNSBL value {:?} for key {:?}.",
-                        value,
-                        key.as_key()
-                    ))
-                }
-            };
-        }
-
-        Ok(dns_bl)
     }
 }

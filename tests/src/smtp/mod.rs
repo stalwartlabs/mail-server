@@ -40,8 +40,8 @@ use smtp::{
     config::{
         if_block::ConfigIf, queue::ConfigQueue, scripts::SieveContext, session::ConfigSession,
         throttle::ConfigThrottle, AggregateReport, ArcAuthConfig, Auth, ConfigContext, Connect,
-        Data, DkimAuthConfig, DmarcAuthConfig, DnsBlConfig, Dsn, Ehlo, EnvelopeKey, Extensions,
-        IfBlock, IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp,
+        Data, DkimAuthConfig, DmarcAuthConfig, Dsn, Ehlo, EnvelopeKey, Extensions, IfBlock,
+        IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp,
         QueueOutboundTimeout, QueueOutboundTls, QueueQuotas, QueueThrottle, Rcpt, Report,
         ReportAnalysis, ReportConfig, SessionConfig, SessionThrottle, SpfAuthConfig, Throttle,
         VerifyStrategy,
@@ -367,11 +367,6 @@ impl TestConfig for MailAuthConfig {
             },
             iprev: IpRevAuthConfig {
                 verify: IfBlock::new(VerifyStrategy::Relaxed),
-            },
-            dnsbl: DnsBlConfig {
-                verify: IfBlock::new(0),
-                ip_lookup: vec![],
-                domain_lookup: vec![],
             },
         }
     }

@@ -212,14 +212,17 @@ impl Servers {
         }
     }
 
-    pub fn spawn(self, spawn: impl Fn(Server, watch::Receiver<bool>)) -> watch::Sender<bool> {
+    pub fn spawn(
+        self,
+        spawn: impl Fn(Server, watch::Receiver<bool>),
+    ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.inner {
             spawn(server, shutdown_rx.clone());
         }
 
-        shutdown_tx
+        (shutdown_tx, shutdown_rx)
     }
 }
 

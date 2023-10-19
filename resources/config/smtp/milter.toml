@@ -1,0 +1,26 @@
+#############################################
+# SMTP inbound Milter configuration
+#############################################
+
+#[session.data.milter."rspamd"]
+#enable = [ { if = "listener", eq = "smtp", then = true }, 
+#           { else = false } ]
+#hostname = "127.0.0.1"
+#port = 11332
+#tls = false
+#allow-invalid-certs = false
+
+#[session.data.milter."rspamd".timeout]
+#connect = "30s"
+#command = "30s"
+#data = "60s"
+
+#[session.data.milter."rspamd".options]
+#tempfail-on-error = true
+#max-response-size = 52428800 # 50mb
+#version = 6
+
+#[session.data.pipe."spam-assassin"]
+#command = "spamc"
+#arguments = []
+#timeout = "10s"

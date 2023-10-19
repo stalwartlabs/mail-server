@@ -1,0 +1,23 @@
+#############################################
+# SMTP server resolver configuration
+#############################################
+
+[resolver]
+type = "system"
+#preserve-intermediates = true
+concurrency = 2
+timeout = "5s"
+attempts = 2
+try-tcp-on-error = true
+public-suffix = ["https://publicsuffix.org/list/public_suffix_list.dat", 
+                 "file://%%{BASE_PATH}%%/etc/spamfilter/maps/suffix_list.dat.gz"]
+
+[resolver.cache]
+txt = 2048
+mx = 1024
+ipv4 = 1024
+ipv6 = 1024
+ptr = 1024
+tlsa = 1024
+mta-sts = 1024
+

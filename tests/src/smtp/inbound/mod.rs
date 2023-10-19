@@ -37,7 +37,6 @@ pub mod auth;
 pub mod basic;
 pub mod data;
 pub mod dmarc;
-pub mod dnsrbl;
 pub mod ehlo;
 pub mod limits;
 pub mod mail;

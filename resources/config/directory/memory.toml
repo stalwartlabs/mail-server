@@ -1,0 +1,47 @@
+#############################################
+# Directory configuration
+#############################################
+
+[directory."default"]
+type = "memory"
+
+[directory."default".options]
+catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
+subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+superuser-group = "superusers"
+
+[[directory."default".users]]
+name = "admin"
+description = "Superuser"
+secret = "changeme"
+email = ["postmaster@__DOMAIN__"]
+member-of = ["superusers"]
+
+[[directory."default".users]]
+name = "jane"
+description = "Jane Doe"
+secret = "abcde"
+email = ["jane@__DOMAIN__", "jane.doe@__DOMAIN__"]
+email-list = ["info@__DOMAIN__"]
+member-of = ["sales", "support"]
+
+[[directory."default".users]]
+name = "bill"
+description = "Bill Foobar"
+secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
+quota = 50000000
+email = ["bill@__DOMAIN__", "bill.foobar@__DOMAIN__"]
+email-list = ["info@__DOMAIN__"]
+
+[[directory."default".groups]]
+name = "sales"
+description = "Sales Team"
+
+[[directory."default".groups]]
+name = "support"
+description = "Support Team"
+
+[directory."default".lookup]
+domains = ["__DOMAIN__"]

@@ -21,14 +21,14 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Instant};
 
-use chrono::{Datelike, TimeZone, Timelike};
 use tokio::sync::mpsc;
-use utils::{config::Config, failed, map::ttl_dashmap::TtlMap, UnwrapFailure};
+use utils::{
+    config::{cron::SimpleCron, Config},
+    map::ttl_dashmap::TtlMap,
+    UnwrapFailure,
+};
 
 use crate::JMAP;
 
@@ -41,29 +41,20 @@ pub enum Event {
     Exit,
 }
 
-enum SimpleCron {
-    Day { hour: u32, minute: u32 },
-    Week { day: u32, hour: u32, minute: u32 },
-    Hour { minute: u32 },
-}
-
 const TASK_PURGE_DB: usize = 0;
 const TASK_PURGE_BLOBS: usize = 1;
 const TASK_PURGE_SESSIONS: usize = 2;
 
 pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
-    let purge_db_at =
-        SimpleCron::parse(settings.value("jmap.purge.schedule.db").unwrap_or("0 3 *"));
-    let purge_blobs_at = SimpleCron::parse(
-        settings
-            .value("jmap.purge.schedule.blobs")
-            .unwrap_or("30 3 *"),
-    );
-    let purge_cache = SimpleCron::parse(
-        settings
-            .value("jmap.purge.schedule.sessions")
-            .unwrap_or("15 * *"),
-    );
+    let purge_db_at = settings
+        .property_or_static::<SimpleCron>("jmap.purge.schedule.db", "0 3 *")
+        .failed("Initialize housekeeper");
+    let purge_blobs_at = settings
+        .property_or_static::<SimpleCron>("jmap.purge.schedule.blobs", "30 3 *")
+        .failed("Initialize housekeeper");
+    let purge_cache = settings
+        .property_or_static::<SimpleCron>("jmap.purge.schedule.sessions", "15 * *")
+        .failed("Initialize housekeeper");
 
     tokio::spawn(async move {
         tracing::debug!("Housekeeper task started.");
@@ -146,85 +137,4 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
 
 pub fn init_housekeeper() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
     mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
-}
-
-impl SimpleCron {
-    pub fn parse(value: &str) -> Self {
-        let mut hour = 0;
-        let mut minute = 0;
-
-        for (pos, value) in value.split(' ').enumerate() {
-            if pos == 0 {
-                minute = value.parse::<u32>().failed("parse cron minute");
-                if !(0..=59).contains(&minute) {
-                    failed(&format!("parse minute, invalid value: {}", minute));
-                }
-            } else if pos == 1 {
-                if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
-                    return SimpleCron::Hour { minute };
-                } else {
-                    hour = value.parse::<u32>().failed("parse cron hour");
-                    if !(0..=23).contains(&hour) {
-                        failed(&format!("parse hour, invalid value: {}", hour));
-                    }
-                }
-            } else if pos == 2 {
-                if value.as_bytes().first().failed("parse cron weekday") == &b'*' {
-                    return SimpleCron::Day { hour, minute };
-                } else {
-                    let day = value.parse::<u32>().failed("parse cron weekday");
-                    if !(1..=7).contains(&hour) {
-                        failed(&format!(
-                            "parse weekday, invalid value: {}, range is 1 (Monday) to 7 (Sunday).",
-                            hour,
-                        ));
-                    }
-
-                    return SimpleCron::Week { day, hour, minute };
-                }
-            }
-        }
-
-        failed("parse cron expression.");
-    }
-
-    pub fn time_to_next(&self) -> Duration {
-        let now = chrono::Local::now();
-        let next = match self {
-            SimpleCron::Day { hour, minute } => {
-                let next = chrono::Local
-                    .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
-                    .unwrap();
-                if next < now {
-                    next + chrono::Duration::days(1)
-                } else {
-                    next
-                }
-            }
-            SimpleCron::Week { day, hour, minute } => {
-                let next = chrono::Local
-                    .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
-                    .unwrap();
-                if next < now {
-                    next + chrono::Duration::days(
-                        (7 - now.weekday().number_from_monday() + *day).into(),
-                    )
-                } else {
-                    next
-                }
-            }
-            SimpleCron::Hour { minute } => {
-                let next = chrono::Local
-                    .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
-                    .unwrap();
-                if next < now {
-                    next + chrono::Duration::hours(1)
-                } else {
-                    next
-                }
-            }
-        };
-
-        (next - now).to_std().unwrap()
-    }
 }

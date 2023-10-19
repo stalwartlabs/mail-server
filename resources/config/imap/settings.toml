@@ -1,20 +1,6 @@
 #############################################
-# IMAP server configuration
+# IMAP server settings
 #############################################
-
-[server.listener."imap"]
-bind = ["[::]:143"]
-protocol = "imap"
-
-[server.listener."imaptls"]
-bind = ["[::]:993"]
-protocol = "imap"
-tls.implicit = true
-
-[server.listener."sieve"]
-bind = ["[::]:4190"]
-protocol = "managesieve"
-tls.implicit = true
 
 [imap.request]
 max-size = 52428800

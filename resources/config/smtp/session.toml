@@ -1,0 +1,102 @@
+#############################################
+# SMTP inbound session configuration
+#############################################
+
+[session]
+timeout = "5m"
+transfer-limit = 262144000 # 250 MB
+duration = "10m"
+
+[session.connect]
+#script = "connect.sieve"
+
+[session.ehlo]
+require = true
+reject-non-fqdn = [ { if = "listener", eq = "smtp", then = true},
+                    { else = false } ]
+#script = "ehlo"
+
+[session.extensions]
+pipelining = true
+chunking = true
+requiretls = true
+no-soliciting = ""
+dsn = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
+expn = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
+vrfy = [ { if = "authenticated-as", ne = "", then = true},
+        { else = false } ]
+future-release = [ { if = "authenticated-as", ne = "", then = "7d"},
+                   { else = false } ]
+deliver-by = [ { if = "authenticated-as", ne = "", then = "15d"},
+               { else = false } ]
+mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
+                { else = false } ]
+
+[session.auth]
+mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
+               { else = [] } ]
+directory = [ { if = "listener", ne = "smtp", then = "__SMTP_DIRECTORY__" }, 
+           { else = false } ]
+require = [ { if = "listener", ne = "smtp", then = true},
+            { else = false } ]
+allow-plain-text = false
+
+[session.auth.errors]
+total = 3
+wait = "5s"
+
+[session.mail]
+#script = "mail-from"
+#rewrite = [ { all-of = [ { if = "listener", ne = "smtp" },
+#                         { if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$"}, 
+#                       ], then = "${1}@${3}" }, 
+#            { else = false } ]
+
+[session.rcpt]
+#script = "greylist"
+relay = [ { if = "authenticated-as", ne = "", then = true }, 
+          { else = false } ]
+#rewrite = [ { all-of = [ { if = "rcpt-domain", in-list = "__SMTP_DIRECTORY__/domains" },
+#                         { if = "rcpt", matches = "^([^.]+)\.([^.]+)@(.+)$"}, 
+#                       ], then = "${1}+${2}@${3}" }, 
+#            { else = false } ]
+max-recipients = 25
+directory = "__SMTP_DIRECTORY__"
+
+[session.rcpt.errors]
+total = 5
+wait = "5s"
+
+[session.data]
+script = [ { if = "authenticated-as", eq = "", then = "spam-filter"},
+           { else = "track-replies" } ]
+
+[session.data.limits]
+messages = 10
+size = 104857600
+received-headers = 50
+
+[session.data.add-headers]
+received = [ { if = "listener", eq = "smtp", then = true }, 
+             { else = false } ]
+received-spf = [ { if = "listener", eq = "smtp", then = true }, 
+                 { else = false } ]
+auth-results = [ { if = "listener", eq = "smtp", then = true }, 
+                 { else = false } ]
+message-id = [ { if = "listener", eq = "smtp", then = false }, 
+               { else = true } ]
+date = [ { if = "listener", eq = "smtp", then = false }, 
+         { else = true } ]
+return-path = false
+
+[[session.throttle]]
+#match = {if = "remote-ip", eq = "10.0.0.1"}
+key = ["remote-ip"]
+concurrency = 5
+#rate = "5/1h"
+
+[[session.throttle]]
+key = ["sender-domain", "rcpt"]
+rate = "25/1h"
