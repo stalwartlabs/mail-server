@@ -20,6 +20,14 @@ email = ["postmaster@%{DEFAULT_DOMAIN}%"]
 member-of = ["superusers"]
 
 [[directory."default".users]]
+name = "john"
+description = "John Doe"
+secret = "12345"
+email = ["john@%{DEFAULT_DOMAIN}%", "jdoe@%{DEFAULT_DOMAIN}%", "john.doe@%{DEFAULT_DOMAIN}%"]
+email-list = ["info@%{DEFAULT_DOMAIN}%"]
+member-of = ["sales"]
+
+[[directory."default".users]]
 name = "jane"
 description = "Jane Doe"
 secret = "abcde"

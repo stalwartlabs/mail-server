@@ -291,7 +291,8 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         // Run Milter filters
         let mut edited_message = match self.run_milters(&auth_message).await {
             Ok(modifications) => {
-                tracing::debug!(
+                if !modifications.is_empty() {
+                    tracing::debug!(
                     parent: &self.span,
                     context = "milter",
                     event = "accept",
@@ -305,9 +306,12 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                     }),
                     "Milter filter(s) accepted message.");
 
-                self.data
-                    .apply_milter_modifications(modifications, &auth_message)
-                    .map(Arc::new)
+                    self.data
+                        .apply_milter_modifications(modifications, &auth_message)
+                        .map(Arc::new)
+                } else {
+                    None
+                }
             }
             Err(response) => return response,
         };

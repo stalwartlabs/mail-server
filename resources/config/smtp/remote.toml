@@ -5,7 +5,7 @@
 [remote."local"]
 address = "127.0.0.1"
 port = 11200
-protocol = "local"
+protocol = "lmtp"
 concurrency = 10
 timeout = "1m"
 

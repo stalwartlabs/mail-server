@@ -7,13 +7,13 @@ if eval "AUTOLEARN_ENABLE && (score >= AUTOLEARN_SPAM_THRESHOLD || score <= AUTO
 }
 
 # Process score actions
-if "SCORE_REJECT_THRESHOLD && score >= SCORE_REJECT_THRESHOLD" {
+if eval "SCORE_REJECT_THRESHOLD && score >= SCORE_REJECT_THRESHOLD" {
     reject "Your message has been rejected because it has an excessive spam score. If you feel this is an error, please contact the postmaster.";
     stop;
-} else if "SCORE_DISCARD_THRESHOLD && score >= SCORE_DISCARD_THRESHOLD" {
+} elsif eval "SCORE_DISCARD_THRESHOLD && score >= SCORE_DISCARD_THRESHOLD" {
     discard;
     stop;
-} else if "ADD_HEADER_SPAM" {
+} elsif eval "ADD_HEADER_SPAM" {
     let "spam_status" "";
     if eval "score >= SCORE_SPAM_THRESHOLD" {
         let "spam_status" "'Yes, score=' + score";

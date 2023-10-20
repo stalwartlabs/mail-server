@@ -6,7 +6,9 @@ spf.result none
 spf_ehlo.result none
 dmarc.result none
 remote_ip 195.210.29.48
-expect hfilter_helo_nores_a_or_mx once_received mid_rhs_match_from r_spf_na has_data_uri arc_na subject_has_exclaim subject_ends_exclaim rdns_dnsfail mime_html_only html_short_link_img_1 to_dn_none rcpt_count_one to_match_envrcpt_all hfilter_fromhost_nores_a_or_mx rcvd_count_zero from_eq_envfrom r_dkim_na rcvd_no_tls_last from_has_dn date_in_past
+expect_header X-Spam-Status Yes, score=7.
+expect_header X-Spam-Result
+expect auth_na dmarc_na hfilter_helo_nores_a_or_mx once_received mid_rhs_match_from r_spf_na has_data_uri arc_na subject_has_exclaim subject_ends_exclaim rdns_dnsfail mime_html_only html_short_link_img_1 to_dn_none rcpt_count_one to_match_envrcpt_all hfilter_fromhost_nores_a_or_mx rcvd_count_zero from_eq_envfrom r_dkim_na rcvd_no_tls_last from_has_dn date_in_past
 
 From: Client Services <noreply@tetheer.com>
 To: licensing@stalw.art
@@ -48,6 +50,8 @@ dkim.domains tenthrevolution.com
 dmarc.result pass
 remote_ip 185.58.86.181
 tls.version TLSv1.3
+expect_header X-Spam-Status No, score=4.
+expect_header X-Spam-Result
 expect from_eq_envfrom from_has_dn hfilter_helo_nores_a_or_mx forged_rcvd_trail date_in_past arc_na uri_count_odd dkim_signed has_attachment r_spf_allow rcvd_tls_last rcpt_count_one mime_good subject_ends_spaces hfilter_fromhost_nores_a_or_mx to_dn_eq_addr_all r_dkim_allow dmarc_policy_allow rcvd_count_three to_match_envrcpt_all
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=tenthrevolution.com;
@@ -621,7 +625,9 @@ dmarc.result fail
 dmarc.policy reject
 remote_ip 51.89.165.39
 tls.version TLS1_2
-expect has_replyto once_received r_parts_differ mid_rhs_match_from hfilter_fromhost_nores_a_or_mx from_has_dn r_dkim_allow date_in_past to_match_envrcpt_all html_short_link_img_1 rcpt_count_one arc_na hfilter_helo_nores_a_or_mx r_spf_softfail rcvd_tls_last rcvd_count_zero replyto_dom_eq_from_dom to_dn_none has_list_unsub dkim_signed rdns_none from_eq_envfrom dmarc_policy_reject
+expect_header X-Spam-Status Yes, score=13.
+expect_header X-Spam-Result
+expect has_replyto violated_direct_spf replyto_addr_eq_from once_received r_parts_differ mid_rhs_match_from hfilter_fromhost_nores_a_or_mx from_has_dn r_dkim_allow date_in_past to_match_envrcpt_all html_short_link_img_1 rcpt_count_one arc_na hfilter_helo_nores_a_or_mx r_spf_softfail rcvd_tls_last rcvd_count_zero replyto_dom_eq_from_dom to_dn_none has_list_unsub dkim_signed rdns_none from_eq_envfrom dmarc_policy_reject
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=sectionalism; d=grupokonecta.net;
  h=To:Subject:Message-ID:Date:From:Reply-To:MIME-Version:List-Unsubscribe:

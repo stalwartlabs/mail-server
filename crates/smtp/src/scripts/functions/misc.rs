@@ -116,7 +116,7 @@ pub fn fn_hash<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variab
 pub fn fn_is_var_names<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable>) -> Variable {
     Variable::Array(
         ctx.global_variable_names()
-            .map(|v| Variable::from(v.to_string()))
+            .map(|v| Variable::from(v.to_uppercase()))
             .collect::<Vec<_>>()
             .into(),
     )

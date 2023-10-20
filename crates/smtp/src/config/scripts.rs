@@ -154,7 +154,7 @@ impl ConfigSieve for Config {
             let script = if !self.contains_key(key) {
                 let mut script = Vec::new();
                 for sub_key in self.sub_keys(key) {
-                    script.extend(self.file_contents(sub_key)?);
+                    script.extend(self.file_contents(("sieve.smtp.scripts", id, sub_key))?);
                 }
                 script
             } else {

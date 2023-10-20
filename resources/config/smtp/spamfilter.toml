@@ -28,6 +28,9 @@ query = ["DELETE FROM seen_ids WHERE ttl < CURRENT_TIMESTAMP",
          "DELETE FROM reputation WHERE ttl < CURRENT_TIMESTAMP"]
 frequency = "0 3 *"
 
+[directory."spam"]
+type = "memory"
+
 [directory."spam".lookup."free-domains"]
 type = "glob"
 comment = '#'
@@ -80,33 +83,34 @@ type = "map"
 values = "file://%{BASE_PATH}%/etc/spamfilter/maps/scores.map"
 
 [sieve.smtp.scripts]
-spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/prelude",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/from",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/recipient",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/subject",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replyto",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/date",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/messageid",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/received",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/headers",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bounce",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/html",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/mime",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/dmarc",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/ip",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/helo",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_in",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/spamtrap",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bayes_classify",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/url",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/rbl",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/pyzor",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/composites",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/scores",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/reputation",
-               "file://%{BASE_PATH}%/etc/spamfilter/scripts/epilogue"]
+spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/prelude.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/from.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/recipient.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/subject.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replyto.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/date.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/messageid.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/received.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/headers.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bounce.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/html.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/mime.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/dmarc.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/ip.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/helo.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_in.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/spamtrap.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bayes_classify.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/url.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/rbl.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/pyzor.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/composites.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/scores.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/reputation.sieve",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/epilogue.sieve"]
 
-track-replies = "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_out.sieve"
+track-replies = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
+                 "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_out.sieve"]
 
 greylist = "file://%{BASE_PATH}%/etc/spamfilter/scripts/greylist.sieve"

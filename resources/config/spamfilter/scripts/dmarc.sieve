@@ -52,7 +52,7 @@ if eval "env.dmarc.result == 'pass'" {
     } else {
         let "t.DMARC_POLICY_SOFTFAIL" "1";
     }
-} elsif eval "env.dmarc.result == ''" {
+} else {
     let "t.DMARC_NA" "1";
 }
 

@@ -181,9 +181,8 @@ impl Config {
         let mut includes = AHashSet::new();
         let mut macros = AHashMap::new();
 
-        for (key, mut value) in config.keys {
-            value.replace_macros(&key, &macros);
-            if let Some(macro_name) = key.strip_prefix("macro.") {
+        for (key, value) in config.keys {
+            if let Some(macro_name) = key.strip_prefix("macros.") {
                 macros.insert(macro_name.to_ascii_lowercase(), value);
             } else if key.starts_with("include.files.") {
                 includes.insert(value);
@@ -194,13 +193,13 @@ impl Config {
 
         // Include files
         config.keys = keys;
-        for include in includes {
+        for mut include in includes {
+            include.replace_macros("include.files", &macros);
             config
-                .parse(
-                    &std::fs::read_to_string(include)
-                        .failed("Could not read included configuration file"),
-                )
-                .failed("Invalid included configuration file");
+                .parse(&std::fs::read_to_string(&include).failed(&format!(
+                    "Could not read included configuration file {include:?}"
+                )))
+                .failed(&format!("Invalid included configuration file {include:?}"));
         }
 
         // Replace macros
@@ -227,7 +226,7 @@ impl ReplaceMacros for String {
                     if !suffix.is_empty() {
                         result.push_str(suffix);
                     }
-                    if let Some((macro_name, rest)) = macro_name.split_once('}') {
+                    if let Some((macro_name, rest)) = macro_name.split_once("}%") {
                         if let Some(macro_value) = macros.get(&macro_name.to_ascii_lowercase()) {
                             result.push_str(macro_value);
                             value = rest;

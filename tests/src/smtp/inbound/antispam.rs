@@ -18,7 +18,7 @@ use smtp::{
     inbound::AuthResult,
     scripts::{
         functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
-        ScriptResult,
+        ScriptModification, ScriptResult,
     },
 };
 use tokio::runtime::Handle;
@@ -122,7 +122,7 @@ values = ["spamtrap@*"]
 
 [directory."spam".lookup."scores"]
 type = "map"
-values = ["SPAM_TRAP discard"]
+values = "file://%CFG_PATH%/maps/scores.map"
 
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
@@ -192,6 +192,13 @@ async fn antispam() {
     ];
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_antispam_test");
+    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
+        .join("resources")
+        .join("config")
+        .join("spamfilter");
     let mut config = CONFIG
         .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
         .replace(
@@ -202,15 +209,9 @@ async fn antispam() {
                 .join("lists")
                 .to_str()
                 .unwrap(),
-        );
-    let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-        .join("resources")
-        .join("config")
-        .join("spamfilter")
-        .join("scripts");
+        )
+        .replace("%CFG_PATH%", base_path.as_path().to_str().unwrap());
+    let base_path = base_path.join("scripts");
     let script_config = fs::read_to_string(base_path.join("config.sieve")).unwrap();
     let script_prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     let mut all_scripts = script_config.clone() + "\n" + script_prelude.as_str();
@@ -234,6 +235,13 @@ async fn antispam() {
         config.push_str(&format!(
             "{test_name} = '''{script_config}\n{script_prelude}\n{script}\n'''\n"
         ));
+    }
+    for test_name in ["composites", "scores", "epilogue"] {
+        all_scripts = all_scripts
+            + "\n"
+            + fs::read_to_string(base_path.join(format!("{test_name}.sieve")))
+                .unwrap()
+                .as_str();
     }
 
     config.push_str(&format!("combined = '''{all_scripts}\n'''\n"));
@@ -331,6 +339,7 @@ async fn antispam() {
             let mut in_params = true;
             let mut variables: HashMap<String, Variable> = HashMap::new();
             let mut expected_variables = AHashMap::new();
+            let mut expected_headers = AHashMap::new();
 
             // Build session
             let mut session = Session::test(core.clone());
@@ -420,6 +429,14 @@ async fn antispam() {
                                     .unwrap_or((v.to_lowercase(), Variable::Integer(1)))
                             }));
                         }
+                        "expect_header" => {
+                            if let Some((header, value)) = value.split_once(' ') {
+                                expected_headers
+                                    .insert(header.to_string(), value.trim().to_string());
+                            } else {
+                                expected_headers.insert(value.to_string(), String::new());
+                            }
+                        }
                         "score" | "final_score" => {
                             variables
                                 .insert(param.to_string(), value.parse::<f64>().unwrap().into());
@@ -466,7 +483,32 @@ async fn antispam() {
                 .await
                 .unwrap()
             {
-                ScriptResult::Accept { .. } => {}
+                ScriptResult::Accept { modifications } => {
+                    if modifications.len() != expected_headers.len() {
+                        panic!(
+                            "Expected {:?} headers, got {:?}",
+                            expected_headers, modifications
+                        );
+                    }
+                    for modification in modifications {
+                        if let ScriptModification::AddHeader { name, value } = modification {
+                            if let Some(expected_value) = expected_headers.remove(name.as_str()) {
+                                if !expected_value.is_empty()
+                                    && !value.starts_with(expected_value.as_str())
+                                {
+                                    panic!(
+                                        "Expected header {:?} to be {:?}, got {:?}",
+                                        name, expected_value, value
+                                    );
+                                }
+                            } else {
+                                panic!("Unexpected header {:?}", name);
+                            }
+                        } else {
+                            panic!("Unexpected modification {:?}", modification);
+                        }
+                    }
+                }
                 ScriptResult::Reject(message) => panic!("{}", message),
                 ScriptResult::Replace {
                     message,
