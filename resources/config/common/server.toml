@@ -3,7 +3,7 @@
 #############################################
 
 [server]
-hostname = "__HOST__"
+hostname = "%{HOST}%"
 max-connections = 8192
 
 [server.run-as]

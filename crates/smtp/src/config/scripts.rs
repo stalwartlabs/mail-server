@@ -95,7 +95,7 @@ impl ConfigSieve for Config {
             .with_max_header_size(10240)
             .with_max_includes(10)
             .with_no_capability_check(
-                self.property_or_static("sieve.no-capability-check", "false")?,
+                self.property_or_static("sieve.smtp.no-capability-check", "false")?,
             )
             .register_functions(&mut fnc_map);
 
@@ -114,31 +114,33 @@ impl ConfigSieve for Config {
             ])
             .with_capability(Capability::Expressions)
             .with_capability(Capability::While)
-            .with_max_variable_size(102400)
+            .with_max_variable_size(
+                self.property_or_static("sieve.smtp.limits.variable-size", "52428800")?,
+            )
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
             .with_valid_ext_lists(ctx.directory.lookups.keys().map(|k| k.to_string()))
             .with_functions(&mut fnc_map);
 
-        if let Some(value) = self.property("sieve.limits.redirects")? {
+        if let Some(value) = self.property("sieve.smtp.limits.redirects")? {
             runtime.set_max_redirects(value);
         }
-        if let Some(value) = self.property("sieve.limits.out-messages")? {
+        if let Some(value) = self.property("sieve.smtp.limits.out-messages")? {
             runtime.set_max_out_messages(value);
         }
-        if let Some(value) = self.property("sieve.limits.cpu")? {
+        if let Some(value) = self.property("sieve.smtp.limits.cpu")? {
             runtime.set_cpu_limit(value);
         }
-        if let Some(value) = self.property("sieve.limits.nested-includes")? {
+        if let Some(value) = self.property("sieve.smtp.limits.nested-includes")? {
             runtime.set_max_nested_includes(value);
         }
-        if let Some(value) = self.property("sieve.limits.received-headers")? {
+        if let Some(value) = self.property("sieve.smtp.limits.received-headers")? {
             runtime.set_max_received_headers(value);
         }
-        if let Some(value) = self.property::<Duration>("sieve.limits.duplicate-expiry")? {
+        if let Some(value) = self.property::<Duration>("sieve.smtp.limits.duplicate-expiry")? {
             runtime.set_default_duplicate_expiry(value.as_secs());
         }
-        let hostname = if let Some(hostname) = self.value("sieve.hostname") {
+        let hostname = if let Some(hostname) = self.value("sieve.smtp.hostname") {
             hostname
         } else {
             self.value_require("server.hostname")?
@@ -146,8 +148,19 @@ impl ConfigSieve for Config {
         runtime.set_local_hostname(hostname.to_string());
 
         // Parse scripts
-        for id in self.sub_keys("sieve.scripts") {
-            let script = self.file_contents(("sieve.scripts", id))?;
+        for id in self.sub_keys("sieve.smtp.scripts") {
+            let key = ("sieve.smtp.scripts", id);
+
+            let script = if !self.contains_key(key) {
+                let mut script = Vec::new();
+                for sub_key in self.sub_keys(key) {
+                    script.extend(self.file_contents(sub_key)?);
+                }
+                script
+            } else {
+                self.file_contents(key)?
+            };
+
             ctx.scripts.insert(
                 id.to_string(),
                 compiler
@@ -159,14 +172,14 @@ impl ConfigSieve for Config {
 
         // Parse DKIM signatures
         let mut sign = Vec::new();
-        for (pos, id) in self.values("sieve.sign") {
+        for (pos, id) in self.values("sieve.smtp.sign") {
             if let Some(dkim) = ctx.signers.get(id) {
                 sign.push(dkim.clone());
             } else {
                 return Err(format!(
                     "No DKIM signer found with id {:?} for key {:?}.",
                     id,
-                    ("sieve.sign", pos).as_key()
+                    ("sieve.smtp.sign", pos).as_key()
                 ));
             }
         }
@@ -177,15 +190,15 @@ impl ConfigSieve for Config {
             lookup: ctx.directory.lookups.clone(),
             config: SieveConfig {
                 from_addr: self
-                    .value("sieve.from-addr")
+                    .value("sieve.smtp.from-addr")
                     .map(|a| a.to_string())
                     .unwrap_or(format!("MAILER-DAEMON@{hostname}")),
                 from_name: self
-                    .value("sieve.from-name")
+                    .value("sieve.smtp.from-name")
                     .unwrap_or("Mailer Daemon")
                     .to_string(),
                 return_path: self
-                    .value("sieve.return-path")
+                    .value("sieve.smtp.return-path")
                     .unwrap_or_default()
                     .to_string(),
                 sign,

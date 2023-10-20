@@ -61,10 +61,8 @@ pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
     test_blob(
         Store::open(
-            &Config::parse(
-                &CONFIG_LOCAL.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()),
-            )
-            .unwrap(),
+            &Config::new(&CONFIG_LOCAL.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
+                .unwrap(),
         )
         .await
         .unwrap(),
@@ -72,7 +70,7 @@ pub async fn blob_tests() {
     .await;
     test_blob(
         Store::open(
-            &Config::parse(&CONFIG_S3.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
+            &Config::new(&CONFIG_S3.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
                 .unwrap(),
         )
         .await

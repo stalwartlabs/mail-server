@@ -1,10 +1,10 @@
 #############################################
-# Directory configuration
+# SQL Directory configuration
 #############################################
 
 [directory."default"]
 type = "sql"
-address = "sqlite://__PATH__/data/accounts.sqlite3?mode=rwc"
+address = "sqlite://%{BASE_PATH}%/data/accounts.sqlite3?mode=rwc"
 
 [directory."default".options]
 catch-all = true

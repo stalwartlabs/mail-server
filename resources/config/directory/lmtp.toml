@@ -1,5 +1,5 @@
 #############################################
-# Directory configuration
+# LMTP Directory configuration
 #############################################
 
 [directory."lmtp"]
@@ -27,5 +27,5 @@ entries = 500
 ttl = {positive = '1h', negative = '10m'}
 
 [directory."lmtp".lookup]
-domains = ["__DOMAIN__"]
+domains = ["%{DEFAULT_DOMAIN}%"]
 

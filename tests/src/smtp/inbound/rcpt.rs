@@ -73,7 +73,7 @@ async fn rcpt() {
     let mut core = SMTP::test();
 
     let config_ext = &mut core.session.config.extensions;
-    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

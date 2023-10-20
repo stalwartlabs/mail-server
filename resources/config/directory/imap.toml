@@ -1,5 +1,5 @@
 #############################################
-# Directory configuration
+# IMAP Directory configuration
 #############################################
 
 [directory."imap"]
@@ -23,5 +23,5 @@ entries = 500
 ttl = {positive = '1h', negative = '10m'}
 
 [directory."imap".lookup]
-domains = ["__DOMAIN__"]
+domains = ["%{DEFAULT_DOMAIN}%"]
 

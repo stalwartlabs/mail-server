@@ -283,7 +283,7 @@ struct JMAPTest {
 async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("jmap_tests", delete_if_exists);
-    let config = utils::config::Config::parse(
+    let config = utils::config::Config::new(
         &add_test_certs(SERVER).replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();

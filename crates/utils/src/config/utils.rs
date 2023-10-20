@@ -117,6 +117,10 @@ impl Config {
         self.keys.get(&key.as_key()).map(|s| s.as_str())
     }
 
+    pub fn contains_key(&self, key: impl AsKey) -> bool {
+        self.keys.contains_key(&key.as_key())
+    }
+
     pub fn value_require(&self, key: impl AsKey) -> super::Result<&str> {
         self.keys
             .get(&key.as_key())
@@ -652,7 +656,8 @@ idle = 20
 hostname = "submit.example.org"
 ip = "a:b::1:1"
 "#;
-        let config = Config::parse(toml).unwrap();
+        let mut config = Config::default();
+        config.parse(toml).unwrap();
 
         assert_eq!(
             config.sub_keys("queues").collect::<Vec<_>>(),
@@ -664,11 +669,11 @@ ip = "a:b::1:1"
         );
         assert_eq!(
             config.sub_keys("queues.z.retry").collect::<Vec<_>>(),
-            ["0", "1", "2", "3", "4"]
+            ["0000", "0001", "0002", "0003", "0004"]
         );
         assert_eq!(
             config
-                .property::<u32>("servers.my relay.transaction.auth.limits.1.idle")
+                .property::<u32>("servers.my relay.transaction.auth.limits.0001.idle")
                 .unwrap()
                 .unwrap(),
             20

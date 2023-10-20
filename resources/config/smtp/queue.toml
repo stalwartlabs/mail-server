@@ -3,7 +3,7 @@
 #############################################
 
 [queue]
-path = "__PATH__/queue"
+path = "%{BASE_PATH}%/queue"
 hash = 64
 
 [queue.schedule]
@@ -12,8 +12,8 @@ notify = ["1d", "3d"]
 expire = "5d"
 
 [queue.outbound]
-#hostname = "__HOST__"
-next-hop = [ { if = "rcpt-domain", in-list = "__SMTP_DIRECTORY__/domains", then = "__NEXT_HOP__" }, 
+#hostname = "%{HOST}%"
+next-hop = [ { if = "rcpt-domain", in-list = "default/domains", then = "local" }, 
              { else = false } ]
 ip-strategy = "ipv4-then-ipv6"
 

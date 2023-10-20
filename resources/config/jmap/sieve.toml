@@ -2,12 +2,12 @@
 # JMAP Sieve interpreter configuration
 #############################################
 
-[jmap.sieve]
+[sieve.jmap]
 disable-capabilities = []
 notification-uris = ["mailto"]
 protected-headers = ["Original-Subject", "Original-From", "Received", "Auto-Submitted"]
 
-[jmap.sieve.limits]
+[sieve.jmap.limits]
 name-length = 512
 max-scripts = 256
 script-size = 102400
@@ -27,10 +27,10 @@ redirects = 1
 received-headers = 10
 outgoing-messages = 3
 
-[jmap.sieve.vacation]
+[sieve.jmap.vacation]
 default-subject = "Automated reply"
 subject-prefix = "Auto: "
 
-[jmap.sieve.default-expiry]
+[sieve.jmap.default-expiry]
 vacation = "30d"
 duplicate = "7d"

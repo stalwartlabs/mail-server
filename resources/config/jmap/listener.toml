@@ -4,5 +4,5 @@
 
 [server.listener."jmap"]
 bind = ["[::]:8080"]
-url = "https://__HOST__:8080"
+url = "https://%{HOST}%:8080"
 protocol = "jmap"

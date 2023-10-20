@@ -36,6 +36,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::{AHashMap, AHashSet};
 use rustls::ServerConfig;
 use tokio::net::TcpSocket;
 
@@ -43,7 +44,7 @@ use crate::{failed, UnwrapFailure};
 
 use self::utils::ParseValue;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
     pub keys: BTreeMap<String, String>,
 }
@@ -164,12 +165,87 @@ impl Config {
             }
         }
 
-        Config::parse(
-            &std::fs::read_to_string(
-                config_path.failed("Missing parameter --config=<path-to-config>."),
+        // Read main configuration file
+        let mut config = Config::default();
+        config
+            .parse(
+                &std::fs::read_to_string(
+                    config_path.failed("Missing parameter --config=<path-to-config>."),
+                )
+                .failed("Could not read configuration file"),
             )
-            .failed("Could not read configuration file"),
-        )
-        .failed("Invalid configuration file")
+            .failed("Invalid configuration file");
+
+        // Extract macros and includes
+        let mut keys = BTreeMap::new();
+        let mut includes = AHashSet::new();
+        let mut macros = AHashMap::new();
+
+        for (key, mut value) in config.keys {
+            value.replace_macros(&key, &macros);
+            if let Some(macro_name) = key.strip_prefix("macro.") {
+                macros.insert(macro_name.to_ascii_lowercase(), value);
+            } else if key.starts_with("include.files.") {
+                includes.insert(value);
+            } else {
+                keys.insert(key, value);
+            }
+        }
+
+        // Include files
+        config.keys = keys;
+        for include in includes {
+            config
+                .parse(
+                    &std::fs::read_to_string(include)
+                        .failed("Could not read included configuration file"),
+                )
+                .failed("Invalid included configuration file");
+        }
+
+        // Replace macros
+        for (key, value) in &mut config.keys {
+            value.replace_macros(key, &macros);
+        }
+
+        config
+    }
+}
+
+trait ReplaceMacros: Sized {
+    fn replace_macros(&mut self, key: &str, macros: &AHashMap<String, String>);
+}
+
+impl ReplaceMacros for String {
+    fn replace_macros(&mut self, key: &str, macros: &AHashMap<String, String>) {
+        if self.contains("%{") {
+            let mut result = String::with_capacity(self.len());
+            let mut value = self.as_str();
+
+            loop {
+                if let Some((suffix, macro_name)) = value.split_once("%{") {
+                    if !suffix.is_empty() {
+                        result.push_str(suffix);
+                    }
+                    if let Some((macro_name, rest)) = macro_name.split_once('}') {
+                        if let Some(macro_value) = macros.get(&macro_name.to_ascii_lowercase()) {
+                            result.push_str(macro_value);
+                            value = rest;
+                        } else {
+                            failed(&format!("Unknown macro {macro_name:?} for key {key:?}"));
+                        }
+                    } else {
+                        failed(&format!(
+                            "Unterminated macro name {value:?} for key {key:?}"
+                        ));
+                    }
+                } else {
+                    result.push_str(value);
+                    break;
+                }
+            }
+
+            *self = result;
+        }
     }
 }

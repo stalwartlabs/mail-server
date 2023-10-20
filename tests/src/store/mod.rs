@@ -49,7 +49,7 @@ pub async fn store_tests() {
         temp_dir.path.display()
     );
     let db = Arc::new(
-        Store::open(&Config::parse(&config_file).unwrap())
+        Store::open(&Config::new(&config_file).unwrap())
             .await
             .unwrap(),
     );

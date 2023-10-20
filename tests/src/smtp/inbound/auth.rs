@@ -59,7 +59,7 @@ member-of = ["sales", "support"]
 async fn auth() {
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]);
-    ctx.directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    ctx.directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
 
     let config = &mut core.session.config.auth;
 

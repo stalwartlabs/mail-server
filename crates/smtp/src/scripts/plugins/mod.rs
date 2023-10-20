@@ -24,6 +24,7 @@
 pub mod bayes;
 pub mod dns;
 pub mod exec;
+pub mod headers;
 pub mod http;
 pub mod lookup;
 pub mod pyzor;
@@ -35,6 +36,8 @@ use tokio::runtime::Handle;
 
 use crate::{config::scripts::SieveContext, core::SMTP};
 
+use super::ScriptModification;
+
 type RegisterPluginFnc = fn(u32, &mut FunctionMap<SieveContext>) -> ();
 type ExecPluginFnc = fn(PluginContext<'_>) -> Variable;
 
@@ -43,10 +46,11 @@ pub struct PluginContext<'x> {
     pub handle: &'x Handle,
     pub core: &'x SMTP,
     pub message: &'x Message<'x>,
+    pub modifications: &'x mut Vec<ScriptModification>,
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 14] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 15] = [
     query::exec,
     exec::exec,
     lookup::exec,
@@ -61,8 +65,9 @@ const PLUGINS_EXEC: [ExecPluginFnc; 14] = [
     bayes::exec_classify,
     bayes::exec_is_balanced,
     pyzor::exec,
+    headers::exec,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 14] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 15] = [
     query::register,
     exec::register,
     lookup::register,
@@ -77,6 +82,7 @@ const PLUGINS_REGISTER: [RegisterPluginFnc; 14] = [
     bayes::register_classify,
     bayes::register_is_balanced,
     pyzor::register,
+    headers::register,
 ];
 
 pub trait RegisterSievePlugins {

@@ -2,18 +2,17 @@
 # SMTP remote servers configuration
 #############################################
 
-[remote."lmtp"]
+[remote."local"]
 address = "127.0.0.1"
 port = 11200
-protocol = "lmtp"
+protocol = "local"
 concurrency = 10
 timeout = "1m"
 
-[remote."lmtp".tls]
+[remote."local".tls]
 implicit = false
 allow-invalid-certs = true
 
-#[remote."lmtp".auth]
+#[remote."local".auth]
 #username = ""
 #secret = ""
-

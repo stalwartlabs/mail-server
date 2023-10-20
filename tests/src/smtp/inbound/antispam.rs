@@ -27,14 +27,14 @@ use utils::config::Config;
 use crate::smtp::{TestConfig, TestSMTP};
 
 const CONFIG: &str = r#"
-[sieve]
+[sieve.smtp]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 no-capability-check = true
 
-[sieve.limits]
+[sieve.smtp.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -127,7 +127,7 @@ values = ["SPAM_TRAP discard"]
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
 
-[sieve.scripts]
+[sieve.smtp.scripts]
 "#;
 
 const CREATE_TABLES: &[&str; 3] = &[
@@ -239,7 +239,7 @@ async fn antispam() {
     config.push_str(&format!("combined = '''{all_scripts}\n'''\n"));
 
     // Parse config
-    let config = Config::parse(&config).unwrap();
+    let config = Config::new(&config).unwrap();
     let mut ctx = ConfigContext::new(&[]);
     ctx.directory = config.parse_directory().unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();

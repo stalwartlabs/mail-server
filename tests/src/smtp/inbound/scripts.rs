@@ -60,14 +60,14 @@ command = [ { if = "remote-ip", eq = "10.0.0.123", then = "/bin/bash" },
 arguments = ["%CFG_PATH%/pipe_me.sh", "hello", "world"]
 timeout = "10s"
 
-[sieve]
+[sieve.smtp]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 sign = ["rsa"]
 
-[sieve.limits]
+[sieve.smtp.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -75,7 +75,7 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.scripts]
+[sieve.smtp.scripts]
 "#;
 
 #[tokio::test]
@@ -117,7 +117,7 @@ async fn sieve_scripts() {
     let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_sieve_test");
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
-    let config = Config::parse(
+    let config = Config::new(
         &config
             .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
             .replace(

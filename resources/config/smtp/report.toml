@@ -3,45 +3,45 @@
 #############################################
 
 [report]
-path = "__PATH__/reports"
+path = "%{BASE_PATH}%/reports"
 hash = 64
-#submitter = "__HOST__"
+#submitter = "%{HOST}%"
 
 [report.analysis]
 addresses = ["dmarc@*", "abuse@*", "postmaster@*"]
 forward = true
-#store = "__PATH__/incoming"
+#store = "%{BASE_PATH}%/incoming"
 
 [report.dsn]
 from-name = "Mail Delivery Subsystem"
-from-address = "MAILER-DAEMON@__DOMAIN__"
+from-address = "MAILER-DAEMON@%{DEFAULT_DOMAIN}%"
 sign = ["rsa"]
 
 [report.dkim]
 from-name = "Report Subsystem"
-from-address = "noreply-dkim@__DOMAIN__"
+from-address = "noreply-dkim@%{DEFAULT_DOMAIN}%"
 subject = "DKIM Authentication Failure Report"
 sign = ["rsa"]
 send = "1/1d"
 
 [report.spf]
 from-name = "Report Subsystem"
-from-address = "noreply-spf@__DOMAIN__"
+from-address = "noreply-spf@%{DEFAULT_DOMAIN}%"
 subject = "SPF Authentication Failure Report"
 send = "1/1d"
 sign = ["rsa"]
 
 [report.dmarc]
 from-name = "Report Subsystem"
-from-address = "noreply-dmarc@__DOMAIN__"
+from-address = "noreply-dmarc@%{DEFAULT_DOMAIN}%"
 subject = "DMARC Authentication Failure Report"
 send = "1/1d"
 sign = ["rsa"]
 
 [report.dmarc.aggregate]
 from-name = "DMARC Report"
-from-address = "noreply-dmarc@__DOMAIN__"
-org-name = "__DOMAIN__"
+from-address = "noreply-dmarc@%{DEFAULT_DOMAIN}%"
+org-name = "%{DEFAULT_DOMAIN}%"
 #contact-info = ""
 send = "daily"
 max-size = 26214400 # 25mb
@@ -49,8 +49,8 @@ sign = ["rsa"]
 
 [report.tls.aggregate]
 from-name = "TLS Report"
-from-address = "noreply-tls@__DOMAIN__"
-org-name = "__DOMAIN__"
+from-address = "noreply-tls@%{DEFAULT_DOMAIN}%"
+org-name = "%{DEFAULT_DOMAIN}%"
 #contact-info = ""
 send = "daily"
 max-size = 26214400 # 25 mb

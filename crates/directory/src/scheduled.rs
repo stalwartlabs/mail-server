@@ -27,6 +27,7 @@ use crate::DirectorySchedule;
 
 impl DirectorySchedule {
     pub fn spawn(self, mut shutdown_rx: watch::Receiver<bool>) {
+        tracing::debug!("Directory query scheduler task starting.");
         tokio::spawn(async move {
             loop {
                 if tokio::time::timeout(self.cron.time_to_next(), shutdown_rx.changed())

@@ -83,7 +83,7 @@ async fn lookup_sql() {
     // Parse settings
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]);
-    let config = Config::parse(CONFIG).unwrap();
+    let config = Config::new(CONFIG).unwrap();
     ctx.directory = config.parse_directory().unwrap();
 
     // Obtain directory handle

@@ -1,5 +1,5 @@
 #############################################
-# Directory configuration
+# In-Memory Directory configuration
 #############################################
 
 [directory."default"]
@@ -16,15 +16,15 @@ superuser-group = "superusers"
 name = "admin"
 description = "Superuser"
 secret = "changeme"
-email = ["postmaster@__DOMAIN__"]
+email = ["postmaster@%{DEFAULT_DOMAIN}%"]
 member-of = ["superusers"]
 
 [[directory."default".users]]
 name = "jane"
 description = "Jane Doe"
 secret = "abcde"
-email = ["jane@__DOMAIN__", "jane.doe@__DOMAIN__"]
-email-list = ["info@__DOMAIN__"]
+email = ["jane@%{DEFAULT_DOMAIN}%", "jane.doe@%{DEFAULT_DOMAIN}%"]
+email-list = ["info@%{DEFAULT_DOMAIN}%"]
 member-of = ["sales", "support"]
 
 [[directory."default".users]]
@@ -32,8 +32,8 @@ name = "bill"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
 quota = 50000000
-email = ["bill@__DOMAIN__", "bill.foobar@__DOMAIN__"]
-email-list = ["info@__DOMAIN__"]
+email = ["bill@%{DEFAULT_DOMAIN}%", "bill.foobar@%{DEFAULT_DOMAIN}%"]
+email-list = ["info@%{DEFAULT_DOMAIN}%"]
 
 [[directory."default".groups]]
 name = "sales"
@@ -44,4 +44,4 @@ name = "support"
 description = "Support Team"
 
 [directory."default".lookup]
-domains = ["__DOMAIN__"]
+domains = ["%{DEFAULT_DOMAIN}%"]

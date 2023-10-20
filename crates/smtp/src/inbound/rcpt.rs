@@ -29,7 +29,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     core::{Session, SessionAddress},
     queue::DomainPart,
-    scripts::ScriptResult,
+    scripts::{ScriptModification, ScriptResult},
 };
 
 use super::IsTls;
@@ -102,7 +102,13 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
                             event = "modify",
                             address = self.data.rcpt_to.last().unwrap().address,
                             modifications = ?modifications);
-                            self.data.apply_sieve_modifications(modifications);
+                            for modification in modifications {
+                                if let ScriptModification::SetEnvelope { name, value } =
+                                    modification
+                                {
+                                    self.data.apply_envelope_modification(name, value);
+                                }
+                            }
                         }
                     }
                     ScriptResult::Reject(message) => {

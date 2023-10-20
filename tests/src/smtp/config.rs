@@ -67,7 +67,7 @@ fn parse_conditions() {
     file.push("config");
     file.push("rules.toml");
 
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
     let servers = vec![Server {
         id: "smtp".to_string(),
         internal_id: 123,
@@ -190,7 +190,7 @@ fn parse_if_blocks() {
     file.push("config");
     file.push("if-blocks.toml");
 
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
 
     // Create context and add some conditions
     let context = ConfigContext::new(&[]);
@@ -375,7 +375,7 @@ fn parse_throttle() {
         EnvelopeKey::Priority,
     ];
 
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
     let context = ConfigContext::new(&[]);
     let throttle = config
         .parse_throttle("throttle", &context, &available_keys, u16::MAX)
@@ -424,7 +424,7 @@ fn parse_servers() {
     let toml = add_test_certs(&fs::read_to_string(file).unwrap());
 
     // Parse servers
-    let config = Config::parse(&toml).unwrap();
+    let config = Config::new(&toml).unwrap();
     let servers = config.parse_servers().unwrap().inner;
     let expected_servers = vec![
         Server {
@@ -554,7 +554,7 @@ async fn eval_if() {
     file.push("config");
     file.push("rules-eval.toml");
 
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
     let servers = vec![
         Server {
             id: "smtp".to_string(),
@@ -600,7 +600,7 @@ async fn eval_dynvalue() {
     file.push("config");
     file.push("rules-dynvalue.toml");
 
-    let config = Config::parse(&fs::read_to_string(file).unwrap()).unwrap();
+    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
     let mut context = ConfigContext::new(&[]);
     context.directory = config.parse_directory().unwrap();
 

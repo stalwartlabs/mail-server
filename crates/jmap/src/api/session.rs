@@ -379,7 +379,7 @@ impl SieveCapabilities {
     pub fn new(config: &crate::Config, settings: &utils::config::Config) -> Self {
         let mut notification_methods = Vec::new();
 
-        for (_, uri) in settings.values("jmap.sieve.notification-uris") {
+        for (_, uri) in settings.values("sieve.jmap.notification-uris") {
             notification_methods.push(uri.to_string());
         }
         if notification_methods.is_empty() {
@@ -389,7 +389,7 @@ impl SieveCapabilities {
         let mut capabilities: AHashSet<sieve::compiler::grammar::Capability> =
             AHashSet::from_iter(sieve::compiler::grammar::Capability::all().iter().cloned());
 
-        for (_, capability) in settings.values("jmap.sieve.disabled-capabilities") {
+        for (_, capability) in settings.values("sieve.jmap.disabled-capabilities") {
             capabilities.remove(&sieve::compiler::grammar::Capability::parse(capability));
         }
 
@@ -402,12 +402,12 @@ impl SieveCapabilities {
         SieveCapabilities {
             max_script_name: config.sieve_max_script_name,
             max_script_size: settings
-                .property("jmap.sieve.max-script-size")
+                .property("sieve.jmap.max-script-size")
                 .failed("Invalid configuration file")
                 .unwrap_or(1024 * 1024),
             max_scripts: config.sieve_max_scripts,
             max_redirects: settings
-                .property("jmap.sieve.max-redirects")
+                .property("sieve.jmap.max-redirects")
                 .failed("Invalid configuration file")
                 .unwrap_or(1),
             extensions,

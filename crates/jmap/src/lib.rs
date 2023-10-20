@@ -228,98 +228,98 @@ impl JMAP {
             sieve_compiler: Compiler::new()
                 .with_max_script_size(
                     config
-                        .property("jmap.sieve.limits.script-size")?
+                        .property("sieve.jmap.limits.script-size")?
                         .unwrap_or(1024 * 1024),
                 )
                 .with_max_string_size(
                     config
-                        .property("jmap.sieve.limits.string-length")?
+                        .property("sieve.jmap.limits.string-length")?
                         .unwrap_or(4096),
                 )
                 .with_max_variable_name_size(
                     config
-                        .property("jmap.sieve.limits.variable-name-length")?
+                        .property("sieve.jmap.limits.variable-name-length")?
                         .unwrap_or(32),
                 )
                 .with_max_nested_blocks(
                     config
-                        .property("jmap.sieve.limits.nested-blocks")?
+                        .property("sieve.jmap.limits.nested-blocks")?
                         .unwrap_or(15),
                 )
                 .with_max_nested_tests(
                     config
-                        .property("jmap.sieve.limits.nested-tests")?
+                        .property("sieve.jmap.limits.nested-tests")?
                         .unwrap_or(15),
                 )
                 .with_max_nested_foreverypart(
                     config
-                        .property("jmap.sieve.limits.nested-foreverypart")?
+                        .property("sieve.jmap.limits.nested-foreverypart")?
                         .unwrap_or(3),
                 )
                 .with_max_match_variables(
                     config
-                        .property("jmap.sieve.limits.match-variables")?
+                        .property("sieve.jmap.limits.match-variables")?
                         .unwrap_or(30),
                 )
                 .with_max_local_variables(
                     config
-                        .property("jmap.sieve.limits.local-variables")?
+                        .property("sieve.jmap.limits.local-variables")?
                         .unwrap_or(128),
                 )
                 .with_max_header_size(
                     config
-                        .property("jmap.sieve.limits.header-size")?
+                        .property("sieve.jmap.limits.header-size")?
                         .unwrap_or(1024),
                 )
-                .with_max_includes(config.property("jmap.sieve.limits.includes")?.unwrap_or(3)),
+                .with_max_includes(config.property("sieve.jmap.limits.includes")?.unwrap_or(3)),
             sieve_runtime: Runtime::new()
                 .with_max_nested_includes(
                     config
-                        .property("jmap.sieve.limits.nested-includes")?
+                        .property("sieve.jmap.limits.nested-includes")?
                         .unwrap_or(3),
                 )
-                .with_cpu_limit(config.property("jmap.sieve.limits.cpu")?.unwrap_or(5000))
+                .with_cpu_limit(config.property("sieve.jmap.limits.cpu")?.unwrap_or(5000))
                 .with_max_variable_size(
                     config
-                        .property("jmap.sieve.limits.variable-size")?
+                        .property("sieve.jmap.limits.variable-size")?
                         .unwrap_or(4096),
                 )
-                .with_max_redirects(config.property("jmap.sieve.limits.redirects")?.unwrap_or(1))
+                .with_max_redirects(config.property("sieve.jmap.limits.redirects")?.unwrap_or(1))
                 .with_max_received_headers(
                     config
-                        .property("jmap.sieve.limits.received-headers")?
+                        .property("sieve.jmap.limits.received-headers")?
                         .unwrap_or(10),
                 )
                 .with_max_header_size(
                     config
-                        .property("jmap.sieve.limits.header-size")?
+                        .property("sieve.jmap.limits.header-size")?
                         .unwrap_or(1024),
                 )
                 .with_max_out_messages(
                     config
-                        .property("jmap.sieve.limits.outgoing-messages")?
+                        .property("sieve.jmap.limits.outgoing-messages")?
                         .unwrap_or(3),
                 )
                 .with_default_vacation_expiry(
                     config
-                        .property::<Duration>("jmap.sieve.default-expiry.vacation")?
+                        .property::<Duration>("sieve.jmap.default-expiry.vacation")?
                         .unwrap_or(Duration::from_secs(30 * 86400))
                         .as_secs(),
                 )
                 .with_default_duplicate_expiry(
                     config
-                        .property::<Duration>("jmap.sieve.default-expiry.duplicate")?
+                        .property::<Duration>("sieve.jmap.default-expiry.duplicate")?
                         .unwrap_or(Duration::from_secs(7 * 86400))
                         .as_secs(),
                 )
                 .without_capabilities(
                     config
-                        .values("jmap.sieve.disable-capabilities")
+                        .values("sieve.jmap.disable-capabilities")
                         .map(|(_, v)| v),
                 )
                 .with_valid_notification_uris({
                     let values = config
-                        .values("jmap.sieve.notification-uris")
+                        .values("sieve.jmap.notification-uris")
                         .map(|(_, v)| v.to_string())
                         .collect::<Vec<_>>();
                     if !values.is_empty() {
@@ -330,7 +330,7 @@ impl JMAP {
                 })
                 .with_protected_headers({
                     let values = config
-                        .values("jmap.sieve.protected-headers")
+                        .values("sieve.jmap.protected-headers")
                         .map(|(_, v)| v.to_string())
                         .collect::<Vec<_>>();
                     if !values.is_empty() {
@@ -346,13 +346,13 @@ impl JMAP {
                 })
                 .with_vacation_default_subject(
                     config
-                        .value("jmap.sieve.vacation.default-subject")
+                        .value("sieve.jmap.vacation.default-subject")
                         .unwrap_or("Automated reply")
                         .to_string(),
                 )
                 .with_vacation_subject_prefix(
                     config
-                        .value("jmap.sieve.vacation.subject-prefix")
+                        .value("sieve.jmap.vacation.subject-prefix")
                         .unwrap_or("Auto: ")
                         .to_string(),
                 )

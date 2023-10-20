@@ -1,5 +1,5 @@
 #############################################
-# Directory configuration
+# LDAP Directory configuration
 #############################################
 
 [directory."default"]

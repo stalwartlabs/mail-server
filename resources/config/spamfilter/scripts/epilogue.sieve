@@ -20,9 +20,9 @@ if "SCORE_REJECT_THRESHOLD && score >= SCORE_REJECT_THRESHOLD" {
     } else {
         let "spam_status" "'No, score=' + score";
     }
-    eval "add-header('X-Spam-Status', spam_status)";
+    eval "add_header('X-Spam-Status', spam_status)";
     if eval "!is_empty(spam_result)" {
-        eval "add-header('X-Spam-Result', spam_result)";
+        eval "add_header('X-Spam-Result', spam_result)";
     }
 }
 

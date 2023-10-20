@@ -4,7 +4,7 @@
 
 [directory."spamdb"]
 type = "sql"
-address = "sqlite://__PATH__/data/spamfilter.sqlite3"
+address = "sqlite://%{BASE_PATH}%/data/spamfilter.sqlite3"
 
 [directory."spamdb".pool]
 max-connections = 10
@@ -31,81 +31,82 @@ frequency = "0 3 *"
 [directory."spam".lookup."free-domains"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/domains_free.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/domains_free.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_free.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_free.list"]
 
 [directory."spam".lookup."disposable-domains"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/domains_disposable.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/domains_disposable.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_disposable.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_disposable.list"]
 
 [directory."spam".lookup."redirectors"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/url_redirectors.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/url_redirectors.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/url_redirectors.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/url_redirectors.list"]
 
 [directory."spam".lookup."domains-allow"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/allow_domains.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/allow_domains.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_domains.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_domains.list"]
 
 [directory."spam".lookup."dmarc-allow"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/allow_dmarc.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/allow_dmarc.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_dmarc.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_dmarc.list"]
 
 [directory."spam".lookup."spf-dkim-allow"]
 type = "glob"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/allow_spf_dkim.list", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/allow_spf_dkim.list"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_spf_dkim.list", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_spf_dkim.list"]
 
 [directory."spam".lookup."mime-types"]
 type = "map"
 comment = '#'
-values = ["https://get.stalw.art/resources/etc/spamfilter/maps/mime_types.map", 
-          "file+fallback://%%{BASE_PATH}%%/etc/spamfilter/maps/mime_types.map"]
+values = ["https://get.stalw.art/resources/config/spamfilter/maps/mime_types.map", 
+          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/mime_types.map"]
 
 [directory."spam".lookup."trap-address"]
 type = "glob"
 comment = '#'
-values = "file://%%{BASE_PATH}%%/etc/spamfilter/maps/spam_trap.list"
+values = "file://%{BASE_PATH}%/etc/spamfilter/maps/spam_trap.list"
 
 [directory."spam".lookup."scores"]
 type = "map"
-values = "file://%%{BASE_PATH}%%/etc/spamfilter/maps/scores.map"
+values = "file://%{BASE_PATH}%/etc/spamfilter/maps/scores.map"
 
-[sieve.scripts]
-spam-filter = ["file://%%{BASE_PATH}%%/etc/spamfilter/scripts/config",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/prelude",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/from",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/recipient",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/subject",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/replyto",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/date",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/messageid",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/received",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/headers",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/bounce",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/html",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/mime",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/dmarc",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/ip",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/helo",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/replies_in",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/spamtrap",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/bayes_classify",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/url",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/rbl",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/pyzor",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/scores",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/reputation",
-               "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/epilogue"]
+[sieve.smtp.scripts]
+spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/prelude",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/from",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/recipient",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/subject",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replyto",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/date",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/messageid",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/received",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/headers",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bounce",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/html",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/mime",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/dmarc",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/ip",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/helo",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_in",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/spamtrap",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/bayes_classify",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/url",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/rbl",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/pyzor",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/composites",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/scores",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/reputation",
+               "file://%{BASE_PATH}%/etc/spamfilter/scripts/epilogue"]
 
-track-replies = "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/replies_out.sieve"
+track-replies = "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_out.sieve"
 
-greylist = "file://%%{BASE_PATH}%%/etc/spamfilter/scripts/greylist.sieve"
+greylist = "file://%{BASE_PATH}%/etc/spamfilter/scripts/greylist.sieve"

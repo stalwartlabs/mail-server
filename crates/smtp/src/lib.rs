@@ -63,6 +63,10 @@ impl SMTP {
         let mut config_ctx = ConfigContext::new(&servers.inner);
         config_ctx.directory = directory.clone();
 
+        // Parse remote hosts
+        config.parse_remote_hosts(&mut config_ctx)?;
+
+        // Add local delivery host
         #[cfg(feature = "local_delivery")]
         {
             config_ctx.hosts.insert(
@@ -81,7 +85,7 @@ impl SMTP {
             );
         }
 
-        config.parse_remote_hosts(&mut config_ctx)?;
+        // Parse configuration
         config.parse_signatures(&mut config_ctx)?;
         let sieve_config = config.parse_sieve(&mut config_ctx)?;
         let session_config = config.parse_session_config(&config_ctx)?;

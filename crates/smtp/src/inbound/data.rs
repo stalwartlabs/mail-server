@@ -47,7 +47,7 @@ use crate::{
     core::{Session, SessionAddress, State},
     queue::{self, Message, SimpleEnvelope},
     reporting::analysis::AnalyzeReport,
-    scripts::ScriptResult,
+    scripts::{ScriptModification, ScriptResult},
 };
 
 use super::{AuthResult, IsTls};
@@ -400,6 +400,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         }
 
         // Sieve filtering
+        let mut headers = Vec::with_capacity(64);
         if let Some(script) = dc.script.eval(self).await {
             let params = self
                 .build_script_parameters("data")
@@ -450,20 +451,14 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                         .unwrap_or_default(),
                 );
 
-            match self.run_script(script.clone(), params).await {
-                ScriptResult::Accept { modifications } => {
-                    if !modifications.is_empty() {
-                        self.data.apply_sieve_modifications(modifications)
-                    }
-                }
+            let modifications = match self.run_script(script.clone(), params).await {
+                ScriptResult::Accept { modifications } => modifications,
                 ScriptResult::Replace {
                     message,
                     modifications,
                 } => {
-                    if !modifications.is_empty() {
-                        self.data.apply_sieve_modifications(modifications)
-                    }
                     edited_message = Arc::new(message).into();
+                    modifications
                 }
                 ScriptResult::Reject(message) => {
                     tracing::info!(parent: &self.span,
@@ -476,6 +471,23 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                 ScriptResult::Discard => {
                     return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
                 }
+            };
+
+            // Apply modifications
+            for modification in modifications {
+                match modification {
+                    ScriptModification::AddHeader { name, value } => {
+                        headers.extend_from_slice(name.as_bytes());
+                        headers.extend_from_slice(b": ");
+                        headers.extend_from_slice(value.as_bytes());
+                        if !value.ends_with('\n') {
+                            headers.extend_from_slice(b"\r\n");
+                        }
+                    }
+                    ScriptModification::SetEnvelope { name, value } => {
+                        self.data.apply_envelope_modification(name, value);
+                    }
+                }
             }
         }
 
@@ -485,7 +497,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         let mut message = self.build_message(mail_from, rcpt_to).await;
 
         // Add Received header
-        let mut headers = Vec::with_capacity(64);
         if *dc.add_received.eval(self).await {
             self.write_received(&mut headers, message.id)
         }

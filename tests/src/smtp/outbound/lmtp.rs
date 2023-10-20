@@ -80,7 +80,7 @@ async fn lmtp_delivery() {
     let mut local_qr = core.init_test_queue("lmtp_delivery_local");
 
     let mut ctx = ConfigContext::new(&[]);
-    let config = Config::parse(REMOTE).unwrap();
+    let config = Config::new(REMOTE).unwrap();
     config.parse_remote_hosts(&mut ctx).unwrap();
     core.queue.config.next_hop = "[{if = 'rcpt-domain', eq = 'foobar.org', then = 'lmtp'},
     {else = false}]"

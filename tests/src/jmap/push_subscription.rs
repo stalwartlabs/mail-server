@@ -104,7 +104,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     });
 
     // Start mock push server
-    let settings = utils::config::Config::parse(&add_test_certs(SERVER)).unwrap();
+    let settings = utils::config::Config::new(&add_test_certs(SERVER)).unwrap();
     let servers = settings.parse_servers().unwrap();
 
     // Start JMAP server

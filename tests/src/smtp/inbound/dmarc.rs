@@ -134,7 +134,7 @@ async fn dmarc() {
 
     // Create report channels
     let mut rr = core.init_test_report();
-    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

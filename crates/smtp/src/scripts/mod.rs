@@ -35,14 +35,26 @@ pub mod plugins;
 #[derive(Debug)]
 pub enum ScriptResult {
     Accept {
-        modifications: Vec<(Envelope, String)>,
+        modifications: Vec<ScriptModification>,
     },
     Replace {
         message: Vec<u8>,
-        modifications: Vec<(Envelope, String)>,
+        modifications: Vec<ScriptModification>,
     },
     Reject(String),
     Discard,
+}
+
+#[derive(Debug)]
+pub enum ScriptModification {
+    SetEnvelope {
+        name: Envelope,
+        value: String,
+    },
+    AddHeader {
+        name: Arc<String>,
+        value: Arc<String>,
+    },
 }
 
 pub struct ScriptParameters {

@@ -65,7 +65,7 @@ async fn vrfy_expn() {
     let mut core = SMTP::test();
     let ctx = ConfigContext::new(&[]);
 
-    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

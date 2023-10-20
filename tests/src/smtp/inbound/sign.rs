@@ -154,7 +154,7 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    let directory = Config::parse(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
@@ -225,7 +225,7 @@ pub trait TextConfigContext<'x> {
 
 impl<'x> TextConfigContext<'x> for ConfigContext<'x> {
     fn parse_signatures(mut self) -> Self {
-        Config::parse(SIGNATURES)
+        Config::new(SIGNATURES)
             .unwrap()
             .parse_signatures(&mut self)
             .unwrap();

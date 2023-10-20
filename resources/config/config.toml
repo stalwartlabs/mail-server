@@ -1,0 +1,36 @@
+#############################################
+# Stalwart Mail Server Configuration File   
+#############################################
+
+[macros]
+host = "__HOST__"
+default_domain = "__DOMAIN__"
+base_path = "__BASE_PATH__"
+
+[include]
+files = [ "%{BASE_PATH}%/etc/common/server.toml",
+          "%{BASE_PATH}%/etc/common/tls.toml",
+          "%{BASE_PATH}%/etc/common/tracing.toml",
+          "%{BASE_PATH}%/etc/directory/sql.toml",
+          "%{BASE_PATH}%/etc/imap/listener.toml",
+          "%{BASE_PATH}%/etc/imap/settings.toml",
+          "%{BASE_PATH}%/etc/jmap/auth.toml",
+          "%{BASE_PATH}%/etc/jmap/listener.toml",
+          "%{BASE_PATH}%/etc/jmap/oauth.toml",
+          "%{BASE_PATH}%/etc/jmap/protocol.toml",
+          "%{BASE_PATH}%/etc/jmap/push.toml",
+          "%{BASE_PATH}%/etc/jmap/ratelimit.toml",
+          "%{BASE_PATH}%/etc/jmap/sieve.toml",
+          "%{BASE_PATH}%/etc/jmap/store.toml",
+          "%{BASE_PATH}%/etc/jmap/websockets.toml",
+          "%{BASE_PATH}%/etc/smtp/auth.toml",
+          "%{BASE_PATH}%/etc/smtp/listener.toml",
+          "%{BASE_PATH}%/etc/smtp/milter.toml",
+          "%{BASE_PATH}%/etc/smtp/queue.toml",
+          "%{BASE_PATH}%/etc/smtp/remote.toml",
+          "%{BASE_PATH}%/etc/smtp/report.toml",
+          "%{BASE_PATH}%/etc/smtp/resolver.toml",
+          "%{BASE_PATH}%/etc/smtp/session.toml",
+          "%{BASE_PATH}%/etc/smtp/sieve.toml",
+          "%{BASE_PATH}%/etc/smtp/signature.toml",
+          "%{BASE_PATH}%/etc/smtp/spamfilter.toml" ]

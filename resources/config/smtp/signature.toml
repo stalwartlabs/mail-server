@@ -3,9 +3,9 @@
 #############################################
 
 [signature."rsa"]
-#public-key = "file://__PATH__/etc/dkim/__DOMAIN__.cert"
-private-key = "file://__PATH__/etc/dkim/__DOMAIN__.key"
-domain = "__DOMAIN__"
+#public-key = "file://%{BASE_PATH}%/etc/dkim/%{DEFAULT_DOMAIN}%.cert"
+private-key = "file://%{BASE_PATH}%/etc/dkim/%{DEFAULT_DOMAIN}%.key"
+domain = "%{DEFAULT_DOMAIN}%"
 selector = "stalwart"
 headers = ["From", "To", "Date", "Subject", "Message-ID"]
 algorithm = "rsa-sha256"

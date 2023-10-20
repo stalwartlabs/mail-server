@@ -73,7 +73,7 @@ pub trait ParseTestConfig {
 
 impl ParseTestConfig for &str {
     fn parse_if<T: Default + ParseValues>(&self, ctx: &ConfigContext) -> IfBlock<T> {
-        Config::parse(&format!("test = {self}\n"))
+        Config::new(&format!("test = {self}\n"))
             .unwrap()
             .parse_if_block(
                 "test",
@@ -97,7 +97,7 @@ impl ParseTestConfig for &str {
     }
 
     fn parse_throttle(&self, ctx: &ConfigContext) -> Vec<Throttle> {
-        Config::parse(self)
+        Config::new(self)
             .unwrap()
             .parse_throttle(
                 "throttle",
@@ -121,18 +121,18 @@ impl ParseTestConfig for &str {
     }
 
     fn parse_quota(&self, ctx: &ConfigContext) -> QueueQuotas {
-        Config::parse(self).unwrap().parse_queue_quota(ctx).unwrap()
+        Config::new(self).unwrap().parse_queue_quota(ctx).unwrap()
     }
 
     fn parse_queue_throttle(&self, ctx: &ConfigContext) -> QueueThrottle {
-        Config::parse(self)
+        Config::new(self)
             .unwrap()
             .parse_queue_throttle(ctx)
             .unwrap()
     }
 
     fn parse_milters(&self, ctx: &ConfigContext) -> Vec<Milter> {
-        Config::parse(self)
+        Config::new(self)
             .unwrap()
             .parse_milters(
                 ctx,

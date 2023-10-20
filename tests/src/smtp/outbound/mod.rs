@@ -72,7 +72,7 @@ private-key = 'file://{PK}'
 
 pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
     // Spawn listeners
-    let config = Config::parse(&add_test_certs(SERVER)).unwrap();
+    let config = Config::new(&add_test_certs(SERVER)).unwrap();
     let mut servers = config.parse_servers().unwrap();
 
     // Filter out protocols

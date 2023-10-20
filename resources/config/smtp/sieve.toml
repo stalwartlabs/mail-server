@@ -2,14 +2,14 @@
 # SMTP Sieve interpreter configuration
 #############################################
 
-[sieve]
+[sieve.smtp]
 from-name = "Automated Message"
-from-addr = "no-reply@__DOMAIN__"
+from-addr = "no-reply@%{DEFAULT_DOMAIN}%"
 return-path = ""
-#hostname = "__HOST__"
+#hostname = "%{HOST}%"
 sign = ["rsa"]
 
-[sieve.limits]
+[sieve.smtp.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -17,14 +17,14 @@ cpu = 50000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.scripts]
+[sieve.smtp.scripts]
 #connect = '''require ["variables", "extlists", "reject"];
-#    if string :list "${env.remote_ip}" "__SMTP_DIRECTORY__/blocked-ips" {
+#    if string :list "${env.remote_ip}" "default/blocked-ips" {
 #        reject "Your IP '${env.remote_ip}' is not welcomed here.";
 #    }'''
 
 #ehlo = '''require ["variables", "extlists", "reject"];
-#    if string :list "${env.helo_domain}" "__SMTP_DIRECTORY__/blocked-domains" {
+#    if string :list "${env.helo_domain}" "default/blocked-domains" {
 #        reject "551 5.1.1 Your domain '${env.helo_domain}' has been blacklisted.";
 #    }'''
 

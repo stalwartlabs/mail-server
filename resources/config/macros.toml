@@ -1,8 +1,0 @@
-#############################################
-# Configuration file macros
-#############################################
-
-[macros]
-default_domain = "__HOST__"
-base_path = "__BASE_PATH__"
-

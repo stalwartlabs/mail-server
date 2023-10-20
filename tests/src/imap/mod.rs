@@ -235,7 +235,7 @@ struct IMAPTest {
 async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("imap_tests", delete_if_exists);
-    let config = utils::config::Config::parse(
+    let config = utils::config::Config::new(
         &add_test_certs(SERVER).replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();

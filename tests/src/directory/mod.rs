@@ -176,7 +176,7 @@ domains = ["example.org"]
 "#;
 
 pub fn parse_config() -> DirectoryConfig {
-    utils::config::Config::parse(CONFIG)
+    utils::config::Config::new(CONFIG)
         .unwrap()
         .parse_directory()
         .unwrap()
@@ -423,7 +423,7 @@ async fn lookup_local() {
     )
     .unwrap();*/
 
-    let lookups = utils::config::Config::parse(
+    let lookups = utils::config::Config::new(
         &LOOKUP_CONFIG.replace(
             "%PATH%",
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -493,7 +493,7 @@ fn address_mappings() {
     expected-catch = "info@example.org"
     "#;
 
-    let config = utils::config::Config::parse(MAPPINGS).unwrap();
+    let config = utils::config::Config::new(MAPPINGS).unwrap();
     const ADDR: &str = "john.doe+alias@example.org";
 
     for test in ["enable", "disable", "custom"] {

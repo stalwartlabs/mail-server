@@ -45,6 +45,10 @@ if eval "!is_empty(rto_raw)" {
             }
         }
 
+        if eval "rto_addr == envelope.from" {
+            let "t.REPLYTO_ADDR_EQ_FROM" "1';
+        }
+
         if eval "lookup('spam/free-domains', rto_domain_sld)" {
             let "t.FREEMAIL_REPLYTO" "1";
             if eval "rto_domain_sld != from_domain_sld && lookup('spam/free-domains', from_domain_sld)" {

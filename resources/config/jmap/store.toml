@@ -3,7 +3,7 @@
 #############################################
 
 [store.db]
-path = "__PATH__/data/index.sqlite3"
+path = "%{BASE_PATH}%/data/index.sqlite3"
 
 [store.db.pool]
 max-connections = 10
@@ -13,10 +13,10 @@ max-connections = 10
 size = 1000
 
 [store.blob]
-type = "__BLOB_STORE__"
+type = "local"
 
 [store.blob.local]
-path = "__PATH__/data/blobs"
+path = "%{BASE_PATH}%/data/blobs"
 
 [store.blob.s3]
 bucket = "stalwart"

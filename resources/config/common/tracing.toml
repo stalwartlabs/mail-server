@@ -15,7 +15,7 @@
 
 [global.tracing]
 method = "log"
-path = "__PATH__/logs"
+path = "%{BASE_PATH}%/logs"
 prefix = "stalwart.log"
 rotate = "daily"
 level = "info"

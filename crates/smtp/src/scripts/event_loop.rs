@@ -40,7 +40,7 @@ use crate::{
     queue::{DomainPart, InstantFromTimestamp, Message},
 };
 
-use super::{plugins::PluginContext, ScriptParameters, ScriptResult};
+use super::{plugins::PluginContext, ScriptModification, ScriptParameters, ScriptResult};
 
 impl SMTP {
     pub fn run_script_blocking(
@@ -122,6 +122,7 @@ impl SMTP {
                                 handle: &handle,
                                 core: self,
                                 message: instance.message(),
+                                modifications: &mut modifications,
                                 arguments,
                             },
                         );
@@ -315,7 +316,10 @@ impl SMTP {
                         input = true.into();
                     }
                     Event::SetEnvelope { envelope, value } => {
-                        modifications.push((envelope, value));
+                        modifications.push(ScriptModification::SetEnvelope {
+                            name: envelope,
+                            value,
+                        });
                         input = true.into();
                     }
                     unsupported => {

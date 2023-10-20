@@ -46,13 +46,13 @@ rewrite = [ { all-of = [ { if = "rcpt-domain", eq = "foobar.net" },
 script = [ { if = "rcpt-domain", eq = "foobar.org", then = "rcpt" }, 
             { else = false } ]
 
-[sieve]
+[sieve.smtp]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 
-[sieve.limits]
+[sieve.smtp.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -60,7 +60,7 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.scripts]
+[sieve.smtp.scripts]
 mail = '''
 require ["variables", "envelope"];
 
@@ -102,7 +102,7 @@ async fn address_rewrite() {
     ];
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
-    let settings = Config::parse(CONFIG).unwrap();
+    let settings = Config::new(CONFIG).unwrap();
     ctx.directory = settings.parse_directory().unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
