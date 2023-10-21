@@ -10,7 +10,7 @@ default = ["sqlite"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 
-[dependencies]
+[dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
 nlp = { path = "../crates/nlp" }
 directory = { path = "../crates/directory" }

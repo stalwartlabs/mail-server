@@ -9,6 +9,7 @@ description = "A procedure macro to unify SYNC and ASYNC implementation"
 repository = "https://github.com/fMeow/maybe-async-rs"
 documentation = "https://docs.rs/maybe-async"
 keywords = [ "maybe", "async", "futures", "macros", "proc_macro" ]
+resolver = "2"
 
 [dependencies]
 proc-macro2 = "1.0"
