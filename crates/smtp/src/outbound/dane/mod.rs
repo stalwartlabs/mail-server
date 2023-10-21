@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use mail_auth::trust_dns_resolver::TokioAsyncResolver;
+use mail_auth::hickory_resolver::TokioAsyncResolver;
 
 pub mod dnssec;
 pub mod verify;

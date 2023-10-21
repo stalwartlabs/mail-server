@@ -23,7 +23,7 @@
 
 use std::time::{Duration, Instant};
 
-use mail_auth::trust_dns_resolver::proto::op::ResponseCode;
+use mail_auth::hickory_resolver::proto::op::ResponseCode;
 
 use smtp::queue::{manager::Queue, Domain, Message, Schedule, Status};
 

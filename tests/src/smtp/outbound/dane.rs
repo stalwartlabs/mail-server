@@ -36,12 +36,12 @@ use mail_auth::{
         lru::{DnsCache, LruCache},
         parse::TxtRecordParser,
     },
-    mta_sts::{ReportUri, TlsRpt},
-    report::tlsrpt::ResultType,
-    trust_dns_resolver::{
+    hickory_resolver::{
         config::{ResolverConfig, ResolverOpts},
         AsyncResolver,
     },
+    mta_sts::{ReportUri, TlsRpt},
+    report::tlsrpt::ResultType,
     Resolver, MX,
 };
 use rustls::Certificate;

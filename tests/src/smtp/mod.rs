@@ -28,7 +28,7 @@ use dashmap::DashMap;
 use directory::memory::MemoryDirectory;
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
-    trust_dns_resolver::config::{ResolverConfig, ResolverOpts},
+    hickory_resolver::config::{ResolverConfig, ResolverOpts},
     IpLookupStrategy, Resolver,
 };
 use mail_send::smtp::tls::build_tls_connector;

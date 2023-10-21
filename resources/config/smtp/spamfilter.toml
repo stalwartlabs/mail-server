@@ -4,7 +4,7 @@
 
 [directory."spamdb"]
 type = "sql"
-address = "sqlite://%{BASE_PATH}%/data/spamfilter.sqlite3"
+address = "sqlite://%{BASE_PATH}%/data/spamfilter.sqlite3?mode=rwc"
 
 [directory."spamdb".pool]
 max-connections = 10

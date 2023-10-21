@@ -26,7 +26,7 @@ use std::io::Read;
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     flate2::read::GzDecoder,
-    trust_dns_resolver::{
+    hickory_resolver::{
         config::{ResolverConfig, ResolverOpts},
         system_conf::read_system_conf,
     },
@@ -71,7 +71,7 @@ impl ConfigResolver for Config {
 
         // Prepare DNSSEC resolver options
         let config_dnssec = config.clone();
-        let mut opts_dnssec = opts;
+        let mut opts_dnssec = opts.clone();
         opts_dnssec.validate = true;
 
         let mut capacities = [1024usize; 5];

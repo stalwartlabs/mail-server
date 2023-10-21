@@ -23,7 +23,7 @@
 
 use mail_auth::{
     common::{lru::DnsCache, resolver::IntoFqdn},
-    trust_dns_resolver::{
+    hickory_resolver::{
         config::{ResolverConfig, ResolverOpts},
         error::{ResolveError, ResolveErrorKind},
         proto::{
