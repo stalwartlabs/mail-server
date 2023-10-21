@@ -1,4 +1,4 @@
-expect HFILTER_URL_ONLY
+expect URL_ONLY
 
 Subject: test
 

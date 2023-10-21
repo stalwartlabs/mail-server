@@ -77,7 +77,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
         if let Some(ip_rev) = &self.data.iprev {
             params = params.set_variable("iprev.result", ip_rev.result().as_str());
             if let Some(ptr) = ip_rev.ptr.as_ref().and_then(|addrs| addrs.first()) {
-                params = params.set_variable("iprev.ptr", ptr.to_lowercase());
+                params = params.set_variable(
+                    "iprev.ptr",
+                    ptr.strip_suffix('.').unwrap_or(ptr).to_lowercase(),
+                );
             }
         }
 

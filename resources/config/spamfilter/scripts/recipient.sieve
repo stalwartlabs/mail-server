@@ -146,7 +146,7 @@ if eval "rcpt_count > 0" {
              (is_empty(envelope.from) || 
               envfrom_local == 'postmaster' || 
               envfrom_local == 'mailer-daemon')" {
-        let "t.HFILTER_RCPT_BOUNCEMOREONE" "1";
+        let "t.RCPT_BOUNCEMOREONE" "1";
     }
 
     # Check for sorted recipients

@@ -49,7 +49,7 @@ MIME-Version: 1.0
 
 Test
 <!-- NEXT TEST -->
-expect MIME_BASE64_TEXT_BOGUS MIME_BASE64_TEXT
+expect MIME_BASE64_TEXT_BOGUS
 
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: base64

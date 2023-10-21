@@ -41,7 +41,7 @@ Test
 envelope_from 
 envelope_to hello@world.com
 envelope_to goodbye@world.com
-expect HFILTER_RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE RCPT_COUNT_TWO
+expect RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_ALL TO_DN_NONE RCPT_COUNT_TWO
 
 To: hello@world.com
 Cc: goodbye@world.com
@@ -51,7 +51,7 @@ Test
 envelope_from postmaster@domain.org
 envelope_to hello@world.com
 envelope_to goodbye@world.com
-expect HFILTER_RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_SOME TO_DN_NONE RCPT_COUNT_THREE
+expect RCPT_BOUNCEMOREONE TO_MATCH_ENVRCPT_SOME TO_DN_NONE RCPT_COUNT_THREE
 
 To: hello@world.com, test@domain.com
 Cc: goodbye@world.com

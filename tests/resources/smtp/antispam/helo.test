@@ -1,12 +1,12 @@
 helo_domain localhost
-expect HFILTER_HELO_NOT_FQDN
+expect HELO_NOT_FQDN
 
 Subject: test
 
 test
 <!-- NEXT TEST -->
 helo_domain user
-expect RCVD_HELO_USER HFILTER_HELO_NOT_FQDN
+expect RCVD_HELO_USER HELO_NOT_FQDN
 
 Subject: test
 
@@ -14,7 +14,7 @@ test
 <!-- NEXT TEST -->
 helo_domain 8.8.8.8
 remote_ip 8.8.8.8
-expect HFILTER_HELO_BAREIP
+expect HELO_BAREIP
 
 Subject: test
 
@@ -22,7 +22,7 @@ test
 <!-- NEXT TEST -->
 helo_domain 8.8.8.8
 remote_ip 1.1.1.1
-expect HFILTER_HELO_IP_A HFILTER_HELO_BAREIP
+expect HELO_IP_A HELO_BAREIP
 
 Subject: test
 
@@ -40,7 +40,7 @@ test
 helo_domain domain.org
 iprev.ptr otherdomain.org
 remote_ip 1.1.1.1
-expect HFILTER_HOSTNAME_UNKNOWN
+expect HELO_IPREV_MISMATCH
 
 Subject: test
 
@@ -49,7 +49,7 @@ test
 helo_domain otherdomain.org
 iprev.ptr otherdomain.org
 remote_ip 1.1.1.1
-expect HFILTER_HELO_NORES_A_OR_MX
+expect HELO_NORES_A_OR_MX
 
 Subject: test
 
@@ -58,7 +58,7 @@ test
 helo_domain otherdomain.org
 iprev.ptr otherdomain.net
 remote_ip 1.1.1.1
-expect HFILTER_HELO_NORES_A_OR_MX HFILTER_HOSTNAME_UNKNOWN
+expect HELO_NORES_A_OR_MX HELO_IPREV_MISMATCH
 
 Subject: test
 

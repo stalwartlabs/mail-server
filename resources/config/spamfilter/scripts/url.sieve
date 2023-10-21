@@ -1,5 +1,5 @@
 if eval "(count(body_urls) == 1 || count(html_body_urls) == 1) && count(tokenize(text_body, 'words')) == 0" {
-    let "t.HFILTER_URL_ONLY" "1";
+    let "t.URL_ONLY" "1";
 }
 
 if eval "has_zwsp(urls)" {

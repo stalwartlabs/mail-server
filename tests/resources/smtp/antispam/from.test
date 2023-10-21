@@ -48,14 +48,14 @@ From: "hello@other.domain.co.uk" <hello@domain.co.uk>
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN HFILTER_FROM_BOUNCE
+expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN FROM_BOUNCE
 
 From: "postmaster@mx.domain.co.uk" <postmaster@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_HAS_DN HFILTER_FROM_BOUNCE
+expect FROM_EQ_ENVFROM FROM_HAS_DN FROM_BOUNCE
 
 From: "Mailer Daemon" <MAILER-DAEMON@domain.co.uk>
 
@@ -174,7 +174,7 @@ From: hello@custom.disposable.org
 Test
 <!-- NEXT TEST -->
 envelope_from hello@nomx.org
-expect HFILTER_FROMHOST_NORES_A_OR_MX FROM_EQ_ENVFROM FROM_NO_DN
+expect FROMHOST_NORES_A_OR_MX FROM_EQ_ENVFROM FROM_NO_DN
 
 From: hello@nomx.org
 

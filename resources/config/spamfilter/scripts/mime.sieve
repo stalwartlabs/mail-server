@@ -105,11 +105,12 @@ foreverypart {
             }
         } else {
             if eval "cte == 'base64'" {
-                # Has text part encoded in base64
-                let "t.MIME_BASE64_TEXT" "1";
                 if eval "is_ascii(part.text)" {
                     # Has text part encoded in base64 that does not contain any 8bit characters
                     let "t.MIME_BASE64_TEXT_BOGUS" "1";
+                } else {
+                    # Has text part encoded in base64
+                    let "t.MIME_BASE64_TEXT" "1";
                 }
             }
 

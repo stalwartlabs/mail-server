@@ -66,7 +66,7 @@ if eval "(t.FREEMAIL_FROM || t.FREEMAIL_ENVFROM || t.FREEMAIL_REPLYTO) && (t.TO_
 	let "t.FREEMAIL_AFF" "1";
 }
 
-if eval "t.HFILTER_URL_ONLY && t.REDIRECTOR_URL" {
+if eval "t.URL_ONLY && t.REDIRECTOR_URL" {
 	let "t.REDIRECTOR_URL_ONLY" "1";
 }
 

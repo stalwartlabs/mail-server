@@ -57,12 +57,12 @@ if eval "from_count > 0" {
              (from_local == 'postmaster' || 
               from_local == 'mailer-daemon' || 
               from_local == 'root')" {
-        let "t.HFILTER_FROM_BOUNCE" "1";
+        let "t.FROM_BOUNCE" "1";
     }
 
     if eval "(!is_empty(envelope.from) && 
                eq_ignore_case(from_addr, envelope.from)) ||
-             (t.HFILTER_FROM_BOUNCE && 
+             (t.FROM_BOUNCE && 
               !is_empty(from_domain) && 
               from_domain_sld == helo_domain_sld)" {
         let "t.FROM_EQ_ENVFROM" "1";
@@ -133,7 +133,7 @@ if eval "!is_empty(envelope.from)" {
 
         # Mail from no resolve to A or MX
         if eval "!dns_exists(envfrom_domain, 'mx') && !dns_exists(envfrom_domain, 'ip')" {
-            let "t.HFILTER_FROMHOST_NORES_A_OR_MX" "1";
+            let "t.FROMHOST_NORES_A_OR_MX" "1";
         }        
     }
 
