@@ -82,7 +82,7 @@ values = "file://%{BASE_PATH}%/etc/spamfilter/maps/spam_trap.list"
 type = "map"
 values = "file://%{BASE_PATH}%/etc/spamfilter/maps/scores.map"
 
-[sieve.smtp.scripts]
+[sieve.trusted.scripts]
 spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
                "file://%{BASE_PATH}%/etc/spamfilter/scripts/prelude.sieve",
                "file://%{BASE_PATH}%/etc/spamfilter/scripts/from.sieve",

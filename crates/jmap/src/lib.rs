@@ -228,98 +228,110 @@ impl JMAP {
             sieve_compiler: Compiler::new()
                 .with_max_script_size(
                     config
-                        .property("sieve.jmap.limits.script-size")?
+                        .property("sieve.untrusted.limits.script-size")?
                         .unwrap_or(1024 * 1024),
                 )
                 .with_max_string_size(
                     config
-                        .property("sieve.jmap.limits.string-length")?
+                        .property("sieve.untrusted.limits.string-length")?
                         .unwrap_or(4096),
                 )
                 .with_max_variable_name_size(
                     config
-                        .property("sieve.jmap.limits.variable-name-length")?
+                        .property("sieve.untrusted.limits.variable-name-length")?
                         .unwrap_or(32),
                 )
                 .with_max_nested_blocks(
                     config
-                        .property("sieve.jmap.limits.nested-blocks")?
+                        .property("sieve.untrusted.limits.nested-blocks")?
                         .unwrap_or(15),
                 )
                 .with_max_nested_tests(
                     config
-                        .property("sieve.jmap.limits.nested-tests")?
+                        .property("sieve.untrusted.limits.nested-tests")?
                         .unwrap_or(15),
                 )
                 .with_max_nested_foreverypart(
                     config
-                        .property("sieve.jmap.limits.nested-foreverypart")?
+                        .property("sieve.untrusted.limits.nested-foreverypart")?
                         .unwrap_or(3),
                 )
                 .with_max_match_variables(
                     config
-                        .property("sieve.jmap.limits.match-variables")?
+                        .property("sieve.untrusted.limits.match-variables")?
                         .unwrap_or(30),
                 )
                 .with_max_local_variables(
                     config
-                        .property("sieve.jmap.limits.local-variables")?
+                        .property("sieve.untrusted.limits.local-variables")?
                         .unwrap_or(128),
                 )
                 .with_max_header_size(
                     config
-                        .property("sieve.jmap.limits.header-size")?
+                        .property("sieve.untrusted.limits.header-size")?
                         .unwrap_or(1024),
                 )
-                .with_max_includes(config.property("sieve.jmap.limits.includes")?.unwrap_or(3)),
+                .with_max_includes(
+                    config
+                        .property("sieve.untrusted.limits.includes")?
+                        .unwrap_or(3),
+                ),
             sieve_runtime: Runtime::new()
                 .with_max_nested_includes(
                     config
-                        .property("sieve.jmap.limits.nested-includes")?
+                        .property("sieve.untrusted.limits.nested-includes")?
                         .unwrap_or(3),
                 )
-                .with_cpu_limit(config.property("sieve.jmap.limits.cpu")?.unwrap_or(5000))
+                .with_cpu_limit(
+                    config
+                        .property("sieve.untrusted.limits.cpu")?
+                        .unwrap_or(5000),
+                )
                 .with_max_variable_size(
                     config
-                        .property("sieve.jmap.limits.variable-size")?
+                        .property("sieve.untrusted.limits.variable-size")?
                         .unwrap_or(4096),
                 )
-                .with_max_redirects(config.property("sieve.jmap.limits.redirects")?.unwrap_or(1))
+                .with_max_redirects(
+                    config
+                        .property("sieve.untrusted.limits.redirects")?
+                        .unwrap_or(1),
+                )
                 .with_max_received_headers(
                     config
-                        .property("sieve.jmap.limits.received-headers")?
+                        .property("sieve.untrusted.limits.received-headers")?
                         .unwrap_or(10),
                 )
                 .with_max_header_size(
                     config
-                        .property("sieve.jmap.limits.header-size")?
+                        .property("sieve.untrusted.limits.header-size")?
                         .unwrap_or(1024),
                 )
                 .with_max_out_messages(
                     config
-                        .property("sieve.jmap.limits.outgoing-messages")?
+                        .property("sieve.untrusted.limits.outgoing-messages")?
                         .unwrap_or(3),
                 )
                 .with_default_vacation_expiry(
                     config
-                        .property::<Duration>("sieve.jmap.default-expiry.vacation")?
+                        .property::<Duration>("sieve.untrusted.default-expiry.vacation")?
                         .unwrap_or(Duration::from_secs(30 * 86400))
                         .as_secs(),
                 )
                 .with_default_duplicate_expiry(
                     config
-                        .property::<Duration>("sieve.jmap.default-expiry.duplicate")?
+                        .property::<Duration>("sieve.untrusted.default-expiry.duplicate")?
                         .unwrap_or(Duration::from_secs(7 * 86400))
                         .as_secs(),
                 )
                 .without_capabilities(
                     config
-                        .values("sieve.jmap.disable-capabilities")
+                        .values("sieve.untrusted.disable-capabilities")
                         .map(|(_, v)| v),
                 )
                 .with_valid_notification_uris({
                     let values = config
-                        .values("sieve.jmap.notification-uris")
+                        .values("sieve.untrusted.notification-uris")
                         .map(|(_, v)| v.to_string())
                         .collect::<Vec<_>>();
                     if !values.is_empty() {
@@ -330,7 +342,7 @@ impl JMAP {
                 })
                 .with_protected_headers({
                     let values = config
-                        .values("sieve.jmap.protected-headers")
+                        .values("sieve.untrusted.protected-headers")
                         .map(|(_, v)| v.to_string())
                         .collect::<Vec<_>>();
                     if !values.is_empty() {
@@ -346,13 +358,13 @@ impl JMAP {
                 })
                 .with_vacation_default_subject(
                     config
-                        .value("sieve.jmap.vacation.default-subject")
+                        .value("sieve.untrusted.vacation.default-subject")
                         .unwrap_or("Automated reply")
                         .to_string(),
                 )
                 .with_vacation_subject_prefix(
                     config
-                        .value("sieve.jmap.vacation.subject-prefix")
+                        .value("sieve.untrusted.vacation.subject-prefix")
                         .unwrap_or("Auto: ")
                         .to_string(),
                 )

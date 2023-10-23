@@ -60,14 +60,14 @@ command = [ { if = "remote-ip", eq = "10.0.0.123", then = "/bin/bash" },
 arguments = ["%CFG_PATH%/pipe_me.sh", "hello", "world"]
 timeout = "10s"
 
-[sieve.smtp]
+[sieve.trusted]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 sign = ["rsa"]
 
-[sieve.smtp.limits]
+[sieve.trusted.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -75,7 +75,7 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.smtp.scripts]
+[sieve.trusted.scripts]
 "#;
 
 #[tokio::test]

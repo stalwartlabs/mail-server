@@ -85,10 +85,10 @@ impl crate::Config {
                 .property("jmap.email.parse.max-items")?
                 .unwrap_or(10),
             sieve_max_script_name: settings
-                .property("sieve.jmap.limits.name-length")?
+                .property("sieve.untrusted.limits.name-length")?
                 .unwrap_or(512),
             sieve_max_scripts: settings
-                .property("sieve.jmap.limits.max-scripts")?
+                .property("sieve.untrusted.limits.max-scripts")?
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
             session_cache_ttl: settings

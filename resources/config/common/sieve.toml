@@ -1,8 +1,45 @@
 #############################################
-# SMTP Sieve interpreter configuration
+# Sieve untrusted runtime configuration
 #############################################
 
-[sieve.smtp]
+[sieve.untrusted]
+disable-capabilities = []
+notification-uris = ["mailto"]
+protected-headers = ["Original-Subject", "Original-From", "Received", "Auto-Submitted"]
+
+[sieve.untrusted.limits]
+name-length = 512
+max-scripts = 256
+script-size = 102400
+string-length = 4096
+variable-name-length = 32
+variable-size = 4096
+nested-blocks = 15
+nested-tests = 15
+nested-foreverypart = 3
+match-variables = 30
+local-variables = 128
+header-size = 1024
+includes = 3
+nested-includes = 3
+cpu = 5000
+redirects = 1
+received-headers = 10
+outgoing-messages = 3
+
+[sieve.untrusted.vacation]
+default-subject = "Automated reply"
+subject-prefix = "Auto: "
+
+[sieve.untrusted.default-expiry]
+vacation = "30d"
+duplicate = "7d"
+
+#############################################
+# Sieve trusted runtime configuration
+#############################################
+
+[sieve.trusted]
 from-name = "Automated Message"
 from-addr = "no-reply@%{DEFAULT_DOMAIN}%"
 return-path = ""
@@ -10,7 +47,7 @@ return-path = ""
 no-capability-check = true
 sign = ["rsa"]
 
-[sieve.smtp.limits]
+[sieve.trusted.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -18,7 +55,7 @@ cpu = 1048576
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.smtp.scripts]
+[sieve.trusted.scripts]
 #connect = '''require ["variables", "extlists", "reject"];
 #    if string :list "${env.remote_ip}" "default/blocked-ips" {
 #        reject "Your IP '${env.remote_ip}' is not welcomed here.";

@@ -27,14 +27,14 @@ use utils::config::Config;
 use crate::smtp::{TestConfig, TestSMTP};
 
 const CONFIG: &str = r#"
-[sieve.smtp]
+[sieve.trusted]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 no-capability-check = true
 
-[sieve.smtp.limits]
+[sieve.trusted.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -127,7 +127,7 @@ values = "file://%CFG_PATH%/maps/scores.map"
 [resolver]
 public-suffix = "file://%LIST_PATH%/public-suffix.dat"
 
-[sieve.smtp.scripts]
+[sieve.trusted.scripts]
 "#;
 
 const CREATE_TABLES: &[&str; 3] = &[

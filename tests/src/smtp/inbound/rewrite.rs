@@ -46,13 +46,13 @@ rewrite = [ { all-of = [ { if = "rcpt-domain", eq = "foobar.net" },
 script = [ { if = "rcpt-domain", eq = "foobar.org", then = "rcpt" }, 
             { else = false } ]
 
-[sieve.smtp]
+[sieve.trusted]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
 return-path = ""
 hostname = "mx.foobar.org"
 
-[sieve.smtp.limits]
+[sieve.trusted.limits]
 redirects = 3
 out-messages = 5
 received-headers = 50
@@ -60,7 +60,7 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.smtp.scripts]
+[sieve.trusted.scripts]
 mail = '''
 require ["variables", "envelope"];
 
