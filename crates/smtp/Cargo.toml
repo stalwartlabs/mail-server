@@ -16,7 +16,7 @@ utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5"] }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] } 
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
@@ -56,8 +56,11 @@ decancer = "1.6.1"
 unicode-security = "0.1.0"
 infer = "0.15.0"
 
+[dev-dependencies]
+mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }  # required for mock resolver
+
 [features]
-test_mode = []
+test_mode = ["mail-auth/test"]  # required for mock resolver
 local_delivery = []
 
 #[[bench]]

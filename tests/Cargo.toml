@@ -21,7 +21,7 @@ imap_proto = { path = "../crates/imap-proto" }
 smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5"] }
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }
 sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
 utils = { path = "../crates/utils", features = ["test_mode"] }

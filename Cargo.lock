@@ -2809,7 +2809,7 @@ dependencies = [
 [[package]]
 name = "mail-send"
 version = "0.4.1"
-source = "git+https://github.com/stalwartlabs/mail-send#53904ce6cf4fcb9a42a92a541f5d64d4d972d6cb"
+source = "git+https://github.com/hoxxep/mail-send?rev=1fcb932#1fcb9327895f322e31a84e511a23b3267f4dc710"
 dependencies = [
  "base64 0.20.0",
  "gethostname",
