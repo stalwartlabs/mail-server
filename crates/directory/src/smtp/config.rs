@@ -62,6 +62,7 @@ impl SmtpDirectory {
                     .value("server.hostname")
                     .unwrap_or("[127.0.0.1]")
                     .to_string(),
+                skip_ehlo: true,
             },
             max_rcpt: config.property_or_static((&prefix, "limits.rcpt"), "10")?,
             max_auth_errors: config.property_or_static((&prefix, "limits.auth-errors"), "3")?,
