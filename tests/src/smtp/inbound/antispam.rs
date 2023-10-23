@@ -38,7 +38,7 @@ no-capability-check = true
 redirects = 3
 out-messages = 5
 received-headers = 50
-cpu = 10000
+cpu = 500000
 nested-includes = 5
 duplicate-expiry = "7d"
 

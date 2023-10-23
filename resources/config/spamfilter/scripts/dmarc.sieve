@@ -1,29 +1,29 @@
 if eval "env.spf.result == 'pass'" {
-    let "t.R_SPF_ALLOW" "1";
+    let "t.SPF_ALLOW" "1";
 } elsif eval "env.spf.result == 'fail'" {
-    let "t.R_SPF_FAIL" "1";
+    let "t.SPF_FAIL" "1";
 } elsif eval "env.spf.result == 'softfail'" {
-    let "t.R_SPF_SOFTFAIL" "1";
+    let "t.SPF_SOFTFAIL" "1";
 } elsif eval "env.spf.result == 'neutral'" {
-    let "t.R_SPF_NEUTRAL" "1";
+    let "t.SPF_NEUTRAL" "1";
 } elsif eval "env.spf.result == 'temperror'" {
-    let "t.R_SPF_DNSFAIL" "1";
+    let "t.SPF_DNSFAIL" "1";
 } elsif eval "env.spf.result == 'permerror'" {
-    let "t.R_SPF_PERMFAIL" "1";
+    let "t.SPF_PERMFAIL" "1";
 } else {
-    let "t.R_SPF_NA" "1";
+    let "t.SPF_NA" "1";
 }
 
 if eval "env.dkim.result == 'pass'" {
-    let "t.R_DKIM_ALLOW" "1";
+    let "t.DKIM_ALLOW" "1";
 } elsif eval "env.dkim.result == 'fail'" {
-    let "t.R_DKIM_REJECT" "1";
+    let "t.DKIM_REJECT" "1";
 } elsif eval "env.dkim.result == 'temperror'" {
-    let "t.R_DKIM_TEMPFAIL" "1";
+    let "t.DKIM_TEMPFAIL" "1";
 } elsif eval "env.dkim.result == 'permerror'" {
-    let "t.R_DKIM_PERMFAIL" "1";
+    let "t.DKIM_PERMFAIL" "1";
 } else {
-    let "t.R_DKIM_NA" "1";
+    let "t.DKIM_NA" "1";
 }
 
 if eval "env.arc.result == 'pass'" {
@@ -73,19 +73,19 @@ if eval "lookup('spam/dmarc-allow', from_domain)" {
 } elsif eval "lookup('spam/spf-dkim-allow', from_domain)" {
     let "is_dkim_pass" "contains(env.dkim.domains, from_domain) || t.ARC_ALLOW";
 
-    if eval "is_dkim_pass && t.R_SPF_ALLOW" {
+    if eval "is_dkim_pass && t.SPF_ALLOW" {
         let "t.ALLOWLIST_SPF_DKIM" "1";
     } elsif eval "is_dkim_pass" {
         let "t.ALLOWLIST_DKIM" "1";
-        if eval "!t.R_SPF_DNSFAIL" {
+        if eval "!t.SPF_DNSFAIL" {
             let "t.BLOCKLIST_SPF" "1";
         }
-    } elsif eval "t.R_SPF_ALLOW" {
+    } elsif eval "t.SPF_ALLOW" {
         let "t.ALLOWLIST_SPF" "1";
-        if eval "!t.R_DKIM_TEMPFAIL" {
+        if eval "!t.DKIM_TEMPFAIL" {
             let "t.BLOCKLIST_DKIM" "1";
         }
-    } elsif eval "!t.R_SPF_DNSFAIL && !t.R_DKIM_TEMPFAIL" {
+    } elsif eval "!t.SPF_DNSFAIL && !t.DKIM_TEMPFAIL" {
         let "t.BLOCKLIST_SPF_DKIM" "1";
     }
 }

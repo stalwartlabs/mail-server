@@ -55,6 +55,16 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
 }
 
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
+    // Make sure there is at least one text part
+    if !ctx
+        .message
+        .parts
+        .iter()
+        .any(|p| matches!(p.body, PartType::Text(_) | PartType::Html(_)))
+    {
+        return Variable::default();
+    }
+
     // Hash message
     let request = ctx
         .message

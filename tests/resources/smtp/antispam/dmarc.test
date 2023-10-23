@@ -1,4 +1,4 @@
-expect DMARC_NA R_SPF_NA R_DKIM_NA ARC_NA
+expect DMARC_NA SPF_NA DKIM_NA ARC_NA
 
 Subject: test
 
@@ -9,7 +9,7 @@ spf.result pass
 dkim.result pass
 arc.result pass
 dmarc.result pass
-expect DKIM_SIGNED ARC_SIGNED R_DKIM_ALLOW R_SPF_ALLOW ARC_ALLOW DMARC_POLICY_ALLOW
+expect DKIM_SIGNED ARC_SIGNED DKIM_ALLOW SPF_ALLOW ARC_ALLOW DMARC_POLICY_ALLOW
 
 DKIM-Signature: abc
 ARC-Seal: xyz
@@ -23,7 +23,7 @@ dkim.result fail
 arc.result fail
 dmarc.result fail
 dmarc.policy quarantine
-expect R_SPF_FAIL ARC_REJECT R_DKIM_REJECT DMARC_POLICY_QUARANTINE
+expect SPF_FAIL ARC_REJECT DKIM_REJECT DMARC_POLICY_QUARANTINE
 
 Subject: test
 
@@ -35,7 +35,7 @@ dkim.result temperror
 arc.result permerror
 dmarc.result fail
 dmarc.policy reject
-expect R_DKIM_TEMPFAIL R_SPF_NEUTRAL ARC_INVALID DMARC_POLICY_REJECT
+expect DKIM_TEMPFAIL SPF_NEUTRAL ARC_INVALID DMARC_POLICY_REJECT
 
 Subject: test
 
@@ -46,7 +46,7 @@ spf.result softfail
 dkim.result permerror
 arc.result temperror
 dmarc.result permerror
-expect ARC_DNSFAIL DMARC_BAD_POLICY R_DKIM_PERMFAIL R_SPF_SOFTFAIL
+expect ARC_DNSFAIL DMARC_BAD_POLICY DKIM_PERMFAIL SPF_SOFTFAIL
 
 Subject: test
 
@@ -55,7 +55,7 @@ Test
 dmarc.result pass
 dkim.result pass
 spf.result pass
-expect ALLOWLIST_DMARC DMARC_POLICY_ALLOW R_DKIM_ALLOW R_SPF_ALLOW ARC_NA
+expect ALLOWLIST_DMARC DMARC_POLICY_ALLOW DKIM_ALLOW SPF_ALLOW ARC_NA
 
 From: user@dmarc-allow.org
 Subject: test
@@ -66,7 +66,7 @@ Test
 dmarc.result fail
 dkim.result fail
 spf.result fail
-expect BLOCKLIST_DMARC DMARC_POLICY_SOFTFAIL R_DKIM_REJECT R_SPF_FAIL ARC_NA
+expect BLOCKLIST_DMARC DMARC_POLICY_SOFTFAIL DKIM_REJECT SPF_FAIL ARC_NA
 
 From: user@dmarc-allow.org
 Subject: test
@@ -77,7 +77,7 @@ Test
 dkim.result pass
 dkim.domains spf-dkim-allow.org
 spf.result pass
-expect ALLOWLIST_SPF_DKIM R_DKIM_ALLOW R_SPF_ALLOW ARC_NA DMARC_NA
+expect ALLOWLIST_SPF_DKIM DKIM_ALLOW SPF_ALLOW ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -87,7 +87,7 @@ Test
 dkim.result pass
 spf.result pass
 arc.result pass
-expect ALLOWLIST_SPF_DKIM R_DKIM_ALLOW R_SPF_ALLOW ARC_ALLOW DMARC_NA
+expect ALLOWLIST_SPF_DKIM DKIM_ALLOW SPF_ALLOW ARC_ALLOW DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -96,7 +96,7 @@ Test
 <!-- NEXT TEST -->
 spf.result pass
 dkim.result fail
-expect ALLOWLIST_SPF BLOCKLIST_DKIM R_DKIM_REJECT R_SPF_ALLOW ARC_NA DMARC_NA
+expect ALLOWLIST_SPF BLOCKLIST_DKIM DKIM_REJECT SPF_ALLOW ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -105,7 +105,7 @@ Test
 <!-- NEXT TEST -->
 spf.result pass
 dkim.result temperror
-expect ALLOWLIST_SPF R_DKIM_TEMPFAIL R_SPF_ALLOW ARC_NA DMARC_NA
+expect ALLOWLIST_SPF DKIM_TEMPFAIL SPF_ALLOW ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -115,7 +115,7 @@ Test
 dkim.result pass
 dkim.domains spf-dkim-allow.org
 spf.result fail
-expect BLOCKLIST_SPF ALLOWLIST_DKIM R_DKIM_ALLOW R_SPF_FAIL ARC_NA DMARC_NA
+expect BLOCKLIST_SPF ALLOWLIST_DKIM DKIM_ALLOW SPF_FAIL ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -125,7 +125,7 @@ Test
 dkim.result pass
 dkim.domains spf-dkim-allow.org
 spf.result temperror
-expect ALLOWLIST_DKIM R_DKIM_ALLOW R_SPF_DNSFAIL ARC_NA DMARC_NA
+expect ALLOWLIST_DKIM DKIM_ALLOW SPF_DNSFAIL ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -134,7 +134,7 @@ Test
 <!-- NEXT TEST -->
 dkim.result fail
 spf.result fail
-expect BLOCKLIST_SPF_DKIM R_DKIM_REJECT R_SPF_FAIL ARC_NA DMARC_NA
+expect BLOCKLIST_SPF_DKIM DKIM_REJECT SPF_FAIL ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test
@@ -143,7 +143,7 @@ Test
 <!-- NEXT TEST -->
 dkim.result temperror
 spf.result temperror
-expect R_DKIM_TEMPFAIL R_SPF_DNSFAIL ARC_NA DMARC_NA
+expect DKIM_TEMPFAIL SPF_DNSFAIL ARC_NA DMARC_NA
 
 From: user@spf-dkim-allow.org
 Subject: test

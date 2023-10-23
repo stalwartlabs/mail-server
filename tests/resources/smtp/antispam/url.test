@@ -16,13 +16,13 @@ Subject: test
 
 my site is https://192.168.1.1
 <!-- NEXT TEST -->
-expect OMOGRAPH_URL
+expect HOMOGRAPH_URL
 
 Subject: test
 
 my site is https://xn--youtue-tg7b.com
 <!-- NEXT TEST -->
-expect R_MIXED_CHARSET_URL
+expect MIXED_CHARSET_URL
 
 Subject: test
 
@@ -40,7 +40,7 @@ Subject: nested redirect
 
 login to https://redirect.com/?https://redirect.org/?https://redirect.net/?https://redirect.io/?https://redirect.me/?https://redirect.com
 <!-- NEXT TEST -->
-expect REDIRECTOR_URL OMOGRAPH_URL
+expect REDIRECTOR_URL HOMOGRAPH_URL
 
 Subject: redirect to omograph
 

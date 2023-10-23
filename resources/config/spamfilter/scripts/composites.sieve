@@ -6,15 +6,15 @@ if eval "t.FORGED_SENDER && t.MAILLIST" {
 	let "t.FORGED_SENDER_MAILLIST" "1";
 }
 
-if eval "t.DMARC_POLICY_ALLOW && (t.R_SPF_SOFTFAIL || t.R_SPF_FAIL || t.R_DKIM_REJECT)" {
+if eval "t.DMARC_POLICY_ALLOW && (t.SPF_SOFTFAIL || t.SPF_FAIL || t.DKIM_REJECT)" {
 	let "t.DMARC_POLICY_ALLOW_WITH_FAILURES" "1";
 }
 
-if eval "t.R_DKIM_NA && t.R_SPF_NA && t.DMARC_NA && t.ARC_NA" {
+if eval "t.DKIM_NA && t.SPF_NA && t.DMARC_NA && t.ARC_NA" {
 	let "t.AUTH_NA" "1";
 }
 
-if eval "!(t.R_DKIM_NA && t.R_SPF_NA && t.DMARC_NA && t.ARC_NA) && (t.R_DKIM_NA || t.R_DKIM_TEMPFAIL || t.R_DKIM_PERMFAIL) && (t.R_SPF_NA || t.R_SPF_DNSFAIL) && t.DMARC_NA && (t.ARC_NA || t.ARC_DNSFAIL)" {
+if eval "!(t.DKIM_NA && t.SPF_NA && t.DMARC_NA && t.ARC_NA) && (t.DKIM_NA || t.DKIM_TEMPFAIL || t.DKIM_PERMFAIL) && (t.SPF_NA || t.SPF_DNSFAIL) && t.DMARC_NA && (t.ARC_NA || t.ARC_DNSFAIL)" {
 	let "t.AUTH_NA_OR_FAIL" "1";
 }
 
@@ -38,11 +38,11 @@ if eval "t.RECEIVED_SPAMHAUS_PBL && !t.RCVD_VIA_SMTP_AUTH" {
 	let "t.RCVD_UNAUTH_PBL" "1";
 }
 
-if eval "(t.R_DKIM_ALLOW || t.ARC_ALLOW) && t.RCVD_IN_DNSWL_MED" {
+if eval "(t.DKIM_ALLOW || t.ARC_ALLOW) && t.RCVD_IN_DNSWL_MED" {
 	let "t.RCVD_DKIM_ARC_DNSWL_MED" "1";
 }
 
-if eval "(t.R_DKIM_ALLOW || t.ARC_ALLOW) && t.RCVD_IN_DNSWL_HI" {
+if eval "(t.DKIM_ALLOW || t.ARC_ALLOW) && t.RCVD_IN_DNSWL_HI" {
 	let "t.RCVD_DKIM_ARC_DNSWL_HI" "1";
 }
 
@@ -58,7 +58,7 @@ if eval "t.HAS_GUC_PROXY_URI || t.URIBL_RED || t.DBL_ABUSE_REDIR || t.HAS_ONION_
 	let "t.HAS_ANON_DOMAIN" "1";
 }
 
-if eval "(t.R_SPF_FAIL || t.R_SPF_SOFTFAIL) && (t.RCVD_COUNT_ZERO || t.RCVD_NO_TLS_LAST)" {
+if eval "(t.SPF_FAIL || t.SPF_SOFTFAIL) && (t.RCVD_COUNT_ZERO || t.RCVD_NO_TLS_LAST)" {
 	let "t.VIOLATED_DIRECT_SPF" "1";
 }
 

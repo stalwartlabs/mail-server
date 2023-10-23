@@ -93,6 +93,14 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         return false.into();
     }
 
+    tracing::debug!(
+        parent: span,
+        context = "sieve:bayes_train",
+        event = "classify",
+        is_spam = is_spam,
+        num_tokens = model.weights.len(),
+    );
+
     // Update weight and invalidate cache
     for (hash, weights) in model.weights {
         let (s_weight, h_weight) = if is_train {

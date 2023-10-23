@@ -69,11 +69,11 @@ while "i > 0" {
             if eval "!is_ascii(host)" {
                 let "host_cured" "cure_text(host)";
                 if eval "host_lc != host_cured && dns_exists(host_cured, 'ip')" {
-                    let "t.OMOGRAPH_URL" "1";
+                    let "t.HOMOGRAPH_URL" "1";
                 }
 
                 if eval "!is_single_script(host)" {
-                    let "t.R_MIXED_CHARSET_URL" "1";
+                    let "t.MIXED_CHARSET_URL" "1";
                 }
             } else {
                 if eval "ends_with(host, 'googleusercontent.com') && starts_with(query, '/proxy/')" {
