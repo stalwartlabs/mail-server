@@ -398,7 +398,7 @@ impl From<ImapError> for DirectoryError {
         tracing::warn!(
             context = "directory",
             event = "error",
-            protocol = "ldap",
+            protocol = "imap",
             reason = %error,
             "IMAP directory error"
         );

@@ -55,7 +55,7 @@ impl Directory for ImapDirectory {
                 tracing::warn!(
                     context = "remote",
                     event = "error",
-                    protocol = "ldap",
+                    protocol = "imap",
                     "IMAP server does not offer any supported auth mechanisms.",
                 );
                 return Ok(None);
