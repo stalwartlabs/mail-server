@@ -58,7 +58,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Try importing using multiple methods and symmetric algos
     for (file_name, method, num_certs) in [
         ("cert_smime.pem", EncryptionMethod::SMIME, 3),
-        ("cert_pgp.der", EncryptionMethod::PGP, 1),
+        ("cert_pgp.pem", EncryptionMethod::PGP, 1),
     ] {
         params.insert(
             "certificate".to_string(),
