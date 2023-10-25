@@ -21,11 +21,9 @@ base64 = "0.21.2"
 pwhash = "1.0.0"
 rand = "0.8.5"
 clap = { version = "4.1.6", features = ["derive"] }
+zip-extract = "0.1.2"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = "0.2.147"
 flate2 = "1.0.26"
 tar = "0.4.38"
-
-[target.'cfg(target_env = "msvc")'.dependencies]
-zip-extract = "0.1.2"

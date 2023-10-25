@@ -398,7 +398,7 @@ async fn antispam() {
                                 .rcpt_to
                                 .push(SessionAddress::new(value.to_string()));
                         }
-                        "iprev.ptr" | "dmarc.from" => {
+                        "iprev.ptr" => {
                             variables.insert(param.to_string(), value.to_string().into());
                         }
                         "dmarc.result" => {

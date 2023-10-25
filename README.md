@@ -26,6 +26,16 @@ Key features:
   - Inbound throttling and filtering with granular configuration rules, sieve scripting and milter integration.
   - Virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
+- **Spam and Phishing** filter:
+  - Comprehensive set of filtering **rules** on par with popular solutions.
+  - Statistical **spam classifier** with automatic training capabilities.
+  - DNS Blocklists (**DNSBLs**) checking of IP addresses, domains, and hashes.
+  - Collaborative digest-based spam filtering with **Pyzor**.
+  - **Phishing** protection against homographic URL attacks, sender spoofing and other techniques.
+  - Trusted **reply** tracking to recognize and prioritize genuine e-mail replies.
+  - Sender **reputation** monitoring by IP address, ASN, domain and email address.
+  - **Greylisting** to temporarily defer unknown senders.
+  - **Spam traps** to set up decoy email addresses that catch and analyze spam.
 - **Flexible**:
   - **LDAP** directory and **SQL** database authentication.
   - Full-text search available in 17 languages.

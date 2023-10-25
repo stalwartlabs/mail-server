@@ -25,7 +25,7 @@ use std::{
     fs,
     io::Cursor,
     path::{Path, PathBuf},
-    time::SystemTime,
+    process::exit,
 };
 
 use base64::{engine::general_purpose, Engine};
@@ -36,11 +36,7 @@ use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use rusqlite::{Connection, OpenFlags};
 
-const CFG_COMMON: &str = "../../../resources/config/common.toml";
-const CFG_DIRECTORY: &str = "../../../resources/config/directory_sql.toml";
-const CFG_JMAP: &str = "../../../resources/config/jmap.toml";
-const CFG_IMAP: &str = "../../../resources/config/imap.toml";
-const CFG_SMTP: &str = "../../../resources/config/smtp.toml";
+const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
 
 #[cfg(target_os = "linux")]
 const SERVICE: &str = include_str!("../../../resources/systemd/stalwart-mail.service");
@@ -163,14 +159,17 @@ fn main() -> std::io::Result<()> {
     };
     create_directories(&base_path)?;
 
+    // Download and unpack configuration files
+    let cfg_path = base_path.join("etc");
+    if let Err(err) = zip_extract::extract(Cursor::new(download(CONFIG_URL)), &cfg_path, true) {
+        eprintln!(
+            "❌ Failed to unpack configuration bundle {}: {}",
+            CONFIG_URL, err
+        );
+        return Ok(());
+    }
+
     // Build configuration file
-    let mut cfg_file = match component {
-        Component::AllInOne | Component::Imap => {
-            [CFG_COMMON, CFG_DIRECTORY, CFG_JMAP, CFG_IMAP, CFG_SMTP].join("\n")
-        }
-        Component::Jmap => [CFG_COMMON, CFG_DIRECTORY, CFG_JMAP, CFG_SMTP].join("\n"),
-        Component::Smtp => [CFG_COMMON, CFG_DIRECTORY, CFG_SMTP].join("\n"),
-    };
     let mut download_url = None;
 
     // Obtain database engine
@@ -232,37 +231,28 @@ fn main() -> std::io::Result<()> {
             ],
             Directory::None,
         )?;
-        cfg_file = cfg_file
-            .replace(
-                "__BLOB_STORE__",
-                match blob {
-                    Blob::Local => "local",
-                    _ => "s3",
-                },
-            )
-            .replace("__NEXT_HOP__", "local")
-            .replace(
-                "__DIRECTORY__",
-                match directory {
-                    Directory::Sql | Directory::None => "sql",
-                    Directory::Ldap => "ldap",
-                },
-            )
-            .replace(
-                "__SMTP_DIRECTORY__",
-                match directory {
-                    Directory::Sql | Directory::None => "sql",
-                    Directory::Ldap => "ldap",
-                },
-            )
-            .replace(
+
+        // Update settings
+        if blob != Blob::Local {
+            sed(
+                cfg_path.join("jmap").join("store.toml"),
+                &[("\"local\"", "\"s3\"")],
+            );
+        }
+        if directory == Directory::Ldap {
+            sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
+        }
+        sed(
+            cfg_path.join("jmap").join("oauth.toml"),
+            &[(
                 "__OAUTH_KEY__",
-                &thread_rng()
+                thread_rng()
                     .sample_iter(Alphanumeric)
                     .take(64)
                     .map(char::from)
                     .collect::<String>(),
-            );
+            )],
+        );
 
         directory
     } else {
@@ -276,25 +266,36 @@ fn main() -> std::io::Result<()> {
             ],
             SmtpDirectory::Lmtp,
         )?;
-        cfg_file = cfg_file
-            .replace("__NEXT_HOP__", "lmtp")
-            .replace(
-                "__SMTP_DIRECTORY__",
-                match smtp_directory {
-                    SmtpDirectory::Sql => "sql",
-                    SmtpDirectory::Ldap => "ldap",
-                    SmtpDirectory::Lmtp => "lmtp",
-                    SmtpDirectory::Imap => "imap",
-                },
-            )
-            .replace(
-                "__DIRECTORY__",
-                match smtp_directory {
-                    SmtpDirectory::Sql | SmtpDirectory::Lmtp | SmtpDirectory::Imap => "sql",
-                    SmtpDirectory::Ldap => "ldap",
-                },
-            )
-            .replace("__NEXT_HOP__", "lmtp");
+
+        if smtp_directory == SmtpDirectory::Ldap {
+            sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
+        }
+
+        match smtp_directory {
+            SmtpDirectory::Ldap => {
+                sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
+            }
+            SmtpDirectory::Lmtp | SmtpDirectory::Imap => {
+                let d_type = if smtp_directory == SmtpDirectory::Lmtp {
+                    "lmtp"
+                } else {
+                    "imap"
+                };
+                sed(
+                    cfg_path.join("smtp").join("queue.toml"),
+                    &[("default", d_type)],
+                );
+                sed(
+                    cfg_path.join("smtp").join("session.toml"),
+                    &[("default", d_type)],
+                );
+                sed(
+                    cfg_path.join("config.toml"),
+                    &[("\"%{BASE_PATH}%/etc/directory/", format!("\"%{{BASE_PATH}}%/etc/directory/{d_type}.toml\",\n\t\"%{{BASE_PATH}}%/etc/directory/"))],
+                );
+            }
+            SmtpDirectory::Sql => (),
+        }
 
         if !skip_download {
             download_url = format!(
@@ -326,48 +327,25 @@ fn main() -> std::io::Result<()> {
                 TARGET, PKG_EXTENSION
             ),
         ] {
-            match reqwest::blocking::get(&url).and_then(|r| {
-                if r.status().is_success() {
-                    r.bytes().map(Ok)
-                } else {
-                    Ok(Err(r))
-                }
-            }) {
-                Ok(Ok(bytes)) => {
-                    let unpack_path = if !args.docker {
-                        base_path.join("bin")
-                    } else {
-                        PathBuf::from("/usr/local/bin")
-                    };
+            let bytes = download(&url);
+            let unpack_path = if !args.docker {
+                base_path.join("bin")
+            } else {
+                PathBuf::from("/usr/local/bin")
+            };
 
-                    #[cfg(not(target_env = "msvc"))]
-                    if let Err(err) =
-                        tar::Archive::new(flate2::bufread::GzDecoder::new(Cursor::new(bytes)))
-                            .unpack(unpack_path)
-                    {
-                        eprintln!("❌ Failed to unpack {}: {}", url, err);
-                        return Ok(());
-                    }
+            #[cfg(not(target_env = "msvc"))]
+            if let Err(err) = tar::Archive::new(flate2::bufread::GzDecoder::new(Cursor::new(bytes)))
+                .unpack(unpack_path)
+            {
+                eprintln!("❌ Failed to unpack {}: {}", url, err);
+                return Ok(());
+            }
 
-                    #[cfg(target_env = "msvc")]
-                    if let Err(err) = zip_extract::extract(Cursor::new(bytes), &unpack_path, true) {
-                        eprintln!("❌ Failed to unpack {}: {}", url, err);
-                        return Ok(());
-                    }
-                }
-                Ok(Err(response)) => {
-                    eprintln!(
-                        "❌ Failed to download {}, make sure your platform is supported: {}",
-                        url,
-                        response.status()
-                    );
-                    return Ok(());
-                }
-
-                Err(err) => {
-                    eprintln!("❌ Failed to download {}: {}", url, err);
-                    return Ok(());
-                }
+            #[cfg(target_env = "msvc")]
+            if let Err(err) = zip_extract::extract(Cursor::new(bytes), &unpack_path, true) {
+                eprintln!("❌ Failed to unpack {}: {}", url, err);
+                return Ok(());
             }
         }
     }
@@ -423,42 +401,43 @@ fn main() -> std::io::Result<()> {
     // Generate DKIM key and instructions
     let dkim_instructions = generate_dkim(&base_path, &domain, &hostname)?;
 
-    // Create authentication SQLite database
-    let admin_password = if matches!(directory, Directory::None) {
-        create_databases(&base_path, &domain)?.into()
-    } else {
-        None
-    };
-
-    // Write config file
-    let cfg_path = base_path.join("etc").join("config.toml");
-    if cfg_path.exists() {
-        // Rename existing config file
-        let backup_path = base_path.join("etc").join(format!(
-            "config.toml.bak.{}",
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0)
-        ));
-        fs::rename(&cfg_path, backup_path)?;
-    }
-    if args.docker {
-        cfg_file = cfg_file
-            .replace("127.0.0.1:8080", "0.0.0.0:8080")
-            .replace("[server.run-as]", "#[server.run-as]")
-            .replace("user = \"stalwart-mail\"", "#user = \"stalwart-mail\"")
-            .replace("group = \"stalwart-mail\"", "#group = \"stalwart-mail\"");
-    }
-    fs::write(
-        cfg_path,
-        cfg_file
-            .replace("__PATH__", base_path.to_str().unwrap())
-            .replace("__DOMAIN__", &domain)
-            .replace("__HOST__", &hostname)
-            .replace("__CERT_PATH__", &cert_path)
-            .replace("__PK_PATH__", &pk_path),
+    // Create authentication and spam filter SQLite databases
+    let admin_password = create_databases(
+        &base_path,
+        if matches!(directory, Directory::None) {
+            Some(&domain)
+        } else {
+            None
+        },
     )?;
+
+    // Update config file
+    if args.docker {
+        sed(
+            cfg_path.join("common").join("server.toml"),
+            &[
+                ("[server.run-as]", "#[server.run-as]"),
+                ("user = \"stalwart-mail\"", "#user = \"stalwart-mail\""),
+                ("group = \"stalwart-mail\"", "#group = \"stalwart-mail\""),
+            ],
+        );
+        sed(
+            cfg_path.join("smtp").join("listener.toml"),
+            &[("127.0.0.1:8080", "[::]:8080")],
+        );
+    }
+    sed(
+        cfg_path.join("config.toml"),
+        &[
+            ("__BASE_PATH__", base_path.to_str().unwrap()),
+            ("__DOMAIN__", &domain),
+            ("__HOST__", &hostname),
+        ],
+    );
+    sed(
+        cfg_path.join("common").join("tls.toml"),
+        &[("__CERT_PATH__", &cert_path), ("__PK_PATH__", &pk_path)],
+    );
 
     // Write service file
     if !args.docker {
@@ -570,6 +549,58 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+fn sed(path: impl AsRef<Path>, replacements: &[(&str, impl AsRef<str>)]) {
+    let path = path.as_ref();
+    match fs::read_to_string(path) {
+        Ok(mut contents) => {
+            for (from, to) in replacements {
+                contents = contents.replace(from, to.as_ref());
+            }
+            if let Err(err) = fs::write(path, contents) {
+                eprintln!(
+                    "❌ Failed to write configuration file {}: {}",
+                    path.display(),
+                    err
+                );
+                exit(1);
+            }
+        }
+        Err(err) => {
+            eprintln!(
+                "❌ Failed to read configuration file {}: {}",
+                path.display(),
+                err
+            );
+            exit(1);
+        }
+    }
+}
+
+fn download(url: &str) -> Vec<u8> {
+    match reqwest::blocking::get(url).and_then(|r| {
+        if r.status().is_success() {
+            r.bytes().map(Ok)
+        } else {
+            Ok(Err(r))
+        }
+    }) {
+        Ok(Ok(bytes)) => bytes.to_vec(),
+        Ok(Err(response)) => {
+            eprintln!(
+                "❌ Failed to download {}, make sure your platform is supported: {}",
+                url,
+                response.status()
+            );
+            exit(1);
+        }
+
+        Err(err) => {
+            eprintln!("❌ Failed to download {}: {}", url, err);
+            exit(1);
+        }
+    }
+}
+
 fn select<T: SelectItem>(prompt: &str, items: &[&str], default: T) -> std::io::Result<T> {
     if let Some(index) = Select::with_theme(&ColorfulTheme::default())
         .items(items)
@@ -659,43 +690,7 @@ fn create_directories(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn create_databases(base_path: &Path, domain: &str) -> std::io::Result<String> {
-    // Create accounts database
-    let mut path = PathBuf::from(base_path);
-    path.push("data");
-    if !path.exists() {
-        fs::create_dir_all(&path)?;
-    }
-    path.push("accounts.sqlite3");
-
-    let conn = Connection::open_with_flags(path, OpenFlags::default()).map_err(|err| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to open database: {}", err),
-        )
-    })?;
-    let secret = thread_rng()
-        .sample_iter(Alphanumeric)
-        .take(12)
-        .map(char::from)
-        .collect::<String>();
-    let hashed_secret = sha512_crypt::hash(&secret).unwrap();
-    for query in [
-        concat!("CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, ","type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)").to_string(),
-        concat!("CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of ","TEXT NOT NULL, PRIMARY KEY (name, member_of))").to_string(),
-        concat!("CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL",", type TEXT, PRIMARY KEY (name, address))").to_string(),
-        format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'individual')"), 
-        format!("INSERT OR REPLACE INTO emails (name, address, type) VALUES ('admin', 'postmaster@{domain}', 'primary')"),
-        "INSERT OR IGNORE INTO group_members (name, member_of) VALUES ('admin', 'superusers')".to_string()
-    ] {
-        conn.execute(&query, []).map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create database: {}", err),
-            )
-        })?;
-    }
-
+fn create_databases(base_path: &Path, domain: Option<&str>) -> std::io::Result<Option<String>> {
     // Create Spam database
     let path = PathBuf::from(base_path)
         .join("data")
@@ -729,7 +724,46 @@ fn create_databases(base_path: &Path, domain: &str) -> std::io::Result<String> {
         })?;
     }
 
-    Ok(secret)
+    if let Some(domain) = domain {
+        // Create accounts database
+        let mut path = PathBuf::from(base_path);
+        path.push("data");
+        if !path.exists() {
+            fs::create_dir_all(&path)?;
+        }
+        path.push("accounts.sqlite3");
+
+        let conn = Connection::open_with_flags(path, OpenFlags::default()).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to open database: {}", err),
+            )
+        })?;
+        let secret = thread_rng()
+            .sample_iter(Alphanumeric)
+            .take(12)
+            .map(char::from)
+            .collect::<String>();
+        let hashed_secret = sha512_crypt::hash(&secret).unwrap();
+        for query in [
+        concat!("CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, ","type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)").to_string(),
+        concat!("CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of ","TEXT NOT NULL, PRIMARY KEY (name, member_of))").to_string(),
+        concat!("CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL",", type TEXT, PRIMARY KEY (name, address))").to_string(),
+        format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'individual')"), 
+        format!("INSERT OR REPLACE INTO emails (name, address, type) VALUES ('admin', 'postmaster@{domain}', 'primary')"),
+        "INSERT OR IGNORE INTO group_members (name, member_of) VALUES ('admin', 'superusers')".to_string()
+    ] {
+        conn.execute(&query, []).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create database: {}", err),
+            )
+        })?;
+    }
+        Ok(Some(secret))
+    } else {
+        Ok(None)
+    }
 }
 
 fn generate_dkim(path: &Path, domain: &str, hostname: &str) -> std::io::Result<String> {

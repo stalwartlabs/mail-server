@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.4.0] - 2023-10-25
+
+This version introduces some breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.
+
+## Added
+- Built-in Spam and Phishing filter.
+- Scheduled queries on some directory types.
+- In-memory maps and lists containing glob or regex patterns.
+- Remote retrieval of in-memory list/maps with fallback mechanisms.
+- Macros and support for including files from TOML config files.
+
+### Changed
+- `config.toml` is now split in multiple TOML files for better organization.
+- **BREAKING:** Configuration key prefix `jmap.sieve` (JMAP Sieve Interpreter) has been renamed to `sieve.untrusted`.
+- **BREAKING:** Configuration key prefix `sieve` (SMTP Sieve Interpreter) has been renamed to `sieve.trusted`.
+
+### Fixed
+
 ## [0.3.10] - 2023-10-17
 
 ## Added

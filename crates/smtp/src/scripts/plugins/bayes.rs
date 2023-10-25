@@ -96,7 +96,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     tracing::debug!(
         parent: span,
         context = "sieve:bayes_train",
-        event = "classify",
+        event = "train",
         is_spam = is_spam,
         num_tokens = model.weights.len(),
     );
