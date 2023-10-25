@@ -28,10 +28,11 @@ Upgrading from `v0.3.x` to `v0.4.0`
    - `etc/jmap/oauth.toml`
    - `etc/smtp/signature.toml`
    - `etc/common/tls.toml`
-4. **Configure the SPAM Filter Database:** Set up and configure the SPAM filter database. More details can be found [here](https://stalw.art/docs/spamfilter/settings/database).
-5. **Review All TOML Files:** Navigate to every TOML file under the `etc/` directory and make necessary changes.
-6. **Update Binary:** Download and substitute the v0.4.0 binary suitable for your platform from [here](https://github.com/stalwartlabs/mail-server/releases/tag/v0.4.0).
-7. **Restart Service:** Conclude by restarting the Stalwart Mail Server service.
+4. **Adjust included files:** If you are using an LDAP directory for authentication, edit `etc/config.toml` and replace the `etc/directory/sql.toml` include with `etc/directory/ldap.toml`.
+5. **Configure the SPAM Filter Database:** Set up and configure the SPAM filter database. More details can be found [here](https://stalw.art/docs/spamfilter/settings/database).
+6. **Review All TOML Files:** Navigate to every TOML file under the `etc/` directory and make necessary changes.
+7. **Update Binary:** Download and substitute the v0.4.0 binary suitable for your platform from [here](https://github.com/stalwartlabs/mail-server/releases/tag/v0.4.0).
+8. **Restart Service:** Conclude by restarting the Stalwart Mail Server service.
 
 ### Alternative Method:
 

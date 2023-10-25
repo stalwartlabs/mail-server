@@ -198,7 +198,11 @@ async fn accept_imap(stream: TcpStream, acceptor: Arc<TlsAcceptor>, in_flight: O
             panic!("Unknown command: {}", buf.trim());
         };
         //print!("<- {}", response);
-        stream.write_all(response.as_bytes()).await.unwrap();
+        for line in response.split_inclusive('\n') {
+            stream.write_all(line.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         if buf.contains("bye") || buf.starts_with("LOGOUT") {
             return;

@@ -90,12 +90,15 @@ impl<T: AsyncRead + AsyncWrite + Unpin> ImapClient<T> {
         tokio::time::timeout(self.timeout, async {
             self.write(b"C0 CAPABILITY\r\n").await?;
 
-            let line = self.read_line().await?;
-            if !matches!(line.get(..12), Some(b"* CAPABILITY")) {
-                return Err(ImapError::InvalidResponse(line.into_string()));
+            let mut line = self.read_line().await?.into_string();
+            if !line.starts_with("* CAPABILITY") {
+                return Err(ImapError::InvalidResponse(line));
+            }
+            while !line.contains("C0 ") {
+                line.push_str(&self.read_line().await?.into_string());
             }
 
-            let mut line_iter = line.iter();
+            let mut line_iter = line.as_bytes().iter();
             let mut parser = Rfc5321Parser::new(&mut line_iter);
             let mut mechanisms = 0;
 
