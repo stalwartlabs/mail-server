@@ -260,7 +260,7 @@ pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
             );
             return Variable::default();
         };
-    let learn_spam = ctx.arguments[2].to_bool();
+    let learn_spam = ctx.arguments[1].to_bool();
 
     // Obtain training counts
     let handle = ctx.handle;

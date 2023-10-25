@@ -33,6 +33,7 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.4.x
         - v0.3.x
         - v0.2.x or lower
     validations:
