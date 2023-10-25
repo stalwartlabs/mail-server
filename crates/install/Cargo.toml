@@ -15,7 +15,7 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-
 rusqlite = { version = "0.29.0", features = ["bundled"] }
 rpassword = "7.0"
 indicatif = "0.17.0"
-dialoguer = "0.10.4"
+dialoguer = "0.11"
 openssl = { version = "0.10.55", features = ["vendored"] }
 base64 = "0.21.2"
 pwhash = "1.0.0"

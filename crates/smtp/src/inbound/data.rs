@@ -409,7 +409,6 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             let params = self
                 .build_script_parameters("data")
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
-                .set_variable("dmarc.from", auth_message.from().to_string())
                 .set_variable(
                     "arc.result",
                     arc_output

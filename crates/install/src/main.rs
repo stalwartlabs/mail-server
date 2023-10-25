@@ -425,7 +425,7 @@ fn main() -> std::io::Result<()> {
 
     // Create authentication SQLite database
     let admin_password = if matches!(directory, Directory::None) {
-        create_auth_db(&base_path, &domain)?.into()
+        create_databases(&base_path, &domain)?.into()
     } else {
         None
     };
@@ -575,7 +575,13 @@ fn select<T: SelectItem>(prompt: &str, items: &[&str], default: T) -> std::io::R
         .items(items)
         .with_prompt(prompt)
         .default(default.to_index())
-        .interact_on_opt(&Term::stderr())?
+        .interact_on_opt(&Term::stderr())
+        .map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to read input: {}", err),
+            )
+        })?
     {
         Ok(T::from_index(index))
     } else {
@@ -594,6 +600,12 @@ fn input(
         .default(default.to_string())
         .validate_with(validator)
         .interact_text_on(&Term::stderr())
+        .map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to read input: {}", err),
+            )
+        })
 }
 
 fn dir_create_if_missing(path: &String) -> Result<(), String> {
@@ -647,8 +659,9 @@ fn create_directories(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn create_auth_db(path: &Path, domain: &str) -> std::io::Result<String> {
-    let mut path = PathBuf::from(path);
+fn create_databases(base_path: &Path, domain: &str) -> std::io::Result<String> {
+    // Create accounts database
+    let mut path = PathBuf::from(base_path);
     path.push("data");
     if !path.exists() {
         fs::create_dir_all(&path)?;
@@ -668,14 +681,47 @@ fn create_auth_db(path: &Path, domain: &str) -> std::io::Result<String> {
         .collect::<String>();
     let hashed_secret = sha512_crypt::hash(&secret).unwrap();
     for query in [
-        "CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)".to_string(),
-        "CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of TEXT NOT NULL, PRIMARY KEY (name, member_of))".to_string(),
-        "CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL, type TEXT, PRIMARY KEY (name, address))".to_string(),
+        concat!("CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, ","type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)").to_string(),
+        concat!("CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of ","TEXT NOT NULL, PRIMARY KEY (name, member_of))").to_string(),
+        concat!("CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL",", type TEXT, PRIMARY KEY (name, address))").to_string(),
         format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'individual')"), 
         format!("INSERT OR REPLACE INTO emails (name, address, type) VALUES ('admin', 'postmaster@{domain}', 'primary')"),
         "INSERT OR IGNORE INTO group_members (name, member_of) VALUES ('admin', 'superusers')".to_string()
     ] {
         conn.execute(&query, []).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to create database: {}", err),
+            )
+        })?;
+    }
+
+    // Create Spam database
+    let path = PathBuf::from(base_path)
+        .join("data")
+        .join("spamfilter.sqlite3");
+    let conn = Connection::open_with_flags(path, OpenFlags::default()).map_err(|err| {
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to open database: {}", err),
+        )
+    })?;
+    for query in [
+        concat!(
+            "CREATE TABLE IF NOT EXISTS bayes_tokens (h1 INTEGER NOT NULL, ",
+            "h2 INTEGER NOT NULL, ws INTEGER, wh INTEGER, PRIMARY KEY (h1, h2))",
+        ),
+        concat!(
+            "CREATE TABLE IF NOT EXISTS seen_ids (id STRING NOT NULL PRIMARY KEY",
+            ", ttl DATETIME NOT NULL)",
+        ),
+        concat!(
+            "CREATE TABLE IF NOT EXISTS reputation (token STRING NOT NULL PRIMARY KEY",
+            ", score FLOAT NOT NULL DEFAULT '0', count INT(11) NOT NULL ",
+            "DEFAULT '0', ttl DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        ),
+    ] {
+        conn.execute(query, []).map_err(|err| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to create database: {}", err),
