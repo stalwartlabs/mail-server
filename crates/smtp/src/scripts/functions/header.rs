@@ -75,6 +75,14 @@ pub fn fn_attachment_name<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variabl
         .into()
 }
 
+pub fn fn_mime_part_len<'x>(ctx: &'x Context<'x, SieveContext>, _: Vec<Variable>) -> Variable {
+    ctx.message()
+        .part(ctx.part())
+        .map(|p| p.len())
+        .unwrap_or_default()
+        .into()
+}
+
 pub fn fn_thread_name<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| thread_name(s).into())
 }

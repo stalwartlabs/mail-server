@@ -8,6 +8,8 @@ if eval "!header.mime-version.exists" {
 
 let "has_text_part" "0";
 let "is_encrypted" "0";
+let "parts_num" "0";
+let "parts_max_len" "0";
 
 if eval "header.Content-Type.exists && !header.Content-Disposition:Content-Transfer-Encoding:MIME-Version.exists && !eq_ignore_case(header.Content-Type, 'text/plain')" {
     # Only Content-Type header without other MIME headers
@@ -97,49 +99,60 @@ foreverypart {
         } elsif eval "subtype == 'encrypted'" {
             set "is_encrypted" "1";
         }
-    } elsif eval "type == 'text'" {
-        # MIME text part claims to be ASCII but isn't
-        if eval "cte == '' || cte == '7bit'" {
-            if eval "!is_ascii(part.raw)" {
-                let "t.R_BAD_CTE_7BIT" "1";
-            }
-        } else {
-            if eval "cte == 'base64'" {
-                if eval "is_ascii(part.text)" {
-                    # Has text part encoded in base64 that does not contain any 8bit characters
-                    let "t.MIME_BASE64_TEXT_BOGUS" "1";
-                } else {
-                    # Has text part encoded in base64
-                    let "t.MIME_BASE64_TEXT" "1";
+    } else {
+        if eval "type == 'text'" {
+            # MIME text part claims to be ASCII but isn't
+            if eval "cte == '' || cte == '7bit'" {
+                if eval "!is_ascii(part.raw)" {
+                    let "t.R_BAD_CTE_7BIT" "1";
+                }
+            } else {
+                if eval "cte == 'base64'" {
+                    if eval "is_ascii(part.text)" {
+                        # Has text part encoded in base64 that does not contain any 8bit characters
+                        let "t.MIME_BASE64_TEXT_BOGUS" "1";
+                    } else {
+                        # Has text part encoded in base64
+                        let "t.MIME_BASE64_TEXT" "1";
+                    }
+                }
+
+                if eval "subtype == 'plain' && is_empty(header.content-type.attr.charset)" {
+                    # Charset header is missing
+                    let "t.R_MISSING_CHARSET" "1";
                 }
             }
-
-            if eval "subtype == 'plain' && is_empty(header.content-type.attr.charset)" {
-                # Charset header is missing
-                let "t.R_MISSING_CHARSET" "1";
+            let "has_text_part" "1";
+        } elsif eval "type == 'application'" {
+            if eval "subtype == 'pkcs7-mime'" {
+                let "t.ENCRYPTED_SMIME" "1";
+                let "part_is_attachment" "0";
+            } elsif eval "subtype == 'pkcs7-signature'" {
+                let "t.SIGNED_SMIME" "1";
+                let "part_is_attachment" "0";
+            } elsif eval "subtype == 'pgp-encrypted'" {
+                let "t.ENCRYPTED_PGP" "1";
+                let "part_is_attachment" "0";
+            } elsif eval "subtype == 'pgp-signature'" {
+                let "t.SIGNED_PGP" "1";
+                let "part_is_attachment" "0";
+            } elsif eval "subtype == 'octet-stream'" {
+                if eval "!is_encrypted &&
+                        !header.content-id.exists && 
+                        (!header.content-disposition.exists || 
+                        (!eq_ignore_case(header.content-disposition.type, 'attachment') && 
+                        is_empty(header.content-disposition.attr.filename)))" {
+                    let "t.CTYPE_MISSING_DISPOSITION" "1";
+                }
             }
         }
-        let "has_text_part" "1";
-    } elsif eval "type == 'application'" {
-        if eval "subtype == 'pkcs7-mime'" {
-            let "t.ENCRYPTED_SMIME" "1";
-            let "part_is_attachment" "0";
-        } elsif eval "subtype == 'pkcs7-signature'" {
-            let "t.SIGNED_SMIME" "1";
-            let "part_is_attachment" "0";
-        } elsif eval "subtype == 'pgp-encrypted'" {
-            let "t.ENCRYPTED_PGP" "1";
-            let "part_is_attachment" "0";
-        } elsif eval "subtype == 'pgp-signature'" {
-            let "t.SIGNED_PGP" "1";
-            let "part_is_attachment" "0";
-        } elsif eval "subtype == 'octet-stream'" {
-            if eval "!is_encrypted &&
-                     !header.content-id.exists && 
-                     (!header.content-disposition.exists || 
-                      (!eq_ignore_case(header.content-disposition.type, 'attachment') && 
-                       is_empty(header.content-disposition.attr.filename)))" {
-                let "t.CTYPE_MISSING_DISPOSITION" "1";
+
+        # Increase part count
+        let "parts_num" "parts_num + 1";
+        if eval "parts_num == 1" {
+            let "parts_len" "mime_part_len()";
+            if eval "parts_len > parts_max_len" {
+                let "parts_max_len" "parts_len";
             }
         }
     }
@@ -201,8 +214,16 @@ foreverypart {
 
 }
 
+# Message contains both text and encrypted parts
 if eval "has_text_part && (t.ENCRYPTED_SMIME || t.SIGNED_SMIME || t.ENCRYPTED_PGP || t.SIGNED_PGP)" {
     let "t.BOGUS_ENCRYPTED_AND_TEXT" "1";
+}
+
+# Message contains only one short part
+if eval "parts_num == 1 && parts_max_len < 64" {
+    let "t.SINGLE_SHORT_PART" "1";
+} elsif eval "parts_max_len == 0" {
+    let "t.COMPLETELY_EMPTY" "1";
 }
 
 # Check for mixed script in body

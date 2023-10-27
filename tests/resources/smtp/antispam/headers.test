@@ -77,3 +77,9 @@ List-Unsubscribe: 1
 Subject: test
 
 Test
+<!-- NEXT TEST -->
+expect MISSING_ESSENTIAL_HEADERS
+
+X-Other: test
+
+Test

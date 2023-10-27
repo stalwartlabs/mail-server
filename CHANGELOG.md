@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.4.1] - 2023-10-26
+
+## Added
+
+### Changed
+
+### Fixed
+- Dockerfile entrypoint script.
+- `bayes_is_balanced` function.
+
 ## [0.4.0] - 2023-10-25
 
 This version introduces some breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.

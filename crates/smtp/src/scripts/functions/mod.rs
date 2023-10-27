@@ -110,6 +110,7 @@ pub fn register_functions() -> FunctionMap<SieveContext> {
         .with_function_no_args("is_body", fn_is_body)
         .with_function_no_args("var_names", fn_is_var_names)
         .with_function_no_args("attachment_name", fn_attachment_name)
+        .with_function_no_args("mime_part_len", fn_mime_part_len)
 }
 
 pub trait ApplyString<'x> {

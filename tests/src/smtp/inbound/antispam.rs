@@ -212,7 +212,12 @@ async fn antispam() {
         )
         .replace("%CFG_PATH%", base_path.as_path().to_str().unwrap());
     let base_path = base_path.join("scripts");
-    let script_config = fs::read_to_string(base_path.join("config.sieve")).unwrap();
+    let script_config = fs::read_to_string(base_path.join("config.sieve"))
+        .unwrap()
+        .replace(
+            "AUTOLEARN_SPAM_HAM_BALANCE\" \"0.9",
+            "AUTOLEARN_SPAM_HAM_BALANCE\" \"0.0",
+        );
     let script_prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     let mut all_scripts = script_config.clone() + "\n" + script_prelude.as_str();
     for test_name in tests {

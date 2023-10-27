@@ -1,17 +1,17 @@
-expect MISSING_MIME_VERSION
+expect MISSING_MIME_VERSION SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="us-ascii"
 
 Test
 <!-- NEXT TEST -->
-expect MV_CASE
+expect MV_CASE SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="us-ascii"
 Mime-Version: 1.0
 
 Test
 <!-- NEXT TEST -->
-expect CTE_CASE CT_EXTRA_SEMI
+expect CTE_CASE CT_EXTRA_SEMI SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="us-ascii"; 
 Content-Transfer-Encoding: 7Bit
@@ -19,7 +19,7 @@ MIME-Version: 1.0
 
 Test
 <!-- NEXT TEST -->
-expect BROKEN_CONTENT_TYPE
+expect BROKEN_CONTENT_TYPE SINGLE_SHORT_PART
 
 Content-Type: ; tag=1
 Content-Transfer-Encoding: 7bit
@@ -27,13 +27,13 @@ MIME-Version: 1.0
 
 Test
 <!-- NEXT TEST -->
-expect MIME_HEADER_CTYPE_ONLY MISSING_MIME_VERSION
+expect MIME_HEADER_CTYPE_ONLY MISSING_MIME_VERSION SINGLE_SHORT_PART
 
 Content-Type: text/html; charset="us-ascii"
 
 Test
 <!-- NEXT TEST -->
-expect R_BAD_CTE_7BIT
+expect R_BAD_CTE_7BIT SINGLE_SHORT_PART
 
 Content-Type: text/plain
 Content-Transfer-Encoding: 7bit
@@ -41,7 +41,7 @@ MIME-Version: 1.0
 
 Téstíng
 <!-- NEXT TEST -->
-expect R_MISSING_CHARSET
+expect R_MISSING_CHARSET SINGLE_SHORT_PART
 
 Content-Type: text/plain
 Content-Transfer-Encoding: 8bit
@@ -49,7 +49,7 @@ MIME-Version: 1.0
 
 Test
 <!-- NEXT TEST -->
-expect MIME_BASE64_TEXT_BOGUS
+expect MIME_BASE64_TEXT_BOGUS SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: base64
@@ -58,7 +58,7 @@ MIME-Version: 1.0
 aGVsbG8gd29ybGQK
 
 <!-- NEXT TEST -->
-expect MIME_BASE64_TEXT
+expect MIME_BASE64_TEXT SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: base64
@@ -281,7 +281,7 @@ Content-Transfer-Encoding: 7bit
 </html>
 --boundary--
 <!-- NEXT TEST -->
-expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT
+expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT SINGLE_SHORT_PART
 
 Content-Type: application/octet-stream
 MIME-Version: 1.0
@@ -326,7 +326,7 @@ this is a test
 
 --boundary--
 <!-- NEXT TEST -->
-expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT
+expect CTYPE_MISSING_DISPOSITION HAS_ATTACHMENT SINGLE_SHORT_PART
 
 Content-Type: application/octet-stream
 MIME-Version: 1.0
@@ -353,7 +353,7 @@ this is a test
 
 --boundary--
 <!-- NEXT TEST -->
-expect R_MIXED_CHARSET
+expect R_MIXED_CHARSET SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 8bit

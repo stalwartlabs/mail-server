@@ -32,8 +32,11 @@ if eval "header.x-priority.exists" {
 }
 
 let "unique_header_names" "to_lowercase(header.Content-Type:Content-Transfer-Encoding:Date:From:Sender:Reply-To:To:Cc:Bcc:Message-ID:In-Reply-To:References:Subject[*].raw_name)";
-if eval "count(unique_header_names) != count(dedup(unique_header_names))" {
+let "unique_header_names_len" "count(unique_header_names)";
+if eval "unique_header_names_len != count(dedup(unique_header_names))" {
     let "t.MULTIPLE_UNIQUE_HEADERS" "1";
+} elsif eval "unique_header_names_len == 0" {
+    let "t.MISSING_ESSENTIAL_HEADERS" "1";
 }
 
 # Wrong case X-Mailer
