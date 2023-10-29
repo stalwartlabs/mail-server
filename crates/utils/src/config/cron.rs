@@ -41,7 +41,8 @@ impl SimpleCron {
             SimpleCron::Day { hour, minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
-                    .unwrap();
+                    .earliest()
+                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
                 if next < now {
                     next + chrono::Duration::days(1)
                 } else {
@@ -51,7 +52,8 @@ impl SimpleCron {
             SimpleCron::Week { day, hour, minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
-                    .unwrap();
+                    .earliest()
+                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
                 if next < now {
                     next + chrono::Duration::days(
                         (7 - now.weekday().number_from_monday() + *day).into(),
@@ -63,7 +65,8 @@ impl SimpleCron {
             SimpleCron::Hour { minute } => {
                 let next = chrono::Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
-                    .unwrap();
+                    .earliest()
+                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
                 if next < now {
                     next + chrono::Duration::hours(1)
                 } else {
