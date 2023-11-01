@@ -31,7 +31,7 @@ use jmap_proto::{
     request::websocket::{
         WebSocketMessage, WebSocketRequestError, WebSocketResponse, WebSocketStateChange,
     },
-    types::type_state::TypeState,
+    types::type_state::DataType,
 };
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
@@ -80,7 +80,7 @@ impl JMAP {
             return;
         };
         let mut changes = WebSocketStateChange::new(None);
-        let mut change_types: Bitmap<TypeState> = Bitmap::new();
+        let mut change_types: Bitmap<DataType> = Bitmap::new();
 
         loop {
             tokio::select! {

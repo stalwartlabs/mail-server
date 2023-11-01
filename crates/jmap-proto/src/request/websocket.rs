@@ -28,7 +28,7 @@ use crate::{
     parser::{json::Parser, Error, JsonObjectParser, Token},
     request::Call,
     response::{serialize::serialize_hex, Response, ResponseMethod},
-    types::{id::Id, state::State, type_state::TypeState},
+    types::{any_id::AnyId, id::Id, state::State, type_state::DataType},
 };
 use utils::map::vec_map::VecMap;
 
@@ -54,7 +54,7 @@ pub struct WebSocketResponse {
 
     #[serde(rename(deserialize = "createdIds"))]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    created_ids: HashMap<String, Id>,
+    created_ids: HashMap<String, AnyId>,
 
     #[serde(rename = "requestId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -68,7 +68,7 @@ pub enum WebSocketResponseType {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct WebSocketPushEnable {
-    pub data_types: Vec<TypeState>,
+    pub data_types: Vec<DataType>,
     pub push_state: Option<String>,
 }
 
@@ -88,7 +88,7 @@ pub enum WebSocketStateChangeType {
 pub struct WebSocketStateChange {
     #[serde(rename = "@type")]
     pub type_: WebSocketStateChangeType,
-    pub changed: VecMap<Id, VecMap<TypeState, State>>,
+    pub changed: VecMap<Id, VecMap<DataType, State>>,
     #[serde(rename = "pushState")]
     #[serde(skip_serializing_if = "Option::is_none")]
     push_state: Option<String>,
@@ -162,7 +162,7 @@ impl WebSocketMessage {
                     }
                     0x0073_6570_7954_6174_6164 => {
                         push_enable.data_types =
-                            <Option<Vec<TypeState>>>::parse(&mut parser)?.unwrap_or_default();
+                            <Option<Vec<DataType>>>::parse(&mut parser)?.unwrap_or_default();
                         found_push_keys = true;
                     }
                     0x0065_7461_7453_6873_7570 => {

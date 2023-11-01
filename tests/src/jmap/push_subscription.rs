@@ -44,7 +44,7 @@ use jmap::{
     JMAP,
 };
 use jmap_client::{client::Client, mailbox::Role, push_subscription::Keys};
-use jmap_proto::types::{id::Id, type_state::TypeState};
+use jmap_proto::types::{id::Id, type_state::DataType};
 use reqwest::header::CONTENT_ENCODING;
 use store::ahash::AHashSet;
 use tokio::{net::TcpStream, sync::mpsc};
@@ -138,7 +138,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .unwrap()
         .take_id();
 
-    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[DataType::Mailbox]).await;
 
     // Receive states just for the requested types
     client
@@ -192,14 +192,14 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     push_server.fail_requests.store(false, Ordering::Relaxed);
-    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[DataType::Mailbox]).await;
 
     // Make a mailbox change and expect state change
     client
         .mailbox_rename(&mailbox_id, "My Mailbox")
         .await
         .unwrap();
-    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[DataType::Mailbox]).await;
     //expect_nothing(&mut event_rx).await;
 
     // Multiple change updates should be grouped and pushed in intervals
@@ -209,7 +209,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             .await
             .unwrap();
     }
-    assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
+    assert_state(&mut event_rx, &account_id, &[DataType::Mailbox]).await;
     expect_nothing(&mut event_rx).await;
 
     // Destroy mailbox
@@ -365,7 +365,7 @@ async fn expect_nothing(event_rx: &mut mpsc::Receiver<PushMessage>) {
     }
 }
 
-async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state: &[TypeState]) {
+async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state: &[DataType]) {
     assert_eq!(
         expect_push(event_rx)
             .await
@@ -375,8 +375,8 @@ async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state
             .unwrap()
             .iter()
             .map(|x| x.0)
-            .collect::<AHashSet<&TypeState>>(),
-        state.iter().collect::<AHashSet<&TypeState>>()
+            .collect::<AHashSet<&DataType>>(),
+        state.iter().collect::<AHashSet<&DataType>>()
     );
 }
 

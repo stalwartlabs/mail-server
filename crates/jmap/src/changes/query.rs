@@ -51,6 +51,7 @@ impl JMAP {
                         query::RequestArguments::EmailSubmission => {
                             changes::RequestArguments::EmailSubmission
                         }
+                        query::RequestArguments::Quota => changes::RequestArguments::Quota,
                         _ => return Err(MethodError::UnknownMethod("Unknown method".to_string())),
                     },
                 },
@@ -97,6 +98,7 @@ impl JMAP {
                 query::RequestArguments::EmailSubmission => {
                     self.email_submission_query(query).await?
                 }
+                query::RequestArguments::Quota => self.quota_query(query).await?,
                 _ => unreachable!(),
             };
 

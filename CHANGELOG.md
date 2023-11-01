@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.4.2] - 2023-11-01
+
+## Added
+- JMAP for Quotas support ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html))
+- JMAP Blob Management Extension support ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html))
+- Spam Filter - Empty header rules.
+
+### Changed
+
+### Fixed
+- Daylight savings time support for crontabs.
+- JMAP `oldState` doesn’t reflect in `*/changes` (#56)
+
 ## [0.4.1] - 2023-10-26
 
 ## Added

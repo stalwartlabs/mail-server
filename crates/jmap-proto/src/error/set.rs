@@ -182,12 +182,20 @@ impl SetError {
         Self::new(SetErrorType::NotFound)
     }
 
+    pub fn blob_not_found() -> Self {
+        Self::new(SetErrorType::BlobNotFound)
+    }
+
     pub fn over_quota() -> Self {
         Self::new(SetErrorType::OverQuota).with_description("Account quota exceeded.")
     }
 
     pub fn already_exists() -> Self {
         Self::new(SetErrorType::AlreadyExists)
+    }
+
+    pub fn too_large() -> Self {
+        Self::new(SetErrorType::TooLarge)
     }
 
     pub fn will_destroy() -> Self {

@@ -23,20 +23,20 @@
 
 use crate::{
     error::method::MethodError,
-    object::{email, Object},
+    object::{blob, email, Object},
     parser::{json::Parser, Error, JsonObjectParser, Token},
     request::{
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
         RequestProperty, RequestPropertyParser,
     },
-    types::{id::Id, property::Property, state::State, value::Value},
+    types::{any_id::AnyId, blob::BlobId, id::Id, property::Property, state::State, value::Value},
 };
 
 #[derive(Debug, Clone)]
 pub struct GetRequest<T> {
     pub account_id: Id,
-    pub ids: Option<MaybeReference<Vec<Id>, ResultReference>>,
+    pub ids: Option<MaybeReference<Vec<MaybeReference<AnyId, String>>, ResultReference>>,
     pub properties: Option<MaybeReference<Vec<Property>, ResultReference>>,
     pub arguments: T,
 }
@@ -52,6 +52,8 @@ pub enum RequestArguments {
     SieveScript,
     VacationResponse,
     Principal,
+    Quota,
+    Blob(blob::GetArguments),
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -66,7 +68,7 @@ pub struct GetResponse {
     pub list: Vec<Object<Value>>,
 
     #[serde(rename = "notFound")]
-    pub not_found: Vec<Id>,
+    pub not_found: Vec<AnyId>,
 }
 
 impl JsonObjectParser for GetRequest<RequestArguments> {
@@ -85,6 +87,8 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 MethodObject::SieveScript => RequestArguments::SieveScript,
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::Principal => RequestArguments::Principal,
+                MethodObject::Blob => RequestArguments::Blob(Default::default()),
+                MethodObject::Quota => RequestArguments::Quota,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/get",
@@ -108,7 +112,17 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 }
                 0x0073_6469 => {
                     request.ids = if !key.is_ref {
-                        <Option<Vec<Id>>>::parse(parser)?.map(MaybeReference::Value)
+                        if parser.ctx != MethodObject::Blob {
+                            <Option<Vec<MaybeReference<Id, String>>>>::parse(parser)?.map(|ids| {
+                                MaybeReference::Value(ids.into_iter().map(Into::into).collect())
+                            })
+                        } else {
+                            <Option<Vec<MaybeReference<BlobId, String>>>>::parse(parser)?.map(
+                                |ids| {
+                                    MaybeReference::Value(ids.into_iter().map(Into::into).collect())
+                                },
+                            )
+                        }
                     } else {
                         Some(MaybeReference::Reference(ResultReference::parse(parser)?))
                     };
@@ -138,10 +152,10 @@ impl RequestPropertyParser for RequestArguments {
         parser: &mut Parser,
         property: RequestProperty,
     ) -> crate::parser::Result<bool> {
-        if let RequestArguments::Email(arguments) = self {
-            arguments.parse(parser, property)
-        } else {
-            Ok(false)
+        match self {
+            RequestArguments::Email(arguments) => arguments.parse(parser, property),
+            RequestArguments::Blob(arguments) => arguments.parse(parser, property),
+            _ => Ok(false),
         }
     }
 }
@@ -181,7 +195,31 @@ impl<T> GetRequest<T> {
         if let Some(ids) = self.ids.take() {
             let ids = ids.unwrap();
             if ids.len() <= max_objects_in_get {
-                Ok(Some(ids))
+                Ok(Some(
+                    ids.into_iter()
+                        .filter_map(|id| id.try_unwrap().and_then(|id| id.into_id()))
+                        .collect::<Vec<_>>(),
+                ))
+            } else {
+                Err(MethodError::RequestTooLarge)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn unwrap_blob_ids(
+        &mut self,
+        max_objects_in_get: usize,
+    ) -> Result<Option<Vec<BlobId>>, MethodError> {
+        if let Some(ids) = self.ids.take() {
+            let ids = ids.unwrap();
+            if ids.len() <= max_objects_in_get {
+                Ok(Some(
+                    ids.into_iter()
+                        .filter_map(|id| id.try_unwrap().and_then(|id| id.into_blob_id()))
+                        .collect::<Vec<_>>(),
+                ))
             } else {
                 Err(MethodError::RequestTooLarge)
             }

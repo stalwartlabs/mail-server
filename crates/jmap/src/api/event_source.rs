@@ -31,7 +31,7 @@ use hyper::{
     body::{Bytes, Frame},
     header, StatusCode,
 };
-use jmap_proto::{error::request::RequestError, types::type_state::TypeState};
+use jmap_proto::{error::request::RequestError, types::type_state::DataType};
 use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, JMAP, LONG_SLUMBER};
@@ -63,7 +63,7 @@ impl JMAP {
                         if type_state == "*" {
                             types = Bitmap::all();
                             break;
-                        } else if let Ok(type_state) = TypeState::try_from(type_state) {
+                        } else if let Ok(type_state) = DataType::try_from(type_state) {
                             types.insert(type_state);
                         } else {
                             return RequestError::invalid_parameters().into_http_response();

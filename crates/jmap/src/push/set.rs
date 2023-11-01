@@ -31,7 +31,7 @@ use jmap_proto::{
         collection::Collection,
         date::UTCDate,
         property::Property,
-        type_state::TypeState,
+        type_state::DataType,
         value::{MaybePatchValue, Value},
     },
 };
@@ -99,12 +99,13 @@ impl JMAP {
             }
 
             // Add expiry time if missing
-            if !push.properties.contains_key(&Property::Expires) {
-                push.append(
-                    Property::Expires,
-                    Value::Date(UTCDate::from_timestamp(now() as i64 + EXPIRES_MAX)),
-                )
-            }
+            let expires = if let Some(expires) = push.properties.get(&Property::Expires) {
+                expires.clone()
+            } else {
+                let expires = Value::Date(UTCDate::from_timestamp(now() as i64 + EXPIRES_MAX));
+                push.append(Property::Expires, expires.clone());
+                expires
+            };
 
             // Generate random verification code
             push.append(
@@ -130,7 +131,13 @@ impl JMAP {
                 .value(Property::Value, push, F_VALUE);
             push_ids.insert(document_id);
             self.write_batch(batch).await?;
-            response.created(id, document_id);
+            response.created.insert(
+                id,
+                Object::with_capacity(1)
+                    .with_property(Property::Id, Value::Id(document_id.into()))
+                    .with_property(Property::Keys, Value::Null)
+                    .with_property(Property::Expires, expires),
+            );
         }
 
         // Process updates
@@ -258,7 +265,7 @@ fn validate_push_value(
             if value.iter().all(|value| {
                 value
                     .as_string()
-                    .and_then(|value| TypeState::try_from(value).ok())
+                    .and_then(|value| DataType::try_from(value).ok())
                     .is_some()
             }) =>
         {

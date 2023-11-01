@@ -42,7 +42,7 @@ use jmap_proto::{
     object::Object,
     types::{
         acl::Acl, blob::BlobId, collection::Collection, id::Id, keyword::Keyword,
-        property::Property, state::StateChange, type_state::TypeState, value::Value,
+        property::Property, state::StateChange, type_state::DataType, value::Value,
     },
 };
 use mail_parser::{Address, GetHeader, HeaderName, Message, MessageParser, PartType};
@@ -569,7 +569,7 @@ impl SessionData {
                 modseq = change_id.into();
                 self.jmap
                     .broadcast_state_change(
-                        StateChange::new(account_id).with_change(TypeState::Email, change_id),
+                        StateChange::new(account_id).with_change(DataType::Email, change_id),
                     )
                     .await;
             }

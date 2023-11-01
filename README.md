@@ -13,8 +13,8 @@ Key features:
 - **JMAP** server:
   - JMAP Core ([RFC 8620](https://datatracker.ietf.org/doc/html/rfc8620))
   - JMAP Mail ([RFC 8621](https://datatracker.ietf.org/doc/html/rfc8621))
-  - JMAP over WebSocket ([RFC 8887](https://datatracker.ietf.org/doc/html/rfc8887))
-  - JMAP for Sieve Scripts ([DRAFT-SIEVE-13](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-13.html))
+  - JMAP for Sieve Scripts ([DRAFT-SIEVE-15](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-15.html))
+  - JMAP over WebSocket ([RFC 8887](https://datatracker.ietf.org/doc/html/rfc8887)), JMAP Blob Management ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html)) and JMAP for Quotas ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html)) extensions.
 - **IMAP4** server:
   - IMAP4rev2 ([RFC 9051](https://datatracker.ietf.org/doc/html/rfc9051)) full compliance.
   - IMAP4rev1 ([RFC 3501](https://datatracker.ietf.org/doc/html/rfc3501)) backwards compatible.

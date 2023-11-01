@@ -39,7 +39,7 @@ use jmap_proto::{
         id::Id,
         property::Property,
         state::StateChange,
-        type_state::TypeState,
+        type_state::DataType,
         value::{MaybePatchValue, SetValue, Value},
     },
 };
@@ -245,11 +245,11 @@ impl JMAP {
         // Write changes
         if !changes.is_empty() {
             let state_change =
-                StateChange::new(account_id).with_change(TypeState::Mailbox, changes.change_id);
+                StateChange::new(account_id).with_change(DataType::Mailbox, changes.change_id);
             ctx.response.state_change = if did_remove_emails {
                 state_change
-                    .with_change(TypeState::Email, changes.change_id)
-                    .with_change(TypeState::Thread, changes.change_id)
+                    .with_change(DataType::Email, changes.change_id)
+                    .with_change(DataType::Thread, changes.change_id)
             } else {
                 state_change
             }

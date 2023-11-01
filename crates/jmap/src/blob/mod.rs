@@ -25,6 +25,7 @@ use jmap_proto::types::{blob::BlobId, id::Id};
 
 pub mod copy;
 pub mod download;
+pub mod get;
 pub mod upload;
 
 #[derive(Debug, serde::Serialize)]

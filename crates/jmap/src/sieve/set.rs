@@ -263,8 +263,8 @@ impl JMAP {
                     match id {
                         MaybeReference::Value(id) => id.document_id(),
                         MaybeReference::Reference(id_ref) => match ctx.response.get_id(&id_ref) {
-                            Some(id) => id.document_id(),
-                            None => return Ok(ctx.response),
+                            Some(Value::Id(id)) => id.document_id(),
+                            _ => return Ok(ctx.response),
                         },
                     }
                     .into(),

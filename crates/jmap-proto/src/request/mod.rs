@@ -40,15 +40,17 @@ use crate::{
         copy::{self, CopyBlobRequest, CopyRequest},
         get::{self, GetRequest},
         import::ImportEmailRequest,
+        lookup::BlobLookupRequest,
         parse::ParseEmailRequest,
         query::{self, QueryRequest},
         query_changes::QueryChangesRequest,
         search_snippet::GetSearchSnippetRequest,
         set::{self, SetRequest},
+        upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
     parser::{json::Parser, JsonObjectParser},
-    types::id::Id,
+    types::any_id::AnyId,
 };
 
 use self::{echo::Echo, method::MethodName};
@@ -57,7 +59,7 @@ use self::{echo::Echo, method::MethodName};
 pub struct Request {
     pub using: u32,
     pub method_calls: Vec<Call<RequestMethod>>,
-    pub created_ids: Option<HashMap<String, Id>>,
+    pub created_ids: Option<HashMap<String, AnyId>>,
 }
 
 #[derive(Debug)]
@@ -86,6 +88,8 @@ pub enum RequestMethod {
     Query(QueryRequest<query::RequestArguments>),
     SearchSnippet(GetSearchSnippetRequest),
     ValidateScript(ValidateSieveScriptRequest),
+    LookupBlob(BlobLookupRequest),
+    UploadBlob(BlobUploadRequest),
     Echo(Echo),
     Error(MethodError),
 }

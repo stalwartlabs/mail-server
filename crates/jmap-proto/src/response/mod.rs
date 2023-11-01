@@ -33,15 +33,17 @@ use crate::{
         copy::{CopyBlobResponse, CopyResponse},
         get::GetResponse,
         import::ImportEmailResponse,
+        lookup::BlobLookupResponse,
         parse::ParseEmailResponse,
         query::QueryResponse,
         query_changes::QueryChangesResponse,
         search_snippet::GetSearchSnippetResponse,
         set::SetResponse,
+        upload::BlobUploadResponse,
         validate::ValidateSieveScriptResponse,
     },
     request::{echo::Echo, method::MethodName, Call},
-    types::id::Id,
+    types::any_id::AnyId,
 };
 
 use self::serialize::serialize_hex;
@@ -60,6 +62,8 @@ pub enum ResponseMethod {
     Query(QueryResponse),
     SearchSnippet(GetSearchSnippetResponse),
     ValidateScript(ValidateSieveScriptResponse),
+    LookupBlob(BlobLookupResponse),
+    UploadBlob(BlobUploadResponse),
     Echo(Echo),
     Error(MethodError),
 }
@@ -75,11 +79,11 @@ pub struct Response {
 
     #[serde(rename = "createdIds")]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub created_ids: HashMap<String, Id>,
+    pub created_ids: HashMap<String, AnyId>,
 }
 
 impl Response {
-    pub fn new(session_state: u32, created_ids: HashMap<String, Id>, capacity: usize) -> Self {
+    pub fn new(session_state: u32, created_ids: HashMap<String, AnyId>, capacity: usize) -> Self {
         Response {
             session_state,
             created_ids,
@@ -108,8 +112,8 @@ impl Response {
         });
     }
 
-    pub fn push_created_id(&mut self, create_id: String, id: Id) {
-        self.created_ids.insert(create_id, id);
+    pub fn push_created_id(&mut self, create_id: String, id: impl Into<AnyId>) {
+        self.created_ids.insert(create_id, id.into());
     }
 }
 
@@ -188,6 +192,18 @@ impl From<GetSearchSnippetResponse> for ResponseMethod {
 impl From<ValidateSieveScriptResponse> for ResponseMethod {
     fn from(validate_script: ValidateSieveScriptResponse) -> Self {
         ResponseMethod::ValidateScript(validate_script)
+    }
+}
+
+impl From<BlobUploadResponse> for ResponseMethod {
+    fn from(upload_blob: BlobUploadResponse) -> Self {
+        ResponseMethod::UploadBlob(upload_blob)
+    }
+}
+
+impl From<BlobLookupResponse> for ResponseMethod {
+    fn from(lookup_blob: BlobLookupResponse) -> Self {
+        ResponseMethod::LookupBlob(lookup_blob)
     }
 }
 

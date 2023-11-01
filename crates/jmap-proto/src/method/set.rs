@@ -39,6 +39,7 @@ use crate::{
     response::Response,
     types::{
         acl::Acl,
+        any_id::AnyId,
         blob::BlobId,
         date::UTCDate,
         id::Id,
@@ -205,9 +206,9 @@ impl JsonObjectParser for Object<SetValue> {
                         .map(|id| SetValue::Value(Value::Id(id)))
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::BlobId | Property::Picture => parser
-                        .next_token::<BlobId>()?
+                        .next_token::<MaybeReference<BlobId, String>>()?
                         .unwrap_string_or_null("")?
-                        .map(|id| SetValue::Value(Value::BlobId(id)))
+                        .map(SetValue::from)
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::SentAt
                     | Property::ReceivedAt
@@ -272,11 +273,11 @@ impl JsonObjectParser for Object<SetValue> {
                     Property::ParentId | Property::EmailId | Property::IdentityId => parser
                         .next_token::<MaybeReference<Id, String>>()?
                         .unwrap_string_or_null("")?
-                        .map(SetValue::IdReference)
+                        .map(SetValue::from)
                         .unwrap_or(SetValue::Value(Value::Null)),
                     Property::MailboxIds => {
                         if key.patch.is_empty() {
-                            SetValue::IdReferences(
+                            SetValue::from(
                                 <SetValueMap<MaybeReference<Id, String>>>::parse(parser)?.values,
                             )
                         } else {
@@ -372,6 +373,31 @@ impl JsonObjectParser for Object<SetValue> {
         }
 
         Ok(obj)
+    }
+}
+
+impl<T: Into<AnyId>> From<MaybeReference<T, String>> for SetValue {
+    fn from(reference: MaybeReference<T, String>) -> Self {
+        match reference {
+            MaybeReference::Value(id) => SetValue::IdReference(MaybeReference::Value(id.into())),
+            MaybeReference::Reference(reference) => {
+                SetValue::IdReference(MaybeReference::Reference(reference))
+            }
+        }
+    }
+}
+
+impl<T: Into<AnyId>> From<Vec<MaybeReference<T, String>>> for SetValue {
+    fn from(value: Vec<MaybeReference<T, String>>) -> Self {
+        SetValue::IdReferences(
+            value
+                .into_iter()
+                .map(|reference| match reference {
+                    MaybeReference::Value(id) => MaybeReference::Value(id.into()),
+                    MaybeReference::Reference(reference) => MaybeReference::Reference(reference),
+                })
+                .collect(),
+        )
     }
 }
 
@@ -520,7 +546,7 @@ impl SetResponse {
     pub fn update_created_ids(&self, response: &mut Response) {
         for (user_id, obj) in &self.created {
             if let Some(id) = obj.get(&Property::Id).as_id() {
-                response.created_ids.insert(user_id.clone(), *id);
+                response.created_ids.insert(user_id.clone(), (*id).into());
             }
         }
     }

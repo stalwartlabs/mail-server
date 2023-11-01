@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use jmap_proto::types::{state::StateChange, type_state::TypeState};
+use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 use store::ahash::AHashMap;
 use utils::ipc::{DeliveryResult, IngestMessage};
@@ -122,10 +122,10 @@ impl JMAP {
                     if ingested_message.change_id != u64::MAX {
                         self.broadcast_state_change(
                             StateChange::new(uid)
-                                .with_change(TypeState::EmailDelivery, ingested_message.change_id)
-                                .with_change(TypeState::Email, ingested_message.change_id)
-                                .with_change(TypeState::Mailbox, ingested_message.change_id)
-                                .with_change(TypeState::Thread, ingested_message.change_id),
+                                .with_change(DataType::EmailDelivery, ingested_message.change_id)
+                                .with_change(DataType::Email, ingested_message.change_id)
+                                .with_change(DataType::Mailbox, ingested_message.change_id)
+                                .with_change(DataType::Thread, ingested_message.change_id),
                         )
                         .await;
                     }

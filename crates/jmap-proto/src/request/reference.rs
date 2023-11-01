@@ -52,6 +52,13 @@ impl<V, R> MaybeReference<V, R> {
             MaybeReference::Reference(_) => panic!("unwrap() called on MaybeReference::Reference"),
         }
     }
+
+    pub fn try_unwrap(self) -> Option<V> {
+        match self {
+            MaybeReference::Value(v) => Some(v),
+            MaybeReference::Reference(_) => None,
+        }
+    }
 }
 
 impl JsonObjectParser for ResultReference {
@@ -94,6 +101,20 @@ impl JsonObjectParser for ResultReference {
             Err(Error::Method(MethodError::InvalidResultReference(
                 "Missing required fields".into(),
             )))
+        }
+    }
+}
+
+impl<T: JsonObjectParser> JsonObjectParser for MaybeReference<T, String> {
+    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    where
+        Self: Sized,
+    {
+        if let Some(b'#') = parser.peek_char() {
+            parser.next_unescaped()?;
+            String::parse(parser).map(MaybeReference::Reference)
+        } else {
+            T::parse(parser).map(MaybeReference::Value)
         }
     }
 }

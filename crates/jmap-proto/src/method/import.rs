@@ -172,7 +172,7 @@ impl ImportEmailResponse {
     pub fn update_created_ids(&self, response: &mut Response) {
         for (user_id, obj) in &self.created {
             if let Some(id) = obj.get(&Property::Id).as_id() {
-                response.created_ids.insert(user_id.clone(), *id);
+                response.created_ids.insert(user_id.clone(), (*id).into());
             }
         }
     }

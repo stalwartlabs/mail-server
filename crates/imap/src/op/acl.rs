@@ -40,7 +40,7 @@ use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::TypeState, value::Value,
+        type_state::DataType, value::Value,
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
@@ -434,7 +434,7 @@ impl<T: AsyncRead> Session<T> {
                                         data.jmap
                                             .broadcast_state_change(
                                                 StateChange::new(mailbox.account_id)
-                                                    .with_change(TypeState::Mailbox, change_id),
+                                                    .with_change(DataType::Mailbox, change_id),
                                             )
                                             .await;
                                     }

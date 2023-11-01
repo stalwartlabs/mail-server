@@ -26,7 +26,7 @@ use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     request::reference::MaybeReference,
-    types::{collection::Collection, id::Id, property::Property, value::Value},
+    types::{any_id::AnyId, collection::Collection, id::Id, property::Property, value::Value},
 };
 use store::query::Filter;
 
@@ -60,10 +60,14 @@ impl JMAP {
         let do_get = if let Some(MaybeReference::Value(ids)) = request.ids {
             let mut do_get = false;
             for id in ids {
-                if id.is_singleton() {
-                    do_get = true;
-                } else {
-                    response.not_found.push(id);
+                match id.try_unwrap() {
+                    Some(AnyId::Id(id)) if id.is_singleton() => {
+                        do_get = true;
+                    }
+                    Some(id) => {
+                        response.not_found.push(id);
+                    }
+                    _ => {}
                 }
             }
             do_get
@@ -104,10 +108,10 @@ impl JMAP {
                     }
                     response.list.push(result);
                 } else {
-                    response.not_found.push(Id::singleton());
+                    response.not_found.push(Id::singleton().into());
                 }
             } else {
-                response.not_found.push(Id::singleton());
+                response.not_found.push(Id::singleton().into());
             }
         }
 

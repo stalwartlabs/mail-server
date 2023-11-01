@@ -78,7 +78,7 @@ impl JMAP {
             // Obtain the email_submission object
             let document_id = id.document_id();
             if !email_submission_ids.contains(document_id) {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             }
             let mut push = if let Some(push) = self
@@ -92,7 +92,7 @@ impl JMAP {
             {
                 push
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             };
 

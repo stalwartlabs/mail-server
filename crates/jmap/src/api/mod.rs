@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use hyper::StatusCode;
-use jmap_proto::types::{id::Id, state::State, type_state::TypeState};
+use jmap_proto::types::{id::Id, state::State, type_state::DataType};
 use serde::Serialize;
 use utils::map::vec_map::VecMap;
 
@@ -71,7 +71,7 @@ pub enum StateChangeType {
 pub struct StateChangeResponse {
     #[serde(rename = "@type")]
     pub type_: StateChangeType,
-    pub changed: VecMap<Id, VecMap<TypeState, State>>,
+    pub changed: VecMap<Id, VecMap<DataType, State>>,
 }
 
 impl StateChangeResponse {

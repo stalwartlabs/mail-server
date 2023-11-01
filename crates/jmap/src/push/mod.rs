@@ -28,7 +28,7 @@ pub mod set;
 
 use std::time::Instant;
 
-use jmap_proto::types::{id::Id, state::StateChange, type_state::TypeState};
+use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use utils::map::bitmap::Bitmap;
 
 #[derive(Debug)]
@@ -47,7 +47,7 @@ pub struct PushSubscription {
     pub id: u32,
     pub url: String,
     pub expires: u64,
-    pub types: Bitmap<TypeState>,
+    pub types: Bitmap<DataType>,
     pub keys: Option<EncryptionKeys>,
 }
 

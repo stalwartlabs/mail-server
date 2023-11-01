@@ -28,7 +28,7 @@ use utils::codec::{
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};
 
-use super::{type_state::TypeState, ChangeId};
+use super::{type_state::DataType, ChangeId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JMAPIntermediateState {
@@ -48,7 +48,7 @@ pub enum State {
 #[derive(Clone, Debug)]
 pub struct StateChange {
     pub account_id: u32,
-    pub types: Vec<(TypeState, u64)>,
+    pub types: Vec<(DataType, u64)>,
 }
 
 impl StateChange {
@@ -59,7 +59,7 @@ impl StateChange {
         }
     }
 
-    pub fn with_change(mut self, type_state: TypeState, change_id: u64) -> Self {
+    pub fn with_change(mut self, type_state: DataType, change_id: u64) -> Self {
         if let Some((_, last_change_id)) = self.types.iter_mut().find(|(ts, _)| ts == &type_state) {
             *last_change_id = change_id;
         } else {

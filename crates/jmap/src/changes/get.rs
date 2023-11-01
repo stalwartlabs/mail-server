@@ -62,6 +62,11 @@ impl JMAP {
 
                 Collection::EmailSubmission
             }
+            RequestArguments::Quota => {
+                access_token.assert_is_member(request.account_id)?;
+
+                return Err(MethodError::CannotCalculateChanges);
+            }
         };
 
         let max_changes = if self.config.changes_max_results > 0
@@ -73,7 +78,7 @@ impl JMAP {
         };
         let mut response = ChangesResponse {
             account_id: request.account_id,
-            old_state: State::Initial,
+            old_state: request.since_state.clone(),
             new_state: State::Initial,
             has_more_changes: false,
             created: vec![],

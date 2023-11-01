@@ -1,3 +1,10 @@
+Upgrading from `v0.4.0` to `v0.4.2`
+-----------------------------------
+
+- Replace the binary with the new version.
+- Restart the service.
+
+
 Upgrading from `v0.3.x` to `v0.4.0`
 -----------------------------------
 

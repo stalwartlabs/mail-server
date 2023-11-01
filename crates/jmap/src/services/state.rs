@@ -26,7 +26,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use jmap_proto::types::{id::Id, state::StateChange, type_state::TypeState};
+use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use store::ahash::AHashMap;
 use tokio::sync::mpsc;
 use utils::{config::Config, map::bitmap::Bitmap};
@@ -43,7 +43,7 @@ pub enum Event {
     Subscribe {
         id: u32,
         account_id: u32,
-        types: Bitmap<TypeState>,
+        types: Bitmap<DataType>,
         tx: mpsc::Sender<StateChange>,
     },
     Publish {
@@ -61,7 +61,7 @@ pub enum Event {
 
 #[derive(Debug)]
 struct Subscriber {
-    types: Bitmap<TypeState>,
+    types: Bitmap<DataType>,
     subscription: SubscriberType,
 }
 
@@ -97,7 +97,7 @@ pub fn spawn_state_manager(
     tokio::spawn(async move {
         let mut subscribers: AHashMap<u32, AHashMap<u32, Subscriber>> = AHashMap::default();
         let mut shared_accounts: AHashMap<u32, Vec<u32>> = AHashMap::default();
-        let mut shared_accounts_map: AHashMap<u32, AHashMap<u32, Bitmap<TypeState>>> =
+        let mut shared_accounts_map: AHashMap<u32, AHashMap<u32, Bitmap<DataType>>> =
             AHashMap::default();
 
         let mut last_purge = Instant::now();
@@ -154,13 +154,13 @@ pub fn spawn_state_manager(
                             .insert(account_id, Bitmap::all());
                     }
                     for (shared_account_id, shared_collections) in acl.access_to.iter() {
-                        let mut types: Bitmap<TypeState> = Bitmap::new();
+                        let mut types: Bitmap<DataType> = Bitmap::new();
                         for collection in *shared_collections {
-                            if let Ok(type_state) = TypeState::try_from(collection) {
+                            if let Ok(type_state) = DataType::try_from(collection) {
                                 types.insert(type_state);
-                                if type_state == TypeState::Email {
-                                    types.insert(TypeState::EmailDelivery);
-                                    types.insert(TypeState::Thread);
+                                if type_state == DataType::Email {
+                                    types.insert(DataType::EmailDelivery);
+                                    types.insert(DataType::Thread);
                                 }
                             }
                         }
@@ -391,7 +391,7 @@ impl JMAP {
         &self,
         id: u32,
         account_id: u32,
-        types: Bitmap<TypeState>,
+        types: Bitmap<DataType>,
     ) -> Option<mpsc::Receiver<StateChange>> {
         let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
         let state_tx = self.state_tx.clone();

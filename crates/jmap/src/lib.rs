@@ -71,6 +71,7 @@ pub mod identity;
 pub mod mailbox;
 pub mod principal;
 pub mod push;
+pub mod quota;
 pub mod services;
 pub mod sieve;
 pub mod submission;

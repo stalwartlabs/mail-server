@@ -70,7 +70,7 @@ impl JMAP {
             let name = if let Some(name) = self.get_account_name(id.document_id()).await? {
                 name
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             };
 
@@ -83,7 +83,7 @@ impl JMAP {
             {
                 principal
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             };
 

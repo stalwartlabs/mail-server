@@ -35,7 +35,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap_proto::types::{collection::Collection, type_state::TypeState};
+use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::query::log::Query;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use utils::map::bitmap::Bitmap;
@@ -46,16 +46,12 @@ impl<T: AsyncRead> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> crate::OpResult {
         let (data, mailbox, types) = match &self.state {
             State::Authenticated { data, .. } => {
-                (data.clone(), None, Bitmap::from_iter([TypeState::Mailbox]))
+                (data.clone(), None, Bitmap::from_iter([DataType::Mailbox]))
             }
             State::Selected { data, mailbox, .. } => (
                 data.clone(),
                 mailbox.clone().into(),
-                Bitmap::from_iter([
-                    TypeState::Email,
-                    TypeState::Mailbox,
-                    TypeState::EmailDelivery,
-                ]),
+                Bitmap::from_iter([DataType::Email, DataType::Mailbox, DataType::EmailDelivery]),
             ),
             _ => unreachable!(),
         };
@@ -120,10 +116,10 @@ impl<T: AsyncRead> Session<T> {
 
                         for (type_state, _) in state_change.types {
                             match type_state {
-                                TypeState::Email | TypeState::EmailDelivery => {
+                                DataType::Email | DataType::EmailDelivery => {
                                     has_email_changes = true;
                                 }
-                                TypeState::Mailbox => {
+                                DataType::Mailbox => {
                                     has_mailbox_changes = true;
                                 }
                                 _ => {}

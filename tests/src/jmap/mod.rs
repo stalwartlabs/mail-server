@@ -23,10 +23,12 @@
 
 use std::{sync::Arc, time::Duration};
 
+use base64::{engine::general_purpose, Engine};
 use directory::config::ConfigDirectory;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
+use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::{mpsc, watch};
 use utils::{config::ServerProtocol, UnwrapFailure};
@@ -40,6 +42,7 @@ use crate::{
 pub mod auth_acl;
 pub mod auth_limits;
 pub mod auth_oauth;
+pub mod blob;
 pub mod crypto;
 pub mod delivery;
 pub mod email_changes;
@@ -219,12 +222,12 @@ refresh-token-renew = "2s"
 
 #[tokio::test]
 pub async fn jmap_tests() {
-    tracing::subscriber::set_global_default(
+    /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::WARN)
             .finish(),
     )
-    .unwrap();
+    .unwrap();*/
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
@@ -251,6 +254,7 @@ pub async fn jmap_tests() {
     websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
     crypto::test(params.server.clone(), &mut params.client).await;
+    blob::test(params.server.clone(), &mut params.client).await;
 
     if delete {
         params.temp_dir.delete();
@@ -336,6 +340,51 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
         client,
         shutdown_tx,
     }
+}
+
+pub async fn jmap_raw_request(body: impl AsRef<str>, username: &str, secret: &str) -> String {
+    let mut headers = header::HeaderMap::new();
+
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_str(&format!(
+            "Basic {}",
+            general_purpose::STANDARD.encode(format!("{}:{}", username, secret))
+        ))
+        .unwrap(),
+    );
+
+    const BODY_TEMPLATE: &str = r#"{
+        "using": [ "urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:quota" ],
+        "methodCalls": $$
+      }"#;
+
+    String::from_utf8(
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .timeout(Duration::from_millis(1000))
+            .default_headers(headers)
+            .build()
+            .unwrap()
+            .post("https://127.0.0.1:8899/jmap")
+            .body(BODY_TEMPLATE.replace("$$", body.as_ref()))
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap()
+}
+
+pub async fn jmap_json_request(
+    body: impl AsRef<str>,
+    username: &str,
+    secret: &str,
+) -> serde_json::Value {
+    serde_json::from_str(&jmap_raw_request(body, username, secret).await).unwrap()
 }
 
 pub fn find_values(string: &str, name: &str) -> Vec<String> {

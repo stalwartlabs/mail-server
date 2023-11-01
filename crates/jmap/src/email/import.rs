@@ -33,7 +33,7 @@ use jmap_proto::{
         id::Id,
         property::Property,
         state::{State, StateChange},
-        type_state::TypeState,
+        type_state::DataType,
     },
 };
 use mail_parser::MessageParser;
@@ -172,9 +172,9 @@ impl JMAP {
             response.new_state = self.get_state(account_id, Collection::Email).await?;
             if let State::Exact(change_id) = &response.new_state {
                 response.state_change = StateChange::new(account_id)
-                    .with_change(TypeState::Email, *change_id)
-                    .with_change(TypeState::Mailbox, *change_id)
-                    .with_change(TypeState::Thread, *change_id)
+                    .with_change(DataType::Email, *change_id)
+                    .with_change(DataType::Mailbox, *change_id)
+                    .with_change(DataType::Thread, *change_id)
                     .into()
             }
         }

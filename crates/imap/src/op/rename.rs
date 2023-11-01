@@ -32,7 +32,7 @@ use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::TypeState, value::Value,
+        type_state::DataType, value::Value,
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
@@ -203,7 +203,7 @@ impl SessionData {
         // Broadcast changes
         self.jmap
             .broadcast_state_change(
-                StateChange::new(params.account_id).with_change(TypeState::Mailbox, change_id),
+                StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
             )
             .await;
 

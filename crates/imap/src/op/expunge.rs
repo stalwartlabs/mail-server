@@ -35,7 +35,7 @@ use jmap_proto::{
     error::method::MethodError,
     types::{
         acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        state::StateChange, type_state::TypeState,
+        state::StateChange, type_state::DataType,
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE};
@@ -247,9 +247,9 @@ impl SessionData {
             self.jmap
                 .broadcast_state_change(
                     StateChange::new(account_id)
-                        .with_change(TypeState::Email, change_id)
-                        .with_change(TypeState::Mailbox, change_id)
-                        .with_change(TypeState::Thread, change_id),
+                        .with_change(DataType::Email, change_id)
+                        .with_change(DataType::Mailbox, change_id)
+                        .with_change(DataType::Thread, change_id),
                 )
                 .await;
         }

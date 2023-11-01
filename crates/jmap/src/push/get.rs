@@ -26,7 +26,7 @@ use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
-    types::{collection::Collection, property::Property, type_state::TypeState, value::Value},
+    types::{collection::Collection, property::Property, type_state::DataType, value::Value},
 };
 use store::{write::now, BitmapKey, ValueKey};
 use utils::map::bitmap::Bitmap;
@@ -74,7 +74,7 @@ impl JMAP {
             // Obtain the push subscription object
             let document_id = id.document_id();
             if !push_ids.contains(document_id) {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             }
             let mut push = if let Some(push) = self
@@ -88,7 +88,7 @@ impl JMAP {
             {
                 push
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             };
             let mut result = Object::with_capacity(properties.len());
@@ -215,7 +215,7 @@ impl JMAP {
                             for type_state in value {
                                 if let Some(type_state) = type_state
                                     .as_string()
-                                    .and_then(|type_state| TypeState::try_from(type_state).ok())
+                                    .and_then(|type_state| DataType::try_from(type_state).ok())
                                 {
                                     type_states.insert(type_state);
                                 }

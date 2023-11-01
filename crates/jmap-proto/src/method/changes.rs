@@ -68,6 +68,7 @@ pub enum RequestArguments {
     Thread,
     Identity,
     EmailSubmission,
+    Quota,
 }
 
 impl JsonObjectParser for ChangesRequest {
@@ -82,6 +83,7 @@ impl JsonObjectParser for ChangesRequest {
                 MethodObject::Thread => RequestArguments::Thread,
                 MethodObject::Identity => RequestArguments::Identity,
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
+                MethodObject::Quota => RequestArguments::Quota,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/changes",

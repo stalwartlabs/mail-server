@@ -144,7 +144,7 @@ impl JMAP {
         'outer: for id in ids {
             // Obtain the email object
             if !message_ids.contains(id.document_id()) {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             }
             let mut values = match self
@@ -158,7 +158,7 @@ impl JMAP {
             {
                 Some(values) => values,
                 None => {
-                    response.not_found.push(id);
+                    response.not_found.push(id.into());
                     continue;
                 }
             };
@@ -185,7 +185,7 @@ impl JMAP {
                         document_id = id.document_id(),
                         blob_id = ?blob_id,
                         "Blob not found");
-                    response.not_found.push(id);
+                    response.not_found.push(id.into());
                     continue;
                 }
             } else {
@@ -244,7 +244,7 @@ impl JMAP {
                                             collection = ?Collection::Email,
                                             document_id = id.document_id(),
                                             "Mailbox property not found");
-                            response.not_found.push(id);
+                            response.not_found.push(id.into());
                             continue 'outer;
                         }
                     }
@@ -272,7 +272,7 @@ impl JMAP {
                                 collection = ?Collection::Email,
                                 document_id = id.document_id(),
                                 "Keywords property not found");
-                            response.not_found.push(id);
+                            response.not_found.push(id.into());
                             continue 'outer;
                         }
                     }

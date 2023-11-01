@@ -38,7 +38,7 @@ use jmap_proto::{
     error::method::MethodError,
     types::{
         acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        state::StateChange, type_state::TypeState,
+        state::StateChange, type_state::DataType,
     },
 };
 use store::{
@@ -353,10 +353,10 @@ impl SessionData {
             self.jmap
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)
-                        .with_change(TypeState::Email, change_id)
-                        .with_change(TypeState::Mailbox, change_id)
+                        .with_change(DataType::Email, change_id)
+                        .with_change(DataType::Mailbox, change_id)
                 } else {
-                    StateChange::new(account_id).with_change(TypeState::Email, change_id)
+                    StateChange::new(account_id).with_change(DataType::Email, change_id)
                 })
                 .await;
         }

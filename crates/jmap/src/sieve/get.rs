@@ -72,7 +72,7 @@ impl JMAP {
             // Obtain the sieve script object
             let document_id = id.document_id();
             if !push_ids.contains(document_id) {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             }
             let mut push = if let Some(push) = self
@@ -86,7 +86,7 @@ impl JMAP {
             {
                 push
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
                 continue;
             };
             let mut result = Object::with_capacity(properties.len());

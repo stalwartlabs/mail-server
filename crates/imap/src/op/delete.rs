@@ -24,7 +24,7 @@
 use imap_proto::{
     protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
-use jmap_proto::types::{state::StateChange, type_state::TypeState};
+use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
 use tokio::io::AsyncRead;
 
@@ -109,11 +109,11 @@ impl SessionData {
         self.jmap
             .broadcast_state_change(if did_remove_emails {
                 StateChange::new(account_id)
-                    .with_change(TypeState::Mailbox, change_id)
-                    .with_change(TypeState::Email, change_id)
-                    .with_change(TypeState::Thread, change_id)
+                    .with_change(DataType::Mailbox, change_id)
+                    .with_change(DataType::Email, change_id)
+                    .with_change(DataType::Thread, change_id)
             } else {
-                StateChange::new(account_id).with_change(TypeState::Mailbox, change_id)
+                StateChange::new(account_id).with_change(DataType::Mailbox, change_id)
             })
             .await;
 

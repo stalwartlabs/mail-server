@@ -34,6 +34,7 @@ use crate::{
 };
 
 use super::{
+    any_id::AnyId,
     blob::BlobId,
     date::UTCDate,
     id::Id,
@@ -62,8 +63,8 @@ pub enum Value {
 pub enum SetValue {
     Value(Value),
     Patch(Vec<Value>),
-    IdReference(MaybeReference<Id, String>),
-    IdReferences(Vec<MaybeReference<Id, String>>),
+    IdReference(MaybeReference<AnyId, String>),
+    IdReferences(Vec<MaybeReference<AnyId, String>>),
     ResultReference(ResultReference),
 }
 
@@ -191,24 +192,24 @@ impl Value {
         }
     }
 
-    pub fn unwrap_id(self) -> Id {
+    pub fn try_unwrap_id(self) -> Option<Id> {
         match self {
-            Value::Id(id) => id,
-            _ => panic!("Expected id"),
+            Value::Id(id) => id.into(),
+            _ => None,
         }
     }
 
-    pub fn unwrap_bool(self) -> bool {
+    pub fn try_unwrap_bool(self) -> Option<bool> {
         match self {
-            Value::Bool(b) => b,
-            _ => panic!("Expected bool"),
+            Value::Bool(b) => b.into(),
+            _ => None,
         }
     }
 
-    pub fn unwrap_keyword(self) -> Keyword {
+    pub fn try_unwrap_keyword(self) -> Option<Keyword> {
         match self {
-            Value::Keyword(k) => k,
-            _ => panic!("Expected keyword"),
+            Value::Keyword(k) => k.into(),
+            _ => None,
         }
     }
 
@@ -236,13 +237,6 @@ impl Value {
     pub fn try_unwrap_date(self) -> Option<UTCDate> {
         match self {
             Value::Date(d) => Some(d),
-            _ => None,
-        }
-    }
-
-    pub fn try_unwrap_id(self) -> Option<Id> {
-        match self {
-            Value::Id(i) => Some(i),
             _ => None,
         }
     }

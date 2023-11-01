@@ -25,10 +25,7 @@ use std::ops::Deref;
 
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
-use crate::{
-    parser::{json::Parser, JsonObjectParser},
-    request::reference::MaybeReference,
-};
+use crate::parser::{json::Parser, JsonObjectParser};
 
 use super::DocumentId;
 
@@ -60,38 +57,6 @@ impl JsonObjectParser for Id {
         }
 
         Ok(Id { id })
-    }
-}
-
-impl JsonObjectParser for MaybeReference<Id, String> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
-    where
-        Self: Sized,
-    {
-        let ch = parser
-            .next_unescaped()?
-            .ok_or_else(|| parser.error_value())?;
-
-        if ch != b'#' {
-            let mut id = BASE32_INVERSE[ch as usize] as u64;
-
-            if id != u8::MAX as u64 {
-                while let Some(ch) = parser.next_unescaped()? {
-                    let i = BASE32_INVERSE[ch as usize];
-                    if i != u8::MAX {
-                        id = (id << 5) | i as u64;
-                    } else {
-                        return Err(parser.error_value());
-                    }
-                }
-
-                Ok(MaybeReference::Value(Id { id }))
-            } else {
-                Err(parser.error_value())
-            }
-        } else {
-            String::parse(parser).map(MaybeReference::Reference)
-        }
     }
 }
 

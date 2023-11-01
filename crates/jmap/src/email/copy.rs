@@ -43,7 +43,7 @@ use jmap_proto::{
         keyword::Keyword,
         property::Property,
         state::{State, StateChange},
-        type_state::TypeState,
+        type_state::DataType,
         value::{MaybePatchValue, Value},
     },
 };
@@ -139,38 +139,41 @@ impl JMAP {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes = ids
                             .into_iter()
-                            .map(|id| id.unwrap_id().document_id())
+                            .filter_map(|id| id.try_unwrap_id()?.document_id().into())
                             .collect();
                     }
 
                     (Property::MailboxIds, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
-                        let document_id = patch.next().unwrap().unwrap_id().document_id();
-                        if patch.next().unwrap().unwrap_bool() {
-                            if !mailboxes.contains(&document_id) {
-                                mailboxes.push(document_id);
+                        if let Some(id) = patch.next().unwrap().try_unwrap_id() {
+                            let document_id = id.document_id();
+                            if patch.next().unwrap().try_unwrap_bool().unwrap_or_default() {
+                                if !mailboxes.contains(&document_id) {
+                                    mailboxes.push(document_id);
+                                }
+                            } else {
+                                mailboxes.retain(|id| id != &document_id);
                             }
-                        } else {
-                            mailboxes.retain(|id| id != &document_id);
                         }
                     }
 
                     (Property::Keywords, MaybePatchValue::Value(Value::List(keywords_))) => {
                         keywords = keywords_
                             .into_iter()
-                            .map(|keyword| keyword.unwrap_keyword())
+                            .filter_map(|keyword| keyword.try_unwrap_keyword())
                             .collect();
                     }
 
                     (Property::Keywords, MaybePatchValue::Patch(patch)) => {
                         let mut patch = patch.into_iter();
-                        let keyword = patch.next().unwrap().unwrap_keyword();
-                        if patch.next().unwrap().unwrap_bool() {
-                            if !keywords.contains(&keyword) {
-                                keywords.push(keyword);
+                        if let Some(keyword) = patch.next().unwrap().try_unwrap_keyword() {
+                            if patch.next().unwrap().try_unwrap_bool().unwrap_or_default() {
+                                if !keywords.contains(&keyword) {
+                                    keywords.push(keyword);
+                                }
+                            } else {
+                                keywords.retain(|k| k != &keyword);
                             }
-                        } else {
-                            keywords.retain(|k| k != &keyword);
                         }
                     }
                     (Property::ReceivedAt, MaybePatchValue::Value(Value::Date(value))) => {
@@ -252,9 +255,9 @@ impl JMAP {
             response.new_state = self.get_state(account_id, Collection::Email).await?;
             if let State::Exact(change_id) = &response.new_state {
                 response.state_change = StateChange::new(account_id)
-                    .with_change(TypeState::Email, *change_id)
-                    .with_change(TypeState::Mailbox, *change_id)
-                    .with_change(TypeState::Thread, *change_id)
+                    .with_change(DataType::Email, *change_id)
+                    .with_change(DataType::Mailbox, *change_id)
+                    .with_change(DataType::Thread, *change_id)
                     .into()
             }
         }

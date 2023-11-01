@@ -119,8 +119,8 @@ impl BlobId {
         }
     }
 
-    pub fn from_base32(value: &str) -> Option<Self> {
-        BlobId::from_iter(&mut Base32Reader::new(value.as_bytes()))
+    pub fn from_base32(value: impl AsRef<[u8]>) -> Option<Self> {
+        BlobId::from_iter(&mut Base32Reader::new(value.as_ref()))
     }
 
     #[allow(clippy::should_implement_trait)]

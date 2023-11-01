@@ -113,6 +113,8 @@ pub enum Filter {
     HasAnyRole(bool),
     IsSubscribed(bool),
     IsActive(bool),
+    Scope(String),
+    ResourceType(String),
     _T(String),
 
     And,
@@ -149,6 +151,7 @@ pub enum SortProperty {
     HasKeyword,
     AllInThreadHaveKeyword,
     SomeInThreadHaveKeyword,
+    Used,
     _T(String),
 }
 
@@ -159,6 +162,7 @@ pub enum RequestArguments {
     EmailSubmission,
     SieveScript,
     Principal,
+    Quota,
 }
 
 impl JsonObjectParser for QueryRequest<RequestArguments> {
@@ -173,6 +177,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
                 MethodObject::SieveScript => RequestArguments::SieveScript,
                 MethodObject::Principal => RequestArguments::Principal,
+                MethodObject::Quota => RequestArguments::Quota,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/query",
@@ -428,6 +433,14 @@ pub fn parse_filter(parser: &mut Parser) -> crate::parser::Result<Vec<Filter>> {
                         (0x6576_6974_6341_7369, _) => Filter::IsActive(
                             parser.next_token::<String>()?.unwrap_bool("isActive")?,
                         ),
+                        (0x0065_706f_6373, _) => {
+                            Filter::Scope(parser.next_token::<String>()?.unwrap_string("scope")?)
+                        }
+                        (0x6570_7954_6563_7275_6f73_6572, _) => Filter::ResourceType(
+                            parser
+                                .next_token::<String>()?
+                                .unwrap_string("resourceType")?,
+                        ),
                         _ => {
                             if parser.is_eof || parser.skip_string() {
                                 let filter = Filter::_T(
@@ -569,6 +582,7 @@ impl JsonObjectParser for SortProperty {
             0x6472_6f77_7965_4b73_6168 => Ok(SortProperty::HasKeyword),
             0x4b65_7661_4864_6165_7268_546e_496c_6c61 => Ok(SortProperty::AllInThreadHaveKeyword),
             0x6576_6148_6461_6572_6854_6e49_656d_6f73 => Ok(SortProperty::SomeInThreadHaveKeyword),
+            0x6465_7375 => Ok(SortProperty::Used),
             _ => {
                 if parser.is_eof || parser.skip_string() {
                     Ok(SortProperty::_T(
@@ -629,6 +643,8 @@ impl Display for Filter {
             Filter::HasAnyRole(_) => "hasAnyRole",
             Filter::IsSubscribed(_) => "isSubscribed",
             Filter::IsActive(_) => "isActive",
+            Filter::ResourceType(_) => "resourceType",
+            Filter::Scope(_) => "scope",
             Filter::_T(v) => v.as_str(),
             Filter::And => "and",
             Filter::Or => "or",
@@ -659,6 +675,7 @@ impl Display for SortProperty {
             SortProperty::HasKeyword => "hasKeyword",
             SortProperty::AllInThreadHaveKeyword => "allInThreadHaveKeyword",
             SortProperty::SomeInThreadHaveKeyword => "someInThreadHaveKeyword",
+            SortProperty::Used => "used",
             SortProperty::_T(s) => s,
         })
     }

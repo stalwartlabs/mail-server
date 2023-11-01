@@ -27,13 +27,14 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     error::{method::MethodError, set::SetError},
-    method::{copy::CopyResponse, set::SetResponse},
+    method::{copy::CopyResponse, set::SetResponse, upload::DataSourceObject},
     object::Object,
     request::{
         reference::{MaybeReference, ResultReference},
         RequestMethod,
     },
     types::{
+        any_id::AnyId,
         id::Id,
         property::Property,
         value::{MaybePatchValue, SetValue, Value},
@@ -53,11 +54,27 @@ impl Response {
         match request {
             RequestMethod::Get(request) => {
                 // Resolve id references
-                if let Some(MaybeReference::Reference(reference)) = &request.ids {
-                    request.ids = Some(MaybeReference::Value(
-                        self.eval_result_references(reference)
-                            .unwrap_ids(reference)?,
-                    ));
+                match &mut request.ids {
+                    Some(MaybeReference::Reference(reference)) => {
+                        request.ids = Some(MaybeReference::Value(
+                            self.eval_result_references(reference)
+                                .unwrap_any_ids(reference)?,
+                        ));
+                    }
+                    Some(MaybeReference::Value(ids)) => {
+                        for id in ids {
+                            if let MaybeReference::Reference(reference) = id {
+                                if let Some(resolved_id) = self.created_ids.get(reference) {
+                                    *id = MaybeReference::Value(resolved_id.clone());
+                                } else {
+                                    return Err(MethodError::InvalidResultReference(format!(
+                                        "Id reference {reference:?} does not exist."
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
                 }
 
                 // Resolve properties references
@@ -78,61 +95,7 @@ impl Response {
 
                     // Perform topological sort
                     if !graph.is_empty() {
-                        // Make sure all references exist
-                        for (from_id, to_ids) in graph.iter() {
-                            for to_id in to_ids {
-                                if !create.contains_key(to_id) {
-                                    return Err(MethodError::InvalidResultReference(format!(
-                                        "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
-                                    )));
-                                }
-                            }
-                        }
-
-                        let mut sorted_create = VecMap::with_capacity(create.len());
-                        let mut it_stack = Vec::new();
-                        let keys = graph.keys().cloned().collect::<Vec<_>>();
-                        let mut it = keys.iter();
-
-                        'main: loop {
-                            while let Some(from_id) = it.next() {
-                                if let Some(to_ids) = graph.get(from_id) {
-                                    it_stack.push((it, from_id));
-                                    if it_stack.len() > 1000 {
-                                        return Err(MethodError::InvalidArguments(
-                                            "Cyclical references are not allowed.".to_string(),
-                                        ));
-                                    }
-                                    it = to_ids.iter();
-                                    continue;
-                                } else if let Some((id, value)) = create.remove_entry(from_id) {
-                                    sorted_create.append(id, value);
-                                    if create.is_empty() {
-                                        break 'main;
-                                    }
-                                }
-                            }
-
-                            if let Some((prev_it, from_id)) = it_stack.pop() {
-                                it = prev_it;
-                                if let Some((id, value)) = create.remove_entry(from_id) {
-                                    sorted_create.append(id, value);
-                                    if create.is_empty() {
-                                        break 'main;
-                                    }
-                                }
-                            } else {
-                                break;
-                            }
-                        }
-
-                        // Add remaining items
-                        if !create.is_empty() {
-                            for (id, value) in std::mem::take(create) {
-                                sorted_create.append(id, value);
-                            }
-                        }
-                        request.create = sorted_create.into();
+                        request.create = topological_sort(create, graph)?.into();
                     }
                 }
 
@@ -190,6 +153,38 @@ impl Response {
                         self.eval_result_references(reference)
                             .unwrap_ids(reference)?,
                     );
+                }
+            }
+            RequestMethod::UploadBlob(request) => {
+                let mut graph = HashMap::with_capacity(request.create.len());
+                for (create_id, object) in request.create.iter_mut() {
+                    for data in &mut object.data {
+                        if let DataSourceObject::Id { id, .. } = data {
+                            if let MaybeReference::Reference(parent_id) = id {
+                                match self.created_ids.get(parent_id) {
+                                    Some(AnyId::Blob(blob_id)) => {
+                                        *id = MaybeReference::Value(blob_id.clone());
+                                    }
+                                    Some(_) => {
+                                        return Err(MethodError::InvalidResultReference(format!(
+                                            "Id reference {parent_id:?} points to invalid type."
+                                        )));
+                                    }
+                                    None => {
+                                        graph
+                                            .entry(create_id.to_string())
+                                            .or_insert_with(Vec::new)
+                                            .push(parent_id.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Perform topological sort
+                if !graph.is_empty() {
+                    request.create = topological_sort(&mut request.create, graph)?;
                 }
             }
             _ => {}
@@ -269,7 +264,7 @@ impl Response {
     }
 
     fn eval_id_reference(&self, ir: &str) -> Result<Id, MethodError> {
-        if let Some(id) = self.created_ids.get(ir) {
+        if let Some(AnyId::Id(id)) = self.created_ids.get(ir) {
             Ok(*id)
         } else {
             Err(MethodError::InvalidResultReference(format!(
@@ -287,7 +282,7 @@ impl Response {
             match set_value {
                 SetValue::IdReference(MaybeReference::Reference(parent_id)) => {
                     if let Some(id) = self.created_ids.get(parent_id) {
-                        *set_value = SetValue::Value(Value::Id(*id));
+                        *set_value = SetValue::Value(id.into());
                     } else if let Some((child_id, graph)) = &mut graph {
                         graph
                             .entry(child_id.to_string())
@@ -303,7 +298,7 @@ impl Response {
                     for id_ref in id_refs {
                         if let MaybeReference::Reference(parent_id) = id_ref {
                             if let Some(id) = self.created_ids.get(parent_id) {
-                                *id_ref = MaybeReference::Value(*id);
+                                *id_ref = MaybeReference::Value(id.clone());
                             } else if let Some((child_id, graph)) = &mut graph {
                                 graph
                                     .entry(child_id.to_string())
@@ -329,8 +324,69 @@ impl Response {
     }
 }
 
+fn topological_sort<T>(
+    create: &mut VecMap<String, T>,
+    graph: HashMap<String, Vec<String>>,
+) -> Result<VecMap<String, T>, MethodError> {
+    // Make sure all references exist
+    for (from_id, to_ids) in graph.iter() {
+        for to_id in to_ids {
+            if !create.contains_key(to_id) {
+                return Err(MethodError::InvalidResultReference(format!(
+                    "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
+                )));
+            }
+        }
+    }
+
+    let mut sorted_create = VecMap::with_capacity(create.len());
+    let mut it_stack = Vec::new();
+    let keys = graph.keys().cloned().collect::<Vec<_>>();
+    let mut it = keys.iter();
+
+    'main: loop {
+        while let Some(from_id) = it.next() {
+            if let Some(to_ids) = graph.get(from_id) {
+                it_stack.push((it, from_id));
+                if it_stack.len() > 1000 {
+                    return Err(MethodError::InvalidArguments(
+                        "Cyclical references are not allowed.".to_string(),
+                    ));
+                }
+                it = to_ids.iter();
+                continue;
+            } else if let Some((id, value)) = create.remove_entry(from_id) {
+                sorted_create.append(id, value);
+                if create.is_empty() {
+                    break 'main;
+                }
+            }
+        }
+
+        if let Some((prev_it, from_id)) = it_stack.pop() {
+            it = prev_it;
+            if let Some((id, value)) = create.remove_entry(from_id) {
+                sorted_create.append(id, value);
+                if create.is_empty() {
+                    break 'main;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Add remaining items
+    if !create.is_empty() {
+        for (id, value) in std::mem::take(create) {
+            sorted_create.append(id, value);
+        }
+    }
+    Ok(sorted_create)
+}
+
 pub trait EvalObjectReferences {
-    fn get_id(&self, id_ref: &str) -> Option<&Id>;
+    fn get_id(&self, id_ref: &str) -> Option<Value>;
 
     fn eval_object_references(&self, set_value: SetValue) -> Result<MaybePatchValue, SetError> {
         match set_value {
@@ -338,25 +394,31 @@ pub trait EvalObjectReferences {
             SetValue::Patch(patch) => Ok(MaybePatchValue::Patch(patch)),
             SetValue::IdReference(MaybeReference::Reference(id_ref)) => {
                 if let Some(id) = self.get_id(&id_ref) {
-                    Ok(MaybePatchValue::Value(Value::Id(*id)))
+                    Ok(MaybePatchValue::Value(id))
                 } else {
                     Err(SetError::not_found()
                         .with_description(format!("Id reference {id_ref:?} not found.")))
                 }
             }
-            SetValue::IdReference(MaybeReference::Value(id)) => {
+            SetValue::IdReference(MaybeReference::Value(AnyId::Id(id))) => {
                 Ok(MaybePatchValue::Value(Value::Id(id)))
+            }
+            SetValue::IdReference(MaybeReference::Value(AnyId::Blob(blob_id))) => {
+                Ok(MaybePatchValue::Value(Value::BlobId(blob_id)))
             }
             SetValue::IdReferences(id_refs) => {
                 let mut ids = Vec::with_capacity(id_refs.len());
                 for id_ref in id_refs {
                     match id_ref {
-                        MaybeReference::Value(id) => {
+                        MaybeReference::Value(AnyId::Id(id)) => {
                             ids.push(Value::Id(id));
+                        }
+                        MaybeReference::Value(AnyId::Blob(blob_id)) => {
+                            ids.push(Value::BlobId(blob_id));
                         }
                         MaybeReference::Reference(id_ref) => {
                             if let Some(id) = self.get_id(&id_ref) {
-                                ids.push(Value::Id(*id));
+                                ids.push(id);
                             } else {
                                 return Err(SetError::not_found().with_description(format!(
                                     "Id reference {id_ref:?} not found."
@@ -373,16 +435,20 @@ pub trait EvalObjectReferences {
 }
 
 impl EvalObjectReferences for SetResponse {
-    fn get_id(&self, id_ref: &str) -> Option<&Id> {
+    fn get_id(&self, id_ref: &str) -> Option<Value> {
         self.created
             .get(id_ref)
             .and_then(|obj| obj.properties.get(&Property::Id))
-            .and_then(|v| v.as_id())
+            .and_then(|value| match value {
+                Value::Id(id) => Value::Id(*id).into(),
+                Value::BlobId(blob_id) => Value::BlobId(blob_id.clone()).into(),
+                _ => None,
+            })
     }
 }
 
 impl EvalObjectReferences for CopyResponse {
-    fn get_id(&self, _id_ref: &str) -> Option<&Id> {
+    fn get_id(&self, _id_ref: &str) -> Option<Value> {
         None
     }
 }
@@ -396,12 +462,53 @@ impl EvalResult {
                     Value::Id(id) => ids.push(id),
                     Value::List(list) => {
                         for value in list {
-                            if let Value::Id(id) = value {
-                                ids.push(id);
-                            } else {
-                                return Err(MethodError::InvalidResultReference(format!(
-                                    "Failed to evaluate {rr} result reference."
-                                )));
+                            match value {
+                                Value::Id(id) => ids.push(id),
+                                _ => {
+                                    return Err(MethodError::InvalidResultReference(format!(
+                                        "Failed to evaluate {rr} result reference."
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(MethodError::InvalidResultReference(format!(
+                            "Failed to evaluate {rr} result reference."
+                        )))
+                    }
+                }
+            }
+            Ok(ids)
+        } else {
+            Err(MethodError::InvalidResultReference(format!(
+                "Failed to evaluate {rr} result reference."
+            )))
+        }
+    }
+
+    pub fn unwrap_any_ids(
+        self,
+        rr: &ResultReference,
+    ) -> Result<Vec<MaybeReference<AnyId, String>>, MethodError> {
+        if let EvalResult::Values(values) = self {
+            let mut ids = Vec::with_capacity(values.len());
+            for value in values {
+                match value {
+                    Value::Id(id) => ids.push(MaybeReference::Value(id.into())),
+                    Value::BlobId(blob_id) => ids.push(MaybeReference::Value(blob_id.into())),
+                    Value::List(list) => {
+                        for value in list {
+                            match value {
+                                Value::Id(id) => ids.push(MaybeReference::Value(id.into())),
+                                Value::BlobId(blob_id) => {
+                                    ids.push(MaybeReference::Value(blob_id.into()))
+                                }
+                                _ => {
+                                    return Err(MethodError::InvalidResultReference(format!(
+                                        "Failed to evaluate {rr} result reference."
+                                    )));
+                                }
                             }
                         }
                     }
@@ -754,9 +861,15 @@ mod tests {
             panic!("Expected Mailbox Set Request");
         }
 
-        response.created_ids.insert("a".to_string(), Id::new(5));
-        response.created_ids.insert("b".to_string(), Id::new(6));
-        response.created_ids.insert("c".to_string(), Id::new(7));
+        response
+            .created_ids
+            .insert("a".to_string(), Id::new(5).into());
+        response
+            .created_ids
+            .insert("b".to_string(), Id::new(6).into());
+        response
+            .created_ids
+            .insert("c".to_string(), Id::new(7).into());
 
         let mut call = invocations.next().unwrap();
         response.resolve_references(&mut call.method).unwrap();

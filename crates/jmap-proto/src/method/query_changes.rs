@@ -86,6 +86,7 @@ impl JsonObjectParser for QueryChangesRequest {
                 MethodObject::Email => RequestArguments::Email(Default::default()),
                 MethodObject::Mailbox => RequestArguments::Mailbox(Default::default()),
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
+                MethodObject::Quota => RequestArguments::Quota,
                 _ => {
                     return Err(Error::Method(MethodError::UnknownMethod(format!(
                         "{}/queryChanges",

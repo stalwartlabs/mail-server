@@ -27,7 +27,7 @@ use jmap_proto::{
     error::request::RequestError,
     request::capability::Capability,
     response::serialize::serialize_hex,
-    types::{acl::Acl, collection::Collection, id::Id},
+    types::{acl::Acl, collection::Collection, id::Id, type_state::DataType},
 };
 use store::ahash::AHashSet;
 use utils::{listener::ServerInstance, map::vec_map::VecMap, UnwrapFailure};
@@ -78,9 +78,11 @@ pub enum Capabilities {
     Core(CoreCapabilities),
     Mail(MailCapabilities),
     Submission(SubmissionCapabilities),
-    VacationResponse(VacationResponseCapabilities),
     WebSocket(WebSocketCapabilities),
-    Sieve(SieveCapabilities),
+    SieveAccount(SieveAccountCapabilities),
+    SieveSession(SieveSessionCapabilities),
+    Blob(BlobCapabilities),
+    Empty(EmptyCapabilities),
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -112,9 +114,13 @@ pub struct WebSocketCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct SieveCapabilities {
+pub struct SieveSessionCapabilities {
     #[serde(rename(serialize = "implementation"))]
     pub implementation: &'static str,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SieveAccountCapabilities {
     #[serde(rename(serialize = "maxSizeScriptName"))]
     pub max_script_name: usize,
     #[serde(rename(serialize = "maxSizeScript"))]
@@ -156,11 +162,24 @@ pub struct SubmissionCapabilities {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct VacationResponseCapabilities {}
+pub struct BlobCapabilities {
+    #[serde(rename(serialize = "maxSizeBlobSet"))]
+    max_size_blob_set: usize,
+    #[serde(rename(serialize = "maxDataSources"))]
+    max_data_sources: usize,
+    #[serde(rename(serialize = "supportedTypeNames"))]
+    supported_type_names: Vec<DataType>,
+    #[serde(rename(serialize = "supportedDigestAlgorithms"))]
+    supported_digest_algorithms: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct EmptyCapabilities {}
 
 #[derive(Default)]
 pub struct BaseCapabilities {
-    pub capabilities: VecMap<Capability, Capabilities>,
+    pub session: VecMap<Capability, Capabilities>,
+    pub account: VecMap<Capability, Capabilities>,
 }
 
 impl JMAP {
@@ -179,6 +198,7 @@ impl JMAP {
                 .clone()
                 .unwrap_or_else(|| access_token.name.clone()),
             None,
+            &self.config.capabilities.account,
         );
 
         // Add secondary accounts
@@ -198,7 +218,8 @@ impl JMAP {
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,
-                Some(&[Capability::Core, Capability::Mail, Capability::WebSocket]),
+                Some(&[Capability::Mail, Capability::Quota, Capability::Blob]),
+                &self.config.capabilities.account,
             );
         }
 
@@ -208,15 +229,28 @@ impl JMAP {
 
 impl crate::Config {
     pub fn add_capabilites(&mut self, settings: &utils::config::Config) {
-        self.capabilities.capabilities.append(
+        // Add core capabilities
+        self.capabilities.session.append(
             Capability::Core,
             Capabilities::Core(CoreCapabilities::new(self)),
         );
-        self.capabilities.capabilities.append(
+
+        // Add email capabilities
+        self.capabilities.session.append(
+            Capability::Mail,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+        self.capabilities.account.append(
             Capability::Mail,
             Capabilities::Mail(MailCapabilities::new(self)),
         );
-        self.capabilities.capabilities.append(
+
+        // Add submission capabilities
+        self.capabilities.session.append(
+            Capability::Submission,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+        self.capabilities.account.append(
             Capability::Submission,
             Capabilities::Submission(SubmissionCapabilities {
                 max_delayed_send: 86400 * 30,
@@ -230,16 +264,52 @@ impl crate::Config {
                 ]),
             }),
         );
-        self.capabilities.capabilities.append(
+
+        // Add vacation response capabilities
+        self.capabilities.session.append(
+            Capability::VacationResponse,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+        self.capabilities.account.append(
+            Capability::VacationResponse,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+
+        // Add Sieve capabilities
+        self.capabilities.session.append(
             Capability::Sieve,
-            Capabilities::Sieve(SieveCapabilities::new(self, settings)),
+            Capabilities::SieveSession(SieveSessionCapabilities::default()),
+        );
+        self.capabilities.account.append(
+            Capability::Sieve,
+            Capabilities::SieveAccount(SieveAccountCapabilities::new(self, settings)),
+        );
+
+        // Add Blob capabilities
+        self.capabilities.session.append(
+            Capability::Blob,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+        self.capabilities.account.append(
+            Capability::Blob,
+            Capabilities::Blob(BlobCapabilities::new(self)),
+        );
+
+        // Add Quota capabilities
+        self.capabilities.session.append(
+            Capability::Quota,
+            Capabilities::Empty(EmptyCapabilities::default()),
+        );
+        self.capabilities.account.append(
+            Capability::Quota,
+            Capabilities::Empty(EmptyCapabilities::default()),
         );
     }
 }
 
 impl Session {
     pub fn new(base_url: &str, base_capabilities: &BaseCapabilities) -> Session {
-        let mut capabilities = base_capabilities.capabilities.clone();
+        let mut capabilities = base_capabilities.session.clone();
         capabilities.append(
             Capability::WebSocket,
             Capabilities::WebSocket(WebSocketCapabilities::new(base_url)),
@@ -271,6 +341,7 @@ impl Session {
         username: String,
         name: String,
         capabilities: Option<&[Capability]>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
     ) {
         self.username = username;
 
@@ -286,7 +357,7 @@ impl Session {
 
         self.accounts.set(
             account_id,
-            Account::new(name, true, false).add_capabilities(capabilities, &self.capabilities),
+            Account::new(name, true, false).add_capabilities(capabilities, account_capabilities),
         );
     }
 
@@ -297,11 +368,12 @@ impl Session {
         is_personal: bool,
         is_read_only: bool,
         capabilities: Option<&[Capability]>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
     ) {
         self.accounts.set(
             account_id,
             Account::new(name, is_personal, is_read_only)
-                .add_capabilities(capabilities, &self.capabilities),
+                .add_capabilities(capabilities, account_capabilities),
         );
     }
 
@@ -331,17 +403,16 @@ impl Account {
     pub fn add_capabilities(
         mut self,
         capabilities: Option<&[Capability]>,
-        core_capabilities: &VecMap<Capability, Capabilities>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
     ) -> Account {
         if let Some(capabilities) = capabilities {
             for capability in capabilities {
-                self.account_capabilities.append(
-                    *capability,
-                    core_capabilities.get(capability).unwrap().clone(),
-                );
+                if let Some(value) = account_capabilities.get(capability) {
+                    self.account_capabilities.append(*capability, value.clone());
+                }
             }
         } else {
-            self.account_capabilities = core_capabilities.clone();
+            self.account_capabilities = account_capabilities.clone();
         }
         self
     }
@@ -375,7 +446,7 @@ impl WebSocketCapabilities {
     }
 }
 
-impl SieveCapabilities {
+impl SieveAccountCapabilities {
     pub fn new(config: &crate::Config, settings: &utils::config::Config) -> Self {
         let mut notification_methods = Vec::new();
 
@@ -399,7 +470,7 @@ impl SieveCapabilities {
             .collect::<Vec<String>>();
         extensions.sort_unstable();
 
-        SieveCapabilities {
+        SieveAccountCapabilities {
             max_script_name: config.sieve_max_script_name,
             max_script_size: settings
                 .property("sieve.untrusted.max-script-size")
@@ -417,6 +488,13 @@ impl SieveCapabilities {
                 None
             },
             ext_lists: None,
+        }
+    }
+}
+
+impl Default for SieveSessionCapabilities {
+    fn default() -> Self {
+        Self {
             implementation: concat!("Stalwart JMAP v", env!("CARGO_PKG_VERSION"),),
         }
     }
@@ -444,6 +522,17 @@ impl MailCapabilities {
             .map(|s| s.to_string())
             .collect(),
             may_create_top_level_mailbox: true,
+        }
+    }
+}
+
+impl BlobCapabilities {
+    pub fn new(config: &crate::Config) -> Self {
+        BlobCapabilities {
+            max_size_blob_set: (config.request_max_size * 3 / 4) - 512,
+            max_data_sources: config.request_max_calls,
+            supported_type_names: vec![DataType::Email, DataType::Thread, DataType::SieveScript],
+            supported_digest_algorithms: vec!["sha", "sha-256", "sha-512"],
         }
     }
 }

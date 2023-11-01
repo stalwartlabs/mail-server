@@ -44,6 +44,8 @@ pub enum MethodError {
     AccountNotSupportedByMethod,
     AccountReadOnly,
     NotFound,
+    CannotCalculateChanges,
+    UnknownDataType,
 }
 
 impl Display for MethodError {
@@ -69,6 +71,8 @@ impl Display for MethodError {
             }
             MethodError::AccountReadOnly => write!(f, "Account read only"),
             MethodError::NotFound => write!(f, "Not found"),
+            MethodError::UnknownDataType => write!(f, "Unknown data type"),
+            MethodError::CannotCalculateChanges => write!(f, "Cannot calculate changes"),
         }
     }
 }
@@ -154,6 +158,21 @@ impl Serialize for MethodError {
             MethodError::AccountReadOnly => (
                 "accountReadOnly",
                 "This method modifies state, but the account is read-only.",
+            ),
+            MethodError::UnknownDataType => (
+                "unknownDataType",
+                concat!(
+                    "The server does not recognise this data type, ",
+                    "or the capability to enable it is not present ",
+                    "in the current Request Object."
+                ),
+            ),
+            MethodError::CannotCalculateChanges => (
+                "cannotCalculateChanges",
+                concat!(
+                    "The server cannot calculate the changes ",
+                    "between the old and new states."
+                ),
             ),
         };
 

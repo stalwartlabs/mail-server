@@ -70,9 +70,7 @@ impl JMAP {
                         match &mut method_response {
                             ResponseMethod::Set(set_response) => {
                                 // Add created ids
-                                if add_created_ids {
-                                    set_response.update_created_ids(&mut response);
-                                }
+                                set_response.update_created_ids(&mut response);
 
                                 // Publish state changes
                                 if let Some(state_change) = set_response.state_change.take() {
@@ -81,9 +79,7 @@ impl JMAP {
                             }
                             ResponseMethod::ImportEmail(import_response) => {
                                 // Add created ids
-                                if add_created_ids {
-                                    import_response.update_created_ids(&mut response);
-                                }
+                                import_response.update_created_ids(&mut response);
 
                                 // Publish state changes
                                 if let Some(state_change) = import_response.state_change.take() {
@@ -95,6 +91,10 @@ impl JMAP {
                                 if let Some(state_change) = copy_response.state_change.take() {
                                     self.broadcast_state_change(state_change).await;
                                 }
+                            }
+                            ResponseMethod::UploadBlob(upload_response) => {
+                                // Add created blobIds
+                                upload_response.update_created_ids(&mut response);
                             }
                             _ => {}
                         }
@@ -114,6 +114,10 @@ impl JMAP {
                     break;
                 }
             }
+        }
+
+        if !add_created_ids {
+            response.created_ids.clear();
         }
 
         Ok(response)
@@ -177,6 +181,18 @@ impl JMAP {
                         ));
                     }
                 }
+                get::RequestArguments::Quota => {
+                    access_token.assert_is_member(req.account_id)?;
+
+                    self.quota_get(req, access_token).await?.into()
+                }
+                get::RequestArguments::Blob(arguments) => {
+                    access_token.assert_is_member(req.account_id)?;
+
+                    self.blob_get(req.with_arguments(arguments), access_token)
+                        .await?
+                        .into()
+                }
             },
             RequestMethod::Query(mut req) => match req.take_arguments() {
                 query::RequestArguments::Email(arguments) => {
@@ -211,6 +227,11 @@ impl JMAP {
                             "Principal lookups are disabled".to_string(),
                         ));
                     }
+                }
+                query::RequestArguments::Quota => {
+                    access_token.assert_is_member(req.account_id)?;
+
+                    self.quota_query(req).await?.into()
                 }
             },
             RequestMethod::Set(mut req) => match req.take_arguments() {
@@ -262,7 +283,6 @@ impl JMAP {
 
                 self.email_copy(req, access_token, next_call).await?.into()
             }
-            RequestMethod::CopyBlob(req) => self.blob_copy(req, access_token).await?.into(),
             RequestMethod::ImportEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;
 
@@ -283,6 +303,21 @@ impl JMAP {
                 access_token.assert_is_member(req.account_id)?;
 
                 self.sieve_script_validate(req, access_token).await?.into()
+            }
+            RequestMethod::CopyBlob(req) => {
+                access_token.assert_is_member(req.account_id)?;
+
+                self.blob_copy(req, access_token).await?.into()
+            }
+            RequestMethod::LookupBlob(req) => {
+                access_token.assert_is_member(req.account_id)?;
+
+                self.blob_lookup(req).await?.into()
+            }
+            RequestMethod::UploadBlob(req) => {
+                access_token.assert_is_member(req.account_id)?;
+
+                self.blob_upload_many(req, access_token).await?.into()
             }
             RequestMethod::Echo(req) => req.into(),
             RequestMethod::Error(error) => return Err(error),

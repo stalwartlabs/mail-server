@@ -33,15 +33,17 @@ use crate::{
         copy::{CopyBlobRequest, CopyRequest},
         get::GetRequest,
         import::ImportEmailRequest,
+        lookup::BlobLookupRequest,
         parse::ParseEmailRequest,
         query::QueryRequest,
         query_changes::QueryChangesRequest,
         search_snippet::GetSearchSnippetRequest,
         set::SetRequest,
+        upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
     parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
-    types::id::Id,
+    types::any_id::AnyId,
 };
 
 use super::{
@@ -129,13 +131,23 @@ impl Request {
                         let start_depth_dict = parser.depth_dict;
 
                         let method = match (&method_name.fnc, &method_name.obj) {
-                            (MethodFunction::Get, _) => {
-                                if method_name.obj != MethodObject::SearchSnippet {
-                                    GetRequest::parse(parser).map(RequestMethod::Get)
-                                } else {
-                                    GetSearchSnippetRequest::parse(parser)
-                                        .map(RequestMethod::SearchSnippet)
-                                }
+                            (
+                                MethodFunction::Get,
+                                MethodObject::Email
+                                | MethodObject::Mailbox
+                                | MethodObject::Thread
+                                | MethodObject::Identity
+                                | MethodObject::EmailSubmission
+                                | MethodObject::PushSubscription
+                                | MethodObject::VacationResponse
+                                | MethodObject::SieveScript
+                                | MethodObject::Principal
+                                | MethodObject::Quota
+                                | MethodObject::Blob,
+                            ) => GetRequest::parse(parser).map(RequestMethod::Get),
+                            (MethodFunction::Get, MethodObject::SearchSnippet) => {
+                                GetSearchSnippetRequest::parse(parser)
+                                    .map(RequestMethod::SearchSnippet)
                             }
                             (MethodFunction::Query, _) => {
                                 QueryRequest::parse(parser).map(RequestMethod::Query)
@@ -154,6 +166,12 @@ impl Request {
                             }
                             (MethodFunction::Copy, MethodObject::Blob) => {
                                 CopyBlobRequest::parse(parser).map(RequestMethod::CopyBlob)
+                            }
+                            (MethodFunction::Lookup, MethodObject::Blob) => {
+                                BlobLookupRequest::parse(parser).map(RequestMethod::LookupBlob)
+                            }
+                            (MethodFunction::Upload, MethodObject::Blob) => {
+                                BlobUploadRequest::parse(parser).map(RequestMethod::UploadBlob)
                             }
                             (MethodFunction::Import, MethodObject::Email) => {
                                 ImportEmailRequest::parse(parser).map(RequestMethod::ImportEmail)
@@ -204,8 +222,10 @@ impl Request {
                 let mut created_ids = HashMap::new();
                 parser.next_token::<Ignore>()?.assert(Token::DictStart)?;
                 while let Some(key) = parser.next_dict_key::<String>()? {
-                    created_ids
-                        .insert(key, parser.next_token::<Id>()?.unwrap_string("createdIds")?);
+                    created_ids.insert(
+                        key,
+                        parser.next_token::<AnyId>()?.unwrap_string("createdIds")?,
+                    );
                 }
                 self.created_ids = Some(created_ids);
                 Ok(true)

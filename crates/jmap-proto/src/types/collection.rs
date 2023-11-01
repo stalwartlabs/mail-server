@@ -25,7 +25,7 @@ use std::fmt::{self, Display, Formatter};
 
 use utils::map::bitmap::BitmapItem;
 
-use super::type_state::TypeState;
+use super::type_state::DataType;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
@@ -85,16 +85,18 @@ impl From<Collection> for u64 {
     }
 }
 
-impl TryFrom<Collection> for TypeState {
+impl TryFrom<Collection> for DataType {
     type Error = ();
 
     fn try_from(value: Collection) -> Result<Self, Self::Error> {
         match value {
-            Collection::Email => Ok(TypeState::Email),
-            Collection::Mailbox => Ok(TypeState::Mailbox),
-            Collection::Thread => Ok(TypeState::Thread),
-            Collection::Identity => Ok(TypeState::Identity),
-            Collection::EmailSubmission => Ok(TypeState::EmailSubmission),
+            Collection::Email => Ok(DataType::Email),
+            Collection::Mailbox => Ok(DataType::Mailbox),
+            Collection::Thread => Ok(DataType::Thread),
+            Collection::Identity => Ok(DataType::Identity),
+            Collection::EmailSubmission => Ok(DataType::EmailSubmission),
+            Collection::SieveScript => Ok(DataType::SieveScript),
+            Collection::PushSubscription => Ok(DataType::PushSubscription),
             _ => Err(()),
         }
     }

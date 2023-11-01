@@ -27,7 +27,7 @@ use jmap_proto::{
     error::method::MethodError,
     object::{index::ObjectIndexBuilder, Object},
     types::{
-        collection::Collection, property::Property, state::StateChange, type_state::TypeState,
+        collection::Collection, property::Property, state::StateChange, type_state::DataType,
         value::Value,
     },
 };
@@ -164,7 +164,7 @@ impl SessionData {
             // Broadcast changes
             self.jmap
                 .broadcast_state_change(
-                    StateChange::new(account_id).with_change(TypeState::Mailbox, change_id),
+                    StateChange::new(account_id).with_change(DataType::Mailbox, change_id),
                 )
                 .await;
 

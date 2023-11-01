@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.4.0"
+version = "0.4.2"
 edition = "2021"
 resolver = "2"
 
@@ -35,7 +35,8 @@ async-stream = "0.3.5"
 base64 = "0.21"
 p256 = { version = "0.13", features = ["ecdh"] }
 hkdf = "0.12.3"
-sha2 = "0.10.1"
+sha1 = "0.10"
+sha2 = "0.10"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"]}
 tokio-tungstenite = "0.20"
 tungstenite = "0.20"

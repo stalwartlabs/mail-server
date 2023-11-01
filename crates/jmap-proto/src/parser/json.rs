@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{fmt::Display, slice::Iter};
+use std::{fmt::Display, iter::Peekable, slice::Iter};
 
 use crate::{error::method::MethodError, request::method::MethodObject};
 
@@ -32,7 +32,7 @@ const MAX_NESTED_LEVELS: u32 = 16;
 #[derive(Debug)]
 pub struct Parser<'x> {
     pub bytes: &'x [u8],
-    pub iter: Iter<'x, u8>,
+    pub iter: Peekable<Iter<'x, u8>>,
     pub next_ch: Option<u8>,
     pub pos: usize,
     pub pos_marker: usize,
@@ -46,7 +46,7 @@ impl<'x> Parser<'x> {
     pub fn new(bytes: &'x [u8]) -> Self {
         Self {
             bytes,
-            iter: bytes.iter(),
+            iter: bytes.iter().peekable(),
             next_ch: None,
             pos: 0,
             pos_marker: 0,
@@ -79,6 +79,11 @@ impl<'x> Parser<'x> {
         } else {
             self.error_unterminated()
         }
+    }
+
+    #[inline(always)]
+    pub fn peek_char(&mut self) -> Option<u8> {
+        self.iter.peek().map(|&&ch| ch)
     }
 
     #[inline(always)]

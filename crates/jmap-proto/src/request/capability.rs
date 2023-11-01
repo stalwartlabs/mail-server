@@ -44,6 +44,10 @@ pub enum Capability {
     WebSocket = 1 << 6,
     #[serde(rename(serialize = "urn:ietf:params:jmap:sieve"))]
     Sieve = 1 << 7,
+    #[serde(rename(serialize = "urn:ietf:params:jmap:blob"))]
+    Blob = 1 << 8,
+    #[serde(rename(serialize = "urn:ietf:params:jmap:quota"))]
+    Quota = 1 << 9,
 }
 
 impl JsonObjectParser for Capability {
@@ -71,6 +75,8 @@ impl JsonObjectParser for Capability {
                 0x0073_7261_646e_656c_6163 => Ok(Capability::Calendars),
                 0x0074_656b_636f_7362_6577 => Ok(Capability::WebSocket),
                 0x0065_7665_6973 => Ok(Capability::Sieve),
+                0x626f_6c62 => Ok(Capability::Blob),
+                0x0061_746f_7571 => Ok(Capability::Quota),
                 _ => Err(parser.error_capability()),
             },
             Err(Error::Method(_)) => Err(parser.error_capability()),

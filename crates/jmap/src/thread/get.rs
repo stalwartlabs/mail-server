@@ -92,7 +92,7 @@ impl JMAP {
                 }
                 response.list.push(thread);
             } else {
-                response.not_found.push(id);
+                response.not_found.push(id.into());
             }
         }
 

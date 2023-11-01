@@ -206,7 +206,7 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
                 Token::String(item) => vec.push(item),
                 Token::Comma => (),
                 Token::ArrayEnd => break,
-                token => return Err(token.error("", &token.to_string())),
+                token => return Err(token.error("", "[ or string")),
             }
         }
         Ok(vec)

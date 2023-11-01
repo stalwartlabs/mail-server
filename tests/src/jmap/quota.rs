@@ -33,7 +33,10 @@ use jmap_proto::types::{collection::Collection, id::Id};
 
 use crate::{
     directory::sql::{add_to_group, create_test_user_with_email, set_test_quota},
-    jmap::{delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login},
+    jmap::{
+        delivery::SmtpConnection, jmap_raw_request, mailbox::destroy_all_mailboxes,
+        test_account_login,
+    },
 };
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
@@ -110,6 +113,26 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .await
         .unwrap();
 
+    // Test JMAP Quotas extension
+    let response = jmap_raw_request(
+        r#"[[ "Quota/get", {
+            "accountId": "$$",
+            "ids": null
+          }, "0" ]]"#
+            .replace("$$", &account_id.to_string()),
+        "robert@example.com",
+        "aabbcc",
+    )
+    .await;
+    assert!(response.contains("\"used\":0"), "{}", response);
+    assert!(response.contains("\"hardLimit\":1024"), "{}", response);
+    assert!(response.contains("\"scope\":\"account\""), "{}", response);
+    assert!(
+        response.contains("\"name\":\"robert@example.com\""),
+        "{}",
+        response
+    );
+
     // Test Email/import quota
     let inbox_id = Id::new(INBOX_ID as u64).to_string();
     let mut message_ids = Vec::new();
@@ -142,6 +165,20 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             )
             .await,
     );
+
+    // Test JMAP Quotas extension
+    let response = jmap_raw_request(
+        r#"[[ "Quota/get", {
+            "accountId": "$$",
+            "ids": null
+          }, "0" ]]"#
+            .replace("$$", &account_id.to_string()),
+        "robert@example.com",
+        "aabbcc",
+    )
+    .await;
+    assert!(response.contains("\"used\":1024"), "{}", response);
+    assert!(response.contains("\"hardLimit\":1024"), "{}", response);
 
     // Delete messages and check available quota
     for message_id in message_ids {

@@ -39,19 +39,19 @@ impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
         } else {
             response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
         };
-        if let Some(sieve) =
-            self.jmap
-                .config
-                .capabilities
-                .capabilities
-                .iter()
-                .find_map(|(_, item)| {
-                    if let Capabilities::Sieve(sieve) = item {
-                        Some(sieve)
-                    } else {
-                        None
-                    }
-                })
+        if let Some(sieve) = self
+            .jmap
+            .config
+            .capabilities
+            .account
+            .iter()
+            .find_map(|(_, item)| {
+                if let Capabilities::SieveAccount(sieve) = item {
+                    Some(sieve)
+                } else {
+                    None
+                }
+            })
         {
             response.extend_from_slice(b"\"SIEVE\" \"");
             response.extend_from_slice(sieve.extensions.join(" ").as_bytes());

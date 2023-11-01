@@ -25,7 +25,10 @@ use std::ops::Range;
 
 use jmap_proto::{
     error::method::MethodError,
-    types::{acl::Acl, blob::BlobId},
+    types::{
+        acl::Acl,
+        blob::{BlobId, BlobSection},
+    },
 };
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
@@ -79,21 +82,29 @@ impl JMAP {
         }
 
         if let Some(section) = &blob_id.section {
-            Ok(self
-                .get_blob(
-                    &blob_id.kind,
-                    (section.offset_start as u32)
-                        ..(section.offset_start.saturating_add(section.size) as u32),
-                )
-                .await?
-                .and_then(|bytes| match Encoding::from(section.encoding) {
-                    Encoding::None => Some(bytes),
-                    Encoding::Base64 => base64_decode(&bytes),
-                    Encoding::QuotedPrintable => quoted_printable_decode(&bytes),
-                }))
+            self.get_blob_section(&blob_id.kind, section).await
         } else {
             self.get_blob(&blob_id.kind, 0..u32::MAX).await
         }
+    }
+
+    pub async fn get_blob_section(
+        &self,
+        kind: &BlobKind,
+        section: &BlobSection,
+    ) -> Result<Option<Vec<u8>>, MethodError> {
+        Ok(self
+            .get_blob(
+                kind,
+                (section.offset_start as u32)
+                    ..(section.offset_start.saturating_add(section.size) as u32),
+            )
+            .await?
+            .and_then(|bytes| match Encoding::from(section.encoding) {
+                Encoding::None => Some(bytes),
+                Encoding::Base64 => base64_decode(&bytes),
+                Encoding::QuotedPrintable => quoted_printable_decode(&bytes),
+            }))
     }
 
     pub async fn get_blob(

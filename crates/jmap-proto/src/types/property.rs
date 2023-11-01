@@ -130,7 +130,29 @@ pub enum Property {
     MayCreateChild,
     MayRename,
     MaySubmit,
+    ResourceType,
+    Used,
+    HardLimit,
+    WarnLimit,
+    SoftLimit,
+    Scope,
+    Digest(DigestProperty),
+    Data(DataProperty),
     _T(String),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum DigestProperty {
+    Sha,
+    Sha256,
+    Sha512,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum DataProperty {
+    AsText,
+    AsBase64,
+    Default,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -165,8 +187,12 @@ impl JsonObjectParser for Property {
                 } else {
                     first_char = ch;
                 }
-            } else if ch == b':' && first_char == b'h' && hash == 0x0072_6564_6165 {
-                return parse_header_property(parser);
+            } else if ch == b':' {
+                return if first_char == b'h' && hash == 0x0072_6564_6165 {
+                    parse_header_property(parser)
+                } else {
+                    parse_sub_property(parser, first_char, hash)
+                };
             } else {
                 return parser.invalid_property();
             }
@@ -348,6 +374,7 @@ fn parse_property(first_char: u8, hash: u128) -> Option<Property> {
             0x0064_4974_6e65_696c_4365_6369_7665 => Property::DeviceClientId,
             0x6e6f_6974_6973_6f70_7369 => Property::Disposition,
             0x0073_6449_626f_6c42_6e73 => Property::DsnBlobIds,
+            0x0061_7461 => Property::Data(DataProperty::Default),
             _ => return None,
         },
         b'e' => match hash {
@@ -539,6 +566,41 @@ fn parse_header_property(parser: &mut Parser) -> crate::parser::Result<Property>
     Ok(Property::Header(HeaderProperty { form, header, all }))
 }
 
+fn parse_sub_property(
+    parser: &mut Parser,
+    first_char: u8,
+    parent_hash: u128,
+) -> crate::parser::Result<Property> {
+    let mut hash = 0;
+    let mut shift = 0;
+
+    while let Some(ch) = parser.next_unescaped()? {
+        if ch.is_ascii_alphanumeric() || ch == b'-' {
+            if shift < 128 {
+                hash |= (ch as u128) << shift;
+                shift += 8;
+            } else {
+                return parser.invalid_property();
+            }
+        } else {
+            return parser.invalid_property();
+        }
+    }
+
+    match (first_char, parent_hash, hash) {
+        (b'd', 0x0061_7461, 0x7478_6554_7361) => Ok(Property::Data(DataProperty::AsText)),
+        (b'd', 0x0061_7461, 0x3436_6573_6142_7361) => Ok(Property::Data(DataProperty::AsBase64)),
+        (b'd', 0x0074_7365_6769, 0x0061_6873) => Ok(Property::Digest(DigestProperty::Sha)),
+        (b'd', 0x0074_7365_6769, 0x0036_3532_2d61_6873) => {
+            Ok(Property::Digest(DigestProperty::Sha256))
+        }
+        (b'd', 0x0074_7365_6769, 0x0032_3135_2d61_6873) => {
+            Ok(Property::Digest(DigestProperty::Sha512))
+        }
+        _ => parser.invalid_property(),
+    }
+}
+
 impl JsonObjectParser for ObjectProperty {
     fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
         let mut first_char = 0;
@@ -591,6 +653,7 @@ impl JsonObjectParser for ObjectProperty {
             },
             b'h' => match hash {
                 0x7372_6564_6165 => Property::Headers,
+                0x7469_6d69_4c64_7261 => Property::HardLimit,
                 _ => parser.invalid_property()?,
             },
             b'i' => match hash {
@@ -628,20 +691,31 @@ impl JsonObjectParser for ObjectProperty {
             },
             b'r' => match hash {
                 0x006f_5474_7063 => Property::RcptTo,
+                0x0065_7079_5465_6372_756f_7365 => Property::ResourceType,
                 _ => parser.invalid_property()?,
             },
             b's' => match hash {
                 0x0065_7a69 => Property::Size,
                 0x0073_7472_6150_6275 => Property::SubParts,
                 0x796c_7065_5270_746d => Property::SmtpReply,
+                0x7469_6d69_4c74_666f => Property::SoftLimit,
+                0x6570_6f63 => Property::Scope,
                 _ => parser.invalid_property()?,
             },
             b't' => match hash {
                 0x0065_7079 => Property::Type,
                 _ => parser.invalid_property()?,
             },
+            b'u' => match hash {
+                0x0064_6573 => Property::Used,
+                _ => parser.invalid_property()?,
+            },
             b'v' => match hash {
                 0x6575_6c61 => Property::Value,
+                _ => parser.invalid_property()?,
+            },
+            b'w' => match hash {
+                0x7469_6d69_4c6e_7261 => Property::WarnLimit,
                 _ => parser.invalid_property()?,
             },
             _ => parser.invalid_property()?,
@@ -810,6 +884,22 @@ impl Display for Property {
             Property::MayCreateChild => write!(f, "mayCreateChild"),
             Property::MayRename => write!(f, "mayRename"),
             Property::MaySubmit => write!(f, "maySubmit"),
+            Property::Data(data) => f.write_str(match data {
+                DataProperty::AsText => "data:asText",
+                DataProperty::AsBase64 => "data:asBase64",
+                DataProperty::Default => "data",
+            }),
+            Property::Digest(digest) => f.write_str(match digest {
+                DigestProperty::Sha => "digest:sha",
+                DigestProperty::Sha256 => "digest:sha-256",
+                DigestProperty::Sha512 => "digest:sha-512",
+            }),
+            Property::ResourceType => write!(f, "resourceType"),
+            Property::Used => write!(f, "used"),
+            Property::HardLimit => write!(f, "hardLimit"),
+            Property::Scope => write!(f, "scope"),
+            Property::WarnLimit => write!(f, "warnLimit"),
+            Property::SoftLimit => write!(f, "softLimit"),
             Property::_T(s) => write!(f, "{s}"),
         }
     }
@@ -984,6 +1074,13 @@ impl From<&Property> for u8 {
             Property::IdentityId => 95,
             Property::InReplyTo => 96,
             Property::_T(_) => 97,
+            Property::ResourceType => 98,
+            Property::Used => 99,
+            Property::HardLimit => 100,
+            Property::WarnLimit => 101,
+            Property::SoftLimit => 102,
+            Property::Scope => 103,
+            Property::Digest(_) | Property::Data(_) => unreachable!("invalid property"),
         }
     }
 }
@@ -1119,6 +1216,15 @@ impl SerializeInto for Property {
                 value.serialize_into(buf);
                 return;
             }
+            Property::ResourceType => 98,
+            Property::Used => 99,
+            Property::HardLimit => 100,
+            Property::WarnLimit => 101,
+            Property::SoftLimit => 102,
+            Property::Scope => 103,
+            Property::Digest(_) | Property::Data(_) => {
+                unreachable!("Property::Digest and Property::Data are not serializable")
+            }
         });
     }
 }
@@ -1228,6 +1334,12 @@ impl DeserializeFrom for Property {
             95 => Some(Property::IdentityId),
             96 => Some(Property::InReplyTo),
             97 => String::deserialize_from(bytes).map(Property::_T),
+            98 => Some(Property::ResourceType),
+            99 => Some(Property::Used),
+            100 => Some(Property::HardLimit),
+            101 => Some(Property::WarnLimit),
+            102 => Some(Property::SoftLimit),
+            103 => Some(Property::Scope),
             _ => None,
         }
     }
