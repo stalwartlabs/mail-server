@@ -1,10 +1,37 @@
-# Stalwart Mail Server
+<h2 align="center">
+    <a href="https://stalw.art">
+    <img src="https://stalw.art/home/apple-touch-icon.png" height="60">
+    </a>
+    <br>
+    Stalwart Mail Server
+</h1>
 
-[![Build](https://github.com/stalwartlabs/mail-server/actions/workflows/build.yml/badge.svg)](https://github.com/stalwartlabs/mail-server/actions/workflows/build.yml)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![](https://img.shields.io/discord/923615863037390889?label=Chat)](https://discord.gg/jtgtCNj66U)
-[![](https://img.shields.io/twitter/follow/stalwartlabs)](https://twitter.com/stalwartlabs)
-[![](https://img.shields.io/mastodon/follow/109929667531941122)](https://mastodon.social/@stalwartlabs)
+<p align="center">
+  <i align="center">Secure & Modern All-in-One Mail Server (IMAP, JMAP, SMTP)</i> 🛡️
+</p>
+
+<h4 align="center">
+  <a href="https://github.com/stalwartlabs/mail-server/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/stalwartlabs/mail-server/build.yml?style=flat-square" alt="continuous integration">
+  </a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0">
+    <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?label=license&style=flat-square" alt="License: AGPL v3">
+  </a>
+  <a href="https://stalw.art/docs/get-started/">
+    <img src="https://img.shields.io/badge/read_the-docs-red?style=flat-square" alt="Documentation">
+  </a>
+  <br>
+  <a href="https://discord.gg/jtgtCNj66U">
+    <img src="https://img.shields.io/discord/923615863037390889?label=chat&style=flat-square" alt="Discord">
+  </a>
+  <a href="https://mastodon.social/@stalwartlabs">
+    <img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff" alt="Mastodon">
+  </a>
+  <a href="https://twitter.com/stalwartlabs">
+    <img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=twitter" alt="Twitter">
+  </a>
+</h4>
+
 
 **Stalwart Mail Server** is an open-source mail server solution with JMAP, IMAP4, and SMTP support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
 
@@ -70,6 +97,16 @@ If you are having problems running Stalwart Mail Server, you found a bug or just
 do not hesitate to reach us on [Github Discussions](https://github.com/stalwartlabs/mail-server/discussions),
 [Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
 Additionally you may become a sponsor to obtain priority support from Stalwart Labs Ltd.
+
+## Roadmap
+
+- [ ] Performance enhancements
+- [ ] Web-based admin panel
+- [ ] JMAP Calendar, Contacts and Tasks support
+- [ ] Brand Indicators for Message Identification (BIMI) support
+- [ ] Distributed SMTP queues
+
+See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a full list of proposed features (and known issues).
 
 ## Funding
 
