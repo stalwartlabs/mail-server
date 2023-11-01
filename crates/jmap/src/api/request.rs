@@ -231,7 +231,7 @@ impl JMAP {
                 query::RequestArguments::Quota => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.quota_query(req).await?.into()
+                    self.quota_query(req, access_token).await?.into()
                 }
             },
             RequestMethod::Set(mut req) => match req.take_arguments() {

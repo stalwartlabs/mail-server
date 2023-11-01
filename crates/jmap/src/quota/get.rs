@@ -50,11 +50,15 @@ impl JMAP {
             Property::Types,
         ]);
         let account_id = request.account_id.document_id();
-        let quota_ids = [0u32];
+        let quota_ids = if access_token.quota > 0 {
+            vec![0u32]
+        } else {
+            vec![]
+        };
         let ids = if let Some(ids) = ids {
             ids
         } else {
-            vec![Id::new(0)]
+            quota_ids.iter().map(|id| Id::from(*id)).collect()
         };
         let mut response = GetResponse {
             account_id: request.account_id.into(),

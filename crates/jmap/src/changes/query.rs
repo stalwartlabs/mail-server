@@ -98,7 +98,7 @@ impl JMAP {
                 query::RequestArguments::EmailSubmission => {
                     self.email_submission_query(query).await?
                 }
-                query::RequestArguments::Quota => self.quota_query(query).await?,
+                query::RequestArguments::Quota => self.quota_query(query, access_token).await?,
                 _ => unreachable!(),
             };
 

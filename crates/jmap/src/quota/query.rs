@@ -27,19 +27,24 @@ use jmap_proto::{
     types::{id::Id, state::State},
 };
 
-use crate::JMAP;
+use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn quota_query(
         &self,
         request: QueryRequest<RequestArguments>,
+        access_token: &AccessToken,
     ) -> Result<QueryResponse, MethodError> {
         Ok(QueryResponse {
             account_id: request.account_id,
             query_state: State::Initial,
             can_calculate_changes: false,
             position: 0,
-            ids: vec![Id::new(0)],
+            ids: if access_token.quota > 0 {
+                vec![Id::new(0)]
+            } else {
+                vec![]
+            },
             total: Some(1),
             limit: None,
         })
