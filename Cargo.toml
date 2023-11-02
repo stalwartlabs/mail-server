@@ -60,3 +60,7 @@ incremental = false
 debug-assertions = false
 overflow-checks = false
 rpath = false
+
+# TODO: remove before merge
+[patch."https://github.com/stalwartlabs/mail-send"]
+mail-send = { git = "https://github.com/hoxxep/mail-send", rev = "1fcb932" }

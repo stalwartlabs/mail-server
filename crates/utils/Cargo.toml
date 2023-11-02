@@ -13,7 +13,7 @@ serde = { version = "1.0", features = ["derive"]}
 tracing = "0.1"
 mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.21.0"

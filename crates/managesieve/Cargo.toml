@@ -13,7 +13,7 @@ directory = { path = "../directory" }
 store = { path = "../store" }
 utils = { path = "../utils" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5"] }
 sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
 rustls = "0.21.0"
 rustls-pemfile = "1.0"
