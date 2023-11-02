@@ -334,10 +334,7 @@ impl<'x> BodyPart<'x> {
                 body_parameters,
                 extension,
             } => {
-                for (pos, part) in body_parts.iter().enumerate() {
-                    if pos > 0 {
-                        buf.push(b' ');
-                    }
+                for part in body_parts.iter() {
                     part.serialize(buf, is_extended);
                 }
                 buf.push(b' ');
@@ -1173,7 +1170,7 @@ mod tests {
                 },
                 concat!(
                     "BODY ((\"text\" \"PLAIN\" (\"CHARSET\" \"US-ASCII\") ",
-                    "NIL NIL \"7BIT\" 1152 23) ",
+                    "NIL NIL \"7BIT\" 1152 23)",
                     "(\"text\" \"PLAIN\" (\"CHARSET\" \"US-ASCII\" \"NAME\" \"cc.diff\") ",
                     "\"<960723163407.20117h@cac.washington.edu>\" \"Compiler diff\" ",
                     "\"BASE64\" 4554 73) \"MIXED\")",
@@ -1283,14 +1280,14 @@ mod tests {
                 concat!(
                     "BODYSTRUCTURE (((\"text\" \"PLAIN\" (\"CHARSET\" \"UTF-8\") ",
                     "\"<111@domain.com>\" \"Text part\" \"7BIT\" 1152 23 \"8o3456\" ",
-                    "(\"inline\" ()) \"en-US\" \"right here\") ",
+                    "(\"inline\" ()) \"en-US\" \"right here\")",
                     "(\"text\" \"HTML\" (\"CHARSET\" \"UTF-8\") ",
                     "\"<54535@domain.com>\" \"HTML part\" \"8BIT\" 45345 994 \"53454\" ",
                     "(\"attachment\" (\"filename\" \"myfile.txt\")) ",
                     "(\"en-US\" \"de-DE\") ",
                     "\"right there\") \"ALTERNATIVE\" (\"x-param\" ",
                     "\"a very special parameter\") ",
-                    "NIL \"en-US\" \"unknown\") ",
+                    "NIL \"en-US\" \"unknown\")",
                     "(\"APPLICATION\" \"MSWORD\" (\"NAME\" \"chimichangas.docx\") ",
                     "\"<4444@chimi.changa>\" \"Chimichangas recipe\" \"base64\"",
                     " 84723 \"1234\" ",

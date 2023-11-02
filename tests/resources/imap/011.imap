@@ -34,7 +34,7 @@ BODY (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 8 1
          ) 0
-      ) (
+      )(
          "message" NIL NIL NIL NIL NIL 42 (
             NIL "m2" (
                (
@@ -94,7 +94,7 @@ BODYSTRUCTURE (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 8 1 "8dc313ad8cf1d82dbe8d46f5f0d3d79c" NIL NIL NIL
          ) 0 "702907ad1c165219425153a8f0a5f578" NIL NIL NIL
-      ) (
+      )(
          "message" NIL NIL NIL NIL NIL 42 (
             NIL "m2" (
                (

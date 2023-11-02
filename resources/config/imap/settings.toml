@@ -9,6 +9,9 @@ max-size = 52428800
 max-failures = 3
 allow-plain-text = false
 
+[imap.folders]
+all-messages = true
+
 [imap.folders.name]
 shared = "Shared Folders"
 all = "All Mail"

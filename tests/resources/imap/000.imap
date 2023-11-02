@@ -3,25 +3,25 @@ BODY (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 262 7
-   ) (
+   )(
       "text" "plain" (
          "charset" "US-ASCII"
       ) NIL NIL "7bit" 111 3
-   ) (
+   )(
       (
          "text" "basic" (
             "charset" "us-ascii"
          ) NIL NIL "base64" 85 2
-      ) (
+      )(
          "text" "jpeg" (
             "charset" "us-ascii"
          ) NIL NIL "base64" 44 1
       ) "parallel"
-   ) (
+   )(
       "text" "enriched" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 140 5
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL NIL 223 (
          NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
       ) (
@@ -37,27 +37,27 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 262 7 "1ba9f4410aca245ffe18870d1767eaf1" NIL NIL NIL
-   ) (
+   )(
       "text" "plain" (
          "charset" "US-ASCII"
       ) NIL NIL "7bit" 111 3 "457a84e4830817334703ecead7a71bdf" NIL NIL NIL
-   ) (
+   )(
       (
          "text" "basic" (
             "charset" "us-ascii"
          ) NIL NIL "base64" 85 2 "c6e3404e683fdeb88e96dfed0abbddad" NIL NIL NIL
-      ) (
+      )(
          "text" "jpeg" (
             "charset" "us-ascii"
          ) NIL NIL "base64" 44 1 "88217c7613d6252c87ba0cd279f1e93c" NIL NIL NIL
       ) "parallel" (
          "boundary" "unique-boundary-2"
       ) NIL NIL NIL
-   ) (
+   )(
       "text" "enriched" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 140 5 "4a5cd280a875e791bd6d767dcf60c43d" NIL NIL NIL
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL NIL 223 (
          NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
       ) (

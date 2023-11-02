@@ -3,11 +3,11 @@ BODY (
       "message" "external-body" (
          "name" "BodyFormats.ps" "site" "thumper.bellcore.com" "mode" "image" "access-type" "ANON-FTP" "directory" "pub" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 79
-   ) (
+   )(
       "message" "external-body" (
          "access-type" "local-file" "name" "/u/nsb/writing/rfcs/RFC-MIME.ps" "site" "thumper.bellcore.com" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 79
-   ) (
+   )(
       "message" "external-body" (
          "access-type" "mail-server" "server" "listserv@bogus.bitnet" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 97
@@ -19,11 +19,11 @@ BODYSTRUCTURE (
       "message" "external-body" (
          "name" "BodyFormats.ps" "site" "thumper.bellcore.com" "mode" "image" "access-type" "ANON-FTP" "directory" "pub" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 79 "13a120642a010037cbc238c999349116" NIL NIL NIL
-   ) (
+   )(
       "message" "external-body" (
          "access-type" "local-file" "name" "/u/nsb/writing/rfcs/RFC-MIME.ps" "site" "thumper.bellcore.com" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 79 "13a120642a010037cbc238c999349116" NIL NIL NIL
-   ) (
+   )(
       "message" "external-body" (
          "access-type" "mail-server" "server" "listserv@bogus.bitnet" "expiration" "Fri, 14 Jun 1991 19:13:14 -0400 (EDT)"
       ) NIL NIL NIL 97 "6f6c2486f2516ed45542404973c1cebb" NIL NIL NIL

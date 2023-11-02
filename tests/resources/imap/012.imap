@@ -3,7 +3,7 @@ BODY (
       "text" "x-myown" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 6 1
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL NIL 280 (
          "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
             (
@@ -23,7 +23,7 @@ BODY (
             "text" "html" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 19 1
-         ) (
+         )(
             "text" "plain" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 20 1
@@ -37,7 +37,7 @@ BODYSTRUCTURE (
       "text" "x-myown" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 6 1 "b1946ac92492d2347c6235b4d2611184" NIL NIL NIL
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL NIL 280 (
          "Sun, 12 Aug 2012 12:34:56 +0300" "submsg" (
             (
@@ -57,7 +57,7 @@ BODYSTRUCTURE (
             "text" "html" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 19 1 "35c5b687e359e8ce7be1f1ecafd9b475" NIL NIL NIL
-         ) (
+         )(
             "text" "plain" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 20 1 "deeff770fadb17c664d431b97bcd05c5" NIL NIL NIL

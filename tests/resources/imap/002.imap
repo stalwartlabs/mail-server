@@ -3,7 +3,7 @@ BODY (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 61 5
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL "7bit" 1979 (
          "Thu, 13 Aug 1998 17:42:41 +1000" "Map of Argentina with Description" (
             (
@@ -27,7 +27,7 @@ BODY (
             "text" "plain" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 355 12
-         ) (
+         )(
             "image" "gif" (
                "name" "map_of_Argentina.gif"
             ) NIL NIL "base64" 389
@@ -41,7 +41,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 61 5 "63aa55d7eacd3e7d4af551d3d7f8fe46" NIL NIL NIL
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL "7bit" 1979 (
          "Thu, 13 Aug 1998 17:42:41 +1000" "Map of Argentina with Description" (
             (
@@ -65,7 +65,7 @@ BODYSTRUCTURE (
             "text" "plain" (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 355 12 "47027313db254547987c7eb4be377593" NIL NIL NIL
-         ) (
+         )(
             "image" "gif" (
                "name" "map_of_Argentina.gif"
             ) NIL NIL "base64" 389 "5359a63540c1a8eae06a27e8760e1501" (

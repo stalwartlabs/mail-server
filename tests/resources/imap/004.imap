@@ -3,7 +3,7 @@ BODY (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 45 1
-   ) (
+   )(
       (
          "message" NIL NIL NIL NIL NIL 100 (
             "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
@@ -12,7 +12,7 @@ BODY (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 22 1
          ) 0
-      ) (
+      )(
          "message" NIL NIL NIL NIL NIL 125 (
             "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (
@@ -29,7 +29,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 45 1 "f7f7e917e54763330bc648984459b38e" NIL NIL NIL
-   ) (
+   )(
       (
          "message" NIL NIL NIL NIL NIL 100 (
             "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
@@ -38,7 +38,7 @@ BODYSTRUCTURE (
                "charset" "us-ascii"
             ) NIL NIL "7bit" 22 1 "1ec4e1f0175dc661a12854b33879ce9b" NIL NIL NIL
          ) 0 "ef1527984c599523c90fb184a8fdfd61" NIL NIL NIL
-      ) (
+      )(
          "message" NIL NIL NIL NIL NIL 125 (
             "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
          ) (

@@ -3,7 +3,7 @@ BODY (
       "text" "plain" (
          "charset" "utf-8"
       ) NIL NIL "7bit" 54 0
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL "base64" 1179 (
          "Tue, 14 Dec 2021 11:48:25 +0100" "HTML test" (
             (
@@ -27,7 +27,7 @@ BODY (
             "text" "plain" (
                "charset" "utf-8" "format" "flowed"
             ) NIL NIL "7bit" 30 0
-         ) (
+         )(
             "text" "html" (
                "charset" "utf-8"
             ) NIL NIL "7bit" 173 8
@@ -41,7 +41,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "utf-8"
       ) NIL NIL "7bit" 54 0 "e377afc895a2c4c0d17b378f355de59e" NIL NIL NIL
-   ) (
+   )(
       "message" "rfc822" NIL NIL NIL "base64" 1179 (
          "Tue, 14 Dec 2021 11:48:25 +0100" "HTML test" (
             (
@@ -65,7 +65,7 @@ BODYSTRUCTURE (
             "text" "plain" (
                "charset" "utf-8" "format" "flowed"
             ) NIL NIL "7bit" 30 0 "6891396510cbadf4e2cfe31aee5bd25f" NIL NIL NIL
-         ) (
+         )(
             "text" "html" (
                "charset" "utf-8"
             ) NIL NIL "7bit" 173 8 "1a04bd2ec90f44a42792eacdc14fe8ea" NIL NIL NIL

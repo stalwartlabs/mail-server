@@ -3,7 +3,7 @@ BODY (
       "text" "plain" (
          "charset" "utf-8"
       ) NIL NIL "quoted-printable" 87 2
-   ) (
+   )(
       "text" "html" (
          "charset" "utf-8"
       ) NIL NIL "quoted-printable" 93 2
@@ -19,7 +19,7 @@ BODYSTRUCTURE (
             
          )
       ) NIL NIL
-   ) (
+   )(
       "text" "html" (
          "charset" "utf-8"
       ) NIL NIL "quoted-printable" 93 2 "bb2724458c0a6183195d922d711523c0" (

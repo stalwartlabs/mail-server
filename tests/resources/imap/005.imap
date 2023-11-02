@@ -3,7 +3,7 @@ BODY (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 79 1
-   ) (
+   )(
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 76 2
@@ -15,7 +15,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 79 1 "b35878dedb7cd0aa6934f90df9d517b0" NIL NIL NIL
-   ) (
+   )(
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 76 2 "d3905bfd2a53ad0a4438d01bf271677a" NIL NIL NIL
