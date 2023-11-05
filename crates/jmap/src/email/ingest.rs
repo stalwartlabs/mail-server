@@ -303,7 +303,6 @@ impl JMAP {
                 params.keywords,
                 params.mailbox_ids,
                 params.received_at.unwrap_or_else(now),
-                self.config.default_language,
             )
             .map_err(|err| {
                 tracing::error!(

@@ -222,12 +222,13 @@ refresh-token-renew = "2s"
 
 #[tokio::test]
 pub async fn jmap_tests() {
-    /*tracing::subscriber::set_global_default(
+    let coco = 1;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::WARN)
             .finish(),
     )
-    .unwrap();*/
+    .unwrap();
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;

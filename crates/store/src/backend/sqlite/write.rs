@@ -159,7 +159,7 @@ impl Store {
                         .serialize();
 
                         if *set {
-                            trx.prepare_cached("INSERT OR REPLACE INTO i (k) VALUES (?)")?
+                            trx.prepare_cached("INSERT OR IGNORE INTO i (k) VALUES (?)")?
                                 .execute([&key])?;
                         } else {
                             trx.prepare_cached("DELETE FROM i WHERE k = ?")?

@@ -178,13 +178,15 @@ impl JMAP {
                     | Property::Header(_) => {
                         email.append(
                             property.clone(),
-                            message.parts[0].header_to_value(property, &raw_message),
+                            message.parts[0]
+                                .headers
+                                .header_to_value(property, &raw_message),
                         );
                     }
                     Property::Headers => {
                         email.append(
                             Property::Headers,
-                            message.parts[0].headers_to_value(&raw_message),
+                            message.parts[0].headers.headers_to_value(&raw_message),
                         );
                     }
                     Property::TextBody | Property::HtmlBody | Property::Attachments => {

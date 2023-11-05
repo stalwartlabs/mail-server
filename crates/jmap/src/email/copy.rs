@@ -27,7 +27,6 @@ use jmap_proto::{
         copy::{CopyRequest, CopyResponse, RequestArguments},
         set::{self, SetRequest},
     },
-    object::Object,
     request::{
         method::{MethodFunction, MethodName, MethodObject},
         reference::MaybeReference,
@@ -47,7 +46,7 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
-use mail_parser::parsers::fields::thread::thread_name;
+use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
     fts::term_index::TokenIndex,
     query::RawValue,
@@ -56,11 +55,12 @@ use store::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{auth::AccessToken, Bincode, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
     ingest::IngestedEmail,
+    metadata::MessageMetadata,
 };
 
 impl JMAP {
@@ -295,7 +295,7 @@ impl JMAP {
     ) -> Result<Result<IngestedEmail, SetError>, MethodError> {
         // Obtain term index and metadata
         let (mut metadata, token_index) = if let (Some(metadata), Some(token_index)) = (
-            self.get_property::<Object<Value>>(
+            self.get_property::<Bincode<MessageMetadata>>(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
@@ -309,7 +309,7 @@ impl JMAP {
             )
             .await?,
         ) {
-            (metadata, token_index)
+            (metadata.inner, token_index)
         } else {
             return Ok(Err(SetError::not_found().with_description(format!(
                 "Message not found not found in account {}.",
@@ -319,37 +319,35 @@ impl JMAP {
 
         // Check quota
         if account_quota > 0
-            && metadata.get(&Property::Size).as_uint().unwrap_or_default() as i64
-                + self.get_used_quota(account_id).await?
-                > account_quota
+            && metadata.size as i64 + self.get_used_quota(account_id).await? > account_quota
         {
             return Ok(Err(SetError::over_quota()));
         }
 
         // Set receivedAt
         if let Some(received_at) = received_at {
-            metadata.set(Property::ReceivedAt, Value::Date(received_at));
+            metadata.received_at = received_at.timestamp() as u64;
         }
 
         // Obtain threadId
         let mut references = vec![];
         let mut subject = "";
-        for (property, value) in &metadata.properties {
-            match property {
-                Property::MessageId
-                | Property::InReplyTo
-                | Property::References
-                | Property::EmailIds => match value {
-                    Value::Text(text) => {
-                        references.push(text.as_str());
+        for header in &metadata.contents.parts[0].headers {
+            match header.name {
+                HeaderName::MessageId
+                | HeaderName::InReplyTo
+                | HeaderName::References
+                | HeaderName::ResentMessageId => match &header.value {
+                    HeaderValue::Text(text) => {
+                        references.push(text.as_ref());
                     }
-                    Value::List(list) => {
-                        references.extend(list.iter().filter_map(|v| v.as_string()));
+                    HeaderValue::TextList(list) => {
+                        references.extend(list.iter().map(|v| v.as_ref()));
                     }
                     _ => (),
                 },
-                Property::Subject => {
-                    if let Some(value) = value.as_string() {
+                HeaderName::Subject => {
+                    if let HeaderValue::Text(value) = &header.value {
                         subject = thread_name(value).trim_text(MAX_SORT_FIELD_LENGTH);
                     }
                 }
@@ -373,7 +371,7 @@ impl JMAP {
                 account_id,
                 document_id: message_id,
             }),
-            size: metadata.get(&Property::Size).as_uint().unwrap_or(0) as usize,
+            size: metadata.size,
             ..Default::default()
         };
         self.store

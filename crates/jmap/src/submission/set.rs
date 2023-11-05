@@ -47,6 +47,7 @@ use jmap_proto::{
         value::{MaybePatchValue, SetValue, Value},
     },
 };
+use mail_parser::{HeaderName, HeaderValue};
 use smtp::{
     core::{management::QueueRequest, NullIo, Session, SessionData, State},
     queue,
@@ -59,7 +60,7 @@ use store::{
 use tokio::sync::oneshot;
 use utils::{listener::ServerInstance, map::vec_map::VecMap};
 
-use crate::{identity::set::sanitize_email, JMAP};
+use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, Bincode, JMAP};
 
 pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::UndoStatus).index_as(IndexAs::Text {
@@ -505,8 +506,8 @@ impl JMAP {
 
         // Add recipients to envelope if missing
         if rcpt_to.is_empty() {
-            if let Some(obj) = self
-                .get_property::<Object<Value>>(
+            if let Some(metadata) = self
+                .get_property::<Bincode<MessageMetadata>>(
                     account_id,
                     Collection::Email,
                     email_id,
@@ -515,29 +516,30 @@ impl JMAP {
                 .await?
             {
                 let mut envelope_values = Vec::new();
-                for property in &[Property::To, Property::Cc, Property::Bcc] {
-                    if let Some(Value::List(addresses)) = obj.properties.get(property) {
-                        for address in addresses {
-                            if let Some(address) = address
-                                .as_obj()
-                                .and_then(|obj| obj.properties.get(&Property::Email))
-                                .and_then(|value| value.as_string())
-                                .and_then(sanitize_email)
-                            {
-                                if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
-                                    envelope_values.push(Value::Object(
-                                        Object::with_capacity(1)
-                                            .with_property(Property::Email, address.clone()),
-                                    ));
-                                    rcpt_to.push(RcptTo {
-                                        address,
-                                        ..Default::default()
-                                    });
+                for header in &metadata.inner.contents.parts[0].headers {
+                    if matches!(
+                        header.name,
+                        HeaderName::To | HeaderName::Cc | HeaderName::Bcc
+                    ) {
+                        if let HeaderValue::Address(addr) = &header.value {
+                            for address in addr.iter() {
+                                if let Some(address) = address.address().and_then(sanitize_email) {
+                                    if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
+                                        envelope_values.push(Value::Object(
+                                            Object::with_capacity(1)
+                                                .with_property(Property::Email, address.clone()),
+                                        ));
+                                        rcpt_to.push(RcptTo {
+                                            address,
+                                            ..Default::default()
+                                        });
+                                    }
                                 }
                             }
                         }
                     }
                 }
+
                 if !rcpt_to.is_empty() {
                     submission
                         .properties

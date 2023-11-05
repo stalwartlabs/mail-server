@@ -29,7 +29,6 @@ use jmap_proto::{
         set::{SetError, SetErrorType},
     },
     method::set::{RequestArguments, SetRequest, SetResponse},
-    object::Object,
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
@@ -61,12 +60,13 @@ use store::{
     BlobKind, Serialize, ValueKey,
 };
 
-use crate::{auth::AccessToken, IngestError, JMAP};
+use crate::{auth::AccessToken, Bincode, IngestError, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
     index::EmailIndexBuilder,
     ingest::IngestEmail,
+    metadata::MessageMetadata,
 };
 
 impl JMAP {
@@ -1182,7 +1182,7 @@ impl JMAP {
 
         // Remove message metadata
         if let Some(metadata) = self
-            .get_property::<Object<Value>>(
+            .get_property::<Bincode<MessageMetadata>>(
                 account_id,
                 Collection::Email,
                 document_id,
@@ -1190,7 +1190,7 @@ impl JMAP {
             )
             .await?
         {
-            batch.custom(EmailIndexBuilder::clear(metadata));
+            batch.custom(EmailIndexBuilder::clear(metadata.inner));
         } else {
             tracing::debug!(
                 event = "error",

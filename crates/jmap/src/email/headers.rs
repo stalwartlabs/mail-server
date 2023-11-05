@@ -41,7 +41,7 @@ use mail_builder::{
     },
     MessageBuilder,
 };
-use mail_parser::{parsers::MessageStream, Addr, HeaderName, HeaderValue, MessagePart};
+use mail_parser::{parsers::MessageStream, Addr, Header, HeaderName, HeaderValue};
 
 pub trait IntoForm {
     fn into_form(self, form: &HeaderForm) -> Value;
@@ -62,7 +62,7 @@ pub trait BuildHeader: Sized {
     fn build_header(self, header: HeaderProperty, value: Value) -> Result<Self, HeaderProperty>;
 }
 
-impl HeaderToValue for MessagePart<'_> {
+impl HeaderToValue for Vec<Header<'_>> {
     fn header_to_value(&self, property: &Property, raw_message: &[u8]) -> Value {
         let (header_name, form, all) = match property {
             Property::Header(header) => (
@@ -85,44 +85,31 @@ impl HeaderToValue for MessagePart<'_> {
             _ => return Value::Null,
         };
 
+        let is_raw = matches!(form, HeaderForm::Raw) || matches!(header_name, HeaderName::Other(_));
         let mut headers = Vec::new();
-
-        match (&header_name, &form) {
-            (HeaderName::Other(_), _) | (_, HeaderForm::Raw) => {
-                let header_name = header_name.as_str();
-                for header in self.headers().iter().rev() {
-                    if header.name.as_str().eq_ignore_ascii_case(header_name) {
-                        let header_value = raw_message
-                            .get(header.offset_start..header.offset_end)
-                            .map_or(HeaderValue::Empty, |bytes| match form {
-                                HeaderForm::Raw => {
-                                    HeaderValue::Text(String::from_utf8_lossy(bytes.trim_end()))
-                                }
-                                HeaderForm::Text => MessageStream::new(bytes).parse_unstructured(),
-                                HeaderForm::Addresses => MessageStream::new(bytes).parse_address(),
-                                HeaderForm::GroupedAddresses => {
-                                    MessageStream::new(bytes).parse_address()
-                                }
-                                HeaderForm::MessageIds => MessageStream::new(bytes).parse_id(),
-                                HeaderForm::Date => MessageStream::new(bytes).parse_date(),
-                                HeaderForm::URLs => MessageStream::new(bytes).parse_address(),
-                            });
-                        headers.push(header_value.into_form(&form));
-                        if !all {
-                            break;
-                        }
-                    }
-                }
-            }
-            (header_name, _) => {
-                let header_name = header_name.as_str();
-                for header in self.headers().iter().rev() {
-                    if header.name.as_str().eq_ignore_ascii_case(header_name) {
-                        headers.push(header.value.clone().into_form(&form));
-                        if !all {
-                            break;
-                        }
-                    }
+        let header_name = header_name.as_str();
+        for header in self.iter().rev() {
+            if header.name.as_str().eq_ignore_ascii_case(header_name) {
+                let header_value = if is_raw || matches!(header.value, HeaderValue::Empty) {
+                    raw_message
+                        .get(header.offset_start..header.offset_end)
+                        .map_or(HeaderValue::Empty, |bytes| match form {
+                            HeaderForm::Raw => {
+                                HeaderValue::Text(String::from_utf8_lossy(bytes.trim_end()))
+                            }
+                            HeaderForm::Text => MessageStream::new(bytes).parse_unstructured(),
+                            HeaderForm::Addresses
+                            | HeaderForm::GroupedAddresses
+                            | HeaderForm::URLs => MessageStream::new(bytes).parse_address(),
+                            HeaderForm::MessageIds => MessageStream::new(bytes).parse_id(),
+                            HeaderForm::Date => MessageStream::new(bytes).parse_date(),
+                        })
+                } else {
+                    header.value.clone()
+                };
+                headers.push(header_value.into_form(&form));
+                if !all {
+                    break;
                 }
             }
         }
@@ -138,8 +125,8 @@ impl HeaderToValue for MessagePart<'_> {
     }
 
     fn headers_to_value(&self, raw_message: &[u8]) -> Value {
-        let mut headers = Vec::with_capacity(self.headers.len());
-        for header in self.headers() {
+        let mut headers = Vec::with_capacity(self.len());
+        for header in self.iter() {
             headers.push(Value::Object(
                 Object::with_capacity(2)
                     .with_property(Property::Name, header.name().to_string())

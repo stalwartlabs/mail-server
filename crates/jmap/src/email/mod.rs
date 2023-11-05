@@ -29,6 +29,7 @@ pub mod headers;
 pub mod import;
 pub mod index;
 pub mod ingest;
+pub mod metadata;
 pub mod parse;
 pub mod query;
 pub mod set;

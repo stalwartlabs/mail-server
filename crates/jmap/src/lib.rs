@@ -736,13 +736,13 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for &Bincode<T> {
     fn serialize(self) -> Vec<u8> {
-        bincode::serialize(&self.inner).unwrap_or_default()
+        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
     }
 }
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
     fn serialize(self) -> Vec<u8> {
-        bincode::serialize(&self.inner).unwrap_or_default()
+        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
     }
 }
 
@@ -750,15 +750,29 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
     for Bincode<T>
 {
     fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        bincode::deserialize(bytes)
-            .map(|inner| Self { inner })
+        lz4_flex::decompress_size_prepended(bytes)
             .map_err(|err| {
-                store::Error::InternalError(format!("Bincode deserialization failed: {err}"))
+                store::Error::InternalError(format!("Bincode decompression failed: {err:?}"))
             })
+            .and_then(|result| {
+                bincode::deserialize(&result).map_err(|err| {
+                    store::Error::InternalError(format!(
+                        "Bincode deserialization failed (len {}): {err:?}",
+                        result.len()
+                    ))
+                })
+            })
+            .map(|inner| Self { inner })
     }
 }
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T> {
+    fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
+        unreachable!()
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for &Bincode<T> {
     fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
         unreachable!()
     }

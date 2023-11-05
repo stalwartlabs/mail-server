@@ -23,19 +23,12 @@
 
 use std::borrow::Cow;
 
-use jmap_proto::{
-    object::Object,
-    types::{
-        date::UTCDate,
-        keyword::Keyword,
-        property::{HeaderForm, Property},
-        value::Value,
-    },
-};
+use jmap_proto::types::{keyword::Keyword, property::Property};
 use mail_parser::{
     decoders::html::html_to_text,
     parsers::{fields::thread::thread_name, preview::preview_text},
-    Addr, Address, GetHeader, Group, HeaderName, HeaderValue, Message, MessagePart, PartType,
+    Addr, Address, GetHeader, Group, Header, HeaderName, HeaderValue, Message, MessagePart,
+    PartType,
 };
 use nlp::language::Language;
 use store::{
@@ -43,7 +36,9 @@ use store::{
     write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
 };
 
-use crate::email::headers::IntoForm;
+use crate::Bincode;
+
+use super::metadata::MessageMetadata;
 
 pub const MAX_MESSAGE_PARTS: usize = 1000;
 pub const MAX_ID_LENGTH: usize = 100;
@@ -64,8 +59,13 @@ pub(super) trait IndexMessage {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
-        default_language: Language,
     ) -> store::Result<&mut Self>;
+
+    fn index_headers(&mut self, headers: &[Header<'_>], options: u32);
+}
+
+pub(super) trait IndexMessageText<'x> {
+    fn index_message(&mut self, message: &'x Message<'x>);
 }
 
 impl IndexMessage for BatchBuilder {
@@ -75,10 +75,7 @@ impl IndexMessage for BatchBuilder {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
-        default_language: Language,
     ) -> store::Result<&mut Self> {
-        let mut metadata = Object::with_capacity(15);
-
         // Index keywords
         self.value(Property::Keywords, keywords, F_VALUE | F_BITMAP);
 
@@ -86,21 +83,14 @@ impl IndexMessage for BatchBuilder {
         self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
 
         // Index size
-        metadata.append(Property::Size, message.raw_message.len());
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
             .quota(message.raw_message.len() as i64);
 
         // Index receivedAt
-        metadata.append(
-            Property::ReceivedAt,
-            Value::Date(UTCDate::from_timestamp(received_at as i64)),
-        );
         self.value(Property::ReceivedAt, received_at, F_INDEX);
 
-        let mut fts = FtsIndexBuilder::with_default_language(default_language);
-        let mut seen_headers = [false; 40];
-        let mut language = Language::Unknown;
         let mut has_attachments = false;
+        let mut preview = None;
         let preview_part_id = message
             .text_body
             .first()
@@ -108,23 +98,181 @@ impl IndexMessage for BatchBuilder {
             .copied()
             .unwrap_or(usize::MAX);
 
-        for (part_id, part) in message
-            .parts
-            .into_iter()
-            .take(MAX_MESSAGE_PARTS)
-            .enumerate()
-        {
+        for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
+            if part_id == 0 {
+                self.index_headers(&part.headers, 0);
+            }
+
+            match &part.body {
+                PartType::Text(text) => {
+                    if part_id == preview_part_id {
+                        preview =
+                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH).into();
+                    }
+
+                    if !message.text_body.contains(&part_id)
+                        && !message.html_body.contains(&part_id)
+                    {
+                        has_attachments = true;
+                    }
+                }
+                PartType::Html(html) => {
+                    let text = html_to_text(html);
+                    if part_id == preview_part_id {
+                        preview =
+                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH).into();
+                    }
+
+                    if !message.text_body.contains(&part_id)
+                        && !message.html_body.contains(&part_id)
+                    {
+                        has_attachments = true;
+                    }
+                }
+                PartType::Binary(_) | PartType::Message(_) if !has_attachments => {
+                    has_attachments = true;
+                }
+                _ => {}
+            }
+        }
+
+        // Store and index hasAttachment property
+        if has_attachments {
+            self.bitmap(Property::HasAttachment, (), 0);
+        }
+
+        // FTS index
+        let mut fts = FtsIndexBuilder::with_default_language(Language::English);
+        fts.index_message(&message);
+        self.custom(fts);
+
+        // Store message metadata
+        self.value(
+            Property::BodyStructure,
+            Bincode::new(MessageMetadata {
+                preview: preview.unwrap_or_default().into_owned(),
+                size: message.raw_message.len(),
+                contents: message.into(),
+                received_at,
+                has_attachments,
+            }),
+            F_VALUE,
+        );
+
+        Ok(self)
+    }
+
+    fn index_headers(&mut self, headers: &[Header<'_>], options: u32) {
+        let mut seen_headers = [false; 40];
+        for header in headers.iter().rev() {
+            if matches!(header.name, HeaderName::Other(_)) {
+                continue;
+            }
+
+            match header.name {
+                HeaderName::MessageId
+                | HeaderName::InReplyTo
+                | HeaderName::References
+                | HeaderName::ResentMessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            self.value(Property::MessageId, id, F_INDEX | options);
+                        }
+                    });
+                }
+                HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
+                    if !seen_headers[header.name.id() as usize] {
+                        let property = Property::from_header(&header.name);
+                        let mut sort_text = SortedAddressBuilder::new();
+                        let mut found_addr = false;
+
+                        header.value.visit_addresses(|element, value| {
+                            if !found_addr {
+                                match element {
+                                    AddressElement::Name => {
+                                        found_addr = !sort_text.push(value);
+                                    }
+                                    AddressElement::Address => {
+                                        sort_text.push(value);
+                                        found_addr = true;
+                                    }
+                                    AddressElement::GroupName => (),
+                                }
+                            }
+                        });
+
+                        // Add address to inverted index
+                        self.value(u8::from(&property), sort_text.build(), F_INDEX | options);
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                HeaderName::Date => {
+                    if !seen_headers[header.name.id() as usize] {
+                        if let HeaderValue::DateTime(datetime) = &header.value {
+                            self.value(
+                                Property::SentAt,
+                                datetime.to_timestamp() as u64,
+                                F_INDEX | options,
+                            );
+                        }
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+                HeaderName::Subject => {
+                    if !seen_headers[header.name.id() as usize] {
+                        // Index subject
+                        let subject = match &header.value {
+                            HeaderValue::Text(text) => text.clone(),
+                            HeaderValue::TextList(list) if !list.is_empty() => {
+                                list.first().unwrap().clone()
+                            }
+                            _ => "".into(),
+                        };
+
+                        // Index thread name
+                        let thread_name = thread_name(&subject);
+                        self.value(
+                            Property::Subject,
+                            if !thread_name.is_empty() {
+                                thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                            } else {
+                                "!"
+                            },
+                            F_INDEX | options,
+                        );
+
+                        seen_headers[header.name.id() as usize] = true;
+                    }
+                }
+
+                _ => (),
+            }
+        }
+
+        // Add subject to index if missing
+        if !seen_headers[HeaderName::Subject.id() as usize] {
+            self.value(Property::Subject, "!", F_INDEX | options);
+        }
+    }
+}
+
+impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
+    fn index_message(&mut self, message: &'x Message<'x>) {
+        let mut language = Language::Unknown;
+
+        for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
             let part_language = part.language().unwrap_or(language);
             if part_id == 0 {
                 language = part_language;
-                let mut extra_ids = Vec::new();
-                for header in part.headers.into_iter().rev() {
+
+                for header in part.headers.iter().rev() {
                     if matches!(header.name, HeaderName::Other(_)) {
                         continue;
                     }
                     // Index hasHeader property
                     let header_num = header.name.id().to_string();
-                    fts.index_raw_token(Property::Headers, &header_num);
+                    self.index_raw_token(Property::Headers, &header_num);
 
                     match header.name {
                         HeaderName::MessageId
@@ -132,156 +280,43 @@ impl IndexMessage for BatchBuilder {
                         | HeaderName::References
                         | HeaderName::ResentMessageId => {
                             header.value.visit_text(|id| {
-                                // Add ids to inverted index
-                                if id.len() < MAX_ID_LENGTH {
-                                    self.value(Property::MessageId, id, F_INDEX);
-                                }
-
                                 // Index ids without stemming
                                 if id.len() < MAX_TOKEN_LENGTH {
-                                    fts.index_raw_token(
+                                    self.index_raw_token(
                                         Property::Headers,
                                         format!("{header_num}{id}"),
                                     );
                                 }
                             });
-
-                            if matches!(
-                                header.name,
-                                HeaderName::MessageId
-                                    | HeaderName::InReplyTo
-                                    | HeaderName::References
-                            ) && !seen_headers[header.name.id() as usize]
-                            {
-                                metadata.append(
-                                    Property::from_header(&header.name),
-                                    header
-                                        .value
-                                        .trim_text(MAX_STORED_FIELD_LENGTH)
-                                        .into_form(&HeaderForm::MessageIds),
-                                );
-                                seen_headers[header.name.id() as usize] = true;
-                            } else {
-                                header.value.into_visit_text(|id| {
-                                    extra_ids.push(Value::Text(id));
-                                });
-                            }
                         }
-                        HeaderName::From
-                        | HeaderName::To
-                        | HeaderName::Cc
-                        | HeaderName::Bcc
-                        | HeaderName::ReplyTo
-                        | HeaderName::Sender => {
+                        HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
                             let property = Property::from_header(&header.name);
-                            let seen_header = seen_headers[header.name.id() as usize];
-                            if matches!(
-                                header.name,
-                                HeaderName::From
-                                    | HeaderName::To
-                                    | HeaderName::Cc
-                                    | HeaderName::Bcc
-                            ) {
-                                let mut sort_text = SortedAddressBuilder::new();
-                                let mut found_addr = seen_header;
 
-                                header.value.visit_addresses(|element, value| {
-                                    if !found_addr {
-                                        match element {
-                                            AddressElement::Name => {
-                                                found_addr = !sort_text.push(value);
-                                            }
-                                            AddressElement::Address => {
-                                                sort_text.push(value);
-                                                found_addr = true;
-                                            }
-                                            AddressElement::GroupName => (),
-                                        }
-                                    }
-
-                                    // Index an address name or email without stemming
-                                    fts.index_raw(u8::from(&property), value);
-                                });
-
-                                if !seen_header {
-                                    // Add address to inverted index
-                                    self.value(u8::from(&property), sort_text.build(), F_INDEX);
-                                }
-                            }
-
-                            if !seen_header {
-                                // Add address to metadata
-                                metadata.append(
-                                    property,
-                                    header
-                                        .value
-                                        .trim_text(MAX_STORED_FIELD_LENGTH)
-                                        .into_form(&HeaderForm::Addresses),
-                                );
-                                seen_headers[header.name.id() as usize] = true;
-                            }
-                        }
-                        HeaderName::Date => {
-                            if !seen_headers[header.name.id() as usize] {
-                                if let HeaderValue::DateTime(datetime) = &header.value {
-                                    self.value(
-                                        Property::SentAt,
-                                        datetime.to_timestamp() as u64,
-                                        F_INDEX,
-                                    );
-                                }
-                                metadata.append(
-                                    Property::SentAt,
-                                    header.value.into_form(&HeaderForm::Date),
-                                );
-                                seen_headers[header.name.id() as usize] = true;
-                            }
+                            header.value.visit_addresses(|_, value| {
+                                // Index an address name or email without stemming
+                                self.index_raw(u8::from(&property), value);
+                            });
                         }
                         HeaderName::Subject => {
-                            // Index subject
-                            let subject = match &header.value {
-                                HeaderValue::Text(text) => text.clone(),
-                                HeaderValue::TextList(list) if !list.is_empty() => {
-                                    list.first().unwrap().clone()
-                                }
-                                _ => "".into(),
-                            };
-
-                            if !seen_headers[header.name.id() as usize] {
-                                // Add to metadata
-                                metadata.append(
-                                    Property::Subject,
-                                    header
-                                        .value
-                                        .trim_text(MAX_STORED_FIELD_LENGTH)
-                                        .into_form(&HeaderForm::Text),
-                                );
-
-                                // Index thread name
-                                let thread_name = thread_name(&subject);
-                                self.value(
-                                    Property::Subject,
-                                    if !thread_name.is_empty() {
-                                        thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                                    } else {
-                                        "!"
-                                    },
-                                    F_INDEX,
-                                );
-
-                                seen_headers[header.name.id() as usize] = true;
-                            }
-
                             // Index subject for FTS
-                            fts.index(Property::Subject, subject, language);
+                            self.index(
+                                Property::Subject,
+                                match &header.value {
+                                    HeaderValue::Text(text) => text.clone(),
+                                    HeaderValue::TextList(list) if !list.is_empty() => {
+                                        list.first().unwrap().clone()
+                                    }
+                                    _ => "".into(),
+                                },
+                                language,
+                            );
                         }
-
                         HeaderName::Comments | HeaderName::Keywords | HeaderName::ListId => {
                             // Index headers
                             header.value.visit_text(|text| {
                                 for token in text.split_ascii_whitespace() {
                                     if token.len() < MAX_TOKEN_LENGTH {
-                                        fts.index_raw_token(
+                                        self.index_raw_token(
                                             Property::Headers,
                                             format!("{header_num}{}", token.to_lowercase()),
                                         );
@@ -292,123 +327,83 @@ impl IndexMessage for BatchBuilder {
                         _ => (),
                     }
                 }
-
-                // Add any extra Ids to metadata
-                if !extra_ids.is_empty() {
-                    metadata.append(Property::EmailIds, Value::List(extra_ids));
-                }
             }
 
-            // Add subject to index if missing
-            if !seen_headers[HeaderName::Subject.id() as usize] {
-                self.value(Property::Subject, "!", F_INDEX);
-            }
-
-            match part.body {
+            match &part.body {
                 PartType::Text(text) => {
-                    if part_id == preview_part_id {
-                        metadata.append(
-                            Property::Preview,
-                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH),
-                        );
-                    }
-
                     if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
                     {
-                        fts.index(Property::TextBody, text, part_language);
+                        self.index(Property::TextBody, text.as_ref(), part_language);
                     } else {
-                        fts.index(Property::Attachments, text, part_language);
-                        has_attachments = true;
+                        self.index(Property::Attachments, text.as_ref(), part_language);
                     }
                 }
                 PartType::Html(html) => {
-                    let text = html_to_text(&html);
-                    if part_id == preview_part_id {
-                        metadata.append(
-                            Property::Preview,
-                            preview_text(text.replace('\r', "").into(), PREVIEW_LENGTH),
-                        );
-                    }
+                    let text = html_to_text(html);
 
                     if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
                     {
-                        fts.index(Property::TextBody, text, part_language);
+                        self.index(Property::TextBody, text, part_language);
                     } else {
-                        fts.index(Property::Attachments, text, part_language);
-                        has_attachments = true;
+                        self.index(Property::Attachments, text, part_language);
                     }
                 }
-                PartType::Binary(_) if !has_attachments => {
-                    has_attachments = true;
-                }
-                PartType::Message(mut nested_message) => {
+                PartType::Message(nested_message) => {
                     let nested_message_language = nested_message
                         .root_part()
                         .language()
                         .unwrap_or(Language::Unknown);
                     if let Some(HeaderValue::Text(subject)) =
-                        nested_message.remove_header(HeaderName::Subject)
+                        nested_message.header(HeaderName::Subject)
                     {
-                        fts.index(
+                        self.index(
                             Property::Attachments,
-                            subject.into_owned(),
+                            subject.as_ref(),
                             nested_message_language,
                         );
                     }
 
-                    for sub_part in nested_message.parts.into_iter().take(MAX_MESSAGE_PARTS) {
+                    for sub_part in nested_message.parts.iter().take(MAX_MESSAGE_PARTS) {
                         let language = sub_part.language().unwrap_or(nested_message_language);
-                        match sub_part.body {
+                        match &sub_part.body {
                             PartType::Text(text) => {
-                                fts.index(Property::Attachments, text, language);
+                                self.index(Property::Attachments, text.as_ref(), language);
                             }
                             PartType::Html(html) => {
-                                fts.index(Property::Attachments, html_to_text(&html), language);
+                                self.index(Property::Attachments, html_to_text(html), language);
                             }
                             _ => (),
                         }
-                    }
-
-                    if !has_attachments {
-                        has_attachments = true;
                     }
                 }
                 _ => {}
             }
         }
-
-        // Store and index hasAttachment property
-        metadata.append(Property::HasAttachment, has_attachments);
-        if has_attachments {
-            self.bitmap(Property::HasAttachment, (), 0);
-        }
-
-        // Store properties
-        self.value(Property::BodyStructure, metadata, F_VALUE);
-
-        // Store full text index
-        self.custom(fts);
-
-        Ok(self)
     }
 }
 
-pub struct EmailIndexBuilder {
-    inner: Object<Value>,
+pub struct EmailIndexBuilder<'x> {
+    inner: Bincode<MessageMetadata<'x>>,
     set: bool,
 }
 
-impl EmailIndexBuilder {
-    pub fn set(inner: Object<Value>) -> Self {
-        Self { inner, set: true }
+impl<'x> EmailIndexBuilder<'x> {
+    pub fn set(inner: MessageMetadata<'x>) -> Self {
+        Self {
+            inner: Bincode { inner },
+            set: true,
+        }
     }
 
-    pub fn clear(inner: Object<Value>) -> Self {
-        Self { inner, set: false }
+    pub fn clear(inner: MessageMetadata<'x>) -> Self {
+        Self {
+            inner: Bincode { inner },
+            set: false,
+        }
     }
 }
 
-impl IntoOperations for EmailIndexBuilder {
+impl<'x> IntoOperations for EmailIndexBuilder<'x> {
     fn build(self, batch: &mut BatchBuilder) {
         let options = if self.set {
             // Serialize metadata
@@ -419,81 +414,25 @@ impl IntoOperations for EmailIndexBuilder {
             batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
             F_CLEAR
         };
+        let metadata = &self.inner.inner;
 
-        // Remove properties from index
-        let mut has_subject = false;
-        for (property, value) in self.inner.properties {
-            match (&property, value) {
-                (Property::Size, Value::UnsignedInt(size)) => {
-                    batch
-                        .value(Property::Size, size as u32, F_INDEX | options)
-                        .quota(if self.set {
-                            size as i64
-                        } else {
-                            -(size as i64)
-                        });
-                }
-                (Property::ReceivedAt | Property::SentAt, Value::Date(date)) => {
-                    batch.value(property, date.timestamp() as u64, F_INDEX | options);
-                }
-                (
-                    Property::MessageId
-                    | Property::InReplyTo
-                    | Property::References
-                    | Property::EmailIds,
-                    Value::List(ids),
-                ) => {
-                    // Remove messageIds from index
-                    for id in ids {
-                        match id {
-                            Value::Text(id) if id.len() < MAX_ID_LENGTH => {
-                                batch.value(Property::MessageId, id, F_INDEX | options);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                (
-                    Property::From | Property::To | Property::Cc | Property::Bcc,
-                    Value::List(addresses),
-                ) => {
-                    let mut sort_text = SortedAddressBuilder::new();
-                    'outer: for addr in addresses {
-                        if let Some(addr) = addr.try_unwrap_object() {
-                            for part in [Property::Name, Property::Email] {
-                                if let Some(Value::Text(value)) = addr.properties.get(&part) {
-                                    if !sort_text.push(value) || part == Property::Email {
-                                        break 'outer;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    batch.value(property, sort_text.build(), F_INDEX | options);
-                }
-                (Property::Subject, Value::Text(value)) => {
-                    let thread_name = thread_name(&value);
-                    batch.value(
-                        Property::Subject,
-                        if !thread_name.is_empty() {
-                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                        } else {
-                            "!"
-                        },
-                        F_INDEX | options,
-                    );
-                    has_subject = true;
-                }
-                (Property::HasAttachment, Value::Bool(true)) => {
-                    batch.bitmap(Property::HasAttachment, (), options);
-                }
-                _ => {}
-            }
+        // Index properties
+        batch
+            .value(Property::Size, metadata.size as u32, F_INDEX | options)
+            .quota(if self.set {
+                metadata.size as i64
+            } else {
+                -(metadata.size as i64)
+            });
+        batch.value(
+            Property::ReceivedAt,
+            metadata.received_at,
+            F_INDEX | options,
+        );
+        if metadata.has_attachments {
+            batch.bitmap(Property::HasAttachment, (), options);
         }
-
-        if !has_subject {
-            batch.value(Property::Subject, "!", F_INDEX | options);
-        }
+        batch.index_headers(&metadata.contents.parts[0].headers, options);
     }
 }
 

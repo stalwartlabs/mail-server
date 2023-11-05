@@ -37,15 +37,15 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
+use jmap::{email::metadata::MessageMetadata, Bincode};
 use jmap_proto::{
     error::method::MethodError,
-    object::Object,
     types::{
         acl::Acl, blob::BlobId, collection::Collection, id::Id, keyword::Keyword,
-        property::Property, state::StateChange, type_state::DataType, value::Value,
+        property::Property, state::StateChange, type_state::DataType,
     },
 };
-use mail_parser::{Address, GetHeader, HeaderName, Message, MessageParser, PartType};
+use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
 use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, BatchBuilder, F_BITMAP, F_VALUE},
@@ -268,7 +268,7 @@ impl SessionData {
             // Obtain attributes and keywords
             let (email, keywords) = if let (Ok(Some(email)), Ok(Some(keywords))) = (
                 self.jmap
-                    .get_property::<Object<Value>>(
+                    .get_property::<Bincode<MessageMetadata>>(
                         account_id,
                         Collection::Email,
                         id,
@@ -284,7 +284,7 @@ impl SessionData {
                     )
                     .await,
             ) {
-                (email, keywords)
+                (email.inner, keywords)
             } else {
                 tracing::debug!(
                     event = "not-found",
@@ -317,23 +317,9 @@ impl SessionData {
             } else {
                 None
             };
-
-            let message = if let Some(raw_message) = &raw_message {
-                if let Some(message) = MessageParser::new().parse(raw_message) {
-                    message.into()
-                } else {
-                    tracing::warn!(
-                        event = "parse-error",
-                        account_id = account_id,
-                        collection = ?Collection::Email,
-                        document_id = id,
-                        blob_id = ?BlobId::maildir(account_id, id),
-                        "Failed to parse stored message");
-                    continue;
-                }
-            } else {
-                None
-            };
+            let message = email
+                .contents
+                .into_message(raw_message.as_deref().unwrap_or_default());
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
@@ -356,7 +342,7 @@ impl SessionData {
                 match attribute {
                     Attribute::Envelope => {
                         items.push(DataItem::Envelope {
-                            envelope: message.as_ref().unwrap().envelope(),
+                            envelope: message.envelope(),
                         });
                     }
                     Attribute::Flags => {
@@ -371,24 +357,21 @@ impl SessionData {
                         items.push(DataItem::Flags { flags });
                     }
                     Attribute::InternalDate => {
-                        if let Some(date) = email.get(&Property::ReceivedAt).as_date() {
-                            items.push(DataItem::InternalDate {
-                                date: date.timestamp(),
-                            });
-                        }
+                        items.push(DataItem::InternalDate {
+                            date: email.received_at as i64,
+                        });
                     }
                     Attribute::Preview { .. } => {
                         items.push(DataItem::Preview {
-                            contents: email
-                                .get(&Property::Preview)
-                                .as_string()
-                                .map(|p| p.as_bytes().into()),
+                            contents: if !email.preview.is_empty() {
+                                Some(email.preview.as_bytes().into())
+                            } else {
+                                None
+                            },
                         });
                     }
                     Attribute::Rfc822Size => {
-                        items.push(DataItem::Rfc822Size {
-                            size: email.get(&Property::Size).as_uint().unwrap_or(0) as usize,
-                        });
+                        items.push(DataItem::Rfc822Size { size: email.size });
                     }
                     Attribute::Uid => {
                         items.push(DataItem::Uid { uid });
@@ -399,7 +382,7 @@ impl SessionData {
                         });
                     }
                     Attribute::Rfc822Header => {
-                        let message = message.as_ref().unwrap().root_part();
+                        let message = message.root_part();
                         if let Some(header) = raw_message
                             .as_ref()
                             .unwrap()
@@ -411,7 +394,7 @@ impl SessionData {
                         }
                     }
                     Attribute::Rfc822Text => {
-                        let message = message.as_ref().unwrap().root_part();
+                        let message = message.root_part();
                         if let Some(text) = raw_message
                             .as_ref()
                             .unwrap()
@@ -424,20 +407,18 @@ impl SessionData {
                     }
                     Attribute::Body => {
                         items.push(DataItem::Body {
-                            part: message.as_ref().unwrap().body_structure(false),
+                            part: message.body_structure(false),
                         });
                     }
                     Attribute::BodyStructure => {
                         items.push(DataItem::BodyStructure {
-                            part: message.as_ref().unwrap().body_structure(true),
+                            part: message.body_structure(true),
                         });
                     }
                     Attribute::BodySection {
                         sections, partial, ..
                     } => {
-                        if let Some(contents) =
-                            message.as_ref().unwrap().body_section(sections, *partial)
-                        {
+                        if let Some(contents) = message.body_section(sections, *partial) {
                             items.push(DataItem::BodySection {
                                 sections: sections.to_vec(),
                                 origin_octet: partial.map(|(start, _)| start),
@@ -448,7 +429,7 @@ impl SessionData {
 
                     Attribute::Binary {
                         sections, partial, ..
-                    } => match message.as_ref().unwrap().binary(sections, *partial) {
+                    } => match message.binary(sections, *partial) {
                         Ok(Some(contents)) => {
                             items.push(DataItem::Binary {
                                 sections: sections.to_vec(),
@@ -476,7 +457,7 @@ impl SessionData {
                         _ => (),
                     },
                     Attribute::BinarySize { sections } => {
-                        if let Some(size) = message.as_ref().unwrap().binary_size(sections) {
+                        if let Some(size) = message.binary_size(sections) {
                             items.push(DataItem::BinarySize {
                                 sections: sections.to_vec(),
                                 size,

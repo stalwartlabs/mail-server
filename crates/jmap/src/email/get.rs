@@ -26,15 +26,25 @@ use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
     types::{
-        acl::Acl, blob::BlobId, collection::Collection, id::Id, keyword::Keyword,
-        property::Property, value::Value,
+        acl::Acl,
+        blob::BlobId,
+        collection::Collection,
+        date::UTCDate,
+        id::Id,
+        keyword::Keyword,
+        property::{HeaderForm, Property},
+        value::Value,
     },
 };
-use mail_parser::MessageParser;
+use mail_parser::HeaderName;
 
-use crate::{auth::AccessToken, email::headers::HeaderToValue, JMAP};
+use crate::{auth::AccessToken, email::headers::HeaderToValue, Bincode, JMAP};
 
-use super::body::{ToBodyPart, TruncateBody};
+use super::{
+    body::{ToBodyPart, TruncateBody},
+    headers::IntoForm,
+    metadata::{MessageMetadata, MetadataPartType},
+};
 
 impl JMAP {
     pub async fn email_get(
@@ -147,8 +157,8 @@ impl JMAP {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut values = match self
-                .get_property::<Object<Value>>(
+            let mut metadata = match self
+                .get_property::<Bincode<MessageMetadata>>(
                     account_id,
                     Collection::Email,
                     id.document_id(),
@@ -156,7 +166,7 @@ impl JMAP {
                 )
                 .await?
             {
-                Some(values) => values,
+                Some(metadata) => metadata.inner,
                 None => {
                     response.not_found.push(id.into());
                     continue;
@@ -190,21 +200,6 @@ impl JMAP {
                 }
             } else {
                 vec![]
-            };
-            let message = if !raw_message.is_empty() {
-                let message = MessageParser::new().parse(&raw_message);
-                if message.is_none() {
-                    tracing::warn!(
-                        event = "parse-error",
-                        account_id = account_id,
-                        collection = ?Collection::Email,
-                        document_id = id.document_id(),
-                        blob_id = ?blob_id,
-                        "Failed to parse stored message");
-                }
-                message
-            } else {
-                None
             };
 
             // Prepare response
@@ -276,101 +271,154 @@ impl JMAP {
                             continue 'outer;
                         }
                     }
-                    Property::Size
-                    | Property::ReceivedAt
-                    | Property::MessageId
-                    | Property::InReplyTo
-                    | Property::References
-                    | Property::Sender
+                    Property::Size => {
+                        email.append(Property::Size, metadata.size);
+                    }
+                    Property::ReceivedAt => {
+                        email.append(
+                            Property::ReceivedAt,
+                            Value::Date(UTCDate::from_timestamp(metadata.received_at as i64)),
+                        );
+                    }
+                    Property::Preview => {
+                        if !metadata.preview.is_empty() {
+                            email.append(Property::Preview, std::mem::take(&mut metadata.preview));
+                        }
+                    }
+                    Property::HasAttachment => {
+                        email.append(Property::HasAttachment, metadata.has_attachments);
+                    }
+                    Property::Subject => {
+                        email.append(
+                            Property::Subject,
+                            metadata.contents.parts[0]
+                                .remove_header(&HeaderName::Subject)
+                                .map(|value| value.into_form(&HeaderForm::Text))
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Property::SentAt => {
+                        email.append(
+                            Property::SentAt,
+                            metadata.contents.parts[0]
+                                .remove_header(&HeaderName::Date)
+                                .map(|value| value.into_form(&HeaderForm::Date))
+                                .unwrap_or_default(),
+                        );
+                    }
+                    Property::MessageId | Property::InReplyTo | Property::References => {
+                        email.append(
+                            property.clone(),
+                            metadata.contents.parts[0]
+                                .remove_header(&match property {
+                                    Property::MessageId => HeaderName::MessageId,
+                                    Property::InReplyTo => HeaderName::InReplyTo,
+                                    Property::References => HeaderName::References,
+                                    _ => unreachable!(),
+                                })
+                                .map(|value| value.into_form(&HeaderForm::MessageIds))
+                                .unwrap_or_default(),
+                        );
+                    }
+
+                    Property::Sender
                     | Property::From
                     | Property::To
                     | Property::Cc
                     | Property::Bcc
-                    | Property::ReplyTo
-                    | Property::Subject
-                    | Property::SentAt
-                    | Property::HasAttachment
-                    | Property::Preview => {
-                        email.append(property.clone(), values.remove(property));
+                    | Property::ReplyTo => {
+                        email.append(
+                            property.clone(),
+                            metadata.contents.parts[0]
+                                .remove_header(&match property {
+                                    Property::Sender => HeaderName::Sender,
+                                    Property::From => HeaderName::From,
+                                    Property::To => HeaderName::To,
+                                    Property::Cc => HeaderName::Cc,
+                                    Property::Bcc => HeaderName::Bcc,
+                                    Property::ReplyTo => HeaderName::ReplyTo,
+                                    _ => unreachable!(),
+                                })
+                                .map(|value| value.into_form(&HeaderForm::Addresses))
+                                .unwrap_or_default(),
+                        );
                     }
                     Property::Header(_) => {
-                        if let Some(message) = &message {
-                            email.append(
-                                property.clone(),
-                                message.parts[0].header_to_value(property, &raw_message),
-                            );
-                        }
+                        email.append(
+                            property.clone(),
+                            metadata.contents.parts[0]
+                                .headers
+                                .header_to_value(property, &raw_message),
+                        );
                     }
                     Property::Headers => {
-                        if let Some(message) = &message {
-                            email.append(
-                                Property::Headers,
-                                message.parts[0].headers_to_value(&raw_message),
-                            );
-                        }
+                        email.append(
+                            Property::Headers,
+                            metadata.contents.parts[0]
+                                .headers
+                                .headers_to_value(&raw_message),
+                        );
                     }
                     Property::TextBody | Property::HtmlBody | Property::Attachments => {
-                        if let Some(message) = &message {
-                            let list = match property {
-                                Property::TextBody => &message.text_body,
-                                Property::HtmlBody => &message.html_body,
-                                Property::Attachments => &message.attachments,
-                                _ => unreachable!(),
-                            }
-                            .iter();
-                            email.append(
-                                property.clone(),
-                                list.map(|part_id| {
-                                    message.parts.to_body_part(
-                                        *part_id,
-                                        &body_properties,
-                                        &raw_message,
-                                        &blob_id,
-                                    )
-                                })
-                                .collect::<Vec<_>>(),
-                            );
+                        let list = match property {
+                            Property::TextBody => &metadata.contents.text_body,
+                            Property::HtmlBody => &metadata.contents.html_body,
+                            Property::Attachments => &metadata.contents.attachments,
+                            _ => unreachable!(),
                         }
-                    }
-                    Property::BodyStructure => {
-                        if let Some(message) = &message {
-                            email.append(
-                                Property::BodyStructure,
-                                message.parts.to_body_part(
-                                    0,
+                        .iter();
+                        email.append(
+                            property.clone(),
+                            list.map(|part_id| {
+                                metadata.contents.to_body_part(
+                                    *part_id,
                                     &body_properties,
                                     &raw_message,
                                     &blob_id,
-                                ),
-                            );
-                        }
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                        );
+                    }
+                    Property::BodyStructure => {
+                        email.append(
+                            Property::BodyStructure,
+                            metadata.contents.to_body_part(
+                                0,
+                                &body_properties,
+                                &raw_message,
+                                &blob_id,
+                            ),
+                        );
                     }
                     Property::BodyValues => {
-                        if let Some(message) = &message {
-                            let mut body_values = Object::with_capacity(message.parts.len());
-                            for (part_id, part) in message.parts.iter().enumerate() {
-                                if ((message.html_body.contains(&part_id)
-                                    && (fetch_all_body_values || fetch_html_body_values))
-                                    || (message.text_body.contains(&part_id)
-                                        && (fetch_all_body_values || fetch_text_body_values)))
-                                    && part.is_text()
-                                {
-                                    let (is_truncated, value) =
-                                        part.body.truncate(max_body_value_bytes);
-                                    body_values.append(
-                                        Property::_T(part_id.to_string()),
-                                        Object::with_capacity(3)
-                                            .with_property(
-                                                Property::IsEncodingProblem,
-                                                part.is_encoding_problem,
-                                            )
-                                            .with_property(Property::IsTruncated, is_truncated)
-                                            .with_property(Property::Value, value),
-                                    );
-                                }
+                        let mut body_values = Object::with_capacity(metadata.contents.parts.len());
+                        for (part_id, part) in metadata.contents.parts.iter().enumerate() {
+                            if ((metadata.contents.html_body.contains(&part_id)
+                                && (fetch_all_body_values || fetch_html_body_values))
+                                || (metadata.contents.text_body.contains(&part_id)
+                                    && (fetch_all_body_values || fetch_text_body_values)))
+                                && matches!(
+                                    part.body,
+                                    MetadataPartType::Text | MetadataPartType::Html
+                                )
+                            {
+                                let (is_truncated, value) = part
+                                    .decode_contents(&raw_message)
+                                    .truncate(max_body_value_bytes);
+                                body_values.append(
+                                    Property::_T(part_id.to_string()),
+                                    Object::with_capacity(3)
+                                        .with_property(
+                                            Property::IsEncodingProblem,
+                                            part.is_encoding_problem,
+                                        )
+                                        .with_property(Property::IsTruncated, is_truncated)
+                                        .with_property(Property::Value, value),
+                                );
                             }
-                            email.append(Property::BodyValues, body_values);
                         }
+                        email.append(Property::BodyValues, body_values);
                     }
 
                     _ => {

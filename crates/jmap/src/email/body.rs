@@ -27,7 +27,10 @@ use jmap_proto::{
 };
 use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
 
-use super::headers::HeaderToValue;
+use super::{
+    headers::HeaderToValue,
+    metadata::{MessageMetadataContents, MetadataPartType},
+};
 
 pub trait ToBodyPart {
     fn to_body_part(
@@ -117,8 +120,114 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                             _ => Value::Null,
                         },
                         Property::Location => part.content_location().into(),
-                        Property::Header(_) => part.header_to_value(property, raw_message),
-                        Property::Headers => part.headers_to_value(raw_message),
+                        Property::Header(_) => part.headers.header_to_value(property, raw_message),
+                        Property::Headers => part.headers.headers_to_value(raw_message),
+                        Property::SubParts => continue,
+                        _ => Value::Null,
+                    };
+                    values.append(property.clone(), value);
+                }
+
+                subparts.push(values);
+
+                if let Some(multipart) = multipart {
+                    let multipart = multipart.clone();
+                    parts_stack.push((
+                        parts,
+                        std::mem::replace(&mut subparts, Vec::with_capacity(multipart.len())),
+                    ));
+                    parts = multipart.into_iter();
+                }
+            } else if let Some((prev_parts, mut prev_subparts)) = parts_stack.pop() {
+                prev_subparts
+                    .last_mut()
+                    .unwrap()
+                    .append(Property::SubParts, subparts);
+                parts = prev_parts;
+                subparts = prev_subparts;
+            } else {
+                return subparts.pop().map(Into::into).unwrap_or_default();
+            }
+        }
+    }
+}
+
+impl ToBodyPart for MessageMetadataContents<'_> {
+    fn to_body_part(
+        &self,
+        part_id: usize,
+        properties: &[Property],
+        raw_message: &[u8],
+        blob_id: &BlobId,
+    ) -> Value {
+        let mut parts = vec![part_id].into_iter();
+        let mut parts_stack = Vec::new();
+        let mut subparts = Vec::with_capacity(1);
+
+        loop {
+            if let Some((part_id, part)) =
+                parts.next().map(|part_id| (part_id, &self.parts[part_id]))
+            {
+                let mut values = Object::with_capacity(properties.len());
+                let multipart = if let MetadataPartType::Multipart(parts) = &part.body {
+                    parts.into()
+                } else {
+                    None
+                };
+
+                for property in properties {
+                    let value = match property {
+                        Property::PartId if multipart.is_none() => part_id.to_string().into(),
+                        Property::BlobId if multipart.is_none() => {
+                            let base_offset = blob_id.start_offset();
+                            BlobId::new_section(
+                                blob_id.kind,
+                                part.offset_body + base_offset,
+                                part.offset_end + base_offset,
+                                part.encoding as u8,
+                            )
+                            .into()
+                        }
+                        Property::Size if multipart.is_none() => part.size.into(),
+                        Property::Name => part.attachment_name().into(),
+                        Property::Type => part
+                            .content_type()
+                            .map(|ct| {
+                                ct.subtype()
+                                    .map(|st| format!("{}/{}", ct.ctype(), st))
+                                    .unwrap_or_else(|| ct.ctype().to_string())
+                            })
+                            .or_else(|| match &part.body {
+                                MetadataPartType::Text => Some("text/plain".to_string()),
+                                MetadataPartType::Html => Some("text/html".to_string()),
+                                MetadataPartType::Message(_) => Some("message/rfc822".to_string()),
+                                _ => None,
+                            })
+                            .into(),
+                        Property::Charset => part
+                            .content_type()
+                            .and_then(|ct| ct.attribute("charset"))
+                            .or(match &part.body {
+                                MetadataPartType::Text | MetadataPartType::Html => Some("us-ascii"),
+                                _ => None,
+                            })
+                            .into(),
+                        Property::Disposition => {
+                            part.content_disposition().map(|cd| cd.ctype()).into()
+                        }
+                        Property::Cid => part.content_id().into(),
+                        Property::Language => match part.content_language() {
+                            HeaderValue::Text(text) => vec![text.to_string()].into(),
+                            HeaderValue::TextList(list) => list
+                                .iter()
+                                .map(|text| text.to_string().into())
+                                .collect::<Vec<Value>>()
+                                .into(),
+                            _ => Value::Null,
+                        },
+                        Property::Location => part.content_location().into(),
+                        Property::Header(_) => part.headers.header_to_value(property, raw_message),
+                        Property::Headers => part.headers.headers_to_value(raw_message),
                         Property::SubParts => continue,
                         _ => Value::Null,
                     };
