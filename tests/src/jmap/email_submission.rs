@@ -21,11 +21,6 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use ahash::AHashMap;
 use jmap::JMAP;
 use jmap_client::{
@@ -37,7 +32,12 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 use mail_parser::DateTime;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use store::parking_lot::Mutex;
+use store::StoreRead;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,

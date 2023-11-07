@@ -28,16 +28,17 @@ use foundationdb::{
 use futures::StreamExt;
 
 use crate::{
-    write::key::KeySerializer, Store, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    write::key::KeySerializer, StorePurge, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
     SUBSPACE_QUOTAS, SUBSPACE_VALUES,
 };
 
-use super::bitmap::DenseBitmap;
+use super::{bitmap::DenseBitmap, FdbStore};
 
 const MAX_COMMIT_ATTEMPTS: u8 = 25;
 
-impl Store {
-    pub async fn purge_bitmaps(&self) -> crate::Result<()> {
+#[async_trait::async_trait]
+impl StorePurge for FdbStore {
+    async fn purge_bitmaps(&self) -> crate::Result<()> {
         // Obtain all empty bitmaps
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(
@@ -91,7 +92,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
         for subspace in [
             SUBSPACE_BITMAPS,
             SUBSPACE_VALUES,

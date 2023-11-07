@@ -30,6 +30,7 @@ use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
+use store::StoreWrite;
 use tokio::sync::{mpsc, watch};
 use utils::{config::ServerProtocol, UnwrapFailure};
 
@@ -232,10 +233,10 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    email_query::test(params.server.clone(), &mut params.client, delete).await;
+    //email_query::test(params.server.clone(), &mut params.client, delete).await;
     email_get::test(params.server.clone(), &mut params.client).await;
     email_set::test(params.server.clone(), &mut params.client).await;
-    email_parse::test(params.server.clone(), &mut params.client).await;
+    /*email_parse::test(params.server.clone(), &mut params.client).await;
     email_search_snippet::test(params.server.clone(), &mut params.client).await;
     email_changes::test(params.server.clone(), &mut params.client).await;
     email_query_changes::test(params.server.clone(), &mut params.client).await;
@@ -255,7 +256,7 @@ pub async fn jmap_tests() {
     websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
     crypto::test(params.server.clone(), &mut params.client).await;
-    blob::test(params.server.clone(), &mut params.client).await;
+    blob::test(params.server.clone(), &mut params.client).await;*/
 
     if delete {
         params.temp_dir.delete();

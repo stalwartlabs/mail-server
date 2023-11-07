@@ -21,8 +21,6 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use jmap::JMAP;
 use jmap_client::{
     client::Client,
@@ -31,9 +29,12 @@ use jmap_client::{
     mailbox::Role,
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property, state::State};
+use std::sync::Arc;
+use store::StoreRead;
 use store::{
     ahash::{AHashMap, AHashSet},
     write::{log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
+    StoreWrite,
 };
 
 use crate::jmap::{

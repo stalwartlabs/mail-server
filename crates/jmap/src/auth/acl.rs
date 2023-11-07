@@ -34,7 +34,7 @@ use jmap_proto::{
 use store::{
     roaring::RoaringBitmap,
     write::{assert::HashedValue, key::DeserializeBigEndian},
-    AclKey, Deserialize, Error,
+    AclKey, Deserialize, Error, StoreRead,
 };
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
@@ -62,58 +62,49 @@ impl JMAP {
             };
             match self
                 .store
-                .iterate(
-                    access_token,
-                    from_key,
-                    to_key,
-                    false,
-                    true,
-                    |access_token, key, value| {
-                        let acl_key = AclKey::deserialize(key)?;
-                        if access_token.is_member(acl_key.to_account_id) {
-                            return Ok(true);
-                        }
+                .iterate(from_key, to_key, false, true, |key, value| {
+                    let acl_key = AclKey::deserialize(key)?;
+                    if access_token.is_member(acl_key.to_account_id) {
+                        return Ok(true);
+                    }
 
-                        let acl = Bitmap::<Acl>::from(u64::deserialize(value)?);
-                        let collection = Collection::from(acl_key.to_collection);
-                        if !collection.is_valid() {
-                            return Err(Error::InternalError(format!(
-                                "Found corrupted collection in key {key:?}"
-                            )));
-                        }
+                    let acl = Bitmap::<Acl>::from(u64::deserialize(value)?);
+                    let collection = Collection::from(acl_key.to_collection);
+                    if !collection.is_valid() {
+                        return Err(Error::InternalError(format!(
+                            "Found corrupted collection in key {key:?}"
+                        )));
+                    }
 
-                        let mut collections: Bitmap<Collection> = Bitmap::new();
-                        if acl.contains(Acl::Read) || acl.contains(Acl::Administer) {
-                            collections.insert(collection);
-                        }
-                        if collection == Collection::Mailbox
-                            && (acl.contains(Acl::ReadItems) || acl.contains(Acl::Administer))
+                    let mut collections: Bitmap<Collection> = Bitmap::new();
+                    if acl.contains(Acl::Read) || acl.contains(Acl::Administer) {
+                        collections.insert(collection);
+                    }
+                    if collection == Collection::Mailbox
+                        && (acl.contains(Acl::ReadItems) || acl.contains(Acl::Administer))
+                    {
+                        collections.insert(Collection::Email);
+                    }
+
+                    if !collections.is_empty() {
+                        if let Some((_, sharing)) = access_token
+                            .access_to
+                            .iter_mut()
+                            .find(|(account_id, _)| *account_id == acl_key.to_account_id)
                         {
-                            collections.insert(Collection::Email);
-                        }
-
-                        if !collections.is_empty() {
-                            if let Some((_, sharing)) = access_token
+                            sharing.union(&collections);
+                        } else {
+                            access_token
                                 .access_to
-                                .iter_mut()
-                                .find(|(account_id, _)| *account_id == acl_key.to_account_id)
-                            {
-                                sharing.union(&collections);
-                            } else {
-                                access_token
-                                    .access_to
-                                    .push((acl_key.to_account_id, collections));
-                            }
+                                .push((acl_key.to_account_id, collections));
                         }
+                    }
 
-                        Ok(true)
-                    },
-                )
+                    Ok(true)
+                })
                 .await
             {
-                Ok(access_token_) => {
-                    access_token = access_token_;
-                }
+                Ok(_) => {}
                 Err(err) => {
                     tracing::error!(
                         event = "error",
@@ -152,30 +143,21 @@ impl JMAP {
 
             match self
                 .store
-                .iterate(
-                    document_ids,
-                    from_key,
-                    to_key,
-                    false,
-                    true,
-                    move |document_ids, key, value| {
-                        let mut acls = Bitmap::<Acl>::from(u64::deserialize(value)?);
+                .iterate(from_key, to_key, false, true, |key, value| {
+                    let mut acls = Bitmap::<Acl>::from(u64::deserialize(value)?);
 
-                        acls.intersection(&check_acls);
-                        if !acls.is_empty() {
-                            document_ids.insert(
-                                key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
-                            );
-                        }
+                    acls.intersection(&check_acls);
+                    if !acls.is_empty() {
+                        document_ids.insert(
+                            key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
+                        );
+                    }
 
-                        Ok(true)
-                    },
-                )
+                    Ok(true)
+                })
                 .await
             {
-                Ok(document_ids_) => {
-                    document_ids = document_ids_;
-                }
+                Ok(_) => (),
                 Err(err) => {
                     tracing::error!(
                     event = "error",

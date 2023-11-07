@@ -23,7 +23,7 @@
 
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{write::key::DeserializeBigEndian, Error, LogKey, Store};
+use crate::{write::key::DeserializeBigEndian, Error, LogKey, StoreRead};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
@@ -58,11 +58,12 @@ impl Default for Changes {
     }
 }
 
-impl Store {
-    pub async fn changes(
+#[async_trait::async_trait]
+pub trait StoreLog: StoreRead {
+    async fn changes(
         &self,
         account_id: u32,
-        collection: impl Into<u8>,
+        collection: impl Into<u8> + Sync + Send,
         query: Query,
     ) -> crate::Result<Changes> {
         let collection = collection.into();
@@ -85,32 +86,25 @@ impl Store {
             change_id: to_change_id,
         };
 
-        let mut changelog = self
-            .iterate(
-                Changes::default(),
-                from_key,
-                to_key,
-                false,
-                true,
-                move |changelog, key, value| {
-                    let change_id =
-                        key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())?;
-                    if is_inclusive || change_id != from_change_id {
-                        if changelog.changes.is_empty() {
-                            changelog.from_change_id = change_id;
-                        }
-                        changelog.to_change_id = change_id;
-                        changelog.deserialize(value).ok_or_else(|| {
-                            Error::InternalError(format!(
-                                "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
-                                account_id, collection, query
-                            ))
-                        })?;
-                    }
-                    Ok(true)
-                },
-            )
-            .await?;
+        let mut changelog = Changes::default();
+
+        self.iterate(from_key, to_key, false, true, |key, value| {
+            let change_id = key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())?;
+            if is_inclusive || change_id != from_change_id {
+                if changelog.changes.is_empty() {
+                    changelog.from_change_id = change_id;
+                }
+                changelog.to_change_id = change_id;
+                changelog.deserialize(value).ok_or_else(|| {
+                    Error::InternalError(format!(
+                        "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
+                        account_id, collection, query
+                    ))
+                })?;
+            }
+            Ok(true)
+        })
+        .await?;
 
         if changelog.changes.is_empty() {
             changelog.from_change_id = from_change_id;

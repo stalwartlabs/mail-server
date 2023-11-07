@@ -22,12 +22,15 @@
 */
 
 use crate::{
-    write::key::KeySerializer, Store, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    write::key::KeySerializer, StorePurge, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
     SUBSPACE_VALUES,
 };
 
-impl Store {
-    pub async fn purge_bitmaps(&self) -> crate::Result<()> {
+use super::SqliteStore;
+
+#[async_trait::async_trait]
+impl StorePurge for SqliteStore {
+    async fn purge_bitmaps(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             //Todo
@@ -57,7 +60,7 @@ impl Store {
         .await
     }
 
-    pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             let from_key = KeySerializer::new(std::mem::size_of::<u32>())

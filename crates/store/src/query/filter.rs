@@ -27,23 +27,24 @@ use ahash::HashSet;
 use nlp::tokenizers::space::SpaceTokenizer;
 use roaring::RoaringBitmap;
 
-use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ReadTransaction, Store};
+use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, StoreRead};
 
-use super::{Filter, ResultSet, TextMatch};
+use super::{Filter, ResultSet};
 
 struct State {
     op: Filter,
     bm: Option<RoaringBitmap>,
 }
 
-impl ReadTransaction<'_> {
-    #[maybe_async::maybe_async]
-    pub async fn filter(
-        &mut self,
+#[async_trait::async_trait]
+pub trait StoreQuery: StoreRead {
+    async fn filter(
+        &self,
         account_id: u32,
-        collection: u8,
+        collection: impl Into<u8> + Sync + Send,
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
+        let collection = collection.into();
         let mut not_mask = RoaringBitmap::new();
         let mut not_fetch = false;
         if filters.is_empty() {
@@ -62,23 +63,17 @@ impl ReadTransaction<'_> {
         let mut filters = filters.into_iter().peekable();
 
         while let Some(filter) = filters.next() {
-            self.refresh_if_old().await?;
-
             let result = match filter {
                 Filter::MatchValue { field, op, value } => {
                     self.range_to_bitmap(account_id, collection, field, value, op)
                         .await?
                 }
-                Filter::HasText { field, text, op } => match op {
-                    TextMatch::Exact(language) => {
-                        self.fts_query(account_id, collection, field, &text, language, true)
-                            .await?
-                    }
-                    TextMatch::Stemmed(language) => {
-                        self.fts_query(account_id, collection, field, &text, language, false)
-                            .await?
-                    }
-                    TextMatch::Tokenized => {
+                Filter::HasText {
+                    field,
+                    text,
+                    tokenize,
+                } => {
+                    if tokenize {
                         self.get_bitmaps_intersection(
                             SpaceTokenizer::new(&text, MAX_TOKEN_LENGTH)
                                 .collect::<HashSet<String>>()
@@ -89,12 +84,11 @@ impl ReadTransaction<'_> {
                                 .collect(),
                         )
                         .await?
-                    }
-                    TextMatch::Raw => {
+                    } else {
                         self.get_bitmap(BitmapKey::hash(&text, account_id, collection, 0, field))
                             .await?
                     }
-                },
+                }
                 Filter::InBitmap { family, field, key } => {
                     self.get_bitmap(BitmapKey {
                         account_id,
@@ -149,31 +143,6 @@ impl ReadTransaction<'_> {
             collection,
             results: state.bm.unwrap_or_else(RoaringBitmap::new),
         })
-    }
-}
-
-impl Store {
-    pub async fn filter(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-        filters: Vec<Filter>,
-    ) -> crate::Result<ResultSet> {
-        let collection = collection.into();
-        #[cfg(not(feature = "is_sync"))]
-        {
-            self.read_transaction()
-                .await?
-                .filter(account_id, collection, filters)
-                .await
-        }
-
-        #[cfg(feature = "is_sync")]
-        {
-            let mut trx = self.read_transaction()?;
-            self.spawn_worker(move || trx.filter(account_id, collection, filters))
-                .await
-        }
     }
 }
 

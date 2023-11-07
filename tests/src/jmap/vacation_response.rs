@@ -21,12 +21,12 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Instant};
-
 use chrono::{Duration, Utc};
 use jmap::JMAP;
 use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
+use std::{sync::Arc, time::Instant};
+use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,

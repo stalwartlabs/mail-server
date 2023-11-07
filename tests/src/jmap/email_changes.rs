@@ -32,6 +32,7 @@ use jmap_proto::{
 use store::{
     ahash::AHashSet,
     write::{log::ChangeLogBuilder, BatchBuilder},
+    StoreRead, StoreWrite,
 };
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {

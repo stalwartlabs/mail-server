@@ -57,7 +57,7 @@ use store::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
         ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
-    BlobKind, Serialize, ValueKey,
+    BlobKind, Serialize, StoreRead, StoreWrite, ValueKey,
 };
 
 use crate::{auth::AccessToken, Bincode, IngestError, JMAP};

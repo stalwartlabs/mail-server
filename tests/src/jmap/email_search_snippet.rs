@@ -23,12 +23,12 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
 use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{client::Client, core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashMap;
-
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running SearchSnippet tests...");

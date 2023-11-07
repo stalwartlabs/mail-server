@@ -22,11 +22,9 @@
 */
 
 pub mod filter;
-pub mod get;
 pub mod log;
 pub mod sort;
 
-use nlp::language::Language;
 use roaring::RoaringBitmap;
 
 use crate::{write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS};
@@ -50,7 +48,7 @@ pub enum Filter {
     HasText {
         field: u8,
         text: String,
-        op: TextMatch,
+        tokenize: bool,
     },
     InBitmap {
         family: u8,
@@ -62,14 +60,6 @@ pub enum Filter {
     Or,
     Not,
     End,
-}
-
-#[derive(Debug)]
-pub enum TextMatch {
-    Exact(Language),
-    Stemmed(Language),
-    Tokenized,
-    Raw,
 }
 
 #[derive(Debug)]
@@ -154,7 +144,7 @@ impl Filter {
         }
     }
 
-    pub fn has_text_detect(
+    /*pub fn has_text_detect(
         field: impl Into<u8>,
         text: impl Into<String>,
         default_language: Language,
@@ -194,6 +184,22 @@ impl Filter {
 
     pub fn has_english_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
         Self::has_text(field, text, Language::English)
+    }*/
+
+    pub fn has_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
+        Filter::HasText {
+            field: field.into(),
+            text: text.into(),
+            tokenize: true,
+        }
+    }
+
+    pub fn has_text_token(field: impl Into<u8>, text: impl Into<String>) -> Self {
+        Filter::HasText {
+            field: field.into(),
+            text: text.into(),
+            tokenize: true,
+        }
     }
 
     pub fn is_in_bitmap(field: impl Into<u8>, value: impl BitmapFamily + Serialize) -> Self {

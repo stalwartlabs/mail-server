@@ -35,9 +35,9 @@ use mail_parser::{
 };
 use store::{
     ahash::AHashSet,
-    query::Filter,
+    query::{filter::StoreQuery, Filter},
     write::{log::ChangeLogBuilder, now, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
-    BitmapKey, ValueKey,
+    BitmapKey, StoreId, StoreRead, StoreWrite, ValueKey,
 };
 use utils::map::vec_map::VecMap;
 

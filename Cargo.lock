@@ -2522,7 +2522,7 @@ dependencies = [
  "base64 0.13.1",
  "chrono",
  "futures-util",
- "maybe-async 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "maybe-async",
  "parking_lot",
  "reqwest",
  "rustls 0.21.7",
@@ -2901,15 +2901,6 @@ name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
-
-[[package]]
-name = "maybe-async"
-version = "0.2.7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "maybe-async"
@@ -4233,7 +4224,7 @@ dependencies = [
  "hmac 0.12.1",
  "http",
  "log",
- "maybe-async 0.2.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "maybe-async",
  "md5",
  "percent-encoding",
  "quick-xml 0.26.0",
@@ -5132,6 +5123,7 @@ name = "store"
 version = "0.1.0"
 dependencies = [
  "ahash 0.8.3",
+ "async-trait",
  "bitpacking",
  "blake3",
  "farmhash",
@@ -5139,7 +5131,6 @@ dependencies = [
  "futures",
  "lazy_static",
  "lru-cache",
- "maybe-async 0.2.7",
  "nlp",
  "num_cpus",
  "parking_lot",

@@ -99,129 +99,129 @@ impl JMAP {
                         filters.push(query::Filter::End);
                     }
                 }
-                Filter::Text(text) => {
-                    filters.push(query::Filter::Or);
-                    filters.push(query::Filter::has_text(
-                        Property::From,
-                        &text,
-                        Language::None,
-                    ));
-                    filters.push(query::Filter::has_text(Property::To, &text, Language::None));
-                    filters.push(query::Filter::has_text(Property::Cc, &text, Language::None));
-                    filters.push(query::Filter::has_text(
-                        Property::Bcc,
-                        &text,
-                        Language::None,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::Subject,
-                        &text,
-                        self.config.default_language,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::TextBody,
-                        &text,
-                        self.config.default_language,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::Attachments,
-                        text,
-                        self.config.default_language,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                Filter::From(text) => filters.push(query::Filter::has_text(
-                    Property::From,
-                    text,
-                    Language::None,
-                )),
-                Filter::To(text) => {
-                    filters.push(query::Filter::has_text(Property::To, text, Language::None))
-                }
-                Filter::Cc(text) => {
-                    filters.push(query::Filter::has_text(Property::Cc, text, Language::None))
-                }
-                Filter::Bcc(text) => {
-                    filters.push(query::Filter::has_text(Property::Bcc, text, Language::None))
-                }
-                Filter::Subject(text) => filters.push(query::Filter::has_text_detect(
-                    Property::Subject,
-                    text,
-                    self.config.default_language,
-                )),
-                Filter::Body(text) => filters.push(query::Filter::has_text_detect(
-                    Property::TextBody,
-                    text,
-                    self.config.default_language,
-                )),
-                Filter::Header(header) => {
-                    let mut header = header.into_iter();
-                    let header_name = header.next().ok_or_else(|| {
-                        MethodError::InvalidArguments("Header name is missing.".to_string())
-                    })?;
-
-                    match HeaderName::parse(&header_name) {
-                        Some(HeaderName::Other(_)) | None => {
-                            return Err(MethodError::InvalidArguments(format!(
-                                "Querying non-RFC header '{header_name}' is not allowed.",
-                            )));
-                        }
-                        Some(header_name) => {
-                            let is_id = matches!(
-                                header_name,
-                                HeaderName::MessageId
-                                    | HeaderName::InReplyTo
-                                    | HeaderName::References
-                                    | HeaderName::ResentMessageId
-                            );
-                            let tokens = if let Some(header_value) = header.next() {
-                                let header_num = header_name.id().to_string();
-                                header_value
-                                    .split_ascii_whitespace()
-                                    .filter_map(|token| {
-                                        if token.len() < MAX_TOKEN_LENGTH {
-                                            if is_id {
-                                                format!("{header_num}{token}")
-                                            } else {
-                                                format!("{header_num}{}", token.to_lowercase())
-                                            }
-                                            .into()
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
-                            } else {
-                                vec![]
-                            };
-                            match tokens.len() {
-                                0 => {
-                                    filters.push(query::Filter::has_raw_text(
-                                        Property::Headers,
-                                        header_name.id().to_string(),
+                /*Filter::Text(text) => {
+                                    filters.push(query::Filter::Or);
+                                    filters.push(query::Filter::has_text(
+                                        Property::From,
+                                        &text,
+                                        Language::None,
                                     ));
-                                }
-                                1 => {
-                                    filters.push(query::Filter::has_raw_text(
-                                        Property::Headers,
-                                        tokens.into_iter().next().unwrap(),
+                                    filters.push(query::Filter::has_text(Property::To, &text, Language::None));
+                                    filters.push(query::Filter::has_text(Property::Cc, &text, Language::None));
+                                    filters.push(query::Filter::has_text(
+                                        Property::Bcc,
+                                        &text,
+                                        Language::None,
                                     ));
-                                }
-                                _ => {
-                                    filters.push(query::Filter::And);
-                                    for token in tokens {
-                                        filters.push(query::Filter::has_raw_text(
-                                            Property::Headers,
-                                            token,
-                                        ));
-                                    }
+                                    filters.push(query::Filter::has_text_detect(
+                                        Property::Subject,
+                                        &text,
+                                        self.config.default_language,
+                                    ));
+                                    filters.push(query::Filter::has_text_detect(
+                                        Property::TextBody,
+                                        &text,
+                                        self.config.default_language,
+                                    ));
+                                    filters.push(query::Filter::has_text_detect(
+                                        Property::Attachments,
+                                        text,
+                                        self.config.default_language,
+                                    ));
                                     filters.push(query::Filter::End);
                                 }
-                            }
-                        }
-                    }
-                }
+                                Filter::From(text) => filters.push(query::Filter::has_text(
+                                    Property::From,
+                                    text,
+                                    Language::None,
+                                )),
+                                Filter::To(text) => {
+                                    filters.push(query::Filter::has_text(Property::To, text, Language::None))
+                                }
+                                Filter::Cc(text) => {
+                                    filters.push(query::Filter::has_text(Property::Cc, text, Language::None))
+                                }
+                                Filter::Bcc(text) => {
+                                    filters.push(query::Filter::has_text(Property::Bcc, text, Language::None))
+                                }
+                                Filter::Subject(text) => filters.push(query::Filter::has_text_detect(
+                                    Property::Subject,
+                                    text,
+                                    self.config.default_language,
+                                )),
+                                Filter::Body(text) => filters.push(query::Filter::has_text_detect(
+                                    Property::TextBody,
+                                    text,
+                                    self.config.default_language,
+                                )),
+                                Filter::Header(header) => {
+                                    let mut header = header.into_iter();
+                                    let header_name = header.next().ok_or_else(|| {
+                                        MethodError::InvalidArguments("Header name is missing.".to_string())
+                                    })?;
 
+                                    match HeaderName::parse(&header_name) {
+                                        Some(HeaderName::Other(_)) | None => {
+                                            return Err(MethodError::InvalidArguments(format!(
+                                                "Querying non-RFC header '{header_name}' is not allowed.",
+                                            )));
+                                        }
+                                        Some(header_name) => {
+                                            let is_id = matches!(
+                                                header_name,
+                                                HeaderName::MessageId
+                                                    | HeaderName::InReplyTo
+                                                    | HeaderName::References
+                                                    | HeaderName::ResentMessageId
+                                            );
+                                            let tokens = if let Some(header_value) = header.next() {
+                                                let header_num = header_name.id().to_string();
+                                                header_value
+                                                    .split_ascii_whitespace()
+                                                    .filter_map(|token| {
+                                                        if token.len() < MAX_TOKEN_LENGTH {
+                                                            if is_id {
+                                                                format!("{header_num}{token}")
+                                                            } else {
+                                                                format!("{header_num}{}", token.to_lowercase())
+                                                            }
+                                                            .into()
+                                                        } else {
+                                                            None
+                                                        }
+                                                    })
+                                                    .collect::<Vec<_>>()
+                                            } else {
+                                                vec![]
+                                            };
+                                            match tokens.len() {
+                                                0 => {
+                                                    filters.push(query::Filter::has_raw_text(
+                                                        Property::Headers,
+                                                        header_name.id().to_string(),
+                                                    ));
+                                                }
+                                                1 => {
+                                                    filters.push(query::Filter::has_raw_text(
+                                                        Property::Headers,
+                                                        tokens.into_iter().next().unwrap(),
+                                                    ));
+                                                }
+                                                _ => {
+                                                    filters.push(query::Filter::And);
+                                                    for token in tokens {
+                                                        filters.push(query::Filter::has_raw_text(
+                                                            Property::Headers,
+                                                            token,
+                                                        ));
+                                                    }
+                                                    filters.push(query::Filter::End);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                */
                 // Non-standard
                 Filter::Id(ids) => {
                     let mut set = RoaringBitmap::new();

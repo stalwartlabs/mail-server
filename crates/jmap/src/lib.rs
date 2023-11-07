@@ -48,11 +48,16 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
+    backend::sqlite::SqliteStore,
     parking_lot::Mutex,
-    query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
+    query::{
+        filter::StoreQuery,
+        sort::{Pagination, StoreSort},
+        Comparator, Filter, ResultSet, SortedResultSet,
+    },
     roaring::RoaringBitmap,
     write::{BatchBuilder, BitmapFamily, ToBitmaps},
-    BitmapKey, Deserialize, Serialize, Store, ValueKey,
+    BitmapKey, Deserialize, Serialize, StoreId, StoreInit, StoreRead, StoreWrite, ValueKey,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -82,7 +87,7 @@ pub mod websocket;
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct JMAP {
-    pub store: Store,
+    pub store: SqliteStore,
     pub config: Config,
     pub directory: Arc<dyn Directory>,
 
@@ -195,7 +200,9 @@ impl JMAP {
                     config.value_require("jmap.directory")?
                 ))
                 .clone(),
-            store: Store::open(config).await.failed("Unable to open database"),
+            store: SqliteStore::open(config)
+                .await
+                .failed("Unable to open database"),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),

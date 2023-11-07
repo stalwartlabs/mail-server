@@ -28,7 +28,7 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, type_state::DataType, value::Value},
 };
-use store::{write::now, BitmapKey, ValueKey};
+use store::{write::now, BitmapKey, StoreRead, ValueKey};
 use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, services::state, JMAP};

@@ -47,7 +47,7 @@ use store::{
     query::Filter,
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE},
-    BlobKind,
+    BlobKind, StoreWrite,
 };
 
 use crate::{auth::AccessToken, JMAP};

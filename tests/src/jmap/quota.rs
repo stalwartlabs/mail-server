@@ -23,14 +23,6 @@
 
 use std::sync::Arc;
 
-use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JMAP};
-use jmap_client::{
-    client::Client,
-    core::set::{SetErrorType, SetObject},
-    email::EmailBodyPart,
-};
-use jmap_proto::types::{collection::Collection, id::Id};
-
 use crate::{
     directory::sql::{add_to_group, create_test_user_with_email, set_test_quota},
     jmap::{
@@ -38,6 +30,14 @@ use crate::{
         test_account_login,
     },
 };
+use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JMAP};
+use jmap_client::{
+    client::Client,
+    core::set::{SetErrorType, SetObject},
+    email::EmailBodyPart,
+};
+use jmap_proto::types::{collection::Collection, id::Id};
+use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running quota tests...");

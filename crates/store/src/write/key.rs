@@ -26,7 +26,7 @@ use utils::codec::leb128::Leb128_;
 
 use crate::{
     AclKey, BitmapKey, CustomValueKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey,
-    Serialize, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 pub struct KeySerializer {
@@ -176,39 +176,13 @@ impl ValueKey {
     }
 }
 
-impl<T: AsRef<[u8]>> Serialize for &IndexKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        let key = self.key.as_ref();
+impl IndexKeyPrefix {
+    pub fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         {
-            #[cfg(feature = "key_subspace")]
-            {
-                KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len() + 1)
-                    .write(crate::SUBSPACE_INDEXES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
-                KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len())
-            }
-        }
-        .write(self.account_id)
-        .write(self.collection)
-        .write(self.field)
-        .write(key)
-        .write(self.document_id)
-        .finalize()
-    }
-}
-
-impl Serialize for &IndexKeyPrefix {
-    fn serialize(self) -> Vec<u8> {
-        {
-            #[cfg(feature = "key_subspace")]
-            {
+            if include_subspace {
                 KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>() + 1)
                     .write(crate::SUBSPACE_INDEXES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
+            } else {
                 KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>())
             }
         }
@@ -219,16 +193,50 @@ impl Serialize for &IndexKeyPrefix {
     }
 }
 
-impl Serialize for &ValueKey {
-    fn serialize(self) -> Vec<u8> {
+impl Deserialize for AclKey {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(AclKey {
+            grant_account_id: bytes.deserialize_be_u32(0)?,
+            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
+            to_collection: *bytes
+                .get((std::mem::size_of::<u32>() * 2) + 1)
+                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
+            to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
+        })
+    }
+}
+
+impl Key for LogKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_LOGS
+    }
+
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        {
+            if include_subspace {
+                KeySerializer::new(std::mem::size_of::<LogKey>() + 1).write(crate::SUBSPACE_LOGS)
+            } else {
+                KeySerializer::new(std::mem::size_of::<LogKey>())
+            }
+        }
+        .write(self.account_id)
+        .write(self.collection)
+        .write(self.change_id)
+        .finalize()
+    }
+}
+
+impl Key for ValueKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
+    }
+
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         let ks = {
-            #[cfg(feature = "key_subspace")]
-            {
+            if include_subspace {
                 KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
                     .write(crate::SUBSPACE_VALUES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
+            } else {
                 KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
             }
         }
@@ -247,16 +255,17 @@ impl Serialize for &ValueKey {
     }
 }
 
-impl Serialize for &CustomValueKey {
-    fn serialize(self) -> Vec<u8> {
+impl Key for CustomValueKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
+    }
+
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         {
-            #[cfg(feature = "key_subspace")]
-            {
+            if include_subspace {
                 KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
                     .write(crate::SUBSPACE_VALUES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
+            } else {
                 KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
             }
         }
@@ -265,39 +274,16 @@ impl Serialize for &CustomValueKey {
     }
 }
 
-impl<T: AsRef<[u8]>> Serialize for &BitmapKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        let key = self.key.as_ref();
-        {
-            #[cfg(feature = "key_subspace")]
-            {
-                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len() + 1)
-                    .write(crate::SUBSPACE_BITMAPS)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
-                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len())
-            }
-        }
-        .write(self.account_id)
-        .write(self.collection)
-        .write(self.family)
-        .write(self.field)
-        .write(key)
-        .write(self.block_num)
-        .finalize()
+impl Key for AclKey {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
     }
-}
 
-impl Serialize for &AclKey {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         {
-            #[cfg(feature = "key_subspace")]
-            {
+            if include_subspace {
                 KeySerializer::new(std::mem::size_of::<AclKey>() + 1).write(crate::SUBSPACE_VALUES)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
+            } else {
                 KeySerializer::new(std::mem::size_of::<AclKey>())
             }
         }
@@ -310,106 +296,51 @@ impl Serialize for &AclKey {
     }
 }
 
-impl Deserialize for AclKey {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        Ok(AclKey {
-            grant_account_id: bytes.deserialize_be_u32(0)?,
-            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
-            to_collection: *bytes
-                .get((std::mem::size_of::<u32>() * 2) + 1)
-                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
-            to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
-        })
+impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
+    fn subspace(&self) -> u8 {
+        SUBSPACE_INDEXES
     }
-}
 
-impl Serialize for &LogKey {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        let key = self.key.as_ref();
         {
-            #[cfg(feature = "key_subspace")]
-            {
-                KeySerializer::new(std::mem::size_of::<LogKey>() + 1).write(crate::SUBSPACE_LOGS)
-            }
-            #[cfg(not(feature = "key_subspace"))]
-            {
-                KeySerializer::new(std::mem::size_of::<LogKey>())
+            if include_subspace {
+                KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len() + 1)
+                    .write(crate::SUBSPACE_INDEXES)
+            } else {
+                KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len())
             }
         }
         .write(self.account_id)
         .write(self.collection)
-        .write(self.change_id)
+        .write(self.field)
+        .write(key)
+        .write(self.document_id)
         .finalize()
     }
 }
 
-impl Serialize for LogKey {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl Key for LogKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_LOGS
-    }
-}
-
-impl Key for ValueKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
-    }
-}
-
-impl Key for CustomValueKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
-    }
-}
-
-impl Key for AclKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
-    }
-}
-
-impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for IndexKey<T> {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_INDEXES
-    }
-}
-
-impl<T: AsRef<[u8]> + Sync + Send + 'static> Key for BitmapKey<T> {
+impl<T: AsRef<[u8]> + Sync + Send> Key for BitmapKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_BITMAPS
     }
-}
 
-impl Serialize for ValueKey {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl Serialize for CustomValueKey {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl Serialize for AclKey {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl<T: AsRef<[u8]>> Serialize for IndexKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl<T: AsRef<[u8]>> Serialize for BitmapKey<T> {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        let key = self.key.as_ref();
+        {
+            if include_subspace {
+                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len() + 1)
+                    .write(crate::SUBSPACE_BITMAPS)
+            } else {
+                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len())
+            }
+        }
+        .write(self.account_id)
+        .write(self.collection)
+        .write(self.family)
+        .write(self.field)
+        .write(key)
+        .write(self.block_num)
+        .finalize()
     }
 }

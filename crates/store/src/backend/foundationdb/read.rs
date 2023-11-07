@@ -21,11 +21,6 @@
  * for more details.
 */
 
-use std::{
-    ops::BitAndAssign,
-    time::{Duration, Instant},
-};
-
 use foundationdb::{
     options::{self, StreamingMode},
     KeySelector, RangeOption,
@@ -34,39 +29,43 @@ use futures::StreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
-    query::Operator,
+    query::{self, Operator},
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
-    Store, SUBSPACE_INDEXES, SUBSPACE_QUOTAS,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, SUBSPACE_INDEXES,
+    SUBSPACE_QUOTAS,
 };
 
-use super::bitmap::DeserializeBlock;
+use super::{bitmap::DeserializeBlock, FdbStore};
 
-impl ReadTransaction<'_> {
-    #[inline(always)]
-    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+//trx
+
+#[async_trait::async_trait]
+impl StoreRead for FdbStore {
+    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {
-        let key = key.serialize();
+        let key = key.serialize(true);
+        let trx = self.db.create_trx()?;
 
-        if let Some(bytes) = self.trx.get(&key, true).await? {
+        if let Some(bytes) = trx.get(&key, true).await? {
             U::deserialize(&bytes).map(Some)
         } else {
             Ok(None)
         }
     }
 
-    async fn get_bitmap_<T: AsRef<[u8]>>(
+    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
         &self,
         mut key: BitmapKey<T>,
-        bm: &mut RoaringBitmap,
-    ) -> crate::Result<()> {
-        let begin = (&key).serialize();
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let mut bm = RoaringBitmap::new();
+        let begin = key.serialize(true);
         key.block_num = u32::MAX;
-        let end = key.serialize();
+        let end = key.serialize(true);
         let key_len = begin.len();
-        let mut values = self.trx.get_ranges(
+        let trx = self.db.create_trx()?;
+        let mut values = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(begin),
                 end: KeySelector::first_greater_or_equal(end),
@@ -88,61 +87,16 @@ impl ReadTransaction<'_> {
                 }
             }
         }
-
-        Ok(())
-    }
-
-    pub async fn get_bitmap<T: AsRef<[u8]>>(
-        &self,
-        key: BitmapKey<T>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-        self.get_bitmap_(key, &mut bm).await?;
         Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
-    pub(crate) async fn get_bitmaps_intersection<T: AsRef<[u8]>>(
-        &self,
-        keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut result: Option<RoaringBitmap> = None;
-        for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await? {
-                if let Some(result) = &mut result {
-                    result.bitand_assign(&bitmap);
-                    if result.is_empty() {
-                        break;
-                    }
-                } else {
-                    result = Some(bitmap);
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-        Ok(result)
-    }
-
-    pub(crate) async fn get_bitmaps_union<T: AsRef<[u8]>>(
-        &self,
-        keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-
-        for key in keys {
-            self.get_bitmap_(key, &mut bm).await?;
-        }
-
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
-    }
-
-    pub(crate) async fn range_to_bitmap(
+    async fn range_to_bitmap(
         &self,
         account_id: u32,
         collection: u8,
         field: u8,
         value: Vec<u8>,
-        op: Operator,
+        op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let k1 = KeySerializer::new(
             std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + std::mem::size_of::<u32>(),
@@ -196,7 +150,8 @@ impl ReadTransaction<'_> {
         };
 
         let mut bm = RoaringBitmap::new();
-        let mut range_stream = self.trx.get_ranges(opt, true);
+        let trx = self.db.create_trx()?;
+        let mut range_stream = trx.get_ranges(opt, true);
 
         if op != Operator::Equal {
             while let Some(values) = range_stream.next().await {
@@ -219,28 +174,32 @@ impl ReadTransaction<'_> {
         Ok(Some(bm))
     }
 
-    pub(crate) async fn sort_index(
+    async fn sort_index(
         &self,
         account_id: u32,
-        collection: u8,
-        field: u8,
+        collection: impl Into<u8> + Sync + Send,
+        field: impl Into<u8> + Sync + Send,
         ascending: bool,
-        mut cb: impl FnMut(&[u8], u32) -> bool,
+        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
+        let collection = collection.into();
+        let field = field.into();
+
         let from_key = IndexKeyPrefix {
             account_id,
             collection,
             field,
         }
-        .serialize();
+        .serialize(true);
         let to_key = IndexKeyPrefix {
             account_id,
             collection,
             field: field + 1,
         }
-        .serialize();
+        .serialize(true);
         let prefix_len = from_key.len();
-        let mut sorted_iter = self.trx.get_ranges(
+        let trx = self.db.create_trx()?;
+        let mut sorted_iter = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&from_key),
                 end: KeySelector::first_greater_or_equal(&to_key),
@@ -261,7 +220,7 @@ impl ReadTransaction<'_> {
                         crate::Error::InternalError("Invalid key found in index".to_string())
                     })?,
                     key.deserialize_be_u32(id_pos)?,
-                ) {
+                )? {
                     return Ok(());
                 }
             }
@@ -270,19 +229,19 @@ impl ReadTransaction<'_> {
         Ok(())
     }
 
-    pub(crate) async fn iterate<T>(
+    async fn iterate(
         &self,
-        mut acc: T,
         begin: impl Key,
         end: impl Key,
         first: bool,
         ascending: bool,
-        cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
-    ) -> crate::Result<T> {
-        let begin = begin.serialize();
-        let end = end.serialize();
+        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
+    ) -> crate::Result<()> {
+        let begin = begin.serialize(true);
+        let end = end.serialize(true);
 
-        let mut iter = self.trx.get_ranges(
+        let trx = self.db.create_trx()?;
+        let mut iter = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&begin),
                 end: KeySelector::first_greater_than(&end),
@@ -302,34 +261,36 @@ impl ReadTransaction<'_> {
                 let key = value.key().get(1..).unwrap_or_default();
                 let value = value.value();
 
-                if !cb(&mut acc, key, value)? || first {
-                    return Ok(acc);
+                if !cb(key, value)? || first {
+                    return Ok(());
                 }
             }
         }
 
-        Ok(acc)
+        Ok(())
     }
 
-    pub(crate) async fn get_last_change_id(
+    async fn get_last_change_id(
         &self,
         account_id: u32,
-        collection: u8,
+        collection: impl Into<u8> + Sync + Send,
     ) -> crate::Result<Option<u64>> {
+        let collection = collection.into();
         let from_key = LogKey {
             account_id,
             collection,
             change_id: 0,
         }
-        .serialize();
+        .serialize(true);
         let to_key = LogKey {
             account_id,
             collection,
             change_id: u64::MAX,
         }
-        .serialize();
+        .serialize(true);
 
-        let mut iter = self.trx.get_ranges(
+        let trx = self.db.create_trx()?;
+        let mut iter = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&from_key),
                 end: KeySelector::first_greater_or_equal(&to_key),
@@ -353,9 +314,10 @@ impl ReadTransaction<'_> {
         Ok(None)
     }
 
-    pub async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+    async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
         if let Some(bytes) = self
-            .trx
+            .db
+            .create_trx()?
             .get(
                 &KeySerializer::new(5)
                     .write(SUBSPACE_QUOTAS)
@@ -376,34 +338,16 @@ impl ReadTransaction<'_> {
         }
     }
 
-    pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
-        if self.trx_age.elapsed() > Duration::from_millis(2000) {
-            self.trx = self.db.create_trx()?;
-            self.trx_age = Instant::now();
-        }
-        Ok(())
-    }
-}
-
-impl Store {
-    pub async fn read_transaction(&self) -> crate::Result<ReadTransaction<'_>> {
-        Ok(ReadTransaction {
-            db: &self.db,
-            trx: self.db.create_trx()?,
-            trx_age: Instant::now(),
-        })
-    }
-
     #[cfg(feature = "test_mode")]
-    pub async fn assert_is_empty(&self) {
-        use crate::{SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
+    async fn assert_is_empty(&self) {
+        use crate::{StorePurge, SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
 
         // Purge bitmaps
         self.purge_bitmaps().await.unwrap();
 
-        let conn = self.read_transaction().await.unwrap();
+        let conn = self.db.create_trx().unwrap();
 
-        let mut iter = conn.trx.get_ranges(
+        let mut iter = conn.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&[0u8][..]),
                 end: KeySelector::first_greater_or_equal(&[u8::MAX][..]),

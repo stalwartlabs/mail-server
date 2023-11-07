@@ -36,7 +36,7 @@ use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use store::{
     write::{key::KeySerializer, BatchBuilder, Operation, ValueClass},
-    CustomValueKey, Serialize,
+    CustomValueKey, Serialize, StoreRead, StoreWrite,
 };
 use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 

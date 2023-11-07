@@ -23,6 +23,7 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
 use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{
     client::Client,
@@ -32,8 +33,7 @@ use jmap_client::{
     Error, Set,
 };
 use jmap_proto::types::id::Id;
-
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use store::StoreRead;
 
 use super::{find_values, replace_blob_ids, replace_boundaries, replace_values};
 

@@ -25,10 +25,10 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
     write::{Batch, Operation, ValueClass},
-    AclKey, BitmapKey, IndexKey, Key, LogKey, Serialize, Store, ValueKey,
+    AclKey, BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
 };
 
-use super::{BITS_MASK, BITS_PER_BLOCK};
+use super::{SqliteStore, BITS_MASK, BITS_PER_BLOCK};
 
 const INSERT_QUERIES: &[&str] = &[
     "INSERT INTO b (z, a) VALUES (?, ?)",
@@ -85,8 +85,9 @@ const CLEAR_QUERIES: &[&str] = &[
     "UPDATE b SET p = p & ? WHERE z = ?",
 ];
 
-impl Store {
-    pub async fn write(&self, batch: Batch) -> crate::Result<()> {
+#[async_trait::async_trait]
+impl StoreWrite for SqliteStore {
+    async fn write(&self, batch: Batch) -> crate::Result<()> {
         let mut conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             let mut account_id = u32::MAX;
@@ -129,14 +130,14 @@ impl Store {
                                 family: *family,
                                 field: *field,
                             }
-                            .serialize(),
+                            .serialize(false),
                             ValueClass::Acl { grant_account_id } => AclKey {
                                 grant_account_id: *grant_account_id,
                                 to_account_id: account_id,
                                 to_collection: collection,
                                 to_document_id: document_id,
                             }
-                            .serialize(),
+                            .serialize(false),
                             ValueClass::Custom { bytes } => bytes.to_vec(),
                         };
 
@@ -156,7 +157,7 @@ impl Store {
                             field: *field,
                             key,
                         }
-                        .serialize();
+                        .serialize(false);
 
                         if *set {
                             trx.prepare_cached("INSERT OR IGNORE INTO i (k) VALUES (?)")?
@@ -180,7 +181,7 @@ impl Store {
                             block_num: bitmap_block_num,
                             key,
                         }
-                        .serialize();
+                        .serialize(false);
 
                         if *set {
                             //trx.prepare_cached("INSERT OR IGNORE INTO b (z) VALUES (?)")?
@@ -207,7 +208,7 @@ impl Store {
                             collection: *collection,
                             change_id: *change_id,
                         }
-                        .serialize();
+                        .serialize(false);
 
                         trx.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")?
                             .execute([&key, set])?;
@@ -224,14 +225,14 @@ impl Store {
                                 family: *family,
                                 field: *field,
                             }
-                            .serialize(),
+                            .serialize(false),
                             ValueClass::Acl { grant_account_id } => AclKey {
                                 grant_account_id: *grant_account_id,
                                 to_account_id: account_id,
                                 to_collection: collection,
                                 to_document_id: document_id,
                             }
-                            .serialize(),
+                            .serialize(false),
                             ValueClass::Custom { bytes } => bytes.to_vec(),
                         };
                         let matches = trx
@@ -265,24 +266,8 @@ impl Store {
         .await
     }
 
-    #[inline(always)]
-    pub async fn set_value(&self, key: impl Key, value: impl Serialize) -> crate::Result<()> {
-        let key = key.serialize();
-        let value = value.serialize();
-
-        let conn = self.conn_pool.get()?;
-        self.spawn_worker(move || {
-            conn.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")?
-                .execute([&key, &value])
-                .map_err(Into::into)
-        })
-        .await?;
-
-        Ok(())
-    }
-
     #[cfg(feature = "test_mode")]
-    pub async fn destroy(&self) {
+    async fn destroy(&self) {
         use crate::{
             SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_QUOTAS, SUBSPACE_VALUES,
         };

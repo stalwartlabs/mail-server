@@ -38,7 +38,7 @@ use jmap_client::{
 use jmap_proto::types::id::Id;
 use reqwest::{header, redirect::Policy};
 use serde::de::DeserializeOwned;
-use store::ahash::AHashMap;
+use store::{ahash::AHashMap, StoreRead};
 
 use crate::{directory::sql::create_test_user_with_email, jmap::mailbox::destroy_all_mailboxes};
 

@@ -37,7 +37,12 @@ use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::{
     fts::builder::MAX_TOKEN_LENGTH,
-    query::{self, log::Query, sort::Pagination, ResultSet},
+    query::{
+        self,
+        log::Query,
+        sort::{Pagination, StoreSort},
+        ResultSet,
+    },
     roaring::RoaringBitmap,
     write::now,
 };
@@ -313,7 +318,7 @@ impl SessionData {
                         Keyword::Answered,
                     ));
                 }
-                search::Filter::Bcc(text) => {
+                /*search::Filter::Bcc(text) => {
                     filters.push(query::Filter::has_text(Property::Bcc, text, Language::None));
                 }
                 search::Filter::Before(date) => {
@@ -496,7 +501,7 @@ impl SessionData {
                 }
                 search::Filter::To(text) => {
                     filters.push(query::Filter::has_text(Property::To, text, Language::None));
-                }
+                }*/
                 search::Filter::Unanswered => {
                     filters.push(query::Filter::Not);
                     filters.push(query::Filter::is_in_bitmap(
@@ -640,6 +645,7 @@ impl SessionData {
                         )));
                     }
                 }
+                _ => (),
             }
         }
 

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::HashSet};
+use std::{borrow::Cow, collections::HashSet, fmt::Display};
 
 use ahash::AHashSet;
 use nlp::{
@@ -45,96 +45,115 @@ use super::term_index::{TermIndexBuilder, TokenIndex};
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 
-struct Text<'x> {
-    field: u8,
+struct Text<'x, T: Into<u8> + Display> {
+    field: T,
     text: Cow<'x, str>,
-    language: Language,
+    language: Type,
 }
 
-pub struct FtsIndexBuilder<'x> {
-    parts: Vec<Text<'x>>,
-    tokens: VecMap<u8, AHashSet<String>>,
-    detect: LanguageDetector,
+enum Type {
+    Stem(Language),
+    Tokenize,
+    Static,
+}
+
+pub struct FtsIndexBuilder<'x, T: Into<u8> + Display> {
+    parts: Vec<Text<'x, T>>,
     default_language: Language,
 }
 
-impl<'x> FtsIndexBuilder<'x> {
-    pub fn with_default_language(default_language: Language) -> FtsIndexBuilder<'x> {
+impl<'x, T: Into<u8> + Display> FtsIndexBuilder<'x, T> {
+    pub fn with_default_language(default_language: Language) -> FtsIndexBuilder<'x, T> {
         FtsIndexBuilder {
             parts: vec![],
-            detect: LanguageDetector::new(),
-            tokens: VecMap::new(),
             default_language,
         }
     }
 
-    pub fn index(
-        &mut self,
-        field: impl Into<u8>,
-        text: impl Into<Cow<'x, str>>,
-        mut language: Language,
-    ) {
-        let text = text.into();
-        if language == Language::Unknown {
-            language = self.detect.detect(&text, MIN_LANGUAGE_SCORE);
-        }
+    pub fn index(&mut self, field: T, text: impl Into<Cow<'x, str>>, language: Language) {
         self.parts.push(Text {
-            field: field.into(),
-            text,
-            language,
+            field,
+            text: text.into(),
+            language: Type::Stem(language),
         });
     }
 
-    pub fn index_raw(&mut self, field: impl Into<u8>, text: &str) {
-        let tokens = self.tokens.get_mut_or_insert(field.into());
-        for token in SpaceTokenizer::new(text, MAX_TOKEN_LENGTH) {
-            tokens.insert(token);
-        }
+    pub fn index_raw(&mut self, field: T, text: impl Into<Cow<'x, str>>) {
+        self.parts.push(Text {
+            field,
+            text: text.into(),
+            language: Type::Tokenize,
+        });
     }
 
-    pub fn index_raw_token(&mut self, field: impl Into<u8>, token: impl Into<String>) {
-        self.tokens
-            .get_mut_or_insert(field.into())
-            .insert(token.into());
+    pub fn index_raw_token(&mut self, field: T, text: impl Into<Cow<'x, str>>) {
+        self.parts.push(Text {
+            field,
+            text: text.into(),
+            language: Type::Static,
+        });
     }
 }
 
-impl<'x> IntoOperations for FtsIndexBuilder<'x> {
+impl<'x, T: Into<u8> + Display> IntoOperations for FtsIndexBuilder<'x, T> {
     fn build(self, batch: &mut BatchBuilder) {
-        let default_language = self
-            .detect
+        let mut detect = LanguageDetector::new();
+        let mut tokens: VecMap<u8, AHashSet<String>> = VecMap::new();
+        let mut parts = Vec::new();
+
+        for text in self.parts {
+            match text.language {
+                Type::Stem(language) => {
+                    let language = if language == Language::Unknown {
+                        detect.detect(&text.text, MIN_LANGUAGE_SCORE)
+                    } else {
+                        language
+                    };
+                    parts.push((text.field, language, text.text));
+                }
+                Type::Tokenize => {
+                    let tokens = tokens.get_mut_or_insert(text.field.into());
+                    for token in SpaceTokenizer::new(text.text.as_ref(), MAX_TOKEN_LENGTH) {
+                        tokens.insert(token);
+                    }
+                }
+                Type::Static => {
+                    tokens
+                        .get_mut_or_insert(text.field.into())
+                        .insert(text.text.into_owned());
+                }
+            }
+        }
+
+        let default_language = detect
             .most_frequent_language()
             .unwrap_or(self.default_language);
         let mut term_index = TermIndexBuilder::new();
         let mut ops = AHashSet::new();
 
-        for (part_id, part) in self.parts.iter().enumerate() {
-            let language = if part.language != Language::Unknown {
-                part.language
+        for (part_id, (field, language, text)) in parts.into_iter().enumerate() {
+            let language = if language != Language::Unknown {
+                language
             } else {
                 default_language
             };
             let mut terms = Vec::new();
+            let field: u8 = field.into();
 
-            for token in Stemmer::new(&part.text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
-                ops.insert(Operation::hash(&token.word, HASH_EXACT, part.field, true));
+            for token in Stemmer::new(&text, language, MAX_TOKEN_LENGTH).collect::<Vec<_>>() {
+                ops.insert(Operation::hash(&token.word, HASH_EXACT, field, true));
                 if let Some(stemmed_word) = &token.stemmed_word {
-                    ops.insert(Operation::hash(
-                        stemmed_word,
-                        HASH_STEMMED,
-                        part.field,
-                        true,
-                    ));
+                    ops.insert(Operation::hash(stemmed_word, HASH_STEMMED, field, true));
                 }
                 terms.push(term_index.add_stemmed_token(token));
             }
 
             if !terms.is_empty() {
-                term_index.add_terms(part.field, part_id as u32, terms);
+                term_index.add_terms(field, part_id as u32, terms);
             }
         }
 
-        for (field, tokens) in self.tokens {
+        for (field, tokens) in tokens {
             let mut terms = Vec::with_capacity(tokens.len());
             for token in tokens {
                 ops.insert(Operation::hash(&token, HASH_EXACT, field, true));

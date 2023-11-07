@@ -36,7 +36,7 @@ use jmap_client::{
 use jmap_proto::types::{id::Id, state::State};
 use serde::{Deserialize, Serialize};
 use store::ahash::AHashMap;
-
+use store::StoreRead;
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Mailbox tests...");
 

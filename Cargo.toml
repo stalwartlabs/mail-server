@@ -12,7 +12,6 @@ members = [
     "crates/store",
     "crates/directory",
     "crates/utils",
-    "crates/maybe-async",
     "crates/cli",
     "crates/install",
     "tests",

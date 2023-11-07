@@ -51,7 +51,7 @@ use store::{
     fts::term_index::TokenIndex,
     query::RawValue,
     write::{BatchBuilder, F_BITMAP, F_VALUE},
-    BlobKind,
+    BlobKind, StoreWrite,
 };
 use utils::map::vec_map::VecMap;
 

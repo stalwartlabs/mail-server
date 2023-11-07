@@ -21,8 +21,6 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
-
 use ahash::AHashSet;
 use futures::StreamExt;
 use jmap::JMAP;
@@ -36,6 +34,8 @@ use jmap_client::{
     TypeState,
 };
 use jmap_proto::types::id::Id;
+use std::{sync::Arc, time::Duration};
+use store::StoreRead;
 use tokio::sync::mpsc;
 
 use crate::{

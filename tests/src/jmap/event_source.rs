@@ -23,17 +23,17 @@
 
 use std::{sync::Arc, time::Duration};
 
+use crate::{
+    directory::sql::create_test_user_with_email,
+    jmap::{delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login},
+};
 use futures::StreamExt;
 use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{client::Client, event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
+use store::StoreRead;
 use tokio::sync::mpsc;
-
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login},
-};
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running EventSource tests...");

@@ -47,6 +47,7 @@ use store::{
     query::Filter,
     roaring::RoaringBitmap,
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
+    StoreWrite,
 };
 
 use crate::{

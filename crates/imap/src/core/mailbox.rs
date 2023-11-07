@@ -11,7 +11,10 @@ use jmap_proto::{
     types::{acl::Acl, collection::Collection, id::Id, property::Property, value::Value},
 };
 use parking_lot::Mutex;
-use store::query::log::{Change, Query};
+use store::{
+    query::log::{Change, Query},
+    StoreRead,
+};
 use tokio::io::AsyncRead;
 use utils::{listener::limiter::InFlight, map::mutex_map::MutexMap};
 

@@ -25,7 +25,7 @@ use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
 
-use crate::{ReadTransaction, Store, ValueKey};
+use crate::{StoreRead, ValueKey};
 
 use super::{Comparator, ResultSet, SortedResultSet};
 
@@ -42,14 +42,26 @@ pub struct Pagination {
     prefix_unique: bool,
 }
 
-impl ReadTransaction<'_> {
-    #[maybe_async::maybe_async]
-    pub async fn sort(
-        &mut self,
+#[async_trait::async_trait]
+pub trait StoreSort: StoreRead {
+    async fn sort(
+        &self,
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,
         mut paginate: Pagination,
     ) -> crate::Result<SortedResultSet> {
+        paginate.limit = match (result_set.results.len(), paginate.limit) {
+            (0, _) => {
+                return Ok(SortedResultSet {
+                    position: paginate.position,
+                    ids: vec![],
+                    found_anchor: true,
+                });
+            }
+            (_, 0) => result_set.results.len() as usize,
+            (a, b) => std::cmp::min(a as usize, b),
+        };
+
         if comparators.len() == 1 && !paginate.prefix_unique {
             match comparators.pop().unwrap() {
                 Comparator::Field { field, ascending } => {
@@ -61,7 +73,7 @@ impl ReadTransaction<'_> {
                         field,
                         ascending,
                         |_, document_id| {
-                            !results.remove(document_id) || paginate.add(0, document_id)
+                            Ok(!results.remove(document_id) || paginate.add(0, document_id))
                         },
                     )
                     .await?;
@@ -120,14 +132,13 @@ impl ReadTransaction<'_> {
                         let mut has_grouped_ids = false;
                         let mut idx = 0;
 
-                        self.refresh_if_old().await?;
                         self.sort_index(
                             result_set.account_id,
                             result_set.collection,
                             field,
                             ascending,
                             |data, document_id| {
-                                if results.remove(document_id) {
+                                Ok(if results.remove(document_id) {
                                     debug_assert!(!data.is_empty());
 
                                     if data != prev_data {
@@ -142,7 +153,7 @@ impl ReadTransaction<'_> {
                                     !results.is_empty()
                                 } else {
                                     true
-                                }
+                                })
                             },
                         )
                         .await?;
@@ -236,42 +247,6 @@ impl ReadTransaction<'_> {
                 }
             }
             Ok(paginate.build())
-        }
-    }
-}
-
-impl Store {
-    pub async fn sort(
-        &self,
-        result_set: ResultSet,
-        comparators: Vec<Comparator>,
-        mut paginate: Pagination,
-    ) -> crate::Result<SortedResultSet> {
-        paginate.limit = match (result_set.results.len(), paginate.limit) {
-            (0, _) => {
-                return Ok(SortedResultSet {
-                    position: paginate.position,
-                    ids: vec![],
-                    found_anchor: true,
-                });
-            }
-            (_, 0) => result_set.results.len() as usize,
-            (a, b) => std::cmp::min(a as usize, b),
-        };
-
-        #[cfg(not(feature = "is_sync"))]
-        {
-            self.read_transaction()
-                .await?
-                .sort(result_set, comparators, paginate)
-                .await
-        }
-
-        #[cfg(feature = "is_sync")]
-        {
-            let mut trx = self.read_transaction()?;
-            self.spawn_worker(move || trx.sort(result_set, comparators, paginate))
-                .await
         }
     }
 }

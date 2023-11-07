@@ -23,11 +23,11 @@
 
 use std::sync::Arc;
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
 use jmap::JMAP;
 use jmap_client::{client::Client, mailbox::Role};
 use jmap_proto::types::id::Id;
-
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Thread tests...");

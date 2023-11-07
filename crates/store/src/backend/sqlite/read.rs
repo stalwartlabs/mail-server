@@ -21,30 +21,27 @@
  * for more details.
 */
 
-use std::ops::BitAndAssign;
-
 use roaring::RoaringBitmap;
 use rusqlite::OptionalExtension;
 
 use crate::{
-    query::Operator,
+    query::{self, Operator},
     write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ReadTransaction, Serialize,
-    Store,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead,
 };
 
-use super::{BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
+use super::{SqliteStore, BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
 
-impl ReadTransaction<'_> {
-    #[inline(always)]
-    #[maybe_async::maybe_async]
-    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+#[async_trait::async_trait]
+impl StoreRead for SqliteStore {
+    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {
-        let key = key.serialize();
-        self.conn
-            .prepare_cached("SELECT v FROM v WHERE k = ?")?
+        let conn = self.conn_pool.get()?;
+        let key = key.serialize(false);
+        let mut result = conn.prepare_cached("SELECT v FROM v WHERE k = ?")?;
+        result
             .query_row([&key], |row| {
                 U::deserialize(row.get_ref(0)?.as_bytes()?)
                     .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
@@ -53,197 +50,163 @@ impl ReadTransaction<'_> {
             .map_err(Into::into)
     }
 
-    #[maybe_async::maybe_async]
-    async fn get_bitmap_<T: AsRef<[u8]>>(
+    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
         &self,
         mut key: BitmapKey<T>,
-        bm: &mut RoaringBitmap,
-    ) -> crate::Result<()> {
-        let begin = (&key).serialize();
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let begin = key.serialize(false);
         key.block_num = u32::MAX;
         let key_len = begin.len();
-        let end = key.serialize();
-        let mut query = self
-            .conn
-            .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b WHERE z >= ? AND z <= ?")?;
-        let mut rows = query.query([&begin, &end])?;
+        let end = key.serialize(false);
+        let conn = self.conn_pool.get()?;
 
-        while let Some(row) = rows.next()? {
-            let key = row.get_ref(0)?.as_bytes()?;
-            if key.len() == key_len {
-                let block_num = key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
+        self.spawn_worker(move || {
+            let mut bm = RoaringBitmap::new();
+            let mut query = conn
+                    .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b WHERE z >= ? AND z <= ?")?;
+            let mut rows = query.query([&begin, &end])?;
 
-                for word_num in 0..WORDS_PER_BLOCK {
-                    match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
-                        0 => (),
-                        u64::MAX => {
-                            bm.insert_range(
-                                block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
-                                    ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS)
-                                        + WORD_SIZE_BITS,
-                            );
-                        }
-                        mut word => {
-                            while word != 0 {
-                                let trailing_zeros = word.trailing_zeros();
-                                bm.insert(
-                                    block_num * BITS_PER_BLOCK
-                                        + word_num * WORD_SIZE_BITS
-                                        + trailing_zeros,
+            while let Some(row) = rows.next()? {
+                let key = row.get_ref(0)?.as_bytes()?;
+                if key.len() == key_len {
+                    let block_num = key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
+
+                    for word_num in 0..WORDS_PER_BLOCK {
+                        match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
+                            0 => (),
+                            u64::MAX => {
+                                bm.insert_range(
+                                    block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
+                                        ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS)
+                                            + WORD_SIZE_BITS,
                                 );
-                                word ^= 1 << trailing_zeros;
+                            }
+                            mut word => {
+                                while word != 0 {
+                                    let trailing_zeros = word.trailing_zeros();
+                                    bm.insert(
+                                        block_num * BITS_PER_BLOCK
+                                            + word_num * WORD_SIZE_BITS
+                                            + trailing_zeros,
+                                    );
+                                    word ^= 1 << trailing_zeros;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-
-        Ok(())
+            Ok(if !bm.is_empty() { Some(bm) } else { None })
+        }).await
     }
 
-    #[maybe_async::maybe_async]
-    pub async fn get_bitmap<T: AsRef<[u8]>>(
-        &self,
-        key: BitmapKey<T>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-        self.get_bitmap_(key, &mut bm).await?;
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
-    }
-
-    #[maybe_async::maybe_async]
-    pub(crate) async fn get_bitmaps_intersection<T: AsRef<[u8]>>(
-        &self,
-        keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut result: Option<RoaringBitmap> = None;
-        for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await? {
-                if let Some(result) = &mut result {
-                    result.bitand_assign(&bitmap);
-                    if result.is_empty() {
-                        break;
-                    }
-                } else {
-                    result = Some(bitmap);
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-        Ok(result)
-    }
-
-    #[maybe_async::maybe_async]
-    pub(crate) async fn get_bitmaps_union<T: AsRef<[u8]>>(
-        &self,
-        keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-
-        for key in keys {
-            self.get_bitmap_(key, &mut bm).await?;
-        }
-
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
-    }
-
-    #[maybe_async::maybe_async]
-    pub(crate) async fn range_to_bitmap(
+    async fn range_to_bitmap(
         &self,
         account_id: u32,
         collection: u8,
         field: u8,
         value: Vec<u8>,
-        op: Operator,
+        op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let k1 = KeySerializer::new(
-            std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + std::mem::size_of::<u32>(),
-        )
-        .write(account_id)
-        .write(collection)
-        .write(field);
-        let k2 = KeySerializer::new(
-            std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + std::mem::size_of::<u32>(),
-        )
-        .write(account_id)
-        .write(collection)
-        .write(field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8);
+        let conn = self.conn_pool.get()?;
+        self.spawn_worker(move || {
+            let k1 = KeySerializer::new(
+                std::mem::size_of::<IndexKey<&[u8]>>()
+                    + value.len()
+                    + 1
+                    + std::mem::size_of::<u32>(),
+            )
+            .write(account_id)
+            .write(collection)
+            .write(field);
+            let k2 = KeySerializer::new(
+                std::mem::size_of::<IndexKey<&[u8]>>()
+                    + value.len()
+                    + 1
+                    + std::mem::size_of::<u32>(),
+            )
+            .write(account_id)
+            .write(collection)
+            .write(field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8);
 
-        let (query, begin, end) = match op {
-            Operator::LowerThan => (
-                ("SELECT k FROM i WHERE k >= ? AND k < ?"),
-                (k1.finalize()),
-                (k2.write(&value[..]).write(0u32).finalize()),
-            ),
-            Operator::LowerEqualThan => (
-                ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                (k1.finalize()),
-                (k2.write(&value[..]).write(u32::MAX).finalize()),
-            ),
-            Operator::GreaterThan => (
-                ("SELECT k FROM i WHERE k > ? AND k <= ?"),
-                (k1.write(&value[..]).write(u32::MAX).finalize()),
-                (k2.finalize()),
-            ),
-            Operator::GreaterEqualThan => (
-                ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                (k1.write(&value[..]).write(0u32).finalize()),
-                (k2.finalize()),
-            ),
-            Operator::Equal => (
-                ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                (k1.write(&value[..]).write(0u32).finalize()),
-                (k2.write(&value[..]).write(u32::MAX).finalize()),
-            ),
-        };
+            let (query, begin, end) = match op {
+                Operator::LowerThan => (
+                    ("SELECT k FROM i WHERE k >= ? AND k < ?"),
+                    (k1.finalize()),
+                    (k2.write(&value[..]).write(0u32).finalize()),
+                ),
+                Operator::LowerEqualThan => (
+                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
+                    (k1.finalize()),
+                    (k2.write(&value[..]).write(u32::MAX).finalize()),
+                ),
+                Operator::GreaterThan => (
+                    ("SELECT k FROM i WHERE k > ? AND k <= ?"),
+                    (k1.write(&value[..]).write(u32::MAX).finalize()),
+                    (k2.finalize()),
+                ),
+                Operator::GreaterEqualThan => (
+                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
+                    (k1.write(&value[..]).write(0u32).finalize()),
+                    (k2.finalize()),
+                ),
+                Operator::Equal => (
+                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
+                    (k1.write(&value[..]).write(0u32).finalize()),
+                    (k2.write(&value[..]).write(u32::MAX).finalize()),
+                ),
+            };
 
-        let mut bm = RoaringBitmap::new();
-        let mut query = self.conn.prepare_cached(query)?;
-        let mut rows = query.query([&begin, &end])?;
+            let mut bm = RoaringBitmap::new();
+            let mut query = conn.prepare_cached(query)?;
+            let mut rows = query.query([&begin, &end])?;
 
-        if op != Operator::Equal {
-            while let Some(row) = rows.next()? {
-                let key = row.get_ref(0)?.as_bytes()?;
-                bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
-            }
-        } else {
-            let key_len = begin.len();
-            while let Some(row) = rows.next()? {
-                let key = row.get_ref(0)?.as_bytes()?;
-                if key.len() == key_len {
+            if op != Operator::Equal {
+                while let Some(row) = rows.next()? {
+                    let key = row.get_ref(0)?.as_bytes()?;
                     bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
                 }
+            } else {
+                let key_len = begin.len();
+                while let Some(row) = rows.next()? {
+                    let key = row.get_ref(0)?.as_bytes()?;
+                    if key.len() == key_len {
+                        bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                    }
+                }
             }
-        }
 
-        Ok(Some(bm))
+            Ok(Some(bm))
+        })
+        .await
     }
 
-    #[maybe_async::maybe_async]
-    pub(crate) async fn sort_index(
+    async fn sort_index(
         &self,
         account_id: u32,
-        collection: u8,
-        field: u8,
+        collection: impl Into<u8> + Sync + Send,
+        field: impl Into<u8> + Sync + Send,
         ascending: bool,
-        mut cb: impl FnMut(&[u8], u32) -> bool,
+        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
+        let collection = collection.into();
+        let field = field.into();
+
+        let conn = self.conn_pool.get()?;
         let begin = IndexKeyPrefix {
             account_id,
             collection,
             field,
         }
-        .serialize();
+        .serialize(false);
         let end = IndexKeyPrefix {
             account_id,
             collection,
             field: field + 1,
         }
-        .serialize();
+        .serialize(false);
         let prefix_len = begin.len();
-        let mut query = self.conn.prepare_cached(if ascending {
+        let mut query = conn.prepare_cached(if ascending {
             "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k ASC"
         } else {
             "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k DESC"
@@ -259,7 +222,7 @@ impl ReadTransaction<'_> {
                     crate::Error::InternalError("Invalid key found in index".to_string())
                 })?,
                 key.deserialize_be_u32(id_pos)?,
-            ) {
+            )? {
                 return Ok(());
             }
         }
@@ -267,21 +230,20 @@ impl ReadTransaction<'_> {
         Ok(())
     }
 
-    #[maybe_async::maybe_async]
-    pub(crate) async fn iterate<T>(
+    async fn iterate(
         &self,
-        mut acc: T,
         begin: impl Key,
         end: impl Key,
         first: bool,
         ascending: bool,
-        cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
-    ) -> crate::Result<T> {
+        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
+    ) -> crate::Result<()> {
+        let conn = self.conn_pool.get()?;
         let table = char::from(begin.subspace());
-        let begin = begin.serialize();
-        let end = end.serialize();
+        let begin = begin.serialize(false);
+        let end = end.serialize(false);
 
-        let mut query = self.conn.prepare_cached(&match (first, ascending) {
+        let mut query = conn.prepare_cached(&match (first, ascending) {
             (true, true) => {
                 format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1")
             }
@@ -301,29 +263,30 @@ impl ReadTransaction<'_> {
             let key = row.get_ref(0)?.as_bytes()?;
             let value = row.get_ref(1)?.as_bytes()?;
 
-            if !cb(&mut acc, key, value)? {
-                return Ok(acc);
+            if !cb(key, value)? {
+                break;
             }
         }
 
-        Ok(acc)
+        Ok(())
     }
 
-    #[maybe_async::maybe_async]
-    pub(crate) async fn get_last_change_id(
+    async fn get_last_change_id(
         &self,
         account_id: u32,
-        collection: u8,
+        collection: impl Into<u8> + Sync + Send,
     ) -> crate::Result<Option<u64>> {
+        let conn = self.conn_pool.get()?;
+        let collection = collection.into();
         let key = LogKey {
             account_id,
             collection,
             change_id: u64::MAX,
         }
-        .serialize();
-
-        self.conn
-            .prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
+        .serialize(false);
+        let mut results =
+            conn.prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?;
+        results
             .query_row([&key], |row| {
                 let key = row.get_ref(0)?.as_bytes()?;
 
@@ -334,39 +297,26 @@ impl ReadTransaction<'_> {
             .map_err(Into::into)
     }
 
-    #[maybe_async::maybe_async]
-    pub(crate) async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
-        match self
-            .conn
-            .prepare_cached("SELECT v FROM q WHERE k = ?")?
-            .query_row([account_id as i64], |row| row.get::<_, i64>(0))
-        {
+    async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+        let conn = self.conn_pool.get()?;
+        let mut results = conn.prepare_cached("SELECT v FROM q WHERE k = ?")?;
+        match results.query_row([account_id as i64], |row| row.get::<_, i64>(0)) {
             Ok(value) => Ok(value),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
             Err(e) => Err(e.into()),
         }
     }
 
-    #[maybe_async::maybe_async]
-    pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
-        Ok(())
-    }
-}
-
-impl Store {
-    #[maybe_async::maybe_async]
-    pub async fn read_transaction(&self) -> crate::Result<ReadTransaction<'static>> {
-        Ok(ReadTransaction {
-            conn: self.conn_pool.get()?,
-            _p: std::marker::PhantomData,
-        })
-    }
-
     #[cfg(feature = "test_mode")]
-    pub async fn assert_is_empty(&self) {
-        let conn = self.read_transaction().unwrap();
+    async fn assert_is_empty(&self) {
+        use crate::StorePurge;
+
+        let conn = self.conn_pool.get().unwrap();
+        self.purge_bitmaps().await.unwrap();
+
+        self.spawn_worker(move || {
         // Values
-        let mut query = conn.conn.prepare_cached("SELECT k, v FROM v").unwrap();
+        let mut query = conn.prepare_cached("SELECT k, v FROM v").unwrap();
         let mut rows = query.query([]).unwrap();
         let mut has_errors = false;
 
@@ -381,7 +331,7 @@ impl Store {
         }
 
         // Indexes
-        let mut query = conn.conn.prepare_cached("SELECT k FROM i").unwrap();
+        let mut query = conn.prepare_cached("SELECT k FROM i").unwrap();
         let mut rows = query.query([]).unwrap();
 
         while let Some(row) = rows.next().unwrap() {
@@ -400,9 +350,7 @@ impl Store {
         }
 
         // Bitmaps
-        self.purge_bitmaps().await.unwrap();
         let mut query = conn
-            .conn
             .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b")
             .unwrap();
         let mut rows = query.query([]).unwrap();
@@ -425,7 +373,7 @@ impl Store {
         }
 
         // Quotas
-        let mut query = conn.conn.prepare_cached("SELECT k, v FROM q").unwrap();
+        let mut query = conn.prepare_cached("SELECT k, v FROM q").unwrap();
         let mut rows = query.query([]).unwrap();
 
         while let Some(row) = rows.next().unwrap() {
@@ -441,12 +389,14 @@ impl Store {
         }
 
         // Delete logs
-        conn.conn.execute("DELETE FROM l", []).unwrap();
+        conn.execute("DELETE FROM l", []).unwrap();
 
         if has_errors {
             panic!("Database is not empty");
         }
 
+        Ok(())
+        }).await.unwrap();
         self.id_assigner.lock().clear();
     }
 }

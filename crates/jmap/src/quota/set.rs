@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2023 Stalwart Labs Ltd.
  *
- * This file is part of the Stalwart Mail Server.
+ * This file is part of Stalwart Mail Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,26 +21,18 @@
  * for more details.
 */
 
-use foundationdb::{api::NetworkAutoStop, Database, FdbError};
+use jmap_proto::{
+    object::index::{IndexAs, IndexProperty},
+    types::property::Property,
+};
 
-use crate::{blob::BlobStore, Error};
+use crate::JMAP;
 
-pub mod bitmap;
-pub mod id_assign;
-pub mod main;
-pub mod purge;
-pub mod read;
-pub mod write;
-
-#[allow(dead_code)]
-pub struct FdbStore {
-    db: Database,
-    guard: NetworkAutoStop,
-    blob: BlobStore,
-}
-
-impl From<FdbError> for Error {
-    fn from(error: FdbError) -> Self {
-        Self::InternalError(format!("FoundationDB error: {}", error.message()))
+impl JMAP {
+    pub async fn quota_set(
+        &self,
+        account_id: u32,
+        quota: &AccessToken,
+    ) -> Result<SetResponse, MethodError> {
     }
 }

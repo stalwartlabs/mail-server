@@ -31,8 +31,7 @@ tracing = "0.1"
 jemallocator = "0.5.0"
 
 [features]
-default = ["sqlite"]
-#default = ["foundationdb"]
+default = ["sqlite", "foundationdb"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 

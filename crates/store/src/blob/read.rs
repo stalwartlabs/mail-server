@@ -28,11 +28,11 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 
-use crate::{BlobKind, Store};
+use crate::{backend::sqlite::SqliteStore, BlobKind};
 
 use super::{get_local_path, get_s3_path, BlobStore};
 
-impl Store {
+impl SqliteStore {
     pub async fn get_blob(
         &self,
         kind: &BlobKind,

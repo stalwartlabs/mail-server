@@ -27,7 +27,6 @@ use jmap_proto::{
     object::{mailbox::QueryArguments, Object},
     types::{acl::Acl, collection::Collection, property::Property, value::Value},
 };
-use nlp::language::Language;
 use store::{
     ahash::{AHashMap, AHashSet},
     query::{self, sort::Pagination},
@@ -62,11 +61,7 @@ impl JMAP {
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
-                    filters.push(query::Filter::has_text(
-                        Property::Name,
-                        &name,
-                        Language::None,
-                    ));
+                    filters.push(query::Filter::has_text(Property::Name, &name));
                 }
                 Filter::Role(role) => {
                     if let Some(role) = role {

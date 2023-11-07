@@ -32,7 +32,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     roaring::RoaringBitmap,
     write::{assert::HashedValue, now, BatchBuilder, ToBitmaps, F_VALUE},
-    Deserialize, Serialize,
+    Deserialize, Serialize, StoreRead, StoreWrite,
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
@@ -118,26 +118,26 @@ impl SessionData {
 
             // Obtain message data
             let (id_list, id_list_hash) = if !message_ids.is_empty() {
-                let uid_builder = self
-                    .jmap
+                let mut uid_builder = UidMapBuilder {
+                    id_list: Vec::with_capacity(message_ids.len() as usize),
+                    message_ids,
+                    hasher: RandomState::with_seeds(
+                        0xaf1f2242106c64b3,
+                        0x60ca4cfb4b3ed0ce,
+                        0xc7dbc0bb615e82b3,
+                        0x520ad065378daf88,
+                    )
+                    .build_hasher(),
+                };
+
+                self.jmap
                     .store
-                    .index_values(
-                        UidMapBuilder {
-                            id_list: Vec::with_capacity(message_ids.len() as usize),
-                            message_ids,
-                            hasher: RandomState::with_seeds(
-                                0xaf1f2242106c64b3,
-                                0x60ca4cfb4b3ed0ce,
-                                0xc7dbc0bb615e82b3,
-                                0x520ad065378daf88,
-                            )
-                            .build_hasher(),
-                        },
+                    .sort_index(
                         mailbox.account_id,
                         Collection::Email,
                         Property::ReceivedAt,
                         true,
-                        |uid_builder, message_id, bytes| {
+                        |bytes, message_id| {
                             if uid_builder.message_ids.remove(message_id) {
                                 let received = (u64::deserialize(bytes)? & u32::MAX as u64) as u32;
                                 uid_builder.id_list.push((message_id, received));

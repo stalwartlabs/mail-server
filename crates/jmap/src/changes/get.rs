@@ -26,7 +26,7 @@ use jmap_proto::{
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
-use store::query::log::{Change, Changes, Query};
+use store::query::log::{Change, Changes, Query, StoreLog};
 
 use crate::{auth::AccessToken, JMAP};
 

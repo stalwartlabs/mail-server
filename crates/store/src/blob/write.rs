@@ -28,11 +28,11 @@ use tokio::{
     io::AsyncWriteExt,
 };
 
-use crate::{write::now, BlobKind, Store};
+use crate::{backend::sqlite::SqliteStore, write::now, BlobKind};
 
 use super::{get_local_path, get_s3_path, BlobStore};
 
-impl Store {
+impl SqliteStore {
     pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> crate::Result<()> {
         match &self.blob {
             BlobStore::Local(base_path) => {

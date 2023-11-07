@@ -21,13 +21,6 @@
  * for more details.
 */
 
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use jmap::JMAP;
 use jmap_client::{
     client::Client,
@@ -37,6 +30,13 @@ use jmap_client::{
     Error,
 };
 use jmap_proto::types::id::Id;
+use std::{
+    fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,

@@ -22,7 +22,10 @@
 */
 
 use jmap_proto::error::method::MethodError;
-use store::write::{log::ChangeLogBuilder, BatchBuilder};
+use store::{
+    write::{log::ChangeLogBuilder, BatchBuilder},
+    StoreId, StoreWrite,
+};
 
 use crate::JMAP;
 

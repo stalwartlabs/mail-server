@@ -21,6 +21,23 @@
  * for more details.
 */
 
+use std::sync::Arc;
+
+use lru_cache::LruCache;
+use parking_lot::Mutex;
+use r2d2::Pool;
+
+use crate::{
+    blob::BlobStore,
+    query::{filter::StoreQuery, log::StoreLog, sort::StoreSort},
+    Store,
+};
+
+use self::{
+    id_assign::{IdAssigner, IdCacheKey},
+    pool::SqliteConnectionManager,
+};
+
 pub mod id_assign;
 pub mod main;
 pub mod pool;
@@ -51,3 +68,15 @@ impl From<rusqlite::types::FromSqlError> for crate::Error {
         Self::InternalError(format!("SQLite error: {}", err))
     }
 }
+
+pub struct SqliteStore {
+    pub(crate) conn_pool: Pool<SqliteConnectionManager>,
+    pub(crate) id_assigner: Arc<Mutex<LruCache<IdCacheKey, IdAssigner>>>,
+    pub(crate) worker_pool: rayon::ThreadPool,
+    pub(crate) blob: BlobStore,
+}
+
+impl Store for SqliteStore {}
+impl StoreQuery for SqliteStore {}
+impl StoreSort for SqliteStore {}
+impl StoreLog for SqliteStore {}

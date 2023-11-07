@@ -30,6 +30,7 @@ use jmap_client::{
     mailbox::{self},
 };
 use jmap_proto::types::id::Id;
+use store::StoreRead;
 
 use crate::{
     directory::sql::{create_test_user_with_email, link_test_address},

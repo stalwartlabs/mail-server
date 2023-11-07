@@ -39,7 +39,7 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 use std::fmt::Debug;
-use store::ahash::AHashMap;
+use store::{ahash::AHashMap, StoreRead};
 
 use crate::{
     directory::sql::{

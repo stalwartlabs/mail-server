@@ -27,6 +27,7 @@ use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
+use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,

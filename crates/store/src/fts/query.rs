@@ -21,18 +21,20 @@
  * for more details.
 */
 
+use std::ops::BitOrAssign;
+
 use nlp::language::{stemmer::Stemmer, Language};
 use roaring::RoaringBitmap;
 
 use crate::{
-    fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ReadTransaction, ValueKey, HASH_EXACT, HASH_STEMMED,
+    fts::builder::MAX_TOKEN_LENGTH, BitmapKey, StoreRead, ValueKey, HASH_EXACT, HASH_STEMMED,
 };
 
 use super::term_index::TermIndex;
 
-impl ReadTransaction<'_> {
-    #[maybe_async::maybe_async]
-    pub(crate) async fn fts_query(
+#[async_trait::async_trait]
+pub trait StoreFts: StoreRead {
+    async fn fts_query(
         &mut self,
         account_id: u32,
         collection: u8,
@@ -71,7 +73,6 @@ impl ReadTransaction<'_> {
 
             let mut results = RoaringBitmap::new();
             for document_id in bitmaps {
-                self.refresh_if_old().await?;
                 if let Some(term_index) = self
                     .get_value::<TermIndex>(ValueKey::term_index(
                         account_id,
@@ -132,8 +133,6 @@ impl ReadTransaction<'_> {
                     token2
                 };
 
-                self.refresh_if_old().await?;
-
                 match self.get_bitmaps_union(vec![token1, token2]).await? {
                     Some(b) if !b.is_empty() => {
                         if !bitmaps.is_empty() {
@@ -151,5 +150,20 @@ impl ReadTransaction<'_> {
 
             Ok(Some(bitmaps))
         }
+    }
+
+    async fn get_bitmaps_union<T: AsRef<[u8]> + Sync + Send>(
+        &self,
+        keys: Vec<BitmapKey<T>>,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let mut bm = RoaringBitmap::new();
+
+        for key in keys {
+            if let Some(items) = self.get_bitmap(key).await? {
+                bm.bitor_assign(items);
+            }
+        }
+
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 }

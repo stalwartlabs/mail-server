@@ -23,6 +23,10 @@
 
 use std::{collections::hash_map::Entry, sync::Arc, time::Instant};
 
+use crate::{
+    jmap::mailbox::destroy_all_mailboxes,
+    store::{deflate_artwork_data, query::FIELDS},
+};
 use jmap::JMAP;
 use jmap_client::{
     client::Client,
@@ -31,12 +35,8 @@ use jmap_client::{
 };
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::HeaderName;
-use store::{ahash::AHashMap, write::BatchBuilder};
-
-use crate::{
-    jmap::mailbox::destroy_all_mailboxes,
-    store::{deflate_artwork_data, query::FIELDS},
-};
+use store::StoreRead;
+use store::{ahash::AHashMap, write::BatchBuilder, StoreWrite};
 
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;

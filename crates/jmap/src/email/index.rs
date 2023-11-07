@@ -257,7 +257,7 @@ impl IndexMessage for BatchBuilder {
     }
 }
 
-impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
+impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
     fn index_message(&mut self, message: &'x Message<'x>) {
         let mut language = Language::Unknown;
 
@@ -271,8 +271,7 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
                         continue;
                     }
                     // Index hasHeader property
-                    let header_num = header.name.id().to_string();
-                    self.index_raw_token(Property::Headers, &header_num);
+                    self.index_raw_token(Property::Headers, header.name.as_str());
 
                     match header.name {
                         HeaderName::MessageId
@@ -282,10 +281,8 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
                             header.value.visit_text(|id| {
                                 // Index ids without stemming
                                 if id.len() < MAX_TOKEN_LENGTH {
-                                    self.index_raw_token(
-                                        Property::Headers,
-                                        format!("{header_num}{id}"),
-                                    );
+                                    let fix = "true";
+                                    self.index_raw_token(Property::MessageId, id.to_string());
                                 }
                             });
                         }
@@ -294,7 +291,7 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
 
                             header.value.visit_addresses(|_, value| {
                                 // Index an address name or email without stemming
-                                self.index_raw(u8::from(&property), value);
+                                self.index_raw(property.clone(), value.to_string());
                             });
                         }
                         HeaderName::Subject => {
@@ -316,9 +313,10 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x> {
                             header.value.visit_text(|text| {
                                 for token in text.split_ascii_whitespace() {
                                     if token.len() < MAX_TOKEN_LENGTH {
+                                        let fix = "true";
                                         self.index_raw_token(
                                             Property::Headers,
-                                            format!("{header_num}{}", token.to_lowercase()),
+                                            token.to_lowercase(),
                                         );
                                     }
                                 }

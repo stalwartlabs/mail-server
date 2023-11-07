@@ -30,6 +30,7 @@ use jmap_client::{
     mailbox::Role,
 };
 use jmap_proto::types::id::Id;
+use store::StoreRead;
 
 use crate::jmap::{email_get::all_headers, mailbox::destroy_all_mailboxes, replace_blob_ids};
 

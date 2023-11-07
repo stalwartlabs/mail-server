@@ -23,7 +23,9 @@
 
 use roaring::RoaringBitmap;
 
-use crate::{BitmapKey, Store};
+use crate::{BitmapKey, StoreId, StoreRead};
+
+use super::SqliteStore;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct IdCacheKey {
@@ -91,24 +93,9 @@ impl IdAssigner {
     }
 }
 
-impl Store {
-    pub async fn assign_document_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-    ) -> crate::Result<u32> {
-        let key = IdCacheKey::new(account_id, collection.into());
-        for _ in 0..2 {
-            if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
-                return Ok(assigner.assign_document_id());
-            }
-            self.build_id_assigner(key).await?;
-        }
-
-        unreachable!()
-    }
-
-    pub async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
+#[async_trait::async_trait]
+impl StoreId for SqliteStore {
+    async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
         let collection = u8::MAX;
         let key = IdCacheKey::new(account_id, collection);
         for _ in 0..2 {
@@ -121,28 +108,43 @@ impl Store {
         unreachable!()
     }
 
-    async fn build_id_assigner(&self, key: IdCacheKey) -> crate::Result<()> {
-        let conn = self.read_transaction()?;
-        let id_assigner = self.id_assigner.clone();
-        self.spawn_worker(move || {
-            let mut id_assigner = id_assigner.lock();
-            // Make sure id assigner was not added by another thread
-            if id_assigner.get_mut(&key).is_some() {
-                return Ok(());
+    async fn assign_document_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+    ) -> crate::Result<u32> {
+        let key = IdCacheKey::new(account_id, collection.into());
+        for _ in 0..2 {
+            if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
+                return Ok(assigner.assign_document_id());
             }
+            self.build_id_assigner(key).await?;
+        }
 
-            // Obtain used ids
-            let used_ids =
-                conn.get_bitmap(BitmapKey::document_ids(key.account_id, key.collection))?;
-            let next_change_id = conn
-                .get_last_change_id(key.account_id, key.collection)?
-                .map(|id| id + 1)
-                .unwrap_or(0);
+        unreachable!()
+    }
+}
+
+impl SqliteStore {
+    async fn build_id_assigner(&self, key: IdCacheKey) -> crate::Result<()> {
+        // Obtain used ids
+        let used_ids = self
+            .get_bitmap(BitmapKey::document_ids(key.account_id, key.collection))
+            .await?;
+        let next_change_id = self
+            .get_last_change_id(key.account_id, key.collection)
+            .await?
+            .map(|id| id + 1)
+            .unwrap_or(0);
+
+        let id_assigner = self.id_assigner.clone();
+        let mut id_assigner = id_assigner.lock();
+        // Make sure id assigner was not added by another thread
+        if id_assigner.get_mut(&key).is_none() {
             id_assigner.insert(key, IdAssigner::new(used_ids, next_change_id));
+        }
 
-            Ok(())
-        })
-        .await
+        Ok(())
     }
 }
 

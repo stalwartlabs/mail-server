@@ -26,6 +26,7 @@ use std::sync::Arc;
 use jmap::JMAP;
 use jmap_client::{client::Client, mailbox::Role};
 use jmap_proto::types::id::Id;
+use store::StoreRead;
 
 use crate::jmap::mailbox::destroy_all_mailboxes;
 

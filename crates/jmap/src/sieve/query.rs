@@ -28,7 +28,6 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
-use nlp::language::Language;
 use store::query::{self};
 
 use crate::JMAP;
@@ -43,11 +42,7 @@ impl JMAP {
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
-                Filter::Name(name) => filters.push(query::Filter::has_text(
-                    Property::Name,
-                    &name,
-                    Language::None,
-                )),
+                Filter::Name(name) => filters.push(query::Filter::has_text(Property::Name, &name)),
                 Filter::IsActive(is_active) => {
                     filters.push(query::Filter::eq(Property::IsActive, is_active as u32))
                 }

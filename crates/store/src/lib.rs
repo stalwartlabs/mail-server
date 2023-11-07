@@ -21,9 +21,7 @@
  * for more details.
 */
 
-use std::fmt::Display;
-
-use blob::BlobStore;
+use std::{fmt::Display, ops::BitAndAssign};
 
 pub mod backend;
 pub mod blob;
@@ -34,59 +32,15 @@ pub mod write;
 pub use ahash;
 pub use blake3;
 pub use parking_lot;
+use query::{filter::StoreQuery, log::StoreLog, sort::StoreSort};
 pub use rand;
 pub use roaring;
+use roaring::RoaringBitmap;
+use write::Batch;
 
 #[cfg(feature = "rocks")]
 pub struct Store {
     db: rocksdb::OptimisticTransactionDB<rocksdb::MultiThreaded>,
-}
-
-#[cfg(feature = "foundation")]
-#[allow(dead_code)]
-pub struct Store {
-    db: foundationdb::Database,
-    guard: foundationdb::api::NetworkAutoStop,
-    blob: BlobStore,
-}
-
-#[cfg(feature = "foundation")]
-pub struct ReadTransaction<'x> {
-    db: &'x foundationdb::Database,
-    pub trx: foundationdb::Transaction,
-    trx_age: std::time::Instant,
-}
-
-#[cfg(feature = "sqlite")]
-pub struct Store {
-    conn_pool: r2d2::Pool<backend::sqlite::pool::SqliteConnectionManager>,
-    id_assigner: std::sync::Arc<
-        parking_lot::Mutex<
-            lru_cache::LruCache<
-                backend::sqlite::id_assign::IdCacheKey,
-                backend::sqlite::id_assign::IdAssigner,
-            >,
-        >,
-    >,
-    worker_pool: rayon::ThreadPool,
-    blob: BlobStore,
-}
-
-#[cfg(feature = "sqlite")]
-pub struct ReadTransaction<'x> {
-    conn: r2d2::PooledConnection<backend::sqlite::pool::SqliteConnectionManager>,
-    _p: std::marker::PhantomData<&'x ()>,
-}
-
-#[cfg(not(feature = "backend"))]
-#[allow(dead_code)]
-pub struct Store {
-    blob: BlobStore,
-}
-
-#[cfg(not(feature = "backend"))]
-pub struct ReadTransaction<'x> {
-    _db: &'x [u8],
 }
 
 pub trait Deserialize: Sized + Sync + Send {
@@ -97,7 +51,8 @@ pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
 }
 
-pub trait Key: Serialize + Sync + Send + 'static {
+pub trait Key: Sync + Send {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8>;
     fn subspace(&self) -> u8;
 }
 
@@ -234,128 +189,125 @@ pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
 pub const SUBSPACE_QUOTAS: u8 = b'q';
 
-#[cfg(not(feature = "backend"))]
-impl Store {
-    pub async fn open(_config: &utils::config::Config) -> crate::Result<Self> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn purge_bitmaps(&self) -> crate::Result<()> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn purge_account(&self, _account_id: u32) -> crate::Result<()> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn read_transaction(&self) -> crate::Result<ReadTransaction<'_>> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn write(&self, _batch: write::Batch) -> crate::Result<()> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn assign_document_id(
-        &self,
-        _account_id: u32,
-        _collection: impl Into<u8>,
-    ) -> crate::Result<u32> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn assign_change_id(&self, _account_id: u32) -> crate::Result<u64> {
-        unimplemented!("No backend selected")
-    }
-
-    #[cfg(feature = "test_mode")]
-    pub async fn destroy(&self) {
-        unimplemented!("No backend selected")
-    }
-
-    #[cfg(feature = "test_mode")]
-    pub async fn assert_is_empty(&self) {
-        unimplemented!("No backend selected")
-    }
+#[async_trait::async_trait]
+pub trait StoreInit: Sized {
+    async fn open(config: &utils::config::Config) -> crate::Result<Self>;
 }
 
-#[cfg(not(feature = "backend"))]
-impl ReadTransaction<'_> {
-    pub async fn get_value<U>(&self, _key: impl Key) -> crate::Result<Option<U>>
+#[async_trait::async_trait]
+pub trait StorePurge {
+    async fn purge_bitmaps(&self) -> crate::Result<()>;
+    async fn purge_account(&self, account_id: u32) -> crate::Result<()>;
+}
+
+#[async_trait::async_trait]
+pub trait StoreId {
+    async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64>;
+    async fn assign_document_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+    ) -> crate::Result<u32>;
+}
+
+#[async_trait::async_trait]
+pub trait StoreRead: Sync {
+    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
-        U: Deserialize,
+        U: Deserialize + 'static;
+
+    async fn get_values<U>(&self, key: Vec<impl Key>) -> crate::Result<Vec<Option<U>>>
+    where
+        U: Deserialize + 'static,
     {
-        unimplemented!("No backend selected")
+        let mut results = Vec::with_capacity(key.len());
+
+        for key in key {
+            results.push(self.get_value(key).await?);
+        }
+
+        Ok(results)
     }
 
-    pub async fn get_bitmap<T: AsRef<[u8]>>(
+    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
         &self,
-        _key: BitmapKey<T>,
-    ) -> crate::Result<Option<roaring::RoaringBitmap>> {
-        unimplemented!("No backend selected")
-    }
+        key: BitmapKey<T>,
+    ) -> crate::Result<Option<RoaringBitmap>>;
 
-    pub(crate) async fn get_bitmaps_intersection<T: AsRef<[u8]>>(
+    async fn get_bitmaps_intersection<T: AsRef<[u8]> + Sync + Send>(
         &self,
-        _keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<roaring::RoaringBitmap>> {
-        unimplemented!("No backend selected")
+        keys: Vec<BitmapKey<T>>,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let mut result: Option<RoaringBitmap> = None;
+        for key in keys {
+            if let Some(bitmap) = self.get_bitmap(key).await? {
+                if let Some(result) = &mut result {
+                    result.bitand_assign(&bitmap);
+                    if result.is_empty() {
+                        break;
+                    }
+                } else {
+                    result = Some(bitmap);
+                }
+            } else {
+                return Ok(None);
+            }
+        }
+        Ok(result)
     }
 
-    pub(crate) async fn get_bitmaps_union<T: AsRef<[u8]>>(
+    async fn range_to_bitmap(
         &self,
-        _keys: Vec<BitmapKey<T>>,
-    ) -> crate::Result<Option<roaring::RoaringBitmap>> {
-        unimplemented!("No backend selected")
-    }
+        account_id: u32,
+        collection: u8,
+        field: u8,
+        value: Vec<u8>,
+        op: query::Operator,
+    ) -> crate::Result<Option<RoaringBitmap>>;
 
-    pub(crate) async fn range_to_bitmap(
+    async fn sort_index(
         &self,
-        _account_id: u32,
-        _collection: u8,
-        _field: u8,
-        _value: Vec<u8>,
-        _op: query::Operator,
-    ) -> crate::Result<Option<roaring::RoaringBitmap>> {
-        unimplemented!("No backend selected")
-    }
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+        field: impl Into<u8> + Sync + Send,
+        ascending: bool,
+        cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
+    ) -> crate::Result<()>;
 
-    pub(crate) async fn sort_index(
+    async fn iterate(
         &self,
-        _account_id: u32,
-        _collection: u8,
-        _field: u8,
-        _ascending: bool,
-        _cb: impl FnMut(&[u8], u32) -> bool,
-    ) -> crate::Result<()> {
-        unimplemented!("No backend selected")
-    }
+        begin: impl Key,
+        end: impl Key,
+        first: bool,
+        ascending: bool,
+        cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
+    ) -> crate::Result<()>;
 
-    pub(crate) async fn iterate<T>(
+    async fn get_last_change_id(
         &self,
-        _acc: T,
-        _begin: impl Key,
-        _end: impl Key,
-        _first: bool,
-        _ascending: bool,
-        _cb: impl Fn(&mut T, &[u8], &[u8]) -> crate::Result<bool> + Sync + Send + 'static,
-    ) -> crate::Result<T> {
-        unimplemented!("No backend selected")
-    }
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+    ) -> crate::Result<Option<u64>>;
 
-    pub(crate) async fn get_last_change_id(
+    async fn get_quota(&self, account_id: u32) -> crate::Result<i64>;
+
+    #[cfg(feature = "test_mode")]
+    async fn assert_is_empty(&self);
+}
+
+#[async_trait::async_trait]
+pub trait StoreWrite {
+    async fn write(&self, batch: Batch) -> crate::Result<()>;
+    /*async fn set_value(
         &self,
-        _account_id: u32,
-        _collection: u8,
-    ) -> crate::Result<Option<u64>> {
-        unimplemented!("No backend selected")
-    }
+        key: impl Key,
+        value: impl Serialize + Sync + Send + 'static,
+    ) -> crate::Result<()>;*/
+    #[cfg(feature = "test_mode")]
+    async fn destroy(&self);
+}
 
-    pub(crate) async fn get_quota(&self, _account_id: u32) -> crate::Result<i64> {
-        unimplemented!("No backend selected")
-    }
-
-    pub async fn refresh_if_old(&mut self) -> crate::Result<()> {
-        unimplemented!("No backend selected")
-    }
+pub trait Store:
+    StoreInit + StoreRead + StoreWrite + StoreId + StorePurge + StoreQuery + StoreSort + StoreLog
+{
 }

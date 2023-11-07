@@ -23,6 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use crate::jmap::mailbox::destroy_all_mailboxes;
 use futures::future::join_all;
 use jmap::JMAP;
 use jmap_client::{
@@ -32,8 +33,7 @@ use jmap_client::{
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::rand::{self, Rng};
-
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use store::StoreRead;
 
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;

@@ -30,8 +30,8 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
-use store::roaring::RoaringBitmap;
 use store::Deserialize;
+use store::{roaring::RoaringBitmap, StoreRead};
 use tokio::io::AsyncRead;
 
 use crate::core::{Mailbox, Session, SessionData};
@@ -392,31 +392,32 @@ impl SessionData {
         account_id: u32,
         message_ids: &Arc<RoaringBitmap>,
     ) -> super::Result<u32> {
+        let mut total_size = 0u32;
         self.jmap
             .store
-            .index_values(
-                (message_ids.clone(), 0u32),
+            .sort_index(
                 account_id,
                 Collection::Email,
                 Property::Size,
                 true,
-                |(message_ids, total_size), document_id, bytes| {
+                |bytes, document_id| {
                     if message_ids.contains(document_id) {
                         u32::deserialize(bytes).map(|size| {
-                            *total_size += size;
+                            total_size += size;
                         })?;
                     }
                     Ok(true)
                 },
             )
             .await
-            .map(|(_, size)| size)
             .map_err(|err| {
                 tracing::warn!(parent: &self.span,
                                event = "error", 
                                reason = ?err,
                                "Failed to calculate mailbox size");
                 StatusResponse::database_failure()
-            })
+            })?;
+
+        Ok(total_size)
     }
 }

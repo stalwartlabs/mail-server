@@ -26,6 +26,7 @@ use std::{sync::Arc, time::Duration};
 use jmap::JMAP;
 use jmap_client::client::Client;
 use jmap_proto::types::{collection::Collection, id::Id};
+use store::StoreRead;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,

@@ -30,13 +30,15 @@ use tokio::sync::oneshot;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    blob::BlobStore, Store, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    blob::BlobStore, StoreInit, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
-use super::pool::SqliteConnectionManager;
+use super::{pool::SqliteConnectionManager, SqliteStore};
 
-impl Store {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
+#[async_trait::async_trait]
+impl StoreInit for SqliteStore {
+    async fn open(config: &Config) -> crate::Result<Self> {
+        let blob = BlobStore::new(config).await?;
         let db = Self {
             conn_pool: Pool::builder()
                 .max_size(config.property_or_static("store.db.pool.max-connections", "10")?)
@@ -69,12 +71,14 @@ impl Store {
             id_assigner: Arc::new(Mutex::new(LruCache::new(
                 config.property_or_static("store.db.cache.size", "1000")?,
             ))),
-            blob: BlobStore::new(config).await?,
+            blob,
         };
         db.create_tables()?;
         Ok(db)
     }
+}
 
+impl SqliteStore {
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 

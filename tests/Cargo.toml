@@ -5,8 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [features]
-default = ["sqlite"]
-#default = ["foundationdb"]
+default = ["sqlite", "foundationdb"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 
