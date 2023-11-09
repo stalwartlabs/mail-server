@@ -27,7 +27,10 @@ pub mod sort;
 
 use roaring::RoaringBitmap;
 
-use crate::{write::BitmapFamily, BitmapKey, Deserialize, Serialize, BM_DOCUMENT_IDS};
+use crate::{
+    write::{BitmapClass, TagValue},
+    BitmapKey, Serialize,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operator {
@@ -50,11 +53,7 @@ pub enum Filter {
         text: String,
         tokenize: bool,
     },
-    InBitmap {
-        family: u8,
-        field: u8,
-        key: Vec<u8>,
-    },
+    InBitmap(BitmapClass),
     DocumentSet(RoaringBitmap),
     And,
     Or,
@@ -202,12 +201,11 @@ impl Filter {
         }
     }
 
-    pub fn is_in_bitmap(field: impl Into<u8>, value: impl BitmapFamily + Serialize) -> Self {
-        Self::InBitmap {
-            family: value.family(),
+    pub fn is_in_bitmap(field: impl Into<u8>, value: impl Into<TagValue>) -> Self {
+        Self::InBitmap(BitmapClass::Tag {
             field: field.into(),
-            key: value.serialize(),
-        }
+            value: value.into(),
+        })
     }
 
     pub fn is_in_set(set: RoaringBitmap) -> Self {
@@ -242,19 +240,52 @@ impl Comparator {
     }
 }
 
-impl BitmapKey<&'static [u8]> {
+impl BitmapKey<BitmapClass> {
     pub fn document_ids(account_id: u32, collection: impl Into<u8>) -> Self {
         BitmapKey {
             account_id,
             collection: collection.into(),
-            family: BM_DOCUMENT_IDS,
-            field: u8::MAX,
-            key: b"",
+            class: BitmapClass::DocumentIds,
+            block_num: 0,
+        }
+    }
+
+    pub fn text_token(
+        account_id: u32,
+        collection: impl Into<u8>,
+        field: impl Into<u8>,
+        token: impl Into<Vec<u8>>,
+    ) -> Self {
+        BitmapKey {
+            account_id,
+            collection: collection.into(),
+            class: BitmapClass::Text {
+                field: field.into(),
+                token: token.into(),
+            },
+            block_num: 0,
+        }
+    }
+
+    pub fn tag(
+        account_id: u32,
+        collection: impl Into<u8>,
+        field: impl Into<u8>,
+        value: impl Into<TagValue>,
+    ) -> Self {
+        BitmapKey {
+            account_id,
+            collection: collection.into(),
+            class: BitmapClass::Tag {
+                field: field.into(),
+                value: value.into(),
+            },
             block_num: 0,
         }
     }
 }
 
+/*
 #[derive(Debug)]
 pub struct RawValue<T: Deserialize> {
     pub raw: Vec<u8>,
@@ -269,3 +300,4 @@ impl<T: Deserialize> Deserialize for RawValue<T> {
         })
     }
 }
+*/

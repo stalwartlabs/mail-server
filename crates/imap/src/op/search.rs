@@ -36,7 +36,6 @@ use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, proper
 use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::{
-    fts::builder::MAX_TOKEN_LENGTH,
     query::{
         self,
         log::Query,

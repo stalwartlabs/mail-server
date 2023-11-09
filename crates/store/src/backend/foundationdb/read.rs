@@ -30,14 +30,15 @@ use roaring::RoaringBitmap;
 
 use crate::{
     query::{self, Operator},
-    write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, SUBSPACE_INDEXES,
-    SUBSPACE_QUOTAS,
+    write::{
+        key::{DeserializeBigEndian, KeySerializer},
+        BitmapClass, ValueClass,
+    },
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, ValueKey,
+    SUBSPACE_INDEXES, SUBSPACE_QUOTAS,
 };
 
 use super::{bitmap::DeserializeBlock, FdbStore};
-
-//trx
 
 #[async_trait::async_trait]
 impl StoreRead for FdbStore {
@@ -55,9 +56,9 @@ impl StoreRead for FdbStore {
         }
     }
 
-    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
+    async fn get_bitmap(
         &self,
-        mut key: BitmapKey<T>,
+        mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
         let begin = key.serialize(true);
@@ -314,24 +315,14 @@ impl StoreRead for FdbStore {
         Ok(None)
     }
 
-    async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
-        if let Some(bytes) = self
-            .db
-            .create_trx()?
-            .get(
-                &KeySerializer::new(5)
-                    .write(SUBSPACE_QUOTAS)
-                    .write(account_id)
-                    .finalize(),
-                true,
-            )
-            .await?
-        {
+    async fn get_counter(
+        &self,
+        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+    ) -> crate::Result<i64> {
+        let key = key.into().serialize(true);
+        if let Some(bytes) = self.db.create_trx()?.get(&key, true).await? {
             Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-                crate::Error::InternalError(format!(
-                    "Invalid quota value for account {}",
-                    account_id
-                ))
+                crate::Error::InternalError("Invalid counter value.".to_string())
             })?))
         } else {
             Ok(0)

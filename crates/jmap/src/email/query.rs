@@ -27,12 +27,10 @@ use jmap_proto::{
     object::email::QueryArguments,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
-use mail_parser::HeaderName;
-use nlp::language::Language;
 use store::{
-    fts::builder::MAX_TOKEN_LENGTH,
     query::{self},
     roaring::RoaringBitmap,
+    write::ValueClass,
     ValueKey,
 };
 
@@ -323,12 +321,12 @@ impl JMAP {
                 result_set,
                 comparators,
                 paginate
-                    .with_prefix_key(ValueKey::new(
+                    .with_prefix_key(ValueKey {
                         account_id,
-                        Collection::Email,
-                        0,
-                        Property::ThreadId,
-                    ))
+                        collection: Collection::Email.into(),
+                        document_id: 0,
+                        class: ValueClass::Property(Property::ThreadId.into()),
+                    })
                     .with_prefix_unique(request.arguments.collapse_threads.unwrap_or(false)),
                 response,
             )

@@ -86,7 +86,7 @@ impl Store {
     #[inline(always)]
     pub fn get_bitmap<T: AsRef<[u8]>>(
         &self,
-        key: BitmapKey<T>,
+        key: BitmapKey,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let key = key.serialize();
         if let Some(bytes) = self

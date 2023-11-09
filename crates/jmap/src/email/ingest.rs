@@ -36,7 +36,10 @@ use mail_parser::{
 use store::{
     ahash::AHashSet,
     query::{filter::StoreQuery, Filter},
-    write::{log::ChangeLogBuilder, now, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
+    write::{
+        log::ChangeLogBuilder, now, BatchBuilder, BitmapClass, TagValue, ValueClass, F_BITMAP,
+        F_CLEAR, F_VALUE,
+    },
     BitmapKey, StoreId, StoreRead, StoreWrite, ValueKey,
 };
 use utils::map::vec_map::VecMap;
@@ -380,13 +383,11 @@ impl JMAP {
                 .get_values::<u32>(
                     results
                         .iter()
-                        .map(|document_id| {
-                            ValueKey::new(
-                                account_id,
-                                Collection::Email,
-                                document_id,
-                                Property::ThreadId,
-                            )
+                        .map(|document_id| ValueKey {
+                            account_id,
+                            collection: Collection::Email.into(),
+                            document_id,
+                            class: ValueClass::Property(Property::ThreadId.into()),
                         })
                         .collect(),
                 )
@@ -454,12 +455,15 @@ impl JMAP {
                 if thread_id != old_thread_id {
                     for document_id in self
                         .store
-                        .get_bitmap(BitmapKey::value(
+                        .get_bitmap(BitmapKey {
                             account_id,
-                            Collection::Email,
-                            Property::ThreadId,
-                            old_thread_id,
-                        ))
+                            collection: Collection::Email.into(),
+                            class: BitmapClass::Tag {
+                                field: Property::ThreadId.into(),
+                                value: TagValue::Id(old_thread_id),
+                            },
+                            block_num: 0,
+                        })
                         .await
                         .map_err(|err| {
                             tracing::error!(

@@ -26,8 +26,11 @@ use rusqlite::OptionalExtension;
 
 use crate::{
     query::{self, Operator},
-    write::key::{DeserializeBigEndian, KeySerializer},
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead,
+    write::{
+        key::{DeserializeBigEndian, KeySerializer},
+        BitmapClass, ValueClass,
+    },
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, ValueKey,
 };
 
 use super::{SqliteStore, BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
@@ -36,23 +39,26 @@ use super::{SqliteStore, BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
 impl StoreRead for SqliteStore {
     async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
-        U: Deserialize,
+        U: Deserialize + 'static,
     {
         let conn = self.conn_pool.get()?;
-        let key = key.serialize(false);
-        let mut result = conn.prepare_cached("SELECT v FROM v WHERE k = ?")?;
-        result
-            .query_row([&key], |row| {
-                U::deserialize(row.get_ref(0)?.as_bytes()?)
-                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
-            })
-            .optional()
-            .map_err(Into::into)
+        self.spawn_worker(move || {
+            let key = key.serialize(false);
+            let mut result = conn.prepare_cached("SELECT v FROM v WHERE k = ?")?;
+            result
+                .query_row([&key], |row| {
+                    U::deserialize(row.get_ref(0)?.as_bytes()?)
+                        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
+                })
+                .optional()
+                .map_err(Into::into)
+        })
+        .await
     }
 
-    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
+    async fn get_bitmap(
         &self,
-        mut key: BitmapKey<T>,
+        mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let begin = key.serialize(false);
         key.block_num = u32::MAX;
@@ -193,41 +199,45 @@ impl StoreRead for SqliteStore {
         let field = field.into();
 
         let conn = self.conn_pool.get()?;
-        let begin = IndexKeyPrefix {
-            account_id,
-            collection,
-            field,
-        }
-        .serialize(false);
-        let end = IndexKeyPrefix {
-            account_id,
-            collection,
-            field: field + 1,
-        }
-        .serialize(false);
-        let prefix_len = begin.len();
-        let mut query = conn.prepare_cached(if ascending {
-            "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k ASC"
-        } else {
-            "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k DESC"
-        })?;
-        let mut rows = query.query([&begin, &end])?;
 
-        while let Some(row) = rows.next()? {
-            let key = row.get_ref(0)?.as_bytes()?;
-            let id_pos = key.len() - std::mem::size_of::<u32>();
-            debug_assert!(key.starts_with(&begin));
-            if !cb(
-                key.get(prefix_len..id_pos).ok_or_else(|| {
-                    crate::Error::InternalError("Invalid key found in index".to_string())
-                })?,
-                key.deserialize_be_u32(id_pos)?,
-            )? {
-                return Ok(());
+        self.spawn_worker(move || {
+            let begin = IndexKeyPrefix {
+                account_id,
+                collection,
+                field,
             }
-        }
+            .serialize(false);
+            let end = IndexKeyPrefix {
+                account_id,
+                collection,
+                field: field + 1,
+            }
+            .serialize(false);
+            let prefix_len = begin.len();
+            let mut query = conn.prepare_cached(if ascending {
+                "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k ASC"
+            } else {
+                "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k DESC"
+            })?;
+            let mut rows = query.query([&begin, &end])?;
 
-        Ok(())
+            while let Some(row) = rows.next()? {
+                let key = row.get_ref(0)?.as_bytes()?;
+                let id_pos = key.len() - std::mem::size_of::<u32>();
+                debug_assert!(key.starts_with(&begin));
+                if !cb(
+                    key.get(prefix_len..id_pos).ok_or_else(|| {
+                        crate::Error::InternalError("Invalid key found in index".to_string())
+                    })?,
+                    key.deserialize_be_u32(id_pos)?,
+                )? {
+                    return Ok(());
+                }
+            }
+
+            Ok(())
+        })
+        .await
     }
 
     async fn iterate(
@@ -239,36 +249,44 @@ impl StoreRead for SqliteStore {
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
-        let table = char::from(begin.subspace());
-        let begin = begin.serialize(false);
-        let end = end.serialize(false);
 
-        let mut query = conn.prepare_cached(&match (first, ascending) {
-            (true, true) => {
-                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1")
-            }
-            (true, false) => {
-                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1")
-            }
-            (false, true) => {
-                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")
-            }
-            (false, false) => {
-                format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
-            }
-        })?;
-        let mut rows = query.query([&begin, &end])?;
+        self.spawn_worker(move || {
+            let table = char::from(begin.subspace());
+            let begin = begin.serialize(false);
+            let end = end.serialize(false);
 
-        while let Some(row) = rows.next()? {
-            let key = row.get_ref(0)?.as_bytes()?;
-            let value = row.get_ref(1)?.as_bytes()?;
+            let mut query = conn.prepare_cached(&match (first, ascending) {
+                (true, true) => {
+                    format!(
+                        "SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1"
+                    )
+                }
+                (true, false) => {
+                    format!(
+                        "SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1"
+                    )
+                }
+                (false, true) => {
+                    format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")
+                }
+                (false, false) => {
+                    format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
+                }
+            })?;
+            let mut rows = query.query([&begin, &end])?;
 
-            if !cb(key, value)? {
-                break;
+            while let Some(row) = rows.next()? {
+                let key = row.get_ref(0)?.as_bytes()?;
+                let value = row.get_ref(1)?.as_bytes()?;
+
+                if !cb(key, value)? {
+                    break;
+                }
             }
-        }
 
-        Ok(())
+            Ok(())
+        })
+        .await
     }
 
     async fn get_last_change_id(
@@ -278,33 +296,45 @@ impl StoreRead for SqliteStore {
     ) -> crate::Result<Option<u64>> {
         let conn = self.conn_pool.get()?;
         let collection = collection.into();
-        let key = LogKey {
-            account_id,
-            collection,
-            change_id: u64::MAX,
-        }
-        .serialize(false);
-        let mut results =
-            conn.prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?;
-        results
-            .query_row([&key], |row| {
-                let key = row.get_ref(0)?.as_bytes()?;
 
-                key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
-                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
-            })
-            .optional()
-            .map_err(Into::into)
+        self.spawn_worker(move || {
+            let key = LogKey {
+                account_id,
+                collection,
+                change_id: u64::MAX,
+            }
+            .serialize(false);
+
+            conn.prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
+                .query_row([&key], |row| {
+                    let key = row.get_ref(0)?.as_bytes()?;
+
+                    key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
+                        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
+                })
+                .optional()
+                .map_err(Into::into)
+        })
+        .await
     }
 
-    async fn get_quota(&self, account_id: u32) -> crate::Result<i64> {
+    async fn get_counter(
+        &self,
+        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+    ) -> crate::Result<i64> {
+        let key = key.into().serialize(false);
         let conn = self.conn_pool.get()?;
-        let mut results = conn.prepare_cached("SELECT v FROM q WHERE k = ?")?;
-        match results.query_row([account_id as i64], |row| row.get::<_, i64>(0)) {
-            Ok(value) => Ok(value),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
-            Err(e) => Err(e.into()),
-        }
+        self.spawn_worker(move || {
+            match conn
+                .prepare_cached("SELECT v FROM q WHERE k = ?")?
+                .query_row([&key], |row| row.get::<_, i64>(0))
+            {
+                Ok(value) => Ok(value),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+                Err(e) => Err(e.into()),
+            }
+        })
+        .await
     }
 
     #[cfg(feature = "test_mode")]
@@ -377,11 +407,11 @@ impl StoreRead for SqliteStore {
         let mut rows = query.query([]).unwrap();
 
         while let Some(row) = rows.next().unwrap() {
-            let key = row.get::<_, i64>(0).unwrap();
+            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
             let value = row.get::<_, i64>(1).unwrap();
             if value != 0 {
                 eprintln!(
-                    "Table quota is not empty, account {}, quota: {}",
+                    "Table counter is not empty, account {:?}, quota: {}",
                     key, value,
                 );
                 has_errors = true;

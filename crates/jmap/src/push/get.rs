@@ -28,7 +28,10 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, type_state::DataType, value::Value},
 };
-use store::{write::now, BitmapKey, StoreRead, ValueKey};
+use store::{
+    write::{now, ValueClass},
+    BitmapKey, StoreRead, ValueKey,
+};
 use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, services::state, JMAP};
@@ -129,12 +132,12 @@ impl JMAP {
         for document_id in document_ids {
             let mut subscription = self
                 .store
-                .get_value::<Object<Value>>(ValueKey::new(
+                .get_value::<Object<Value>>(ValueKey {
                     account_id,
-                    Collection::PushSubscription,
+                    collection: Collection::PushSubscription.into(),
                     document_id,
-                    Property::Value,
-                ))
+                    class: ValueClass::Property(Property::Value.into()),
+                })
                 .await?
                 .ok_or_else(|| {
                     store::Error::InternalError(format!(

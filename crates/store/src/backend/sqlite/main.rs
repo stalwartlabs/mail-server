@@ -107,7 +107,7 @@ impl SqliteStore {
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS q (
-                    k INTEGER PRIMARY KEY,
+                    k BLOB PRIMARY KEY,
                     v INTEGER NOT NULL DEFAULT 0
                 )",
             [],
@@ -142,15 +142,17 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub async fn spawn_worker<U, V>(&self, f: U) -> crate::Result<V>
+    pub async fn spawn_worker<U, V>(&self, mut f: U) -> crate::Result<V>
     where
-        U: FnOnce() -> crate::Result<V> + Send + 'static,
+        U: FnMut() -> crate::Result<V> + Send,
         V: Sync + Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
 
-        self.worker_pool.spawn(move || {
-            tx.send(f()).ok();
+        self.worker_pool.scope(|s| {
+            s.spawn(|_| {
+                tx.send(f()).ok();
+            });
         });
 
         match rx.await {

@@ -31,14 +31,7 @@ use jmap_proto::{
 };
 use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
 use nlp::language::{stemmer::Stemmer, Language};
-use store::{
-    fts::{
-        builder::MAX_TOKEN_LENGTH,
-        search_snippet::generate_snippet,
-        term_index::{self, TermIndex},
-    },
-    BlobKind,
-};
+use store::BlobKind;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -52,13 +45,13 @@ impl JMAP {
     ) -> Result<GetSearchSnippetResponse, MethodError> {
         let mut filter_stack = vec![];
         let mut include_term = true;
-        let mut terms = vec![];
+        //let mut terms = vec![];
         let mut match_phrase = false;
 
         for cond in request.filter {
             match cond {
                 Filter::Text(text) | Filter::Subject(text) | Filter::Body(text) => {
-                    if include_term {
+                    /*if include_term {
                         let (text, language) = Language::detect(text, self.config.default_language);
                         if (text.starts_with('"') && text.ends_with('"'))
                             || (text.starts_with('\'') && text.ends_with('\''))
@@ -82,7 +75,7 @@ impl JMAP {
                                     .collect::<Vec<_>>(),
                             );
                         }
-                    }
+                    }*/
                 }
                 Filter::And | Filter::Or => {
                     filter_stack.push(cond);
@@ -114,145 +107,146 @@ impl JMAP {
             return Err(MethodError::RequestTooLarge);
         }
 
-        for email_id in email_ids {
-            let document_id = email_id.document_id();
-            let mut snippet = SearchSnippet {
-                email_id,
-                subject: None,
-                preview: None,
-            };
-            if !document_ids.contains(document_id) {
-                response.not_found.push(email_id);
-                continue;
-            } else if terms.is_empty() {
-                response.list.push(snippet);
-                continue;
-            }
-
-            // Obtain the term index and raw message
-            let (term_index, raw_message) = if let (Some(term_index), Some(raw_message)) = (
-                self.get_term_index::<TermIndex>(account_id, Collection::Email, document_id)
-                    .await?,
-                self.get_blob(
-                    &BlobKind::LinkedMaildir {
-                        account_id,
-                        document_id,
-                    },
-                    0..u32::MAX,
-                )
-                .await?,
-            ) {
-                (term_index, raw_message)
-            } else {
-                response.not_found.push(email_id);
-                continue;
-            };
-
-            // Parse message
-            let message = if let Some(message) = MessageParser::new().parse(&raw_message) {
-                message
-            } else {
-                response.not_found.push(email_id);
-                continue;
-            };
-
-            // Build the match terms
-            let mut match_terms = Vec::new();
-            for term in &terms {
-                for (word, stemmed_word) in term {
-                    match_terms.push(term_index.get_match_term(word, stemmed_word.as_deref()));
-                }
-            }
-
-            'outer: for term_group in term_index
-                .match_terms(&match_terms, None, match_phrase, true, true)
-                .map_err(|err| match err {
-                    term_index::Error::InvalidArgument => {
-                        MethodError::UnsupportedFilter("Too many search terms.".to_string())
+        /*
+                for email_id in email_ids {
+                    let document_id = email_id.document_id();
+                    let mut snippet = SearchSnippet {
+                        email_id,
+                        subject: None,
+                        preview: None,
+                    };
+                    if !document_ids.contains(document_id) {
+                        response.not_found.push(email_id);
+                        continue;
+                    } else if terms.is_empty() {
+                        response.list.push(snippet);
+                        continue;
                     }
-                    err => {
-                        tracing::error!(
-                            account_id = account_id,
-                            document_id = document_id,
-                            reason = ?err,
-                            "Failed to generate search snippet.");
-                        MethodError::UnsupportedFilter(
-                            "Failed to generate search snippet.".to_string(),
+
+                    // Obtain the term index and raw message
+                    let (term_index, raw_message) = if let (Some(term_index), Some(raw_message)) = (
+                        self.get_term_index::<TermIndex>(account_id, Collection::Email, document_id)
+                            .await?,
+                        self.get_blob(
+                            &BlobKind::LinkedMaildir {
+                                account_id,
+                                document_id,
+                            },
+                            0..u32::MAX,
                         )
-                    }
-                })?
-                .unwrap_or_default()
-            {
-                if term_group.part_id == 0 {
-                    // Generate subject snippent
-                    snippet.subject =
-                        generate_snippet(&term_group.terms, message.subject().unwrap_or_default());
-                } else {
-                    let mut part_num = 1;
-                    for part in &message.parts {
-                        match &part.body {
-                            PartType::Text(text) => {
-                                if part_num == term_group.part_id {
-                                    snippet.preview = generate_snippet(&term_group.terms, text);
-                                    break 'outer;
-                                } else {
-                                    part_num += 1;
-                                }
-                            }
-                            PartType::Html(html) => {
-                                if part_num == term_group.part_id {
-                                    snippet.preview =
-                                        generate_snippet(&term_group.terms, &html_to_text(html));
-                                    break 'outer;
-                                } else {
-                                    part_num += 1;
-                                }
-                            }
-                            PartType::Message(message) => {
-                                if let Some(subject) = message.subject() {
-                                    if part_num == term_group.part_id {
-                                        snippet.preview =
-                                            generate_snippet(&term_group.terms, subject);
-                                        break 'outer;
-                                    } else {
-                                        part_num += 1;
-                                    }
-                                }
-                                for sub_part in message.parts.iter().take(MAX_MESSAGE_PARTS) {
-                                    match &sub_part.body {
-                                        PartType::Text(text) => {
-                                            if part_num == term_group.part_id {
-                                                snippet.preview =
-                                                    generate_snippet(&term_group.terms, text);
-                                                break 'outer;
-                                            } else {
-                                                part_num += 1;
-                                            }
-                                        }
-                                        PartType::Html(html) => {
-                                            if part_num == term_group.part_id {
-                                                snippet.preview = generate_snippet(
-                                                    &term_group.terms,
-                                                    &html_to_text(html),
-                                                );
-                                                break 'outer;
-                                            } else {
-                                                part_num += 1;
-                                            }
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            }
-                            _ => (),
+                        .await?,
+                    ) {
+                        (term_index, raw_message)
+                    } else {
+                        response.not_found.push(email_id);
+                        continue;
+                    };
+
+                    // Parse message
+                    let message = if let Some(message) = MessageParser::new().parse(&raw_message) {
+                        message
+                    } else {
+                        response.not_found.push(email_id);
+                        continue;
+                    };
+
+                    // Build the match terms
+                    let mut match_terms = Vec::new();
+                    for term in &terms {
+                        for (word, stemmed_word) in term {
+                            match_terms.push(term_index.get_match_term(word, stemmed_word.as_deref()));
                         }
                     }
+
+                    'outer: for term_group in term_index
+                        .match_terms(&match_terms, None, match_phrase, true, true)
+                        .map_err(|err| match err {
+                            term_index::Error::InvalidArgument => {
+                                MethodError::UnsupportedFilter("Too many search terms.".to_string())
+                            }
+                            err => {
+                                tracing::error!(
+                                    account_id = account_id,
+                                    document_id = document_id,
+                                    reason = ?err,
+                                    "Failed to generate search snippet.");
+                                MethodError::UnsupportedFilter(
+                                    "Failed to generate search snippet.".to_string(),
+                                )
+                            }
+                        })?
+                        .unwrap_or_default()
+                    {
+                        if term_group.part_id == 0 {
+                            // Generate subject snippent
+                            snippet.subject =
+                                generate_snippet(&term_group.terms, message.subject().unwrap_or_default());
+                        } else {
+                            let mut part_num = 1;
+                            for part in &message.parts {
+                                match &part.body {
+                                    PartType::Text(text) => {
+                                        if part_num == term_group.part_id {
+                                            snippet.preview = generate_snippet(&term_group.terms, text);
+                                            break 'outer;
+                                        } else {
+                                            part_num += 1;
+                                        }
+                                    }
+                                    PartType::Html(html) => {
+                                        if part_num == term_group.part_id {
+                                            snippet.preview =
+                                                generate_snippet(&term_group.terms, &html_to_text(html));
+                                            break 'outer;
+                                        } else {
+                                            part_num += 1;
+                                        }
+                                    }
+                                    PartType::Message(message) => {
+                                        if let Some(subject) = message.subject() {
+                                            if part_num == term_group.part_id {
+                                                snippet.preview =
+                                                    generate_snippet(&term_group.terms, subject);
+                                                break 'outer;
+                                            } else {
+                                                part_num += 1;
+                                            }
+                                        }
+                                        for sub_part in message.parts.iter().take(MAX_MESSAGE_PARTS) {
+                                            match &sub_part.body {
+                                                PartType::Text(text) => {
+                                                    if part_num == term_group.part_id {
+                                                        snippet.preview =
+                                                            generate_snippet(&term_group.terms, text);
+                                                        break 'outer;
+                                                    } else {
+                                                        part_num += 1;
+                                                    }
+                                                }
+                                                PartType::Html(html) => {
+                                                    if part_num == term_group.part_id {
+                                                        snippet.preview = generate_snippet(
+                                                            &term_group.terms,
+                                                            &html_to_text(html),
+                                                        );
+                                                        break 'outer;
+                                                    } else {
+                                                        part_num += 1;
+                                                    }
+                                                }
+                                                _ => (),
+                                            }
+                                        }
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
+                    }
+
+                    response.list.push(snippet);
                 }
-            }
-
-            response.list.push(snippet);
-        }
-
+        */
         Ok(response)
     }
 }

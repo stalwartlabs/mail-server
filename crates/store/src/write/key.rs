@@ -21,13 +21,15 @@
  * for more details.
 */
 
-use std::convert::TryInto;
+use std::{convert::TryInto, hash::Hasher};
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    AclKey, BitmapKey, CustomValueKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey,
+    backend::MAX_TOKEN_MASK, BitmapKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey,
     ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
+
+use super::{BitmapClass, TagValue, ValueClass};
 
 pub struct KeySerializer {
     buf: Vec<u8>,
@@ -142,29 +144,18 @@ impl DeserializeBigEndian for &[u8] {
     }
 }
 
-impl ValueKey {
-    pub fn new(
+impl<T: AsRef<ValueClass>> ValueKey<T> {
+    pub fn property(
         account_id: u32,
         collection: impl Into<u8>,
         document_id: u32,
         field: impl Into<u8>,
-    ) -> Self {
+    ) -> ValueKey<ValueClass> {
         ValueKey {
             account_id,
             collection: collection.into(),
             document_id,
-            family: 0,
-            field: field.into(),
-        }
-    }
-
-    pub fn term_index(account_id: u32, collection: impl Into<u8>, document_id: u32) -> Self {
-        ValueKey {
-            account_id,
-            collection: collection.into(),
-            document_id,
-            family: u8::MAX,
-            field: u8::MAX,
+            class: ValueClass::Property(field.into()),
         }
     }
 
@@ -193,19 +184,6 @@ impl IndexKeyPrefix {
     }
 }
 
-impl Deserialize for AclKey {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        Ok(AclKey {
-            grant_account_id: bytes.deserialize_be_u32(0)?,
-            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
-            to_collection: *bytes
-                .get((std::mem::size_of::<u32>() * 2) + 1)
-                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
-            to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
-        })
-    }
-}
-
 impl Key for LogKey {
     fn subspace(&self) -> u8 {
         SUBSPACE_LOGS
@@ -226,7 +204,7 @@ impl Key for LogKey {
     }
 }
 
-impl Key for ValueKey {
+impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_VALUES
     }
@@ -234,64 +212,26 @@ impl Key for ValueKey {
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         let ks = {
             if include_subspace {
-                KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
-                    .write(crate::SUBSPACE_VALUES)
+                KeySerializer::new(self.len() + 2).write(crate::SUBSPACE_VALUES)
             } else {
-                KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
+                KeySerializer::new(self.len() + 1)
             }
+        };
+
+        match self.class.as_ref() {
+            ValueClass::Property(field) => ks
+                .write(self.account_id)
+                .write(self.collection)
+                .write_leb128(self.document_id)
+                .write(*field),
+            ValueClass::Acl(grant_account_id) => ks
+                .write(*grant_account_id)
+                .write(u8::MAX)
+                .write(self.account_id)
+                .write(self.collection)
+                .write(self.document_id),
+            ValueClass::Named(name) => ks.write(u32::MAX).write(name.as_slice()),
         }
-        .write(self.account_id)
-        .write(self.collection)
-        .write_leb128(self.document_id);
-
-        if self.family == 0 {
-            ks.write(self.field).finalize()
-        } else {
-            ks.write(u8::MAX)
-                .write(self.family)
-                .write(self.field)
-                .finalize()
-        }
-    }
-}
-
-impl Key for CustomValueKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
-    }
-
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        {
-            if include_subspace {
-                KeySerializer::new(std::mem::size_of::<ValueKey>() + 2)
-                    .write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(std::mem::size_of::<ValueKey>() + 1)
-            }
-        }
-        .write(&self.value[..])
-        .finalize()
-    }
-}
-
-impl Key for AclKey {
-    fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
-    }
-
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        {
-            if include_subspace {
-                KeySerializer::new(std::mem::size_of::<AclKey>() + 1).write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(std::mem::size_of::<AclKey>())
-            }
-        }
-        .write(self.grant_account_id)
-        .write(u8::MAX)
-        .write(self.to_account_id)
-        .write(self.to_collection)
-        .write(self.to_document_id)
         .finalize()
     }
 }
@@ -320,27 +260,142 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send> Key for BitmapKey<T> {
+impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_BITMAPS
     }
 
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        let key = self.key.as_ref();
-        {
-            if include_subspace {
-                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len() + 1)
-                    .write(crate::SUBSPACE_BITMAPS)
-            } else {
-                KeySerializer::new(std::mem::size_of::<BitmapKey<T>>() + key.len())
-            }
+        const BM_DOCUMENT_IDS: u8 = 0;
+        const BM_TAG: u8 = 1 << 5;
+        const BM_TEXT: u8 = 1 << 6;
+
+        const TAG_ID: u8 = 0;
+        const TAG_TEXT: u8 = 1 << 0;
+        const TAG_STATIC: u8 = 1 << 1;
+
+        let ks = if include_subspace {
+            KeySerializer::new(self.len() + 1).write(crate::SUBSPACE_BITMAPS)
+        } else {
+            KeySerializer::new(self.len())
         }
         .write(self.account_id)
-        .write(self.collection)
-        .write(self.family)
-        .write(self.field)
-        .write(key)
+        .write(self.collection);
+
+        match self.class.as_ref() {
+            BitmapClass::DocumentIds => ks.write(BM_DOCUMENT_IDS),
+            BitmapClass::Tag { field, value } => match value {
+                TagValue::Id(id) => ks.write(BM_TAG | TAG_ID).write(*field).write_leb128(*id),
+                TagValue::Text(text) => ks
+                    .write(BM_TAG | TAG_TEXT)
+                    .write(*field)
+                    .write(text.as_slice()),
+                TagValue::Static(id) => ks.write(BM_TAG | TAG_STATIC).write(*field).write(*id),
+            },
+            BitmapClass::Text { field, token } => ks
+                .write(BM_TEXT | (token.len() & MAX_TOKEN_MASK) as u8)
+                .write(*field)
+                .hash_text(token),
+        }
         .write(self.block_num)
         .finalize()
+    }
+}
+
+const AHASHER: ahash::RandomState = ahash::RandomState::with_seeds(
+    0xaf1f2242106c64b3,
+    0x60ca4cfb4b3ed0ce,
+    0xc7dbc0bb615e82b3,
+    0x520ad065378daf88,
+);
+lazy_static::lazy_static! {
+    static ref SIPHASHER: siphasher::sip::SipHasher13 =
+        siphasher::sip::SipHasher13::new_with_keys(0x56205cbdba8f02a6, 0xbd0dbc4bb06d687b);
+}
+
+impl KeySerializer {
+    fn hash_text(mut self, item: impl AsRef<[u8]>) -> Self {
+        let item = item.as_ref();
+
+        if item.len() <= 8 {
+            self.buf.extend_from_slice(item);
+        } else {
+            let h1 = xxhash_rust::xxh3::xxh3_64(item).to_le_bytes();
+            let h2 = farmhash::hash64(item).to_le_bytes();
+            let h3 = AHASHER.hash_one(item).to_le_bytes();
+            let mut sh = *SIPHASHER;
+            sh.write(item.as_ref());
+            let h4 = sh.finish().to_le_bytes();
+
+            match item.len() {
+                9..=16 => {
+                    self.buf.extend_from_slice(&h1[..2]);
+                    self.buf.extend_from_slice(&h2[..2]);
+                    self.buf.extend_from_slice(&h3[..2]);
+                    self.buf.extend_from_slice(&h4[..2]);
+                }
+                17..=32 => {
+                    self.buf.extend_from_slice(&h1[..3]);
+                    self.buf.extend_from_slice(&h2[..3]);
+                    self.buf.extend_from_slice(&h3[..3]);
+                    self.buf.extend_from_slice(&h4[..3]);
+                }
+                _ => {
+                    self.buf.extend_from_slice(&h1[..4]);
+                    self.buf.extend_from_slice(&h2[..4]);
+                    self.buf.extend_from_slice(&h3[..4]);
+                    self.buf.extend_from_slice(&h4[..4]);
+                }
+            }
+        }
+        self
+    }
+}
+
+impl<T: AsRef<BitmapClass>> BitmapKey<T> {
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        std::mem::size_of::<BitmapKey<BitmapClass>>()
+            + match self.class.as_ref() {
+                BitmapClass::DocumentIds => 0,
+                BitmapClass::Tag { value, .. } => match value {
+                    TagValue::Id(_) => std::mem::size_of::<u32>(),
+                    TagValue::Text(v) => v.len(),
+                    TagValue::Static(_) => 1,
+                },
+                BitmapClass::Text { token, .. } => token.len(),
+            }
+    }
+}
+
+impl<T: AsRef<ValueClass>> ValueKey<T> {
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        std::mem::size_of::<ValueKey<ValueClass>>()
+            + match self.class.as_ref() {
+                ValueClass::Property(_) => 1,
+                ValueClass::Acl(_) => std::mem::size_of::<u32>(),
+                ValueClass::Named(v) => v.len(),
+            }
+    }
+}
+
+pub struct AclKey {
+    pub to_account_id: u32,
+    pub to_collection: u8,
+    //pub grant_account_id: u32,
+    //pub to_document_id: u32,
+}
+
+impl Deserialize for AclKey {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(AclKey {
+            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
+            to_collection: *bytes
+                .get((std::mem::size_of::<u32>() * 2) + 1)
+                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
+            //grant_account_id: bytes.deserialize_be_u32(0)?,
+            //to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
+        })
     }
 }

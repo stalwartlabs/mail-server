@@ -50,7 +50,7 @@ use store::{
     BlobKind, StoreWrite,
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{auth::AccessToken, NamedKey, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -68,7 +68,6 @@ pub static SCHEMA: &[IndexProperty] = &[
         .max_size(255)
         .required(),
     IndexProperty::new(Property::IsActive).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::Size).index_as(IndexAs::Quota),
 ];
 
 impl JMAP {
@@ -114,6 +113,10 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document(document_id)
+                            .add(
+                                NamedKey::Quota::<&[u8]>(account_id),
+                                builder.changes().unwrap().script_size(),
+                            )
                             .custom(builder);
                         sieve_ids.insert(document_id);
                         self.write_batch(batch).await?;
@@ -163,19 +166,29 @@ impl JMAP {
                 )
                 .await?
             {
+                let prev_size = sieve.inner.script_size();
+
                 match self
                     .sieve_set_item(object, (document_id, sieve).into(), &ctx)
                     .await?
                 {
                     Ok((builder, blob)) => {
                         // Store blob
-                        let blob_id = if let Some(blob) = blob {
+                        let (update_quota, blob_id) = if let Some(blob) = blob {
                             let blob_id =
                                 BlobId::linked(account_id, Collection::SieveScript, document_id);
                             self.put_blob(&blob_id.kind, &blob).await?;
-                            Some(blob_id.with_section_size(blob.len()))
+                            let blob_size = builder.changes().unwrap().script_size();
+                            (
+                                match blob_size.cmp(&prev_size) {
+                                    std::cmp::Ordering::Greater => blob_size - prev_size,
+                                    std::cmp::Ordering::Less => -prev_size + blob_size,
+                                    std::cmp::Ordering::Equal => 0,
+                                },
+                                Some(blob_id.with_section_size(blob.len())),
+                            )
                         } else {
-                            None
+                            (0, None)
                         };
 
                         // Write record
@@ -185,6 +198,9 @@ impl JMAP {
                             .with_collection(Collection::SieveScript)
                             .update_document(document_id)
                             .custom(builder);
+                        if update_quota != 0 {
+                            batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+                        }
                         if !batch.is_empty() {
                             changes.log_update(Collection::SieveScript, document_id);
                             match self.store.write(batch.build()).await {
@@ -333,6 +349,10 @@ impl JMAP {
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
             .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
+            .add(
+                NamedKey::Quota::<&[u8]>(account_id),
+                -(obj.inner.script_size()),
+            )
             .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));
         self.write_batch(batch).await?;
         let _ = self
@@ -603,5 +623,18 @@ impl JMAP {
         }
 
         Ok(changed_ids)
+    }
+}
+
+pub trait ScriptSize {
+    fn script_size(&self) -> i64;
+}
+
+impl ScriptSize for Object<Value> {
+    fn script_size(&self) -> i64 {
+        self.properties
+            .get(&Property::Size)
+            .and_then(|v| v.as_uint())
+            .unwrap_or_default() as i64
     }
 }

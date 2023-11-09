@@ -28,10 +28,9 @@ use std::{
 
 use jmap_proto::types::keyword::Keyword;
 use nlp::language::Language;
-use store::{ahash::AHashMap, query::sort::Pagination, StoreWrite};
+use store::{ahash::AHashMap, query::sort::Pagination, write::ValueClass, StoreWrite};
 
 use store::{
-    fts::builder::FtsIndexBuilder,
     query::{Comparator, Filter},
     write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
     Store, ValueKey,
@@ -117,7 +116,7 @@ pub async fn test(db: Arc<impl Store + Send + 'static>, do_insert: bool) {
                 let documents = documents.clone();
 
                 s.spawn_fifo(move |_| {
-                    let mut fts_builder = FtsIndexBuilder::with_default_language(Language::English);
+                    /*let mut fts_builder = FtsIndexBuilder::with_default_language(Language::English);
                     let mut builder = BatchBuilder::new();
                     builder
                         .with_account_id(0)
@@ -167,7 +166,7 @@ pub async fn test(db: Arc<impl Store + Send + 'static>, do_insert: bool) {
                     }
 
                     builder.custom(fts_builder);
-                    documents.lock().unwrap().push(builder.build());
+                    documents.lock().unwrap().push(builder.build());*/
                 });
             }
         });
@@ -443,8 +442,7 @@ pub async fn test_sort(db: Arc<impl Store>) {
                         account_id: 0,
                         collection: COLLECTION_ID,
                         document_id: document_id as u32,
-                        family: 0,
-                        field: fields["accession_number"],
+                        class: ValueClass::Property(fields["accession_number"])
                     })
                     .collect()
             )

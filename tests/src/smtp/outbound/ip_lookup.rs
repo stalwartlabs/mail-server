@@ -56,7 +56,7 @@ async fn ip_lookup_strategy() {
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     for strategy in [IpLookupStrategy::Ipv6Only, IpLookupStrategy::Ipv6thenIpv4] {
-        println!("-> Strategy: {:?}", strategy);
+        //println!("-> Strategy: {:?}", strategy);
         // Add mock DNS entries
         let mut core = SMTP::test();
         core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);

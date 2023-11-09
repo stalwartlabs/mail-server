@@ -198,7 +198,7 @@ impl SieveConnection {
                 Ok(Ok(Some(line))) => {
                     let is_done =
                         line.starts_with("OK") || line.starts_with("NO") || line.starts_with("BYE");
-                    println!("<- {:?}", line);
+                    //println!("<- {:?}", line);
                     lines.push(line);
                     if is_done {
                         return lines;
@@ -216,13 +216,13 @@ impl SieveConnection {
     }
 
     pub async fn send(&mut self, text: &str) {
-        println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
     }
 
     pub async fn send_raw(&mut self, text: &str) {
-        println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
     }
 

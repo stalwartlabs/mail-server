@@ -31,12 +31,9 @@ use mail_parser::{
     PartType,
 };
 use nlp::language::Language;
-use store::{
-    fts::builder::{FtsIndexBuilder, MAX_TOKEN_LENGTH},
-    write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
-};
+use store::write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE};
 
-use crate::Bincode;
+use crate::{Bincode, NamedKey};
 
 use super::metadata::MessageMetadata;
 
@@ -83,8 +80,12 @@ impl IndexMessage for BatchBuilder {
         self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
 
         // Index size
+        let account_id = self.last_account_id().unwrap();
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
-            .quota(message.raw_message.len() as i64);
+            .add(
+                NamedKey::Quota::<&[u8]>(account_id),
+                message.raw_message.len() as i64,
+            );
 
         // Index receivedAt
         self.value(Property::ReceivedAt, received_at, F_INDEX);
@@ -138,13 +139,8 @@ impl IndexMessage for BatchBuilder {
 
         // Store and index hasAttachment property
         if has_attachments {
-            self.bitmap(Property::HasAttachment, (), 0);
+            self.tag(Property::HasAttachment, (), 0);
         }
-
-        // FTS index
-        let mut fts = FtsIndexBuilder::with_default_language(Language::English);
-        fts.index_message(&message);
-        self.custom(fts);
 
         // Store message metadata
         self.value(
@@ -257,6 +253,7 @@ impl IndexMessage for BatchBuilder {
     }
 }
 
+/*
 impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
     fn index_message(&mut self, message: &'x Message<'x>) {
         let mut language = Language::Unknown;
@@ -379,6 +376,7 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
         }
     }
 }
+*/
 
 pub struct EmailIndexBuilder<'x> {
     inner: Bincode<MessageMetadata<'x>>,
@@ -415,20 +413,24 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         let metadata = &self.inner.inner;
 
         // Index properties
+        let account_id = batch.last_account_id().unwrap();
         batch
             .value(Property::Size, metadata.size as u32, F_INDEX | options)
-            .quota(if self.set {
-                metadata.size as i64
-            } else {
-                -(metadata.size as i64)
-            });
+            .add(
+                NamedKey::Quota::<&[u8]>(account_id),
+                if self.set {
+                    metadata.size as i64
+                } else {
+                    -(metadata.size as i64)
+                },
+            );
         batch.value(
             Property::ReceivedAt,
             metadata.received_at,
             F_INDEX | options,
         );
         if metadata.has_attachments {
-            batch.bitmap(Property::HasAttachment, (), options);
+            batch.tag(Property::HasAttachment, (), options);
         }
         batch.index_headers(&metadata.contents.parts[0].headers, options);
     }

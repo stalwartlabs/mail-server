@@ -27,3 +27,6 @@ pub mod foundationdb;
 pub mod rocksdb;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
+
+pub(crate) const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
+pub(crate) const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;

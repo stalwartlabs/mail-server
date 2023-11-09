@@ -21,11 +21,9 @@
  * for more details.
 */
 
-use crate::BM_DOCUMENT_IDS;
-
 use super::{
-    assert::ToAssertValue, Batch, BatchBuilder, BitmapFamily, HasFlag, IntoOperations, Operation,
-    Serialize, ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    assert::ToAssertValue, Batch, BatchBuilder, BitmapClass, HasFlag, IntoOperations, Operation,
+    Serialize, TagValue, ToBitmaps, ValueClass, ValueOp, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -57,9 +55,7 @@ impl BatchBuilder {
 
         // Add document id
         self.ops.push(Operation::Bitmap {
-            family: BM_DOCUMENT_IDS,
-            field: u8::MAX,
-            key: vec![],
+            class: BitmapClass::DocumentIds,
             set: true,
         });
         self
@@ -73,9 +69,7 @@ impl BatchBuilder {
     pub fn delete_document(&mut self, document_id: u32) -> &mut Self {
         self.ops.push(Operation::DocumentId { document_id });
         self.ops.push(Operation::Bitmap {
-            family: BM_DOCUMENT_IDS,
-            field: u8::MAX,
-            key: vec![],
+            class: BitmapClass::DocumentIds,
             set: false,
         });
         self
@@ -118,36 +112,55 @@ impl BatchBuilder {
 
         if options.has_flag(F_VALUE) {
             self.ops.push(Operation::Value {
-                class: ValueClass::Property { field, family: 0 },
-                set: if is_set { Some(value) } else { None },
+                class: ValueClass::Property(field),
+                op: if is_set {
+                    ValueOp::Set(value)
+                } else {
+                    ValueOp::Clear
+                },
             });
         }
 
         self
     }
 
-    pub fn bitmap(
+    pub fn tag(
         &mut self,
         field: impl Into<u8>,
-        value: impl BitmapFamily + Serialize,
+        value: impl Into<TagValue>,
         options: u32,
     ) -> &mut Self {
         self.ops.push(Operation::Bitmap {
-            family: value.family(),
-            field: field.into(),
-            key: value.serialize(),
+            class: BitmapClass::Tag {
+                field: field.into(),
+                value: value.into(),
+            },
             set: !options.has_flag(F_CLEAR),
         });
         self
     }
 
-    pub fn quota(&mut self, bytes: i64) -> &mut Self {
-        self.ops.push(Operation::UpdateQuota { bytes });
+    pub fn add(&mut self, class: impl Into<ValueClass>, value: i64) -> &mut Self {
+        self.ops.push(Operation::Value {
+            class: class.into(),
+            op: ValueOp::Add(value),
+        });
         self
     }
 
-    pub fn op(&mut self, op: Operation) -> &mut Self {
-        self.ops.push(op);
+    pub fn set(&mut self, class: impl Into<ValueClass>, value: Vec<u8>) -> &mut Self {
+        self.ops.push(Operation::Value {
+            class: class.into(),
+            op: ValueOp::Set(value),
+        });
+        self
+    }
+
+    pub fn clear(&mut self, class: impl Into<ValueClass>) -> &mut Self {
+        self.ops.push(Operation::Value {
+            class: class.into(),
+            op: ValueOp::Clear,
+        });
         self
     }
 
@@ -164,6 +177,13 @@ impl BatchBuilder {
         Batch {
             ops: std::mem::take(&mut self.ops),
         }
+    }
+
+    pub fn last_account_id(&self) -> Option<u32> {
+        self.ops.iter().rev().find_map(|op| match op {
+            Operation::AccountId { account_id } => Some(*account_id),
+            _ => None,
+        })
     }
 
     pub fn is_empty(&self) -> bool {

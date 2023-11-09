@@ -24,9 +24,11 @@
 use std::{borrow::Cow, collections::HashSet};
 
 use store::{
-    fts::builder::ToTokens,
-    write::{assert::HashedValue, BatchBuilder, BitmapFamily, IntoOperations, Operation},
-    Serialize, HASH_EXACT,
+    write::{
+        assert::HashedValue, BatchBuilder, BitmapClass, IntoOperations, Operation, TagValue,
+        TokenizeText, ValueClass, ValueOp,
+    },
+    Serialize,
 };
 
 use crate::{
@@ -58,7 +60,6 @@ pub enum IndexAs {
     LongInteger,
     HasProperty,
     Acl,
-    Quota,
     #[default]
     None,
 }
@@ -138,6 +139,14 @@ impl ObjectIndexBuilder {
 
         Ok(self)
     }
+
+    pub fn changes(&self) -> Option<&Object<Value>> {
+        self.changes.as_ref()
+    }
+
+    pub fn current(&self) -> Option<&HashedValue<Object<Value>>> {
+        self.current.as_ref()
+    }
 }
 
 impl IntoOperations for ObjectIndexBuilder {
@@ -146,10 +155,7 @@ impl IntoOperations for ObjectIndexBuilder {
             (None, Some(changes)) => {
                 // Insertion
                 build_batch(batch, self.index, &changes, true);
-                batch.ops.push(Operation::Value {
-                    class: Property::Value.into(),
-                    set: changes.serialize().into(),
-                });
+                batch.set(Property::Value, changes.serialize());
             }
             (Some(current), Some(changes)) => {
                 // Update
@@ -160,10 +166,7 @@ impl IntoOperations for ObjectIndexBuilder {
                 // Deletion
                 batch.assert_value(Property::Value, &current);
                 build_batch(batch, self.index, &current.inner, false);
-                batch.ops.push(Operation::Value {
-                    class: Property::Value.into(),
-                    set: None,
-                });
+                batch.clear(Property::Value);
             }
             (None, None) => unreachable!(),
         }
@@ -202,7 +205,7 @@ fn merge_batch(
                             });
                         }
                         if tokenize {
-                            remove_tokens = text.to_tokens();
+                            text.tokenize_into(&mut remove_tokens);
                         }
                     }
 
@@ -225,14 +228,16 @@ fn merge_batch(
                     }
 
                     // Update tokens
+                    let field: u8 = property.clone().into();
                     for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
                         for token in token {
-                            batch.ops.push(Operation::hash(
-                                &token,
-                                HASH_EXACT,
-                                property.clone().into(),
+                            batch.ops.push(Operation::Bitmap {
+                                class: BitmapClass::Text {
+                                    field,
+                                    token: token.into(),
+                                },
                                 set,
-                            ));
+                            });
                         }
                     }
                 }
@@ -250,7 +255,7 @@ fn merge_batch(
                                     remove_values.insert(text);
                                 }
                                 if tokenize {
-                                    remove_tokens.extend(text.to_tokens());
+                                    text.tokenize_into(&mut remove_tokens);
                                 }
                             }
                         }
@@ -286,14 +291,16 @@ fn merge_batch(
                     }
 
                     // Update tokens
+                    let field: u8 = property.clone().into();
                     for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
                         for token in token {
-                            batch.ops.push(Operation::hash(
-                                &token,
-                                HASH_EXACT,
-                                property.clone().into(),
+                            batch.ops.push(Operation::Bitmap {
+                                class: BitmapClass::Text {
+                                    field,
+                                    token: token.into_bytes(),
+                                },
                                 set,
-                            ));
+                            });
                         }
                     }
                 }
@@ -347,16 +354,18 @@ fn merge_batch(
                 IndexAs::HasProperty => {
                     if current_value == &Value::Null {
                         batch.ops.push(Operation::Bitmap {
-                            family: ().family(),
-                            field: property.clone().into(),
-                            key: vec![],
+                            class: BitmapClass::Tag {
+                                field: property.clone().into(),
+                                value: ().into(),
+                            },
                             set: true,
                         });
                     } else if value == Value::Null {
                         batch.ops.push(Operation::Bitmap {
-                            family: ().family(),
-                            field: property.clone().into(),
-                            key: vec![],
+                            class: BitmapClass::Tag {
+                                field: property.clone().into(),
+                                value: ().into(),
+                            },
                             set: false,
                         });
                     }
@@ -426,14 +435,6 @@ fn merge_batch(
                         _ => {}
                     }
                 }
-                IndexAs::Quota => {
-                    if let Some(current_value) = current_value.try_cast_uint() {
-                        batch.quota(-(current_value as i64));
-                    }
-                    if let Some(value) = value.try_cast_uint() {
-                        batch.quota(value as i64);
-                    }
-                }
                 IndexAs::None => (),
             }
         }
@@ -448,7 +449,7 @@ fn merge_batch(
     if has_changes {
         batch.ops.push(Operation::Value {
             class: Property::Value.into(),
-            set: current.serialize().into(),
+            op: ValueOp::Set(current.serialize()),
         });
     }
 }
@@ -470,13 +471,15 @@ fn build_batch(
                     });
                 }
                 if tokenize {
-                    for token in text.to_tokens() {
-                        batch.ops.push(Operation::hash(
-                            &token,
-                            HASH_EXACT,
-                            (&item.property).into(),
+                    let field: u8 = (&item.property).into();
+                    for token in text.as_str().to_tokens() {
+                        batch.ops.push(Operation::Bitmap {
+                            class: BitmapClass::Text {
+                                field,
+                                token: token.into_bytes(),
+                            },
                             set,
-                        ));
+                        });
                     }
                 }
             }
@@ -493,20 +496,22 @@ fn build_batch(
                         }
                     }
                 }
+                let field: u8 = (&item.property).into();
                 for text in indexes {
                     batch.ops.push(Operation::Index {
-                        field: (&item.property).into(),
+                        field,
                         key: text.serialize(),
                         set,
                     });
                 }
                 for token in tokens {
-                    batch.ops.push(Operation::hash(
-                        &token,
-                        HASH_EXACT,
-                        (&item.property).into(),
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Text {
+                            field,
+                            token: token.into_bytes(),
+                        },
                         set,
-                    ));
+                    });
                 }
             }
             (Value::UnsignedInt(integer), IndexAs::Integer | IndexAs::LongInteger) => {
@@ -559,16 +564,12 @@ fn build_batch(
                     }
                 }
             }
-            (Value::UnsignedInt(bytes), IndexAs::Quota) => {
-                batch.ops.push(Operation::UpdateQuota {
-                    bytes: if set { *bytes as i64 } else { -(*bytes as i64) },
-                });
-            }
             (value, IndexAs::HasProperty) if value != &Value::Null => {
                 batch.ops.push(Operation::Bitmap {
-                    family: ().family(),
-                    field: (&item.property).into(),
-                    key: vec![],
+                    class: BitmapClass::Tag {
+                        field: (&item.property).into(),
+                        value: ().into(),
+                    },
                     set,
                 });
             }
@@ -633,6 +634,21 @@ impl IntoIndex for &Id {
             IndexAs::Integer => self.document_id().serialize(),
             IndexAs::LongInteger => self.id().serialize(),
             _ => unreachable!("index as {index_as:?} not supported for Id"),
+        }
+    }
+}
+
+impl From<Property> for ValueClass {
+    fn from(value: Property) -> Self {
+        ValueClass::Property(value.into())
+    }
+}
+
+impl From<Property> for BitmapClass {
+    fn from(value: Property) -> Self {
+        BitmapClass::Tag {
+            field: value.into(),
+            value: TagValue::Static(0),
         }
     }
 }

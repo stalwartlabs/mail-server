@@ -52,12 +52,11 @@ use mail_builder::{
 use mail_parser::MessageParser;
 use store::{
     ahash::AHashSet,
-    fts::term_index::TokenIndex,
     write::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
         ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
-    BlobKind, Serialize, StoreRead, StoreWrite, ValueKey,
+    BlobKind, Serialize, StoreWrite,
 };
 
 use crate::{auth::AccessToken, Bincode, IngestError, JMAP};
@@ -1202,36 +1201,6 @@ impl JMAP {
             return Ok(Err(SetError::not_found()));
         };
 
-        // Delete term index
-        if let Some(token_index) = self
-            .store
-            .get_value::<TokenIndex>(ValueKey::term_index(
-                account_id,
-                Collection::Email,
-                document_id,
-            ))
-            .await
-            .map_err(|err| {
-                tracing::error!(
-            event = "error",
-            context = "email_delete",
-            error = ?err,
-            "Failed to deserialize token index while deleting email.");
-                MethodError::ServerPartialFail
-            })?
-        {
-            batch.custom(token_index);
-        } else {
-            tracing::debug!(
-                event = "error",
-                context = "email_delete",
-                account_id = account_id,
-                document_id = document_id,
-                "Failed to fetch term index.",
-            );
-            return Ok(Err(SetError::not_found()));
-        }
-
         // Delete threadId
         if let Some(thread_id) = delete_thread_id {
             batch
@@ -1370,13 +1339,7 @@ impl<
         let property = u8::from(property);
 
         batch
-            .assert_value(
-                ValueClass::Property {
-                    field: property,
-                    family: 0,
-                },
-                &self.current,
-            )
+            .assert_value(ValueClass::Property(property), &self.current)
             .value(property, self.current.inner, F_VALUE);
         for added in self.added {
             batch.value(property, added, F_BITMAP);

@@ -26,11 +26,11 @@ use jmap_proto::{
     types::{collection::Collection, property::Property, value::Value},
 };
 use store::{
-    write::{assert::HashedValue, BatchBuilder, Operation, ValueClass},
+    write::{assert::HashedValue, BatchBuilder, ValueClass},
     BitmapKey, Serialize, StorePurge, StoreRead, StoreWrite, ValueKey,
 };
 
-use crate::{auth::authenticate::AccountKey, mailbox::set::SCHEMA, JMAP};
+use crate::{mailbox::set::SCHEMA, NamedKey, JMAP};
 
 impl JMAP {
     pub async fn delete_account(&self, account_name: &str, account_id: u32) -> store::Result<()> {
@@ -42,18 +42,9 @@ impl JMAP {
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
-            .op(Operation::Value {
-                class: ValueClass::Custom {
-                    bytes: AccountKey::name_to_id(account_name),
-                },
-                set: None,
-            })
-            .op(Operation::Value {
-                class: ValueClass::Custom {
-                    bytes: AccountKey::id_to_name(account_id),
-                },
-                set: None,
-            })
+            .clear(NamedKey::Name(account_name))
+            .clear(NamedKey::Id::<&[u8]>(account_id))
+            .clear(NamedKey::Quota::<&[u8]>(account_id))
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
         for mailbox_id in self
@@ -64,12 +55,12 @@ impl JMAP {
         {
             let mailbox = self
                 .store
-                .get_value::<HashedValue<Object<Value>>>(ValueKey::new(
+                .get_value::<HashedValue<Object<Value>>>(ValueKey {
                     account_id,
-                    Collection::Mailbox,
-                    mailbox_id,
-                    Property::Value,
-                ))
+                    collection: Collection::Mailbox.into(),
+                    document_id: mailbox_id,
+                    class: ValueClass::Property(Property::Value.into()),
+                })
                 .await?
                 .ok_or_else(|| {
                     store::Error::InternalError(format!("Mailbox {} not found", mailbox_id))
@@ -102,24 +93,12 @@ impl JMAP {
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
-            .op(Operation::Value {
-                class: ValueClass::Custom {
-                    bytes: AccountKey::name_to_id(account_name),
-                },
-                set: None,
-            })
-            .op(Operation::Value {
-                class: ValueClass::Custom {
-                    bytes: AccountKey::name_to_id(new_account_name),
-                },
-                set: account_id.serialize().into(),
-            })
-            .op(Operation::Value {
-                class: ValueClass::Custom {
-                    bytes: AccountKey::id_to_name(account_id),
-                },
-                set: new_account_name.serialize().into(),
-            });
+            .clear(NamedKey::Name(account_name))
+            .set(
+                NamedKey::Id::<&[u8]>(account_id),
+                new_account_name.serialize(),
+            )
+            .set(NamedKey::Name(new_account_name), account_id.serialize());
         self.store.write(batch.build()).await?;
         Ok(())
     }

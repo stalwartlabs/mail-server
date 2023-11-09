@@ -34,13 +34,10 @@ use jmap_proto::{
 };
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use store::{
-    write::{key::KeySerializer, BatchBuilder, Operation, ValueClass},
-    CustomValueKey, Serialize, StoreRead, StoreWrite,
-};
+use store::{write::BatchBuilder, Serialize, StoreRead, StoreWrite};
 use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
-use crate::JMAP;
+use crate::{NamedKey, JMAP};
 
 use super::{rate_limit::RemoteAddress, AccessToken};
 
@@ -155,9 +152,7 @@ impl JMAP {
 
     pub async fn try_get_account_id(&self, name: &str) -> Result<Option<u32>, MethodError> {
         self.store
-            .get_value::<u32>(CustomValueKey {
-                value: AccountKey::name_to_id(name),
-            })
+            .get_value::<u32>(NamedKey::Name(name))
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -183,26 +178,15 @@ impl JMAP {
                 .assign_document_id(u32::MAX, Collection::Principal)
                 .await?;
 
-            // Serialize key
-            let key = AccountKey::name_to_id(name);
-
             // Write account ID
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(u32::MAX)
                 .with_collection(Collection::Principal)
                 .create_document(account_id)
-                .assert_value(ValueClass::Custom { bytes: key.clone() }, ())
-                .op(Operation::Value {
-                    class: ValueClass::Custom { bytes: key },
-                    set: account_id.serialize().into(),
-                })
-                .op(Operation::Value {
-                    class: ValueClass::Custom {
-                        bytes: AccountKey::id_to_name(account_id),
-                    },
-                    set: name.serialize().into(),
-                });
+                .assert_value(NamedKey::Name(name), ())
+                .set(NamedKey::Name(name), account_id.serialize())
+                .set(NamedKey::Id::<&[u8]>(account_id), name.serialize());
 
             match self.store.write(batch.build()).await {
                 Ok(_) => {
@@ -233,9 +217,7 @@ impl JMAP {
 
     pub async fn get_account_name(&self, account_id: u32) -> Result<Option<String>, MethodError> {
         self.store
-            .get_value::<String>(CustomValueKey {
-                value: AccountKey::id_to_name(account_id),
-            })
+            .get_value::<String>(NamedKey::Id::<&[u8]>(account_id))
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -327,24 +309,5 @@ impl JMAP {
         } else {
             None
         }
-    }
-}
-
-pub struct AccountKey();
-
-impl AccountKey {
-    pub fn name_to_id(name: &str) -> Vec<u8> {
-        KeySerializer::new(name.len() + std::mem::size_of::<u32>() + 1)
-            .write(u32::MAX)
-            .write(0u8)
-            .write(name)
-            .finalize()
-    }
-    pub fn id_to_name(id: u32) -> Vec<u8> {
-        KeySerializer::new(std::mem::size_of::<u32>() * 2 + 1)
-            .write(u32::MAX)
-            .write(1u8)
-            .write(id)
-            .finalize()
     }
 }

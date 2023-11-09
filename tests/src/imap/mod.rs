@@ -450,7 +450,7 @@ impl ImapConnection {
                         Type::Untagged | Type::Status => "* ",
                         Type::Continuation => "+ ",
                     });
-                    println!("<- {:?}", line);
+                    //println!("<- {:?}", line);
                     lines.push(line);
                     if is_done {
                         return lines;
@@ -468,20 +468,20 @@ impl ImapConnection {
     }
 
     pub async fn send(&mut self, text: &str) {
-        println!("-> {}{:?}", std::str::from_utf8(self.tag).unwrap(), text);
+        //println!("-> {}{:?}", std::str::from_utf8(self.tag).unwrap(), text);
         self.writer.write_all(self.tag).await.unwrap();
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
     }
 
     pub async fn send_untagged(&mut self, text: &str) {
-        println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
     }
 
     pub async fn send_raw(&mut self, text: &str) {
-        println!("-> {:?}", text);
+        //println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
     }
 }

@@ -93,7 +93,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
                 response.contains(&format!("{method} ({algo})")),
                 "got response {response}, expected {encryption} algo"
             );
-            println!("response = {response}");
+            //println!("response = {response}");
         }
     }
 

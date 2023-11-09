@@ -45,7 +45,10 @@ use store::{
     BlobKind,
 };
 
-use crate::{sieve::set::SCHEMA, JMAP};
+use crate::{
+    sieve::set::{ScriptSize, SCHEMA},
+    NamedKey, JMAP,
+};
 
 impl JMAP {
     pub async fn vacation_response_set(
@@ -224,10 +227,25 @@ impl JMAP {
                 .with_changes(changes);
 
             // Create sieve script only if there are changes
-            let script_blob = if build_script {
-                self.build_script(&mut obj)?.into()
+            let (update_quota, script_blob) = if build_script {
+                let script_blob = self.build_script(&mut obj)?;
+                let script_size = obj.changes().unwrap().script_size();
+
+                (
+                    if let Some(current) = obj.current() {
+                        let current_script_size = current.inner.script_size();
+                        match script_size.cmp(&current_script_size) {
+                            std::cmp::Ordering::Greater => script_size - current_script_size,
+                            std::cmp::Ordering::Less => -current_script_size + script_size,
+                            std::cmp::Ordering::Equal => 0,
+                        }
+                    } else {
+                        script_size
+                    },
+                    Some(script_blob),
+                )
             } else {
-                None
+                (0, None)
             };
 
             // Write changes
@@ -247,6 +265,9 @@ impl JMAP {
                 document_id
             };
             if !batch.is_empty() {
+                if update_quota != 0 {
+                    batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+                }
                 self.write_batch(batch).await?;
             }
 

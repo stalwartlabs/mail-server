@@ -27,7 +27,7 @@ use ahash::HashSet;
 use nlp::tokenizers::space::SpaceTokenizer;
 use roaring::RoaringBitmap;
 
-use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, StoreRead};
+use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, StoreRead};
 
 use super::{Filter, ResultSet};
 
@@ -79,23 +79,21 @@ pub trait StoreQuery: StoreRead {
                                 .collect::<HashSet<String>>()
                                 .into_iter()
                                 .map(|word| {
-                                    BitmapKey::hash(&word, account_id, collection, 0, field)
+                                    BitmapKey::text_token(account_id, collection, field, word)
                                 })
                                 .collect(),
                         )
                         .await?
                     } else {
-                        self.get_bitmap(BitmapKey::hash(&text, account_id, collection, 0, field))
+                        self.get_bitmap(BitmapKey::text_token(account_id, collection, field, text))
                             .await?
                     }
                 }
-                Filter::InBitmap { family, field, key } => {
+                Filter::InBitmap(class) => {
                     self.get_bitmap(BitmapKey {
                         account_id,
                         collection,
-                        family,
-                        field,
-                        key: &key,
+                        class,
                         block_num: 0,
                     })
                     .await?

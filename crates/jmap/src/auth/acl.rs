@@ -33,8 +33,12 @@ use jmap_proto::{
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, key::DeserializeBigEndian},
-    AclKey, Deserialize, Error, StoreRead,
+    write::{
+        assert::HashedValue,
+        key::{AclKey, DeserializeBigEndian},
+        ValueClass,
+    },
+    Deserialize, Error, StoreRead, ValueKey,
 };
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
@@ -48,17 +52,17 @@ impl JMAP {
             .iter()
             .chain(access_token.member_of.clone().iter())
         {
-            let from_key = AclKey {
-                grant_account_id,
-                to_account_id: 0,
-                to_collection: 0,
-                to_document_id: 0,
+            let from_key = ValueKey {
+                account_id: 0,
+                collection: 0,
+                document_id: 0,
+                class: ValueClass::Acl(grant_account_id),
             };
-            let to_key = AclKey {
-                grant_account_id,
-                to_account_id: u32::MAX,
-                to_collection: u8::MAX,
-                to_document_id: u32::MAX,
+            let to_key = ValueKey {
+                account_id: u32::MAX,
+                collection: u8::MAX,
+                document_id: u32::MAX,
+                class: ValueClass::Acl(grant_account_id),
             };
             match self
                 .store
@@ -132,14 +136,14 @@ impl JMAP {
             .iter()
             .chain(access_token.member_of.clone().iter())
         {
-            let from_key = AclKey {
-                grant_account_id,
-                to_account_id,
-                to_collection,
-                to_document_id: 0,
+            let from_key = ValueKey {
+                account_id: to_account_id,
+                collection: to_collection,
+                document_id: 0,
+                class: ValueClass::Acl(grant_account_id),
             };
-            let mut to_key = from_key;
-            to_key.to_document_id = u32::MAX;
+            let mut to_key = from_key.clone();
+            to_key.document_id = u32::MAX;
 
             match self
                 .store
@@ -258,11 +262,11 @@ impl JMAP {
         {
             match self
                 .store
-                .get_value::<u64>(AclKey {
-                    grant_account_id,
-                    to_account_id,
-                    to_collection,
-                    to_document_id,
+                .get_value::<u64>(ValueKey {
+                    account_id: to_account_id,
+                    collection: to_collection,
+                    document_id: to_document_id,
+                    class: ValueClass::Acl(grant_account_id),
                 })
                 .await
             {

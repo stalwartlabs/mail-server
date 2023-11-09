@@ -499,7 +499,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
                 .unwrap();
 
             while rx.read_line(&mut buf).await.is_ok() {
-                print!("-> {}", buf);
+                //print!("-> {}", buf);
                 if buf.starts_with("EHLO") {
                     tx.write_all(b"250 Hi there, but I have no extensions to offer :-(\r\n")
                         .await
@@ -590,7 +590,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
 pub async fn expect_message_delivery(event_rx: &mut mpsc::Receiver<MockMessage>) -> MockMessage {
     match tokio::time::timeout(Duration::from_millis(3000), event_rx.recv()).await {
         Ok(Some(message)) => {
-            println!("Got message [{}]", message.message);
+            //println!("Got message [{}]", message.message);
 
             message
         }

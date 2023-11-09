@@ -26,9 +26,7 @@ use std::{collections::HashSet, slice::Iter, time::SystemTime};
 use nlp::tokenizers::space::SpaceTokenizer;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::{
-    fts::builder::MAX_TOKEN_LENGTH, Deserialize, Serialize, BM_TAG, HASH_EXACT, TAG_ID, TAG_STATIC,
-};
+use crate::{backend::MAX_TOKEN_LENGTH, Deserialize, Serialize};
 
 use self::assert::AssertValue;
 
@@ -68,7 +66,7 @@ pub enum Operation {
     },
     Value {
         class: ValueClass,
-        set: Option<Vec<u8>>,
+        op: ValueOp,
     },
     Index {
         field: u8,
@@ -76,13 +74,8 @@ pub enum Operation {
         set: bool,
     },
     Bitmap {
-        family: u8,
-        field: u8,
-        key: Vec<u8>,
+        class: BitmapClass,
         set: bool,
-    },
-    UpdateQuota {
-        bytes: i64,
     },
     Log {
         change_id: u64,
@@ -92,10 +85,62 @@ pub enum Operation {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
+pub enum BitmapClass {
+    DocumentIds,
+    Tag { field: u8, value: TagValue },
+    Text { field: u8, token: Vec<u8> },
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum TagValue {
+    Id(u32),
+    Text(Vec<u8>),
+    Static(u8),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum ValueClass {
-    Property { field: u8, family: u8 },
-    Acl { grant_account_id: u32 },
-    Custom { bytes: Vec<u8> },
+    Property(u8),
+    Acl(u32),
+    Named(Vec<u8>),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Default)]
+pub enum ValueOp {
+    Set(Vec<u8>),
+    Add(i64),
+    #[default]
+    Clear,
+}
+
+impl From<u32> for TagValue {
+    fn from(value: u32) -> Self {
+        TagValue::Id(value)
+    }
+}
+
+impl From<Vec<u8>> for TagValue {
+    fn from(value: Vec<u8>) -> Self {
+        TagValue::Text(value)
+    }
+}
+
+impl From<String> for TagValue {
+    fn from(value: String) -> Self {
+        TagValue::Text(value.into_bytes())
+    }
+}
+
+impl From<u8> for TagValue {
+    fn from(value: u8) -> Self {
+        TagValue::Static(value)
+    }
+}
+
+impl From<()> for TagValue {
+    fn from(_: ()) -> Self {
+        TagValue::Text(vec![])
+    }
 }
 
 impl Serialize for u32 {
@@ -277,17 +322,40 @@ pub trait ToBitmaps {
     fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool);
 }
 
+pub trait TokenizeText {
+    fn tokenize_into(&self, tokens: &mut HashSet<String>);
+    fn to_tokens(&self) -> HashSet<String>;
+}
+
 impl ToBitmaps for &str {
     fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
         let mut tokens = HashSet::new();
 
+        self.tokenize_into(&mut tokens);
+
+        for token in tokens {
+            ops.push(Operation::Bitmap {
+                class: BitmapClass::Text {
+                    field,
+                    token: token.into_bytes(),
+                },
+                set,
+            });
+        }
+    }
+}
+
+impl TokenizeText for &str {
+    fn tokenize_into(&self, tokens: &mut HashSet<String>) {
         for token in SpaceTokenizer::new(self, MAX_TOKEN_LENGTH) {
             tokens.insert(token);
         }
+    }
 
-        for token in tokens {
-            ops.push(Operation::hash(&token, HASH_EXACT, field, set));
-        }
+    fn to_tokens(&self) -> HashSet<String> {
+        let mut tokens = HashSet::new();
+        self.tokenize_into(&mut tokens);
+        tokens
     }
 }
 
@@ -300,9 +368,10 @@ impl ToBitmaps for String {
 impl ToBitmaps for u32 {
     fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
         ops.push(Operation::Bitmap {
-            family: BM_TAG | TAG_ID,
-            field,
-            key: self.serialize(),
+            class: BitmapClass::Tag {
+                field,
+                value: TagValue::Id(*self),
+            },
             set,
         });
     }
@@ -311,9 +380,10 @@ impl ToBitmaps for u32 {
 impl ToBitmaps for u64 {
     fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
         ops.push(Operation::Bitmap {
-            family: BM_TAG | TAG_ID,
-            field,
-            key: (*self as u32).serialize(),
+            class: BitmapClass::Tag {
+                field,
+                value: TagValue::Id(*self as u32),
+            },
             set,
         });
     }
@@ -330,22 +400,6 @@ impl<T: ToBitmaps> ToBitmaps for Vec<T> {
         for item in self {
             item.to_bitmaps(ops, field, set);
         }
-    }
-}
-
-pub trait BitmapFamily {
-    fn family(&self) -> u8;
-}
-
-impl BitmapFamily for () {
-    fn family(&self) -> u8 {
-        BM_TAG | TAG_STATIC
-    }
-}
-
-impl BitmapFamily for u32 {
-    fn family(&self) -> u8 {
-        BM_TAG | TAG_ID
     }
 }
 
@@ -368,8 +422,8 @@ pub trait IntoOperations {
 impl Operation {
     pub fn acl(grant_account_id: u32, set: Option<Vec<u8>>) -> Self {
         Operation::Value {
-            class: ValueClass::Acl { grant_account_id },
-            set,
+            class: ValueClass::Acl(grant_account_id),
+            op: set.map(ValueOp::Set).unwrap_or(ValueOp::Clear),
         }
     }
 }
@@ -379,4 +433,25 @@ pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
+}
+
+impl AsRef<ValueClass> for ValueClass {
+    fn as_ref(&self) -> &ValueClass {
+        self
+    }
+}
+
+impl AsRef<BitmapClass> for BitmapClass {
+    fn as_ref(&self) -> &BitmapClass {
+        self
+    }
+}
+
+impl BitmapClass {
+    pub fn tag_id(property: impl Into<u8>, id: u32) -> Self {
+        BitmapClass::Tag {
+            field: property.into(),
+            value: TagValue::Id(id),
+        }
+    }
 }

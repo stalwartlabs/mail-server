@@ -48,8 +48,6 @@ use jmap_proto::{
 };
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
-    fts::term_index::TokenIndex,
-    query::RawValue,
     write::{BatchBuilder, F_BITMAP, F_VALUE},
     BlobKind, StoreWrite,
 };
@@ -294,22 +292,16 @@ impl JMAP {
         received_at: Option<UTCDate>,
     ) -> Result<Result<IngestedEmail, SetError>, MethodError> {
         // Obtain term index and metadata
-        let (mut metadata, token_index) = if let (Some(metadata), Some(token_index)) = (
-            self.get_property::<Bincode<MessageMetadata>>(
+        let mut metadata = if let Some(metadata) = self
+            .get_property::<Bincode<MessageMetadata>>(
                 from_account_id,
                 Collection::Email,
                 from_message_id,
                 Property::BodyStructure,
             )
-            .await?,
-            self.get_term_index::<RawValue<TokenIndex>>(
-                from_account_id,
-                Collection::Email,
-                from_message_id,
-            )
-            .await?,
-        ) {
-            (metadata.inner, token_index)
+            .await?
+        {
+            metadata.inner
         } else {
             return Ok(Err(SetError::not_found().with_description(format!(
                 "Message not found not found in account {}.",
@@ -432,7 +424,6 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
             .custom(EmailIndexBuilder::set(metadata))
-            .custom(token_index)
             .custom(changes);
 
         self.store.write(batch.build()).await.map_err(|err| {

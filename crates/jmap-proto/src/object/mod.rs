@@ -31,7 +31,7 @@ pub mod sieve;
 use std::slice::Iter;
 
 use store::{
-    write::{DeserializeFrom, SerializeInto, ToBitmaps, ValueClass},
+    write::{DeserializeFrom, SerializeInto, ToBitmaps},
     Deserialize, Serialize,
 };
 use utils::{
@@ -259,15 +259,6 @@ impl DeserializeFrom for Value {
             BLOB => Some(Value::Blob(Vec::deserialize_from(bytes)?)),
             NULL => Some(Value::Null),
             _ => None,
-        }
-    }
-}
-
-impl From<Property> for ValueClass {
-    fn from(value: Property) -> Self {
-        ValueClass::Property {
-            field: value.into(),
-            family: 0,
         }
     }
 }

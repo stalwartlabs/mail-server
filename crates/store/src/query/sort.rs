@@ -25,7 +25,7 @@ use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
 
-use crate::{StoreRead, ValueKey};
+use crate::{write::ValueClass, StoreRead, ValueKey};
 
 use super::{Comparator, ResultSet, SortedResultSet};
 
@@ -38,7 +38,7 @@ pub struct Pagination {
     has_anchor: bool,
     anchor_found: bool,
     ids: Vec<u64>,
-    prefix_key: Option<ValueKey>,
+    prefix_key: Option<ValueKey<ValueClass>>,
     prefix_unique: bool,
 }
 
@@ -111,7 +111,7 @@ pub trait StoreSort: StoreRead {
             if let Some(prefix_key) = prefix_key {
                 for id in sorted_results.ids.iter_mut() {
                     if let Some(prefix_id) = self
-                        .get_value::<u32>(prefix_key.with_document_id(*id as u32))
+                        .get_value::<u32>(prefix_key.clone().with_document_id(*id as u32))
                         .await?
                     {
                         *id |= (prefix_id as u64) << 32;
@@ -198,7 +198,7 @@ pub trait StoreSort: StoreRead {
                 // Obtain document prefixId
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
-                        .get_value(prefix_key.with_document_id(document_id))
+                        .get_value(prefix_key.clone().with_document_id(document_id))
                         .await?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
@@ -226,7 +226,7 @@ pub trait StoreSort: StoreRead {
                 // Obtain document prefixId
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
-                        .get_value(prefix_key.with_document_id(document_id))
+                        .get_value(prefix_key.clone().with_document_id(document_id))
                         .await?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
@@ -269,7 +269,7 @@ impl Pagination {
         }
     }
 
-    pub fn with_prefix_key(mut self, prefix_key: ValueKey) -> Self {
+    pub fn with_prefix_key(mut self, prefix_key: ValueKey<ValueClass>) -> Self {
         self.prefix_key = Some(prefix_key);
         self
     }

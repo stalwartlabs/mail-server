@@ -25,7 +25,7 @@ use std::{fmt::Display, ops::BitAndAssign};
 
 pub mod backend;
 pub mod blob;
-pub mod fts;
+//pub mod fts;
 pub mod query;
 pub mod write;
 
@@ -36,7 +36,7 @@ use query::{filter::StoreQuery, log::StoreLog, sort::StoreSort};
 pub use rand;
 pub use roaring;
 use roaring::RoaringBitmap;
-use write::Batch;
+use write::{Batch, BitmapClass, ValueClass};
 
 #[cfg(feature = "rocks")]
 pub struct Store {
@@ -57,16 +57,14 @@ pub trait Key: Sync + Send {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitmapKey<T: AsRef<[u8]>> {
+pub struct BitmapKey<T: AsRef<BitmapClass>> {
     pub account_id: u32,
     pub collection: u8,
-    pub family: u8,
-    pub field: u8,
+    pub class: T,
     pub block_num: u32,
-    pub key: T,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IndexKey<T: AsRef<[u8]>> {
     pub account_id: u32,
     pub collection: u8,
@@ -83,25 +81,11 @@ pub struct IndexKeyPrefix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ValueKey {
+pub struct ValueKey<T: AsRef<ValueClass>> {
     pub account_id: u32,
     pub collection: u8,
     pub document_id: u32,
-    pub family: u8,
-    pub field: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CustomValueKey {
-    pub value: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AclKey {
-    pub grant_account_id: u32,
-    pub to_account_id: u32,
-    pub to_collection: u8,
-    pub to_document_id: u32,
+    pub class: T,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -169,20 +153,6 @@ impl From<String> for Error {
     }
 }
 
-pub const BM_DOCUMENT_IDS: u8 = 0;
-pub const BM_TAG: u8 = 1 << 5;
-pub const BM_HASH: u8 = 1 << 6;
-
-pub const HASH_EXACT: u8 = 0;
-pub const HASH_STEMMED: u8 = 1 << 6;
-
-pub const BLOOM_BIGRAM: u8 = 1 << 0;
-pub const BLOOM_TRIGRAM: u8 = 1 << 1;
-
-pub const TAG_ID: u8 = 0;
-pub const TAG_TEXT: u8 = 1 << 0;
-pub const TAG_STATIC: u8 = 1 << 1;
-
 pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
@@ -229,14 +199,12 @@ pub trait StoreRead: Sync {
         Ok(results)
     }
 
-    async fn get_bitmap<T: AsRef<[u8]> + Sync + Send>(
-        &self,
-        key: BitmapKey<T>,
-    ) -> crate::Result<Option<RoaringBitmap>>;
+    async fn get_bitmap(&self, key: BitmapKey<BitmapClass>)
+        -> crate::Result<Option<RoaringBitmap>>;
 
-    async fn get_bitmaps_intersection<T: AsRef<[u8]> + Sync + Send>(
+    async fn get_bitmaps_intersection(
         &self,
-        keys: Vec<BitmapKey<T>>,
+        keys: Vec<BitmapKey<BitmapClass>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for key in keys {
@@ -289,7 +257,10 @@ pub trait StoreRead: Sync {
         collection: impl Into<u8> + Sync + Send,
     ) -> crate::Result<Option<u64>>;
 
-    async fn get_quota(&self, account_id: u32) -> crate::Result<i64>;
+    async fn get_counter(
+        &self,
+        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+    ) -> crate::Result<i64>;
 
     #[cfg(feature = "test_mode")]
     async fn assert_is_empty(&self);
@@ -308,6 +279,16 @@ pub trait StoreWrite {
 }
 
 pub trait Store:
-    StoreInit + StoreRead + StoreWrite + StoreId + StorePurge + StoreQuery + StoreSort + StoreLog
+    StoreInit
+    + StoreRead
+    + StoreWrite
+    + StoreId
+    + StorePurge
+    + StoreQuery
+    + StoreSort
+    + StoreLog
+    + Sync
+    + Send
+    + 'static
 {
 }

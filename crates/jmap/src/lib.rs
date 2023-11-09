@@ -56,8 +56,9 @@ use store::{
         Comparator, Filter, ResultSet, SortedResultSet,
     },
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BitmapFamily, ToBitmaps},
-    BitmapKey, Deserialize, Serialize, StoreId, StoreInit, StoreRead, StoreWrite, ValueKey,
+    write::{key::KeySerializer, BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass},
+    BitmapKey, Deserialize, Key, Serialize, StoreId, StoreInit, StoreRead, StoreWrite, ValueKey,
+    SUBSPACE_VALUES,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -425,7 +426,12 @@ impl JMAP {
         let property = property.as_ref();
         match self
             .store
-            .get_value::<U>(ValueKey::new(account_id, collection, document_id, property))
+            .get_value::<U>(ValueKey {
+                account_id,
+                collection: collection.into(),
+                document_id,
+                class: ValueClass::Property(property.into()),
+            })
             .await
         {
             Ok(value) => Ok(value),
@@ -454,11 +460,17 @@ impl JMAP {
         U: Deserialize + 'static,
     {
         let property = property.as_ref();
+
         match self
             .store
             .get_values::<U>(
                 document_ids
-                    .map(|document_id| ValueKey::new(account_id, collection, document_id, property))
+                    .map(|document_id| ValueKey {
+                        account_id,
+                        collection: collection.into(),
+                        document_id,
+                        class: ValueClass::Property(property.into()),
+                    })
                     .collect(),
             )
             .await
@@ -472,37 +484,6 @@ impl JMAP {
                                 property = ?property,
                                 error = ?err,
                                 "Failed to retrieve properties");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
-    }
-
-    pub async fn get_term_index<T: Deserialize + 'static>(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        document_id: u32,
-    ) -> Result<Option<T>, MethodError> {
-        match self
-            .store
-            .get_value::<T>(ValueKey {
-                account_id,
-                collection: collection.into(),
-                document_id,
-                family: u8::MAX,
-                field: u8::MAX,
-            })
-            .await
-        {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                document_id = document_id,
-                                error = ?err,
-                                "Failed to retrieve term index");
                 Err(MethodError::ServerPartialFail)
             }
         }
@@ -536,12 +517,20 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         property: impl AsRef<Property>,
-        value: impl BitmapFamily + Serialize,
+        value: impl Into<TagValue>,
     ) -> Result<Option<RoaringBitmap>, MethodError> {
         let property = property.as_ref();
         match self
             .store
-            .get_bitmap(BitmapKey::value(account_id, collection, property, value))
+            .get_bitmap(BitmapKey {
+                account_id,
+                collection: collection.into(),
+                class: BitmapClass::Tag {
+                    field: property.into(),
+                    value: value.into(),
+                },
+                block_num: 0,
+            })
             .await
         {
             Ok(value) => Ok(value),
@@ -601,15 +590,18 @@ impl JMAP {
     }
 
     pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
-        self.store.get_quota(account_id).await.map_err(|err| {
-            tracing::error!(
+        self.store
+            .get_counter(NamedKey::Quota::<&[u8]>(account_id))
+            .await
+            .map_err(|err| {
+                tracing::error!(
                 event = "error",
                 context = "get_used_quota",
                 account_id = account_id,
                 error = ?err,
                 "Failed to obtain used disk quota for account.");
-            MethodError::ServerPartialFail
-        })
+                MethodError::ServerPartialFail
+            })
     }
 
     pub async fn filter(
@@ -803,5 +795,69 @@ impl UpdateResults for QueryResponse {
         } else {
             Err(MethodError::AnchorNotFound)
         }
+    }
+}
+
+pub enum NamedKey<T: AsRef<[u8]>> {
+    Name(T),
+    Id(u32),
+    Quota(u32),
+}
+
+impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
+    fn from(key: &NamedKey<T>) -> Self {
+        match key {
+            NamedKey::Name(name) => ValueClass::Named(
+                KeySerializer::new(name.as_ref().len() + 1)
+                    .write(0u8)
+                    .write(name.as_ref())
+                    .finalize(),
+            ),
+            NamedKey::Id(id) => ValueClass::Named(
+                KeySerializer::new(std::mem::size_of::<u32>())
+                    .write(1u8)
+                    .write_leb128(*id)
+                    .finalize(),
+            ),
+            NamedKey::Quota(id) => ValueClass::Named(
+                KeySerializer::new(std::mem::size_of::<u32>())
+                    .write(2u8)
+                    .write_leb128(*id)
+                    .finalize(),
+            ),
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>> From<NamedKey<T>> for ValueClass {
+    fn from(key: NamedKey<T>) -> Self {
+        (&key).into()
+    }
+}
+
+impl<T: AsRef<[u8]>> From<NamedKey<T>> for ValueKey<ValueClass> {
+    fn from(key: NamedKey<T>) -> Self {
+        ValueKey {
+            account_id: 0,
+            collection: 0,
+            document_id: 0,
+            class: key.into(),
+        }
+    }
+}
+
+impl<T: AsRef<[u8]> + Sync + Send> Key for NamedKey<T> {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        ValueKey {
+            account_id: 0,
+            collection: 0,
+            document_id: 0,
+            class: ValueClass::from(self),
+        }
+        .serialize(include_subspace)
+    }
+
+    fn subspace(&self) -> u8 {
+        SUBSPACE_VALUES
     }
 }

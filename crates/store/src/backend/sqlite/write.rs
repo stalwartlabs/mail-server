@@ -24,8 +24,8 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{Batch, Operation, ValueClass},
-    AclKey, BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
+    write::{Batch, Operation, ValueOp},
+    BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
 };
 
 use super::{SqliteStore, BITS_MASK, BITS_PER_BLOCK};
@@ -121,27 +121,39 @@ impl StoreWrite for SqliteStore {
                         bitmap_value_set = (1u64 << (index as u64 & 63)) as i64;
                         bitmap_value_clear = (!(1u64 << (index as u64 & 63))) as i64;
                     }
-                    Operation::Value { class, set } => {
-                        let key = match class {
-                            ValueClass::Property { field, family } => ValueKey {
-                                account_id,
-                                collection,
-                                document_id,
-                                family: *family,
-                                field: *field,
-                            }
-                            .serialize(false),
-                            ValueClass::Acl { grant_account_id } => AclKey {
-                                grant_account_id: *grant_account_id,
-                                to_account_id: account_id,
-                                to_collection: collection,
-                                to_document_id: document_id,
-                            }
-                            .serialize(false),
-                            ValueClass::Custom { bytes } => bytes.to_vec(),
-                        };
+                    Operation::Value {
+                        class,
+                        op: ValueOp::Add(by),
+                    } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(false);
 
-                        if let Some(value) = set {
+                        if *by >= 0 {
+                            trx.prepare_cached(concat!(
+                                "INSERT INTO q (k, v) VALUES (?, ?) ",
+                                "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                            ))?
+                            .execute(params![&key, *by])?;
+                        } else {
+                            trx.prepare_cached("UPDATE q SET v = v + ? WHERE k = ?")?
+                                .execute(params![*by, &key])?;
+                        }
+                    }
+                    Operation::Value { class, op } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(false);
+
+                        if let ValueOp::Set(value) = op {
                             trx.prepare_cached("INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)")?
                                 .execute([&key, value])?;
                         } else {
@@ -167,25 +179,16 @@ impl StoreWrite for SqliteStore {
                                 .execute([&key])?;
                         }
                     }
-                    Operation::Bitmap {
-                        family,
-                        field,
-                        key,
-                        set,
-                    } => {
+                    Operation::Bitmap { class, set } => {
                         let key = BitmapKey {
                             account_id,
                             collection,
-                            family: *family,
-                            field: *field,
+                            class,
                             block_num: bitmap_block_num,
-                            key,
                         }
                         .serialize(false);
 
                         if *set {
-                            //trx.prepare_cached("INSERT OR IGNORE INTO b (z) VALUES (?)")?
-                            //    .execute([&key])?;
                             trx.prepare_cached(SET_QUERIES[bitmap_col_num])?
                                 .execute(params![bitmap_value_set, &key])?;
                             if trx.changes() == 0 {
@@ -217,24 +220,14 @@ impl StoreWrite for SqliteStore {
                         class,
                         assert_value,
                     } => {
-                        let key = match class {
-                            ValueClass::Property { field, family } => ValueKey {
-                                account_id,
-                                collection,
-                                document_id,
-                                family: *family,
-                                field: *field,
-                            }
-                            .serialize(false),
-                            ValueClass::Acl { grant_account_id } => AclKey {
-                                grant_account_id: *grant_account_id,
-                                to_account_id: account_id,
-                                to_collection: collection,
-                                to_document_id: document_id,
-                            }
-                            .serialize(false),
-                            ValueClass::Custom { bytes } => bytes.to_vec(),
-                        };
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(false);
+
                         let matches = trx
                             .prepare_cached("SELECT v FROM v WHERE k = ?")?
                             .query_row([&key], |row| {
@@ -244,18 +237,6 @@ impl StoreWrite for SqliteStore {
                             .unwrap_or_else(|| assert_value.is_none());
                         if !matches {
                             return Err(crate::Error::AssertValueFailed);
-                        }
-                    }
-                    Operation::UpdateQuota { bytes } => {
-                        if *bytes >= 0 {
-                            trx.prepare_cached(concat!(
-                                "INSERT INTO q (k, v) VALUES (?, ?) ",
-                                "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
-                            ))?
-                            .execute(params![account_id, *bytes])?;
-                        } else {
-                            trx.prepare_cached("UPDATE q SET v = v + ? WHERE k = ?")?
-                                .execute(params![*bytes, account_id])?;
                         }
                     }
                 }

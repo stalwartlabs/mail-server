@@ -27,9 +27,8 @@ use ahash::AHashMap;
 use foundationdb::{options::MutationType, FdbError};
 
 use crate::{
-    write::{key::KeySerializer, Batch, Operation, ValueClass},
-    AclKey, BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey, SUBSPACE_QUOTAS,
-    SUBSPACE_VALUES,
+    write::{Batch, Operation, ValueOp},
+    BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
 };
 
 use super::{bitmap::DenseBitmap, FdbStore};
@@ -87,31 +86,30 @@ impl StoreWrite for FdbStore {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::Value { class, set } => {
-                        let key = match class {
-                            ValueClass::Property { field, family } => ValueKey {
-                                account_id,
-                                collection,
-                                document_id,
-                                family: *family,
-                                field: *field,
-                            }
-                            .serialize(true),
-                            ValueClass::Acl { grant_account_id } => AclKey {
-                                grant_account_id: *grant_account_id,
-                                to_account_id: account_id,
-                                to_collection: collection,
-                                to_document_id: document_id,
-                            }
-                            .serialize(true),
-                            ValueClass::Custom { bytes } => {
-                                let mut key = Vec::with_capacity(1 + bytes.len());
-                                key.push(SUBSPACE_VALUES);
-                                key.extend_from_slice(bytes);
-                                key
-                            }
-                        };
-                        if let Some(value) = set {
+                    Operation::Value {
+                        class,
+                        op: ValueOp::Add(by),
+                    } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(true);
+
+                        trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
+                    }
+                    Operation::Value { class, op } => {
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(true);
+
+                        if let ValueOp::Set(value) = op {
                             trx.set(&key, value);
                         } else {
                             trx.clear(&key);
@@ -126,18 +124,14 @@ impl StoreWrite for FdbStore {
                             key,
                         }
                         .serialize(true);
+
                         if *set {
                             trx.set(&key, &[]);
                         } else {
                             trx.clear(&key);
                         }
                     }
-                    Operation::Bitmap {
-                        family,
-                        field,
-                        key,
-                        set,
-                    } => {
+                    Operation::Bitmap { class, set } => {
                         if retry_count == 0 {
                             if *set {
                                 &mut set_bitmaps
@@ -148,10 +142,8 @@ impl StoreWrite for FdbStore {
                                 BitmapKey {
                                     account_id,
                                     collection,
-                                    family: *family,
-                                    field: *field,
+                                    class,
                                     block_num: DenseBitmap::block_num(document_id),
-                                    key,
                                 }
                                 .serialize(true),
                             )
@@ -176,29 +168,13 @@ impl StoreWrite for FdbStore {
                         class,
                         assert_value,
                     } => {
-                        let key = match class {
-                            ValueClass::Property { field, family } => ValueKey {
-                                account_id,
-                                collection,
-                                document_id,
-                                family: *family,
-                                field: *field,
-                            }
-                            .serialize(true),
-                            ValueClass::Acl { grant_account_id } => AclKey {
-                                grant_account_id: *grant_account_id,
-                                to_account_id: account_id,
-                                to_collection: collection,
-                                to_document_id: document_id,
-                            }
-                            .serialize(true),
-                            ValueClass::Custom { bytes } => {
-                                let mut key = Vec::with_capacity(1 + bytes.len());
-                                key.push(SUBSPACE_VALUES);
-                                key.extend_from_slice(bytes);
-                                key
-                            }
-                        };
+                        let key = ValueKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            class,
+                        }
+                        .serialize(true);
 
                         let matches = if let Ok(bytes) = trx.get(&key, false).await {
                             if let Some(bytes) = bytes {
@@ -214,16 +190,6 @@ impl StoreWrite for FdbStore {
                             trx.cancel();
                             return Err(crate::Error::AssertValueFailed);
                         }
-                    }
-                    Operation::UpdateQuota { bytes } => {
-                        trx.atomic_op(
-                            &KeySerializer::new(5)
-                                .write(SUBSPACE_QUOTAS)
-                                .write(account_id)
-                                .finalize(),
-                            &bytes.to_le_bytes()[..],
-                            MutationType::Add,
-                        );
                     }
                 }
             }
@@ -257,19 +223,12 @@ impl StoreWrite for FdbStore {
                                 } => {
                                     document_id = *document_id_;
                                 }
-                                Operation::Bitmap {
-                                    family,
-                                    field,
-                                    key,
-                                    set,
-                                } => {
+                                Operation::Bitmap { class, set } => {
                                     let key = BitmapKey {
                                         account_id,
                                         collection,
-                                        family: *family,
-                                        field: *field,
+                                        class,
                                         block_num: DenseBitmap::block_num(document_id),
-                                        key,
                                     }
                                     .serialize(true);
                                     if *set {

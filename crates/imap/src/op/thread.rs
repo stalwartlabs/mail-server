@@ -34,7 +34,7 @@ use imap_proto::{
 };
 
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::{StoreRead, ValueKey};
+use store::{write::ValueClass, StoreRead, ValueKey};
 use tokio::io::AsyncRead;
 
 use crate::core::{SelectedMailbox, Session, SessionData};
@@ -92,13 +92,11 @@ impl SessionData {
                 result_set
                     .results
                     .iter()
-                    .map(|document_id| {
-                        ValueKey::new(
-                            mailbox.id.account_id,
-                            Collection::Email,
-                            document_id,
-                            Property::ThreadId,
-                        )
+                    .map(|document_id| ValueKey {
+                        account_id: mailbox.id.account_id,
+                        collection: Collection::Email.into(),
+                        document_id,
+                        class: ValueClass::Property(Property::ThreadId.into()),
                     })
                     .collect(),
             )
