@@ -136,7 +136,10 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                                 self.handle_expn(value).await?;
                             }
                             Request::StartTls => {
-                                if !self.stream.is_tls() {
+                                if !self.instance.tls_acceptor.is_some() {
+                                    self.write(b"502 5.5.1 Command not implemented.\r\n")
+                                        .await?;
+                                } else if !self.stream.is_tls() {
                                     self.write(b"220 2.0.0 Ready to start TLS.\r\n").await?;
                                     #[cfg(any(test, feature = "test_mode"))]
                                     if self.data.helo_domain.contains("badtls") {

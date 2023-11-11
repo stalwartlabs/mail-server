@@ -115,7 +115,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         let mut response = EhloResponse::new(self.instance.hostname.as_str());
         response.capabilities =
             EXT_ENHANCED_STATUS_CODES | EXT_8BIT_MIME | EXT_BINARY_MIME | EXT_SMTP_UTF8;
-        if !self.stream.is_tls() {
+        if self.instance.tls_acceptor.is_some() && !self.stream.is_tls() {
             response.capabilities |= EXT_START_TLS;
         }
         let ec = &self.core.session.config.extensions;
