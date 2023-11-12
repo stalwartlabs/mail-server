@@ -41,9 +41,6 @@ pub const MAX_COMMIT_ATTEMPTS: u32 = 10;
 pub const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);
 
 #[cfg(feature = "test_mode")]
-pub static ID_ASSIGNMENT_EXPIRY: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(60 * 60); // seconds
-#[cfg(feature = "test_mode")]
 pub const MAX_COMMIT_ATTEMPTS: u32 = 1000;
 #[cfg(feature = "test_mode")]
 pub const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);

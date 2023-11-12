@@ -21,14 +21,14 @@
  * for more details.
 */
 
-use std::ops::BitAndAssign;
+use std::ops::{BitAndAssign, Range};
 
 use roaring::RoaringBitmap;
 
 use crate::{
     query,
     write::{Batch, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey,
+    BitmapKey, BlobStore, Deserialize, IterateParams, Key, Store, ValueKey,
 };
 
 impl Store {
@@ -252,7 +252,7 @@ impl Store {
     }
 
     #[cfg(feature = "test_mode")]
-    pub async fn assert_is_empty(&self, blob_store: std::sync::Arc<dyn crate::BlobStore>) {
+    pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
         self.blob_hash_expire_all().await;
         self.blob_hash_purge(blob_store).await.unwrap();
         self.purge_bitmaps().await.unwrap();
@@ -260,6 +260,29 @@ impl Store {
         match self {
             Self::SQLite(store) => store.assert_is_empty().await,
             Self::FoundationDb(store) => store.assert_is_empty().await,
+        }
+    }
+}
+
+impl BlobStore {
+    pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
+        match self {
+            Self::Fs(store) => store.get_blob(key, range).await,
+            Self::S3(store) => store.get_blob(key, range).await,
+        }
+    }
+
+    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+        match self {
+            Self::Fs(store) => store.put_blob(key, data).await,
+            Self::S3(store) => store.put_blob(key, data).await,
+        }
+    }
+
+    pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+        match self {
+            Self::Fs(store) => store.delete_blob(key).await,
+            Self::S3(store) => store.delete_blob(key).await,
         }
     }
 }

@@ -21,28 +21,27 @@
  * for more details.
 */
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use store::ahash::AHashSet;
 
+use store::backend::ID_ASSIGNMENT_EXPIRY;
 use store::{write::BatchBuilder, Store};
 
-pub async fn test(db: Arc<Store>) {
+pub async fn test(db: Store) {
     println!("Running Store ID assignment tests...");
 
-    store::backend::foundationdb::write::ID_ASSIGNMENT_EXPIRY
-        .store(2, std::sync::atomic::Ordering::Relaxed);
+    ID_ASSIGNMENT_EXPIRY.store(2, std::sync::atomic::Ordering::Relaxed);
 
     test_1(db.clone()).await;
     test_2(db.clone()).await;
     test_3(db.clone()).await;
     test_4(db).await;
 
-    store::backend::foundationdb::write::ID_ASSIGNMENT_EXPIRY
-        .store(60 * 60, std::sync::atomic::Ordering::Relaxed);
+    ID_ASSIGNMENT_EXPIRY.store(60 * 60, std::sync::atomic::Ordering::Relaxed);
 }
 
-async fn test_1(db: Arc<Store>) {
+async fn test_1(db: Store) {
     // Test change id assignment
     let mut handles = Vec::new();
     let mut expected_ids = HashSet::new();
@@ -66,7 +65,7 @@ async fn test_1(db: Arc<Store>) {
     db.destroy().await;
 }
 
-async fn test_2(db: Arc<Store>) {
+async fn test_2(db: Store) {
     // Test document id assignment
     for wait_for_expiry in [true, false] {
         let mut handles = Vec::new();
@@ -102,7 +101,7 @@ async fn test_2(db: Arc<Store>) {
     db.destroy().await;
 }
 
-async fn test_3(db: Arc<Store>) {
+async fn test_3(db: Store) {
     // Create document ids and try reassigning
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
@@ -133,7 +132,7 @@ async fn test_3(db: Arc<Store>) {
     db.destroy().await;
 }
 
-async fn test_4(db: Arc<Store>) {
+async fn test_4(db: Store) {
     // Try reassigning deleted ids
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();

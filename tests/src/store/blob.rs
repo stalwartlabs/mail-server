@@ -21,222 +21,383 @@
  * for more details.
 */
 
-use store::{write::now, BlobHash, Store};
+use store::{
+    backend::{fs::FsStore, s3::S3Store, sqlite::SqliteStore},
+    write::{blob::BlobQuota, now, BatchBuilder, BlobOp, F_CLEAR},
+    BlobClass, BlobHash, BlobStore, Store,
+};
 use utils::config::Config;
 
 use crate::store::TempDir;
 
 const CONFIG_S3: &str = r#"
-[store.db]
-path = "{TMP}/_blob_s3_test_delete.db?mode=rwc"
-
-[store.blob]
-type = "s3"
-
 [store.blob.s3]
 access-key = "minioadmin"
 secret-key = "minioadmin"
 region = "eu-central-1"
 endpoint = "http://localhost:9000"
 bucket = "tmp"
-
 "#;
 
 const CONFIG_LOCAL: &str = r#"
-[store.db]
-path = "{TMP}/_blob_s3_test_delete.db?mode=rwc"
-
-[store.blob]
-type = "local"
-
 [store.blob.local]
 path = "{TMP}"
-
 "#;
 
-const DATA: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce erat nisl, dignissim a porttitor id, varius nec arcu. Sed mauris.";
+const CONFIG_DB: &str = r#"
+[store.db]
+path = "{TMP}/db.db?mode=rwc"
+"#;
 
 #[tokio::test]
 pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
-    /* test_blob(
-        Store::open(
-            &Config::new(&CONFIG_LOCAL.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap(),
-    )
-    .await;
-    test_blob(
-        Store::open(
-            &Config::new(&CONFIG_S3.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap(),
-    )
-    .await;*/
-    temp_dir.delete();
-}
+    let mut blob_store = None;
 
-/*
-async fn test_blob(store: impl Store) {
-    // Obtain temp quota
-    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 100).await.unwrap();
-    assert_eq!(quota_items, 0);
-    assert_eq!(quota_bytes, 0);
-    store.purge_tmp_blobs(0).await.unwrap();
+    for (store_id, store_cfg) in [("s3", CONFIG_S3), ("fs", CONFIG_LOCAL)] {
+        let config =
+            Config::new(&store_cfg.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
+                .unwrap();
 
-    // Store and fetch
-    let kind = BlobHash::LinkedMaildir {
-        account_id: 0,
-        document_id: 0,
-    };
-    store.put_blob(&kind, DATA).await.unwrap();
-    assert_eq!(
-        String::from_utf8(store.get_blob(&kind, 0..u32::MAX).await.unwrap().unwrap()).unwrap(),
-        std::str::from_utf8(DATA).unwrap()
-    );
-    assert_eq!(
-        String::from_utf8(store.get_blob(&kind, 11..57).await.unwrap().unwrap()).unwrap(),
-        std::str::from_utf8(&DATA[11..57]).unwrap()
-    );
-    assert!(store.delete_blob(&kind).await.unwrap());
-    assert!(store.get_blob(&kind, 0..u32::MAX).await.unwrap().is_none());
-
-    // Copy
-    let src_kind = BlobHash::LinkedMaildir {
-        account_id: 0,
-        document_id: 1,
-    };
-    store.put_blob(&src_kind, DATA).await.unwrap();
-    for id in 0..4 {
-        let dest_kind = BlobHash::LinkedMaildir {
-            account_id: 1,
-            document_id: id,
+        let blob_store_: BlobStore = match store_id {
+            "fs" => FsStore::open(&config).await.unwrap().into(),
+            "s3" => S3Store::open(&config).await.unwrap().into(),
+            _ => unreachable!(),
         };
-        assert!(store.copy_blob(&src_kind, &dest_kind, None).await.unwrap());
 
-        assert_eq!(
-            String::from_utf8(
-                store
-                    .get_blob(&dest_kind, 0..u32::MAX)
-                    .await
-                    .unwrap()
-                    .unwrap()
-            )
+        println!("Testing store {}...", store_id);
+        test_store(blob_store_.clone()).await;
+        blob_store = Some(blob_store_);
+    }
+    let blob_store = blob_store.unwrap();
+
+    // Start SQLite store
+    let store: Store = SqliteStore::open(
+        &Config::new(&CONFIG_DB.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
             .unwrap(),
-            std::str::from_utf8(DATA).unwrap()
+    )
+    .await
+    .unwrap()
+    .into();
+
+    // Blob hash exists
+    let hash = BlobHash::from(b"abc".as_slice());
+    assert!(!store.blob_hash_exists(&hash).await.unwrap());
+
+    // Reserve blob but mark it as expired
+    store
+        .write(
+            BatchBuilder::new()
+                .with_account_id(0)
+                .blob(
+                    hash.clone(),
+                    BlobOp::Reserve {
+                        until: now() - 10,
+                        size: 1024,
+                    },
+                    0,
+                )
+                .build_batch(),
+        )
+        .await
+        .unwrap();
+
+    // Uncommitted blob, should not exist
+    assert!(!store.blob_hash_exists(&hash).await.unwrap());
+
+    // Write blob to store
+    blob_store.put_blob(hash.as_ref(), b"abc").await.unwrap();
+
+    // Commit blob
+    store
+        .write(
+            BatchBuilder::new()
+                .blob(hash.clone(), BlobOp::Commit, 0)
+                .build_batch(),
+        )
+        .await
+        .unwrap();
+
+    // Blob hash should now exist
+    assert!(store.blob_hash_exists(&hash).await.unwrap());
+
+    // AccountId 0 should be able to read blob
+    assert!(store
+        .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 0 })
+        .await
+        .unwrap());
+
+    // AccountId 1 should not be able to read blob
+    assert!(!store
+        .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 1 })
+        .await
+        .unwrap());
+
+    // Blob already expired, quota should be 0
+    assert_eq!(
+        store.blob_hash_quota(0).await.unwrap(),
+        BlobQuota { bytes: 0, count: 0 }
+    );
+
+    // Purge expired blobs
+    store.blob_hash_purge(blob_store.clone()).await.unwrap();
+
+    // Blob hash should no longer exist
+    assert!(!store.blob_hash_exists(&hash).await.unwrap());
+
+    // AccountId 0 should not be able to read blob
+    assert!(!store
+        .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 0 })
+        .await
+        .unwrap());
+
+    // Blob should no longer be in store
+    assert!(blob_store
+        .get_blob(hash.as_ref(), 0..u32::MAX)
+        .await
+        .unwrap()
+        .is_none());
+
+    // Upload one linked blob to accountId 1, two linked blobs to accountId 0, and three unlinked (reserved) blobs to accountId 2
+    for (document_id, (blob, blob_op)) in [
+        (b"123", BlobOp::Link),
+        (b"456", BlobOp::Link),
+        (b"789", BlobOp::Link),
+        (
+            b"abc",
+            BlobOp::Reserve {
+                until: now() - 10,
+                size: 5000,
+            },
+        ),
+        (
+            b"efg",
+            BlobOp::Reserve {
+                until: now() + 10,
+                size: 1000,
+            },
+        ),
+        (
+            b"hij",
+            BlobOp::Reserve {
+                until: now() + 10,
+                size: 2000,
+            },
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let hash = BlobHash::from(blob.as_slice());
+        store
+            .write(
+                BatchBuilder::new()
+                    .with_account_id(if document_id > 0 { 0 } else { 1 })
+                    .with_collection(0)
+                    .update_document(document_id as u32)
+                    .blob(hash.clone(), blob_op, 0)
+                    .blob(hash.clone(), BlobOp::Commit, 0)
+                    .build_batch(),
+            )
+            .await
+            .unwrap();
+        blob_store
+            .put_blob(hash.as_ref(), blob.as_slice())
+            .await
+            .unwrap();
+    }
+
+    // One of the reserved blobs expired and should not count towards quota
+    assert_eq!(
+        store.blob_hash_quota(0).await.unwrap(),
+        BlobQuota {
+            bytes: 3000,
+            count: 2
+        }
+    );
+    assert_eq!(
+        store.blob_hash_quota(1).await.unwrap(),
+        BlobQuota { bytes: 0, count: 0 }
+    );
+
+    // Purge expired blobs and make sure nothing else is deleted
+    store.blob_hash_purge(blob_store.clone()).await.unwrap();
+    for (pos, (blob, blob_class)) in [
+        (b"abc", BlobClass::Reserved { account_id: 0 }),
+        (
+            b"123",
+            BlobClass::Linked {
+                account_id: 1,
+                collection: 0,
+                document_id: 0,
+            },
+        ),
+        (
+            b"456",
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 1,
+            },
+        ),
+        (
+            b"789",
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 2,
+            },
+        ),
+        (b"efg", BlobClass::Reserved { account_id: 0 }),
+        (b"hij", BlobClass::Reserved { account_id: 0 }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let ct = pos == 0;
+        let hash = BlobHash::from(blob.as_slice());
+        assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
+        assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+        assert!(
+            blob_store
+                .get_blob(hash.as_ref(), 0..u32::MAX)
+                .await
+                .unwrap()
+                .is_some()
+                ^ ct
         );
     }
 
-    // Copy partial
-    let now = now();
-    let mut tmp_kinds = Vec::new();
-    for i in 1..=3 {
-        let tmp_kind = BlobHash::Temporary {
-            account_id: 2,
-            timestamp: now - (i * 5),
-            seq: 0,
-        };
-        assert!(store
-            .copy_blob(&src_kind, &tmp_kind, (0..11).into())
-            .await
-            .unwrap());
-        tmp_kinds.push(tmp_kind);
-    }
-
-    assert_eq!(
-        String::from_utf8(
-            store
-                .get_blob(&tmp_kinds[0], 0..u32::MAX)
-                .await
-                .unwrap()
-                .unwrap()
-        )
-        .unwrap(),
-        std::str::from_utf8(&DATA[0..11]).unwrap()
-    );
-
-    // Obtain temp quota
-    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 100).await.unwrap();
-    assert_eq!(quota_items, 3);
-    assert_eq!(quota_bytes, 33);
-    let (quota_items, quota_bytes) = store.get_tmp_blob_usage(2, 12).await.unwrap();
-    assert_eq!(quota_items, 2);
-    assert_eq!(quota_bytes, 22);
-
-    // Delete range
-    store.delete_account_blobs(1).await.unwrap();
-    store.purge_tmp_blobs(7).await.unwrap();
-
-    // Make sure the blobs are deleted
-    for id in 0..4 {
-        assert!(store
-            .get_blob(
-                &BlobHash::LinkedMaildir {
-                    account_id: 1,
-                    document_id: id,
-                },
-                0..u32::MAX
-            )
-            .await
-            .unwrap()
-            .is_none());
-    }
-    for i in [1, 2] {
-        assert!(store
-            .get_blob(&tmp_kinds[i], 0..u32::MAX)
-            .await
-            .unwrap()
-            .is_none());
-    }
-
-    // Make sure other blobs were not deleted
-    assert!(store
-        .get_blob(&src_kind, 0..u32::MAX)
-        .await
-        .unwrap()
-        .is_some());
-    assert!(store
-        .get_blob(&tmp_kinds[0], 0..u32::MAX)
-        .await
-        .unwrap()
-        .is_some());
-
-    // Copying a non-existing blob should fail
+    // AccountId 0 should not have access to accountId 1's blobs
     assert!(!store
-        .copy_blob(&tmp_kinds[1], &src_kind, None)
+        .blob_hash_can_read(
+            BlobHash::from(b"123".as_slice()),
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 0,
+            }
+        )
         .await
         .unwrap());
 
-    // Copy blob between buckets
-    assert!(store
-        .copy_blob(&src_kind, &tmp_kinds[0], (10..20).into())
+    // Unlink blob
+    store
+        .write(
+            BatchBuilder::new()
+                .with_account_id(0)
+                .with_collection(0)
+                .update_document(2)
+                .blob(BlobHash::from(b"789".as_slice()), BlobOp::Link, F_CLEAR)
+                .build_batch(),
+        )
         .await
-        .unwrap());
-    assert_eq!(
-        String::from_utf8(
-            store
-                .get_blob(&tmp_kinds[0], 0..u32::MAX)
+        .unwrap();
+
+    // Purge and make sure blob is deleted
+    store.blob_hash_purge(blob_store.clone()).await.unwrap();
+    for (pos, (blob, blob_class)) in [
+        (
+            b"789",
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 2,
+            },
+        ),
+        (
+            b"123",
+            BlobClass::Linked {
+                account_id: 1,
+                collection: 0,
+                document_id: 0,
+            },
+        ),
+        (
+            b"456",
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 1,
+            },
+        ),
+        (b"efg", BlobClass::Reserved { account_id: 0 }),
+        (b"hij", BlobClass::Reserved { account_id: 0 }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let ct = pos == 0;
+        let hash = BlobHash::from(blob.as_slice());
+        assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
+        assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+        assert!(
+            blob_store
+                .get_blob(hash.as_ref(), 0..u32::MAX)
                 .await
                 .unwrap()
-                .unwrap()
-        )
-        .unwrap(),
-        std::str::from_utf8(&DATA[10..20]).unwrap()
-    );
-
-    // Delete blobs
-    for blob_kind in [src_kind, tmp_kinds[0]] {
-        assert!(store.delete_blob(&blob_kind).await.unwrap());
-        assert!(store
-            .get_blob(&blob_kind, 0..u32::MAX)
-            .await
-            .unwrap()
-            .is_none());
+                .is_some()
+                ^ ct
+        );
     }
+
+    // Unlink all blobs from accountId 1 and purge
+    store.blob_hash_unlink_account(1).await.unwrap();
+    store.blob_hash_purge(blob_store.clone()).await.unwrap();
+
+    // Make sure only accountId 0's blobs are left
+    for (pos, (blob, blob_class)) in [
+        (
+            b"123",
+            BlobClass::Linked {
+                account_id: 1,
+                collection: 0,
+                document_id: 0,
+            },
+        ),
+        (
+            b"456",
+            BlobClass::Linked {
+                account_id: 0,
+                collection: 0,
+                document_id: 1,
+            },
+        ),
+        (b"efg", BlobClass::Reserved { account_id: 0 }),
+        (b"hij", BlobClass::Reserved { account_id: 0 }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let ct = pos == 0;
+        let hash = BlobHash::from(blob.as_slice());
+        assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
+        assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+        assert!(
+            blob_store
+                .get_blob(hash.as_ref(), 0..u32::MAX)
+                .await
+                .unwrap()
+                .is_some()
+                ^ ct
+        );
+    }
+
+    temp_dir.delete();
 }
 
-*/
+async fn test_store(store: BlobStore) {
+    const DATA: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce erat nisl, dignissim a porttitor id, varius nec arcu. Sed mauris.";
+
+    store.put_blob(b"abc", DATA).await.unwrap();
+    assert_eq!(
+        String::from_utf8(store.get_blob(b"abc", 0..u32::MAX).await.unwrap().unwrap()).unwrap(),
+        std::str::from_utf8(DATA).unwrap()
+    );
+    assert_eq!(
+        String::from_utf8(store.get_blob(b"abc", 11..57).await.unwrap().unwrap()).unwrap(),
+        std::str::from_utf8(&DATA[11..57]).unwrap()
+    );
+    assert!(store.delete_blob(b"abc").await.unwrap());
+    assert!(store.get_blob(b"abc", 0..u32::MAX).await.unwrap().is_none());
+}

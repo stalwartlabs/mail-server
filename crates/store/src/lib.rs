@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{fmt::Display, ops::Range, sync::Arc};
+use std::{fmt::Display, sync::Arc};
 
 pub mod backend;
 //pub mod fts;
@@ -30,7 +30,7 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
-use backend::{foundationdb::FdbStore, sqlite::SqliteStore};
+use backend::{foundationdb::FdbStore, fs::FsStore, s3::S3Store, sqlite::SqliteStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -169,14 +169,38 @@ pub struct IterateParams<T: Key> {
     values: bool,
 }
 
-#[async_trait::async_trait]
-pub trait BlobStore: Sync + Send {
-    async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>>;
-    async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()>;
-    async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool>;
-}
-
+#[derive(Clone)]
 pub enum Store {
     SQLite(Arc<SqliteStore>),
     FoundationDb(Arc<FdbStore>),
+}
+
+#[derive(Clone)]
+pub enum BlobStore {
+    Fs(Arc<FsStore>),
+    S3(Arc<S3Store>),
+}
+
+impl From<SqliteStore> for Store {
+    fn from(store: SqliteStore) -> Self {
+        Self::SQLite(Arc::new(store))
+    }
+}
+
+impl From<FdbStore> for Store {
+    fn from(store: FdbStore) -> Self {
+        Self::FoundationDb(Arc::new(store))
+    }
+}
+
+impl From<FsStore> for BlobStore {
+    fn from(store: FsStore) -> Self {
+        Self::Fs(Arc::new(store))
+    }
+}
+
+impl From<S3Store> for BlobStore {
+    fn from(store: S3Store) -> Self {
+        Self::S3(Arc::new(store))
+    }
 }

@@ -21,7 +21,6 @@
  * for more details.
 */
 
-#[cfg(feature = "foundationdb")]
 pub mod assign_id;
 pub mod blob;
 pub mod query;
@@ -30,6 +29,7 @@ use std::{io::Read, sync::Arc};
 
 use ::store::Store;
 
+use store::backend::sqlite::SqliteStore;
 use utils::config::Config;
 
 pub struct TempDir {
@@ -38,7 +38,7 @@ pub struct TempDir {
 
 #[tokio::test]
 pub async fn store_tests() {
-    /*let insert = true;
+    let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
     let config_file = format!(
         concat!(
@@ -49,18 +49,16 @@ pub async fn store_tests() {
         temp_dir.path.display(),
         temp_dir.path.display()
     );
-    let db = Arc::new(
-        Store::open(&Config::new(&config_file).unwrap())
-            .await
-            .unwrap(),
-    );
+    let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
+        .await
+        .unwrap()
+        .into();
     if insert {
         db.destroy().await;
     }
-    #[cfg(feature = "foundationdb")]
     assign_id::test(db.clone()).await;
     query::test(db, insert).await;
-    temp_dir.delete();*/
+    temp_dir.delete();
 }
 
 pub fn deflate_artwork_data() -> Vec<u8> {

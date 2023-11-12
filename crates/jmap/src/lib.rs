@@ -84,7 +84,7 @@ pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct JMAP {
     pub store: Store,
-    pub blob_store: Arc<dyn BlobStore>,
+    pub blob_store: BlobStore,
     pub config: Config,
     pub directory: Arc<dyn Directory>,
 
@@ -202,11 +202,11 @@ impl JMAP {
                     .await
                     .failed("Unable to open database"),
             )),
-            blob_store: Arc::new(
+            blob_store: BlobStore::Fs(Arc::new(
                 FsStore::open(config)
                     .await
                     .failed("Unable to open blob store"),
-            ),
+            )),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),

@@ -30,8 +30,6 @@ use s3::{
 };
 use utils::{codec::base32_custom::Base32Writer, config::Config};
 
-use crate::BlobStore;
-
 pub struct S3Store {
     bucket: Bucket,
 }
@@ -67,11 +65,12 @@ impl S3Store {
             .with_request_timeout(timeout),
         })
     }
-}
 
-#[async_trait::async_trait]
-impl BlobStore for S3Store {
-    async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
+    pub(crate) async fn get_blob(
+        &self,
+        key: &[u8],
+        range: Range<u32>,
+    ) -> crate::Result<Option<Vec<u8>>> {
         let path = Base32Writer::from_bytes(key).finalize();
         let response = if range.start != 0 || range.end != u32::MAX {
             self.bucket
@@ -98,7 +97,7 @@ impl BlobStore for S3Store {
         }
     }
 
-    async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
         match self
             .bucket
             .put_object(Base32Writer::from_bytes(key).finalize(), data)
@@ -114,7 +113,7 @@ impl BlobStore for S3Store {
         }
     }
 
-    async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
         self.bucket
             .delete_object(Base32Writer::from_bytes(key).finalize())
             .await

@@ -35,7 +35,7 @@ use crate::{
 
 use super::{
     bitmap::{next_available_index, BITS_PER_BLOCK},
-    write::{ID_ASSIGNMENT_EXPIRY, MAX_COMMIT_TIME},
+    write::MAX_COMMIT_TIME,
     FdbStore,
 };
 
@@ -85,8 +85,9 @@ impl FdbStore {
                 #[cfg(not(feature = "test_mode"))]
                 let expired_timestamp = now() - ID_ASSIGNMENT_EXPIRY;
                 #[cfg(feature = "test_mode")]
-                let expired_timestamp =
-                    now() - ID_ASSIGNMENT_EXPIRY.load(std::sync::atomic::Ordering::Relaxed);
+                let expired_timestamp = now()
+                    - crate::backend::ID_ASSIGNMENT_EXPIRY
+                        .load(std::sync::atomic::Ordering::Relaxed);
                 while let Some(values) = values.next().await {
                     for value in values? {
                         let key = value.key();

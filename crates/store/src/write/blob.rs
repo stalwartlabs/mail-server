@@ -21,8 +21,6 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use ahash::AHashSet;
 
 use crate::{
@@ -32,7 +30,7 @@ use crate::{
 
 use super::{key::DeserializeBigEndian, now, BlobOp};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BlobQuota {
     pub bytes: usize,
     pub count: usize,
@@ -177,7 +175,7 @@ impl Store {
         Ok(has_access)
     }
 
-    pub async fn blob_hash_purge(&self, blob_store: Arc<dyn BlobStore>) -> crate::Result<()> {
+    pub async fn blob_hash_purge(&self, blob_store: BlobStore) -> crate::Result<()> {
         // Remove expired temporary blobs
         let from_key = BlobKey {
             account_id: 0,
