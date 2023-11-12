@@ -136,7 +136,7 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                                 self.handle_expn(value).await?;
                             }
                             Request::StartTls => {
-                                if !self.instance.tls_acceptor.is_some() {
+                                if self.instance.tls_acceptor.is_none() {
                                     self.write(b"502 5.5.1 Command not implemented.\r\n")
                                         .await?;
                                 } else if !self.stream.is_tls() {
