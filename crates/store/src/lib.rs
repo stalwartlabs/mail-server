@@ -21,22 +21,21 @@
  * for more details.
 */
 
-use std::{fmt::Display, ops::BitAndAssign};
+use std::{fmt::Display, ops::Range, sync::Arc};
 
 pub mod backend;
-pub mod blob;
 //pub mod fts;
+pub mod dispatch;
 pub mod query;
 pub mod write;
 
 pub use ahash;
+use backend::{foundationdb::FdbStore, sqlite::SqliteStore};
 pub use blake3;
 pub use parking_lot;
-use query::{filter::StoreQuery, log::StoreLog, sort::StoreSort};
 pub use rand;
 pub use roaring;
-use roaring::RoaringBitmap;
-use write::{Batch, BitmapClass, ValueClass};
+use write::{BitmapClass, BlobOp, ValueClass};
 
 #[cfg(feature = "rocks")]
 pub struct Store {
@@ -89,46 +88,47 @@ pub struct ValueKey<T: AsRef<ValueClass>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlobKey<T: AsRef<BlobHash>> {
+    pub account_id: u32,
+    pub collection: u8,
+    pub document_id: u32,
+    pub hash: T,
+    pub op: BlobOp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogKey {
     pub account_id: u32,
     pub collection: u8,
     pub change_id: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BlobKind {
+const BLOB_HASH_LEN: usize = 32;
+const U64_LEN: usize = std::mem::size_of::<u64>();
+const U32_LEN: usize = std::mem::size_of::<u32>();
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct BlobHash([u8; BLOB_HASH_LEN]);
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum BlobClass {
+    Reserved {
+        account_id: u32,
+    },
     Linked {
         account_id: u32,
         collection: u8,
         document_id: u32,
     },
-    LinkedMaildir {
-        account_id: u32,
-        document_id: u32,
-    },
-    Temporary {
-        account_id: u32,
-        timestamp: u64,
-        seq: u32,
-    },
 }
 
-impl BlobKind {
-    pub fn is_document(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-        document_id: u32,
-    ) -> bool {
-        matches!(self, BlobKind::Linked {
-            account_id: a,
-            collection: c,
-            document_id: d,
-        } if *a == account_id && *c == collection.into() && *d == document_id)
+impl Default for BlobClass {
+    fn default() -> Self {
+        BlobClass::Reserved { account_id: 0 }
     }
 }
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -157,138 +157,26 @@ pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
-pub const SUBSPACE_QUOTAS: u8 = b'q';
+pub const SUBSPACE_BLOBS: u8 = b'o';
+pub const SUBSPACE_ACLS: u8 = b'a';
+pub const SUBSPACE_COUNTERS: u8 = b'c';
 
-#[async_trait::async_trait]
-pub trait StoreInit: Sized {
-    async fn open(config: &utils::config::Config) -> crate::Result<Self>;
+pub struct IterateParams<T: Key> {
+    begin: T,
+    end: T,
+    first: bool,
+    ascending: bool,
+    values: bool,
 }
 
 #[async_trait::async_trait]
-pub trait StorePurge {
-    async fn purge_bitmaps(&self) -> crate::Result<()>;
-    async fn purge_account(&self, account_id: u32) -> crate::Result<()>;
+pub trait BlobStore: Sync + Send {
+    async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>>;
+    async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()>;
+    async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool>;
 }
 
-#[async_trait::async_trait]
-pub trait StoreId {
-    async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64>;
-    async fn assign_document_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<u32>;
-}
-
-#[async_trait::async_trait]
-pub trait StoreRead: Sync {
-    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
-    where
-        U: Deserialize + 'static;
-
-    async fn get_values<U>(&self, key: Vec<impl Key>) -> crate::Result<Vec<Option<U>>>
-    where
-        U: Deserialize + 'static,
-    {
-        let mut results = Vec::with_capacity(key.len());
-
-        for key in key {
-            results.push(self.get_value(key).await?);
-        }
-
-        Ok(results)
-    }
-
-    async fn get_bitmap(&self, key: BitmapKey<BitmapClass>)
-        -> crate::Result<Option<RoaringBitmap>>;
-
-    async fn get_bitmaps_intersection(
-        &self,
-        keys: Vec<BitmapKey<BitmapClass>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut result: Option<RoaringBitmap> = None;
-        for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await? {
-                if let Some(result) = &mut result {
-                    result.bitand_assign(&bitmap);
-                    if result.is_empty() {
-                        break;
-                    }
-                } else {
-                    result = Some(bitmap);
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-        Ok(result)
-    }
-
-    async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        value: Vec<u8>,
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>>;
-
-    async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()>;
-
-    async fn iterate(
-        &self,
-        begin: impl Key,
-        end: impl Key,
-        first: bool,
-        ascending: bool,
-        cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()>;
-
-    async fn get_last_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>>;
-
-    async fn get_counter(
-        &self,
-        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
-    ) -> crate::Result<i64>;
-
-    #[cfg(feature = "test_mode")]
-    async fn assert_is_empty(&self);
-}
-
-#[async_trait::async_trait]
-pub trait StoreWrite {
-    async fn write(&self, batch: Batch) -> crate::Result<()>;
-    /*async fn set_value(
-        &self,
-        key: impl Key,
-        value: impl Serialize + Sync + Send + 'static,
-    ) -> crate::Result<()>;*/
-    #[cfg(feature = "test_mode")]
-    async fn destroy(&self);
-}
-
-pub trait Store:
-    StoreInit
-    + StoreRead
-    + StoreWrite
-    + StoreId
-    + StorePurge
-    + StoreQuery
-    + StoreSort
-    + StoreLog
-    + Sync
-    + Send
-    + 'static
-{
+pub enum Store {
+    SQLite(Arc<SqliteStore>),
+    FoundationDb(Arc<FdbStore>),
 }

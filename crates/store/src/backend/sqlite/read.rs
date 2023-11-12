@@ -30,14 +30,13 @@ use crate::{
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, ValueKey,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, U32_LEN,
 };
 
 use super::{SqliteStore, BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
 
-#[async_trait::async_trait]
-impl StoreRead for SqliteStore {
-    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+impl SqliteStore {
+    pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
@@ -56,7 +55,7 @@ impl StoreRead for SqliteStore {
         .await
     }
 
-    async fn get_bitmap(
+    pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
@@ -75,7 +74,7 @@ impl StoreRead for SqliteStore {
             while let Some(row) = rows.next()? {
                 let key = row.get_ref(0)?.as_bytes()?;
                 if key.len() == key_len {
-                    let block_num = key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
+                    let block_num = key.deserialize_be_u32(key.len() - U32_LEN)?;
 
                     for word_num in 0..WORDS_PER_BLOCK {
                         match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
@@ -106,7 +105,7 @@ impl StoreRead for SqliteStore {
         }).await
     }
 
-    async fn range_to_bitmap(
+    pub(crate) async fn range_to_bitmap(
         &self,
         account_id: u32,
         collection: u8,
@@ -117,19 +116,13 @@ impl StoreRead for SqliteStore {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             let k1 = KeySerializer::new(
-                std::mem::size_of::<IndexKey<&[u8]>>()
-                    + value.len()
-                    + 1
-                    + std::mem::size_of::<u32>(),
+                std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN,
             )
             .write(account_id)
             .write(collection)
             .write(field);
             let k2 = KeySerializer::new(
-                std::mem::size_of::<IndexKey<&[u8]>>()
-                    + value.len()
-                    + 1
-                    + std::mem::size_of::<u32>(),
+                std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN,
             )
             .write(account_id)
             .write(collection)
@@ -170,14 +163,14 @@ impl StoreRead for SqliteStore {
             if op != Operator::Equal {
                 while let Some(row) = rows.next()? {
                     let key = row.get_ref(0)?.as_bytes()?;
-                    bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                 }
             } else {
                 let key_len = begin.len();
                 while let Some(row) = rows.next()? {
                     let key = row.get_ref(0)?.as_bytes()?;
                     if key.len() == key_len {
-                        bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                        bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                     }
                 }
             }
@@ -187,7 +180,7 @@ impl StoreRead for SqliteStore {
         .await
     }
 
-    async fn sort_index(
+    pub(crate) async fn sort_index(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
@@ -223,7 +216,7 @@ impl StoreRead for SqliteStore {
 
             while let Some(row) = rows.next()? {
                 let key = row.get_ref(0)?.as_bytes()?;
-                let id_pos = key.len() - std::mem::size_of::<u32>();
+                let id_pos = key.len() - U32_LEN;
                 debug_assert!(key.starts_with(&begin));
                 if !cb(
                     key.get(prefix_len..id_pos).ok_or_else(|| {
@@ -240,47 +233,53 @@ impl StoreRead for SqliteStore {
         .await
     }
 
-    async fn iterate(
+    pub(crate) async fn iterate<T: Key>(
         &self,
-        begin: impl Key,
-        end: impl Key,
-        first: bool,
-        ascending: bool,
+        params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 
         self.spawn_worker(move || {
-            let table = char::from(begin.subspace());
-            let begin = begin.serialize(false);
-            let end = end.serialize(false);
+            let table = char::from(params.begin.subspace());
+            let begin = params.begin.serialize(false);
+            let end = params.end.serialize(false);
+            let keys = if params.values { "k, v" } else { "k" };
 
-            let mut query = conn.prepare_cached(&match (first, ascending) {
+            let mut query = conn.prepare_cached(&match (params.first, params.ascending) {
                 (true, true) => {
                     format!(
-                        "SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1"
+                        "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1"
                     )
                 }
                 (true, false) => {
                     format!(
-                        "SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1"
+                        "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1"
                     )
                 }
                 (false, true) => {
-                    format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")
+                    format!("SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")
                 }
                 (false, false) => {
-                    format!("SELECT k, v FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
+                    format!("SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
                 }
             })?;
             let mut rows = query.query([&begin, &end])?;
 
-            while let Some(row) = rows.next()? {
-                let key = row.get_ref(0)?.as_bytes()?;
-                let value = row.get_ref(1)?.as_bytes()?;
+            if params.values {
+                while let Some(row) = rows.next()? {
+                    let key = row.get_ref(0)?.as_bytes()?;
+                    let value = row.get_ref(1)?.as_bytes()?;
 
-                if !cb(key, value)? {
-                    break;
+                    if !cb(key, value)? {
+                        break;
+                    }
+                }
+            } else {
+                while let Some(row) = rows.next()? {
+                    if !cb(row.get_ref(0)?.as_bytes()?, b"")? {
+                        break;
+                    }
                 }
             }
 
@@ -289,36 +288,7 @@ impl StoreRead for SqliteStore {
         .await
     }
 
-    async fn get_last_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>> {
-        let conn = self.conn_pool.get()?;
-        let collection = collection.into();
-
-        self.spawn_worker(move || {
-            let key = LogKey {
-                account_id,
-                collection,
-                change_id: u64::MAX,
-            }
-            .serialize(false);
-
-            conn.prepare_cached("SELECT k FROM l WHERE k < ? ORDER BY k DESC LIMIT 1")?
-                .query_row([&key], |row| {
-                    let key = row.get_ref(0)?.as_bytes()?;
-
-                    key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
-                        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
-                })
-                .optional()
-                .map_err(Into::into)
-        })
-        .await
-    }
-
-    async fn get_counter(
+    pub(crate) async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
@@ -326,7 +296,7 @@ impl StoreRead for SqliteStore {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             match conn
-                .prepare_cached("SELECT v FROM q WHERE k = ?")?
+                .prepare_cached("SELECT v FROM c WHERE k = ?")?
                 .query_row([&key], |row| row.get::<_, i64>(0))
             {
                 Ok(value) => Ok(value),
@@ -338,45 +308,64 @@ impl StoreRead for SqliteStore {
     }
 
     #[cfg(feature = "test_mode")]
-    async fn assert_is_empty(&self) {
-        use crate::StorePurge;
-
+    pub(crate) async fn assert_is_empty(&self) {
         let conn = self.conn_pool.get().unwrap();
-        self.purge_bitmaps().await.unwrap();
-
         self.spawn_worker(move || {
+
         // Values
-        let mut query = conn.prepare_cached("SELECT k, v FROM v").unwrap();
-        let mut rows = query.query([]).unwrap();
         let mut has_errors = false;
+        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_ACLS, crate::SUBSPACE_COUNTERS] {
+            let table = char::from(table);
+            let mut query = conn.prepare_cached(&format!("SELECT k, v FROM {table}")).unwrap();
+            let mut rows = query.query([]).unwrap();
 
-        while let Some(row) = rows.next().unwrap() {
-            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-            let value = row.get_ref(1).unwrap().as_bytes().unwrap();
+            while let Some(row) = rows.next().unwrap() {
+                let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+                if table != 'c' {
+                    let value = row.get_ref(1).unwrap().as_bytes().unwrap();
 
-            if key[0..4] != u32::MAX.to_be_bytes() {
-                eprintln!("Table values is not empty: {key:?} {value:?}");
-                has_errors = true;
+                    if key[0..4] != u32::MAX.to_be_bytes() {
+                        eprintln!("Table {table:?} is not empty: {key:?} {value:?}");
+                        has_errors = true;
+                    }
+                } else {
+                    let value = row.get::<_, i64>(1).unwrap();
+                    if value != 0 {
+                        eprintln!(
+                            "Table counter is not empty, account {:?}, quota: {}",
+                            key, value,
+                        );
+                        has_errors = true;
+                    }
+                }
             }
         }
 
         // Indexes
-        let mut query = conn.prepare_cached("SELECT k FROM i").unwrap();
-        let mut rows = query.query([]).unwrap();
+        for table in [crate::SUBSPACE_INDEXES, crate::SUBSPACE_BLOBS] {
+            let table = char::from(table);
+            let mut query = conn.prepare_cached(&format!("SELECT k FROM {table}")).unwrap();
+            let mut rows = query.query([]).unwrap();
 
-        while let Some(row) = rows.next().unwrap() {
-            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+            while let Some(row) = rows.next().unwrap() {
+                let key = row.get_ref(0).unwrap().as_bytes().unwrap();
 
-            eprintln!(
-                    "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
-                    u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                    key[4],
-                    u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
-                    key[5],
-                    String::from_utf8_lossy(&key[6..key.len()-4]),
-                    key
-                );
-            has_errors = true;
+                if table == 'i' {
+                    eprintln!(
+                        "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
+                        u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                        key[4],
+                        u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
+                        key[5],
+                        String::from_utf8_lossy(&key[6..key.len()-4]),
+                        key
+                    );
+
+                } else {
+                    eprintln!("Table {table:?} is not empty: {key:?}");
+                }
+                has_errors = true;
+            }
         }
 
         // Bitmaps
@@ -398,22 +387,6 @@ impl StoreRead for SqliteStore {
                     }
                 }
                 eprintln!("Table bitmaps failed to purge, found key: {key:?}");
-                has_errors = true;
-            }
-        }
-
-        // Quotas
-        let mut query = conn.prepare_cached("SELECT k, v FROM q").unwrap();
-        let mut rows = query.query([]).unwrap();
-
-        while let Some(row) = rows.next().unwrap() {
-            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-            let value = row.get::<_, i64>(1).unwrap();
-            if value != 0 {
-                eprintln!(
-                    "Table counter is not empty, account {:?}, quota: {}",
-                    key, value,
-                );
                 has_errors = true;
             }
         }

@@ -48,17 +48,12 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::sqlite::SqliteStore,
+    backend::{fs::FsStore, sqlite::SqliteStore},
     parking_lot::Mutex,
-    query::{
-        filter::StoreQuery,
-        sort::{Pagination, StoreSort},
-        Comparator, Filter, ResultSet, SortedResultSet,
-    },
+    query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::{key::KeySerializer, BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass},
-    BitmapKey, Deserialize, Key, Serialize, StoreId, StoreInit, StoreRead, StoreWrite, ValueKey,
-    SUBSPACE_VALUES,
+    BitmapKey, BlobStore, Deserialize, Key, Serialize, Store, ValueKey, SUBSPACE_VALUES,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -88,7 +83,8 @@ pub mod websocket;
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
 pub struct JMAP {
-    pub store: SqliteStore,
+    pub store: Store,
+    pub blob_store: Arc<dyn BlobStore>,
     pub config: Config,
     pub directory: Arc<dyn Directory>,
 
@@ -201,9 +197,16 @@ impl JMAP {
                     config.value_require("jmap.directory")?
                 ))
                 .clone(),
-            store: SqliteStore::open(config)
-                .await
-                .failed("Unable to open database"),
+            store: Store::SQLite(Arc::new(
+                SqliteStore::open(config)
+                    .await
+                    .failed("Unable to open database"),
+            )),
+            blob_store: Arc::new(
+                FsStore::open(config)
+                    .await
+                    .failed("Unable to open blob store"),
+            ),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),

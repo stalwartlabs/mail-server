@@ -87,7 +87,7 @@ macro_rules! impl_bit {
     ($single:ident, $many:ident, $flag:ident) => {
         #[inline(always)]
         pub fn $single(document: u32) -> Vec<u8> {
-            let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + 2);
+            let mut buf = Vec::with_capacity(U32_LEN + 2);
             buf.push(IS_BITLIST);
             buf.push($flag);
             buf.push_leb128(document);
@@ -102,7 +102,7 @@ macro_rules! impl_bit {
             debug_assert!(documents.size_hint().0 > 0);
 
             let mut buf = Vec::with_capacity(
-                ((std::mem::size_of::<u32>() + 1)
+                ((U32_LEN + 1)
                     * documents
                         .size_hint()
                         .1
@@ -145,7 +145,7 @@ where
         .size_hint()
         .1
         .unwrap_or_else(|| documents.size_hint().0);
-    let buf_len = (std::mem::size_of::<u32>() * total_docs) + (total_docs / 0x7F) + 2;
+    let buf_len = (U32_LEN * total_docs) + (total_docs / 0x7F) + 2;
     let mut set_buf = Vec::with_capacity(buf_len);
     let mut clear_buf = Vec::with_capacity(buf_len);
 

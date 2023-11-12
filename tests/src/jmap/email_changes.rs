@@ -32,7 +32,6 @@ use jmap_proto::{
 use store::{
     ahash::AHashSet,
     write::{log::ChangeLogBuilder, BatchBuilder},
-    StoreRead, StoreWrite,
 };
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
@@ -316,7 +315,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_eq!(created, vec![2, 3, 11, 12]);
     assert_eq!(changes.updated(), Vec::<String>::new());
     assert_eq!(changes.destroyed(), Vec::<String>::new());
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 #[derive(Debug, Clone, Copy)]

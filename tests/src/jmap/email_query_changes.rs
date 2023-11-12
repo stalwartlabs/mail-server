@@ -30,11 +30,10 @@ use jmap_client::{
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property, state::State};
 use std::sync::Arc;
-use store::StoreRead;
+
 use store::{
     ahash::{AHashMap, AHashSet},
     write::{log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
-    StoreWrite,
 };
 
 use crate::jmap::{
@@ -288,7 +287,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
     server.store.write(batch.build_batch()).await.unwrap();
 
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 #[derive(Debug, Clone)]

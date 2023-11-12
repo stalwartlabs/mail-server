@@ -38,7 +38,7 @@ use jmap_client::{
 use jmap_proto::types::id::Id;
 use reqwest::{header, redirect::Policy};
 use serde::de::DeserializeOwned;
-use store::{ahash::AHashMap, StoreRead};
+use store::ahash::AHashMap;
 
 use crate::{directory::sql::create_test_user_with_email, jmap::mailbox::destroy_all_mailboxes};
 
@@ -307,7 +307,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     // Destroy test accounts
     admin_client.set_default_account_id(john_id);
     destroy_all_mailboxes(admin_client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 async fn post_bytes(url: &str, params: &AHashMap<String, String>) -> Bytes {

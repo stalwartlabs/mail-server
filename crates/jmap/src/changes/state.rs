@@ -25,7 +25,6 @@ use jmap_proto::{
     error::method::MethodError,
     types::{collection::Collection, state::State},
 };
-use store::StoreRead;
 
 use crate::JMAP;
 

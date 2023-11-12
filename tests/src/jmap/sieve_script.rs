@@ -36,7 +36,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,
@@ -487,7 +486,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         client.sieve_script_destroy(&id).await.unwrap();
     }
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 fn get_script(name: &str) -> Vec<u8> {

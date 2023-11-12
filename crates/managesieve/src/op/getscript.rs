@@ -22,11 +22,11 @@
 */
 
 use imap_proto::receiver::Request;
+use jmap::sieve::set::ObjectBlobId;
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use store::BlobKind;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -41,7 +41,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .ok_or_else(|| StatusResponse::no("Expected script name as a parameter."))?;
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
-        let script_size = self
+        let (blob_section, blob_hash) = self
             .jmap
             .get_property::<Object<Value>>(
                 account_id,
@@ -53,30 +53,23 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .ok_or_else(|| {
                 StatusResponse::no("Script not found").with_code(ResponseCode::NonExistent)
             })?
-            .remove(&Property::Size)
-            .try_unwrap_uint()
+            .blob_id()
+            .and_then(|id| (id.section.as_ref()?.clone(), id.hash.clone()).into())
             .ok_or_else(|| {
-                StatusResponse::no("Filed to retrieve blob size").with_code(ResponseCode::TryLater)
-            })? as u32;
+                StatusResponse::no("Filed to retrieve blobId").with_code(ResponseCode::TryLater)
+            })?;
         let script = self
             .jmap
-            .get_blob(
-                &BlobKind::Linked {
-                    account_id,
-                    collection: Collection::SieveScript.into(),
-                    document_id,
-                },
-                0..script_size,
-            )
+            .get_blob_section(&blob_hash, &blob_section)
             .await?
             .ok_or_else(|| {
                 StatusResponse::no("Script blob not found").with_code(ResponseCode::NonExistent)
             })?;
-        debug_assert_eq!(script.len() as u32, script_size);
+        debug_assert_eq!(script.len(), blob_section.size);
 
         let mut response = Vec::with_capacity(script.len() + 30);
         response.push(b'{');
-        response.extend_from_slice(script_size.to_string().as_bytes());
+        response.extend_from_slice(blob_section.size.to_string().as_bytes());
         response.extend_from_slice(b"}\r\n");
         response.extend(script);
 

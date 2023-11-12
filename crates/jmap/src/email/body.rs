@@ -69,7 +69,8 @@ impl ToBodyPart for Vec<MessagePart<'_>> {
                         Property::BlobId if multipart.is_none() => {
                             let base_offset = blob_id.start_offset();
                             BlobId::new_section(
-                                blob_id.kind,
+                                blob_id.hash.clone(),
+                                blob_id.class.clone(),
                                 part.offset_body + base_offset,
                                 part.offset_end + base_offset,
                                 part.encoding as u8,
@@ -181,7 +182,8 @@ impl ToBodyPart for MessageMetadataContents<'_> {
                         Property::BlobId if multipart.is_none() => {
                             let base_offset = blob_id.start_offset();
                             BlobId::new_section(
-                                blob_id.kind,
+                                blob_id.hash.clone(),
+                                blob_id.class.clone(),
                                 part.offset_body + base_offset,
                                 part.offset_end + base_offset,
                                 part.encoding as u8,

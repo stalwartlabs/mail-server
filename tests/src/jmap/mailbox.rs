@@ -36,7 +36,7 @@ use jmap_client::{
 use jmap_proto::types::{id::Id, state::State};
 use serde::{Deserialize, Serialize};
 use store::ahash::AHashMap;
-use store::StoreRead;
+
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Mailbox tests...");
 
@@ -606,7 +606,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     destroy_all_mailboxes(client).await;
     client.set_default_account_id(Id::from(1u64));
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 async fn create_test_mailboxes(client: &mut Client) -> AHashMap<String, String> {

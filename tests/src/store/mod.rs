@@ -29,7 +29,7 @@ pub mod query;
 use std::{io::Read, sync::Arc};
 
 use ::store::Store;
-use store::StoreWrite;
+
 use utils::config::Config;
 
 pub struct TempDir {

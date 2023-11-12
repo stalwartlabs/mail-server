@@ -36,12 +36,7 @@ use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, proper
 use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::{
-    query::{
-        self,
-        log::Query,
-        sort::{Pagination, StoreSort},
-        ResultSet,
-    },
+    query::{self, log::Query, sort::Pagination, ResultSet},
     roaring::RoaringBitmap,
     write::now,
 };

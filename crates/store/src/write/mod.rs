@@ -21,17 +21,20 @@
  * for more details.
 */
 
-use std::{collections::HashSet, slice::Iter, time::SystemTime};
+use std::{collections::HashSet, hash::Hash, slice::Iter, time::SystemTime};
 
 use nlp::tokenizers::space::SpaceTokenizer;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::{backend::MAX_TOKEN_LENGTH, Deserialize, Serialize};
+use crate::{
+    backend::MAX_TOKEN_LENGTH, BlobClass, BlobHash, Deserialize, Serialize, BLOB_HASH_LEN,
+};
 
 use self::assert::AssertValue;
 
 pub mod assert;
 pub mod batch;
+pub mod blob;
 pub mod key;
 pub mod log;
 
@@ -77,6 +80,11 @@ pub enum Operation {
         class: BitmapClass,
         set: bool,
     },
+    Blob {
+        hash: BlobHash,
+        op: BlobOp,
+        set: bool,
+    },
     Log {
         change_id: u64,
         collection: u8,
@@ -111,6 +119,13 @@ pub enum ValueOp {
     Add(i64),
     #[default]
     Clear,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+pub enum BlobOp {
+    Reserve { until: u64, size: usize },
+    Commit,
+    Link,
 }
 
 impl From<u32> for TagValue {
@@ -452,6 +467,68 @@ impl BitmapClass {
         BitmapClass::Tag {
             field: property.into(),
             value: TagValue::Id(id),
+        }
+    }
+}
+
+impl BlobHash {
+    pub fn new_max() -> Self {
+        BlobHash([u8::MAX; BLOB_HASH_LEN])
+    }
+
+    pub fn try_from_hash_slice(value: &[u8]) -> Result<BlobHash, std::array::TryFromSliceError> {
+        value.try_into().map(BlobHash)
+    }
+}
+
+impl From<&[u8]> for BlobHash {
+    fn from(value: &[u8]) -> Self {
+        BlobHash(blake3::hash(value).into())
+    }
+}
+
+impl From<Vec<u8>> for BlobHash {
+    fn from(value: Vec<u8>) -> Self {
+        value.as_slice().into()
+    }
+}
+
+impl From<&Vec<u8>> for BlobHash {
+    fn from(value: &Vec<u8>) -> Self {
+        value.as_slice().into()
+    }
+}
+
+impl AsRef<BlobHash> for BlobHash {
+    fn as_ref(&self) -> &BlobHash {
+        self
+    }
+}
+
+impl AsRef<[u8]> for BlobHash {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for BlobHash {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut()
+    }
+}
+
+impl AsRef<BlobClass> for BlobClass {
+    fn as_ref(&self) -> &BlobClass {
+        self
+    }
+}
+
+impl BlobClass {
+    pub fn account_id(&self) -> u32 {
+        match self {
+            BlobClass::Reserved { account_id } | BlobClass::Linked { account_id, .. } => {
+                *account_id
+            }
         }
     }
 }

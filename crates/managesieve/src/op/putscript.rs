@@ -22,7 +22,10 @@
 */
 
 use imap_proto::receiver::Request;
-use jmap::sieve::set::SCHEMA;
+use jmap::{
+    sieve::set::{ObjectBlobId, SCHEMA},
+    NamedKey,
+};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{blob::BlobId, collection::Collection, property::Property, value::Value},
@@ -30,7 +33,8 @@ use jmap_proto::{
 use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder},
+    write::{assert::HashedValue, BatchBuilder, BlobOp, F_CLEAR},
+    BlobClass,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -45,17 +49,17 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .ok_or_else(|| StatusResponse::no("Expected script name as a parameter."))?
             .trim()
             .to_string();
-        let mut script = tokens
+        let mut script_bytes = tokens
             .next()
             .ok_or_else(|| StatusResponse::no("Expected script as a parameter."))?
             .unwrap_bytes();
-        let script_len = script.len() as u64;
+        let script_size = script_bytes.len() as i64;
 
         // Check quota
         let access_token = self.state.access_token();
         let account_id = access_token.primary_id();
         if access_token.quota > 0
-            && script.len() as i64 + self.jmap.get_used_quota(account_id).await?
+            && script_bytes.len() as i64 + self.jmap.get_used_quota(account_id).await?
                 > access_token.quota as i64
         {
             return Err(StatusResponse::no("Quota exceeded.").with_code(ResponseCode::Quota));
@@ -74,9 +78,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
 
         // Compile script
-        match self.jmap.sieve_compiler.compile(&script) {
+        match self.jmap.sieve_compiler.compile(&script_bytes) {
             Ok(compiled_script) => {
-                script.extend(bincode::serialize(&compiled_script).unwrap_or_default());
+                script_bytes.extend(bincode::serialize(&compiled_script).unwrap_or_default());
             }
             Err(err) => {
                 return Err(if let ErrorType::ScriptTooLong = &err.error_type() {
@@ -89,14 +93,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
         // Validate name
         if let Some(document_id) = self.validate_name(account_id, &name).await? {
-            // Update blob
-            self.jmap
-                .put_blob(
-                    &BlobId::linked(account_id, Collection::SieveScript, document_id).kind,
-                    &script,
-                )
-                .await?;
-
             // Obtain script values
             let script = self
                 .jmap
@@ -110,6 +106,24 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .ok_or_else(|| {
                     StatusResponse::no("Script not found").with_code(ResponseCode::NonExistent)
                 })?;
+            let prev_blob_id = script.inner.blob_id().ok_or_else(|| {
+                StatusResponse::no("Internal error while obtaining blobId")
+                    .with_code(ResponseCode::TryLater)
+            })?;
+
+            // Write script blob
+            let blob_id = BlobId::new(
+                self.jmap
+                    .put_blob(account_id, &script_bytes, false)
+                    .await?
+                    .hash,
+                BlobClass::Linked {
+                    account_id,
+                    collection: Collection::SieveScript.into(),
+                    document_id,
+                },
+            )
+            .with_section_size(script_size as usize);
 
             // Write record
             let mut batch = BatchBuilder::new();
@@ -117,14 +131,28 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .update_document(document_id)
-                .custom(
-                    ObjectIndexBuilder::new(SCHEMA)
-                        .with_current(script)
-                        .with_changes(
-                            Object::with_capacity(1)
-                                .with_property(Property::Size, Value::UnsignedInt(script_len)),
-                        ),
-                );
+                .blob(prev_blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
+                .blob(blob_id.hash.clone(), BlobOp::Link, 0);
+
+            // Update quota
+            let prev_script_size = prev_blob_id.section.as_ref().unwrap().size as i64;
+            let update_quota = match script_size.cmp(&prev_script_size) {
+                std::cmp::Ordering::Greater => script_size - prev_script_size,
+                std::cmp::Ordering::Less => -prev_script_size + script_size,
+                std::cmp::Ordering::Equal => 0,
+            };
+            if update_quota != 0 {
+                batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+            }
+
+            batch.custom(
+                ObjectIndexBuilder::new(SCHEMA)
+                    .with_current(script)
+                    .with_changes(
+                        Object::with_capacity(1)
+                            .with_property(Property::BlobId, Value::BlobId(blob_id)),
+                    ),
+            );
             self.jmap.write_batch(batch).await?;
         } else {
             // Obtain document id
@@ -133,13 +161,19 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .assign_document_id(account_id, Collection::SieveScript)
                 .await?;
 
-            // Store blob
-            self.jmap
-                .put_blob(
-                    &BlobId::linked(account_id, Collection::SieveScript, document_id).kind,
-                    &script,
-                )
-                .await?;
+            // Write script blob
+            let blob_id = BlobId::new(
+                self.jmap
+                    .put_blob(account_id, &script_bytes, false)
+                    .await?
+                    .hash,
+                BlobClass::Linked {
+                    account_id,
+                    collection: Collection::SieveScript.into(),
+                    document_id,
+                },
+            )
+            .with_section_size(script_size as usize);
 
             // Write record
             let mut changelog = self.jmap.begin_changes(account_id).await?;
@@ -149,12 +183,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .create_document(document_id)
+                .add(NamedKey::Quota::<&[u8]>(account_id), script_size)
+                .blob(blob_id.hash.clone(), BlobOp::Link, 0)
                 .custom(
                     ObjectIndexBuilder::new(SCHEMA).with_changes(
                         Object::with_capacity(3)
                             .with_property(Property::Name, name)
                             .with_property(Property::IsActive, Value::Bool(false))
-                            .with_property(Property::Size, Value::UnsignedInt(script_len)),
+                            .with_property(Property::BlobId, Value::BlobId(blob_id)),
                     ),
                 )
                 .custom(changelog);

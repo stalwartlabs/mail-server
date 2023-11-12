@@ -26,7 +26,6 @@ use jmap::JMAP;
 use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
 use std::{sync::Arc, time::Instant};
-use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,
@@ -174,5 +173,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Remove test data
     client.vacation_response_destroy().await.unwrap();
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }

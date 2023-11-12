@@ -23,7 +23,7 @@
 
 use foundationdb::{api::NetworkAutoStop, Database, FdbError};
 
-use crate::{blob::BlobStore, Error};
+use crate::Error;
 
 pub mod bitmap;
 pub mod id_assign;
@@ -36,7 +36,6 @@ pub mod write;
 pub struct FdbStore {
     db: Database,
     guard: NetworkAutoStop,
-    blob: BlobStore,
 }
 
 impl From<FdbError> for Error {

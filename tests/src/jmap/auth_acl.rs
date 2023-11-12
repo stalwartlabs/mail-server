@@ -39,7 +39,7 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 use std::fmt::Debug;
-use store::{ahash::AHashMap, StoreRead};
+use store::ahash::AHashMap;
 
 use crate::{
     directory::sql::{
@@ -777,7 +777,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         admin_client.set_default_account_id(&id.to_string());
         destroy_all_mailboxes(admin_client).await;
     }
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {
@@ -786,7 +789,7 @@ pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {
         Err(jmap_client::Error::Method(MethodError {
             p_type: MethodErrorType::Forbidden
         })) | Err(jmap_client::Error::Set(SetError {
-            type_: SetErrorType::Forbidden,
+            type_: SetErrorType::BlobNotFound | SetErrorType::Forbidden,
             ..
         }))
     ) {

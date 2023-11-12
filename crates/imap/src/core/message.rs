@@ -32,7 +32,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     roaring::RoaringBitmap,
     write::{assert::HashedValue, now, BatchBuilder, ToBitmaps, F_VALUE},
-    Deserialize, Serialize, StoreRead, StoreWrite,
+    Deserialize, Serialize,
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 

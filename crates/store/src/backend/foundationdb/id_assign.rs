@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use crate::{write::key::DeserializeBigEndian, Deserialize, Key, Serialize};
+use crate::{write::key::DeserializeBigEndian, Deserialize, Key, Serialize, U32_LEN};
 use ahash::AHashSet;
 use foundationdb::{options::StreamingMode, FdbError, KeySelector, RangeOption};
 use futures::StreamExt;
@@ -30,7 +30,7 @@ use std::time::Instant;
 
 use crate::{
     write::{key::KeySerializer, now},
-    BitmapKey, IndexKey, StoreId, SUBSPACE_VALUES,
+    BitmapKey, IndexKey, SUBSPACE_VALUES,
 };
 
 use super::{
@@ -39,9 +39,8 @@ use super::{
     FdbStore,
 };
 
-#[async_trait::async_trait]
-impl StoreId for FdbStore {
-    async fn assign_document_id(
+impl FdbStore {
+    pub(crate) async fn assign_document_id(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
@@ -91,8 +90,7 @@ impl StoreId for FdbStore {
                 while let Some(values) = values.next().await {
                     for value in values? {
                         let key = value.key();
-                        let document_id =
-                            key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?;
+                        let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
                         if u64::deserialize(value.value())? <= expired_timestamp {
                             // Found an expired id, reuse it
                             expired_ids.push(document_id);
@@ -135,7 +133,7 @@ impl StoreId for FdbStore {
                         let key = value.key();
                         if let Some(next_id) = next_available_index(
                             value.value(),
-                            key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
+                            key.deserialize_be_u32(key.len() - U32_LEN)?,
                             &reserved_ids,
                         ) {
                             document_id = next_id;
@@ -185,9 +183,9 @@ impl StoreId for FdbStore {
         }
     }
 
-    async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
+    pub(crate) async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
         let start = Instant::now();
-        let counter = KeySerializer::new(std::mem::size_of::<u32>() + 2)
+        let counter = KeySerializer::new(U32_LEN + 2)
             .write(SUBSPACE_VALUES)
             .write(account_id)
             .finalize();

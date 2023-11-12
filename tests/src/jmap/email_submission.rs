@@ -37,7 +37,7 @@ use std::{
     time::{Duration, Instant},
 };
 use store::parking_lot::Mutex;
-use store::StoreRead;
+
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
@@ -471,7 +471,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         client.email_submission_destroy(&id).await.unwrap();
     }
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockSMTPSettings>>) {
@@ -578,7 +581,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
             }
 
             if settings.lock().do_stop {
-                println!("Mock SMTP server stopped.");
+                //println!("Mock SMTP server stopped.");
                 break;
             }
         }

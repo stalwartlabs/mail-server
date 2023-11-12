@@ -27,10 +27,14 @@ use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
-    types::{blob::BlobId, collection::Collection, property::Property, value::Value},
+    types::{collection::Collection, property::Property, value::Value},
 };
 use sieve::Sieve;
-use store::{query::Filter, BlobKind, Deserialize, Serialize};
+use store::{
+    query::Filter,
+    write::{assert::HashedValue, BatchBuilder, BlobOp, F_CLEAR},
+    Deserialize, Serialize,
+};
 
 use crate::{sieve::SeenIds, Bincode, JMAP};
 
@@ -95,18 +99,7 @@ impl JMAP {
                     Property::Id => {
                         result.append(Property::Id, Value::Id(id));
                     }
-                    Property::BlobId => {
-                        if let Some(Value::UnsignedInt(blob_size)) =
-                            push.properties.remove(&Property::Size)
-                        {
-                            result.append(
-                                Property::BlobId,
-                                BlobId::linked(account_id, Collection::SieveScript, document_id)
-                                    .with_section_size(blob_size as usize),
-                            );
-                        }
-                    }
-                    Property::Name | Property::IsActive => {
+                    Property::Name | Property::BlobId | Property::IsActive => {
                         result.append(property.clone(), push.remove(property));
                     }
                     property => {
@@ -192,7 +185,7 @@ impl JMAP {
     ) -> Result<(Sieve, Object<Value>), MethodError> {
         // Obtain script object
         let script_object = self
-            .get_property::<Object<Value>>(
+            .get_property::<HashedValue<Object<Value>>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -212,32 +205,27 @@ impl JMAP {
             })?;
 
         // Obtain the sieve script length
-        let script_offset = script_object
+        let (script_offset, blob_id) = script_object
+            .inner
             .properties
-            .get(&Property::Size)
-            .and_then(|value| value.as_uint())
+            .get(&Property::BlobId)
+            .and_then(|v| v.as_blob_id())
+            .and_then(|v| (v.section.as_ref()?.size, v).into())
             .ok_or_else(|| {
                 tracing::warn!(
                     context = "sieve_script_compile",
                     event = "error",
                     account_id = account_id,
                     document_id = document_id,
-                    "Failed to obtain sieve script offset"
+                    "Failed to obtain sieve script blobId"
                 );
 
                 MethodError::ServerPartialFail
-            })? as usize;
+            })?;
 
         // Obtain the sieve script blob
         let script_bytes = self
-            .get_blob(
-                &BlobKind::Linked {
-                    account_id,
-                    collection: Collection::SieveScript.into(),
-                    document_id,
-                },
-                0..u32::MAX,
-            )
+            .get_blob(&blob_id.hash, 0..u32::MAX)
             .await?
             .ok_or(MethodError::ServerPartialFail)?;
 
@@ -246,7 +234,7 @@ impl JMAP {
             .get(script_offset..)
             .and_then(|bytes| Bincode::<Sieve>::deserialize(bytes).ok())
         {
-            Ok((sieve.inner, script_object))
+            Ok((sieve.inner, script_object.inner))
         } else {
             // Deserialization failed, probably because the script compiler version changed
             match self
@@ -270,18 +258,29 @@ impl JMAP {
                         Vec::with_capacity(script_offset + compiled_bytes.len());
                     updated_sieve_bytes.extend_from_slice(&script_bytes[0..script_offset]);
                     updated_sieve_bytes.extend_from_slice(&compiled_bytes);
-                    let _ = self
-                        .put_blob(
-                            &BlobKind::Linked {
-                                account_id,
-                                collection: Collection::SieveScript.into(),
-                                document_id,
-                            },
-                            &updated_sieve_bytes,
-                        )
-                        .await;
 
-                    Ok((sieve.inner, script_object))
+                    // Store updated blob
+                    let mut new_blob_id = blob_id.clone();
+                    new_blob_id.hash = self
+                        .put_blob(account_id, &updated_sieve_bytes, false)
+                        .await?
+                        .hash;
+                    let mut new_script_object = script_object.inner.clone();
+                    new_script_object.set(Property::BlobId, new_blob_id.clone());
+
+                    // Update script object
+                    let mut batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(account_id)
+                        .with_collection(Collection::SieveScript)
+                        .update_document(document_id)
+                        .assert_value(Property::Value, &script_object)
+                        .set(Property::Value, (&new_script_object).serialize())
+                        .blob(blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
+                        .blob(new_blob_id.hash, BlobOp::Link, 0);
+                    self.write_batch(batch).await?;
+
+                    Ok((sieve.inner, new_script_object))
                 }
                 Err(error) => {
                     tracing::warn!(

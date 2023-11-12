@@ -38,7 +38,6 @@ pub mod thread;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ::managesieve::core::ManageSieveSessionManager;
-use ::store::StoreWrite;
 use directory::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use imap_proto::ResponseType;

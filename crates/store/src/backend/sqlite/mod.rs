@@ -27,11 +27,7 @@ use lru_cache::LruCache;
 use parking_lot::Mutex;
 use r2d2::Pool;
 
-use crate::{
-    blob::BlobStore,
-    query::{filter::StoreQuery, log::StoreLog, sort::StoreSort},
-    Store,
-};
+use crate::U64_LEN;
 
 use self::{
     id_assign::{IdAssigner, IdCacheKey},
@@ -46,7 +42,7 @@ pub mod read;
 pub mod write;
 
 const WORD_SIZE_BITS: u32 = (WORD_SIZE * 8) as u32;
-const WORD_SIZE: usize = std::mem::size_of::<u64>();
+const WORD_SIZE: usize = U64_LEN;
 const WORDS_PER_BLOCK: u32 = 16;
 pub const BITS_PER_BLOCK: u32 = WORD_SIZE_BITS * WORDS_PER_BLOCK;
 const BITS_MASK: u32 = BITS_PER_BLOCK - 1;
@@ -73,10 +69,4 @@ pub struct SqliteStore {
     pub(crate) conn_pool: Pool<SqliteConnectionManager>,
     pub(crate) id_assigner: Arc<Mutex<LruCache<IdCacheKey, IdAssigner>>>,
     pub(crate) worker_pool: rayon::ThreadPool,
-    pub(crate) blob: BlobStore,
 }
-
-impl Store for SqliteStore {}
-impl StoreQuery for SqliteStore {}
-impl StoreSort for SqliteStore {}
-impl StoreLog for SqliteStore {}

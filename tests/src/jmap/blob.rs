@@ -27,7 +27,6 @@ use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
-use store::StoreRead;
 
 use crate::{
     directory::sql::create_test_user_with_email,
@@ -40,11 +39,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
 
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Blob/set simple test
     let response = jmap_json_request(
@@ -194,11 +189,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         );
     }
 
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Blob/upload Complex Example
     let response = jmap_json_request(
@@ -292,11 +283,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Blob/get Example with Range and Encoding Errors
     let response = jmap_json_request(
@@ -435,11 +422,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Blob/lookup
     admin_client.set_default_account_id(account_id.to_string());
@@ -499,12 +482,15 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
                 .map(|arr| arr.len())
                 .unwrap_or_default(),
             1,
-            "Pointer {pointer:?} Response: {response:?}",
+            "Pointer {pointer:?} Response: {response:#?}",
         );
     }
 
     // Remove test data
     admin_client.set_default_account_id(account_id.to_string());
     destroy_all_mailboxes(admin_client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }

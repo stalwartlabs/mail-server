@@ -26,7 +26,6 @@ use std::sync::Arc;
 use jmap::JMAP;
 use jmap_client::{client::Client, mailbox::Role};
 use jmap_proto::types::id::Id;
-use store::StoreRead;
 
 use crate::jmap::mailbox::destroy_all_mailboxes;
 
@@ -117,5 +116,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     destroy_all_mailboxes(client).await;
     client.set_default_account_id(Id::new(2).to_string());
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }

@@ -31,7 +31,7 @@ use crate::{
 
 use super::CF_LOGS;
 
-const CHANGE_ID_POS: usize = std::mem::size_of::<u32>() + std::mem::size_of::<u8>();
+const CHANGE_ID_POS: usize = U32_LEN + std::mem::size_of::<u8>();
 
 impl Store {
     pub fn get_last_change_id(

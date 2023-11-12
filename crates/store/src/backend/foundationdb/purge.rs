@@ -28,17 +28,16 @@ use foundationdb::{
 use futures::StreamExt;
 
 use crate::{
-    write::key::KeySerializer, StorePurge, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_QUOTAS, SUBSPACE_VALUES,
+    write::key::KeySerializer, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    U32_LEN,
 };
 
 use super::{bitmap::DenseBitmap, FdbStore};
 
 const MAX_COMMIT_ATTEMPTS: u8 = 25;
 
-#[async_trait::async_trait]
-impl StorePurge for FdbStore {
-    async fn purge_bitmaps(&self) -> crate::Result<()> {
+impl FdbStore {
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
         // Obtain all empty bitmaps
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(
@@ -92,19 +91,19 @@ impl StorePurge for FdbStore {
         Ok(())
     }
 
-    async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    pub(crate) async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
         for subspace in [
             SUBSPACE_BITMAPS,
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
             SUBSPACE_INDEXES,
         ] {
-            let from_key = KeySerializer::new(std::mem::size_of::<u32>() + 2)
+            let from_key = KeySerializer::new(U32_LEN + 2)
                 .write(subspace)
                 .write(account_id)
                 .write(0u8)
                 .finalize();
-            let to_key = KeySerializer::new(std::mem::size_of::<u32>() + 2)
+            let to_key = KeySerializer::new(U32_LEN + 2)
                 .write(subspace)
                 .write(account_id)
                 .write(u8::MAX)
@@ -115,18 +114,6 @@ impl StorePurge for FdbStore {
             if let Err(err) = trx.commit().await {
                 return Err(FdbError::from(err).into());
             }
-        }
-
-        // Delete quota key
-        let trx = self.db.create_trx()?;
-        trx.clear(
-            &KeySerializer::new(5)
-                .write(SUBSPACE_QUOTAS)
-                .write(account_id)
-                .finalize(),
-        );
-        if let Err(err) = trx.commit().await {
-            return Err(FdbError::from(err).into());
         }
 
         Ok(())

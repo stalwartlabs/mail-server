@@ -40,7 +40,7 @@ use jmap_proto::{
 use mail_builder::encoders::base64::base64_encode;
 use sha1::{Digest, Sha1};
 use sha2::{Sha256, Sha512};
-use store::BlobKind;
+use store::BlobClass;
 use utils::map::vec_map::VecMap;
 
 use crate::{auth::AccessToken, JMAP};
@@ -208,69 +208,64 @@ impl JMAP {
                 MaybeUnparsable::Value(id) => {
                     let mut matched_ids = VecMap::new();
 
-                    match &id.kind {
-                        BlobKind::Linked {
+                    match &id.class {
+                        BlobClass::Linked {
                             account_id,
                             collection,
                             document_id,
                         } if *account_id == req_account_id => {
-                            if *account_id != req_account_id {
-                                response.not_found.push(MaybeUnparsable::Value(id));
-                                continue;
-                            }
-
-                            match DataType::try_from(Collection::from(*collection)) {
-                                Ok(data_type) if type_names.contains(&data_type) => {
-                                    matched_ids.append(data_type, vec![Id::from(*document_id)]);
+                            let collection = Collection::from(*collection);
+                            if collection == Collection::Email {
+                                if include_email || include_thread {
+                                    if let Some(thread_id) = self
+                                        .get_property::<u32>(
+                                            req_account_id,
+                                            Collection::Email,
+                                            *document_id,
+                                            Property::ThreadId,
+                                        )
+                                        .await?
+                                    {
+                                        if include_email {
+                                            matched_ids.append(
+                                                DataType::Email,
+                                                vec![Id::from_parts(thread_id, *document_id)],
+                                            );
+                                        }
+                                        if include_thread {
+                                            matched_ids.append(
+                                                DataType::Thread,
+                                                vec![Id::from(thread_id)],
+                                            );
+                                        }
+                                    }
                                 }
-                                _ => (),
-                            }
-                        }
-                        BlobKind::LinkedMaildir {
-                            account_id,
-                            document_id,
-                        } if *account_id == req_account_id => {
-                            if include_email || include_thread {
-                                if let Some(thread_id) = self
-                                    .get_property::<u32>(
-                                        req_account_id,
-                                        Collection::Email,
-                                        *document_id,
-                                        Property::ThreadId,
-                                    )
-                                    .await?
-                                {
-                                    if include_email {
+                                if include_mailbox {
+                                    if let Some(mailboxes) = self
+                                        .get_property::<Vec<u32>>(
+                                            req_account_id,
+                                            Collection::Email,
+                                            *document_id,
+                                            Property::MailboxIds,
+                                        )
+                                        .await?
+                                    {
                                         matched_ids.append(
-                                            DataType::Email,
-                                            vec![Id::from_parts(thread_id, *document_id)],
+                                            DataType::Mailbox,
+                                            mailboxes.into_iter().map(Id::from).collect::<Vec<_>>(),
                                         );
                                     }
-                                    if include_thread {
-                                        matched_ids
-                                            .append(DataType::Thread, vec![Id::from(thread_id)]);
+                                }
+                            } else {
+                                match DataType::try_from(collection) {
+                                    Ok(data_type) if type_names.contains(&data_type) => {
+                                        matched_ids.append(data_type, vec![Id::from(*document_id)]);
                                     }
-                                }
-                            }
-                            if include_mailbox {
-                                if let Some(mailboxes) = self
-                                    .get_property::<Vec<u32>>(
-                                        req_account_id,
-                                        Collection::Email,
-                                        *document_id,
-                                        Property::MailboxIds,
-                                    )
-                                    .await?
-                                {
-                                    matched_ids.append(
-                                        DataType::Mailbox,
-                                        mailboxes.into_iter().map(Id::from).collect::<Vec<_>>(),
-                                    );
+                                    _ => (),
                                 }
                             }
                         }
-                        BlobKind::Temporary { account_id, .. } if *account_id == req_account_id => {
-                        }
+                        BlobClass::Reserved { account_id } if *account_id == req_account_id => (),
                         _ => {
                             response.not_found.push(MaybeUnparsable::Value(id));
                             continue;

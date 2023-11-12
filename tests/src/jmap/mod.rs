@@ -30,7 +30,6 @@ use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
-use store::StoreWrite;
 use tokio::sync::{mpsc, watch};
 use utils::{config::ServerProtocol, UnwrapFailure};
 
@@ -253,9 +252,9 @@ pub async fn jmap_tests() {
     sieve_script::test(params.server.clone(), &mut params.client).await;
     vacation_response::test(params.server.clone(), &mut params.client).await;
     email_submission::test(params.server.clone(), &mut params.client).await;
-    websocket::test(params.server.clone(), &mut params.client).await;*/
+    websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
-    crypto::test(params.server.clone(), &mut params.client).await;
+    crypto::test(params.server.clone(), &mut params.client).await;*/
     blob::test(params.server.clone(), &mut params.client).await;
 
     if delete {

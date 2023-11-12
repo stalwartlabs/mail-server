@@ -144,6 +144,10 @@ impl ObjectIndexBuilder {
         self.changes.as_ref()
     }
 
+    pub fn changes_mut(&mut self) -> Option<&mut Object<Value>> {
+        self.changes.as_mut()
+    }
+
     pub fn current(&self) -> Option<&HashedValue<Object<Value>>> {
         self.current.as_ref()
     }

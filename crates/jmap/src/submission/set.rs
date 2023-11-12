@@ -53,10 +53,7 @@ use smtp::{
     queue,
 };
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
-use store::{
-    write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder},
-    BlobKind,
-};
+use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder};
 use tokio::sync::oneshot;
 use utils::{listener::ServerInstance, map::vec_map::VecMap};
 
@@ -504,59 +501,62 @@ impl JMAP {
             }
         };
 
+        // Obtain message metadata
+        let metadata = if let Some(metadata) = self
+            .get_property::<Bincode<MessageMetadata>>(
+                account_id,
+                Collection::Email,
+                email_id,
+                Property::BodyStructure,
+            )
+            .await?
+        {
+            metadata.inner
+        } else {
+            return Ok(Err(SetError::invalid_properties()
+                .with_property(Property::EmailId)
+                .with_description("Email not found.")));
+        };
+
         // Add recipients to envelope if missing
         if rcpt_to.is_empty() {
-            if let Some(metadata) = self
-                .get_property::<Bincode<MessageMetadata>>(
-                    account_id,
-                    Collection::Email,
-                    email_id,
-                    Property::BodyStructure,
-                )
-                .await?
-            {
-                let mut envelope_values = Vec::new();
-                for header in &metadata.inner.contents.parts[0].headers {
-                    if matches!(
-                        header.name,
-                        HeaderName::To | HeaderName::Cc | HeaderName::Bcc
-                    ) {
-                        if let HeaderValue::Address(addr) = &header.value {
-                            for address in addr.iter() {
-                                if let Some(address) = address.address().and_then(sanitize_email) {
-                                    if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
-                                        envelope_values.push(Value::Object(
-                                            Object::with_capacity(1)
-                                                .with_property(Property::Email, address.clone()),
-                                        ));
-                                        rcpt_to.push(RcptTo {
-                                            address,
-                                            ..Default::default()
-                                        });
-                                    }
+            let mut envelope_values = Vec::new();
+            for header in &metadata.contents.parts[0].headers {
+                if matches!(
+                    header.name,
+                    HeaderName::To | HeaderName::Cc | HeaderName::Bcc
+                ) {
+                    if let HeaderValue::Address(addr) = &header.value {
+                        for address in addr.iter() {
+                            if let Some(address) = address.address().and_then(sanitize_email) {
+                                if !rcpt_to.iter().any(|rcpt| rcpt.address == address) {
+                                    envelope_values.push(Value::Object(
+                                        Object::with_capacity(1)
+                                            .with_property(Property::Email, address.clone()),
+                                    ));
+                                    rcpt_to.push(RcptTo {
+                                        address,
+                                        ..Default::default()
+                                    });
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                if !rcpt_to.is_empty() {
-                    submission
-                        .properties
-                        .get_mut_or_insert_with(Property::Envelope, || {
-                            Value::Object(Object::with_capacity(1))
-                        })
-                        .as_obj_mut()
-                        .unwrap()
-                        .set(Property::RcptTo, Value::List(envelope_values));
-                } else {
-                    return Ok(Err(SetError::new(SetErrorType::NoRecipients)
-                        .with_description("No recipients found in email.")));
-                }
+            if !rcpt_to.is_empty() {
+                submission
+                    .properties
+                    .get_mut_or_insert_with(Property::Envelope, || {
+                        Value::Object(Object::with_capacity(1))
+                    })
+                    .as_obj_mut()
+                    .unwrap()
+                    .set(Property::RcptTo, Value::List(envelope_values));
             } else {
-                return Ok(Err(SetError::invalid_properties()
-                    .with_property(Property::EmailId)
-                    .with_description("Email not found.")));
+                return Ok(Err(SetError::new(SetErrorType::NoRecipients)
+                    .with_description("No recipients found in email.")));
             }
         }
 
@@ -573,15 +573,7 @@ impl JMAP {
         );
 
         // Obtain raw message
-        let message = if let Some(message) = self
-            .get_blob(
-                &BlobKind::LinkedMaildir {
-                    account_id,
-                    document_id: email_id,
-                },
-                0..u32::MAX,
-            )
-            .await?
+        let message = if let Some(message) = self.get_blob(&metadata.blob_hash, 0..u32::MAX).await?
         {
             if message.len() > self.config.mail_max_size {
                 return Ok(Err(SetError::new(SetErrorType::InvalidEmail)

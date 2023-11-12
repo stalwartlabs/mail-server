@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use crate::Deserialize;
+use crate::{Deserialize, U32_LEN, U64_LEN};
 
 #[derive(Debug, Clone)]
 pub struct HashedValue<T: Deserialize> {
@@ -80,12 +80,8 @@ impl<T: Deserialize> ToAssertValue for &HashedValue<T> {
 impl AssertValue {
     pub fn matches(&self, bytes: &[u8]) -> bool {
         match self {
-            AssertValue::U32(v) => {
-                bytes.len() == std::mem::size_of::<u32>() && u32::deserialize(bytes).unwrap() == *v
-            }
-            AssertValue::U64(v) => {
-                bytes.len() == std::mem::size_of::<u64>() && u64::deserialize(bytes).unwrap() == *v
-            }
+            AssertValue::U32(v) => bytes.len() == U32_LEN && u32::deserialize(bytes).unwrap() == *v,
+            AssertValue::U64(v) => bytes.len() == U64_LEN && u64::deserialize(bytes).unwrap() == *v,
             AssertValue::Hash(v) => xxhash_rust::xxh3::xxh3_64(bytes) == *v,
             AssertValue::None => false,
         }

@@ -23,7 +23,7 @@
 
 use roaring::RoaringBitmap;
 
-use crate::{BitmapKey, StoreId, StoreRead};
+use crate::{write::key::DeserializeBigEndian, BitmapKey, IterateParams, LogKey, U64_LEN};
 
 use super::SqliteStore;
 
@@ -93,9 +93,8 @@ impl IdAssigner {
     }
 }
 
-#[async_trait::async_trait]
-impl StoreId for SqliteStore {
-    async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
+impl SqliteStore {
+    pub(crate) async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
         let collection = u8::MAX;
         let key = IdCacheKey::new(account_id, collection);
         for _ in 0..2 {
@@ -108,7 +107,7 @@ impl StoreId for SqliteStore {
         unreachable!()
     }
 
-    async fn assign_document_id(
+    pub(crate) async fn assign_document_id(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
@@ -123,10 +122,8 @@ impl StoreId for SqliteStore {
 
         unreachable!()
     }
-}
 
-impl SqliteStore {
-    async fn build_id_assigner(&self, key: IdCacheKey) -> crate::Result<()> {
+    pub(crate) async fn build_id_assigner(&self, key: IdCacheKey) -> crate::Result<()> {
         // Obtain used ids
         let used_ids = self
             .get_bitmap(BitmapKey::document_ids(key.account_id, key.collection))
@@ -145,6 +142,41 @@ impl SqliteStore {
         }
 
         Ok(())
+    }
+
+    async fn get_last_change_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+    ) -> crate::Result<Option<u64>> {
+        let collection = collection.into();
+
+        let from_key = LogKey {
+            account_id,
+            collection,
+            change_id: u64::MAX,
+        };
+        let to_key = LogKey {
+            account_id,
+            collection,
+            change_id: 0,
+        };
+
+        let mut last_change_id = None;
+
+        self.iterate(
+            IterateParams::new(from_key, to_key)
+                .descending()
+                .no_values()
+                .only_first(),
+            |key, _| {
+                last_change_id = key.deserialize_be_u64(key.len() - U64_LEN)?.into();
+                Ok(false)
+            },
+        )
+        .await?;
+
+        Ok(last_change_id)
     }
 }
 

@@ -32,6 +32,7 @@ use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     response::references::EvalObjectReferences,
     types::{
+        blob::BlobId,
         collection::Collection,
         id::Id,
         property::Property,
@@ -41,12 +42,12 @@ use jmap_proto::{
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use store::{
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE},
-    BlobKind,
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, F_CLEAR, F_VALUE},
+    BlobClass,
 };
 
 use crate::{
-    sieve::set::{ScriptSize, SCHEMA},
+    sieve::set::{ObjectBlobId, SCHEMA},
     NamedKey, JMAP,
 };
 
@@ -226,62 +227,76 @@ impl JMAP {
                 })
                 .with_changes(changes);
 
-            // Create sieve script only if there are changes
-            let (update_quota, script_blob) = if build_script {
-                let script_blob = self.build_script(&mut obj)?;
-                let script_size = obj.changes().unwrap().script_size();
-
-                (
-                    if let Some(current) = obj.current() {
-                        let current_script_size = current.inner.script_size();
-                        match script_size.cmp(&current_script_size) {
-                            std::cmp::Ordering::Greater => script_size - current_script_size,
-                            std::cmp::Ordering::Less => -current_script_size + script_size,
-                            std::cmp::Ordering::Equal => 0,
-                        }
-                    } else {
-                        script_size
-                    },
-                    Some(script_blob),
-                )
-            } else {
-                (0, None)
-            };
-
-            // Write changes
+            // Update id
             let document_id = if let Some(document_id) = document_id {
                 batch
                     .update_document(document_id)
-                    .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-                    .custom(obj);
+                    .value(Property::EmailIds, (), F_VALUE | F_CLEAR);
                 change_log.log_insert(Collection::SieveScript, document_id);
                 document_id
             } else {
                 let document_id = self
                     .assign_document_id(account_id, Collection::SieveScript)
                     .await?;
-                batch.create_document(document_id).custom(obj);
+                batch.create_document(document_id);
                 change_log.log_update(Collection::SieveScript, document_id);
                 document_id
             };
-            if !batch.is_empty() {
-                if update_quota != 0 {
-                    batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
-                }
-                self.write_batch(batch).await?;
-            }
 
-            // Write blob
-            if let Some(script_blob) = script_blob {
-                self.put_blob(
-                    &BlobKind::Linked {
-                        account_id,
-                        collection: Collection::SieveScript.into(),
-                        document_id,
-                    },
-                    &script_blob,
-                )
-                .await?;
+            // Create sieve script only if there are changes
+            if build_script {
+                // Upload new blob
+                let hash = self
+                    .put_blob(account_id, &self.build_script(&mut obj)?, false)
+                    .await?
+                    .hash;
+                let blob_id = obj.changes_mut().unwrap().blob_id_mut().unwrap();
+                blob_id.hash = hash;
+                blob_id.class = BlobClass::Linked {
+                    account_id,
+                    collection: Collection::SieveScript.into(),
+                    document_id,
+                };
+
+                // Link blob
+                batch.blob(blob_id.hash.clone(), BlobOp::Link, 0);
+
+                let script_size = blob_id.section.as_ref().unwrap().size as i64;
+
+                if let Some(current) = obj.current() {
+                    let current_blob_id = current.inner.blob_id().ok_or_else(|| {
+                        tracing::warn!(
+                            event = "error",
+                            context = "vacation_response_set",
+                            account_id = account_id,
+                            document_id = document_id,
+                            "Sieve object does not contain a blobId."
+                        );
+                        MethodError::ServerPartialFail
+                    })?;
+
+                    // Unlink previous blob
+                    batch.blob(current_blob_id.hash.clone(), BlobOp::Link, F_CLEAR);
+
+                    // Update quota
+                    let current_script_size = current_blob_id.section.as_ref().unwrap().size as i64;
+                    let quota = match script_size.cmp(&current_script_size) {
+                        std::cmp::Ordering::Greater => script_size - current_script_size,
+                        std::cmp::Ordering::Less => -current_script_size + script_size,
+                        std::cmp::Ordering::Equal => 0,
+                    };
+                    if quota != 0 {
+                        batch.add(NamedKey::Quota::<&[u8]>(account_id), quota);
+                    }
+                } else {
+                    batch.add(NamedKey::Quota::<&[u8]>(account_id), script_size);
+                }
+            };
+
+            // Write changes
+            batch.custom(obj);
+            if !batch.is_empty() {
+                self.write_batch(batch).await?;
             }
 
             // Deactivate other sieve scripts
@@ -414,7 +429,10 @@ impl JMAP {
         match self.sieve_compiler.compile(&script) {
             Ok(compiled_script) => {
                 // Update blob length
-                obj.set(Property::Size, Value::UnsignedInt(script.len() as u64));
+                obj.set(
+                    Property::BlobId,
+                    BlobId::default().with_section_size(script.len()).into(),
+                );
 
                 // Serialize script
                 script.extend(bincode::serialize(&compiled_script).unwrap_or_default());

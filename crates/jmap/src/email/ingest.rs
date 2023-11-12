@@ -35,12 +35,12 @@ use mail_parser::{
 };
 use store::{
     ahash::AHashSet,
-    query::{filter::StoreQuery, Filter},
+    query::Filter,
     write::{
         log::ChangeLogBuilder, now, BatchBuilder, BitmapClass, TagValue, ValueClass, F_BITMAP,
         F_CLEAR, F_VALUE,
     },
-    BitmapKey, StoreId, StoreRead, StoreWrite, ValueKey,
+    BitmapKey, BlobClass, ValueKey,
 };
 use utils::map::vec_map::VecMap;
 
@@ -250,9 +250,8 @@ impl JMAP {
             })?;
 
         // Store blob
-        let blob_id = BlobId::maildir(params.account_id, document_id);
-        self.store
-            .put_blob(&blob_id.kind, raw_message.as_ref())
+        let blob_id = self
+            .put_blob(params.account_id, raw_message.as_ref(), false)
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -303,6 +302,7 @@ impl JMAP {
             .create_document(document_id)
             .index_message(
                 message,
+                blob_id.hash.clone(),
                 params.keywords,
                 params.mailbox_ids,
                 params.received_at.unwrap_or_else(now),
@@ -330,7 +330,15 @@ impl JMAP {
         Ok(IngestedEmail {
             id,
             change_id,
-            blob_id,
+            blob_id: BlobId {
+                hash: blob_id.hash,
+                class: BlobClass::Linked {
+                    account_id: params.account_id,
+                    collection: Collection::Email.into(),
+                    document_id,
+                },
+                section: blob_id.section,
+            },
             size: raw_message_len as usize,
         })
     }

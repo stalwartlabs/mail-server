@@ -192,7 +192,7 @@ impl Store {
             if !key.starts_with(match_prefix) {
                 break;
             }
-            let doc_id_pos = key.len() - std::mem::size_of::<u32>();
+            let doc_id_pos = key.len() - U32_LEN;
             let value = key.get(FIELD_PREFIX_LEN..doc_id_pos).ok_or_else(|| {
                 Error::InternalError("Invalid key found in 'indexes' column family.".to_string())
             })?;

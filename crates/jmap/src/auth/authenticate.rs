@@ -34,7 +34,7 @@ use jmap_proto::{
 };
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use store::{write::BatchBuilder, Serialize, StoreRead, StoreWrite};
+use store::{write::BatchBuilder, Serialize};
 use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
 use crate::{NamedKey, JMAP};

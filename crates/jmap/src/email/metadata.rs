@@ -32,10 +32,12 @@ use mail_parser::{
     MessagePartId, MimeHeaders, PartType,
 };
 use serde::{Deserialize, Serialize};
+use store::BlobHash;
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageMetadata<'x> {
     pub contents: MessageMetadataContents<'x>,
+    pub blob_hash: BlobHash,
     pub size: usize,
     pub received_at: u64,
     pub preview: String,

@@ -23,7 +23,7 @@
 
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{write::key::DeserializeBigEndian, Error, LogKey, StoreRead};
+use crate::{write::key::DeserializeBigEndian, Error, IterateParams, LogKey, Store, U64_LEN};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
@@ -58,9 +58,8 @@ impl Default for Changes {
     }
 }
 
-#[async_trait::async_trait]
-pub trait StoreLog: StoreRead {
-    async fn changes(
+impl Store {
+    pub async fn changes(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
@@ -88,22 +87,25 @@ pub trait StoreLog: StoreRead {
 
         let mut changelog = Changes::default();
 
-        self.iterate(from_key, to_key, false, true, |key, value| {
-            let change_id = key.deserialize_be_u64(key.len() - std::mem::size_of::<u64>())?;
-            if is_inclusive || change_id != from_change_id {
-                if changelog.changes.is_empty() {
-                    changelog.from_change_id = change_id;
+        self.iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let change_id = key.deserialize_be_u64(key.len() - U64_LEN)?;
+                if is_inclusive || change_id != from_change_id {
+                    if changelog.changes.is_empty() {
+                        changelog.from_change_id = change_id;
+                    }
+                    changelog.to_change_id = change_id;
+                    changelog.deserialize(value).ok_or_else(|| {
+                        Error::InternalError(format!(
+                            "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
+                            account_id, collection, query
+                        ))
+                    })?;
                 }
-                changelog.to_change_id = change_id;
-                changelog.deserialize(value).ok_or_else(|| {
-                    Error::InternalError(format!(
-                        "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
-                        account_id, collection, query
-                    ))
-                })?;
-            }
-            Ok(true)
-        })
+                Ok(true)
+            },
+        )
         .await?;
 
         if changelog.changes.is_empty() {
@@ -116,6 +118,41 @@ pub trait StoreLog: StoreRead {
         }
 
         Ok(changelog)
+    }
+
+    pub async fn get_last_change_id(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8> + Sync + Send,
+    ) -> crate::Result<Option<u64>> {
+        let collection = collection.into();
+
+        let from_key = LogKey {
+            account_id,
+            collection,
+            change_id: u64::MAX,
+        };
+        let to_key = LogKey {
+            account_id,
+            collection,
+            change_id: 0,
+        };
+
+        let mut last_change_id = None;
+
+        self.iterate(
+            IterateParams::new(from_key, to_key)
+                .descending()
+                .no_values()
+                .only_first(),
+            |key, _| {
+                last_change_id = key.deserialize_be_u64(key.len() - U64_LEN)?.into();
+                Ok(false)
+            },
+        )
+        .await?;
+
+        Ok(last_change_id)
     }
 }
 

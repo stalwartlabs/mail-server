@@ -26,9 +26,7 @@ use std::ops::BitOrAssign;
 use nlp::language::{stemmer::Stemmer, Language};
 use roaring::RoaringBitmap;
 
-use crate::{
-    fts::builder::MAX_TOKEN_LENGTH, BitmapKey, StoreRead, ValueKey, HASH_EXACT, HASH_STEMMED,
-};
+use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ValueKey, HASH_EXACT, HASH_STEMMED};
 
 use super::term_index::TermIndex;
 

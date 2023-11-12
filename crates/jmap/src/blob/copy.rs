@@ -30,6 +30,10 @@ use jmap_proto::{
     types::blob::BlobId,
 };
 
+use store::{
+    write::{now, BatchBuilder, BlobOp},
+    BlobClass,
+};
 use utils::map::vec_map::VecMap;
 
 use crate::{auth::AccessToken, JMAP};
@@ -50,44 +54,29 @@ impl JMAP {
 
         for blob_id in request.blob_ids {
             if self.has_access_blob(&blob_id, access_token).await? {
-                let dest_blob_id = BlobId::temporary(account_id);
-                match self
-                    .store
-                    .copy_blob(
-                        &blob_id.kind,
-                        &dest_blob_id.kind,
-                        blob_id
-                            .section
-                            .as_ref()
-                            .map(|s| (s.offset_start as u32)..((s.offset_start + s.size) as u32)),
-                    )
-                    .await
-                {
-                    Ok(success) => {
-                        if success {
-                            response.copied.append(blob_id, dest_blob_id);
-                        } else {
-                            response.not_copied.append(
-                                blob_id,
-                                SetError::new(SetErrorType::BlobNotFound)
-                                    .with_description("blobId does not exist."),
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            context = "copy_blob",
-                            event = "error",
-                            reason = %err,
-                            "Failed to copy blob");
-                        return Err(MethodError::ServerPartialFail);
-                    }
-                }
+                let mut batch = BatchBuilder::new();
+                batch.with_account_id(account_id).blob(
+                    blob_id.hash.clone(),
+                    BlobOp::Reserve {
+                        until: now() + self.config.upload_tmp_ttl,
+                        size: 0,
+                    },
+                    0,
+                );
+                self.write_batch(batch).await?;
+                let dest_blob_id = BlobId {
+                    hash: blob_id.hash.clone(),
+                    class: BlobClass::Reserved { account_id },
+                    section: blob_id.section.clone(),
+                };
+
+                response.copied.append(blob_id, dest_blob_id);
             } else {
                 response.not_copied.append(
                     blob_id,
-                    SetError::forbidden()
-                        .with_description("You do not have access to this blobId."),
+                    SetError::new(SetErrorType::BlobNotFound).with_description(
+                        "blobId does not exist or not enough permissions to access it.",
+                    ),
                 );
             }
         }

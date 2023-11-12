@@ -41,7 +41,7 @@ pub enum Error {
 pub type TermId = u32;
 pub type Result<T> = std::result::Result<T, Error>;
 
-const LENGTH_SIZE: usize = std::mem::size_of::<u32>();
+const LENGTH_SIZE: usize = U32_LEN;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Term {
@@ -290,9 +290,8 @@ impl Serialize for TermIndexBuilder {
         }
 
         // Serialize tokens
-        let mut bytes = Vec::with_capacity(
-            terms_len + ((self.items.len() / self.terms.len()) * std::mem::size_of::<u64>() * 2),
-        );
+        let mut bytes =
+            Vec::with_capacity(terms_len + ((self.items.len() / self.terms.len()) * U64_LEN * 2));
         bytes.push_leb128(self.terms.len());
         for terms in terms {
             bytes.extend_from_slice(terms.as_bytes());

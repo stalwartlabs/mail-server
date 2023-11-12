@@ -31,7 +31,10 @@ use mail_parser::{
     PartType,
 };
 use nlp::language::Language;
-use store::write::{BatchBuilder, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE};
+use store::{
+    write::{BatchBuilder, BlobOp, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
+    BlobHash,
+};
 
 use crate::{Bincode, NamedKey};
 
@@ -53,6 +56,7 @@ pub(super) trait IndexMessage {
     fn index_message(
         &mut self,
         message: Message,
+        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
@@ -69,6 +73,7 @@ impl IndexMessage for BatchBuilder {
     fn index_message(
         &mut self,
         message: Message,
+        blob_hash: BlobHash,
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
@@ -142,6 +147,9 @@ impl IndexMessage for BatchBuilder {
             self.tag(Property::HasAttachment, (), 0);
         }
 
+        // Link blob
+        self.blob(blob_hash.clone(), BlobOp::Link, 0);
+
         // Store message metadata
         self.value(
             Property::BodyStructure,
@@ -151,6 +159,7 @@ impl IndexMessage for BatchBuilder {
                 contents: message.into(),
                 received_at,
                 has_attachments,
+                blob_hash,
             }),
             F_VALUE,
         );
@@ -432,7 +441,12 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         if metadata.has_attachments {
             batch.tag(Property::HasAttachment, (), options);
         }
+
+        // Index headers
         batch.index_headers(&metadata.contents.parts[0].headers, options);
+
+        // Link blob
+        batch.blob(metadata.blob_hash.clone(), BlobOp::Link, options);
     }
 }
 

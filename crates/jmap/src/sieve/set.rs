@@ -46,8 +46,8 @@ use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
     rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE},
-    BlobKind, StoreWrite,
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, F_CLEAR, F_VALUE},
+    BlobClass,
 };
 
 use crate::{auth::AccessToken, NamedKey, JMAP};
@@ -96,16 +96,22 @@ impl JMAP {
         for (id, object) in request.unwrap_create() {
             if sieve_ids.len() as usize <= self.config.sieve_max_scripts {
                 match self.sieve_set_item(object, None, &ctx).await? {
-                    Ok((builder, Some(blob))) => {
+                    Ok((mut builder, Some(blob))) => {
                         // Obtain document id
                         let document_id = self
                             .assign_document_id(account_id, Collection::SieveScript)
                             .await?;
 
                         // Store blob
-                        let blob_id =
-                            BlobId::linked(account_id, Collection::SieveScript, document_id);
-                        self.put_blob(&blob_id.kind, &blob).await?;
+                        let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
+                        blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
+                        blob_id.class = BlobClass::Linked {
+                            account_id,
+                            collection: Collection::SieveScript.into(),
+                            document_id,
+                        };
+                        let script_size = blob_id.section.as_ref().unwrap().size;
+                        let blob_id = blob_id.clone();
 
                         // Write record
                         let mut batch = BatchBuilder::new();
@@ -113,10 +119,8 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document(document_id)
-                            .add(
-                                NamedKey::Quota::<&[u8]>(account_id),
-                                builder.changes().unwrap().script_size(),
-                            )
+                            .add(NamedKey::Quota::<&[u8]>(account_id), script_size as i64)
+                            .blob(blob_id.hash.clone(), BlobOp::Link, 0)
                             .custom(builder);
                         sieve_ids.insert(document_id);
                         self.write_batch(batch).await?;
@@ -127,10 +131,7 @@ impl JMAP {
                             id,
                             Object::with_capacity(1)
                                 .with_property(Property::Id, Value::Id(document_id.into()))
-                                .with_property(
-                                    Property::BlobId,
-                                    blob_id.with_section_size(blob.len()),
-                                ),
+                                .with_property(Property::BlobId, blob_id),
                         );
                     }
                     Err(err) => {
@@ -166,41 +167,72 @@ impl JMAP {
                 )
                 .await?
             {
-                let prev_size = sieve.inner.script_size();
+                let prev_blob_id = sieve
+                    .inner
+                    .blob_id()
+                    .ok_or_else(|| {
+                        tracing::warn!(
+                            event = "error",
+                            context = "sieve_set",
+                            account_id = account_id,
+                            document_id = document_id,
+                            "Sieve does not contain a blobId."
+                        );
+                        MethodError::ServerPartialFail
+                    })?
+                    .clone();
 
                 match self
                     .sieve_set_item(object, (document_id, sieve).into(), &ctx)
                     .await?
                 {
-                    Ok((builder, blob)) => {
-                        // Store blob
-                        let (update_quota, blob_id) = if let Some(blob) = blob {
-                            let blob_id =
-                                BlobId::linked(account_id, Collection::SieveScript, document_id);
-                            self.put_blob(&blob_id.kind, &blob).await?;
-                            let blob_size = builder.changes().unwrap().script_size();
-                            (
-                                match blob_size.cmp(&prev_size) {
-                                    std::cmp::Ordering::Greater => blob_size - prev_size,
-                                    std::cmp::Ordering::Less => -prev_size + blob_size,
-                                    std::cmp::Ordering::Equal => 0,
-                                },
-                                Some(blob_id.with_section_size(blob.len())),
-                            )
-                        } else {
-                            (0, None)
-                        };
-
-                        // Write record
+                    Ok((mut builder, blob)) => {
+                        // Prepare write batch
                         let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
-                            .update_document(document_id)
-                            .custom(builder);
-                        if update_quota != 0 {
-                            batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
-                        }
+                            .update_document(document_id);
+
+                        let blob_id = if let Some(blob) = blob {
+                            // Store blob
+                            let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
+                            blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
+                            blob_id.class = BlobClass::Linked {
+                                account_id,
+                                collection: Collection::SieveScript.into(),
+                                document_id,
+                            };
+                            let script_size = blob_id.section.as_ref().unwrap().size as i64;
+                            let prev_script_size =
+                                prev_blob_id.section.as_ref().unwrap().size as i64;
+                            let blob_id = blob_id.clone();
+
+                            // Update quota
+                            let update_quota = match script_size.cmp(&prev_script_size) {
+                                std::cmp::Ordering::Greater => script_size - prev_script_size,
+                                std::cmp::Ordering::Less => -prev_script_size + script_size,
+                                std::cmp::Ordering::Equal => 0,
+                            };
+                            if update_quota != 0 {
+                                batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+                            }
+
+                            // Update blobId
+                            batch.blob(prev_blob_id.hash, BlobOp::Link, F_CLEAR).blob(
+                                blob_id.hash.clone(),
+                                BlobOp::Link,
+                                0,
+                            );
+
+                            blob_id.into()
+                        } else {
+                            None
+                        };
+
+                        // Write record
+                        batch.custom(builder);
+
                         if !batch.is_empty() {
                             changes.log_update(Collection::SieveScript, document_id);
                             match self.store.write(batch.build()).await {
@@ -344,24 +376,28 @@ impl JMAP {
 
         // Delete record
         let mut batch = BatchBuilder::new();
+        let blob_id = obj.inner.blob_id().ok_or_else(|| {
+            tracing::warn!(
+                event = "error",
+                context = "sieve_script_delete",
+                account_id = account_id,
+                document_id = document_id,
+                "Sieve does not contain a blobId."
+            );
+            MethodError::ServerPartialFail
+        })?;
         batch
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
             .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
+            .blob(blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
             .add(
                 NamedKey::Quota::<&[u8]>(account_id),
-                -(obj.inner.script_size()),
+                -(blob_id.section.as_ref().unwrap().size as i64),
             )
             .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));
         self.write_batch(batch).await?;
-        let _ = self
-            .delete_blob(&BlobKind::Linked {
-                account_id,
-                collection: Collection::SieveScript.into(),
-                document_id,
-            })
-            .await;
         Ok(true)
     }
 
@@ -469,9 +505,7 @@ impl JMAP {
 
         let blob_update = if let Some(blob_id) = blob_id {
             if update.as_ref().map_or(true, |(document_id, _)| {
-                !blob_id
-                    .kind
-                    .is_document(ctx.account_id, Collection::SieveScript, *document_id)
+                !matches!(blob_id.class, BlobClass::Linked { account_id, collection, document_id: d } if account_id == ctx.account_id && collection == u8::from(Collection::SieveScript) && *document_id == d)
             }) {
                 // Check access
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
@@ -486,7 +520,7 @@ impl JMAP {
                     // Compile script
                     match self.sieve_compiler.compile(&bytes) {
                         Ok(script) => {
-                            changes.set(Property::Size, Value::UnsignedInt(bytes.len() as u64));
+                            changes.set(Property::BlobId, BlobId::default().with_section_size(bytes.len()));
                             bytes.extend(bincode::serialize(&script).unwrap_or_default());
                             bytes.into()
                         }
@@ -626,15 +660,24 @@ impl JMAP {
     }
 }
 
-pub trait ScriptSize {
-    fn script_size(&self) -> i64;
+pub trait ObjectBlobId {
+    fn blob_id(&self) -> Option<&BlobId>;
+    fn blob_id_mut(&mut self) -> Option<&mut BlobId>;
 }
 
-impl ScriptSize for Object<Value> {
-    fn script_size(&self) -> i64 {
+impl ObjectBlobId for Object<Value> {
+    fn blob_id(&self) -> Option<&BlobId> {
         self.properties
-            .get(&Property::Size)
-            .and_then(|v| v.as_uint())
-            .unwrap_or_default() as i64
+            .get(&Property::BlobId)
+            .and_then(|v| v.as_blob_id())
+    }
+
+    fn blob_id_mut(&mut self) -> Option<&mut BlobId> {
+        self.properties
+            .get_mut(&Property::BlobId)
+            .and_then(|v| match v {
+                Value::BlobId(blob_id) => Some(blob_id),
+                _ => None,
+            })
     }
 }

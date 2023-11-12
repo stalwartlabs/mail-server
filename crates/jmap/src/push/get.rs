@@ -30,7 +30,7 @@ use jmap_proto::{
 };
 use store::{
     write::{now, ValueClass},
-    BitmapKey, StoreRead, ValueKey,
+    BitmapKey, ValueKey,
 };
 use utils::map::bitmap::Bitmap;
 

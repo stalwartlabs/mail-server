@@ -28,7 +28,6 @@ use jmap::JMAP;
 use jmap_client::{client::Client, email, mailbox::Role};
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
-use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Merge Threads tests...");
@@ -204,7 +203,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

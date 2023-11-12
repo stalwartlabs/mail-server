@@ -23,7 +23,6 @@
 
 use std::{sync::Arc, time::Instant};
 
-use store::StorePurge;
 use tokio::sync::mpsc;
 use utils::{
     config::{cron::SimpleCron, Config},
@@ -113,9 +112,9 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                         TASK_PURGE_BLOBS => {
                             tracing::info!("Purging temporary blobs.",);
                             if let Err(err) =
-                                core.store.purge_tmp_blobs(core.config.upload_tmp_ttl).await
+                                core.store.blob_hash_purge(core.blob_store.clone()).await
                             {
-                                tracing::error!("Error while purging bitmaps: {}", err);
+                                tracing::error!("Error while purging blobs: {}", err);
                             }
                         }
                         TASK_PURGE_SESSIONS => {

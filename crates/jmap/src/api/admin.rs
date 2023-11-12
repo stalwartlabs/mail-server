@@ -21,60 +21,34 @@
  * for more details.
 */
 
-use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
-    types::{collection::Collection, property::Property, value::Value},
-};
-use store::{
-    write::{assert::HashedValue, BatchBuilder, ValueClass},
-    BitmapKey, Serialize, StorePurge, StoreRead, StoreWrite, ValueKey,
-};
+use jmap_proto::types::collection::Collection;
+use store::{write::BatchBuilder, Serialize};
 
-use crate::{mailbox::set::SCHEMA, NamedKey, JMAP};
+use crate::{NamedKey, JMAP};
 
 impl JMAP {
     pub async fn delete_account(&self, account_name: &str, account_id: u32) -> store::Result<()> {
-        // Delete blobs
-        self.store.delete_account_blobs(account_id).await?;
+        let test = true;
 
-        // Delete mailboxes
+        // Unlink all account's blobs
+        self.store.blob_hash_unlink_account(account_id).await?;
+
+        // Revoke ACLs
+        self.store.acl_revoke_all(account_id).await?;
+
+        // Delete account data
+        self.store.purge_account(account_id).await?;
+
+        // Delete account
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
             .clear(NamedKey::Name(account_name))
             .clear(NamedKey::Id::<&[u8]>(account_id))
-            .clear(NamedKey::Quota::<&[u8]>(account_id))
-            .with_account_id(account_id)
-            .with_collection(Collection::Mailbox);
-        for mailbox_id in self
-            .store
-            .get_bitmap(BitmapKey::document_ids(account_id, Collection::Mailbox))
-            .await?
-            .unwrap_or_default()
-        {
-            let mailbox = self
-                .store
-                .get_value::<HashedValue<Object<Value>>>(ValueKey {
-                    account_id,
-                    collection: Collection::Mailbox.into(),
-                    document_id: mailbox_id,
-                    class: ValueClass::Property(Property::Value.into()),
-                })
-                .await?
-                .ok_or_else(|| {
-                    store::Error::InternalError(format!("Mailbox {} not found", mailbox_id))
-                })?;
-            batch
-                .delete_document(mailbox_id)
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox));
-        }
-        if !batch.is_empty() {
-            self.store.write(batch.build()).await?;
-        }
+            .clear(NamedKey::Quota::<&[u8]>(account_id));
 
-        // Delete account
-        self.store.purge_account(account_id).await?;
+        self.store.write(batch.build()).await?;
 
         Ok(())
     }
@@ -85,10 +59,6 @@ impl JMAP {
         account_name: &str,
         account_id: u32,
     ) -> store::Result<()> {
-        // Delete blobs
-        self.store.delete_account_blobs(account_id).await?;
-
-        // Delete mailboxes
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(u32::MAX)

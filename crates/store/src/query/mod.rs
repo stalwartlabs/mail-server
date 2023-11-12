@@ -21,6 +21,7 @@
  * for more details.
 */
 
+pub mod acl;
 pub mod filter;
 pub mod log;
 pub mod sort;
@@ -29,7 +30,7 @@ use roaring::RoaringBitmap;
 
 use crate::{
     write::{BitmapClass, TagValue},
-    BitmapKey, Serialize,
+    BitmapKey, IterateParams, Key, Serialize,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,6 +283,38 @@ impl BitmapKey<BitmapClass> {
             },
             block_num: 0,
         }
+    }
+}
+
+impl<T: Key> IterateParams<T> {
+    pub fn new(begin: T, end: T) -> Self {
+        IterateParams {
+            begin,
+            end,
+            first: false,
+            ascending: true,
+            values: true,
+        }
+    }
+
+    pub fn ascending(mut self) -> Self {
+        self.ascending = true;
+        self
+    }
+
+    pub fn descending(mut self) -> Self {
+        self.ascending = false;
+        self
+    }
+
+    pub fn only_first(mut self) -> Self {
+        self.first = true;
+        self
+    }
+
+    pub fn no_values(mut self) -> Self {
+        self.values = false;
+        self
     }
 }
 

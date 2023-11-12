@@ -24,17 +24,13 @@
 use foundationdb::Database;
 use utils::config::Config;
 
-use crate::{blob::BlobStore, StoreInit};
-
 use super::FdbStore;
 
-#[async_trait::async_trait]
-impl StoreInit for FdbStore {
-    async fn open(config: &Config) -> crate::Result<Self> {
+impl FdbStore {
+    pub async fn open(_: &Config) -> crate::Result<Self> {
         Ok(Self {
             guard: unsafe { foundationdb::boot() },
             db: Database::default()?,
-            blob: BlobStore::new(config).await?,
         })
     }
 }

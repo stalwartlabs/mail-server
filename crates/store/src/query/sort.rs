@@ -25,7 +25,7 @@ use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
 
-use crate::{write::ValueClass, StoreRead, ValueKey};
+use crate::{write::ValueClass, Store, ValueKey};
 
 use super::{Comparator, ResultSet, SortedResultSet};
 
@@ -42,9 +42,8 @@ pub struct Pagination {
     prefix_unique: bool,
 }
 
-#[async_trait::async_trait]
-pub trait StoreSort: StoreRead {
-    async fn sort(
+impl Store {
+    pub async fn sort(
         &self,
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,

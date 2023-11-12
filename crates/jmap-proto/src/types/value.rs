@@ -25,7 +25,6 @@ use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
-use store::BlobKind;
 
 use crate::{
     object::Object,
@@ -269,6 +268,13 @@ impl Value {
         }
     }
 
+    pub fn as_blob_id(&self) -> Option<&BlobId> {
+        match self {
+            Value::BlobId(id) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn as_list(&self) -> Option<&Vec<Value>> {
         match self {
             Value::List(l) => Some(l),
@@ -411,12 +417,6 @@ impl From<Object<Value>> for Value {
 impl From<BlobId> for Value {
     fn from(value: BlobId) -> Self {
         Value::BlobId(value)
-    }
-}
-
-impl From<BlobKind> for Value {
-    fn from(value: BlobKind) -> Self {
-        Value::BlobId(BlobId::new(value))
     }
 }
 

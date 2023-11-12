@@ -23,10 +23,18 @@
 
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
+pub mod fs;
 #[cfg(feature = "rocks")]
 pub mod rocksdb;
+pub mod s3;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 pub(crate) const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
 pub(crate) const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
+
+impl From<std::io::Error> for crate::Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::InternalError(format!("IO error: {}", err))
+    }
+}

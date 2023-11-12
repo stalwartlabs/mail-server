@@ -35,8 +35,8 @@ use jmap_client::{
 };
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::HeaderName;
-use store::StoreRead;
-use store::{ahash::AHashMap, write::BatchBuilder, StoreWrite};
+
+use store::{ahash::AHashMap, write::BatchBuilder};
 
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
@@ -115,7 +115,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
         .unwrap();
 
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 pub async fn query(client: &mut Client) {

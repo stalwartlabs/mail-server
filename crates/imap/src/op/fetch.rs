@@ -41,8 +41,8 @@ use jmap::{email::metadata::MessageMetadata, Bincode};
 use jmap_proto::{
     error::method::MethodError,
     types::{
-        acl::Acl, blob::BlobId, collection::Collection, id::Id, keyword::Keyword,
-        property::Property, state::StateChange, type_state::DataType,
+        acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+        state::StateChange, type_state::DataType,
     },
 };
 use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
@@ -298,15 +298,14 @@ impl SessionData {
             // Fetch and parse blob
             let raw_message = if needs_blobs {
                 // Retrieve raw message if needed
-                let blob_id = BlobId::maildir(account_id, id);
-                match self.jmap.get_blob(&blob_id.kind, 0..u32::MAX).await {
+                match self.jmap.get_blob(&email.blob_hash, 0..u32::MAX).await {
                     Ok(Some(raw_message)) => raw_message.into(),
                     Ok(None) => {
                         tracing::warn!(event = "not-found",
                         account_id = account_id,
                         collection = ?Collection::Email,
                         document_id = id,
-                        blob_id = ?blob_id,
+                        blob_id = ?email.blob_hash,
                         "Blob not found");
                         continue;
                     }

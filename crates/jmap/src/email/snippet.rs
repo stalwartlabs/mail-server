@@ -31,7 +31,7 @@ use jmap_proto::{
 };
 use mail_parser::{decoders::html::html_to_text, MessageParser, PartType};
 use nlp::language::{stemmer::Stemmer, Language};
-use store::BlobKind;
+use store::BlobHash;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -128,7 +128,7 @@ impl JMAP {
                         self.get_term_index::<TermIndex>(account_id, Collection::Email, document_id)
                             .await?,
                         self.get_blob(
-                            &BlobKind::LinkedMaildir {
+                            &BlobHash::LinkedMaildir {
                                 account_id,
                                 document_id,
                             },

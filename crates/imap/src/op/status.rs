@@ -30,8 +30,8 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
+use store::roaring::RoaringBitmap;
 use store::Deserialize;
-use store::{roaring::RoaringBitmap, StoreRead};
 use tokio::io::AsyncRead;
 
 use crate::core::{Mailbox, Session, SessionData};

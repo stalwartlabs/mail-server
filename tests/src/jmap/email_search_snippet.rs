@@ -28,7 +28,6 @@ use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{client::Client, core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashMap;
-use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running SearchSnippet tests...");
@@ -180,5 +179,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Destroy test data
     destroy_all_mailboxes(client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }

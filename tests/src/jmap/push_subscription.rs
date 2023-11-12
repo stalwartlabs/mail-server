@@ -46,7 +46,7 @@ use jmap_client::{client::Client, mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
 use reqwest::header::CONTENT_ENCODING;
 use store::ahash::AHashSet;
-use store::StoreRead;
+
 use tokio::{net::TcpStream, sync::mpsc};
 use utils::listener::SessionData;
 
@@ -219,7 +219,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     destroy_all_mailboxes(admin_client).await;
 
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 #[derive(Clone)]

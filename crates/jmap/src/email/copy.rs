@@ -49,7 +49,7 @@ use jmap_proto::{
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
     write::{BatchBuilder, F_BITMAP, F_VALUE},
-    BlobKind, StoreWrite,
+    BlobClass,
 };
 use utils::map::vec_map::VecMap;
 
@@ -354,40 +354,22 @@ impl JMAP {
             None
         };
 
-        // Copy blob
+        // Assign id
         let message_id = self
             .assign_document_id(account_id, Collection::Email)
             .await?;
         let mut email = IngestedEmail {
-            blob_id: BlobId::new(BlobKind::LinkedMaildir {
-                account_id,
-                document_id: message_id,
-            }),
+            blob_id: BlobId::new(
+                metadata.blob_hash.clone(),
+                BlobClass::Linked {
+                    account_id,
+                    collection: Collection::Email.into(),
+                    document_id: message_id,
+                },
+            ),
             size: metadata.size,
             ..Default::default()
         };
-        self.store
-            .copy_blob(
-                &BlobKind::LinkedMaildir {
-                    account_id: from_account_id,
-                    document_id: from_message_id,
-                },
-                &email.blob_id.kind,
-                None,
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_copy",
-                    from_account_id = from_account_id,
-                    from_message_id = from_message_id,
-                    account_id = account_id,
-                    message_id = message_id,
-                    error = ?err,
-                    "Failed to copy blob.");
-                MethodError::ServerPartialFail
-            })?;
 
         // Prepare batch
         let mut batch = BatchBuilder::new();

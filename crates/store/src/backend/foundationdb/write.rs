@@ -28,7 +28,7 @@ use foundationdb::{options::MutationType, FdbError};
 
 use crate::{
     write::{Batch, Operation, ValueOp},
-    BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
+    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::{bitmap::DenseBitmap, FdbStore};
@@ -54,9 +54,8 @@ pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::Hash
                     std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
 }
 
-#[async_trait::async_trait]
-impl StoreWrite for FdbStore {
-    async fn write(&self, batch: Batch) -> crate::Result<()> {
+impl FdbStore {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
         let start = Instant::now();
         let mut retry_count = 0;
         let mut set_bitmaps = AHashMap::new();
@@ -149,6 +148,22 @@ impl StoreWrite for FdbStore {
                             )
                             .or_insert_with(DenseBitmap::empty)
                             .set(document_id);
+                        }
+                    }
+                    Operation::Blob { hash, op, set } => {
+                        let key = BlobKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            hash,
+                            op: *op,
+                        }
+                        .serialize(true);
+
+                        if *set {
+                            trx.set(&key, &[]);
+                        } else {
+                            trx.clear(&key);
                         }
                     }
                     Operation::Log {
@@ -271,7 +286,7 @@ impl StoreWrite for FdbStore {
     }
 
     #[cfg(feature = "test_mode")]
-    async fn destroy(&self) {
+    pub(crate) async fn destroy(&self) {
         let trx = self.db.create_trx().unwrap();
         trx.clear_range(&[0u8], &[u8::MAX]);
         trx.commit().await.unwrap();

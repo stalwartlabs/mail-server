@@ -24,7 +24,7 @@
 use imap::core::IMAP;
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::query::{filter::StoreQuery, Filter};
+use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{Command, IsTls, ResponseCode, ResponseType, Session, State, StatusResponse};

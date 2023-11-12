@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::slice::Iter;
+use std::{io::Write, slice::Iter};
 
 use super::leb128::{Leb128Iterator, Leb128Writer};
 
@@ -49,6 +49,13 @@ pub struct Base32Writer {
 }
 
 impl Base32Writer {
+    pub fn from_bytes(bytes: impl AsRef<[u8]>) -> Self {
+        let bytes = bytes.as_ref();
+        let mut writer = Base32Writer::with_capacity(bytes.len());
+        writer.write_all(bytes).unwrap();
+        writer
+    }
+
     pub fn with_capacity(capacity: usize) -> Self {
         Base32Writer {
             result: String::with_capacity((capacity + 3) / 4 * 5),

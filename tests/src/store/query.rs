@@ -28,7 +28,7 @@ use std::{
 
 use jmap_proto::types::keyword::Keyword;
 use nlp::language::Language;
-use store::{ahash::AHashMap, query::sort::Pagination, write::ValueClass, StoreWrite};
+use store::{ahash::AHashMap, query::sort::Pagination, write::ValueClass};
 
 use store::{
     query::{Comparator, Filter},
@@ -94,7 +94,7 @@ const FIELDS_OPTIONS: [FieldType; 20] = [
 ];
 
 #[allow(clippy::mutex_atomic)]
-pub async fn test(db: Arc<impl Store + Send + 'static>, do_insert: bool) {
+pub async fn test(db: Arc<Store>, do_insert: bool) {
     println!("Running Store query tests...");
 
     let pool = rayon::ThreadPoolBuilder::new()
@@ -215,7 +215,7 @@ pub async fn test(db: Arc<impl Store + Send + 'static>, do_insert: bool) {
     test_sort(db).await;
 }
 
-pub async fn test_filter(db: Arc<impl Store>) {
+pub async fn test_filter(db: Arc<Store>) {
     /*
         let mut fields = AHashMap::default();
         for (field_num, field) in FIELDS.iter().enumerate() {
@@ -361,7 +361,7 @@ pub async fn test_filter(db: Arc<impl Store>) {
     */
 }
 
-pub async fn test_sort(db: Arc<impl Store>) {
+pub async fn test_sort(db: Arc<Store>) {
     let mut fields = AHashMap::default();
     for (field_num, field) in FIELDS.iter().enumerate() {
         fields.insert(field.to_string(), field_num as u8);

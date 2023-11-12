@@ -33,7 +33,6 @@ use jmap_client::{
     Error, Set,
 };
 use jmap_proto::types::id::Id;
-use store::StoreRead;
 
 use super::{find_values, replace_blob_ids, replace_boundaries, replace_values};
 
@@ -48,7 +47,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     destroy_all_mailboxes(client).await;
 
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 async fn create(client: &mut Client, mailbox_id: &str) {

@@ -56,7 +56,7 @@ use store::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
         ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
-    BlobKind, Serialize, StoreWrite,
+    Serialize,
 };
 
 use crate::{auth::AccessToken, Bincode, IngestError, JMAP};
@@ -1225,22 +1225,6 @@ impl JMAP {
                 return Err(MethodError::ServerPartialFail);
             }
         }
-
-        // Delete blob
-        self.store
-            .delete_blob(&BlobKind::LinkedMaildir {
-                account_id,
-                document_id,
-            })
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "email_delete",
-                error = ?err,
-                "Failed to delete blob.");
-                MethodError::ServerPartialFail
-            })?;
 
         Ok(Ok(changes))
     }

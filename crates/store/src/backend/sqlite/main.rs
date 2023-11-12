@@ -30,15 +30,14 @@ use tokio::sync::oneshot;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    blob::BlobStore, StoreInit, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
+    SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 use super::{pool::SqliteConnectionManager, SqliteStore};
 
-#[async_trait::async_trait]
-impl StoreInit for SqliteStore {
-    async fn open(config: &Config) -> crate::Result<Self> {
-        let blob = BlobStore::new(config).await?;
+impl SqliteStore {
+    pub async fn open(config: &Config) -> crate::Result<Self> {
         let db = Self {
             conn_pool: Pool::builder()
                 .max_size(config.property_or_static("store.db.pool.max-connections", "10")?)
@@ -71,18 +70,15 @@ impl StoreInit for SqliteStore {
             id_assigner: Arc::new(Mutex::new(LruCache::new(
                 config.property_or_static("store.db.cache.size", "1000")?,
             ))),
-            blob,
         };
         db.create_tables()?;
         Ok(db)
     }
-}
 
-impl SqliteStore {
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS] {
+        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_ACLS] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -95,21 +91,26 @@ impl SqliteStore {
             )?;
         }
 
+        for table in [SUBSPACE_INDEXES, SUBSPACE_BLOBS] {
+            let table = char::from(table);
+            conn.execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {table} (
+                        k BLOB PRIMARY KEY
+                    )"
+                ),
+                [],
+            )?;
+        }
+
         conn.execute(
             &format!(
                 "CREATE TABLE IF NOT EXISTS {} (
-                    k BLOB PRIMARY KEY
-                )",
-                char::from(SUBSPACE_INDEXES)
-            ),
-            [],
-        )?;
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS q (
                     k BLOB PRIMARY KEY,
                     v INTEGER NOT NULL DEFAULT 0
                 )",
+                char::from(SUBSPACE_COUNTERS)
+            ),
             [],
         )?;
 

@@ -37,10 +37,9 @@ pub const CF_LOGS: &str = "l";
 pub const CF_BLOBS: &str = "o";
 pub const CF_INDEXES: &str = "i";
 
-pub const COLLECTION_PREFIX_LEN: usize = std::mem::size_of::<u32>() + std::mem::size_of::<u8>();
+pub const COLLECTION_PREFIX_LEN: usize = U32_LEN + std::mem::size_of::<u8>();
 pub const FIELD_PREFIX_LEN: usize = COLLECTION_PREFIX_LEN + std::mem::size_of::<u8>();
-pub const ACCOUNT_KEY_LEN: usize =
-    std::mem::size_of::<u32>() + std::mem::size_of::<u8>() + std::mem::size_of::<u32>();
+pub const ACCOUNT_KEY_LEN: usize = U32_LEN + std::mem::size_of::<u8>() + U32_LEN;
 
 impl<T: AsRef<[u8]>> Serialize for IndexKey<T> {
     fn serialize(self) -> Vec<u8> {

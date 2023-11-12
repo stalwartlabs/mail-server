@@ -37,7 +37,6 @@ use jmap_client::{
     email::EmailBodyPart,
 };
 use jmap_proto::types::{collection::Collection, id::Id};
-use store::StoreRead;
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     println!("Running quota tests...");
@@ -50,24 +49,15 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     add_to_group(directory, "robert@example.com", "jdoe@example.com").await;
 
     // Delete temporary blobs from previous tests
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
-    server
-        .store
-        .delete_account_blobs(other_account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
     let client = test_account_login("robert@example.com", "aabbcc").await;
-    for _ in 0..3 {
+    for i in 0..3 {
         assert_eq!(
             client
-                .upload(None, vec![b'A'; 1024], None)
+                .upload(None, vec![b'A' + i; 1024], None)
                 .await
                 .unwrap()
                 .size(),
@@ -75,24 +65,20 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         );
     }
     match client
-        .upload(None, vec![b'A'; 1024], None)
+        .upload(None, vec![b'Z'; 1024], None)
         .await
         .unwrap_err()
     {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Test temporary blob quota (50000 bytes)
-    for _ in 0..2 {
+    for i in 0..2 {
         assert_eq!(
             client
-                .upload(None, vec![b'A'; 25000], None)
+                .upload(None, vec![b'a' + i; 25000], None)
                 .await
                 .unwrap()
                 .size(),
@@ -100,18 +86,14 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         );
     }
     match client
-        .upload(None, vec![b'A'; 1024], None)
+        .upload(None, vec![b'z'; 1024], None)
         .await
         .unwrap_err()
     {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server
-        .store
-        .delete_account_blobs(account_id.document_id())
-        .await
-        .unwrap();
+    server.store.blob_hash_expire_all().await;
 
     // Test JMAP Quotas extension
     let response = jmap_raw_request(
@@ -338,7 +320,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         admin_client.set_default_account_id(account_id.to_string());
         destroy_all_mailboxes(admin_client).await;
     }
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) {

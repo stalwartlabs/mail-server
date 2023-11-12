@@ -37,6 +37,7 @@ use jmap_proto::{
     },
 };
 use mail_parser::HeaderName;
+use store::BlobClass;
 
 use crate::{auth::AccessToken, email::headers::HeaderToValue, Bincode, JMAP};
 
@@ -174,32 +175,36 @@ impl JMAP {
             };
 
             // Retrieve raw message if needed
-            let blob_id = BlobId::maildir(account_id, id.document_id());
             let raw_message = if needs_body || needs_headers {
                 let offset = if !needs_body {
-                    blob_id
-                        .section
-                        .as_ref()
-                        .map(|s| s.offset_start as u32)
-                        .unwrap_or(u32::MAX)
+                    metadata.contents.parts[0].offset_body as u32
                 } else {
                     u32::MAX
                 };
 
-                if let Some(raw_message) = self.get_blob(&blob_id.kind, 0..offset).await? {
+                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..offset).await? {
                     raw_message
                 } else {
                     tracing::warn!(event = "not-found",
                         account_id = account_id,
                         collection = ?Collection::Email,
                         document_id = id.document_id(),
-                        blob_id = ?blob_id,
+                        blob_id = ?metadata.blob_hash,
                         "Blob not found");
                     response.not_found.push(id.into());
                     continue;
                 }
             } else {
                 vec![]
+            };
+            let blob_id = BlobId {
+                hash: metadata.blob_hash.clone(),
+                class: BlobClass::Linked {
+                    account_id,
+                    collection: Collection::Email.into(),
+                    document_id: id.document_id(),
+                },
+                section: None,
             };
 
             // Prepare response

@@ -27,7 +27,7 @@ use ahash::HashSet;
 use nlp::tokenizers::space::SpaceTokenizer;
 use roaring::RoaringBitmap;
 
-use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, StoreRead};
+use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, Store};
 
 use super::{Filter, ResultSet};
 
@@ -36,9 +36,8 @@ struct State {
     bm: Option<RoaringBitmap>,
 }
 
-#[async_trait::async_trait]
-pub trait StoreQuery: StoreRead {
-    async fn filter(
+impl Store {
+    pub async fn filter(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,

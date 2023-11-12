@@ -31,7 +31,10 @@ use jmap_proto::{
     request::reference::MaybeReference,
     types::{blob::BlobId, id::Id},
 };
-use store::BlobKind;
+use store::{
+    write::{now, BatchBuilder, BlobOp},
+    BlobClass, BlobHash,
+};
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -96,7 +99,7 @@ impl JMAP {
                             .map(|length| (length as u32).saturating_add(offset))
                             .unwrap_or(u32::MAX);
                         let bytes = if let Some(section) = &id.section {
-                            self.get_blob_section(&id.kind, section)
+                            self.get_blob_section(&id.hash, section)
                                 .await?
                                 .map(|bytes| {
                                     if offset == 0 && length == u32::MAX {
@@ -112,7 +115,7 @@ impl JMAP {
                                     }
                                 })
                         } else {
-                            self.get_blob(&id.kind, offset..length).await?
+                            self.get_blob(&id.hash, offset..length).await?
                         };
                         if let Some(bytes) = bytes {
                             bytes
@@ -152,9 +155,9 @@ impl JMAP {
             }
 
             // Enforce quota
-            let (total_files, total_bytes) = self
+            let used = self
                 .store
-                .get_tmp_blob_usage(account_id, self.config.upload_tmp_ttl)
+                .blob_hash_quota(account_id)
                 .await
                 .map_err(|err| {
                     tracing::error!(event = "error",
@@ -166,9 +169,9 @@ impl JMAP {
                 })?;
 
             if ((self.config.upload_tmp_quota_size > 0
-                && total_bytes + data.len() > self.config.upload_tmp_quota_size)
+                && used.bytes + data.len() > self.config.upload_tmp_quota_size)
                 || (self.config.upload_tmp_quota_amount > 0
-                    && total_files + 1 > self.config.upload_tmp_quota_amount))
+                    && used.count + 1 > self.config.upload_tmp_quota_amount))
                 && !access_token.is_super_user()
             {
                 response.not_created.append(
@@ -182,29 +185,14 @@ impl JMAP {
             }
 
             // Write blob
-            let blob_id = BlobId::temporary(account_id);
-            match self.store.put_blob(&blob_id.kind, &data).await {
-                Ok(_) => {
-                    response.created.insert(
-                        create_id,
-                        BlobUploadResponseObject {
-                            id: blob_id,
-                            type_: upload_object.type_,
-                            size: data.len(),
-                        },
-                    );
-                }
-                Err(err) => {
-                    tracing::error!(event = "error",
-                    context = "blob_store",
-                    account_id = account_id,
-                    blob_id = ?blob_id,
-                    size = data.len(),
-                    error = ?err,
-                    "Failed to upload blob");
-                    return Err(MethodError::ServerPartialFail);
-                }
-            }
+            response.created.insert(
+                create_id,
+                BlobUploadResponseObject {
+                    id: self.put_blob(account_id, &data, true).await?,
+                    type_: upload_object.type_,
+                    size: data.len(),
+                },
+            );
         }
 
         Ok(response)
@@ -229,9 +217,9 @@ impl JMAP {
         }
 
         // Enforce quota
-        let (total_files, total_bytes) = self
+        let used = self
             .store
-            .get_tmp_blob_usage(account_id.document_id(), self.config.upload_tmp_ttl)
+            .blob_hash_quota(account_id.document_id())
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -243,9 +231,9 @@ impl JMAP {
             })?;
 
         if ((self.config.upload_tmp_quota_size > 0
-            && total_bytes + data.len() > self.config.upload_tmp_quota_size)
+            && used.bytes + data.len() > self.config.upload_tmp_quota_size)
             || (self.config.upload_tmp_quota_amount > 0
-                && total_files + 1 > self.config.upload_tmp_quota_amount))
+                && used.count + 1 > self.config.upload_tmp_quota_amount))
             && !access_token.is_super_user()
         {
             let err = Err(RequestError::over_blob_quota(
@@ -262,49 +250,69 @@ impl JMAP {
             return err;
         }
 
-        let blob_id = BlobId::temporary(account_id.document_id());
-
-        match self.store.put_blob(&blob_id.kind, data).await {
-            Ok(_) => Ok(UploadResponse {
-                account_id,
-                blob_id,
-                c_type: content_type.to_string(),
-                size: data.len(),
-            }),
-            Err(err) => {
-                tracing::error!(event = "error",
-                    context = "blob_store",
-                    account_id = account_id.document_id(),
-                    blob_id = ?blob_id,
-                    size = data.len(),
-                    error = ?err,
-                    "Failed to upload blob");
-                Err(RequestError::internal_server_error())
-            }
-        }
-    }
-
-    pub async fn put_blob(&self, kind: &BlobKind, data: &[u8]) -> Result<(), MethodError> {
-        self.store.put_blob(kind, data).await.map_err(|err| {
-            tracing::error!(
-                    event = "error",
-                    context = "blob_put",
-                    kind = ?kind,
-                    error = ?err,
-                    "Failed to store blob.");
-            MethodError::ServerPartialFail
+        Ok(UploadResponse {
+            account_id,
+            blob_id: self
+                .put_blob(account_id.document_id(), data, true)
+                .await
+                .map_err(|_| RequestError::internal_server_error())?,
+            c_type: content_type.to_string(),
+            size: data.len(),
         })
     }
 
-    pub async fn delete_blob(&self, kind: &BlobKind) -> Result<bool, MethodError> {
-        self.store.delete_blob(kind).await.map_err(|err| {
+    #[allow(clippy::blocks_in_if_conditions)]
+    pub async fn put_blob(
+        &self,
+        account_id: u32,
+        data: &[u8],
+        set_quota: bool,
+    ) -> Result<BlobId, MethodError> {
+        // First reserve the hash
+        let hash = BlobHash::from(data);
+        let mut batch = BatchBuilder::new();
+
+        batch.with_account_id(account_id).blob(
+            hash.clone(),
+            BlobOp::Reserve {
+                until: now() + self.config.upload_tmp_ttl,
+                size: if set_quota { data.len() } else { 0 },
+            },
+            0,
+        );
+        self.write_batch(batch).await?;
+
+        if !self.store.blob_hash_exists(&hash).await.map_err(|err| {
             tracing::error!(
-                    event = "error",
-                    context = "delete_blob",
-                    kind = ?kind,
-                    error = ?err,
-                    "Failed to delete blob.");
+                event = "error",
+                context = "put_blob",
+                error = ?err,
+                "Failed to verify blob hash existence.");
             MethodError::ServerPartialFail
+        })? {
+            // Upload blob to store
+            self.blob_store
+                .put_blob(hash.as_ref(), data)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "put_blob",
+                        error = ?err,
+                        "Failed to store blob.");
+                    MethodError::ServerPartialFail
+                })?;
+
+            // Commit blob
+            let mut batch = BatchBuilder::new();
+            batch.blob(hash.clone(), BlobOp::Commit, 0);
+            self.write_batch(batch).await?;
+        }
+
+        Ok(BlobId {
+            hash,
+            class: BlobClass::Reserved { account_id },
+            section: None,
         })
     }
 }

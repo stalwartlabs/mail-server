@@ -34,7 +34,7 @@ use imap_proto::{
 };
 
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::{write::ValueClass, StoreRead, ValueKey};
+use store::{write::ValueClass, ValueKey};
 use tokio::io::AsyncRead;
 
 use crate::core::{SelectedMailbox, Session, SessionData};

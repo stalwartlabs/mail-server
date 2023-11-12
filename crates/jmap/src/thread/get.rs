@@ -27,10 +27,7 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, id::Id, property::Property},
 };
-use store::query::{
-    sort::{Pagination, StoreSort},
-    Comparator, ResultSet,
-};
+use store::query::{sort::Pagination, Comparator, ResultSet};
 
 use crate::JMAP;
 

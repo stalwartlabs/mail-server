@@ -32,13 +32,10 @@ use jmap_proto::{
     },
 };
 use store::{
+    query::acl::AclQuery,
     roaring::RoaringBitmap,
-    write::{
-        assert::HashedValue,
-        key::{AclKey, DeserializeBigEndian},
-        ValueClass,
-    },
-    Deserialize, Error, StoreRead, ValueKey,
+    write::{assert::HashedValue, ValueClass},
+    ValueKey,
 };
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
@@ -52,32 +49,30 @@ impl JMAP {
             .iter()
             .chain(access_token.member_of.clone().iter())
         {
-            let from_key = ValueKey {
-                account_id: 0,
-                collection: 0,
-                document_id: 0,
-                class: ValueClass::Acl(grant_account_id),
-            };
-            let to_key = ValueKey {
-                account_id: u32::MAX,
-                collection: u8::MAX,
-                document_id: u32::MAX,
-                class: ValueClass::Acl(grant_account_id),
-            };
-            match self
+            for acl_item in self
                 .store
-                .iterate(from_key, to_key, false, true, |key, value| {
-                    let acl_key = AclKey::deserialize(key)?;
-                    if access_token.is_member(acl_key.to_account_id) {
-                        return Ok(true);
-                    }
-
-                    let acl = Bitmap::<Acl>::from(u64::deserialize(value)?);
-                    let collection = Collection::from(acl_key.to_collection);
+                .acl_query(AclQuery::HasAccess { grant_account_id })
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                    event = "error",
+                    context = "update_access_token",
+                    error = ?err,
+                    "Failed to iterate ACLs.");
+                })
+                .ok()?
+            {
+                if !access_token.is_member(acl_item.to_account_id) {
+                    let acl = Bitmap::<Acl>::from(acl_item.permissions);
+                    let collection = Collection::from(acl_item.to_collection);
                     if !collection.is_valid() {
-                        return Err(Error::InternalError(format!(
-                            "Found corrupted collection in key {key:?}"
-                        )));
+                        tracing::warn!(
+                            event = "error",
+                            context = "update_access_token",
+                            error = ?acl_item,
+                            "Found corrupted collection in key"
+                        );
+                        return None;
                     }
 
                     let mut collections: Bitmap<Collection> = Bitmap::new();
@@ -94,28 +89,15 @@ impl JMAP {
                         if let Some((_, sharing)) = access_token
                             .access_to
                             .iter_mut()
-                            .find(|(account_id, _)| *account_id == acl_key.to_account_id)
+                            .find(|(account_id, _)| *account_id == acl_item.to_account_id)
                         {
                             sharing.union(&collections);
                         } else {
                             access_token
                                 .access_to
-                                .push((acl_key.to_account_id, collections));
+                                .push((acl_item.to_account_id, collections));
                         }
                     }
-
-                    Ok(true)
-                })
-                .await
-            {
-                Ok(_) => {}
-                Err(err) => {
-                    tracing::error!(
-                        event = "error",
-                        context = "shared_accounts",
-                        error = ?err,
-                        "Failed to iterate ACLs.");
-                    return None;
                 }
             }
         }
@@ -136,39 +118,28 @@ impl JMAP {
             .iter()
             .chain(access_token.member_of.clone().iter())
         {
-            let from_key = ValueKey {
-                account_id: to_account_id,
-                collection: to_collection,
-                document_id: 0,
-                class: ValueClass::Acl(grant_account_id),
-            };
-            let mut to_key = from_key.clone();
-            to_key.document_id = u32::MAX;
-
-            match self
+            for acl_item in self
                 .store
-                .iterate(from_key, to_key, false, true, |key, value| {
-                    let mut acls = Bitmap::<Acl>::from(u64::deserialize(value)?);
-
-                    acls.intersection(&check_acls);
-                    if !acls.is_empty() {
-                        document_ids.insert(
-                            key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
-                        );
-                    }
-
-                    Ok(true)
+                .acl_query(AclQuery::SharedWith {
+                    grant_account_id,
+                    to_account_id,
+                    to_collection,
                 })
                 .await
-            {
-                Ok(_) => (),
-                Err(err) => {
+                .map_err(|err| {
                     tracing::error!(
-                    event = "error",
-                    context = "shared_accounts",
-                    error = ?err,
-                    "Failed to iterate ACLs.");
-                    return Err(MethodError::ServerPartialFail);
+                        event = "error",
+                        context = "shared_documents",
+                        error = ?err,
+                        "Failed to iterate ACLs.");
+                    MethodError::ServerPartialFail
+                })?
+            {
+                let mut acls = Bitmap::<Acl>::from(acl_item.permissions);
+
+                acls.intersection(&check_acls);
+                if !acls.is_empty() {
+                    document_ids.insert(acl_item.to_document_id);
                 }
             }
         }

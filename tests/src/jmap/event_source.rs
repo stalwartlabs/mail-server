@@ -32,7 +32,7 @@ use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{client::Client, event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
-use store::StoreRead;
+
 use tokio::sync::mpsc;
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
@@ -130,7 +130,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_ping(&mut event_rx).await;
 
     destroy_all_mailboxes(admin_client).await;
-    server.store.assert_is_empty().await;
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 async fn assert_state(

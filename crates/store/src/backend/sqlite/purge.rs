@@ -22,15 +22,14 @@
 */
 
 use crate::{
-    write::key::KeySerializer, StorePurge, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES,
+    write::key::KeySerializer, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    U32_LEN,
 };
 
 use super::SqliteStore;
 
-#[async_trait::async_trait]
-impl StorePurge for SqliteStore {
-    async fn purge_bitmaps(&self) -> crate::Result<()> {
+impl SqliteStore {
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             //Todo
@@ -60,15 +59,11 @@ impl StorePurge for SqliteStore {
         .await
     }
 
-    async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    pub(crate) async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
-            let from_key = KeySerializer::new(std::mem::size_of::<u32>())
-                .write(account_id)
-                .finalize();
-            let to_key = KeySerializer::new(std::mem::size_of::<u32>())
-                .write(account_id + 1)
-                .finalize();
+            let from_key = KeySerializer::new(U32_LEN).write(account_id).finalize();
+            let to_key = KeySerializer::new(U32_LEN).write(account_id + 1).finalize();
 
             for (table, i) in [
                 (SUBSPACE_BITMAPS, 'z'),
@@ -84,8 +79,6 @@ impl StorePurge for SqliteStore {
                 ))?
                 .execute([&from_key, &to_key])?;
             }
-            conn.prepare_cached("DELETE FROM q WHERE k = ?")?
-                .execute([account_id as i64])?;
 
             Ok(())
         })

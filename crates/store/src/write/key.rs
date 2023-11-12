@@ -25,11 +25,12 @@ use std::{convert::TryInto, hash::Hasher};
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    backend::MAX_TOKEN_MASK, BitmapKey, Deserialize, Error, IndexKey, IndexKeyPrefix, Key, LogKey,
-    ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    backend::MAX_TOKEN_MASK, BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey,
+    ValueKey, BLOB_HASH_LEN, SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    SUBSPACE_VALUES, U32_LEN, U64_LEN,
 };
 
-use super::{BitmapClass, TagValue, ValueClass};
+use super::{BitmapClass, BlobOp, TagValue, ValueClass};
 
 pub struct KeySerializer {
     buf: Vec<u8>,
@@ -110,7 +111,7 @@ impl KeySerialize for u64 {
 
 impl DeserializeBigEndian for &[u8] {
     fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32> {
-        self.get(index..index + std::mem::size_of::<u32>())
+        self.get(index..index + U32_LEN)
             .ok_or_else(|| {
                 crate::Error::InternalError(
                     "Index out of range while deserializing u32.".to_string(),
@@ -127,7 +128,7 @@ impl DeserializeBigEndian for &[u8] {
     }
 
     fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64> {
-        self.get(index..index + std::mem::size_of::<u64>())
+        self.get(index..index + U64_LEN)
             .ok_or_else(|| {
                 crate::Error::InternalError(
                     "Index out of range while deserializing u64.".to_string(),
@@ -206,31 +207,40 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
+        if !matches!(self.class.as_ref(), ValueClass::Acl(_)) {
+            SUBSPACE_VALUES
+        } else {
+            SUBSPACE_ACLS
+        }
     }
 
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        let ks = {
-            if include_subspace {
-                KeySerializer::new(self.len() + 2).write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(self.len() + 1)
-            }
-        };
-
         match self.class.as_ref() {
-            ValueClass::Property(field) => ks
-                .write(self.account_id)
-                .write(self.collection)
-                .write_leb128(self.document_id)
-                .write(*field),
-            ValueClass::Acl(grant_account_id) => ks
-                .write(*grant_account_id)
-                .write(u8::MAX)
-                .write(self.account_id)
-                .write(self.collection)
-                .write(self.document_id),
-            ValueClass::Named(name) => ks.write(u32::MAX).write(name.as_slice()),
+            ValueClass::Property(field) => if include_subspace {
+                KeySerializer::new(U32_LEN * 2 + 3).write(crate::SUBSPACE_VALUES)
+            } else {
+                KeySerializer::new(U32_LEN * 2 + 2)
+            }
+            .write(self.account_id)
+            .write(self.collection)
+            .write_leb128(self.document_id)
+            .write(*field),
+            ValueClass::Acl(grant_account_id) => if include_subspace {
+                KeySerializer::new(U32_LEN * 3 + 2).write(crate::SUBSPACE_ACLS)
+            } else {
+                KeySerializer::new(U32_LEN * 3 + 1)
+            }
+            .write(*grant_account_id)
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.document_id),
+            ValueClass::Named(name) => if include_subspace {
+                KeySerializer::new(U32_LEN + name.len() + 1).write(crate::SUBSPACE_VALUES)
+            } else {
+                KeySerializer::new(U32_LEN + name.len())
+            }
+            .write(u32::MAX)
+            .write(name.as_slice()),
         }
         .finalize()
     }
@@ -302,6 +312,44 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
     }
 }
 
+impl<T: AsRef<BlobHash> + Sync + Send> Key for BlobKey<T> {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        let ks = {
+            if include_subspace {
+                KeySerializer::new(BLOB_HASH_LEN + (U64_LEN * 3) + 1).write(crate::SUBSPACE_BLOBS)
+            } else {
+                KeySerializer::new(BLOB_HASH_LEN + (U64_LEN * 3))
+            }
+        };
+
+        match self.op {
+            BlobOp::Reserve { until, size } => ks
+                .write(1u8)
+                .write(self.account_id)
+                .write::<&[u8]>(self.hash.as_ref().as_ref())
+                .write(until)
+                .write(size as u32),
+            BlobOp::Commit => ks
+                .write(0u8)
+                .write::<&[u8]>(self.hash.as_ref().as_ref())
+                .write(u32::MAX)
+                .write(0u8)
+                .write(u32::MAX),
+            BlobOp::Link => ks
+                .write(0u8)
+                .write::<&[u8]>(self.hash.as_ref().as_ref())
+                .write(self.account_id)
+                .write(self.collection)
+                .write(self.document_id),
+        }
+        .finalize()
+    }
+
+    fn subspace(&self) -> u8 {
+        crate::SUBSPACE_BLOBS
+    }
+}
+
 const AHASHER: ahash::RandomState = ahash::RandomState::with_seeds(
     0xaf1f2242106c64b3,
     0x60ca4cfb4b3ed0ce,
@@ -359,7 +407,7 @@ impl<T: AsRef<BitmapClass>> BitmapKey<T> {
             + match self.class.as_ref() {
                 BitmapClass::DocumentIds => 0,
                 BitmapClass::Tag { value, .. } => match value {
-                    TagValue::Id(_) => std::mem::size_of::<u32>(),
+                    TagValue::Id(_) => U32_LEN,
                     TagValue::Text(v) => v.len(),
                     TagValue::Static(_) => 1,
                 },
@@ -374,28 +422,8 @@ impl<T: AsRef<ValueClass>> ValueKey<T> {
         std::mem::size_of::<ValueKey<ValueClass>>()
             + match self.class.as_ref() {
                 ValueClass::Property(_) => 1,
-                ValueClass::Acl(_) => std::mem::size_of::<u32>(),
+                ValueClass::Acl(_) => U32_LEN,
                 ValueClass::Named(v) => v.len(),
             }
-    }
-}
-
-pub struct AclKey {
-    pub to_account_id: u32,
-    pub to_collection: u8,
-    //pub grant_account_id: u32,
-    //pub to_document_id: u32,
-}
-
-impl Deserialize for AclKey {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        Ok(AclKey {
-            to_account_id: bytes.deserialize_be_u32(std::mem::size_of::<u32>() + 1)?,
-            to_collection: *bytes
-                .get((std::mem::size_of::<u32>() * 2) + 1)
-                .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
-            //grant_account_id: bytes.deserialize_be_u32(0)?,
-            //to_document_id: bytes.deserialize_be_u32((std::mem::size_of::<u32>() * 2) + 2)?,
-        })
     }
 }

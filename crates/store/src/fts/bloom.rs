@@ -232,7 +232,7 @@ impl From<Cow<'_, str>> for BloomHashGroup {
 
 impl Serialize for BloomFilter {
     fn serialize(self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(std::mem::size_of::<u64>() + self.b.serialized_size());
+        let mut buf = Vec::with_capacity(U64_LEN + self.b.serialized_size());
         buf.push_leb128(self.m);
         let _ = self.b.serialize_into(&mut buf);
         buf

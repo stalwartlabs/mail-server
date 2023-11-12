@@ -24,8 +24,8 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{Batch, Operation, ValueOp},
-    BitmapKey, IndexKey, Key, LogKey, StoreWrite, ValueKey,
+    write::{Batch, Operation, ValueClass, ValueOp},
+    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::{SqliteStore, BITS_MASK, BITS_PER_BLOCK};
@@ -85,9 +85,8 @@ const CLEAR_QUERIES: &[&str] = &[
     "UPDATE b SET p = p & ? WHERE z = ?",
 ];
 
-#[async_trait::async_trait]
-impl StoreWrite for SqliteStore {
-    async fn write(&self, batch: Batch) -> crate::Result<()> {
+impl SqliteStore {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
         let mut conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             let mut account_id = u32::MAX;
@@ -135,12 +134,12 @@ impl StoreWrite for SqliteStore {
 
                         if *by >= 0 {
                             trx.prepare_cached(concat!(
-                                "INSERT INTO q (k, v) VALUES (?, ?) ",
+                                "INSERT INTO c (k, v) VALUES (?, ?) ",
                                 "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
                             ))?
                             .execute(params![&key, *by])?;
                         } else {
-                            trx.prepare_cached("UPDATE q SET v = v + ? WHERE k = ?")?
+                            trx.prepare_cached("UPDATE c SET v = v + ? WHERE k = ?")?
                                 .execute(params![*by, &key])?;
                         }
                     }
@@ -154,11 +153,19 @@ impl StoreWrite for SqliteStore {
                         .serialize(false);
 
                         if let ValueOp::Set(value) = op {
-                            trx.prepare_cached("INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)")?
-                                .execute([&key, value])?;
+                            trx.prepare_cached(if !matches!(class, ValueClass::Acl(_)) {
+                                "INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)"
+                            } else {
+                                "INSERT OR REPLACE INTO a (k, v) VALUES (?, ?)"
+                            })?
+                            .execute([&key, value])?;
                         } else {
-                            trx.prepare_cached("DELETE FROM v WHERE k = ?")?
-                                .execute([&key])?;
+                            trx.prepare_cached(if !matches!(class, ValueClass::Acl(_)) {
+                                "DELETE FROM v WHERE k = ?"
+                            } else {
+                                "DELETE FROM a WHERE k = ?"
+                            })?
+                            .execute([&key])?;
                         }
                     }
                     Operation::Index { field, key, set } => {
@@ -200,7 +207,24 @@ impl StoreWrite for SqliteStore {
                                 .execute(params![bitmap_value_clear, &key])?;
                         };
                     }
+                    Operation::Blob { hash, op, set } => {
+                        let key = BlobKey {
+                            account_id,
+                            collection,
+                            document_id,
+                            hash,
+                            op: *op,
+                        }
+                        .serialize(false);
 
+                        if *set {
+                            trx.prepare_cached("INSERT OR IGNORE INTO o (k) VALUES (?)")?
+                                .execute([&key])?;
+                        } else {
+                            trx.prepare_cached("DELETE FROM o WHERE k = ?")?
+                                .execute([&key])?;
+                        }
+                    }
                     Operation::Log {
                         collection,
                         change_id,
@@ -248,9 +272,10 @@ impl StoreWrite for SqliteStore {
     }
 
     #[cfg(feature = "test_mode")]
-    async fn destroy(&self) {
+    pub(crate) async fn destroy(&self) {
         use crate::{
-            SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_QUOTAS, SUBSPACE_VALUES,
+            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
+            SUBSPACE_LOGS, SUBSPACE_VALUES,
         };
 
         let conn = self.conn_pool.get().unwrap();
@@ -259,7 +284,9 @@ impl StoreWrite for SqliteStore {
             SUBSPACE_LOGS,
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
-            SUBSPACE_QUOTAS,
+            SUBSPACE_BLOBS,
+            SUBSPACE_ACLS,
+            SUBSPACE_COUNTERS,
         ] {
             conn.execute(&format!("DROP TABLE {}", char::from(table)), [])
                 .unwrap();

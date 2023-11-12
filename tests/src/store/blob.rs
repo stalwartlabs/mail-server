@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use store::{write::now, BlobKind, Store};
+use store::{write::now, BlobHash, Store};
 use utils::config::Config;
 
 use crate::store::TempDir;
@@ -89,7 +89,7 @@ async fn test_blob(store: impl Store) {
     store.purge_tmp_blobs(0).await.unwrap();
 
     // Store and fetch
-    let kind = BlobKind::LinkedMaildir {
+    let kind = BlobHash::LinkedMaildir {
         account_id: 0,
         document_id: 0,
     };
@@ -106,13 +106,13 @@ async fn test_blob(store: impl Store) {
     assert!(store.get_blob(&kind, 0..u32::MAX).await.unwrap().is_none());
 
     // Copy
-    let src_kind = BlobKind::LinkedMaildir {
+    let src_kind = BlobHash::LinkedMaildir {
         account_id: 0,
         document_id: 1,
     };
     store.put_blob(&src_kind, DATA).await.unwrap();
     for id in 0..4 {
-        let dest_kind = BlobKind::LinkedMaildir {
+        let dest_kind = BlobHash::LinkedMaildir {
             account_id: 1,
             document_id: id,
         };
@@ -135,7 +135,7 @@ async fn test_blob(store: impl Store) {
     let now = now();
     let mut tmp_kinds = Vec::new();
     for i in 1..=3 {
-        let tmp_kind = BlobKind::Temporary {
+        let tmp_kind = BlobHash::Temporary {
             account_id: 2,
             timestamp: now - (i * 5),
             seq: 0,
@@ -175,7 +175,7 @@ async fn test_blob(store: impl Store) {
     for id in 0..4 {
         assert!(store
             .get_blob(
-                &BlobKind::LinkedMaildir {
+                &BlobHash::LinkedMaildir {
                     account_id: 1,
                     document_id: id,
                 },

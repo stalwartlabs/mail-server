@@ -34,15 +34,14 @@ use crate::{
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, StoreRead, ValueKey,
-    SUBSPACE_INDEXES, SUBSPACE_QUOTAS,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, SUBSPACE_BLOBS,
+    SUBSPACE_INDEXES, U32_LEN,
 };
 
 use super::{bitmap::DeserializeBlock, FdbStore};
 
-#[async_trait::async_trait]
-impl StoreRead for FdbStore {
-    async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+impl FdbStore {
+    pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
         U: Deserialize,
     {
@@ -56,7 +55,7 @@ impl StoreRead for FdbStore {
         }
     }
 
-    async fn get_bitmap(
+    pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
@@ -83,7 +82,7 @@ impl StoreRead for FdbStore {
                 if key.len() == key_len {
                     bm.deserialize_block(
                         value.value(),
-                        key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?,
+                        key.deserialize_be_u32(key.len() - U32_LEN)?,
                     );
                 }
             }
@@ -91,7 +90,7 @@ impl StoreRead for FdbStore {
         Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
-    async fn range_to_bitmap(
+    pub(crate) async fn range_to_bitmap(
         &self,
         account_id: u32,
         collection: u8,
@@ -99,20 +98,20 @@ impl StoreRead for FdbStore {
         value: Vec<u8>,
         op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let k1 = KeySerializer::new(
-            std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + std::mem::size_of::<u32>(),
-        )
-        .write(SUBSPACE_INDEXES)
-        .write(account_id)
-        .write(collection)
-        .write(field);
-        let k2 = KeySerializer::new(
-            std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + std::mem::size_of::<u32>(),
-        )
-        .write(SUBSPACE_INDEXES)
-        .write(account_id)
-        .write(collection)
-        .write(field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8);
+        let k1 =
+            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
+                .write(SUBSPACE_INDEXES)
+                .write(account_id)
+                .write(collection)
+                .write(field);
+        let k2 =
+            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
+                .write(SUBSPACE_INDEXES)
+                .write(account_id)
+                .write(collection)
+                .write(
+                    field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8,
+                );
 
         let (begin, end) = match op {
             Operator::LowerThan => (
@@ -158,7 +157,7 @@ impl StoreRead for FdbStore {
             while let Some(values) = range_stream.next().await {
                 for value in values? {
                     let key = value.key();
-                    bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                 }
             }
         } else {
@@ -166,7 +165,7 @@ impl StoreRead for FdbStore {
                 for value in values? {
                     let key = value.key();
                     if key.len() == key_len {
-                        bm.insert(key.deserialize_be_u32(key.len() - std::mem::size_of::<u32>())?);
+                        bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                     }
                 }
             }
@@ -175,7 +174,7 @@ impl StoreRead for FdbStore {
         Ok(Some(bm))
     }
 
-    async fn sort_index(
+    pub(crate) async fn sort_index(
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
@@ -214,7 +213,7 @@ impl StoreRead for FdbStore {
         while let Some(values) = sorted_iter.next().await {
             for value in values? {
                 let key = value.key();
-                let id_pos = key.len() - std::mem::size_of::<u32>();
+                let id_pos = key.len() - U32_LEN;
                 debug_assert!(key.starts_with(&from_key));
                 if !cb(
                     key.get(prefix_len..id_pos).ok_or_else(|| {
@@ -230,28 +229,25 @@ impl StoreRead for FdbStore {
         Ok(())
     }
 
-    async fn iterate(
+    pub(crate) async fn iterate<T: Key>(
         &self,
-        begin: impl Key,
-        end: impl Key,
-        first: bool,
-        ascending: bool,
+        params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
-        let begin = begin.serialize(true);
-        let end = end.serialize(true);
+        let begin = params.begin.serialize(true);
+        let end = params.end.serialize(true);
 
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&begin),
                 end: KeySelector::first_greater_than(&end),
-                mode: if first {
+                mode: if params.first {
                     options::StreamingMode::Small
                 } else {
                     options::StreamingMode::Iterator
                 },
-                reverse: !ascending,
+                reverse: !params.ascending,
                 ..Default::default()
             },
             true,
@@ -262,7 +258,7 @@ impl StoreRead for FdbStore {
                 let key = value.key().get(1..).unwrap_or_default();
                 let value = value.value();
 
-                if !cb(key, value)? || first {
+                if !cb(key, value)? || params.first {
                     return Ok(());
                 }
             }
@@ -271,51 +267,7 @@ impl StoreRead for FdbStore {
         Ok(())
     }
 
-    async fn get_last_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>> {
-        let collection = collection.into();
-        let from_key = LogKey {
-            account_id,
-            collection,
-            change_id: 0,
-        }
-        .serialize(true);
-        let to_key = LogKey {
-            account_id,
-            collection,
-            change_id: u64::MAX,
-        }
-        .serialize(true);
-
-        let trx = self.db.create_trx()?;
-        let mut iter = trx.get_ranges(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&from_key),
-                end: KeySelector::first_greater_or_equal(&to_key),
-                mode: options::StreamingMode::Small,
-                reverse: true,
-                ..Default::default()
-            },
-            true,
-        );
-
-        while let Some(values) = iter.next().await {
-            if let Some(value) = (values?).into_iter().next() {
-                let key = value.key();
-
-                return key
-                    .deserialize_be_u64(key.len() - std::mem::size_of::<u64>())
-                    .map(Some);
-            }
-        }
-
-        Ok(None)
-    }
-
-    async fn get_counter(
+    pub(crate) async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
@@ -330,11 +282,8 @@ impl StoreRead for FdbStore {
     }
 
     #[cfg(feature = "test_mode")]
-    async fn assert_is_empty(&self) {
-        use crate::{StorePurge, SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
-
-        // Purge bitmaps
-        self.purge_bitmaps().await.unwrap();
+    pub(crate) async fn assert_is_empty(&self) {
+        use crate::{SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
 
         let conn = self.db.create_trx().unwrap();
 
@@ -399,12 +348,11 @@ impl StoreRead for FdbStore {
                             );
                         }
                     }
-                    SUBSPACE_QUOTAS => {
-                        let v = i64::from_le_bytes(value[..].try_into().unwrap());
-                        if v != 0 {
-                            let k = u32::from_be_bytes(key[1..].try_into().unwrap());
-                            panic!("Table quotas is not empty: {k:?} = {v:?} (key {key:?})");
-                        }
+                    SUBSPACE_BLOBS | SUBSPACE_ACLS => {
+                        panic!(
+                            "Subspace {:?} is not empty: {key:?} {value:?}",
+                            char::from(subspace)
+                        );
                     }
                     SUBSPACE_LOGS => {
                         delete_keys.push(key.to_vec());

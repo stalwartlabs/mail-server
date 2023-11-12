@@ -28,74 +28,91 @@ use jmap_proto::{
     types::{
         acl::Acl,
         blob::{BlobId, BlobSection},
+        collection::Collection,
     },
 };
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
-use store::BlobKind;
+use store::{BlobClass, BlobHash};
 
 use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
+    #[allow(clippy::blocks_in_if_conditions)]
     pub async fn blob_download(
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,
     ) -> Result<Option<Vec<u8>>, MethodError> {
-        if !access_token.is_member(blob_id.account_id()) {
-            match &blob_id.kind {
-                BlobKind::Linked {
+        if !self
+            .store
+            .blob_hash_can_read(&blob_id.hash, &blob_id.class)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                            context = "blob_download",
+                            error = ?err,
+                            "Failed to validate blob access");
+                MethodError::ServerPartialFail
+            })?
+        {
+            return Ok(None);
+        }
+
+        if !access_token.is_member(blob_id.class.account_id()) {
+            match &blob_id.class {
+                BlobClass::Linked {
                     account_id,
                     collection,
                     document_id,
                 } => {
-                    match self
-                        .has_access_to_document(
-                            access_token,
-                            *account_id,
-                            *collection,
-                            *document_id,
-                            Acl::Read,
-                        )
-                        .await
-                    {
-                        Ok(has_access) if has_access => (),
-                        _ => return Ok(None),
+                    if Collection::from(*collection) == Collection::Email {
+                        match self
+                            .shared_messages(access_token, *account_id, Acl::ReadItems)
+                            .await
+                        {
+                            Ok(shared_messages) if shared_messages.contains(*document_id) => (),
+                            _ => return Ok(None),
+                        }
+                    } else {
+                        match self
+                            .has_access_to_document(
+                                access_token,
+                                *account_id,
+                                *collection,
+                                *document_id,
+                                Acl::Read,
+                            )
+                            .await
+                        {
+                            Ok(has_access) if has_access => (),
+                            _ => return Ok(None),
+                        }
                     }
                 }
-                BlobKind::LinkedMaildir {
-                    account_id,
-                    document_id,
-                } => {
-                    match self
-                        .shared_messages(access_token, *account_id, Acl::ReadItems)
-                        .await
-                    {
-                        Ok(shared_messages) if shared_messages.contains(*document_id) => (),
-                        _ => return Ok(None),
-                    }
+                BlobClass::Reserved { .. } => {
+                    return Ok(None);
                 }
-                BlobKind::Temporary { .. } => return Ok(None),
             }
         }
 
         if let Some(section) = &blob_id.section {
-            self.get_blob_section(&blob_id.kind, section).await
+            self.get_blob_section(&blob_id.hash, section).await
         } else {
-            self.get_blob(&blob_id.kind, 0..u32::MAX).await
+            self.get_blob(&blob_id.hash, 0..u32::MAX).await
         }
     }
 
     pub async fn get_blob_section(
         &self,
-        kind: &BlobKind,
+        hash: &BlobHash,
         section: &BlobSection,
     ) -> Result<Option<Vec<u8>>, MethodError> {
         Ok(self
             .get_blob(
-                kind,
+                hash,
                 (section.offset_start as u32)
                     ..(section.offset_start.saturating_add(section.size) as u32),
             )
@@ -109,15 +126,15 @@ impl JMAP {
 
     pub async fn get_blob(
         &self,
-        kind: &BlobKind,
+        hash: &BlobHash,
         range: Range<u32>,
     ) -> Result<Option<Vec<u8>>, MethodError> {
-        match self.store.get_blob(kind, range).await {
+        match self.blob_store.get_blob(hash.as_ref(), range).await {
             Ok(blob) => Ok(blob),
             Err(err) => {
                 tracing::error!(event = "error",
                                 context = "blob_store",
-                                blob_id = ?kind,
+                                blob_id = ?hash,
                                 error = ?err,
                                 "Failed to retrieve blob");
                 Err(MethodError::ServerPartialFail)
@@ -130,35 +147,44 @@ impl JMAP {
         blob_id: &BlobId,
         access_token: &AccessToken,
     ) -> Result<bool, MethodError> {
-        Ok(match &blob_id.kind {
-            BlobKind::Linked {
-                account_id,
-                collection,
-                document_id,
-            } => {
-                access_token.is_member(*account_id)
-                    || (access_token.has_access(*account_id, *collection)
-                        && self
-                            .has_access_to_document(
-                                access_token,
-                                *account_id,
-                                *collection,
-                                *document_id,
-                                Acl::Read,
-                            )
-                            .await?)
-            }
-            BlobKind::LinkedMaildir {
-                account_id,
-                document_id,
-            } => {
-                access_token.is_member(*account_id)
-                    || self
-                        .shared_messages(access_token, *account_id, Acl::ReadItems)
-                        .await?
-                        .contains(*document_id)
-            }
-            BlobKind::Temporary { account_id, .. } => access_token.is_member(*account_id),
-        })
+        Ok(self
+            .store
+            .blob_hash_can_read(&blob_id.hash, &blob_id.class)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                                context = "has_access_blob",
+                                error = ?err,
+                                "Failed to validate blob access");
+                MethodError::ServerPartialFail
+            })?
+            && match &blob_id.class {
+                BlobClass::Linked {
+                    account_id,
+                    collection,
+                    document_id,
+                } => {
+                    if Collection::from(*collection) == Collection::Email {
+                        access_token.is_member(*account_id)
+                            || self
+                                .shared_messages(access_token, *account_id, Acl::ReadItems)
+                                .await?
+                                .contains(*document_id)
+                    } else {
+                        access_token.is_member(*account_id)
+                            || (access_token.has_access(*account_id, *collection)
+                                && self
+                                    .has_access_to_document(
+                                        access_token,
+                                        *account_id,
+                                        *collection,
+                                        *document_id,
+                                        Acl::Read,
+                                    )
+                                    .await?)
+                    }
+                }
+                BlobClass::Reserved { account_id } => access_token.is_member(*account_id),
+            })
     }
 }
