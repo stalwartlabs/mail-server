@@ -22,12 +22,13 @@
 */
 
 use std::io::Read;
+use std::net::{IpAddr, SocketAddr};
 
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     flate2::read::GzDecoder,
     hickory_resolver::{
-        config::{ResolverConfig, ResolverOpts},
+        config::{NameServerConfig, ResolverConfig, ResolverOpts, Protocol},
         system_conf::read_system_conf,
     },
     Resolver,
@@ -51,6 +52,35 @@ impl ConfigResolver for Config {
             "google" => (ResolverConfig::google(), ResolverOpts::default()),
             "system" => read_system_conf()
                 .map_err(|err| format!("Failed to read system DNS config: {err}"))?,
+            "custom" => {
+                // Example config.toml for custom resolvers:
+                //
+                // [resolver]
+                // type = "custom"
+                //
+                // [[resolver.nameservers]]
+                // ip = 1.1.1.1
+                // port = 53
+                // protocol = "udp" | "tcp" | "tls"
+                let mut resolver_config = ResolverConfig::new();
+                for nameserver_config in self.sub_keys("resolver.nameservers") {
+                    let ip: IpAddr = self.property_require(("resolver.nameservers", nameserver_config, "ip"))?;
+                    let port: u16 = self.property_require(("resolver.nameservers", nameserver_config, "port"))?;
+                    let protocol_str: &str = self.value_require(("resolver.nameservers", nameserver_config, "protocol"))?;
+                    let protocol = match protocol_str {
+                        "udp" => Protocol::Udp,
+                        "tcp" => Protocol::Tcp,
+                        "tls" => Protocol::Tls,
+                        p => return Err(format!("Unknown resolver protocol {p}")),
+                    };
+
+                    resolver_config.add_name_server(NameServerConfig::new(SocketAddr::new(ip, port), protocol));
+                }
+                if resolver_config.name_servers().is_empty() {
+                    return Err(format!("No custom resolver nameservers configured."));
+                }
+                (resolver_config, ResolverOpts::default())
+            }
             other => return Err(format!("Unknown resolver type {other:?}.")),
         };
         if let Some(concurrency) = self.property("resolver.concurrency")? {

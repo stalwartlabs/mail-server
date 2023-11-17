@@ -27,7 +27,7 @@ use std::{
 };
 
 use mail_auth::{IpLookupStrategy, MX};
-use utils::config::ServerProtocol;
+use utils::config::{Config, ServerProtocol};
 
 use crate::smtp::{
     inbound::TestQueueEvent, outbound::start_test_server, session::TestSession, TestConfig,
@@ -38,6 +38,7 @@ use smtp::{
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt},
 };
+use smtp::config::resolver::ConfigResolver;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -106,5 +107,45 @@ async fn ip_lookup_strategy() {
                 .to_string();
             assert!(status.contains("Connection refused"));
         }
+    }
+}
+
+#[tokio::test]
+async fn custom_nameserver_config() {
+    let mut config = Config::default();
+    config.parse(r#"
+[resolver]
+type = "custom"
+concurrency = 1
+timeout = "1s"
+attempts = 1
+try-tcp-on-error = false
+public-suffix = []
+
+[[resolver.nameservers]]
+ip = 1.1.1.1
+port = 53
+protocol = "udp"
+"#).unwrap();
+    config.build_resolvers().unwrap();
+}
+
+#[tokio::test]
+async fn custom_nameserver_config_missing() {
+    let mut config = Config::default();
+    config.parse(r#"
+[resolver]
+type = "custom"
+concurrency = 1
+timeout = "1s"
+attempts = 1
+try-tcp-on-error = false
+public-suffix = []
+"#).unwrap();
+
+    // should error, as we must have at least one nameserver configured
+    match config.build_resolvers() {
+        Ok(_) => panic!("Expected building resolvers to fail."),
+        Err(e) => assert_eq!(e, "No custom resolver nameservers configured."),
     }
 }
