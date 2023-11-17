@@ -27,7 +27,10 @@ use jmap_proto::{
     object::email::QueryArguments,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
 };
+use mail_parser::HeaderName;
+use nlp::language::Language;
 use store::{
+    fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
     query::{self},
     roaring::RoaringBitmap,
     write::ValueClass,
@@ -45,200 +48,226 @@ impl JMAP {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
-        for cond in std::mem::take(&mut request.filter) {
-            match cond {
-                Filter::InMailbox(mailbox) => filters.push(query::Filter::is_in_bitmap(
-                    Property::MailboxIds,
-                    mailbox.document_id(),
-                )),
-                Filter::InMailboxOtherThan(mailboxes) => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::Or);
-                    for mailbox in mailboxes {
-                        filters.push(query::Filter::is_in_bitmap(
-                            Property::MailboxIds,
-                            mailbox.document_id(),
-                        ));
-                    }
-                    filters.push(query::Filter::End);
-                    filters.push(query::Filter::End);
-                }
-                Filter::Before(date) => filters.push(query::Filter::lt(Property::ReceivedAt, date)),
-                Filter::After(date) => filters.push(query::Filter::gt(Property::ReceivedAt, date)),
-                Filter::MinSize(size) => filters.push(query::Filter::ge(Property::Size, size)),
-                Filter::MaxSize(size) => filters.push(query::Filter::lt(Property::Size, size)),
-                Filter::AllInThreadHaveKeyword(keyword) => filters.push(query::Filter::is_in_set(
-                    self.thread_keywords(account_id, keyword, true).await?,
-                )),
-                Filter::SomeInThreadHaveKeyword(keyword) => filters.push(query::Filter::is_in_set(
-                    self.thread_keywords(account_id, keyword, false).await?,
-                )),
-                Filter::NoneInThreadHaveKeyword(keyword) => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_set(
-                        self.thread_keywords(account_id, keyword, false).await?,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                Filter::HasKeyword(keyword) => {
-                    filters.push(query::Filter::is_in_bitmap(Property::Keywords, keyword))
-                }
-                Filter::NotKeyword(keyword) => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(Property::Keywords, keyword));
-                    filters.push(query::Filter::End);
-                }
-                Filter::HasAttachment(has_attach) => {
-                    if !has_attach {
-                        filters.push(query::Filter::Not);
-                    }
-                    filters.push(query::Filter::is_in_bitmap(Property::HasAttachment, ()));
-                    if !has_attach {
-                        filters.push(query::Filter::End);
-                    }
-                }
-                /*Filter::Text(text) => {
-                                    filters.push(query::Filter::Or);
-                                    filters.push(query::Filter::has_text(
-                                        Property::From,
-                                        &text,
-                                        Language::None,
-                                    ));
-                                    filters.push(query::Filter::has_text(Property::To, &text, Language::None));
-                                    filters.push(query::Filter::has_text(Property::Cc, &text, Language::None));
-                                    filters.push(query::Filter::has_text(
-                                        Property::Bcc,
-                                        &text,
-                                        Language::None,
-                                    ));
-                                    filters.push(query::Filter::has_text_detect(
-                                        Property::Subject,
-                                        &text,
-                                        self.config.default_language,
-                                    ));
-                                    filters.push(query::Filter::has_text_detect(
-                                        Property::TextBody,
-                                        &text,
-                                        self.config.default_language,
-                                    ));
-                                    filters.push(query::Filter::has_text_detect(
-                                        Property::Attachments,
-                                        text,
-                                        self.config.default_language,
-                                    ));
-                                    filters.push(query::Filter::End);
-                                }
-                                Filter::From(text) => filters.push(query::Filter::has_text(
-                                    Property::From,
-                                    text,
+        for cond_group in std::mem::take(&mut request.filter).into_filter_group() {
+            match cond_group {
+                FilterGroup::Fts(conds) => {
+                    let mut fts_filters = Vec::with_capacity(filters.len());
+                    for cond in conds {
+                        match cond {
+                            Filter::Text(text) => {
+                                fts_filters.push(FtsFilter::Or);
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::From),
+                                    &text,
                                     Language::None,
-                                )),
-                                Filter::To(text) => {
-                                    filters.push(query::Filter::has_text(Property::To, text, Language::None))
-                                }
-                                Filter::Cc(text) => {
-                                    filters.push(query::Filter::has_text(Property::Cc, text, Language::None))
-                                }
-                                Filter::Bcc(text) => {
-                                    filters.push(query::Filter::has_text(Property::Bcc, text, Language::None))
-                                }
-                                Filter::Subject(text) => filters.push(query::Filter::has_text_detect(
-                                    Property::Subject,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::To),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Cc),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Bcc),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Header(HeaderName::Subject),
+                                    &text,
+                                    self.config.default_language,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Body,
+                                    &text,
+                                    self.config.default_language,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Attachment,
                                     text,
                                     self.config.default_language,
-                                )),
-                                Filter::Body(text) => filters.push(query::Filter::has_text_detect(
-                                    Property::TextBody,
-                                    text,
-                                    self.config.default_language,
-                                )),
-                                Filter::Header(header) => {
-                                    let mut header = header.into_iter();
-                                    let header_name = header.next().ok_or_else(|| {
-                                        MethodError::InvalidArguments("Header name is missing.".to_string())
-                                    })?;
+                                ));
+                                fts_filters.push(FtsFilter::End);
+                            }
+                            Filter::From(text) => fts_filters.push(FtsFilter::has_text(
+                                Field::Header(HeaderName::From),
+                                text,
+                                Language::None,
+                            )),
+                            Filter::To(text) => fts_filters.push(FtsFilter::has_text(
+                                Field::Header(HeaderName::To),
+                                text,
+                                Language::None,
+                            )),
+                            Filter::Cc(text) => fts_filters.push(FtsFilter::has_text(
+                                Field::Header(HeaderName::Cc),
+                                text,
+                                Language::None,
+                            )),
+                            Filter::Bcc(text) => fts_filters.push(FtsFilter::has_text(
+                                Field::Header(HeaderName::Bcc),
+                                text,
+                                Language::None,
+                            )),
+                            Filter::Subject(text) => fts_filters.push(FtsFilter::has_text_detect(
+                                Field::Header(HeaderName::Subject),
+                                text,
+                                self.config.default_language,
+                            )),
+                            Filter::Body(text) => fts_filters.push(FtsFilter::has_text_detect(
+                                Field::Body,
+                                text,
+                                self.config.default_language,
+                            )),
+                            Filter::Header(header) => {
+                                let mut header = header.into_iter();
+                                let header_name = header.next().ok_or_else(|| {
+                                    MethodError::InvalidArguments(
+                                        "Header name is missing.".to_string(),
+                                    )
+                                })?;
 
-                                    match HeaderName::parse(&header_name) {
-                                        Some(HeaderName::Other(_)) | None => {
-                                            return Err(MethodError::InvalidArguments(format!(
-                                                "Querying non-RFC header '{header_name}' is not allowed.",
-                                            )));
-                                        }
-                                        Some(header_name) => {
-                                            let is_id = matches!(
+                                match HeaderName::parse(header_name) {
+                                    Some(HeaderName::Other(header_name)) => {
+                                        return Err(MethodError::InvalidArguments(format!(
+                                            "Querying header '{header_name}' is not supported.",
+                                        )));
+                                    }
+                                    Some(header_name) => {
+                                        if let Some(header_value) = header.next() {
+                                            if matches!(
                                                 header_name,
                                                 HeaderName::MessageId
                                                     | HeaderName::InReplyTo
                                                     | HeaderName::References
                                                     | HeaderName::ResentMessageId
-                                            );
-                                            let tokens = if let Some(header_value) = header.next() {
-                                                let header_num = header_name.id().to_string();
-                                                header_value
-                                                    .split_ascii_whitespace()
-                                                    .filter_map(|token| {
-                                                        if token.len() < MAX_TOKEN_LENGTH {
-                                                            if is_id {
-                                                                format!("{header_num}{token}")
-                                                            } else {
-                                                                format!("{header_num}{}", token.to_lowercase())
-                                                            }
-                                                            .into()
-                                                        } else {
-                                                            None
-                                                        }
-                                                    })
-                                                    .collect::<Vec<_>>()
+                                            ) {
+                                                fts_filters.push(FtsFilter::has_keyword(
+                                                    Field::Header(header_name),
+                                                    header_value,
+                                                ));
                                             } else {
-                                                vec![]
-                                            };
-                                            match tokens.len() {
-                                                0 => {
-                                                    filters.push(query::Filter::has_raw_text(
-                                                        Property::Headers,
-                                                        header_name.id().to_string(),
-                                                    ));
-                                                }
-                                                1 => {
-                                                    filters.push(query::Filter::has_raw_text(
-                                                        Property::Headers,
-                                                        tokens.into_iter().next().unwrap(),
-                                                    ));
-                                                }
-                                                _ => {
-                                                    filters.push(query::Filter::And);
-                                                    for token in tokens {
-                                                        filters.push(query::Filter::has_raw_text(
-                                                            Property::Headers,
-                                                            token,
-                                                        ));
-                                                    }
-                                                    filters.push(query::Filter::End);
-                                                }
+                                                fts_filters.push(FtsFilter::has_text(
+                                                    Field::Header(header_name),
+                                                    header_value,
+                                                    Language::None,
+                                                ));
                                             }
+                                        } else {
+                                            fts_filters.push(FtsFilter::has_keyword(
+                                                Field::Keyword,
+                                                header_name.as_str().to_lowercase(),
+                                            ));
                                         }
                                     }
+                                    None => (),
                                 }
-                */
-                // Non-standard
-                Filter::Id(ids) => {
-                    let mut set = RoaringBitmap::new();
-                    for id in ids {
-                        set.insert(id.document_id());
+                            }
+                            Filter::And | Filter::Or | Filter::Not | Filter::Close => {
+                                fts_filters.push(cond.into());
+                            }
+                            other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                        }
                     }
-                    filters.push(query::Filter::is_in_set(set));
+                    filters.push(query::Filter::is_in_set(
+                        self.fts_filter(account_id, Collection::Email, fts_filters)
+                            .await?,
+                    ));
                 }
-                Filter::SentBefore(date) => filters.push(query::Filter::lt(Property::SentAt, date)),
-                Filter::SentAfter(date) => filters.push(query::Filter::gt(Property::SentAt, date)),
-                Filter::InThread(id) => filters.push(query::Filter::is_in_bitmap(
-                    Property::ThreadId,
-                    id.document_id(),
-                )),
-                Filter::And | Filter::Or | Filter::Not | Filter::Close => {
-                    filters.push(cond.into());
-                }
+                FilterGroup::Store(cond) => {
+                    match cond {
+                        Filter::InMailbox(mailbox) => filters.push(query::Filter::is_in_bitmap(
+                            Property::MailboxIds,
+                            mailbox.document_id(),
+                        )),
+                        Filter::InMailboxOtherThan(mailboxes) => {
+                            filters.push(query::Filter::Not);
+                            filters.push(query::Filter::Or);
+                            for mailbox in mailboxes {
+                                filters.push(query::Filter::is_in_bitmap(
+                                    Property::MailboxIds,
+                                    mailbox.document_id(),
+                                ));
+                            }
+                            filters.push(query::Filter::End);
+                            filters.push(query::Filter::End);
+                        }
+                        Filter::Before(date) => {
+                            filters.push(query::Filter::lt(Property::ReceivedAt, date))
+                        }
+                        Filter::After(date) => {
+                            filters.push(query::Filter::gt(Property::ReceivedAt, date))
+                        }
+                        Filter::MinSize(size) => {
+                            filters.push(query::Filter::ge(Property::Size, size))
+                        }
+                        Filter::MaxSize(size) => {
+                            filters.push(query::Filter::lt(Property::Size, size))
+                        }
+                        Filter::AllInThreadHaveKeyword(keyword) => {
+                            filters.push(query::Filter::is_in_set(
+                                self.thread_keywords(account_id, keyword, true).await?,
+                            ))
+                        }
+                        Filter::SomeInThreadHaveKeyword(keyword) => {
+                            filters.push(query::Filter::is_in_set(
+                                self.thread_keywords(account_id, keyword, false).await?,
+                            ))
+                        }
+                        Filter::NoneInThreadHaveKeyword(keyword) => {
+                            filters.push(query::Filter::Not);
+                            filters.push(query::Filter::is_in_set(
+                                self.thread_keywords(account_id, keyword, false).await?,
+                            ));
+                            filters.push(query::Filter::End);
+                        }
+                        Filter::HasKeyword(keyword) => {
+                            filters.push(query::Filter::is_in_bitmap(Property::Keywords, keyword))
+                        }
+                        Filter::NotKeyword(keyword) => {
+                            filters.push(query::Filter::Not);
+                            filters.push(query::Filter::is_in_bitmap(Property::Keywords, keyword));
+                            filters.push(query::Filter::End);
+                        }
+                        Filter::HasAttachment(has_attach) => {
+                            if !has_attach {
+                                filters.push(query::Filter::Not);
+                            }
+                            filters.push(query::Filter::is_in_bitmap(Property::HasAttachment, ()));
+                            if !has_attach {
+                                filters.push(query::Filter::End);
+                            }
+                        }
 
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                        // Non-standard
+                        Filter::Id(ids) => {
+                            let mut set = RoaringBitmap::new();
+                            for id in ids {
+                                set.insert(id.document_id());
+                            }
+                            filters.push(query::Filter::is_in_set(set));
+                        }
+                        Filter::SentBefore(date) => {
+                            filters.push(query::Filter::lt(Property::SentAt, date))
+                        }
+                        Filter::SentAfter(date) => {
+                            filters.push(query::Filter::gt(Property::SentAt, date))
+                        }
+                        Filter::InThread(id) => filters.push(query::Filter::is_in_bitmap(
+                            Property::ThreadId,
+                            id.document_id(),
+                        )),
+                        Filter::And | Filter::Or | Filter::Not | Filter::Close => {
+                            filters.push(cond.into());
+                        }
+
+                        other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                    }
+                }
             }
         }
 

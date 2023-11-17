@@ -33,18 +33,30 @@ impl JMAP {
             .map(ChangeLogBuilder::with_change_id)
     }
 
-    pub async fn assign_change_id(&self, account_id: u32) -> Result<u64, MethodError> {
-        self.store
-            .assign_change_id(account_id)
-            .await
-            .map_err(|err| {
-                tracing::error!(
+    pub async fn assign_change_id(&self, _: u32) -> Result<u64, MethodError> {
+        self.generate_snowflake_id()
+        /*self.store
+        .assign_change_id(account_id)
+        .await
+        .map_err(|err| {
+            tracing::error!(
+            event = "error",
+            context = "change_log",
+            error = ?err,
+            "Failed to assign changeId.");
+            MethodError::ServerPartialFail
+        })*/
+    }
+
+    pub fn generate_snowflake_id(&self) -> Result<u64, MethodError> {
+        self.snowflake_id.generate().ok_or_else(|| {
+            tracing::error!(
                 event = "error",
                 context = "change_log",
-                error = ?err,
-                "Failed to assign changeId.");
-                MethodError::ServerPartialFail
-            })
+                "Failed to generate snowflake id."
+            );
+            MethodError::ServerPartialFail
+        })
     }
 
     pub async fn commit_changes(

@@ -160,10 +160,10 @@ impl BatchBuilder {
         self
     }
 
-    pub fn set(&mut self, class: impl Into<ValueClass>, value: Vec<u8>) -> &mut Self {
+    pub fn set(&mut self, class: impl Into<ValueClass>, value: impl Into<Vec<u8>>) -> &mut Self {
         self.ops.push(Operation::Value {
             class: class.into(),
-            op: ValueOp::Set(value),
+            op: ValueOp::Set(value.into()),
         });
         self
     }

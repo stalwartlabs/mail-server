@@ -28,10 +28,7 @@ use futures::StreamExt;
 use rand::Rng;
 use std::time::Instant;
 
-use crate::{
-    write::{key::KeySerializer, now},
-    BitmapKey, IndexKey, SUBSPACE_VALUES,
-};
+use crate::{write::now, BitmapKey, IndexKey};
 
 use super::{
     bitmap::{next_available_index, BITS_PER_BLOCK},
@@ -172,38 +169,6 @@ impl FdbStore {
             match trx.commit().await {
                 Ok(_) => {
                     return Ok(document_id);
-                }
-                Err(err) => {
-                    if start.elapsed() < MAX_COMMIT_TIME {
-                        err.on_error().await?;
-                    } else {
-                        return Err(FdbError::from(err).into());
-                    }
-                }
-            }
-        }
-    }
-
-    pub(crate) async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
-        let start = Instant::now();
-        let counter = KeySerializer::new(U32_LEN + 2)
-            .write(SUBSPACE_VALUES)
-            .write(account_id)
-            .finalize();
-
-        loop {
-            // Read id
-            let trx = self.db.create_trx()?;
-            let id = if let Some(bytes) = trx.get(&counter, false).await? {
-                u64::deserialize(&bytes)? + 1
-            } else {
-                0
-            };
-            trx.set(&counter, &id.serialize());
-
-            match trx.commit().await {
-                Ok(_) => {
-                    return Ok(id);
                 }
                 Err(err) => {
                     if start.elapsed() < MAX_COMMIT_TIME {

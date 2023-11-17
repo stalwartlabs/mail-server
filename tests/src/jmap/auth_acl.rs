@@ -45,7 +45,7 @@ use crate::{
     directory::sql::{
         add_to_group, create_test_group_with_email, create_test_user_with_email, remove_from_group,
     },
-    jmap::{mailbox::destroy_all_mailboxes, test_account_login},
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
 };
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
@@ -777,10 +777,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         admin_client.set_default_account_id(&id.to_string());
         destroy_all_mailboxes(admin_client).await;
     }
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {

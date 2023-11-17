@@ -26,8 +26,8 @@ use std::sync::Arc;
 use crate::{
     directory::sql::{add_to_group, create_test_user_with_email, set_test_quota},
     jmap::{
-        delivery::SmtpConnection, jmap_raw_request, mailbox::destroy_all_mailboxes,
-        test_account_login,
+        assert_is_empty, delivery::SmtpConnection, jmap_raw_request,
+        mailbox::destroy_all_mailboxes, test_account_login,
     },
 };
 use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JMAP};
@@ -320,10 +320,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         admin_client.set_default_account_id(account_id.to_string());
         destroy_all_mailboxes(admin_client).await;
     }
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) {

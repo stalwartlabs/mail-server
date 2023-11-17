@@ -32,7 +32,6 @@ impl SqliteStore {
     pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
-            //Todo
             conn.prepare_cached(concat!(
                 "DELETE FROM b WHERE ",
                 "a = 0 AND ",

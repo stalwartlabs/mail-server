@@ -25,7 +25,11 @@ use std::{sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose, Engine};
 use directory::config::ConfigDirectory;
-use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use jmap::{
+    api::JmapSessionManager,
+    services::{housekeeper::Event, IPC_CHANNEL_BUFFER},
+    JMAP,
+};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use reqwest::header;
@@ -222,17 +226,23 @@ refresh-token-renew = "2s"
 
 #[tokio::test]
 pub async fn jmap_tests() {
-    let coco = 1;
+    /*let level = "warn";
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::WARN)
+            .with_env_filter(
+                tracing_subscriber::EnvFilter::builder()
+                    .parse(
+                        format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                    )
+                    .unwrap(),
+            )
             .finish(),
     )
-    .unwrap();
+    .unwrap();*/
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    /*email_query::test(params.server.clone(), &mut params.client, delete).await;
+    email_query::test(params.server.clone(), &mut params.client, delete).await;
     email_get::test(params.server.clone(), &mut params.client).await;
     email_set::test(params.server.clone(), &mut params.client).await;
     email_parse::test(params.server.clone(), &mut params.client).await;
@@ -254,7 +264,7 @@ pub async fn jmap_tests() {
     email_submission::test(params.server.clone(), &mut params.client).await;
     websocket::test(params.server.clone(), &mut params.client).await;
     quota::test(params.server.clone(), &mut params.client).await;
-    crypto::test(params.server.clone(), &mut params.client).await;*/
+    crypto::test(params.server.clone(), &mut params.client).await;
     blob::test(params.server.clone(), &mut params.client).await;
 
     if delete {
@@ -283,6 +293,33 @@ struct JMAPTest {
     client: Client,
     temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
+}
+
+pub async fn wait_for_index(server: &JMAP) {
+    loop {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        server
+            .housekeeper_tx
+            .send(Event::IndexIsActive(tx))
+            .await
+            .unwrap();
+        if rx.await.unwrap() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        } else {
+            break;
+        }
+    }
+}
+
+pub async fn assert_is_empty(server: Arc<JMAP>) {
+    // Wait for pending FTS index tasks
+    wait_for_index(&server).await;
+
+    // Assert is empty
+    server
+        .store
+        .assert_is_empty(server.blob_store.clone())
+        .await;
 }
 
 async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {

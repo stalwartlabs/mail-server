@@ -23,7 +23,7 @@
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index};
 use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{client::Client, core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
@@ -64,6 +64,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             .take_id();
         email_ids.insert(email_name, email_id);
     }
+    wait_for_index(&server).await;
 
     // Run tests
     for (filter, email_name, snippet_subject, snippet_preview) in [
@@ -179,8 +180,5 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Destroy test data
     destroy_all_mailboxes(client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }

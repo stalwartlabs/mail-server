@@ -110,7 +110,7 @@ impl SqliteStore {
         account_id: u32,
         collection: u8,
         field: u8,
-        value: Vec<u8>,
+        value: &[u8],
         op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let conn = self.conn_pool.get()?;
@@ -132,27 +132,27 @@ impl SqliteStore {
                 Operator::LowerThan => (
                     ("SELECT k FROM i WHERE k >= ? AND k < ?"),
                     (k1.finalize()),
-                    (k2.write(&value[..]).write(0u32).finalize()),
+                    (k2.write(value).write(0u32).finalize()),
                 ),
                 Operator::LowerEqualThan => (
                     ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
                     (k1.finalize()),
-                    (k2.write(&value[..]).write(u32::MAX).finalize()),
+                    (k2.write(value).write(u32::MAX).finalize()),
                 ),
                 Operator::GreaterThan => (
                     ("SELECT k FROM i WHERE k > ? AND k <= ?"),
-                    (k1.write(&value[..]).write(u32::MAX).finalize()),
+                    (k1.write(value).write(u32::MAX).finalize()),
                     (k2.finalize()),
                 ),
                 Operator::GreaterEqualThan => (
                     ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                    (k1.write(&value[..]).write(0u32).finalize()),
+                    (k1.write(value).write(0u32).finalize()),
                     (k2.finalize()),
                 ),
                 Operator::Equal => (
                     ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                    (k1.write(&value[..]).write(0u32).finalize()),
-                    (k2.write(&value[..]).write(u32::MAX).finalize()),
+                    (k1.write(value).write(0u32).finalize()),
+                    (k2.write(value).write(u32::MAX).finalize()),
                 ),
             };
 
@@ -314,7 +314,7 @@ impl SqliteStore {
 
         // Values
         let mut has_errors = false;
-        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_ACLS, crate::SUBSPACE_COUNTERS] {
+        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_ACLS, crate::SUBSPACE_COUNTERS, crate::SUBSPACE_BLOB_DATA] {
             let table = char::from(table);
             let mut query = conn.prepare_cached(&format!("SELECT k, v FROM {table}")).unwrap();
             let mut rows = query.query([]).unwrap();
@@ -370,7 +370,7 @@ impl SqliteStore {
 
         // Bitmaps
         let mut query = conn
-            .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b")
+            .prepare_cached(&format!("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM {}", char::from(crate::SUBSPACE_BITMAPS)))
             .unwrap();
         let mut rows = query.query([]).unwrap();
 

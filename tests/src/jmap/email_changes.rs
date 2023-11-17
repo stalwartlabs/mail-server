@@ -34,6 +34,8 @@ use store::{
     write::{log::ChangeLogBuilder, BatchBuilder},
 };
 
+use crate::jmap::assert_is_empty;
+
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Changes tests...");
 
@@ -315,10 +317,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_eq!(created, vec![2, 3, 11, 12]);
     assert_eq!(changes.updated(), Vec::<String>::new());
     assert_eq!(changes.destroyed(), Vec::<String>::new());
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 #[derive(Debug, Clone, Copy)]

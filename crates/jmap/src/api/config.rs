@@ -41,6 +41,9 @@ impl crate::Config {
             changes_max_results: settings
                 .property("jmap.protocol.changes.max-results")?
                 .unwrap_or(5000),
+            snippet_max_results: settings
+                .property("jmap.protocol.search-snippet.max-results")?
+                .unwrap_or(100),
             request_max_size: settings
                 .property("jmap.protocol.request.max-size")?
                 .unwrap_or(10000000),

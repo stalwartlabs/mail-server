@@ -46,7 +46,7 @@ use tokio::{
 
 use crate::{
     directory::sql::create_test_user_with_email,
-    jmap::{email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
+    jmap::{assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
 };
 
 #[derive(Default, Debug, PartialEq, Eq)]
@@ -471,10 +471,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         client.email_submission_destroy(&id).await.unwrap();
     }
     destroy_all_mailboxes(client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockSMTPSettings>>) {

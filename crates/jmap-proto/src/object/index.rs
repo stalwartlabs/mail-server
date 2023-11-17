@@ -25,8 +25,8 @@ use std::{borrow::Cow, collections::HashSet};
 
 use store::{
     write::{
-        assert::HashedValue, BatchBuilder, BitmapClass, IntoOperations, Operation, TagValue,
-        TokenizeText, ValueClass, ValueOp,
+        assert::HashedValue, BatchBuilder, BitmapClass, BitmapHash, IntoOperations, Operation,
+        TagValue, TokenizeText, ValueClass, ValueOp,
     },
     Serialize,
 };
@@ -238,7 +238,7 @@ fn merge_batch(
                             batch.ops.push(Operation::Bitmap {
                                 class: BitmapClass::Text {
                                     field,
-                                    token: token.into(),
+                                    token: BitmapHash::new(token),
                                 },
                                 set,
                             });
@@ -301,7 +301,7 @@ fn merge_batch(
                             batch.ops.push(Operation::Bitmap {
                                 class: BitmapClass::Text {
                                     field,
-                                    token: token.into_bytes(),
+                                    token: BitmapHash::new(token),
                                 },
                                 set,
                             });
@@ -480,7 +480,7 @@ fn build_batch(
                         batch.ops.push(Operation::Bitmap {
                             class: BitmapClass::Text {
                                 field,
-                                token: token.into_bytes(),
+                                token: BitmapHash::new(token),
                             },
                             set,
                         });
@@ -512,7 +512,7 @@ fn build_batch(
                     batch.ops.push(Operation::Bitmap {
                         class: BitmapClass::Text {
                             field,
-                            token: token.into_bytes(),
+                            token: BitmapHash::new(token),
                         },
                         set,
                     });

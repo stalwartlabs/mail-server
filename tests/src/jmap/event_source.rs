@@ -25,7 +25,10 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     directory::sql::create_test_user_with_email,
-    jmap::{delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login},
+    jmap::{
+        assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes,
+        test_account_login,
+    },
 };
 use futures::StreamExt;
 use jmap::{mailbox::INBOX_ID, JMAP};
@@ -130,10 +133,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_ping(&mut event_rx).await;
 
     destroy_all_mailboxes(admin_client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 async fn assert_state(

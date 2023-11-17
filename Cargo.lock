@@ -2306,6 +2306,7 @@ dependencies = [
  "chrono",
  "jmap_proto",
  "mail-parser",
+ "store",
  "tokio",
 ]
 
@@ -5131,6 +5132,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "lru-cache",
+ "lz4_flex",
  "nlp",
  "num_cpus",
  "parking_lot",
@@ -5923,6 +5925,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "privdrop",
+ "rand 0.8.5",
  "rustls 0.21.7",
  "rustls-pemfile",
  "serde",

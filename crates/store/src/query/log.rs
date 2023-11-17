@@ -130,12 +130,12 @@ impl Store {
         let from_key = LogKey {
             account_id,
             collection,
-            change_id: u64::MAX,
+            change_id: 0,
         };
         let to_key = LogKey {
             account_id,
             collection,
-            change_id: 0,
+            change_id: u64::MAX,
         };
 
         let mut last_change_id = None;

@@ -26,6 +26,7 @@ use foundationdb::{api::NetworkAutoStop, Database, FdbError};
 use crate::Error;
 
 pub mod bitmap;
+pub mod blob;
 pub mod id_assign;
 pub mod main;
 pub mod purge;

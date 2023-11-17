@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 use jmap::JMAP;
 use jmap_client::{client::Client, email, mailbox::Role};
 use jmap_proto::types::id::Id;
@@ -203,10 +203,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

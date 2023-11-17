@@ -36,6 +36,7 @@ use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, proper
 use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::{
+    fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
     query::{self, log::Query, sort::Pagination, ResultSet},
     roaring::RoaringBitmap,
     write::now,
@@ -275,371 +276,396 @@ impl SessionData {
 
         // Convert query
         let mut include_highest_modseq = false;
-        for filter in imap_filter {
-            match filter {
-                search::Filter::Sequence(sequence, uid_filter) => {
-                    let mut set = RoaringBitmap::new();
-                    if let (Sequence::SavedSearch, Some(prev_saved_search)) =
-                        (&sequence, &prev_saved_search)
-                    {
-                        if let Some(prev_saved_search) = prev_saved_search {
-                            let state = mailbox.state.lock();
-                            for imap_id in prev_saved_search.iter() {
-                                if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
-                                    set.insert(*id);
-                                }
+        for filter_group in imap_filter.into_filter_group() {
+            match filter_group {
+                FilterGroup::Fts(conds) => {
+                    let mut fts_filters = Vec::with_capacity(filters.len());
+                    for cond in conds {
+                        match cond {
+                            search::Filter::Bcc(text) => {
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Bcc),
+                                    text,
+                                    Language::None,
+                                ));
                             }
-                        } else {
-                            return Err(StatusResponse::no("No saved search found."));
-                        }
-                    } else {
-                        for id in mailbox
-                            .sequence_to_ids(&sequence, is_uid || uid_filter)
-                            .await?
-                            .keys()
-                        {
-                            set.insert(*id);
-                        }
-                    }
-                    filters.push(query::Filter::is_in_set(set));
-                }
-                search::Filter::All => {
-                    filters.push(query::Filter::is_in_set(message_ids.clone()));
-                }
-                search::Filter::Answered => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Answered,
-                    ));
-                }
-                /*search::Filter::Bcc(text) => {
-                    filters.push(query::Filter::has_text(Property::Bcc, text, Language::None));
-                }
-                search::Filter::Before(date) => {
-                    filters.push(query::Filter::lt(Property::ReceivedAt, date as u64));
-                }
-                search::Filter::Body(text) => {
-                    filters.push(query::Filter::has_text_detect(
-                        Property::TextBody,
-                        text,
-                        self.jmap.config.default_language,
-                    ));
-                }
-                search::Filter::Cc(text) => {
-                    filters.push(query::Filter::has_text(Property::Cc, text, Language::None));
-                }
-                search::Filter::Deleted => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Deleted,
-                    ));
-                }
-                search::Filter::Draft => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Draft,
-                    ));
-                }
-                search::Filter::Flagged => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Flagged,
-                    ));
-                }
-                search::Filter::From(text) => {
-                    filters.push(query::Filter::has_text(
-                        Property::From,
-                        text,
-                        Language::None,
-                    ));
-                }
-                search::Filter::Header(header, value) => match HeaderName::parse(&header) {
-                    Some(HeaderName::Other(_)) | None => {
-                        return Err(StatusResponse::no(format!(
-                            "Querying non-RFC header '{header}' is not allowed.",
-                        )));
-                    }
-                    Some(header_name) => {
-                        let is_id = matches!(
-                            header_name,
-                            HeaderName::MessageId
-                                | HeaderName::InReplyTo
-                                | HeaderName::References
-                                | HeaderName::ResentMessageId
-                        );
-                        let tokens = if !value.is_empty() {
-                            let header_num = header_name.id().to_string();
-                            value
-                                .split_ascii_whitespace()
-                                .filter_map(|token| {
-                                    if token.len() < MAX_TOKEN_LENGTH {
-                                        if is_id {
-                                            format!("{header_num}{token}")
-                                        } else {
-                                            format!("{header_num}{}", token.to_lowercase())
-                                        }
-                                        .into()
-                                    } else {
-                                        None
+                            search::Filter::Body(text) => {
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Body,
+                                    text,
+                                    self.jmap.config.default_language,
+                                ));
+                            }
+                            search::Filter::Cc(text) => {
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Cc),
+                                    text,
+                                    Language::None,
+                                ));
+                            }
+                            search::Filter::From(text) => {
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::From),
+                                    text,
+                                    Language::None,
+                                ));
+                            }
+                            search::Filter::Header(header, value) => {
+                                match HeaderName::parse(header) {
+                                    Some(HeaderName::Other(header_name)) => {
+                                        return Err(StatusResponse::no(format!(
+                                            "Querying header '{header_name}' is not supported.",
+                                        )));
                                     }
-                                })
-                                .collect::<Vec<_>>()
-                        } else {
-                            vec![]
-                        };
-                        match tokens.len() {
-                            0 => {
-                                filters.push(query::Filter::has_raw_text(
-                                    Property::Headers,
-                                    header_name.id().to_string(),
-                                ));
-                            }
-                            1 => {
-                                filters.push(query::Filter::has_raw_text(
-                                    Property::Headers,
-                                    tokens.into_iter().next().unwrap(),
-                                ));
-                            }
-                            _ => {
-                                filters.push(query::Filter::And);
-                                for token in tokens {
-                                    filters.push(query::Filter::has_raw_text(
-                                        Property::Headers,
-                                        token,
-                                    ));
+                                    Some(header_name) => {
+                                        if !value.is_empty() {
+                                            if matches!(
+                                                header_name,
+                                                HeaderName::MessageId
+                                                    | HeaderName::InReplyTo
+                                                    | HeaderName::References
+                                                    | HeaderName::ResentMessageId
+                                            ) {
+                                                fts_filters.push(FtsFilter::has_keyword(
+                                                    Field::Header(header_name),
+                                                    value,
+                                                ));
+                                            } else {
+                                                fts_filters.push(FtsFilter::has_text(
+                                                    Field::Header(header_name),
+                                                    value,
+                                                    Language::None,
+                                                ));
+                                            }
+                                        } else {
+                                            fts_filters.push(FtsFilter::has_keyword(
+                                                Field::Keyword,
+                                                header_name.as_str().to_lowercase(),
+                                            ));
+                                        }
+                                    }
+                                    None => (),
                                 }
-                                filters.push(query::Filter::End);
+                            }
+                            search::Filter::Subject(text) => {
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Header(HeaderName::Subject),
+                                    text,
+                                    self.jmap.config.default_language,
+                                ));
+                            }
+                            search::Filter::Text(text) => {
+                                fts_filters.push(FtsFilter::Or);
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::From),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::To),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Cc),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::Bcc),
+                                    &text,
+                                    Language::None,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Header(HeaderName::Subject),
+                                    &text,
+                                    self.jmap.config.default_language,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Body,
+                                    &text,
+                                    self.jmap.config.default_language,
+                                ));
+                                fts_filters.push(FtsFilter::has_text_detect(
+                                    Field::Attachment,
+                                    text,
+                                    self.jmap.config.default_language,
+                                ));
+                                fts_filters.push(FtsFilter::End);
+                            }
+                            search::Filter::To(text) => {
+                                fts_filters.push(FtsFilter::has_text(
+                                    Field::Header(HeaderName::To),
+                                    text,
+                                    Language::None,
+                                ));
+                            }
+                            search::Filter::And => {
+                                fts_filters.push(FtsFilter::And);
+                            }
+                            search::Filter::Or => {
+                                fts_filters.push(FtsFilter::Or);
+                            }
+                            search::Filter::Not => {
+                                fts_filters.push(FtsFilter::Not);
+                            }
+                            search::Filter::End => {
+                                fts_filters.push(FtsFilter::End);
+                            }
+                            _ => (),
+                        }
+                    }
+
+                    filters.push(query::Filter::is_in_set(
+                        self.jmap
+                            .fts_filter(mailbox.id.account_id, Collection::Email, fts_filters)
+                            .await?,
+                    ));
+                }
+                FilterGroup::Store(cond) => match cond {
+                    search::Filter::Sequence(sequence, uid_filter) => {
+                        let mut set = RoaringBitmap::new();
+                        if let (Sequence::SavedSearch, Some(prev_saved_search)) =
+                            (&sequence, &prev_saved_search)
+                        {
+                            if let Some(prev_saved_search) = prev_saved_search {
+                                let state = mailbox.state.lock();
+                                for imap_id in prev_saved_search.iter() {
+                                    if let Some(id) = state.uid_to_id.get(&imap_id.uid) {
+                                        set.insert(*id);
+                                    }
+                                }
+                            } else {
+                                return Err(StatusResponse::no("No saved search found."));
+                            }
+                        } else {
+                            for id in mailbox
+                                .sequence_to_ids(&sequence, is_uid || uid_filter)
+                                .await?
+                                .keys()
+                            {
+                                set.insert(*id);
                             }
                         }
+                        filters.push(query::Filter::is_in_set(set));
                     }
-                },
-                search::Filter::Keyword(keyword) => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::from(keyword),
-                    ));
-                }
-                search::Filter::Larger(size) => {
-                    filters.push(query::Filter::gt(Property::Size, size));
-                }
-                search::Filter::On(date) => {
-                    filters.push(query::Filter::And);
-                    filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
-                    filters.push(query::Filter::lt(
-                        Property::ReceivedAt,
-                        (date + 86400) as u64,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Seen => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Seen,
-                    ));
-                }
-                search::Filter::SentBefore(date) => {
-                    filters.push(query::Filter::lt(Property::SentAt, date as u64));
-                }
-                search::Filter::SentOn(date) => {
-                    filters.push(query::Filter::And);
-                    filters.push(query::Filter::ge(Property::SentAt, date as u64));
-                    filters.push(query::Filter::lt(Property::SentAt, (date + 86400) as u64));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::SentSince(date) => {
-                    filters.push(query::Filter::ge(Property::SentAt, date as u64));
-                }
-                search::Filter::Since(date) => {
-                    filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
-                }
-                search::Filter::Smaller(size) => {
-                    filters.push(query::Filter::lt(Property::Size, size));
-                }
-                search::Filter::Subject(text) => {
-                    filters.push(query::Filter::has_text_detect(
-                        Property::Subject,
-                        text,
-                        self.jmap.config.default_language,
-                    ));
-                }
-                search::Filter::Text(text) => {
-                    filters.push(query::Filter::Or);
-                    filters.push(query::Filter::has_text(
-                        Property::From,
-                        &text,
-                        Language::None,
-                    ));
-                    filters.push(query::Filter::has_text(Property::To, &text, Language::None));
-                    filters.push(query::Filter::has_text(Property::Cc, &text, Language::None));
-                    filters.push(query::Filter::has_text(
-                        Property::Bcc,
-                        &text,
-                        Language::None,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::Subject,
-                        &text,
-                        self.jmap.config.default_language,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::TextBody,
-                        &text,
-                        self.jmap.config.default_language,
-                    ));
-                    filters.push(query::Filter::has_text_detect(
-                        Property::Attachments,
-                        text,
-                        self.jmap.config.default_language,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::To(text) => {
-                    filters.push(query::Filter::has_text(Property::To, text, Language::None));
-                }*/
-                search::Filter::Unanswered => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Answered,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Undeleted => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Deleted,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Undraft => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Draft,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Unflagged => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Flagged,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Unkeyword(keyword) => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::from(keyword),
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Unseen => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Seen,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::And => {
-                    filters.push(query::Filter::And);
-                }
-                search::Filter::Or => {
-                    filters.push(query::Filter::Or);
-                }
-                search::Filter::Not => {
-                    filters.push(query::Filter::Not);
-                }
-                search::Filter::End => {
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Recent => {
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Recent,
-                    ));
-                }
-                search::Filter::New => {
-                    filters.push(query::Filter::And);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Recent,
-                    ));
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Seen,
-                    ));
-                    filters.push(query::Filter::End);
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Old => {
-                    filters.push(query::Filter::Not);
-                    filters.push(query::Filter::is_in_bitmap(
-                        Property::Keywords,
-                        Keyword::Seen,
-                    ));
-                    filters.push(query::Filter::End);
-                }
-                search::Filter::Older(secs) => {
-                    filters.push(query::Filter::le(
-                        Property::ReceivedAt,
-                        now().saturating_sub(secs as u64),
-                    ));
-                }
-                search::Filter::Younger(secs) => {
-                    filters.push(query::Filter::ge(
-                        Property::ReceivedAt,
-                        now().saturating_sub(secs as u64),
-                    ));
-                }
-                search::Filter::ModSeq((modseq, _)) => {
-                    let mut set = RoaringBitmap::new();
-                    for change in self
-                        .jmap
-                        .changes_(
-                            mailbox.id.account_id,
-                            Collection::Email,
-                            Query::from_modseq(modseq),
-                        )
-                        .await?
-                        .changes
-                    {
-                        let id = (change.unwrap_id() & u32::MAX as u64) as u32;
-                        if message_ids.contains(id) {
-                            set.insert(id);
+                    search::Filter::All => {
+                        filters.push(query::Filter::is_in_set(message_ids.clone()));
+                    }
+                    search::Filter::Answered => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Answered,
+                        ));
+                    }
+                    search::Filter::Before(date) => {
+                        filters.push(query::Filter::lt(Property::ReceivedAt, date as u64));
+                    }
+                    search::Filter::Deleted => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Deleted,
+                        ));
+                    }
+                    search::Filter::Draft => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Draft,
+                        ));
+                    }
+                    search::Filter::Flagged => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Flagged,
+                        ));
+                    }
+                    search::Filter::Keyword(keyword) => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::from(keyword),
+                        ));
+                    }
+                    search::Filter::Larger(size) => {
+                        filters.push(query::Filter::gt(Property::Size, size));
+                    }
+                    search::Filter::On(date) => {
+                        filters.push(query::Filter::And);
+                        filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
+                        filters.push(query::Filter::lt(
+                            Property::ReceivedAt,
+                            (date + 86400) as u64,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Seen => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Seen,
+                        ));
+                    }
+                    search::Filter::SentBefore(date) => {
+                        filters.push(query::Filter::lt(Property::SentAt, date as u64));
+                    }
+                    search::Filter::SentOn(date) => {
+                        filters.push(query::Filter::And);
+                        filters.push(query::Filter::ge(Property::SentAt, date as u64));
+                        filters.push(query::Filter::lt(Property::SentAt, (date + 86400) as u64));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::SentSince(date) => {
+                        filters.push(query::Filter::ge(Property::SentAt, date as u64));
+                    }
+                    search::Filter::Since(date) => {
+                        filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
+                    }
+                    search::Filter::Smaller(size) => {
+                        filters.push(query::Filter::lt(Property::Size, size));
+                    }
+                    search::Filter::Unanswered => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Answered,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Undeleted => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Deleted,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Undraft => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Draft,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Unflagged => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Flagged,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Unkeyword(keyword) => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::from(keyword),
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Unseen => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Seen,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::And => {
+                        filters.push(query::Filter::And);
+                    }
+                    search::Filter::Or => {
+                        filters.push(query::Filter::Or);
+                    }
+                    search::Filter::Not => {
+                        filters.push(query::Filter::Not);
+                    }
+                    search::Filter::End => {
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Recent => {
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Recent,
+                        ));
+                    }
+                    search::Filter::New => {
+                        filters.push(query::Filter::And);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Recent,
+                        ));
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Seen,
+                        ));
+                        filters.push(query::Filter::End);
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Old => {
+                        filters.push(query::Filter::Not);
+                        filters.push(query::Filter::is_in_bitmap(
+                            Property::Keywords,
+                            Keyword::Seen,
+                        ));
+                        filters.push(query::Filter::End);
+                    }
+                    search::Filter::Older(secs) => {
+                        filters.push(query::Filter::le(
+                            Property::ReceivedAt,
+                            now().saturating_sub(secs as u64),
+                        ));
+                    }
+                    search::Filter::Younger(secs) => {
+                        filters.push(query::Filter::ge(
+                            Property::ReceivedAt,
+                            now().saturating_sub(secs as u64),
+                        ));
+                    }
+                    search::Filter::ModSeq((modseq, _)) => {
+                        let mut set = RoaringBitmap::new();
+                        for change in self
+                            .jmap
+                            .changes_(
+                                mailbox.id.account_id,
+                                Collection::Email,
+                                Query::from_modseq(modseq),
+                            )
+                            .await?
+                            .changes
+                        {
+                            let id = (change.unwrap_id() & u32::MAX as u64) as u32;
+                            if message_ids.contains(id) {
+                                set.insert(id);
+                            }
+                        }
+                        filters.push(query::Filter::is_in_set(set));
+                        include_highest_modseq = true;
+                    }
+                    search::Filter::EmailId(id) => {
+                        if let Some(id) = Id::from_bytes(id.as_bytes()) {
+                            filters.push(query::Filter::is_in_set(
+                                RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
+                            ));
+                        } else {
+                            return Err(StatusResponse::no(format!(
+                                "Failed to parse email id '{id}'.",
+                            )));
                         }
                     }
-                    filters.push(query::Filter::is_in_set(set));
-                    include_highest_modseq = true;
-                }
-                search::Filter::EmailId(id) => {
-                    if let Some(id) = Id::from_bytes(id.as_bytes()) {
-                        filters.push(query::Filter::is_in_set(
-                            RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
-                        ));
-                    } else {
-                        return Err(StatusResponse::no(format!(
-                            "Failed to parse email id '{id}'.",
-                        )));
+                    search::Filter::ThreadId(id) => {
+                        if let Some(id) = Id::from_bytes(id.as_bytes()) {
+                            filters.push(query::Filter::is_in_bitmap(
+                                Property::ThreadId,
+                                id.document_id(),
+                            ));
+                        } else {
+                            return Err(StatusResponse::no(format!(
+                                "Failed to parse thread id '{id}'.",
+                            )));
+                        }
                     }
-                }
-                search::Filter::ThreadId(id) => {
-                    if let Some(id) = Id::from_bytes(id.as_bytes()) {
-                        filters.push(query::Filter::is_in_bitmap(
-                            Property::ThreadId,
-                            id.document_id(),
-                        ));
-                    } else {
-                        return Err(StatusResponse::no(format!(
-                            "Failed to parse thread id '{id}'.",
-                        )));
-                    }
-                }
-                _ => (),
+                    _ => (),
+                },
             }
         }
 

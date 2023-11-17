@@ -34,6 +34,7 @@ use self::{
     pool::SqliteConnectionManager,
 };
 
+pub mod blob;
 pub mod id_assign;
 pub mod main;
 pub mod pool;

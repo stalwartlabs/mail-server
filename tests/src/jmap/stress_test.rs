@@ -34,6 +34,8 @@ use jmap_client::{
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::rand::{self, Rng};
 
+use super::assert_is_empty;
+
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;
 
@@ -254,11 +256,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
         }
 
         destroy_all_mailboxes(&client).await;
-
-        server
-            .store
-            .assert_is_empty(server.blob_store.clone())
-            .await;
+        assert_is_empty(server.clone()).await;
     }
 }
 
@@ -331,10 +329,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
     join_all(futures).await;
 
     destroy_all_mailboxes(&client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 async fn create_mailbox(client: &Client, mailbox: &str) -> Vec<String> {

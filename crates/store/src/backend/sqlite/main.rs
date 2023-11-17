@@ -30,8 +30,8 @@ use tokio::sync::oneshot;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-    SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 use super::{pool::SqliteConnectionManager, SqliteStore};
@@ -78,7 +78,12 @@ impl SqliteStore {
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_ACLS] {
+        for table in [
+            SUBSPACE_VALUES,
+            SUBSPACE_LOGS,
+            SUBSPACE_ACLS,
+            SUBSPACE_BLOB_DATA,
+        ] {
             let table = char::from(table);
             conn.execute(
                 &format!(

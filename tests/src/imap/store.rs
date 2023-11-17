@@ -23,9 +23,11 @@
 
 use imap_proto::ResponseType;
 
-use super::{AssertResult, ImapConnection, Type};
+use crate::jmap::wait_for_index;
 
-pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+use super::{AssertResult, IMAPTest, ImapConnection, Type};
+
+pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, handle: &IMAPTest) {
     // Select INBOX
     imap.send("SELECT INBOX").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
@@ -73,6 +75,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         .assert_contains("UIDNEXT 11");
 
     // Store using saved searches
+    wait_for_index(&handle.jmap).await;
     imap.send("SEARCH RETURN (SAVE) FROM nathaniel").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("UID STORE $ +FLAGS (\\Answered)").await;

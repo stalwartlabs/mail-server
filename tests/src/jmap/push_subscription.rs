@@ -53,7 +53,7 @@ use utils::listener::SessionData;
 use crate::{
     add_test_certs,
     directory::sql::create_test_user_with_email,
-    jmap::{mailbox::destroy_all_mailboxes, test_account_login},
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
 };
 
 const SERVER: &str = "
@@ -218,11 +218,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     expect_nothing(&mut event_rx).await;
 
     destroy_all_mailboxes(admin_client).await;
-
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 #[derive(Clone)]

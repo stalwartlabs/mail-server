@@ -40,6 +40,7 @@ use std::{
 use crate::{
     directory::sql::create_test_user_with_email,
     jmap::{
+        assert_is_empty,
         delivery::SmtpConnection,
         email_submission::{assert_message_delivery, spawn_mock_smtp_server, MockMessage},
         mailbox::destroy_all_mailboxes,
@@ -486,10 +487,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         client.sieve_script_destroy(&id).await.unwrap();
     }
     destroy_all_mailboxes(client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 fn get_script(name: &str) -> Vec<u8> {

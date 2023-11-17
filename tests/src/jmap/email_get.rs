@@ -31,7 +31,7 @@ use jmap_client::{
 use jmap_proto::types::id::Id;
 use mail_parser::HeaderName;
 
-use crate::jmap::{mailbox::destroy_all_mailboxes, replace_blob_ids};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, replace_blob_ids};
 
 pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     println!("Running Email Get tests...");
@@ -177,11 +177,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     destroy_all_mailboxes(client).await;
-
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 pub fn all_headers() -> Vec<email::Property> {

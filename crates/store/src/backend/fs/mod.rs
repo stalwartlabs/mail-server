@@ -52,9 +52,7 @@ impl FsStore {
             )))
         }
     }
-}
 
-impl FsStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
@@ -113,9 +111,7 @@ impl FsStore {
             Ok(false)
         }
     }
-}
 
-impl FsStore {
     fn build_path(&self, key: &[u8]) -> PathBuf {
         let mut path = self.path.clone();
 

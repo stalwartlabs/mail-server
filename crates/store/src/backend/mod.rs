@@ -30,8 +30,8 @@ pub mod s3;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
-pub(crate) const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 2) as usize;
-pub(crate) const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
+pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
+pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 
 #[cfg(feature = "test_mode")]
 pub static ID_ASSIGNMENT_EXPIRY: std::sync::atomic::AtomicU64 =

@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use crate::{
     directory::sql::create_test_user_with_email,
-    jmap::{jmap_json_request, mailbox::destroy_all_mailboxes},
+    jmap::{assert_is_empty, jmap_json_request, mailbox::destroy_all_mailboxes},
 };
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
@@ -489,8 +489,5 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     // Remove test data
     admin_client.set_default_account_id(account_id.to_string());
     destroy_all_mailboxes(admin_client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }

@@ -21,19 +21,19 @@
  * for more details.
 */
 
-use std::{convert::TryInto, hash::Hasher};
+use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    backend::MAX_TOKEN_MASK, BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey,
-    ValueKey, BLOB_HASH_LEN, SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES, U32_LEN, U64_LEN,
+    BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN,
+    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
+    U64_LEN,
 };
 
 use super::{BitmapClass, BlobOp, TagValue, ValueClass};
 
 pub struct KeySerializer {
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
 }
 
 pub trait KeySerialize {
@@ -241,6 +241,15 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             }
             .write(u32::MAX)
             .write(name.as_slice()),
+            ValueClass::TermIndex => if include_subspace {
+                KeySerializer::new(U32_LEN * 2 + 3).write(crate::SUBSPACE_VALUES)
+            } else {
+                KeySerializer::new(U32_LEN * 2 + 2)
+            }
+            .write(self.account_id)
+            .write(self.collection)
+            .write_leb128(self.document_id)
+            .write(u8::MAX),
         }
         .finalize()
     }
@@ -277,35 +286,64 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
 
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         const BM_DOCUMENT_IDS: u8 = 0;
-        const BM_TAG: u8 = 1 << 5;
-        const BM_TEXT: u8 = 1 << 6;
+        const BM_TAG: u8 = 1 << 6;
+        const BM_TEXT: u8 = 1 << 7;
 
         const TAG_ID: u8 = 0;
         const TAG_TEXT: u8 = 1 << 0;
         const TAG_STATIC: u8 = 1 << 1;
 
-        let ks = if include_subspace {
-            KeySerializer::new(self.len() + 1).write(crate::SUBSPACE_BITMAPS)
-        } else {
-            KeySerializer::new(self.len())
-        }
-        .write(self.account_id)
-        .write(self.collection);
-
         match self.class.as_ref() {
-            BitmapClass::DocumentIds => ks.write(BM_DOCUMENT_IDS),
+            BitmapClass::DocumentIds => if include_subspace {
+                KeySerializer::new(U32_LEN + 3).write(SUBSPACE_BITMAPS)
+            } else {
+                KeySerializer::new(U32_LEN + 2)
+            }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(BM_DOCUMENT_IDS),
             BitmapClass::Tag { field, value } => match value {
-                TagValue::Id(id) => ks.write(BM_TAG | TAG_ID).write(*field).write_leb128(*id),
-                TagValue::Text(text) => ks
-                    .write(BM_TAG | TAG_TEXT)
-                    .write(*field)
-                    .write(text.as_slice()),
-                TagValue::Static(id) => ks.write(BM_TAG | TAG_STATIC).write(*field).write(*id),
-            },
-            BitmapClass::Text { field, token } => ks
-                .write(BM_TEXT | (token.len() & MAX_TOKEN_MASK) as u8)
+                TagValue::Id(id) => if include_subspace {
+                    KeySerializer::new((U32_LEN * 2) + 4).write(SUBSPACE_BITMAPS)
+                } else {
+                    KeySerializer::new((U32_LEN * 2) + 3)
+                }
+                .write(self.account_id)
+                .write(self.collection)
+                .write(BM_TAG | TAG_ID)
                 .write(*field)
-                .hash_text(token),
+                .write_leb128(*id),
+                TagValue::Text(text) => if include_subspace {
+                    KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAPS)
+                } else {
+                    KeySerializer::new(U32_LEN + 3 + text.len())
+                }
+                .write(self.account_id)
+                .write(self.collection)
+                .write(BM_TAG | TAG_TEXT)
+                .write(*field)
+                .write(text.as_slice()),
+                TagValue::Static(id) => if include_subspace {
+                    KeySerializer::new(U32_LEN + 5).write(SUBSPACE_BITMAPS)
+                } else {
+                    KeySerializer::new(U32_LEN + 4)
+                }
+                .write(self.account_id)
+                .write(self.collection)
+                .write(BM_TAG | TAG_STATIC)
+                .write(*field)
+                .write(*id),
+            },
+            BitmapClass::Text { field, token } => if include_subspace {
+                KeySerializer::new(U32_LEN + 16 + 3 + 1).write(SUBSPACE_BITMAPS)
+            } else {
+                KeySerializer::new(U32_LEN + 16 + 3)
+            }
+            .write(self.account_id)
+            .write(self.collection)
+            .write(BM_TEXT | token.len)
+            .write(*field)
+            .write(token.hash.as_slice()),
         }
         .write(self.block_num)
         .finalize()
@@ -347,83 +385,5 @@ impl<T: AsRef<BlobHash> + Sync + Send> Key for BlobKey<T> {
 
     fn subspace(&self) -> u8 {
         crate::SUBSPACE_BLOBS
-    }
-}
-
-const AHASHER: ahash::RandomState = ahash::RandomState::with_seeds(
-    0xaf1f2242106c64b3,
-    0x60ca4cfb4b3ed0ce,
-    0xc7dbc0bb615e82b3,
-    0x520ad065378daf88,
-);
-lazy_static::lazy_static! {
-    static ref SIPHASHER: siphasher::sip::SipHasher13 =
-        siphasher::sip::SipHasher13::new_with_keys(0x56205cbdba8f02a6, 0xbd0dbc4bb06d687b);
-}
-
-impl KeySerializer {
-    fn hash_text(mut self, item: impl AsRef<[u8]>) -> Self {
-        let item = item.as_ref();
-
-        if item.len() <= 8 {
-            self.buf.extend_from_slice(item);
-        } else {
-            let h1 = xxhash_rust::xxh3::xxh3_64(item).to_le_bytes();
-            let h2 = farmhash::hash64(item).to_le_bytes();
-            let h3 = AHASHER.hash_one(item).to_le_bytes();
-            let mut sh = *SIPHASHER;
-            sh.write(item.as_ref());
-            let h4 = sh.finish().to_le_bytes();
-
-            match item.len() {
-                9..=16 => {
-                    self.buf.extend_from_slice(&h1[..2]);
-                    self.buf.extend_from_slice(&h2[..2]);
-                    self.buf.extend_from_slice(&h3[..2]);
-                    self.buf.extend_from_slice(&h4[..2]);
-                }
-                17..=32 => {
-                    self.buf.extend_from_slice(&h1[..3]);
-                    self.buf.extend_from_slice(&h2[..3]);
-                    self.buf.extend_from_slice(&h3[..3]);
-                    self.buf.extend_from_slice(&h4[..3]);
-                }
-                _ => {
-                    self.buf.extend_from_slice(&h1[..4]);
-                    self.buf.extend_from_slice(&h2[..4]);
-                    self.buf.extend_from_slice(&h3[..4]);
-                    self.buf.extend_from_slice(&h4[..4]);
-                }
-            }
-        }
-        self
-    }
-}
-
-impl<T: AsRef<BitmapClass>> BitmapKey<T> {
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        std::mem::size_of::<BitmapKey<BitmapClass>>()
-            + match self.class.as_ref() {
-                BitmapClass::DocumentIds => 0,
-                BitmapClass::Tag { value, .. } => match value {
-                    TagValue::Id(_) => U32_LEN,
-                    TagValue::Text(v) => v.len(),
-                    TagValue::Static(_) => 1,
-                },
-                BitmapClass::Text { token, .. } => token.len(),
-            }
-    }
-}
-
-impl<T: AsRef<ValueClass>> ValueKey<T> {
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        std::mem::size_of::<ValueKey<ValueClass>>()
-            + match self.class.as_ref() {
-                ValueClass::Property(_) => 1,
-                ValueClass::Acl(_) => U32_LEN,
-                ValueClass::Named(v) => v.len(),
-            }
     }
 }

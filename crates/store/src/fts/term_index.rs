@@ -23,7 +23,7 @@
 
 use std::{borrow::Cow, convert::TryInto};
 
-use crate::{Deserialize, Serialize};
+use crate::{Deserialize, Serialize, U32_LEN, U64_LEN};
 
 use ahash::{AHashMap, AHashSet};
 use bitpacking::{BitPacker, BitPacker1x, BitPacker4x, BitPacker8x};

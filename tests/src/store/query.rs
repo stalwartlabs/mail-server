@@ -22,13 +22,20 @@
 */
 
 use std::{
+    fmt::Display,
     sync::{Arc, Mutex},
     time::Instant,
 };
 
 use jmap_proto::types::keyword::Keyword;
 use nlp::language::Language;
-use store::{ahash::AHashMap, query::sort::Pagination, write::ValueClass};
+use store::{
+    ahash::AHashMap,
+    fts::{index::FtsDocument, Field, FtsFilter},
+    query::sort::Pagination,
+    write::ValueClass,
+    FtsStore,
+};
 
 use store::{
     query::{Comparator, Filter},
@@ -93,9 +100,34 @@ const FIELDS_OPTIONS: [FieldType; 20] = [
     FieldType::Text,     // "url",
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FieldId(u8);
+
+impl From<FieldId> for u8 {
+    fn from(field_id: FieldId) -> Self {
+        field_id.0
+    }
+}
+impl Display for FieldId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", FIELDS[self.0 as usize], self.0)
+    }
+}
+
+impl FieldId {
+    pub fn new(field_id: u8) -> Field<FieldId> {
+        Field::Header(Self(field_id))
+    }
+
+    pub fn inner(&self) -> u8 {
+        self.0
+    }
+}
+
 #[allow(clippy::mutex_atomic)]
 pub async fn test(db: Store, do_insert: bool) {
     println!("Running Store query tests...");
+    let fts_store = FtsStore::from(db.clone());
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(8)
@@ -116,7 +148,10 @@ pub async fn test(db: Store, do_insert: bool) {
                 let documents = documents.clone();
 
                 s.spawn_fifo(move |_| {
-                    /*let mut fts_builder = FtsIndexBuilder::with_default_language(Language::English);
+                    let mut fts_builder = FtsDocument::with_default_language(Language::English)
+                        .with_account_id(0)
+                        .with_collection(COLLECTION_ID)
+                        .with_document_id(document_id as u32);
                     let mut builder = BatchBuilder::new();
                     builder
                         .with_account_id(0)
@@ -137,7 +172,7 @@ pub async fn test(db: Store, do_insert: bool) {
                             FieldType::FullText => {
                                 if !field.is_empty() {
                                     fts_builder.index(
-                                        field_id,
+                                        FieldId::new(field_id),
                                         field.to_lowercase(),
                                         Language::English,
                                     );
@@ -165,8 +200,10 @@ pub async fn test(db: Store, do_insert: bool) {
                         }
                     }
 
-                    builder.custom(fts_builder);
-                    documents.lock().unwrap().push(builder.build());*/
+                    documents
+                        .lock()
+                        .unwrap()
+                        .push((builder.build(), fts_builder));
                 });
             }
         });
@@ -180,22 +217,31 @@ pub async fn test(db: Store, do_insert: bool) {
         let now = Instant::now();
         let batches = documents.lock().unwrap().drain(..).collect::<Vec<_>>();
         let mut chunk = Vec::new();
+        let mut fts_chunk = Vec::new();
 
-        for batch in batches {
+        for (batch, fts_batch) in batches {
             let chunk_instance = Instant::now();
             chunk.push({
                 let db = db.clone();
                 tokio::spawn(async move { db.write(batch).await })
             });
+            fts_chunk.push({
+                let fts_store = fts_store.clone();
+                tokio::spawn(async move { fts_store.index(fts_batch).await })
+            });
             if chunk.len() == 1000 {
                 for handle in chunk {
                     handle.await.unwrap().unwrap();
                 }
+                for handle in fts_chunk {
+                    handle.await.unwrap().unwrap();
+                }
                 println!(
-                    "Chunk insert took {} ms.",
+                    "Store insert took {} ms.",
                     chunk_instance.elapsed().as_millis()
                 );
                 chunk = Vec::new();
+                fts_chunk = Vec::new();
             }
         }
 
@@ -209,156 +255,232 @@ pub async fn test(db: Store, do_insert: bool) {
     }
 
     println!("Running filter tests...");
-    test_filter(db.clone()).await;
+    test_filter(db.clone(), fts_store).await;
 
     println!("Running sort tests...");
     test_sort(db).await;
 }
 
-pub async fn test_filter(db: Store) {
-    /*
-        let mut fields = AHashMap::default();
-        for (field_num, field) in FIELDS.iter().enumerate() {
-            fields.insert(field.to_string(), field_num as u8);
-        }
+pub async fn test_filter(db: Store, fts: FtsStore) {
+    let mut fields = AHashMap::default();
+    let mut fields_u8 = AHashMap::default();
+    for (field_num, field) in FIELDS.iter().enumerate() {
+        fields.insert(field.to_string(), FieldId::new(field_num as u8));
+        fields_u8.insert(field.to_string(), field_num as u8);
+    }
 
-        let tests = [
-            (
-                vec![
-                    Filter::has_english_text(fields["title"], "water"),
-                    Filter::eq(fields["year"], 1979u32),
-                ],
-                vec!["p11293"],
-            ),
-            (
-                vec![
-                    Filter::has_english_text(fields["medium"], "gelatin"),
-                    Filter::gt(fields["year"], 2000u32),
-                    Filter::lt(fields["width"], 180u32),
-                    Filter::gt(fields["width"], 0u32),
-                ],
-                vec!["p79426", "p79427", "p79428", "p79429", "p79430"],
-            ),
-            (
-                vec![Filter::has_english_text(fields["title"], "'rustic bridge'")],
-                vec!["d05503"],
-            ),
-            (
-                vec![
-                    Filter::has_english_text(fields["title"], "'rustic'"),
-                    Filter::has_english_text(fields["title"], "study"),
-                ],
-                vec!["d00399", "d05352"],
-            ),
-            (
-                vec![
-                    Filter::has_text(fields["artist"], "mauro kunst", Language::None),
-                    Filter::is_in_bitmap(fields["artistRole"], Keyword::Other("artist".to_string())),
-                    Filter::Or,
-                    Filter::eq(fields["year"], 1969u32),
-                    Filter::eq(fields["year"], 1971u32),
-                    Filter::End,
-                ],
-                vec!["p01764", "t05843"],
-            ),
-            (
-                vec![
-                    Filter::Not,
-                    Filter::has_english_text(fields["medium"], "oil"),
-                    Filter::End,
-                    Filter::has_english_text(fields["creditLine"], "bequeath"),
-                    Filter::Or,
-                    Filter::And,
-                    Filter::ge(fields["year"], 1900u32),
-                    Filter::lt(fields["year"], 1910u32),
-                    Filter::End,
-                    Filter::And,
-                    Filter::ge(fields["year"], 2000u32),
-                    Filter::lt(fields["year"], 2010u32),
-                    Filter::End,
-                    Filter::End,
-                ],
-                vec![
-                    "n02478", "n02479", "n03568", "n03658", "n04327", "n04328", "n04721", "n04739",
-                    "n05095", "n05096", "n05145", "n05157", "n05158", "n05159", "n05298", "n05303",
-                    "n06070", "t01181", "t03571", "t05805", "t05806", "t12147", "t12154", "t12155",
-                ],
-            ),
-            (
-                vec![
-                    Filter::And,
-                    Filter::has_text(fields["artist"], "warhol", Language::None),
-                    Filter::Not,
-                    Filter::has_english_text(fields["title"], "'campbell'"),
-                    Filter::End,
-                    Filter::Not,
-                    Filter::Or,
-                    Filter::gt(fields["year"], 1980u32),
-                    Filter::And,
-                    Filter::gt(fields["width"], 500u32),
-                    Filter::gt(fields["height"], 500u32),
-                    Filter::End,
-                    Filter::End,
-                    Filter::End,
-                    Filter::eq(fields["acquisitionYear"], 2008u32),
-                    Filter::End,
-                ],
-                vec!["ar00039", "t12600"],
-            ),
-            (
-                vec![
-                    Filter::has_english_text(fields["title"], "study"),
-                    Filter::has_english_text(fields["medium"], "paper"),
-                    Filter::has_english_text(fields["creditLine"], "'purchased'"),
-                    Filter::Not,
-                    Filter::has_english_text(fields["title"], "'anatomical'"),
-                    Filter::has_english_text(fields["title"], "'for'"),
-                    Filter::End,
-                    Filter::gt(fields["year"], 1900u32),
-                    Filter::gt(fields["acquisitionYear"], 2000u32),
-                ],
-                vec![
-                    "p80042", "p80043", "p80044", "p80045", "p80203", "t11937", "t12172",
-                ],
-            ),
-        ];
-
-        for (filter, expected_results) in tests {
-            //println!("Running test: {:?}", filter);
-            let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
-            let sorted_docset = db
-                .sort(
-                    docset,
-                    vec![Comparator::ascending(fields["accession_number"])],
-                    Pagination::new(0, 0, None, 0),
+    let tests = [
+        (
+            vec![
+                Filter::is_in_set(
+                    fts.query(
+                        0,
+                        COLLECTION_ID,
+                        vec![FtsFilter::has_english_text(
+                            fields["title"].clone(),
+                            "water",
+                        )],
+                    )
+                    .await
+                    .unwrap(),
+                ),
+                Filter::eq(fields_u8["year"], 1979u32),
+            ],
+            vec!["p11293"],
+        ),
+        (
+            vec![
+                Filter::is_in_set(
+                    fts.query(
+                        0,
+                        COLLECTION_ID,
+                        vec![FtsFilter::has_english_text(
+                            fields["medium"].clone(),
+                            "gelatin",
+                        )],
+                    )
+                    .await
+                    .unwrap(),
+                ),
+                Filter::gt(fields_u8["year"], 2000u32),
+                Filter::lt(fields_u8["width"], 180u32),
+                Filter::gt(fields_u8["width"], 0u32),
+            ],
+            vec!["p79426", "p79427", "p79428", "p79429", "p79430"],
+        ),
+        (
+            vec![Filter::is_in_set(
+                fts.query(
+                    0,
+                    COLLECTION_ID,
+                    vec![FtsFilter::has_english_text(
+                        fields["title"].clone(),
+                        "'rustic bridge'",
+                    )],
                 )
                 .await
-                .unwrap();
-
-            assert_eq!(
-                db.get_values::<String>(
-                    sorted_docset
-                        .ids
-                        .into_iter()
-                        .map(|document_id| ValueKey {
-                            account_id: 0,
-                            collection: COLLECTION_ID,
-                            document_id: document_id as u32,
-                            family: 0,
-                            field: fields["accession_number"],
-                        })
-                        .collect()
+                .unwrap(),
+            )],
+            vec!["d05503"],
+        ),
+        (
+            vec![Filter::is_in_set(
+                fts.query(
+                    0,
+                    COLLECTION_ID,
+                    vec![
+                        FtsFilter::has_english_text(fields["title"].clone(), "'rustic'"),
+                        FtsFilter::has_english_text(fields["title"].clone(), "study"),
+                    ],
                 )
                 .await
-                .unwrap()
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>(),
-                expected_results
-            );
-        }
+                .unwrap(),
+            )],
+            vec!["d00399", "d05352"],
+        ),
+        (
+            vec![
+                Filter::has_text(fields_u8["artist"], "mauro kunst"),
+                Filter::is_in_bitmap(
+                    fields_u8["artistRole"],
+                    Keyword::Other("artist".to_string()),
+                ),
+                Filter::Or,
+                Filter::eq(fields_u8["year"], 1969u32),
+                Filter::eq(fields_u8["year"], 1971u32),
+                Filter::End,
+            ],
+            vec!["p01764", "t05843"],
+        ),
+        (
+            vec![
+                Filter::is_in_set(
+                    fts.query(
+                        0,
+                        COLLECTION_ID,
+                        vec![
+                            FtsFilter::Not,
+                            FtsFilter::has_english_text(fields["medium"].clone(), "oil"),
+                            FtsFilter::End,
+                            FtsFilter::has_english_text(fields["creditLine"].clone(), "bequeath"),
+                        ],
+                    )
+                    .await
+                    .unwrap(),
+                ),
+                Filter::Or,
+                Filter::And,
+                Filter::ge(fields_u8["year"], 1900u32),
+                Filter::lt(fields_u8["year"], 1910u32),
+                Filter::End,
+                Filter::And,
+                Filter::ge(fields_u8["year"], 2000u32),
+                Filter::lt(fields_u8["year"], 2010u32),
+                Filter::End,
+                Filter::End,
+            ],
+            vec![
+                "n02478", "n02479", "n03568", "n03658", "n04327", "n04328", "n04721", "n04739",
+                "n05095", "n05096", "n05145", "n05157", "n05158", "n05159", "n05298", "n05303",
+                "n06070", "t01181", "t03571", "t05805", "t05806", "t12147", "t12154", "t12155",
+            ],
+        ),
+        (
+            vec![
+                Filter::And,
+                Filter::has_text(fields_u8["artist"], "warhol"),
+                Filter::Not,
+                Filter::is_in_set(
+                    fts.query(
+                        0,
+                        COLLECTION_ID,
+                        vec![FtsFilter::has_english_text(
+                            fields["title"].clone(),
+                            "'campbell'",
+                        )],
+                    )
+                    .await
+                    .unwrap(),
+                ),
+                Filter::End,
+                Filter::Not,
+                Filter::Or,
+                Filter::gt(fields_u8["year"], 1980u32),
+                Filter::And,
+                Filter::gt(fields_u8["width"], 500u32),
+                Filter::gt(fields_u8["height"], 500u32),
+                Filter::End,
+                Filter::End,
+                Filter::End,
+                Filter::eq(fields_u8["acquisitionYear"], 2008u32),
+                Filter::End,
+            ],
+            vec!["ar00039", "t12600"],
+        ),
+        (
+            vec![
+                Filter::is_in_set(
+                    fts.query(
+                        0,
+                        COLLECTION_ID,
+                        vec![
+                            FtsFilter::has_english_text(fields["title"].clone(), "study"),
+                            FtsFilter::has_english_text(fields["medium"].clone(), "paper"),
+                            FtsFilter::has_english_text(
+                                fields["creditLine"].clone(),
+                                "'purchased'",
+                            ),
+                            FtsFilter::Not,
+                            FtsFilter::has_english_text(fields["title"].clone(), "'anatomical'"),
+                            FtsFilter::has_english_text(fields["title"].clone(), "'for'"),
+                            FtsFilter::End,
+                        ],
+                    )
+                    .await
+                    .unwrap(),
+                ),
+                Filter::gt(fields_u8["year"], 1900u32),
+                Filter::gt(fields_u8["acquisitionYear"], 2000u32),
+            ],
+            vec![
+                "p80042", "p80043", "p80044", "p80045", "p80203", "t11937", "t12172",
+            ],
+        ),
+    ];
 
-    */
+    for (filter, expected_results) in tests {
+        //println!("Running test: {:?}", filter);
+        let docset = db.filter(0, COLLECTION_ID, filter).await.unwrap();
+        let sorted_docset = db
+            .sort(
+                docset,
+                vec![Comparator::ascending(fields_u8["accession_number"])],
+                Pagination::new(0, 0, None, 0),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            db.get_values::<String>(
+                sorted_docset
+                    .ids
+                    .into_iter()
+                    .map(|document_id| ValueKey {
+                        account_id: 0,
+                        collection: COLLECTION_ID,
+                        document_id: document_id as u32,
+                        class: ValueClass::Property(fields_u8["accession_number"])
+                    })
+                    .collect()
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(),
+            expected_results
+        );
+    }
 }
 
 pub async fn test_sort(db: Store) {

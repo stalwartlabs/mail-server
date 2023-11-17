@@ -32,6 +32,8 @@ use mail_parser::{
 };
 use nlp::language::Language;
 use store::{
+    backend::MAX_TOKEN_LENGTH,
+    fts::{index::FtsDocument, Field},
     write::{BatchBuilder, BlobOp, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
     BlobHash,
 };
@@ -60,13 +62,13 @@ pub(super) trait IndexMessage {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
-    ) -> store::Result<&mut Self>;
+    ) -> &mut Self;
 
     fn index_headers(&mut self, headers: &[Header<'_>], options: u32);
 }
 
-pub(super) trait IndexMessageText<'x> {
-    fn index_message(&mut self, message: &'x Message<'x>);
+pub trait IndexMessageText<'x>: Sized {
+    fn index_message(self, message: &'x Message<'x>) -> Self;
 }
 
 impl IndexMessage for BatchBuilder {
@@ -77,7 +79,7 @@ impl IndexMessage for BatchBuilder {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<u32>,
         received_at: u64,
-    ) -> store::Result<&mut Self> {
+    ) -> &mut Self {
         // Index keywords
         self.value(Property::Keywords, keywords, F_VALUE | F_BITMAP);
 
@@ -164,7 +166,7 @@ impl IndexMessage for BatchBuilder {
             F_VALUE,
         );
 
-        Ok(self)
+        self
     }
 
     fn index_headers(&mut self, headers: &[Header<'_>], options: u32) {
@@ -262,9 +264,8 @@ impl IndexMessage for BatchBuilder {
     }
 }
 
-/*
-impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
-    fn index_message(&mut self, message: &'x Message<'x>) {
+impl<'x> IndexMessageText<'x> for FtsDocument<'x, HeaderName<'x>> {
+    fn index_message(mut self, message: &'x Message<'x>) -> Self {
         let mut language = Language::Unknown;
 
         for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
@@ -277,9 +278,9 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
                         continue;
                     }
                     // Index hasHeader property
-                    self.index_raw_token(Property::Headers, header.name.as_str());
+                    self.index_keyword(Field::Keyword, header.name.as_str().to_ascii_lowercase());
 
-                    match header.name {
+                    match &header.name {
                         HeaderName::MessageId
                         | HeaderName::InReplyTo
                         | HeaderName::References
@@ -287,45 +288,35 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
                             header.value.visit_text(|id| {
                                 // Index ids without stemming
                                 if id.len() < MAX_TOKEN_LENGTH {
-                                    let fix = "true";
-                                    self.index_raw_token(Property::MessageId, id.to_string());
+                                    self.index_keyword(
+                                        Field::Header(header.name.clone()),
+                                        id.to_string(),
+                                    );
                                 }
                             });
                         }
                         HeaderName::From | HeaderName::To | HeaderName::Cc | HeaderName::Bcc => {
-                            let property = Property::from_header(&header.name);
-
                             header.value.visit_addresses(|_, value| {
                                 // Index an address name or email without stemming
-                                self.index_raw(property.clone(), value.to_string());
+                                self.index_tokenized(
+                                    Field::Header(header.name.clone()),
+                                    value.to_string(),
+                                );
                             });
                         }
                         HeaderName::Subject => {
                             // Index subject for FTS
-                            self.index(
-                                Property::Subject,
-                                match &header.value {
-                                    HeaderValue::Text(text) => text.clone(),
-                                    HeaderValue::TextList(list) if !list.is_empty() => {
-                                        list.first().unwrap().clone()
-                                    }
-                                    _ => "".into(),
-                                },
-                                language,
-                            );
+                            if let Some(subject) = header.value.as_text() {
+                                self.index(Field::Header(HeaderName::Subject), subject, language);
+                            }
                         }
                         HeaderName::Comments | HeaderName::Keywords | HeaderName::ListId => {
                             // Index headers
                             header.value.visit_text(|text| {
-                                for token in text.split_ascii_whitespace() {
-                                    if token.len() < MAX_TOKEN_LENGTH {
-                                        let fix = "true";
-                                        self.index_raw_token(
-                                            Property::Headers,
-                                            token.to_lowercase(),
-                                        );
-                                    }
-                                }
+                                self.index_tokenized(
+                                    Field::Header(header.name.clone()),
+                                    text.to_string(),
+                                );
                             });
                         }
                         _ => (),
@@ -337,9 +328,9 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
                 PartType::Text(text) => {
                     if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
                     {
-                        self.index(Property::TextBody, text.as_ref(), part_language);
+                        self.index(Field::Body, text.as_ref(), part_language);
                     } else {
-                        self.index(Property::Attachments, text.as_ref(), part_language);
+                        self.index(Field::Attachment, text.as_ref(), part_language);
                     }
                 }
                 PartType::Html(html) => {
@@ -347,9 +338,9 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
 
                     if message.text_body.contains(&part_id) || message.html_body.contains(&part_id)
                     {
-                        self.index(Property::TextBody, text, part_language);
+                        self.index(Field::Body, text, part_language);
                     } else {
-                        self.index(Property::Attachments, text, part_language);
+                        self.index(Field::Attachment, text, part_language);
                     }
                 }
                 PartType::Message(nested_message) => {
@@ -360,21 +351,17 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
                     if let Some(HeaderValue::Text(subject)) =
                         nested_message.header(HeaderName::Subject)
                     {
-                        self.index(
-                            Property::Attachments,
-                            subject.as_ref(),
-                            nested_message_language,
-                        );
+                        self.index(Field::Attachment, subject.as_ref(), nested_message_language);
                     }
 
                     for sub_part in nested_message.parts.iter().take(MAX_MESSAGE_PARTS) {
                         let language = sub_part.language().unwrap_or(nested_message_language);
                         match &sub_part.body {
                             PartType::Text(text) => {
-                                self.index(Property::Attachments, text.as_ref(), language);
+                                self.index(Field::Attachment, text.as_ref(), language);
                             }
                             PartType::Html(html) => {
-                                self.index(Property::Attachments, html_to_text(html), language);
+                                self.index(Field::Attachment, html_to_text(html), language);
                             }
                             _ => (),
                         }
@@ -383,9 +370,9 @@ impl<'x> IndexMessageText<'x> for FtsIndexBuilder<'x, Property> {
                 _ => {}
             }
         }
+        self
     }
 }
-*/
 
 pub struct EmailIndexBuilder<'x> {
     inner: Bincode<MessageMetadata<'x>>,

@@ -37,6 +37,7 @@ use store::{
 };
 
 use crate::jmap::{
+    assert_is_empty,
     email_changes::{LogAction, ParseState},
     mailbox::destroy_all_mailboxes,
 };
@@ -287,10 +288,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
     server.store.write(batch.build_batch()).await.unwrap();
 
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 #[derive(Debug, Clone)]

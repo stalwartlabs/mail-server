@@ -274,8 +274,8 @@ impl SqliteStore {
     #[cfg(feature = "test_mode")]
     pub(crate) async fn destroy(&self) {
         use crate::{
-            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-            SUBSPACE_LOGS, SUBSPACE_VALUES,
+            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
+            SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
         };
 
         let conn = self.conn_pool.get().unwrap();
@@ -287,6 +287,7 @@ impl SqliteStore {
             SUBSPACE_BLOBS,
             SUBSPACE_ACLS,
             SUBSPACE_COUNTERS,
+            SUBSPACE_BLOB_DATA,
         ] {
             conn.execute(&format!("DROP TABLE {}", char::from(table)), [])
                 .unwrap();

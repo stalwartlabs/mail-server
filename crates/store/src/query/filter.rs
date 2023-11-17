@@ -24,7 +24,7 @@
 use std::ops::{BitAndAssign, BitOrAssign, BitXorAssign};
 
 use ahash::HashSet;
-use nlp::tokenizers::space::SpaceTokenizer;
+use nlp::tokenizers::word::WordTokenizer;
 use roaring::RoaringBitmap;
 
 use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, Store};
@@ -32,8 +32,8 @@ use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, Store};
 use super::{Filter, ResultSet};
 
 struct State {
-    op: Filter,
-    bm: Option<RoaringBitmap>,
+    pub op: Filter,
+    pub bm: Option<RoaringBitmap>,
 }
 
 impl Store {
@@ -44,8 +44,6 @@ impl Store {
         filters: Vec<Filter>,
     ) -> crate::Result<ResultSet> {
         let collection = collection.into();
-        let mut not_mask = RoaringBitmap::new();
-        let mut not_fetch = false;
         if filters.is_empty() {
             return Ok(ResultSet {
                 account_id,
@@ -61,10 +59,13 @@ impl Store {
         let mut stack = Vec::new();
         let mut filters = filters.into_iter().peekable();
 
+        let mut not_mask = RoaringBitmap::new();
+        let mut not_fetch = false;
+
         while let Some(filter) = filters.next() {
-            let result = match filter {
+            let mut result = match filter {
                 Filter::MatchValue { field, op, value } => {
-                    self.range_to_bitmap(account_id, collection, field, value, op)
+                    self.range_to_bitmap(account_id, collection, field, &value, op)
                         .await?
                 }
                 Filter::HasText {
@@ -74,7 +75,8 @@ impl Store {
                 } => {
                     if tokenize {
                         self.get_bitmaps_intersection(
-                            SpaceTokenizer::new(&text, MAX_TOKEN_LENGTH)
+                            WordTokenizer::new(&text, MAX_TOKEN_LENGTH)
+                                .map(|token| token.word.into_owned())
                                 .collect::<HashSet<String>>()
                                 .into_iter()
                                 .map(|word| {
@@ -114,6 +116,7 @@ impl Store {
                 }
             };
 
+            // Only fetch not mask if we need it
             if matches!(state.op, Filter::Not) && !not_fetch {
                 not_mask = self
                     .get_bitmap(BitmapKey::document_ids(account_id, collection))
@@ -122,8 +125,41 @@ impl Store {
                 not_fetch = true;
             }
 
-            state.op.apply(&mut state.bm, result, &not_mask);
+            // Apply logical operation
+            if let Some(dest) = &mut state.bm {
+                match state.op {
+                    Filter::And => {
+                        if let Some(result) = result {
+                            dest.bitand_assign(result);
+                        } else {
+                            dest.clear();
+                        }
+                    }
+                    Filter::Or => {
+                        if let Some(result) = result {
+                            dest.bitor_assign(result);
+                        }
+                    }
+                    Filter::Not => {
+                        if let Some(mut result) = result {
+                            result.bitxor_assign(&not_mask);
+                            dest.bitand_assign(result);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else if let Some(ref mut result_) = result {
+                if let Filter::Not = state.op {
+                    result_.bitxor_assign(&not_mask);
+                }
+                state.bm = result;
+            } else if let Filter::Not = state.op {
+                state.bm = Some(not_mask.clone());
+            } else {
+                state.bm = Some(RoaringBitmap::new());
+            }
 
+            // And short-circuit
             if matches!(state.op, Filter::And) && state.bm.as_ref().unwrap().is_empty() {
                 while let Some(filter) = filters.peek() {
                     if matches!(filter, Filter::End) {
@@ -140,49 +176,6 @@ impl Store {
             collection,
             results: state.bm.unwrap_or_else(RoaringBitmap::new),
         })
-    }
-}
-
-impl Filter {
-    #[inline(always)]
-    pub fn apply(
-        &self,
-        dest: &mut Option<RoaringBitmap>,
-        mut src: Option<RoaringBitmap>,
-        not_mask: &RoaringBitmap,
-    ) {
-        if let Some(dest) = dest {
-            match self {
-                Filter::And => {
-                    if let Some(src) = src {
-                        dest.bitand_assign(src);
-                    } else {
-                        dest.clear();
-                    }
-                }
-                Filter::Or => {
-                    if let Some(src) = src {
-                        dest.bitor_assign(src);
-                    }
-                }
-                Filter::Not => {
-                    if let Some(mut src) = src {
-                        src.bitxor_assign(not_mask);
-                        dest.bitand_assign(src);
-                    }
-                }
-                _ => unreachable!(),
-            }
-        } else if let Some(ref mut src_) = src {
-            if let Filter::Not = self {
-                src_.bitxor_assign(not_mask);
-            }
-            *dest = src;
-        } else if let Filter::Not = self {
-            *dest = Some(not_mask.clone());
-        } else {
-            *dest = Some(RoaringBitmap::new());
-        }
     }
 }
 

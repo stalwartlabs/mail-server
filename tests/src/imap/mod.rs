@@ -225,7 +225,7 @@ refresh-token-renew = "2s"
 "#;
 
 #[allow(dead_code)]
-struct IMAPTest {
+pub struct IMAPTest {
     jmap: Arc<JMAP>,
     imap: Arc<IMAP>,
     temp_dir: TempDir,
@@ -331,7 +331,7 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
 pub async fn imap_tests() {
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
+            .with_max_level(tracing::Level::DEBUG)
             .finish(),
     )
     .unwrap();*/
@@ -364,10 +364,10 @@ pub async fn imap_tests() {
     }
 
     mailbox::test(&mut imap, &mut imap_check).await;
-    append::test(&mut imap, &mut imap_check).await;
+    append::test(&mut imap, &mut imap_check, &handle).await;
     search::test(&mut imap, &mut imap_check).await;
     fetch::test(&mut imap, &mut imap_check).await;
-    store::test(&mut imap, &mut imap_check).await;
+    store::test(&mut imap, &mut imap_check, &handle).await;
     copy_move::test(&mut imap, &mut imap_check).await;
     thread::test(&mut imap, &mut imap_check).await;
     idle::test(&mut imap, &mut imap_check).await;

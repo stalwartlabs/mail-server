@@ -24,7 +24,7 @@
 use std::{collections::hash_map::Entry, sync::Arc, time::Instant};
 
 use crate::{
-    jmap::mailbox::destroy_all_mailboxes,
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
     store::{deflate_artwork_data, query::FIELDS},
 };
 use jmap::JMAP;
@@ -94,6 +94,9 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
             "thread {} found",
             MAX_THREADS
         );
+
+        // Wait for indexing to complete
+        wait_for_index(&server).await;
     }
 
     println!("Running JMAP Mail query tests...");
@@ -115,10 +118,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
         .unwrap();
 
     destroy_all_mailboxes(client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }
 
 pub async fn query(client: &mut Client) {

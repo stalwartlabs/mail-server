@@ -53,7 +53,7 @@ use store::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, Bincode, JMAP};
+use crate::{auth::AccessToken, services::housekeeper::Event, Bincode, NamedKey, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
@@ -291,7 +291,7 @@ impl JMAP {
         keywords: Vec<Keyword>,
         received_at: Option<UTCDate>,
     ) -> Result<Result<IngestedEmail, SetError>, MethodError> {
-        // Obtain term index and metadata
+        // Obtain metadata
         let mut metadata = if let Some(metadata) = self
             .get_property::<Bincode<MessageMetadata>>(
                 from_account_id,
@@ -405,6 +405,14 @@ impl JMAP {
             .value(Property::MailboxIds, mailboxes, F_VALUE | F_BITMAP)
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
+            .set(
+                NamedKey::IndexEmail::<&[u8]> {
+                    account_id,
+                    document_id: message_id,
+                    seq: self.generate_snowflake_id()?,
+                },
+                metadata.blob_hash.clone(),
+            )
             .custom(EmailIndexBuilder::set(metadata))
             .custom(changes);
 
@@ -416,6 +424,9 @@ impl JMAP {
                     "Failed to write message to database.");
             MethodError::ServerPartialFail
         })?;
+
+        // Request FTS index
+        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
 
         Ok(Ok(email))
     }

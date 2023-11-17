@@ -23,7 +23,7 @@
 
 use std::{collections::HashSet, hash::Hash, slice::Iter, time::SystemTime};
 
-use nlp::tokenizers::space::SpaceTokenizer;
+use nlp::tokenizers::word::WordTokenizer;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::{
@@ -35,6 +35,7 @@ use self::assert::AssertValue;
 pub mod assert;
 pub mod batch;
 pub mod blob;
+pub mod hash;
 pub mod key;
 pub mod log;
 
@@ -92,14 +93,20 @@ pub enum Operation {
     },
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BitmapClass {
     DocumentIds,
     Tag { field: u8, value: TagValue },
-    Text { field: u8, token: Vec<u8> },
+    Text { field: u8, token: BitmapHash },
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BitmapHash {
+    pub hash: [u8; 8],
+    pub len: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TagValue {
     Id(u32),
     Text(Vec<u8>),
@@ -111,6 +118,7 @@ pub enum ValueClass {
     Property(u8),
     Acl(u32),
     Named(Vec<u8>),
+    TermIndex,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
@@ -352,7 +360,7 @@ impl ToBitmaps for &str {
             ops.push(Operation::Bitmap {
                 class: BitmapClass::Text {
                     field,
-                    token: token.into_bytes(),
+                    token: BitmapHash::new(token),
                 },
                 set,
             });
@@ -362,8 +370,8 @@ impl ToBitmaps for &str {
 
 impl TokenizeText for &str {
     fn tokenize_into(&self, tokens: &mut HashSet<String>) {
-        for token in SpaceTokenizer::new(self, MAX_TOKEN_LENGTH) {
-            tokens.insert(token);
+        for token in WordTokenizer::new(self, MAX_TOKEN_LENGTH) {
+            tokens.insert(token.word.into_owned());
         }
     }
 
@@ -479,6 +487,10 @@ impl BlobHash {
     pub fn try_from_hash_slice(value: &[u8]) -> Result<BlobHash, std::array::TryFromSliceError> {
         value.try_into().map(BlobHash)
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 impl From<&[u8]> for BlobHash {
@@ -520,6 +532,12 @@ impl AsMut<[u8]> for BlobHash {
 impl AsRef<BlobClass> for BlobClass {
     fn as_ref(&self) -> &BlobClass {
         self
+    }
+}
+
+impl From<BlobHash> for Vec<u8> {
+    fn from(value: BlobHash) -> Self {
+        value.0.to_vec()
     }
 }
 

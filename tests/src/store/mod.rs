@@ -25,7 +25,7 @@ pub mod assign_id;
 pub mod blob;
 pub mod query;
 
-use std::{io::Read, sync::Arc};
+use std::io::Read;
 
 use ::store::Store;
 
@@ -56,8 +56,8 @@ pub async fn store_tests() {
     if insert {
         db.destroy().await;
     }
-    assign_id::test(db.clone()).await;
-    query::test(db, insert).await;
+    query::test(db.clone(), insert).await;
+    assign_id::test(db).await;
     temp_dir.delete();
 }
 

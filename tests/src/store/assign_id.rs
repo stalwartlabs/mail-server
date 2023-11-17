@@ -35,37 +35,12 @@ pub async fn test(db: Store) {
 
     test_1(db.clone()).await;
     test_2(db.clone()).await;
-    test_3(db.clone()).await;
-    test_4(db).await;
+    test_3(db).await;
 
     ID_ASSIGNMENT_EXPIRY.store(60 * 60, std::sync::atomic::Ordering::Relaxed);
 }
 
 async fn test_1(db: Store) {
-    // Test change id assignment
-    let mut handles = Vec::new();
-    let mut expected_ids = HashSet::new();
-
-    // Create 100 change ids concurrently
-    for id in 0..100 {
-        handles.push({
-            let db = db.clone();
-            tokio::spawn(async move { db.assign_change_id(0).await })
-        });
-        expected_ids.insert(id);
-    }
-
-    for handle in handles {
-        let assigned_id = handle.await.unwrap().unwrap();
-        assert!(
-            expected_ids.remove(&assigned_id),
-            "already assigned or invalid: {assigned_id} "
-        );
-    }
-    db.destroy().await;
-}
-
-async fn test_2(db: Store) {
     // Test document id assignment
     for wait_for_expiry in [true, false] {
         let mut handles = Vec::new();
@@ -101,7 +76,7 @@ async fn test_2(db: Store) {
     db.destroy().await;
 }
 
-async fn test_3(db: Store) {
+async fn test_2(db: Store) {
     // Create document ids and try reassigning
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
@@ -132,7 +107,7 @@ async fn test_3(db: Store) {
     db.destroy().await;
 }
 
-async fn test_4(db: Store) {
+async fn test_3(db: Store) {
     // Try reassigning deleted ids
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();

@@ -30,6 +30,7 @@ use std::{sync::Arc, time::Instant};
 use crate::{
     directory::sql::create_test_user_with_email,
     jmap::{
+        assert_is_empty,
         delivery::SmtpConnection,
         email_submission::{
             assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
@@ -173,8 +174,5 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Remove test data
     client.vacation_response_destroy().await.unwrap();
     destroy_all_mailboxes(client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }

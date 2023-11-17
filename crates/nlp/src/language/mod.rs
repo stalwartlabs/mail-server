@@ -22,6 +22,7 @@
 */
 
 pub mod detect;
+pub mod search_snippet;
 pub mod stemmer;
 pub mod stopwords;
 

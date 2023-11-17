@@ -377,6 +377,19 @@ pub async fn parse_jmap_request(
                         .into_http_response(),
                     };
                 }
+                ("db", "purge", &Method::GET) => {
+                    return match jmap.store.purge_bitmaps().await {
+                        Ok(_) => {
+                            JsonResponse::new(Value::String("success".into())).into_http_response()
+                        }
+                        Err(err) => RequestError::blank(
+                            StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                            "Purge database failed",
+                            err.to_string(),
+                        )
+                        .into_http_response(),
+                    };
+                }
                 (path_1 @ ("queue" | "report"), path_2, &Method::GET) => {
                     return jmap
                         .smtp

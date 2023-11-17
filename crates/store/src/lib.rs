@@ -24,8 +24,8 @@
 use std::{fmt::Display, sync::Arc};
 
 pub mod backend;
-//pub mod fts;
 pub mod dispatch;
+pub mod fts;
 pub mod query;
 pub mod write;
 
@@ -36,11 +36,6 @@ pub use parking_lot;
 pub use rand;
 pub use roaring;
 use write::{BitmapClass, BlobOp, ValueClass};
-
-#[cfg(feature = "rocks")]
-pub struct Store {
-    db: rocksdb::OptimisticTransactionDB<rocksdb::MultiThreaded>,
-}
 
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
@@ -103,9 +98,9 @@ pub struct LogKey {
     pub change_id: u64,
 }
 
-const BLOB_HASH_LEN: usize = 32;
-const U64_LEN: usize = std::mem::size_of::<u64>();
-const U32_LEN: usize = std::mem::size_of::<u32>();
+pub const BLOB_HASH_LEN: usize = 32;
+pub const U64_LEN: usize = std::mem::size_of::<u64>();
+pub const U32_LEN: usize = std::mem::size_of::<u32>();
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct BlobHash([u8; BLOB_HASH_LEN]);
@@ -158,6 +153,7 @@ pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
 pub const SUBSPACE_BLOBS: u8 = b'o';
+pub const SUBSPACE_BLOB_DATA: u8 = b't';
 pub const SUBSPACE_ACLS: u8 = b'a';
 pub const SUBSPACE_COUNTERS: u8 = b'c';
 
@@ -179,6 +175,13 @@ pub enum Store {
 pub enum BlobStore {
     Fs(Arc<FsStore>),
     S3(Arc<S3Store>),
+    Sqlite(Arc<SqliteStore>),
+    FoundationDb(Arc<FdbStore>),
+}
+
+#[derive(Clone)]
+pub enum FtsStore {
+    Store(Store),
 }
 
 impl From<SqliteStore> for Store {
@@ -202,5 +205,11 @@ impl From<FsStore> for BlobStore {
 impl From<S3Store> for BlobStore {
     fn from(store: S3Store) -> Self {
         Self::S3(Arc::new(store))
+    }
+}
+
+impl From<Store> for FtsStore {
+    fn from(store: Store) -> Self {
+        Self::Store(store)
     }
 }

@@ -23,6 +23,8 @@
 
 use std::fmt::Display;
 
+use store::fts::{FilterItem, FilterType, FtsFilter};
+
 use crate::{
     error::method::MethodError,
     object::{email, mailbox},
@@ -781,6 +783,50 @@ impl From<Filter> for store::query::Filter {
             Filter::Or => Self::Or,
             Filter::Not => Self::Not,
             Filter::Close => Self::End,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<T: Into<u8> + Display + Clone + std::fmt::Debug> From<Filter> for FtsFilter<T> {
+    fn from(value: Filter) -> Self {
+        match value {
+            Filter::And => Self::And,
+            Filter::Or => Self::Or,
+            Filter::Not => Self::Not,
+            Filter::Close => Self::End,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl FilterItem for Filter {
+    fn filter_type(&self) -> FilterType {
+        match self {
+            Filter::Text(_)
+            | Filter::From(_)
+            | Filter::To(_)
+            | Filter::Cc(_)
+            | Filter::Bcc(_)
+            | Filter::Subject(_)
+            | Filter::Body(_)
+            | Filter::Header(_) => FilterType::Fts,
+            Filter::And => FilterType::And,
+            Filter::Or => FilterType::Or,
+            Filter::Not => FilterType::Not,
+            Filter::Close => FilterType::End,
+            _ => FilterType::Store,
+        }
+    }
+}
+
+impl From<FilterType> for Filter {
+    fn from(value: FilterType) -> Self {
+        match value {
+            FilterType::And => Filter::And,
+            FilterType::Or => Filter::Or,
+            FilterType::Not => Filter::Not,
+            FilterType::End => Filter::Close,
             _ => unreachable!(),
         }
     }

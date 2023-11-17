@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, sync::Arc, time::Duration};
+use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
 
 use ::sieve::{Compiler, Runtime};
 use api::session::BaseCapabilities;
@@ -49,17 +49,23 @@ use services::{
 use smtp::core::SMTP;
 use store::{
     backend::{fs::FsStore, sqlite::SqliteStore},
+    fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{key::KeySerializer, BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass},
-    BitmapKey, BlobStore, Deserialize, Key, Serialize, Store, ValueKey, SUBSPACE_VALUES,
+    write::{
+        key::{DeserializeBigEndian, KeySerializer},
+        BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass,
+    },
+    BitmapKey, BlobStore, Deserialize, FtsStore, Key, Serialize, Store, ValueKey, SUBSPACE_VALUES,
+    U32_LEN, U64_LEN,
 };
 use tokio::sync::mpsc;
 use utils::{
     config::Rate,
     ipc::DeliveryEvent,
     map::ttl_dashmap::{TtlDashMap, TtlMap},
+    snowflake::SnowflakeIdGenerator,
     UnwrapFailure,
 };
 
@@ -85,11 +91,13 @@ pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 pub struct JMAP {
     pub store: Store,
     pub blob_store: BlobStore,
+    pub fts_store: FtsStore,
     pub config: Config,
     pub directory: Arc<dyn Directory>,
 
     pub sessions: TtlDashMap<String, u32>,
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
+    pub snowflake_id: SnowflakeIdGenerator,
 
     pub rate_limit_auth: DashMap<u32, Arc<Mutex<AuthenticatedLimiter>>>,
     pub rate_limit_unauth: DashMap<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
@@ -108,6 +116,7 @@ pub struct Config {
     pub default_language: Language,
     pub query_max_results: usize,
     pub changes_max_results: usize,
+    pub snippet_max_results: usize,
 
     pub request_max_size: usize,
     pub request_max_calls: usize,
@@ -187,6 +196,11 @@ impl JMAP {
             .property::<u64>("global.shared-map.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
+        let store = Store::SQLite(Arc::new(
+            SqliteStore::open(config)
+                .await
+                .failed("Unable to open database"),
+        ));
 
         let jmap_server = Arc::new(JMAP {
             directory: directory_config
@@ -197,11 +211,12 @@ impl JMAP {
                     config.value_require("jmap.directory")?
                 ))
                 .clone(),
-            store: Store::SQLite(Arc::new(
-                SqliteStore::open(config)
-                    .await
-                    .failed("Unable to open database"),
-            )),
+            snowflake_id: config
+                .property::<u64>("global.node-id")?
+                .map(SnowflakeIdGenerator::with_node_id)
+                .unwrap_or_else(SnowflakeIdGenerator::new),
+            fts_store: FtsStore::Store(store.clone()),
+            store,
             blob_store: BlobStore::Fs(Arc::new(
                 FsStore::open(config)
                     .await
@@ -618,7 +633,28 @@ impl JMAP {
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
-                                context = "mailbox_set",
+                                context = "filter",
+                                account_id = account_id,
+                                collection = ?collection,
+                                error = ?err,
+                                "Failed to execute filter.");
+
+                MethodError::ServerPartialFail
+            })
+    }
+
+    pub async fn fts_filter<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        filters: Vec<FtsFilter<T>>,
+    ) -> Result<RoaringBitmap, MethodError> {
+        self.fts_store
+            .query(account_id, collection, filters)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                                context = "fts-filter",
                                 account_id = account_id,
                                 collection = ?collection,
                                 error = ?err,
@@ -805,6 +841,11 @@ pub enum NamedKey<T: AsRef<[u8]>> {
     Name(T),
     Id(u32),
     Quota(u32),
+    IndexEmail {
+        account_id: u32,
+        document_id: u32,
+        seq: u64,
+    },
 }
 
 impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
@@ -817,18 +858,41 @@ impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
                     .finalize(),
             ),
             NamedKey::Id(id) => ValueClass::Named(
-                KeySerializer::new(std::mem::size_of::<u32>())
+                KeySerializer::new(std::mem::size_of::<u32>() + 1)
                     .write(1u8)
                     .write_leb128(*id)
                     .finalize(),
             ),
             NamedKey::Quota(id) => ValueClass::Named(
-                KeySerializer::new(std::mem::size_of::<u32>())
+                KeySerializer::new(std::mem::size_of::<u32>() + 1)
                     .write(2u8)
                     .write_leb128(*id)
                     .finalize(),
             ),
+            NamedKey::IndexEmail {
+                account_id,
+                document_id,
+                seq,
+            } => ValueClass::Named(
+                KeySerializer::new(std::mem::size_of::<u32>() * 4 + 1)
+                    .write(3u8)
+                    .write(*seq)
+                    .write(*account_id)
+                    .write(*document_id)
+                    .finalize(),
+            ),
         }
+    }
+}
+
+impl<T: AsRef<[u8]>> NamedKey<T> {
+    pub fn deserialize_index_email(bytes: &[u8]) -> store::Result<Self> {
+        let len = bytes.len();
+        Ok(NamedKey::IndexEmail {
+            seq: bytes.deserialize_be_u64(len - U64_LEN - (U32_LEN * 2))?,
+            account_id: bytes.deserialize_be_u32(len - U32_LEN * 2)?,
+            document_id: bytes.deserialize_be_u32(len - U32_LEN)?,
+        })
     }
 }
 

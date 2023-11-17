@@ -29,7 +29,7 @@ pub mod sort;
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{BitmapClass, TagValue},
+    write::{BitmapClass, BitmapHash, TagValue},
     BitmapKey, IterateParams, Key, Serialize,
 };
 
@@ -144,48 +144,6 @@ impl Filter {
         }
     }
 
-    /*pub fn has_text_detect(
-        field: impl Into<u8>,
-        text: impl Into<String>,
-        default_language: Language,
-    ) -> Self {
-        let (text, language) = Language::detect(text.into(), default_language);
-        Self::has_text(field, text, language)
-    }
-
-    pub fn has_text(field: impl Into<u8>, text: impl Into<String>, language: Language) -> Self {
-        let text = text.into();
-        let op = if !matches!(language, Language::None) {
-            if (text.starts_with('"') && text.ends_with('"'))
-                || (text.starts_with('\'') && text.ends_with('\''))
-            {
-                TextMatch::Exact(language)
-            } else {
-                TextMatch::Stemmed(language)
-            }
-        } else {
-            TextMatch::Tokenized
-        };
-
-        Filter::HasText {
-            field: field.into(),
-            text,
-            op,
-        }
-    }
-
-    pub fn has_raw_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
-        Filter::HasText {
-            field: field.into(),
-            text: text.into(),
-            op: TextMatch::Raw,
-        }
-    }
-
-    pub fn has_english_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
-        Self::has_text(field, text, Language::English)
-    }*/
-
     pub fn has_text(field: impl Into<u8>, text: impl Into<String>) -> Self {
         Filter::HasText {
             field: field.into(),
@@ -255,14 +213,14 @@ impl BitmapKey<BitmapClass> {
         account_id: u32,
         collection: impl Into<u8>,
         field: impl Into<u8>,
-        token: impl Into<Vec<u8>>,
+        token: impl AsRef<[u8]>,
     ) -> Self {
         BitmapKey {
             account_id,
             collection: collection.into(),
             class: BitmapClass::Text {
                 field: field.into(),
-                token: token.into(),
+                token: BitmapHash::new(token),
             },
             block_num: 0,
         }
@@ -317,20 +275,3 @@ impl<T: Key> IterateParams<T> {
         self
     }
 }
-
-/*
-#[derive(Debug)]
-pub struct RawValue<T: Deserialize> {
-    pub raw: Vec<u8>,
-    pub inner: T,
-}
-
-impl<T: Deserialize> Deserialize for RawValue<T> {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        Ok(RawValue {
-            inner: T::deserialize(bytes)?,
-            raw: bytes.to_vec(),
-        })
-    }
-}
-*/

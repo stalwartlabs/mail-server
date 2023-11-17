@@ -140,3 +140,8 @@ impl From<rocksdb::Error> for crate::Error {
         Self::InternalError(format!("RocksDB error: {}", value))
     }
 }
+
+#[cfg(feature = "rocks")]
+pub struct Store {
+    db: rocksdb::OptimisticTransactionDB<rocksdb::MultiThreaded>,
+}

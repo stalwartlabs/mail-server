@@ -95,7 +95,7 @@ impl FdbStore {
         account_id: u32,
         collection: u8,
         field: u8,
-        value: Vec<u8>,
+        value: &[u8],
         op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let k1 =
@@ -116,27 +116,23 @@ impl FdbStore {
         let (begin, end) = match op {
             Operator::LowerThan => (
                 KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::first_greater_or_equal(k2.write(&value[..]).write(0u32).finalize()),
+                KeySelector::first_greater_or_equal(k2.write(value).write(0u32).finalize()),
             ),
             Operator::LowerEqualThan => (
                 KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::first_greater_or_equal(
-                    k2.write(&value[..]).write(u32::MAX).finalize(),
-                ),
+                KeySelector::first_greater_or_equal(k2.write(value).write(u32::MAX).finalize()),
             ),
             Operator::GreaterThan => (
-                KeySelector::first_greater_than(k1.write(&value[..]).write(u32::MAX).finalize()),
+                KeySelector::first_greater_than(k1.write(value).write(u32::MAX).finalize()),
                 KeySelector::first_greater_or_equal(k2.finalize()),
             ),
             Operator::GreaterEqualThan => (
-                KeySelector::first_greater_or_equal(k1.write(&value[..]).write(0u32).finalize()),
+                KeySelector::first_greater_or_equal(k1.write(value).write(0u32).finalize()),
                 KeySelector::first_greater_or_equal(k2.finalize()),
             ),
             Operator::Equal => (
-                KeySelector::first_greater_or_equal(k1.write(&value[..]).write(0u32).finalize()),
-                KeySelector::first_greater_or_equal(
-                    k2.write(&value[..]).write(u32::MAX).finalize(),
-                ),
+                KeySelector::first_greater_or_equal(k1.write(value).write(0u32).finalize()),
+                KeySelector::first_greater_or_equal(k2.write(value).write(u32::MAX).finalize()),
             ),
         };
         let key_len = begin.key().len();

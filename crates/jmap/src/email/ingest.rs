@@ -33,6 +33,7 @@ use jmap_proto::{
 use mail_parser::{
     parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType,
 };
+
 use store::{
     ahash::AHashSet,
     query::Filter,
@@ -46,7 +47,8 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     email::index::{IndexMessage, MAX_ID_LENGTH},
-    IngestError, JMAP,
+    services::housekeeper::Event,
+    IngestError, NamedKey, JMAP,
 };
 
 use super::{
@@ -237,15 +239,14 @@ impl JMAP {
                 IngestError::Temporary
             })?;
         let change_id = self
-            .store
             .assign_change_id(params.account_id)
             .await
-            .map_err(|err| {
+            .map_err(|_| {
                 tracing::error!(
                     event = "error",
                     context = "email_ingest",
-                    error = ?err,
-                    "Failed to assign changeId.");
+                    "Failed to assign changeId."
+                );
                 IngestError::Temporary
             })?;
 
@@ -307,17 +308,19 @@ impl JMAP {
                 params.mailbox_ids,
                 params.received_at.unwrap_or_else(now),
             )
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_ingest",
-                    error = ?err,
-                    "Failed to index message.");
-                IngestError::Temporary
-            })?
             .value(Property::Cid, change_id, F_VALUE)
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
-            .custom(changes);
+            .custom(changes)
+            .set(
+                NamedKey::IndexEmail::<&[u8]> {
+                    account_id: params.account_id,
+                    document_id,
+                    seq: self
+                        .generate_snowflake_id()
+                        .map_err(|_| IngestError::Temporary)?,
+                },
+                blob_id.hash.clone(),
+            );
         self.store.write(batch.build()).await.map_err(|err| {
             tracing::error!(
                 event = "error",
@@ -326,6 +329,9 @@ impl JMAP {
                 "Failed to write message to database.");
             IngestError::Temporary
         })?;
+
+        // Request FTS index
+        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
 
         Ok(IngestedEmail {
             id,
@@ -434,18 +440,14 @@ impl JMAP {
 
             // Delete all but the most common threadId
             let mut batch = BatchBuilder::new();
-            let change_id = self
-                .store
-                .assign_change_id(account_id)
-                .await
-                .map_err(|err| {
-                    tracing::error!(
-                        event = "error",
-                        context = "find_or_merge_thread",
-                        error = ?err,
-                        "Failed to assign changeId for thread merge.");
-                    IngestError::Temporary
-                })?;
+            let change_id = self.assign_change_id(account_id).await.map_err(|_| {
+                tracing::error!(
+                    event = "error",
+                    context = "find_or_merge_thread",
+                    "Failed to assign changeId for thread merge."
+                );
+                IngestError::Temporary
+            })?;
             let mut changes = ChangeLogBuilder::with_change_id(change_id);
             batch
                 .with_account_id(account_id)

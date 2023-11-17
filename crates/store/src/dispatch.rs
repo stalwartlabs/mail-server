@@ -21,23 +21,27 @@
  * for more details.
 */
 
-use std::ops::{BitAndAssign, Range};
+use std::{
+    fmt::Display,
+    ops::{BitAndAssign, Range},
+};
 
 use roaring::RoaringBitmap;
 
 use crate::{
+    fts::{index::FtsDocument, FtsFilter},
     query,
     write::{Batch, BitmapClass, ValueClass},
-    BitmapKey, BlobStore, Deserialize, IterateParams, Key, Store, ValueKey,
+    BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, Key, Store, ValueKey,
 };
 
 impl Store {
-    pub async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
+    /*pub async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
         match self {
             Self::SQLite(store) => store.assign_change_id(account_id).await,
             Self::FoundationDb(store) => store.assign_change_id(account_id).await,
         }
-    }
+    }*/
 
     pub async fn assign_document_id(
         &self,
@@ -110,7 +114,7 @@ impl Store {
         account_id: u32,
         collection: u8,
         field: u8,
-        value: Vec<u8>,
+        value: &[u8],
         op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         match self {
@@ -149,7 +153,7 @@ impl Store {
         }
     }
 
-    pub(crate) async fn iterate<T: Key>(
+    pub async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
         cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
@@ -187,6 +191,27 @@ impl Store {
         match self {
             Self::SQLite(store) => store.purge_account(account_id).await,
             Self::FoundationDb(store) => store.purge_account(account_id).await,
+        }
+    }
+
+    pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
+        match self {
+            Self::SQLite(store) => store.get_blob(key, range).await,
+            Self::FoundationDb(store) => store.get_blob(key, range).await,
+        }
+    }
+
+    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+        match self {
+            Self::SQLite(store) => store.put_blob(key, data).await,
+            Self::FoundationDb(store) => store.put_blob(key, data).await,
+        }
+    }
+
+    pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+        match self {
+            Self::SQLite(store) => store.delete_blob(key).await,
+            Self::FoundationDb(store) => store.delete_blob(key).await,
         }
     }
 
@@ -269,6 +294,8 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.get_blob(key, range).await,
             Self::S3(store) => store.get_blob(key, range).await,
+            Self::Sqlite(store) => store.get_blob(key, range).await,
+            Self::FoundationDb(store) => store.get_blob(key, range).await,
         }
     }
 
@@ -276,6 +303,8 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.put_blob(key, data).await,
             Self::S3(store) => store.put_blob(key, data).await,
+            Self::Sqlite(store) => store.put_blob(key, data).await,
+            Self::FoundationDb(store) => store.put_blob(key, data).await,
         }
     }
 
@@ -283,6 +312,47 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.delete_blob(key).await,
             Self::S3(store) => store.delete_blob(key).await,
+            Self::Sqlite(store) => store.delete_blob(key).await,
+            Self::FoundationDb(store) => store.delete_blob(key).await,
+        }
+    }
+}
+
+impl FtsStore {
+    pub async fn index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+        &self,
+        document: FtsDocument<'_, T>,
+    ) -> crate::Result<()> {
+        match self {
+            FtsStore::Store(store) => store.fts_index(document).await,
+        }
+    }
+
+    pub async fn query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+        &self,
+        account_id: u32,
+        collection: impl Into<u8>,
+        filters: Vec<FtsFilter<T>>,
+    ) -> crate::Result<RoaringBitmap> {
+        match self {
+            FtsStore::Store(store) => store.fts_query(account_id, collection, filters).await,
+        }
+    }
+
+    pub async fn remove(
+        &self,
+        account_id: u32,
+        collection: u8,
+        document_id: u32,
+    ) -> crate::Result<bool> {
+        match self {
+            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_id).await,
+        }
+    }
+
+    pub async fn remove_all(&self, account_id: u32) -> crate::Result<()> {
+        match self {
+            FtsStore::Store(store) => store.fts_remove_all(account_id).await,
         }
     }
 }

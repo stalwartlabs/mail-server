@@ -23,7 +23,7 @@
 
 use roaring::RoaringBitmap;
 
-use crate::{write::key::DeserializeBigEndian, BitmapKey, IterateParams, LogKey, U64_LEN};
+use crate::BitmapKey;
 
 use super::SqliteStore;
 
@@ -46,15 +46,13 @@ impl IdCacheKey {
 pub struct IdAssigner {
     pub freed_document_ids: Option<RoaringBitmap>,
     pub next_document_id: u32,
-    pub next_change_id: u64,
 }
 
 impl IdAssigner {
-    pub fn new(used_ids: Option<RoaringBitmap>, next_change_id: u64) -> Self {
+    pub fn new(used_ids: Option<RoaringBitmap>) -> Self {
         let mut assigner = IdAssigner {
             freed_document_ids: None,
             next_document_id: 0,
-            next_change_id,
         };
         if let Some(used_ids) = used_ids {
             if let Some(max) = used_ids.max() {
@@ -85,28 +83,9 @@ impl IdAssigner {
             id
         }
     }
-
-    pub fn assign_change_id(&mut self) -> u64 {
-        let id = self.next_change_id;
-        self.next_change_id += 1;
-        id
-    }
 }
 
 impl SqliteStore {
-    pub(crate) async fn assign_change_id(&self, account_id: u32) -> crate::Result<u64> {
-        let collection = u8::MAX;
-        let key = IdCacheKey::new(account_id, collection);
-        for _ in 0..2 {
-            if let Some(assigner) = self.id_assigner.lock().get_mut(&key) {
-                return Ok(assigner.assign_change_id());
-            }
-            self.build_id_assigner(key).await?;
-        }
-
-        unreachable!()
-    }
-
     pub(crate) async fn assign_document_id(
         &self,
         account_id: u32,
@@ -128,55 +107,15 @@ impl SqliteStore {
         let used_ids = self
             .get_bitmap(BitmapKey::document_ids(key.account_id, key.collection))
             .await?;
-        let next_change_id = self
-            .get_last_change_id(key.account_id, key.collection)
-            .await?
-            .map(|id| id + 1)
-            .unwrap_or(0);
 
         let id_assigner = self.id_assigner.clone();
         let mut id_assigner = id_assigner.lock();
         // Make sure id assigner was not added by another thread
         if id_assigner.get_mut(&key).is_none() {
-            id_assigner.insert(key, IdAssigner::new(used_ids, next_change_id));
+            id_assigner.insert(key, IdAssigner::new(used_ids));
         }
 
         Ok(())
-    }
-
-    async fn get_last_change_id(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>> {
-        let collection = collection.into();
-
-        let from_key = LogKey {
-            account_id,
-            collection,
-            change_id: u64::MAX,
-        };
-        let to_key = LogKey {
-            account_id,
-            collection,
-            change_id: 0,
-        };
-
-        let mut last_change_id = None;
-
-        self.iterate(
-            IterateParams::new(from_key, to_key)
-                .descending()
-                .no_values()
-                .only_first(),
-            |key, _| {
-                last_change_id = key.deserialize_be_u64(key.len() - U64_LEN)?.into();
-                Ok(false)
-            },
-        )
-        .await?;
-
-        Ok(last_change_id)
     }
 }
 
@@ -188,7 +127,7 @@ mod tests {
 
     #[test]
     fn id_assigner() {
-        let mut assigner = IdAssigner::new(None, 0);
+        let mut assigner = IdAssigner::new(None);
         assert_eq!(assigner.assign_document_id(), 0);
         assert_eq!(assigner.assign_document_id(), 1);
         assert_eq!(assigner.assign_document_id(), 2);
@@ -197,7 +136,6 @@ mod tests {
             RoaringBitmap::from_sorted_iter([0, 2, 4, 6])
                 .unwrap()
                 .into(),
-            0,
         );
         assert_eq!(assigner.assign_document_id(), 1);
         assert_eq!(assigner.assign_document_id(), 3);

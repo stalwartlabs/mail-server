@@ -141,6 +141,7 @@ pub static STEMMER_MAP: &[Option<Algorithm>] = &[
     None,                        // Tagalog = 67,
     None,                        // Armenian = 68,
     None,                        // Unknown = 69,
+    None,                        // None = 70,
 ];
 
 #[cfg(test)]

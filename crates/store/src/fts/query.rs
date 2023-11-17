@@ -21,138 +21,210 @@
  * for more details.
 */
 
-use std::ops::BitOrAssign;
+use std::{
+    fmt::Display,
+    ops::{BitAndAssign, BitOrAssign, BitXorAssign},
+};
 
-use nlp::language::{stemmer::Stemmer, Language};
+use nlp::language::stemmer::Stemmer;
 use roaring::RoaringBitmap;
 
-use crate::{fts::builder::MAX_TOKEN_LENGTH, BitmapKey, ValueKey, HASH_EXACT, HASH_STEMMED};
+use crate::{backend::MAX_TOKEN_LENGTH, fts::FtsFilter, write::BitmapClass, BitmapKey, Store};
 
-use super::term_index::TermIndex;
+struct State<T: Into<u8> + Display + Clone + std::fmt::Debug> {
+    pub op: FtsFilter<T>,
+    pub bm: Option<RoaringBitmap>,
+}
 
-#[async_trait::async_trait]
-pub trait StoreFts: StoreRead {
-    async fn fts_query(
-        &mut self,
+impl Store {
+    pub async fn fts_query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
+        &self,
         account_id: u32,
-        collection: u8,
-        field: u8,
-        text: &str,
-        language: Language,
-        match_phrase: bool,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        if match_phrase {
-            let mut phrase = Vec::new();
-            let mut bit_keys = Vec::new();
-            for token in language.tokenize_text(text, MAX_TOKEN_LENGTH) {
-                let key = BitmapKey::hash(
-                    token.word.as_ref(),
-                    account_id,
-                    collection,
-                    HASH_EXACT,
+        collection: impl Into<u8>,
+        filters: Vec<FtsFilter<T>>,
+    ) -> crate::Result<RoaringBitmap> {
+        let collection = collection.into();
+        let mut not_mask = RoaringBitmap::new();
+        let mut not_fetch = false;
+
+        let mut state: State<T> = FtsFilter::And.into();
+        let mut stack = Vec::new();
+        let mut filters = filters.into_iter().peekable();
+
+        while let Some(filter) = filters.next() {
+            let mut result = match filter {
+                FtsFilter::Exact {
                     field,
-                );
-                if !bit_keys.contains(&key) {
-                    bit_keys.push(key);
+                    text,
+                    language,
+                } => {
+                    let field: u8 = field.clone().into();
+
+                    let tokens = language
+                        .tokenize_text(text.as_ref(), MAX_TOKEN_LENGTH)
+                        .map(|t| t.word)
+                        .collect::<Vec<_>>();
+                    let keys = if tokens.len() > 1 {
+                        tokens
+                            .windows(2)
+                            .map(|bg| BitmapKey {
+                                account_id,
+                                collection,
+                                class: BitmapClass::bigram(format!("{} {}", bg[0], bg[1]), field),
+                                block_num: 0,
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        tokens
+                            .into_iter()
+                            .map(|word| BitmapKey {
+                                account_id,
+                                collection,
+                                class: BitmapClass::word(word.as_ref(), field),
+                                block_num: 0,
+                            })
+                            .collect::<Vec<_>>()
+                    };
+
+                    self.get_bitmaps_intersection(keys).await?
                 }
+                FtsFilter::Contains {
+                    field,
+                    text,
+                    language,
+                } => {
+                    let mut result = RoaringBitmap::new();
+                    let field: u8 = field.clone().into();
 
-                phrase.push(token.word);
-            }
-            let bitmaps = match self.get_bitmaps_intersection(bit_keys).await? {
-                Some(b) if !b.is_empty() => b,
-                _ => return Ok(None),
-            };
+                    for token in Stemmer::new(text.as_ref(), language, MAX_TOKEN_LENGTH) {
+                        let token1 = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::word(token.word.as_ref(), field),
+                            block_num: 0,
+                        };
+                        let token2 = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::stemmed(
+                                if let Some(stemmed_word) = token.stemmed_word {
+                                    stemmed_word
+                                } else {
+                                    token.word
+                                }
+                                .as_ref(),
+                                field,
+                            ),
+                            block_num: 0,
+                        };
 
-            match phrase.len() {
-                0 => return Ok(None),
-                1 => return Ok(Some(bitmaps)),
-                _ => (),
-            }
-
-            let mut results = RoaringBitmap::new();
-            for document_id in bitmaps {
-                if let Some(term_index) = self
-                    .get_value::<TermIndex>(ValueKey::term_index(
-                        account_id,
-                        collection,
-                        document_id,
-                    ))
-                    .await?
-                {
-                    if term_index
-                        .match_terms(
-                            &phrase
-                                .iter()
-                                .map(|w| term_index.get_match_term(w, None))
-                                .collect::<Vec<_>>(),
-                            field.into(),
-                            true,
-                            false,
-                            false,
-                        )
-                        .map_err(|e| {
-                            crate::Error::InternalError(format!(
-                                "TermIndex match_terms failed for {account_id}/{collection}/{document_id}: {e:?}"
-                            ))
-                        })?
-                        .is_some()
-                    {
-                        results.insert(document_id);
-                    }
-                } else {
-                    tracing::debug!(
-                        event = "error",
-                        context = "fts_query",
-                        account_id = account_id,
-                        collection = collection,
-                        document_id = document_id,
-                        "Document is missing a term index",
-                    );
-                }
-            }
-
-            if !results.is_empty() {
-                Ok(Some(results))
-            } else {
-                Ok(None)
-            }
-        } else {
-            let mut bitmaps = RoaringBitmap::new();
-
-            for token in Stemmer::new(text, language, MAX_TOKEN_LENGTH) {
-                let token1 =
-                    BitmapKey::hash(&token.word, account_id, collection, HASH_EXACT, field);
-                let token2 = if let Some(stemmed_word) = token.stemmed_word {
-                    BitmapKey::hash(&stemmed_word, account_id, collection, HASH_STEMMED, field)
-                } else {
-                    let mut token2 = token1.clone();
-                    token2.family &= !HASH_EXACT;
-                    token2.family |= HASH_STEMMED;
-                    token2
-                };
-
-                match self.get_bitmaps_union(vec![token1, token2]).await? {
-                    Some(b) if !b.is_empty() => {
-                        if !bitmaps.is_empty() {
-                            bitmaps &= b;
-                            if bitmaps.is_empty() {
-                                return Ok(None);
+                        match self.get_bitmaps_union(vec![token1, token2]).await? {
+                            Some(b) if !b.is_empty() => {
+                                if !result.is_empty() {
+                                    result &= b;
+                                    if result.is_empty() {
+                                        break;
+                                    }
+                                } else {
+                                    result = b;
+                                }
                             }
-                        } else {
-                            bitmaps = b;
+                            _ => break,
                         }
                     }
-                    _ => return Ok(None),
-                };
+
+                    if !result.is_empty() {
+                        Some(result)
+                    } else {
+                        None
+                    }
+                }
+                FtsFilter::Keyword { field, text } => {
+                    self.get_bitmap(BitmapKey {
+                        account_id,
+                        collection,
+                        class: BitmapClass::word(text, field),
+                        block_num: 0,
+                    })
+                    .await?
+                }
+                op @ (FtsFilter::And | FtsFilter::Or | FtsFilter::Not) => {
+                    stack.push(state);
+                    state = op.into();
+                    continue;
+                }
+                FtsFilter::End => {
+                    if let Some(prev_state) = stack.pop() {
+                        let bm = state.bm;
+                        state = prev_state;
+                        bm
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            // Only fetch not mask if we need it
+            if matches!(state.op, FtsFilter::Not) && !not_fetch {
+                not_mask = self
+                    .get_bitmap(BitmapKey::document_ids(account_id, collection))
+                    .await?
+                    .unwrap_or_else(RoaringBitmap::new);
+                not_fetch = true;
             }
 
-            Ok(Some(bitmaps))
+            // Apply logical operation
+            if let Some(dest) = &mut state.bm {
+                match state.op {
+                    FtsFilter::And => {
+                        if let Some(result) = result {
+                            dest.bitand_assign(result);
+                        } else {
+                            dest.clear();
+                        }
+                    }
+                    FtsFilter::Or => {
+                        if let Some(result) = result {
+                            dest.bitor_assign(result);
+                        }
+                    }
+                    FtsFilter::Not => {
+                        if let Some(mut result) = result {
+                            result.bitxor_assign(&not_mask);
+                            dest.bitand_assign(result);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            } else if let Some(ref mut result_) = result {
+                if let FtsFilter::Not = state.op {
+                    result_.bitxor_assign(&not_mask);
+                }
+                state.bm = result;
+            } else if let FtsFilter::Not = state.op {
+                state.bm = Some(not_mask.clone());
+            } else {
+                state.bm = Some(RoaringBitmap::new());
+            }
+
+            // And short circuit
+            if matches!(state.op, FtsFilter::And) && state.bm.as_ref().unwrap().is_empty() {
+                while let Some(filter) = filters.peek() {
+                    if matches!(filter, FtsFilter::End) {
+                        break;
+                    } else {
+                        filters.next();
+                    }
+                }
+            }
         }
+
+        Ok(state.bm.unwrap_or_default())
     }
 
-    async fn get_bitmaps_union<T: AsRef<[u8]> + Sync + Send>(
+    async fn get_bitmaps_union(
         &self,
-        keys: Vec<BitmapKey<T>>,
+        keys: Vec<BitmapKey<BitmapClass>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
 
@@ -163,5 +235,14 @@ pub trait StoreFts: StoreRead {
         }
 
         Ok(if !bm.is_empty() { Some(bm) } else { None })
+    }
+}
+
+impl<T: Into<u8> + Display + Clone + std::fmt::Debug> From<FtsFilter<T>> for State<T> {
+    fn from(value: FtsFilter<T>) -> Self {
+        Self {
+            op: value,
+            bm: None,
+        }
     }
 }

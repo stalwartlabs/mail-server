@@ -59,7 +59,9 @@ use store::{
     Serialize,
 };
 
-use crate::{auth::AccessToken, Bincode, IngestError, JMAP};
+use crate::{
+    auth::AccessToken, services::housekeeper::Event, Bincode, IngestError, NamedKey, JMAP,
+};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
@@ -1208,6 +1210,16 @@ impl JMAP {
                 .delete_document(thread_id);
         }
 
+        // Remove message from FTS index
+        batch.set(
+            NamedKey::IndexEmail::<&[u8]> {
+                account_id,
+                document_id,
+                seq: self.generate_snowflake_id()?,
+            },
+            vec![],
+        );
+
         // Commit batch
         match self.store.write(batch.build()).await {
             Ok(_) => (),
@@ -1225,6 +1237,9 @@ impl JMAP {
                 return Err(MethodError::ServerPartialFail);
             }
         }
+
+        // Request FTS index
+        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
 
         Ok(Ok(changes))
     }

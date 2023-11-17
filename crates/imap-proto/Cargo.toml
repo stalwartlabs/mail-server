@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 jmap_proto = { path = "../jmap-proto" }
+store = { path = "../store" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 ahash = { version = "0.8" }
 chrono = { version = "0.4"}

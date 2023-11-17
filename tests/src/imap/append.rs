@@ -25,9 +25,11 @@ use std::{fs, io};
 
 use imap_proto::ResponseType;
 
-use super::{resources_dir, AssertResult, ImapConnection, Type};
+use crate::jmap::wait_for_index;
 
-pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+use super::{resources_dir, AssertResult, IMAPTest, ImapConnection, Type};
+
+pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, handle: &IMAPTest) {
     // Invalid APPEND commands
     imap.send("APPEND \"All Mail\" {1+}\r\na").await;
     imap.assert_read(Type::Tagged, ResponseType::No)
@@ -80,6 +82,8 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         assert_eq!(code.next(), Some(expected_uid.to_string().as_str()));
         expected_uid += 1;
     }
+
+    wait_for_index(&handle.jmap).await;
 }
 
 pub async fn assert_append_message(

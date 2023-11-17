@@ -39,6 +39,9 @@ impl JMAP {
         // Delete account data
         self.store.purge_account(account_id).await?;
 
+        // Remove FTS index
+        let todo = 1;
+
         // Delete account
         let mut batch = BatchBuilder::new();
         batch

@@ -33,7 +33,7 @@ use jmap_proto::types::id::Id;
 
 use crate::{
     directory::sql::{create_test_user_with_email, link_test_address},
-    jmap::mailbox::destroy_all_mailboxes,
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
 };
 
 pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
@@ -202,8 +202,5 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     // Destroy test accounts
     admin_client.set_default_account_id(&account_id);
     destroy_all_mailboxes(admin_client).await;
-    server
-        .store
-        .assert_is_empty(server.blob_store.clone())
-        .await;
+    assert_is_empty(server).await;
 }

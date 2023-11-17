@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use store::fts::{FilterItem, FilterType};
+
 use super::{quoted_string, serialize_sequence, Flag, Sequence};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +129,38 @@ pub enum Filter {
     // RFC 8474 - ObjectID
     EmailId(String),
     ThreadId(String),
+}
+
+impl FilterItem for Filter {
+    fn filter_type(&self) -> FilterType {
+        match self {
+            Filter::From(_)
+            | Filter::To(_)
+            | Filter::Cc(_)
+            | Filter::Bcc(_)
+            | Filter::Subject(_)
+            | Filter::Body(_)
+            | Filter::Text(_)
+            | Filter::Header(_, _) => FilterType::Fts,
+            Filter::And => FilterType::And,
+            Filter::Or => FilterType::Or,
+            Filter::Not => FilterType::Not,
+            Filter::End => FilterType::End,
+            _ => FilterType::Store,
+        }
+    }
+}
+
+impl From<FilterType> for Filter {
+    fn from(value: FilterType) -> Self {
+        match value {
+            FilterType::And => Filter::And,
+            FilterType::Or => Filter::Or,
+            FilterType::Not => Filter::Not,
+            FilterType::End => Filter::End,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

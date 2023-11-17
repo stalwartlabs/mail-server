@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2023 Stalwart Labs Ltd.
  *
- * This file is part of Stalwart Mail Server.
+ * This file is part of the Stalwart Mail Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,10 +21,24 @@
  * for more details.
 */
 
-pub mod delivery;
-pub mod housekeeper;
-pub mod index;
-pub mod ingest;
-pub mod state;
+use std::ops::Range;
 
-pub const IPC_CHANNEL_BUFFER: usize = 1024;
+use super::FdbStore;
+
+impl FdbStore {
+    pub(crate) async fn get_blob(
+        &self,
+        key: &[u8],
+        range: Range<u32>,
+    ) -> crate::Result<Option<Vec<u8>>> {
+        todo!()
+    }
+
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+        todo!()
+    }
+
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+        todo!()
+    }
+}

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use super::term_index::Term;
+use super::Language;
 
 fn escape_char(c: char, string: &mut String) {
     match c {
@@ -45,9 +45,53 @@ fn escape_char_len(c: char) -> usize {
     }
 }
 
-pub fn generate_snippet(terms: &[Term], text: &str) -> Option<String> {
+pub struct Term {
+    offset: usize,
+    len: usize,
+}
+
+pub fn generate_snippet(
+    text: &str,
+    needles: &[impl AsRef<str>],
+    language: Language,
+    is_exact: bool,
+) -> Option<String> {
+    let mut terms = Vec::new();
+    if is_exact {
+        let tokens = language.tokenize_text(text, 200).collect::<Vec<_>>();
+        for tokens in tokens.windows(needles.len()) {
+            if needles
+                .iter()
+                .zip(tokens)
+                .all(|(needle, token)| needle.as_ref() == token.word.as_ref())
+            {
+                for token in tokens {
+                    terms.push(Term {
+                        offset: token.from,
+                        len: token.to - token.from,
+                    });
+                }
+            }
+        }
+    } else {
+        for token in language.tokenize_text(text, 200) {
+            if needles.iter().any(|needle| {
+                let needle = needle.as_ref();
+                needle == token.word.as_ref() || needle.len() > 2 && token.word.contains(needle)
+            }) {
+                terms.push(Term {
+                    offset: token.from,
+                    len: token.to - token.from,
+                });
+            }
+        }
+    }
+    if terms.is_empty() {
+        return None;
+    }
+
     let mut snippet = String::with_capacity(text.len());
-    let start_offset = terms.get(0)?.offset as usize;
+    let start_offset = terms.get(0)?.offset;
 
     if start_offset > 0 {
         let mut word_count = 0;
@@ -92,25 +136,22 @@ pub fn generate_snippet(terms: &[Term], text: &str) -> Option<String> {
     let mut terms = terms.iter().peekable();
 
     'outer: while let Some(term) = terms.next() {
-        if snippet.len() + ("<mark>".len() * 2) + term.len as usize + 1 > 255 {
+        if snippet.len() + ("<mark>".len() * 2) + term.len + 1 > 255 {
             break;
         }
 
         snippet.push_str("<mark>");
-        snippet.push_str(text.get(term.offset as usize..term.offset as usize + term.len as usize)?);
+        snippet.push_str(text.get(term.offset..term.offset + term.len)?);
         snippet.push_str("</mark>");
 
         let next_offset = if let Some(next_term) = terms.peek() {
-            next_term.offset as usize
+            next_term.offset
         } else {
             text.len()
         };
 
         let mut last_is_space = false;
-        for char in text
-            .get(term.offset as usize + term.len as usize..next_offset)?
-            .chars()
-        {
+        for char in text.get(term.offset + term.len..next_offset)?.chars() {
             if !char.is_whitespace() {
                 last_is_space = false;
             } else {
@@ -133,15 +174,7 @@ pub fn generate_snippet(terms: &[Term], text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-
-    use nlp::language::Language;
-
-    use crate::{
-        fts::term_index::{TermIndex, TermIndexBuilder},
-        Deserialize, Serialize,
-    };
-
-    use super::*;
+    use crate::language::{search_snippet::generate_snippet, Language};
 
     #[test]
     fn search_snippets() {
@@ -236,39 +269,18 @@ mod tests {
         ];
 
         for (parts, tests) in inputs {
-            let mut builder = TermIndexBuilder::new();
+            for (needles, snippets) in tests {
+                let mut results = Vec::new();
 
-            for (field_num, part) in parts.iter().enumerate() {
-                let mut terms = Vec::new();
-                for token in Language::English.tokenize_text(part, 40) {
-                    terms.push(builder.add_token(token));
-                }
-                builder.add_terms(field_num as u8, 0, terms);
-            }
-
-            let compressed_term_index = builder.serialize();
-            let term_index = TermIndex::deserialize(&compressed_term_index[..]).unwrap();
-
-            for (match_words, snippets) in tests {
-                let mut match_terms = Vec::new();
-                for word in &match_words {
-                    match_terms.push(term_index.get_match_term(word, None));
+                for part in &parts {
+                    if let Some(matched) =
+                        generate_snippet(part, &needles, Language::English, false)
+                    {
+                        results.push(matched);
+                    }
                 }
 
-                let term_groups = term_index
-                    .match_terms(&match_terms, None, false, true, true)
-                    .unwrap()
-                    .unwrap();
-
-                assert_eq!(term_groups.len(), snippets.len());
-
-                for (term_group, snippet) in term_groups.iter().zip(snippets.iter()) {
-                    assert_eq!(
-                        snippet,
-                        &generate_snippet(&term_group.terms, parts[term_group.field_id as usize])
-                            .unwrap()
-                    );
-                }
+                assert_eq!(snippets, results);
             }
         }
     }
