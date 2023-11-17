@@ -123,7 +123,7 @@ try-tcp-on-error = false
 public-suffix = []
 
 [[resolver.nameservers]]
-ip = 1.1.1.1
+ip = "1.1.1.1"
 port = 53
 protocol = "udp"
 "#).unwrap();

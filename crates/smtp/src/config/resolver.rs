@@ -59,7 +59,7 @@ impl ConfigResolver for Config {
                 // type = "custom"
                 //
                 // [[resolver.nameservers]]
-                // ip = 1.1.1.1
+                // ip = "1.1.1.1"
                 // port = 53
                 // protocol = "udp" | "tcp" | "tls"
                 let mut resolver_config = ResolverConfig::new();
