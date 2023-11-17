@@ -272,7 +272,7 @@ async fn antispam() {
         ("youtube.com", "127.0.0.1"),
         ("twitter.com", "127.0.0.3"),
         ("dkimtrusted.org.dwl.dnswl.org", "127.0.0.3"),
-        ("sh-malware.com.dbl.spamhaus.org", "127.0.0.5"),
+        ("sh-malware.com.dbl.spamhaus.org", "127.0.1.5"),
         ("surbl-abuse.com.multi.surbl.org", "127.0.0.64"),
         ("uribl-grey.com.multi.uribl.com", "127.0.0.4"),
         ("sem-uribl.com.uribl.spameatingmonkey.net", "127.0.0.2"),

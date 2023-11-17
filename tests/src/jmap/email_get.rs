@@ -26,7 +26,7 @@ use std::{fs, path::PathBuf, sync::Arc};
 use jmap::{mailbox::INBOX_ID, JMAP};
 use jmap_client::{
     client::Client,
-    email::{self, Header, HeaderForm},
+    email::{self, import::EmailImportResponse, Header, HeaderForm},
 };
 use jmap_proto::types::id::Id;
 use mail_parser::HeaderName;
@@ -53,15 +53,26 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
         let blob = fs::read(&file_name).unwrap();
         let blob_len = blob.len();
-        let email = client
-            .email_import(
-                blob,
-                [mailbox_id.clone()],
-                ["tag".to_string()].into(),
-                ((blob_len * 1000000) as i64).into(),
+
+        // Import email
+        let mut request = client.build();
+        let import_request = request
+            .import_email()
+            .account_id(Id::from(1u64).to_string())
+            .email(
+                client
+                    .upload(None, blob, None)
+                    .await
+                    .unwrap()
+                    .take_blob_id(),
             )
-            .await
-            .unwrap();
+            .mailbox_ids([mailbox_id.clone()])
+            .keywords(["tag".to_string()])
+            .received_at((blob_len * 1000000) as i64);
+        let id = import_request.create_id();
+        let mut response = request.send_single::<EmailImportResponse>().await.unwrap();
+        assert_ne!(response.old_state(), Some(response.new_state()));
+        let email = response.created(&id).unwrap();
 
         let mut request = client.build();
         request

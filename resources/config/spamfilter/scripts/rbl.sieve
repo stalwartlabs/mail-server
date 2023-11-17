@@ -186,11 +186,11 @@ while "i < domains_len" {
 
     # Query SpamHaus DBL
     let "result" "rsplit_once(dns_query(domain + '.dbl.spamhaus.org', 'ipv4')[0], '.')";
-    if eval "result[0] == '127.0.0'" {
+    if eval "result[0] == '127.0.1'" {
         let "result" "result[1]";
 
         if eval "result == 2" {
-            let "t.DBL_SPAM" "";
+            let "t.DBL_SPAM" "1";
         } elsif eval "result == 4" {
             let "t.DBL_PHISH" "1";
         } elsif eval "result == 5" {

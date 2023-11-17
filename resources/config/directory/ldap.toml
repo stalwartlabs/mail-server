@@ -4,7 +4,7 @@
 
 [directory."default"]
 type = "ldap"
-address = "ldap://localhost:3893"
+address = "ldap://localhost:389"
 base-dn = "dc=example,dc=org"
 
 [directory."default".bind]
