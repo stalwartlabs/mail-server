@@ -1,6 +1,5 @@
 /target
 .vscode
-.idea
 *.failed
 *_failed
 stalwart.toml
