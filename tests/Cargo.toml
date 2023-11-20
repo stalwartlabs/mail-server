@@ -20,13 +20,13 @@ imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
-smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
-mail-auth = { git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
+smtp-proto = { version = "0.1", git = "https://github.com/stalwartlabs/smtp-proto" }
+mail-send = { version = "0.4", git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-auth = { version = "0.3", git = "https://github.com/stalwartlabs/mail-auth", features = ["test"] }
+sieve-rs = { version = "0.3", git = "https://github.com/stalwartlabs/sieve" }
 utils = { path = "../crates/utils", features = ["test_mode"] }
-jmap-client = { git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] } 
-mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+jmap-client = { version = "0.3", git = "https://github.com/stalwartlabs/jmap-client", features = ["websockets", "debug", "async"] }
+mail-parser = { version = "0.9", git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] }
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}
 rustls = "0.21.0"
@@ -42,8 +42,8 @@ reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-
 bytes = "1.4.0"
 futures = "0.3"
 ece = "2.2"
-hyper = { version = "1.0.0-rc.4", features = ["server", "http1", "http2"] }
-hyper-util = { git = "https://github.com/hyperium/hyper-util" }
+hyper = { version = "1.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1.0-rc.3"
 base64 = "0.21"
 dashmap = "5.4"

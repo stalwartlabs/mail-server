@@ -15,20 +15,20 @@ resolver = "2"
 utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
-mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
-mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
-mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] } 
-smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
+mail-auth = { version = "0.3", git = "https://github.com/stalwartlabs/mail-auth" }
+mail-send = { version = "0.4", git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-parser = { version = "0.9", git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] }
+mail-builder = { version = "0.3", git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
+smtp-proto = { version = "0.1", git = "https://github.com/stalwartlabs/smtp-proto" }
+sieve-rs = { version = "0.3", git = "https://github.com/stalwartlabs/sieve" }
 ahash = { version = "0.8" }
 rustls = "0.21.0"
 rustls-pemfile = "1.0"
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}
 webpki-roots = { version = "0.25"}
-hyper = { version = "1.0.0-rc.4", features = ["server", "http1", "http2"] }
-hyper-util = { git = "https://github.com/hyperium/hyper-util" }
+hyper = { version = "1.0", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1.0-rc.3"
 form_urlencoded = "1.1.0"
 sha1 = "0.10"
