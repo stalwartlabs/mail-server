@@ -18,7 +18,7 @@ jobs:
         include:
           - target: aarch64-unknown-linux-gnu
             host_os: ubuntu-20.04
-            use_cross: false
+            use_cross: true
           - target: x86_64-unknown-linux-gnu
             host_os: ubuntu-20.04
             use_cross: false
@@ -27,7 +27,7 @@ jobs:
             use_cross: true
           - target: x86_64-unknown-linux-musl
             host_os: ubuntu-20.04
-            use_cross: false
+            use_cross: true
           - target: aarch64-apple-darwin
             host_os: macos-latest
             use_cross: false
@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -yq build-essential musl-tools g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt-get install -yq build-essential
 
       - name: Install FoundationDB (x86_64-unknown-linux-gnu)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
