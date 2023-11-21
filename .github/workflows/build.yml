@@ -18,21 +18,25 @@ jobs:
         include:
           - target: aarch64-unknown-linux-gnu
             host_os: ubuntu-20.04
-            env: RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc"
+            use_cross: true
           - target: x86_64-unknown-linux-gnu
             host_os: ubuntu-20.04
-          # - target: aarch64-unknown-linux-musl
-          #   host_os: ubuntu-20.04
-          #   env: RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" CC="musl-gcc"
+            use_cross: true
+          - target: aarch64-unknown-linux-musl
+            host_os: ubuntu-20.04
+            use_cross: true
           - target: x86_64-unknown-linux-musl
             host_os: ubuntu-20.04
+            use_cross: true
           - target: x86_64-apple-darwin
             host_os: macos-latest
-          # FIXME: Enable when ring 0.17 is released
-          # - target: aarch64-pc-windows-msvc
-          #   host_os: windows-2022
+            use_cross: false
+          - target: aarch64-pc-windows-msvc
+            host_os: windows-2022
+            use_cross: false
           - target: x86_64-pc-windows-msvc
             host_os: windows-2022
+            use_cross: false
 
     steps:
       - name: Checkout
@@ -64,6 +68,12 @@ jobs:
         with:
           key: ${{matrix.host_os}}-${{matrix.target}}-mail
 
+      - name: Install Cross
+        if: matrix.use_cross == true
+        uses: baptiste0928/cargo-install@v2
+        with:
+          crate: cross
+
       - name: Build
         shell: bash
         run: |
@@ -80,7 +90,7 @@ jobs:
           export PATH="/c/Strawberry/c/bin:/c/Strawberry/perl/site/bin:/c/Strawberry/perl/bin:$PATH"
 
           build() {
-            ${{matrix.env}} cargo build --release --target "${target}" "$@"
+            ${{matrix.env}} ${{matrix.use_cross == true && 'cross' || 'cargo'}} build --release --target "${target}" "$@"
           }
 
           artifact() {
