@@ -21,7 +21,7 @@ jobs:
             use_cross: true
           - target: x86_64-unknown-linux-gnu
             host_os: ubuntu-20.04
-            use_cross: true
+            use_cross: false
           - target: aarch64-unknown-linux-musl
             host_os: ubuntu-20.04
             use_cross: true
