@@ -49,9 +49,10 @@ jobs:
             host_os: macos-latest
             use_cross: false
 
-          - target: aarch64-pc-windows-msvc
-            host_os: windows-2022
-            use_cross: false
+          # FIXME: Uncomment when ldap3 and hickory-resolver bump ring to 0.17
+          # - target: aarch64-pc-windows-msvc
+          #   host_os: windows-2022
+          #   use_cross: false
           - target: x86_64-pc-windows-msvc
             host_os: windows-2022
             use_cross: false
