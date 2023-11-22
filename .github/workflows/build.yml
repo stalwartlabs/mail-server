@@ -81,7 +81,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          set -xe
+          set -eux
 
           target="${{matrix.target}}"
           rustup target add "${target}"

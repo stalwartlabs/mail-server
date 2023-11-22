@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
+set -eu
+
 confdir="$1"
 shift
 

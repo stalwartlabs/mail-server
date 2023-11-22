@@ -3,8 +3,7 @@
 
 # Stalwart Mail install script -- based on the rustup installation script.
 
-set -e
-set -u
+set -eu
 
 readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
 
