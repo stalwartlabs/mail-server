@@ -64,13 +64,13 @@ enum Component {
     Smtp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Backend {
     SQLite,
     FoundationDB,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Blob {
     Local,
     MinIO,
@@ -79,14 +79,14 @@ enum Blob {
     Azure,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum Directory {
     Sql,
     Ldap,
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum SmtpDirectory {
     Sql,
     Ldap,
@@ -104,15 +104,27 @@ const DIRECTORIES: [[&str; 2]; 6] = [
 ];
 
 #[derive(Debug, Parser)]
-#[clap(version, about, long_about = None)]
-#[clap(name = "stalwart-cli")]
+#[command(version, about, long_about = None)]
+#[clap(name = "stalwart-install")]
 pub struct Arguments {
-    #[clap(long, short = 'p')]
+    #[arg(long, short = 'p')]
     path: Option<PathBuf>,
-    #[clap(long, short = 'c')]
+    #[arg(long, short = 'c')]
     component: Option<Component>,
-    #[clap(long, short = 'd')]
+    #[arg(long, short = 'd')]
     docker: bool,
+    #[arg(long, short = 'b')]
+    backend: Option<Backend>,
+    #[arg(long, short = 'B')]
+    blob: Option<Blob>,
+    #[arg(long, short = 'D')]
+    directory: Option<Directory>,
+    #[arg(long, short = 'S')]
+    smtp_directory: Option<SmtpDirectory>,
+    #[arg(long, short = 'n', default_value = "")]
+    domain: String,
+    #[arg(long, short = 'h', default_value = "")]
+    hostname: String,
 }
 
 fn main() -> std::io::Result<()> {
@@ -175,14 +187,18 @@ fn main() -> std::io::Result<()> {
     // Obtain database engine
     let directory = if component != Component::Smtp {
         if !skip_download {
-            let backend = select::<Backend>(
-                "Which database engine would you like to use?",
-                &[
-                    "SQLite (single node, replicated with Litestream)",
-                    "FoundationDB (distributed and fault-tolerant)",
-                ],
-                Backend::SQLite,
-            )?;
+            let backend = if let Some(backend) = args.backend {
+                backend
+            } else {
+                select::<Backend>(
+                    "Which database engine would you like to use?",
+                    &[
+                        "SQLite (single node, replicated with Litestream)",
+                        "FoundationDB (distributed and fault-tolerant)",
+                    ],
+                    Backend::SQLite,
+                )?
+            };
 
             download_url = format!(
                 concat!(
@@ -210,28 +226,35 @@ fn main() -> std::io::Result<()> {
             )
             .into();
         }
-        let blob = select::<Blob>(
-            "Where would you like to store e-mails and blobs?",
-            &[
-                "Local disk using Maildir",
-                "MinIO (or any S3-compatible object storage)",
-                "Amazon S3",
-                "Google Cloud Storage",
-                "Azure Blob Storage",
-            ],
-            Blob::Local,
-        )?;
+        let blob = if let Some(blob) = args.blob {
+            blob
+        } else {
+            select::<Blob>(
+                "Where would you like to store e-mails and blobs?",
+                &[
+                    "Local disk using Maildir",
+                    "MinIO (or any S3-compatible object storage)",
+                    "Amazon S3",
+                    "Google Cloud Storage",
+                    "Azure Blob Storage",
+                ],
+                Blob::Local,
+            )?
+        };
 
-        let directory = select::<Directory>(
-            "Do you already have a directory or database containing your accounts?",
-            &[
-                "Yes, it's an SQL database",
-                "Yes, it's an LDAP directory",
-                "No, create a new directory for me",
-            ],
-            Directory::None,
-        )?;
-
+        let directory = if let Some(directory) = args.directory {
+            directory
+        } else {
+            select::<Directory>(
+                "Do you already have a directory or database containing your accounts?",
+                &[
+                    "Yes, it's an SQL database",
+                    "Yes, it's an LDAP directory",
+                    "No, create a new directory for me",
+                ],
+                Directory::None,
+            )?
+        };
         // Update settings
         if blob != Blob::Local {
             sed(
@@ -256,16 +279,19 @@ fn main() -> std::io::Result<()> {
 
         directory
     } else {
-        let smtp_directory = select::<SmtpDirectory>(
-            "How should your local accounts be validated?",
-            &[
-                "SQL database",
-                "LDAP directory",
-                "LMTP server",
-                "IMAP server",
-            ],
-            SmtpDirectory::Lmtp,
-        )?;
+        let smtp_directory = if let Some(smtp_directory) = args.smtp_directory {
+            smtp_directory
+        } else {
+            select::<SmtpDirectory>("How should your local accounts be validated?",
+                &[
+                    "SQL database",
+                    "LDAP directory",
+                    "LMTP server",
+                    "IMAP server",
+                ],
+                SmtpDirectory::Lmtp,
+            )?
+        };
 
         if smtp_directory == SmtpDirectory::Ldap {
             sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
@@ -351,18 +377,26 @@ fn main() -> std::io::Result<()> {
     }
 
     // Obtain domain name
-    let domain = input(
-        "What is your main domain name? (you can add others later)",
-        "yourdomain.org",
-        not_empty,
-    )?
+    let domain = if !args.domain.is_empty() {
+        args.domain
+    } else {
+        input(
+            "What is your main domain name? (you can add others later)",
+            "yourdomain.org",
+            not_empty,
+        )?
+    }
     .trim()
     .to_lowercase();
-    let hostname = input(
-        "What is your server hostname?",
-        &format!("mail.{domain}"),
-        not_empty,
-    )?
+    let hostname = if !args.hostname.is_empty() {
+        args.hostname
+    } else {
+        input(
+            "What is your server hostname?",
+            &format!("mail.{domain}"),
+            not_empty,
+        )?
+    }
     .trim()
     .to_lowercase();
 
