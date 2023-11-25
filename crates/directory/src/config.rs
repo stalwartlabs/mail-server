@@ -364,7 +364,7 @@ impl DirectoryOptions {
             catch_all: AddressMapping::from_config(config, (&key, "options.catch-all"))?,
             subaddressing: AddressMapping::from_config(config, (&key, "options.subaddressing"))?,
             superuser_group: config
-                .value("options.superuser-group")
+                .value((&key, "options.superuser-group"))
                 .unwrap_or("superusers")
                 .to_string(),
         })
