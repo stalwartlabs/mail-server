@@ -70,9 +70,15 @@ impl ImapResponse for Response {
         }
         buf.extend_from_slice(b"* ");
         buf.extend_from_slice(self.total_messages.to_string().as_bytes());
-        buf.extend_from_slice(
-            b" EXISTS\r\n* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n",
-        );
+        if self.recent_messages > 0 {
+            buf.extend_from_slice(
+                b" EXISTS\r\n* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\Recent)\r\n",
+            );
+        } else {
+            buf.extend_from_slice(
+                b" EXISTS\r\n* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n",
+            );
+        }
         if self.is_rev2 {
             self.mailbox.serialize(&mut buf, self.is_rev2, false);
         } else {

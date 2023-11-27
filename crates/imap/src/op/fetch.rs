@@ -66,6 +66,7 @@ impl<T: AsyncRead> Session<T> {
             Ok(arguments) => {
                 let (data, mailbox) = self.state.select_data();
                 let is_qresync = self.is_qresync;
+                let is_rev2 = self.version.is_rev2();
 
                 let enabled_condstore = if !self.is_condstore && arguments.changed_since.is_some()
                     || arguments.attributes.contains(&Attribute::ModSeq)
@@ -78,9 +79,16 @@ impl<T: AsyncRead> Session<T> {
 
                 tokio::spawn(async move {
                     data.write_bytes(
-                        data.fetch(arguments, mailbox, is_uid, is_qresync, enabled_condstore)
-                            .await
-                            .into_bytes(),
+                        data.fetch(
+                            arguments,
+                            mailbox,
+                            is_uid,
+                            is_qresync,
+                            is_rev2,
+                            enabled_condstore,
+                        )
+                        .await
+                        .into_bytes(),
                     )
                     .await;
                 });
@@ -98,6 +106,7 @@ impl SessionData {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_qresync: bool,
+        is_rev2: bool,
         enabled_condstore: bool,
     ) -> StatusResponse {
         // Validate VANISHED parameter
@@ -116,6 +125,11 @@ impl SessionData {
         let mut modseq = match self.synchronize_messages(&mailbox).await {
             Ok(modseq) => modseq,
             Err(response) => return response.with_tag(arguments.tag),
+        };
+        let recent_messages = if !is_rev2 {
+            self.get_recent(&mailbox.id).into()
+        } else {
+            None
         };
 
         // Convert IMAP ids to JMAP ids.
@@ -352,6 +366,12 @@ impl SessionData {
                             .collect::<Vec<_>>();
                         if set_seen_flag {
                             flags.push(Flag::Seen);
+                        }
+                        if recent_messages
+                            .as_ref()
+                            .map_or(false, |recent| recent.contains(id))
+                        {
+                            flags.push(Flag::Recent);
                         }
                         items.push(DataItem::Flags { flags });
                     }

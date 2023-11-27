@@ -560,10 +560,11 @@ impl AssertResult for Vec<String> {
         assert_eq!(
             self.iter().filter(|l| l.contains(text)).count(),
             occurrences,
-            "Expected {} occurrences of {:?}, found {}.",
+            "Expected {} occurrences of {:?}, found {} in {:?}.",
             occurrences,
             text,
-            self.iter().filter(|l| l.contains(text)).count()
+            self.iter().filter(|l| l.contains(text)).count(),
+            self
         );
         self
     }

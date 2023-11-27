@@ -268,6 +268,7 @@ impl SessionData {
                         mailbox.clone(),
                         true,
                         is_qresync,
+                        is_rev2,
                         false,
                     )
                     .await;

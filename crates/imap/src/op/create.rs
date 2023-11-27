@@ -34,7 +34,7 @@ use jmap_proto::{
         type_state::DataType, value::Value,
     },
 };
-use store::{query::Filter, write::BatchBuilder};
+use store::{query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
 use tokio::io::AsyncRead;
 
 use crate::core::{Account, Mailbox, Session, SessionData};
@@ -217,6 +217,7 @@ impl SessionData {
                     } else {
                         None
                     },
+                    recent_messages: RoaringBitmap::new(),
                 },
             );
         }

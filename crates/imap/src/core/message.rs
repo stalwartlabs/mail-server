@@ -33,11 +33,14 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use store::write::{assert::HashedValue, BatchBuilder, F_VALUE};
+use store::{
+    roaring::RoaringBitmap,
+    write::{assert::HashedValue, BatchBuilder, F_VALUE},
+};
 
 use crate::core::ImapId;
 
-use super::{MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
+use super::{Mailbox, MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
 
 pub(crate) const MAX_RETRIES: usize = 10;
 
@@ -107,7 +110,7 @@ impl SessionData {
             )
             .await?
             .into_iter()
-            .zip(message_ids.into_iter())
+            .zip(message_ids.iter())
         {
             // Make sure the message is still in this mailbox
             if let Some(uid_mailbox) = uid_mailbox {
@@ -137,6 +140,7 @@ impl SessionData {
         let mut try_count = 0;
         let mut uid_next = 1;
         let mut uid_other = 0;
+        let mut recent_messages = RoaringBitmap::new();
 
         // Shuffle unassigned
         /*if unassigned.len() > 1 {
@@ -231,6 +235,7 @@ impl SessionData {
                                                 message_id = message_id,
                                                 "Duplicate UID");
                                         }
+                                        recent_messages.insert(message_id);
                                     }
                                     Err(store::Error::AssertValueFailed)
                                         if try_count < MAX_RETRIES =>
@@ -307,6 +312,21 @@ impl SessionData {
                 },
             );
             uid_to_id.insert(uid, message_id);
+        }
+
+        // Update recent flags
+        for account in self.mailboxes.lock().iter_mut() {
+            if account.account_id == mailbox.account_id {
+                let mailbox = account
+                    .mailbox_state
+                    .entry(mailbox.mailbox_id)
+                    .or_insert_with(Mailbox::default);
+                mailbox.recent_messages &= &message_ids;
+                if !recent_messages.is_empty() {
+                    mailbox.recent_messages |= &recent_messages;
+                }
+                break;
+            }
         }
 
         Ok(MailboxState {
@@ -422,6 +442,38 @@ impl SessionData {
                 collection = ?Collection::Email,
                 "Failed to obtain modseq");
             Err(StatusResponse::database_failure())
+        }
+    }
+
+    pub fn get_recent(&self, mailbox: &MailboxId) -> RoaringBitmap {
+        for account in self.mailboxes.lock().iter() {
+            if account.account_id == mailbox.account_id {
+                if let Some(mailbox) = account.mailbox_state.get(&mailbox.mailbox_id) {
+                    return mailbox.recent_messages.clone();
+                }
+            }
+        }
+        RoaringBitmap::new()
+    }
+
+    pub fn get_recent_count(&self, mailbox: &MailboxId) -> usize {
+        for account in self.mailboxes.lock().iter() {
+            if account.account_id == mailbox.account_id {
+                if let Some(mailbox) = account.mailbox_state.get(&mailbox.mailbox_id) {
+                    return mailbox.recent_messages.len() as usize;
+                }
+            }
+        }
+        0
+    }
+
+    pub fn clear_recent(&self, mailbox: &MailboxId) {
+        for account in self.mailboxes.lock().iter_mut() {
+            if account.account_id == mailbox.account_id {
+                if let Some(mailbox) = account.mailbox_state.get_mut(&mailbox.mailbox_id) {
+                    mailbox.recent_messages.clear();
+                }
+            }
         }
     }
 }

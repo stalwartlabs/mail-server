@@ -29,7 +29,10 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
+use jmap_proto::{
+    object::Object,
+    types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
+};
 use store::roaring::RoaringBitmap;
 use store::Deserialize;
 use tokio::io::AsyncRead;
@@ -127,7 +130,6 @@ impl SessionData {
         // Make sure all requested fields are up to date
         let mut items_update = Vec::with_capacity(items.len());
         let mut items_response = Vec::with_capacity(items.len());
-        let mut do_synchronize = false;
 
         for account in self.mailboxes.lock().iter_mut() {
             if account.account_id == mailbox.account_id {
@@ -135,6 +137,7 @@ impl SessionData {
                     .mailbox_state
                     .entry(mailbox.mailbox_id)
                     .or_insert_with(Mailbox::default);
+                let update_recent = mailbox_state.total_messages.is_none();
                 for item in items {
                     match item {
                         Status::Messages => {
@@ -149,7 +152,6 @@ impl SessionData {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.push_unique(*item);
-                                do_synchronize = true;
                             }
                         }
                         Status::UidValidity => {
@@ -157,7 +159,6 @@ impl SessionData {
                                 items_response.push((*item, StatusItemType::Number(value as u64)));
                             } else {
                                 items_update.push_unique(*item);
-                                do_synchronize = true;
                             }
                         }
                         Status::Unseen => {
@@ -197,7 +198,14 @@ impl SessionData {
                             ));
                         }
                         Status::Recent => {
-                            items_response.push((*item, StatusItemType::Number(0)));
+                            if !update_recent {
+                                items_response.push((
+                                    *item,
+                                    StatusItemType::Number(mailbox_state.recent_messages.len()),
+                                ));
+                            } else {
+                                items_update.push_unique(*item);
+                            }
                         }
                     }
                 }
@@ -208,12 +216,6 @@ impl SessionData {
         if !items_update.is_empty() {
             // Retrieve latest values
             let mut values_update = Vec::with_capacity(items_update.len());
-            let mailbox_state = if do_synchronize {
-                self.fetch_messages(&mailbox).await?.into()
-            } else {
-                None
-            };
-
             let mailbox_message_ids = self
                 .jmap
                 .get_tag(
@@ -232,8 +234,38 @@ impl SessionData {
             for item in items_update {
                 let result = match item {
                     Status::Messages => mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
-                    Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
-                    Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
+                    Status::UidNext => {
+                        (self
+                            .jmap
+                            .get_property::<u32>(
+                                mailbox.account_id,
+                                Collection::Mailbox,
+                                mailbox.mailbox_id,
+                                Property::EmailIds,
+                            )
+                            .await?
+                            .unwrap_or(0)
+                            + 1) as u64
+                    }
+                    Status::UidValidity => self
+                        .jmap
+                        .get_property::<Object<Value>>(
+                            mailbox.account_id,
+                            Collection::Mailbox,
+                            mailbox.mailbox_id,
+                            &Property::Value,
+                        )
+                        .await?
+                        .and_then(|obj| obj.get(&Property::Cid).as_uint())
+                        .ok_or_else(|| {
+                            tracing::debug!(event = "error",
+                                            context = "store",
+                                            account_id = mailbox.account_id,
+                                            collection = ?Collection::Mailbox,
+                                            mailbox_id = mailbox.mailbox_id,
+                                            "Failed to obtain uid validity");
+                            StatusResponse::no("Mailbox unavailable.")
+                        })?,
                     Status::Unseen => {
                         if let (Some(message_ids), Some(mailbox_message_ids)) =
                             (&message_ids, &mailbox_message_ids)
@@ -284,7 +316,11 @@ impl SessionData {
                             0
                         }
                     }
-                    Status::HighestModSeq | Status::MailboxId | Status::Recent => {
+                    Status::Recent => {
+                        self.fetch_messages(&mailbox).await?;
+                        0
+                    }
+                    Status::HighestModSeq | Status::MailboxId => {
                         unreachable!()
                     }
                 };
@@ -309,7 +345,15 @@ impl SessionData {
                             Status::Unseen => mailbox_state.total_unseen = value.into(),
                             Status::Deleted => mailbox_state.total_deleted = value.into(),
                             Status::Size => mailbox_state.size = value.into(),
-                            Status::HighestModSeq | Status::MailboxId | Status::Recent => {
+                            Status::Recent => {
+                                items_response
+                                    .iter_mut()
+                                    .find(|(i, _)| *i == Status::Recent)
+                                    .unwrap()
+                                    .1 =
+                                    StatusItemType::Number(mailbox_state.recent_messages.len());
+                            }
+                            Status::HighestModSeq | Status::MailboxId => {
                                 unreachable!()
                             }
                         }

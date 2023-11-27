@@ -574,17 +574,11 @@ impl SessionData {
                         filters.push(query::Filter::End);
                     }
                     search::Filter::Recent => {
-                        filters.push(query::Filter::is_in_bitmap(
-                            Property::Keywords,
-                            Keyword::Recent,
-                        ));
+                        filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
                     }
                     search::Filter::New => {
                         filters.push(query::Filter::And);
-                        filters.push(query::Filter::is_in_bitmap(
-                            Property::Keywords,
-                            Keyword::Recent,
-                        ));
+                        filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
                         filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_bitmap(
                             Property::Keywords,
@@ -595,10 +589,7 @@ impl SessionData {
                     }
                     search::Filter::Old => {
                         filters.push(query::Filter::Not);
-                        filters.push(query::Filter::is_in_bitmap(
-                            Property::Keywords,
-                            Keyword::Seen,
-                        ));
+                        filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
                         filters.push(query::Filter::End);
                     }
                     search::Filter::Older(secs) => {

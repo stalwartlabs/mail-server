@@ -144,7 +144,8 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         .assert_contains("* 7 FETCH (UID 7 ")
         .assert_contains("* 8 FETCH (UID 8 ")
         .assert_contains("* 9 FETCH (UID 9 ")
-        .assert_contains("* 10 FETCH (UID 10 ");
+        .assert_contains("* 10 FETCH (UID 10 ")
+        .assert_count("\\Recent", 0);
 
     imap.send("FETCH 7:* (UID FLAGS)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)

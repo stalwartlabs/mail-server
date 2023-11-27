@@ -42,6 +42,7 @@ use jmap::{
     JMAP,
 };
 use parking_lot::Mutex;
+use store::roaring::RoaringBitmap;
 use tokio::{
     io::{AsyncRead, ReadHalf},
     sync::{mpsc, watch},
@@ -127,6 +128,7 @@ pub struct Mailbox {
     pub uid_validity: Option<u32>,
     pub uid_next: Option<u32>,
     pub size: Option<u32>,
+    pub recent_messages: RoaringBitmap,
 }
 
 #[derive(Debug)]

@@ -52,13 +52,14 @@ impl<T: AsyncRead> Session<T> {
                 }
 
                 if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
-                    // Syncronize messages
+                    // Synchronize messages
                     match data.fetch_messages(&mailbox).await {
                         Ok(state) => {
-                            let closed_previous = self.state.is_mailbox_selected();
+                            let closed_previous = self.state.close_mailbox();
                             let is_condstore = self.is_condstore || arguments.condstore;
 
                             // Build new state
+                            let is_rev2 = self.version.is_rev2();
                             let uid_validity = state.uid_validity;
                             let uid_next = state.uid_next;
                             let total_messages = state.total_messages;
@@ -105,6 +106,7 @@ impl<T: AsyncRead> Session<T> {
                                         mailbox.clone(),
                                         true,
                                         true,
+                                        is_rev2,
                                         false,
                                     )
                                     .await;
@@ -115,12 +117,12 @@ impl<T: AsyncRead> Session<T> {
                             let response = Response {
                                 mailbox: ListItem::new(arguments.mailbox_name),
                                 total_messages,
-                                recent_messages: 0,
+                                recent_messages: data.get_recent_count(&mailbox.id),
                                 unseen_seq: 0,
                                 uid_validity,
                                 uid_next,
                                 closed_previous,
-                                is_rev2: self.version.is_rev2(),
+                                is_rev2,
                                 highest_modseq,
                                 mailbox_id: Id::from_parts(
                                     mailbox.id.account_id,
@@ -164,6 +166,7 @@ impl<T: AsyncRead> Session<T> {
     }
 
     pub async fn handle_unselect(&mut self, request: Request<Command>) -> crate::OpResult {
+        self.state.close_mailbox();
         self.state = State::Authenticated {
             data: self.state.session_data(),
         };
