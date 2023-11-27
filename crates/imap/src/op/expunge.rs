@@ -30,7 +30,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap::email::set::TagManager;
+use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
     error::method::MethodError,
     types::{
@@ -55,7 +55,7 @@ impl<T: AsyncRead> Session<T> {
         match data
             .check_mailbox_acl(
                 mailbox.id.account_id,
-                mailbox.id.mailbox_id.unwrap_or_default(),
+                mailbox.id.mailbox_id,
                 Acl::RemoveItems,
             )
             .await
@@ -132,28 +132,18 @@ impl SessionData {
     ) -> crate::op::Result<()> {
         // Obtain message ids
         let account_id = mailbox.id.account_id;
-        let deleted_ids = if let Some(mailbox_id) = mailbox.id.mailbox_id {
-            self.jmap
-                .get_tag(
-                    account_id,
-                    Collection::Email,
-                    Property::MailboxIds,
-                    mailbox_id,
-                )
-                .await?
-                .unwrap_or_default()
-                & self
-                    .jmap
-                    .get_tag(
-                        account_id,
-                        Collection::Email,
-                        Property::Keywords,
-                        Keyword::Deleted,
-                    )
-                    .await?
-                    .unwrap_or_default()
-        } else {
-            self.jmap
+        let deleted_ids = self
+            .jmap
+            .get_tag(
+                account_id,
+                Collection::Email,
+                Property::MailboxIds,
+                mailbox.id.mailbox_id,
+            )
+            .await?
+            .unwrap_or_default()
+            & self
+                .jmap
                 .get_tag(
                     account_id,
                     Collection::Email,
@@ -161,8 +151,7 @@ impl SessionData {
                     Keyword::Deleted,
                 )
                 .await?
-                .unwrap_or_default()
-        };
+                .unwrap_or_default();
 
         // Delete ids
         let mut changelog = ChangeLogBuilder::new();
@@ -174,63 +163,58 @@ impl SessionData {
                 continue;
             }
 
-            if let Some(mailbox_id) = mailbox.id.mailbox_id {
-                // If the message is present in multiple mailboxes, untag it from this mailbox.
-                let (mut mailboxes, thread_id) =
-                    if let Some(result) = self.get_mailbox_tags(account_id, id).await? {
-                        result
-                    } else {
-                        continue;
-                    };
-                if !mailboxes.current().contains(&mailbox_id) {
-                    continue;
-                } else if mailboxes.current().len() > 1 {
-                    // Remove deleted flag
-                    let mut keywords = if let Some(keywords) = self
-                        .jmap
-                        .get_property::<HashedValue<Vec<Keyword>>>(
-                            account_id,
-                            Collection::Email,
-                            id,
-                            Property::Keywords,
-                        )
-                        .await?
-                    {
-                        TagManager::new(keywords)
-                    } else {
-                        continue;
-                    };
-
-                    // Untag message from this mailbox and remove Deleted flag
-                    mailboxes.update(mailbox_id, false);
-                    keywords.update(Keyword::Deleted, false);
-
-                    // Write changes
-                    let mut batch = BatchBuilder::new();
-                    batch
-                        .with_account_id(account_id)
-                        .with_collection(Collection::Email)
-                        .update_document(id);
-                    mailboxes.update_batch(&mut batch, Property::MailboxIds);
-                    keywords.update_batch(&mut batch, Property::Keywords);
-                    if changelog.change_id == u64::MAX {
-                        changelog.change_id = self.jmap.assign_change_id(account_id).await?
-                    }
-                    batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                    match self.jmap.write_batch(batch).await {
-                        Ok(_) => {
-                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
-                            changelog.log_child_update(Collection::Mailbox, mailbox_id);
-                        }
-                        Err(MethodError::ServerUnavailable) => {}
-                        Err(_) => {
-                            return Err(StatusResponse::database_failure());
-                        }
-                    }
+            // If the message is present in multiple mailboxes, untag it from this mailbox.
+            let mailbox_id = mailbox.id.mailbox_id;
+            let (mut mailboxes, thread_id) =
+                if let Some(result) = self.get_mailbox_tags(account_id, id).await? {
+                    result
                 } else {
-                    // Delete message from all mailboxes
-                    if let Ok(changes) = self.jmap.email_delete(account_id, id).await? {
-                        changelog.merge(changes);
+                    continue;
+                };
+            let mailbox_id = UidMailbox::from(mailbox_id);
+            if !mailboxes.current().contains(&mailbox_id) {
+                continue;
+            } else if mailboxes.current().len() > 1 {
+                // Remove deleted flag
+                let mut keywords = if let Some(keywords) = self
+                    .jmap
+                    .get_property::<HashedValue<Vec<Keyword>>>(
+                        account_id,
+                        Collection::Email,
+                        id,
+                        Property::Keywords,
+                    )
+                    .await?
+                {
+                    TagManager::new(keywords)
+                } else {
+                    continue;
+                };
+
+                // Untag message from this mailbox and remove Deleted flag
+                mailboxes.update(mailbox_id, false);
+                keywords.update(Keyword::Deleted, false);
+
+                // Write changes
+                let mut batch = BatchBuilder::new();
+                batch
+                    .with_account_id(account_id)
+                    .with_collection(Collection::Email)
+                    .update_document(id);
+                mailboxes.update_batch(&mut batch, Property::MailboxIds);
+                keywords.update_batch(&mut batch, Property::Keywords);
+                if changelog.change_id == u64::MAX {
+                    changelog.change_id = self.jmap.assign_change_id(account_id).await?
+                }
+                batch.value(Property::Cid, changelog.change_id, F_VALUE);
+                match self.jmap.write_batch(batch).await {
+                    Ok(_) => {
+                        changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+                        changelog.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
+                    }
+                    Err(MethodError::ServerUnavailable) => {}
+                    Err(_) => {
+                        return Err(StatusResponse::database_failure());
                     }
                 }
             } else {

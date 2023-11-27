@@ -33,7 +33,7 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, ResponseType, StatusResponse,
 };
-use jmap::email::set::TagManager;
+use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
     error::method::MethodError,
     types::{
@@ -47,7 +47,7 @@ use store::{
 };
 use tokio::io::AsyncRead;
 
-use crate::core::{SelectedMailbox, Session, SessionData};
+use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
 
 use super::FromModSeq;
 
@@ -112,7 +112,7 @@ impl SessionData {
         if !self
             .check_mailbox_acl(
                 mailbox.id.account_id,
-                mailbox.id.mailbox_id.unwrap_or_default(),
+                mailbox.id.mailbox_id,
                 Acl::ModifyItems,
             )
             .await
@@ -197,142 +197,153 @@ impl SessionData {
             .collect::<Vec<_>>();
         let mut changelog = ChangeLogBuilder::new();
         let mut changed_mailboxes = AHashSet::new();
-        for (id, imap_id) in ids {
-            // Obtain current keywords
-            let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
-                self.jmap
-                    .get_property::<HashedValue<Vec<Keyword>>>(
-                        account_id,
-                        Collection::Email,
-                        id,
-                        Property::Keywords,
-                    )
-                    .await
-                    .map_err(|_| {
-                        StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                    })?,
-                self.jmap
-                    .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
-                    .await
-                    .map_err(|_| {
-                        StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                    })?,
-            ) {
-                (TagManager::new(keywords), thread_id)
-            } else {
-                continue;
-            };
-
-            // Apply changes
-            match arguments.operation {
-                Operation::Set => {
-                    keywords.set(set_keywords.clone());
-                }
-                Operation::Add => {
-                    for keyword in &set_keywords {
-                        keywords.update(keyword.clone(), true);
-                    }
-                }
-                Operation::Clear => {
-                    for keyword in &set_keywords {
-                        keywords.update(keyword.clone(), false);
-                    }
-                }
-            }
-
-            if keywords.has_changes() {
-                // Convert keywords to flags
-                let seen_changed = keywords
-                    .changed_tags()
-                    .any(|keyword| keyword == &Keyword::Seen);
-                let flags = if !arguments.is_silent {
-                    keywords
-                        .current()
-                        .iter()
-                        .cloned()
-                        .map(Flag::from)
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![]
-                };
-
-                // Write changes
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::Email)
-                    .update_document(id);
-                keywords.update_batch(&mut batch, Property::Keywords);
-                if changelog.change_id == u64::MAX {
-                    changelog.change_id =
-                        self.jmap.assign_change_id(account_id).await.map_err(|_| {
+        'outer: for (id, imap_id) in ids {
+            let mut try_count = 0;
+            loop {
+                // Obtain current keywords
+                let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
+                    self.jmap
+                        .get_property::<HashedValue<Vec<Keyword>>>(
+                            account_id,
+                            Collection::Email,
+                            id,
+                            Property::Keywords,
+                        )
+                        .await
+                        .map_err(|_| {
                             StatusResponse::database_failure()
                                 .with_tag(response.tag.as_ref().unwrap())
-                        })?
+                        })?,
+                    self.jmap
+                        .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
+                        .await
+                        .map_err(|_| {
+                            StatusResponse::database_failure()
+                                .with_tag(response.tag.as_ref().unwrap())
+                        })?,
+                ) {
+                    (TagManager::new(keywords), thread_id)
+                } else {
+                    continue 'outer;
+                };
+
+                // Apply changes
+                match arguments.operation {
+                    Operation::Set => {
+                        keywords.set(set_keywords.clone());
+                    }
+                    Operation::Add => {
+                        for keyword in &set_keywords {
+                            keywords.update(keyword.clone(), true);
+                        }
+                    }
+                    Operation::Clear => {
+                        for keyword in &set_keywords {
+                            keywords.update(keyword.clone(), false);
+                        }
+                    }
                 }
-                batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                match self.jmap.write_batch(batch).await {
-                    Ok(_) => {
-                        // Set all current mailboxes as changed if the Seen tag changed
-                        if seen_changed {
-                            if let Some(mailboxes) = self
-                                .jmap
-                                .get_property::<Vec<u32>>(
-                                    account_id,
-                                    Collection::Email,
-                                    id,
-                                    Property::MailboxIds,
-                                )
-                                .await
-                                .map_err(|_| {
-                                    StatusResponse::database_failure()
-                                        .with_tag(response.tag.as_ref().unwrap())
-                                })?
-                            {
-                                for mailbox_id in mailboxes {
-                                    changed_mailboxes.insert(mailbox_id);
+
+                if keywords.has_changes() {
+                    // Convert keywords to flags
+                    let seen_changed = keywords
+                        .changed_tags()
+                        .any(|keyword| keyword == &Keyword::Seen);
+                    let flags = if !arguments.is_silent {
+                        keywords
+                            .current()
+                            .iter()
+                            .cloned()
+                            .map(Flag::from)
+                            .collect::<Vec<_>>()
+                    } else {
+                        vec![]
+                    };
+
+                    // Write changes
+                    let mut batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(account_id)
+                        .with_collection(Collection::Email)
+                        .update_document(id);
+                    keywords.update_batch(&mut batch, Property::Keywords);
+                    if changelog.change_id == u64::MAX {
+                        changelog.change_id =
+                            self.jmap.assign_change_id(account_id).await.map_err(|_| {
+                                StatusResponse::database_failure()
+                                    .with_tag(response.tag.as_ref().unwrap())
+                            })?
+                    }
+                    batch.value(Property::Cid, changelog.change_id, F_VALUE);
+                    match self.jmap.write_batch(batch).await {
+                        Ok(_) => {
+                            // Set all current mailboxes as changed if the Seen tag changed
+                            if seen_changed {
+                                if let Some(mailboxes) = self
+                                    .jmap
+                                    .get_property::<Vec<UidMailbox>>(
+                                        account_id,
+                                        Collection::Email,
+                                        id,
+                                        Property::MailboxIds,
+                                    )
+                                    .await
+                                    .map_err(|_| {
+                                        StatusResponse::database_failure()
+                                            .with_tag(response.tag.as_ref().unwrap())
+                                    })?
+                                {
+                                    for mailbox_id in mailboxes {
+                                        changed_mailboxes.insert(mailbox_id.mailbox_id);
+                                    }
                                 }
                             }
-                        }
-                        changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
 
-                        // Add item to response
-                        let modseq = changelog.change_id + 1;
-                        if !arguments.is_silent {
-                            let mut data_items = vec![DataItem::Flags { flags }];
-                            if is_uid {
-                                data_items.push(DataItem::Uid { uid: imap_id.uid });
+                            // Add item to response
+                            let modseq = changelog.change_id + 1;
+                            if !arguments.is_silent {
+                                let mut data_items = vec![DataItem::Flags { flags }];
+                                if is_uid {
+                                    data_items.push(DataItem::Uid { uid: imap_id.uid });
+                                }
+                                if is_condstore {
+                                    data_items.push(DataItem::ModSeq { modseq });
+                                }
+                                items.items.push(FetchItem {
+                                    id: imap_id.seqnum,
+                                    items: data_items,
+                                });
+                            } else if is_condstore {
+                                items.items.push(FetchItem {
+                                    id: imap_id.seqnum,
+                                    items: if is_uid {
+                                        vec![
+                                            DataItem::ModSeq { modseq },
+                                            DataItem::Uid { uid: imap_id.uid },
+                                        ]
+                                    } else {
+                                        vec![DataItem::ModSeq { modseq }]
+                                    },
+                                });
                             }
-                            if is_condstore {
-                                data_items.push(DataItem::ModSeq { modseq });
-                            }
-                            items.items.push(FetchItem {
-                                id: imap_id.seqnum,
-                                items: data_items,
-                            });
-                        } else if is_condstore {
-                            items.items.push(FetchItem {
-                                id: imap_id.seqnum,
-                                items: if is_uid {
-                                    vec![
-                                        DataItem::ModSeq { modseq },
-                                        DataItem::Uid { uid: imap_id.uid },
-                                    ]
-                                } else {
-                                    vec![DataItem::ModSeq { modseq }]
-                                },
-                            });
                         }
-                    }
-                    Err(MethodError::ServerUnavailable) => {
-                        response.rtype = ResponseType::No;
-                        response.message = "Some messages could not be updated.".into();
-                    }
-                    Err(_) => {
-                        return Err(StatusResponse::database_failure()
-                            .with_tag(response.tag.as_ref().unwrap()));
+                        Err(MethodError::ServerUnavailable) => {
+                            if try_count < MAX_RETRIES {
+                                try_count += 1;
+                                continue;
+                            } else {
+                                response.rtype = ResponseType::No;
+                                response.message = "Some messages could not be updated.".into();
+                            }
+                        }
+                        Err(_) => {
+                            return Err(StatusResponse::database_failure()
+                                .with_tag(response.tag.as_ref().unwrap()));
+                        }
                     }
                 }
+                break;
             }
         }
 

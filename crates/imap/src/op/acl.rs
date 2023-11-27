@@ -58,7 +58,7 @@ impl<T: AsyncRead> Session<T> {
 
                 tokio::spawn(async move {
                     match data.get_acl_mailbox(&arguments, true).await {
-                        Ok(Some((_, values, _))) => {
+                        Ok((_, values, _)) => {
                             let mut permissions = Vec::new();
                             if let Some(acls) = values
                                 .inner
@@ -137,21 +137,6 @@ impl<T: AsyncRead> Session<T> {
                             )
                             .await;
                         }
-                        Ok(None) => {
-                            // Response for "All Mail" folder
-                            data.write_bytes(
-                                StatusResponse::completed(Command::GetAcl)
-                                    .with_tag(arguments.tag)
-                                    .serialize(
-                                        GetAclResponse {
-                                            mailbox_name: arguments.mailbox_name,
-                                            permissions: vec![],
-                                        }
-                                        .into_bytes(is_rev2),
-                                    ),
-                            )
-                            .await;
-                        }
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -172,7 +157,7 @@ impl<T: AsyncRead> Session<T> {
 
                 tokio::spawn(async move {
                     match data.get_acl_mailbox(&arguments, false).await {
-                        Ok(Some((mailbox, values, access_token))) => {
+                        Ok((mailbox, values, access_token)) => {
                             data.write_bytes(
                                 StatusResponse::completed(Command::MyRights)
                                     .with_tag(arguments.tag)
@@ -227,30 +212,6 @@ impl<T: AsyncRead> Session<T> {
                             )
                             .await;
                         }
-                        Ok(None) => {
-                            // Response for All mail folder
-                            data.write_bytes(
-                                StatusResponse::completed(Command::MyRights)
-                                    .with_tag(arguments.tag)
-                                    .serialize(
-                                        MyRightsResponse {
-                                            mailbox_name: arguments.mailbox_name,
-                                            rights: vec![
-                                                Rights::Read,
-                                                Rights::Lookup,
-                                                Rights::Insert,
-                                                Rights::DeleteMessages,
-                                                Rights::Expunge,
-                                                Rights::Seen,
-                                                Rights::Write,
-                                                Rights::Post,
-                                            ],
-                                        }
-                                        .into_bytes(is_rev2),
-                                    ),
-                            )
-                            .await;
-                        }
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -272,18 +233,7 @@ impl<T: AsyncRead> Session<T> {
                 tokio::spawn(async move {
                     // Validate mailbox
                     let (mailbox, values, _) = match data.get_acl_mailbox(&arguments, true).await {
-                        Ok(Some(result)) => result,
-                        Ok(None) => {
-                            data.write_bytes(
-                                StatusResponse::no(
-                                    "ACL operations are not permitted on this mailbox.",
-                                )
-                                .with_tag(arguments.tag)
-                                .into_bytes(),
-                            )
-                            .await;
-                            return;
-                        }
+                        Ok(result) => result,
                         Err(response) => {
                             data.write_bytes(response.with_tag(arguments.tag).into_bytes())
                                 .await;
@@ -413,7 +363,7 @@ impl<T: AsyncRead> Session<T> {
                     }
 
                     // Write changes
-                    let mailbox_id = mailbox.mailbox_id.unwrap();
+                    let mailbox_id = mailbox.mailbox_id;
                     let mut batch = BatchBuilder::new();
                     batch
                         .with_account_id(mailbox.account_id)
@@ -525,41 +475,37 @@ impl SessionData {
         &self,
         arguments: &Arguments,
         validate: bool,
-    ) -> crate::op::Result<Option<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)>> {
+    ) -> crate::op::Result<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
-            if let Some(mailbox_id) = mailbox.mailbox_id {
-                match (
-                    self.jmap
-                        .get_property::<HashedValue<Object<Value>>>(
-                            mailbox.account_id,
-                            Collection::Mailbox,
-                            mailbox_id,
-                            Property::Value,
+            match (
+                self.jmap
+                    .get_property::<HashedValue<Object<Value>>>(
+                        mailbox.account_id,
+                        Collection::Mailbox,
+                        mailbox.mailbox_id,
+                        Property::Value,
+                    )
+                    .await,
+                self.get_access_token().await,
+            ) {
+                (Ok(Some(values)), Ok(access_token)) => {
+                    if !validate
+                        || access_token.is_member(mailbox.account_id)
+                        || values
+                            .inner
+                            .effective_acl(&access_token)
+                            .contains(Acl::Administer)
+                    {
+                        Ok((mailbox, values, access_token))
+                    } else {
+                        Err(StatusResponse::no(
+                            "You do not have enough permissions to perform this operation.",
                         )
-                        .await,
-                    self.get_access_token().await,
-                ) {
-                    (Ok(Some(values)), Ok(access_token)) => {
-                        if !validate
-                            || access_token.is_member(mailbox.account_id)
-                            || values
-                                .inner
-                                .effective_acl(&access_token)
-                                .contains(Acl::Administer)
-                        {
-                            Ok(Some((mailbox, values, access_token)))
-                        } else {
-                            Err(StatusResponse::no(
-                                "You do not have enough permissions to perform this operation.",
-                            )
-                            .with_code(ResponseCode::NoPerm))
-                        }
+                        .with_code(ResponseCode::NoPerm))
                     }
-                    (Ok(None), _) => Err(StatusResponse::no("Mailbox no longer exists.")),
-                    _ => Err(StatusResponse::database_failure()),
                 }
-            } else {
-                Ok(None)
+                (Ok(None), _) => Err(StatusResponse::no("Mailbox no longer exists.")),
+                _ => Err(StatusResponse::database_failure()),
             }
         } else {
             Err(StatusResponse::no("Mailbox does not exist."))

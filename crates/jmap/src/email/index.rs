@@ -38,7 +38,7 @@ use store::{
     BlobHash,
 };
 
-use crate::{Bincode, NamedKey};
+use crate::{mailbox::UidMailbox, Bincode, NamedKey};
 
 use super::metadata::MessageMetadata;
 
@@ -60,7 +60,7 @@ pub(super) trait IndexMessage {
         message: Message,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
-        mailbox_ids: Vec<u32>,
+        mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
     ) -> &mut Self;
 
@@ -77,7 +77,7 @@ impl IndexMessage for BatchBuilder {
         message: Message,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
-        mailbox_ids: Vec<u32>,
+        mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
     ) -> &mut Self {
         // Index keywords

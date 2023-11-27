@@ -1,0 +1,211 @@
+BODY (
+   (
+      "text" "x-myown" (
+         "charset" "us-ascii"
+      ) NIL NIL "quoted-printable" 79 15
+   ) "mixed"
+)
+
+BODYSTRUCTURE (
+   (
+      "text" "x-myown" (
+         "charset" "us-ascii"
+      ) NIL NIL "quoted-printable" 79 15 "22839bb2efefde05dda98625a9ed8875" NIL NIL NIL
+   ) "mixed" (
+      "boundary" "foo bar"
+   ) NIL NIL NIL
+)
+
+BODY[] {404}
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: quoted-printable
+
+hello  
+bar=
+
+foo	=
+bar
+foo	 	= 
+=62
+foo = 	
+bar
+foo =
+=62
+foo  
+bar=
+
+foo_bar
+
+--foo bar--
+Root MIME epilogue
+
+BINARY[] {16}
+[binary content]
+BINARY.SIZE[] 404
+----------------------------------
+BODY[HEADER] {173}
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[TEXT] {231}
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: quoted-printable
+
+hello  
+bar=
+
+foo	=
+bar
+foo	 	= 
+=62
+foo = 	
+bar
+foo =
+=62
+foo  
+bar=
+
+foo_bar
+
+--foo bar--
+Root MIME epilogue
+
+----------------------------------
+BODY[MIME] {53}
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[1] {79}
+hello  
+bar=
+
+foo	=
+bar
+foo	 	= 
+=62
+foo = 	
+bar
+foo =
+=62
+foo  
+bar=
+
+foo_bar
+
+BINARY[1] {56}
+hello
+bar
+foo	bar
+foo	 	b
+foo bar
+foo b
+foo
+bar
+foo_bar
+
+BINARY.SIZE[1] 56
+----------------------------------
+BODY[1.HEADER] {90}
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: quoted-printable
+
+
+----------------------------------
+BODY[1.TEXT] {79}
+hello  
+bar=
+
+foo	=
+bar
+foo	 	= 
+=62
+foo = 	
+bar
+foo =
+=62
+foo  
+bar=
+
+foo_bar
+
+----------------------------------
+BODY[1.MIME] {91}
+Content-Type: text/x-myown; charset=us-ascii
+Content-Transfer-Encoding: quoted-printable
+
+
+----------------------------------
+BODY[1.1] {79}
+hello  
+bar=
+
+foo	=
+bar
+foo	 	= 
+=62
+foo = 	
+bar
+foo =
+=62
+foo  
+bar=
+
+foo_bar
+
+BINARY[1.1] {56}
+hello
+bar
+foo	bar
+foo	 	b
+foo bar
+foo b
+foo
+bar
+foo_bar
+
+BINARY.SIZE[1.1] 56
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)] {24}
+From: user@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS (FROM TO)]<10> {14}
+@domain.org
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)] {174}
+From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+
+----------------------------------
+BODY[HEADER.FIELDS.NOT (SUBJECT CC)]<10> {25}
+domain  Fri Feb 22 17:06:
+----------------------------------

@@ -31,7 +31,7 @@ use std::{
 
 use base64::{engine::general_purpose, Engine};
 use ece::EcKeyComponents;
-use hyper::{body, server::conn::http1, service::service_fn, StatusCode};
+use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
 use hyper_util::rt::TokioIo;
 use jmap::{
     api::{
@@ -44,7 +44,6 @@ use jmap::{
 };
 use jmap_client::{client::Client, mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
-use reqwest::header::CONTENT_ENCODING;
 use store::ahash::AHashSet;
 
 use tokio::{net::TcpStream, sync::mpsc};

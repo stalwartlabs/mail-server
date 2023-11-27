@@ -31,10 +31,6 @@ use super::{resources_dir, AssertResult, IMAPTest, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, handle: &IMAPTest) {
     // Invalid APPEND commands
-    imap.send("APPEND \"All Mail\" {1+}\r\na").await;
-    imap.assert_read(Type::Tagged, ResponseType::No)
-        .await
-        .assert_response_code("CANNOT");
     imap.send("APPEND \"Does not exist\" {1+}\r\na").await;
     imap.assert_read(Type::Tagged, ResponseType::No)
         .await

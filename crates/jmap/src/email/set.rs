@@ -60,7 +60,8 @@ use store::{
 };
 
 use crate::{
-    auth::AccessToken, services::housekeeper::Event, Bincode, IngestError, NamedKey, JMAP,
+    auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, IngestError,
+    NamedKey, JMAP,
 };
 
 use super::{
@@ -771,7 +772,7 @@ impl JMAP {
             // Obtain current keywords and mailboxes
             let document_id = id.document_id();
             let (mut mailboxes, mut keywords) = if let (Some(mailboxes), Some(keywords)) = (
-                self.get_property::<HashedValue<Vec<u32>>>(
+                self.get_property::<HashedValue<Vec<UidMailbox>>>(
                     account_id,
                     Collection::Email,
                     document_id,
@@ -810,7 +811,9 @@ impl JMAP {
                     (Property::MailboxIds, MaybePatchValue::Value(Value::List(ids))) => {
                         mailboxes.set(
                             ids.into_iter()
-                                .filter_map(|id| id.try_unwrap_id()?.document_id().into())
+                                .filter_map(|id| {
+                                    UidMailbox::from(id.try_unwrap_id()?.document_id()).into()
+                                })
                                 .collect(),
                         );
                     }
@@ -818,7 +821,7 @@ impl JMAP {
                         let mut patch = patch.into_iter();
                         if let Some(id) = patch.next().unwrap().try_unwrap_id() {
                             mailboxes.update(
-                                id.document_id(),
+                                UidMailbox::from(id.document_id()),
                                 patch.next().unwrap().try_unwrap_bool().unwrap_or_default(),
                             );
                         }
@@ -879,7 +882,7 @@ impl JMAP {
                     .any(|keyword| keyword == &Keyword::Seen)
                 {
                     for mailbox_id in mailboxes.current() {
-                        changed_mailboxes.insert(*mailbox_id);
+                        changed_mailboxes.insert(mailbox_id.mailbox_id);
                     }
                 }
 
@@ -908,16 +911,17 @@ impl JMAP {
 
                 // Make sure all new mailboxIds are valid
                 for mailbox_id in mailboxes.added() {
-                    if mailbox_ids.contains(*mailbox_id) {
+                    if mailbox_ids.contains(mailbox_id.mailbox_id) {
                         // Verify permissions on shared accounts
-                        if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id))
+                        if !matches!(&can_add_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
                         {
-                            changed_mailboxes.insert(*mailbox_id);
+                            changed_mailboxes.insert(mailbox_id.mailbox_id);
                         } else {
                             response.not_updated.append(
                                 id,
                                 SetError::forbidden().with_description(format!(
-                                    "You are not allowed to add messages to mailbox {mailbox_id}."
+                                    "You are not allowed to add messages to mailbox {}.",
+                                    mailbox_id.mailbox_id
                                 )),
                             );
                             continue 'update;
@@ -928,7 +932,8 @@ impl JMAP {
                             SetError::invalid_properties()
                                 .with_property(Property::MailboxIds)
                                 .with_description(format!(
-                                    "mailboxId {mailbox_id} does not exist."
+                                    "mailboxId {} does not exist.",
+                                    mailbox_id.mailbox_id
                                 )),
                         );
                         continue 'update;
@@ -938,13 +943,15 @@ impl JMAP {
                 // Add all removed mailboxes to change list
                 for mailbox_id in mailboxes.removed() {
                     // Verify permissions on shared accounts
-                    if !matches!(&can_delete_mailbox_ids, Some(ids) if !ids.contains(*mailbox_id)) {
-                        changed_mailboxes.insert(*mailbox_id);
+                    if !matches!(&can_delete_mailbox_ids, Some(ids) if !ids.contains(mailbox_id.mailbox_id))
+                    {
+                        changed_mailboxes.insert(mailbox_id.mailbox_id);
                     } else {
                         response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(format!(
-                                "You are not allowed to delete messages from mailbox {mailbox_id}."
+                                "You are not allowed to delete messages from mailbox {}.",
+                                mailbox_id.mailbox_id
                             )),
                         );
                         continue 'update;
@@ -1071,7 +1078,7 @@ impl JMAP {
 
         // Remove mailboxes
         let mailboxes = if let Some(mailboxes) = self
-            .get_property::<HashedValue<Vec<u32>>>(
+            .get_property::<HashedValue<Vec<UidMailbox>>>(
                 account_id,
                 Collection::Email,
                 document_id,
@@ -1091,7 +1098,7 @@ impl JMAP {
             return Ok(Err(SetError::not_found()));
         };
         for mailbox_id in &mailboxes.inner {
-            changes.log_child_update(Collection::Mailbox, *mailbox_id);
+            changes.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
         }
         batch.assert_value(Property::MailboxIds, &mailboxes).value(
             Property::MailboxIds,

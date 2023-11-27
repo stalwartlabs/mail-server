@@ -43,7 +43,7 @@ use sha2::{Sha256, Sha512};
 use store::BlobClass;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{auth::AccessToken, mailbox::UidMailbox, JMAP};
 
 impl JMAP {
     pub async fn blob_get(
@@ -242,7 +242,7 @@ impl JMAP {
                                 }
                                 if include_mailbox {
                                     if let Some(mailboxes) = self
-                                        .get_property::<Vec<u32>>(
+                                        .get_property::<Vec<UidMailbox>>(
                                             req_account_id,
                                             Collection::Email,
                                             *document_id,
@@ -252,7 +252,10 @@ impl JMAP {
                                     {
                                         matched_ids.append(
                                             DataType::Mailbox,
-                                            mailboxes.into_iter().map(Id::from).collect::<Vec<_>>(),
+                                            mailboxes
+                                                .into_iter()
+                                                .map(|m| Id::from(m.mailbox_id))
+                                                .collect::<Vec<_>>(),
                                         );
                                     }
                                 }

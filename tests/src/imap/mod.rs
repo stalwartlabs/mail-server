@@ -38,6 +38,7 @@ pub mod thread;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ::managesieve::core::ManageSieveSessionManager;
+use ahash::AHashSet;
 use directory::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use imap_proto::ResponseType;
@@ -494,7 +495,7 @@ pub trait AssertResult: Sized {
 
     fn assert_response_code(self, code: &str) -> Self;
     fn assert_contains(self, text: &str) -> Self;
-    fn assert_count(self, text: &str, occurences: usize) -> Self;
+    fn assert_count(self, text: &str, occurrences: usize) -> Self;
     fn assert_equals(self, text: &str) -> Self;
     fn into_response_code(self) -> String;
     fn into_highest_modseq(self) -> String;
@@ -555,12 +556,12 @@ impl AssertResult for Vec<String> {
         panic!("Expected response to contain {:?}, got {:?}", text, self);
     }
 
-    fn assert_count(self, text: &str, occurences: usize) -> Self {
+    fn assert_count(self, text: &str, occurrences: usize) -> Self {
         assert_eq!(
             self.iter().filter(|l| l.contains(text)).count(),
-            occurences,
+            occurrences,
             "Expected {} occurrences of {:?}, found {}.",
-            occurences,
+            occurrences,
             text,
             self.iter().filter(|l| l.contains(text)).count()
         );
@@ -651,6 +652,23 @@ impl AssertResult for Vec<String> {
         }
         panic!("No UIDVALIDITY entries found in {:?}", self);
     }
+}
+
+pub fn expand_uid_list(list: &str) -> AHashSet<u32> {
+    let mut items = AHashSet::new();
+    for uid in list.split(',') {
+        if let Some((start, end)) = uid.split_once(':') {
+            let start = start.parse::<u32>().unwrap();
+            let end = end.parse::<u32>().unwrap();
+            for uid in start..=end {
+                items.insert(uid);
+            }
+        } else {
+            items.insert(uid.parse::<u32>().unwrap());
+        }
+    }
+
+    items
 }
 
 fn resources_dir() -> PathBuf {

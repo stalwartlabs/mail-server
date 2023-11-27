@@ -124,7 +124,7 @@ impl<T: AsyncRead> Session<T> {
                                 highest_modseq,
                                 mailbox_id: Id::from_parts(
                                     mailbox.id.account_id,
-                                    mailbox.id.mailbox_id.unwrap_or(u32::MAX),
+                                    mailbox.id.mailbox_id,
                                 )
                                 .to_string(),
                             };

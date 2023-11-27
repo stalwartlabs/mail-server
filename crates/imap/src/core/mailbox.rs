@@ -13,7 +13,7 @@ use jmap_proto::{
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use tokio::io::AsyncRead;
-use utils::{listener::limiter::InFlight, map::mutex_map::MutexMap};
+use utils::listener::limiter::InFlight;
 
 use super::{Account, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
@@ -31,7 +31,6 @@ impl SessionData {
             span: session.span.clone(),
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
-            mailbox_locks: MutexMap::with_capacity(5),
             in_flight,
         };
 
@@ -495,37 +494,25 @@ impl SessionData {
     }
 
     pub fn get_mailbox_by_name(&self, mailbox_name: &str) -> Option<MailboxId> {
-        if !self.is_all_mailbox(mailbox_name) {
-            let is_inbox = mailbox_name.eq_ignore_ascii_case("inbox");
-            for account in self.mailboxes.lock().iter() {
-                if account
-                    .prefix
-                    .as_ref()
-                    .map_or(true, |p| mailbox_name.starts_with(p))
-                {
-                    for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
-                        if mailbox_name_ == mailbox_name || (is_inbox && *mailbox_id_ == INBOX_ID) {
-                            return MailboxId {
-                                account_id: account.account_id,
-                                mailbox_id: Some(*mailbox_id_),
-                            }
-                            .into();
+        let is_inbox = mailbox_name.eq_ignore_ascii_case("inbox");
+        for account in self.mailboxes.lock().iter() {
+            if account
+                .prefix
+                .as_ref()
+                .map_or(true, |p| mailbox_name.starts_with(p))
+            {
+                for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
+                    if mailbox_name_ == mailbox_name || (is_inbox && *mailbox_id_ == INBOX_ID) {
+                        return MailboxId {
+                            account_id: account.account_id,
+                            mailbox_id: *mailbox_id_,
                         }
+                        .into();
                     }
                 }
             }
-            None
-        } else {
-            MailboxId {
-                account_id: self.account_id,
-                mailbox_id: None,
-            }
-            .into()
         }
-    }
-
-    pub fn is_all_mailbox(&self, mailbox_name: &str) -> bool {
-        self.imap.name_all == mailbox_name
+        None
     }
 
     pub async fn check_mailbox_acl(

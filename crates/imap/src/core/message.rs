@@ -21,257 +21,162 @@
  * for more details.
 */
 
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::collections::BTreeMap;
 
-use ahash::{AHashMap, AHashSet, AHasher, RandomState};
+use ahash::AHashMap;
 use imap_proto::{
     protocol::{expunge, select::Exists, Sequence},
     StatusResponse,
 };
-use jmap_proto::types::{collection::Collection, property::Property};
-use store::{
-    roaring::RoaringBitmap,
-    write::{assert::HashedValue, now, BatchBuilder, ToBitmaps, F_VALUE},
-    Deserialize, Serialize,
+use jmap::mailbox::UidMailbox;
+use jmap_proto::{
+    object::Object,
+    types::{collection::Collection, property::Property, value::Value},
 };
-use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
+use store::write::{assert::HashedValue, BatchBuilder, F_VALUE};
 
 use crate::core::ImapId;
 
 use super::{MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
 
-const MAX_RETRIES: usize = 10;
-
-#[derive(Debug)]
-struct UidMap {
-    uid_next: u32,
-    uid_validity: u32,
-    hash: u64,
-    items: Vec<Uid>,
-}
-
-#[derive(Debug)]
-struct Uid {
-    uid: u32,
-    id: u32,
-    received: u32,
-}
-
-struct UidMapBuilder {
-    message_ids: RoaringBitmap,
-    hasher: AHasher,
-    id_list: Vec<(u32, u32)>,
-}
+pub(crate) const MAX_RETRIES: usize = 10;
 
 impl SessionData {
     pub async fn fetch_messages(&self, mailbox: &MailboxId) -> crate::op::Result<MailboxState> {
-        let mut try_count = 0;
+        // Obtain message ids
+        let message_ids = self
+            .jmap
+            .get_tag(
+                mailbox.account_id,
+                Collection::Email,
+                Property::MailboxIds,
+                mailbox.mailbox_id,
+            )
+            .await?
+            .unwrap_or_default();
 
-        loop {
-            // Acquire lock on the mailbox
-            let _guard = self.mailbox_locks.lock_hash(mailbox).await;
+        // Obtain mailbox data
+        let uid_validity = self
+            .jmap
+            .get_property::<Object<Value>>(
+                mailbox.account_id,
+                Collection::Mailbox,
+                mailbox.mailbox_id,
+                &Property::Value,
+            )
+            .await?
+            .and_then(|obj| obj.get(&Property::Cid).as_uint())
+            .ok_or_else(|| {
+                tracing::debug!(event = "error",
+            context = "store",
+            account_id = mailbox.account_id,
+            collection = ?Collection::Mailbox,
+            mailbox_id = mailbox.mailbox_id,
+            "Failed to obtain uid validity");
+                StatusResponse::no("Mailbox unavailable.")
+            })? as u32;
 
-            // Deserialize mailbox data
-            let uid_map = self
-                .jmap
-                .get_property::<HashedValue<UidMap>>(
-                    mailbox.account_id,
-                    Collection::Mailbox,
-                    mailbox.mailbox_id.unwrap_or(u32::MAX),
-                    Property::EmailIds,
-                )
-                .await?;
-
-            // Obtain current state
-            let modseq = self
-                .jmap
-                .store
-                .get_last_change_id(mailbox.account_id, Collection::Email)
-                .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
-                context = "store",
-                account_id = mailbox.account_id,
-                collection = ?Collection::Email,
-                error = ?err,
-                "Failed to obtain state");
-                    StatusResponse::database_failure()
-                })?;
-
-            // Obtain message ids
-            let message_ids = if let Some(mailbox_id) = mailbox.mailbox_id {
-                self.jmap
-                    .get_tag(
-                        mailbox.account_id,
-                        Collection::Email,
-                        Property::MailboxIds,
-                        mailbox_id,
-                    )
-                    .await?
-                    .unwrap_or_default()
-            } else {
-                self.jmap
-                    .get_document_ids(mailbox.account_id, Collection::Email)
-                    .await?
-                    .unwrap_or_default()
-            };
-
-            // Obtain message data
-            let (id_list, id_list_hash) = if !message_ids.is_empty() {
-                let mut uid_builder = UidMapBuilder {
-                    id_list: Vec::with_capacity(message_ids.len() as usize),
-                    message_ids,
-                    hasher: RandomState::with_seeds(
-                        0xaf1f2242106c64b3,
-                        0x60ca4cfb4b3ed0ce,
-                        0xc7dbc0bb615e82b3,
-                        0x520ad065378daf88,
-                    )
-                    .build_hasher(),
-                };
-
-                self.jmap
-                    .store
-                    .sort_index(
-                        mailbox.account_id,
-                        Collection::Email,
-                        Property::ReceivedAt,
-                        true,
-                        |bytes, message_id| {
-                            if uid_builder.message_ids.remove(message_id) {
-                                let received = (u64::deserialize(bytes)? & u32::MAX as u64) as u32;
-                                uid_builder.id_list.push((message_id, received));
-                                message_id.hash(&mut uid_builder.hasher);
-                                received.hash(&mut uid_builder.hasher);
-                                Ok(!uid_builder.message_ids.is_empty())
-                            } else {
-                                Ok(true)
-                            }
-                        },
-                    )
-                    .await
-                    .map_err(|err| {
-                        tracing::error!(event = "error",
+        // Obtain current state
+        let modseq = self
+            .jmap
+            .store
+            .get_last_change_id(mailbox.account_id, Collection::Email)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
                     context = "store",
                     account_id = mailbox.account_id,
                     collection = ?Collection::Email,
                     error = ?err,
-                    "Failed to obtain message data");
-                        StatusResponse::database_failure()
-                    })?;
-                (uid_builder.id_list, uid_builder.hasher.finish())
-            } else {
-                (Vec::new(), 0)
-            };
+                    "Failed to obtain state");
+                StatusResponse::database_failure()
+            })?;
 
-            // Build mailboxdata
-            if let Some(mut uid_map) = uid_map {
-                if uid_map.inner.hash != id_list_hash {
-                    let mut id_list_map = id_list.iter().cloned().collect::<AHashSet<_>>();
-                    let mut items = Vec::with_capacity(uid_map.inner.items.len());
+        // Retrieve message ids
+        let mut assigned = BTreeMap::new();
+        let mut unassigned = Vec::new();
 
-                    for item in uid_map.inner.items {
-                        if id_list_map.remove(&(item.id, item.received)) {
-                            items.push(item);
+        // Obtain all message ids
+        for (uid_mailbox, message_id) in self
+            .jmap
+            .get_properties::<HashedValue<Vec<UidMailbox>>>(
+                mailbox.account_id,
+                Collection::Email,
+                message_ids.iter(),
+                Property::MailboxIds,
+            )
+            .await?
+            .into_iter()
+            .zip(message_ids.into_iter())
+        {
+            // Make sure the message is still in this mailbox
+            if let Some(uid_mailbox) = uid_mailbox {
+                if let Some(item) = uid_mailbox
+                    .inner
+                    .iter()
+                    .find(|item| item.mailbox_id == mailbox.mailbox_id)
+                {
+                    if item.uid > 0 {
+                        if assigned.insert(item.uid, message_id).is_some() {
+                            tracing::warn!(event = "error",
+                                context = "store",
+                                account_id = mailbox.account_id,
+                                collection = ?Collection::Mailbox,
+                                mailbox_id = mailbox.mailbox_id,
+                                message_id = message_id,
+                                "Duplicate UID");
                         }
-                    }
-
-                    for (id, received) in id_list_map {
-                        items.push(Uid {
-                            uid: uid_map.inner.uid_next,
-                            id,
-                            received,
-                        });
-
-                        uid_map.inner.uid_next += 1;
-                    }
-
-                    uid_map.inner.items = items;
-                    uid_map.inner.hash = id_list_hash;
-
-                    // Save updated uid map
-                    let mut batch = BatchBuilder::new();
-                    batch
-                        .with_account_id(mailbox.account_id)
-                        .with_collection(Collection::Mailbox)
-                        .update_document(mailbox.mailbox_id.unwrap_or(u32::MAX))
-                        .assert_value(Property::EmailIds, &uid_map)
-                        .value(Property::EmailIds, &uid_map.inner, F_VALUE);
-
-                    match self.jmap.store.write(batch.build()).await {
-                        Ok(_) => (),
-                        Err(store::Error::AssertValueFailed) if try_count < MAX_RETRIES => {
-                            try_count += 1;
-                            continue;
-                        }
-                        Err(err) => {
-                            tracing::error!(event = "error",
-                                            context = "store",
-                                            account_id = mailbox.account_id,
-                                            collection = ?Collection::Mailbox,
-                                            error = ?err,
-                                            "Failed to update uid map");
-                            return Err(StatusResponse::database_failure());
-                        }
+                    } else {
+                        unassigned.push((message_id, uid_mailbox));
                     }
                 }
+            }
+        }
 
-                let uid_map = uid_map.inner;
-                let mut id_to_imap = AHashMap::with_capacity(uid_map.items.len());
-                let mut uid_to_id = AHashMap::with_capacity(uid_map.items.len());
-                let mut uid_max = 0;
+        // Obtain UID next and assign UIDs
+        let mut try_count = 0;
+        let mut uid_next = 1;
+        let mut uid_other = 0;
 
-                for (seqnum, item) in uid_map.items.into_iter().enumerate() {
-                    id_to_imap.insert(
-                        item.id,
-                        ImapId {
-                            uid: item.uid,
-                            seqnum: (seqnum + 1) as u32,
-                        },
-                    );
-                    uid_to_id.insert(item.uid, item.id);
-                    uid_max = item.uid;
-                }
+        // Shuffle unassigned
+        /*if unassigned.len() > 1 {
+            let mut rng = rand::thread_rng();
+            unassigned.shuffle(&mut rng);
+        }*/
 
-                return Ok(MailboxState {
-                    uid_next: uid_map.uid_next,
-                    uid_validity: uid_map.uid_validity,
-                    total_messages: id_to_imap.len(),
-                    id_to_imap,
-                    uid_to_id,
-                    uid_max,
-                    modseq,
-                    next_state: None,
-                });
-            } else {
-                let uid_next = (id_list.len() + 1) as u32;
-                let uid_validity = now() as u32 ^ mailbox.mailbox_id.unwrap_or(0);
-                let mut id_to_imap = AHashMap::with_capacity(id_list.len());
-                let mut uid_to_id = AHashMap::with_capacity(id_list.len());
-                let mut uids = Vec::with_capacity(id_list.len());
-                let mut uid_map = UidMap {
-                    uid_next,
-                    uid_validity,
-                    hash: id_list_hash,
-                    items: Vec::with_capacity(id_list.len()),
-                };
+        loop {
+            let last_uid = self
+                .jmap
+                .get_property::<u32>(
+                    mailbox.account_id,
+                    Collection::Mailbox,
+                    mailbox.mailbox_id,
+                    Property::EmailIds,
+                )
+                .await?;
 
-                for (uid, (id, received)) in id_list.into_iter().enumerate() {
-                    let uid = (uid + 1) as u32;
-                    id_to_imap.insert(id, ImapId { uid, seqnum: uid });
-                    uid_to_id.insert(uid, id);
-                    uids.push(uid);
-                    uid_map.items.push(Uid { uid, id, received });
-                }
-
-                // Store uid map
+            if !unassigned.is_empty() {
+                // Increment UID next
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(mailbox.account_id)
                     .with_collection(Collection::Mailbox)
-                    .update_document(mailbox.mailbox_id.unwrap_or(u32::MAX))
-                    .assert_value(Property::EmailIds, ())
-                    .value(Property::EmailIds, &uid_map, F_VALUE);
+                    .update_document(mailbox.mailbox_id);
+
+                if let Some(last_uid) = last_uid {
+                    batch.assert_value(Property::EmailIds, last_uid).value(
+                        Property::EmailIds,
+                        last_uid + unassigned.len() as u32,
+                        F_VALUE,
+                    );
+                    uid_next = last_uid + 1;
+                } else {
+                    batch.assert_value(Property::EmailIds, ()).value(
+                        Property::EmailIds,
+                        unassigned.len() as u32,
+                        F_VALUE,
+                    );
+                }
 
                 match self.jmap.store.write(batch.build()).await {
                     Ok(_) => (),
@@ -281,27 +186,139 @@ impl SessionData {
                     }
                     Err(err) => {
                         tracing::error!(event = "error",
-                                            context = "store",
-                                            account_id = mailbox.account_id,
-                                            collection = ?Collection::Mailbox,
-                                            error = ?err,
-                                            "Failed to store new uid map");
+                                        context = "store",
+                                        account_id = mailbox.account_id,
+                                        collection = ?Collection::Mailbox,
+                                        mailbox_id = mailbox.mailbox_id,
+                                        error = ?err,
+                                        "Failed to update UID next");
                         return Err(StatusResponse::database_failure());
                     }
                 }
 
-                return Ok(MailboxState {
-                    uid_next,
-                    uid_validity,
-                    total_messages: uids.len(),
-                    id_to_imap,
-                    uid_to_id,
-                    uid_max: uid_next.saturating_sub(1),
-                    modseq,
-                    next_state: None,
-                });
+                // Assign UIDs
+                for (message_id, mut uid_mailbox) in unassigned {
+                    let uid = uid_next;
+                    uid_next += 1;
+                    try_count = 0;
+
+                    loop {
+                        if let Some(item) = uid_mailbox
+                            .inner
+                            .iter_mut()
+                            .find(|item| item.mailbox_id == mailbox.mailbox_id)
+                        {
+                            if item.uid == 0 {
+                                item.uid = uid;
+
+                                // Increment UID next
+                                let mut batch = BatchBuilder::new();
+                                batch
+                                    .with_account_id(mailbox.account_id)
+                                    .with_collection(Collection::Email)
+                                    .update_document(message_id)
+                                    .assert_value(Property::MailboxIds, &uid_mailbox)
+                                    .value(Property::MailboxIds, uid_mailbox.inner, F_VALUE);
+
+                                match self.jmap.store.write(batch.build()).await {
+                                    Ok(_) => {
+                                        if assigned.insert(uid, message_id).is_some() {
+                                            tracing::warn!(event = "error",
+                                                context = "store",
+                                                account_id = mailbox.account_id,
+                                                collection = ?Collection::Mailbox,
+                                                mailbox_id = mailbox.mailbox_id,
+                                                message_id = message_id,
+                                                "Duplicate UID");
+                                        }
+                                    }
+                                    Err(store::Error::AssertValueFailed)
+                                        if try_count < MAX_RETRIES =>
+                                    {
+                                        // Another process modified the mailbox ids
+                                        if let Some(modified_uid_mailbox) = self
+                                            .jmap
+                                            .get_property::<HashedValue<Vec<UidMailbox>>>(
+                                                mailbox.account_id,
+                                                Collection::Email,
+                                                message_id,
+                                                Property::MailboxIds,
+                                            )
+                                            .await?
+                                        {
+                                            uid_mailbox = modified_uid_mailbox;
+                                            try_count += 1;
+                                            continue;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(event = "error",
+                                        context = "store",
+                                        account_id = mailbox.account_id,
+                                        collection = ?Collection::Email,
+                                        mailbox_id = message_id,
+                                        error = ?err,
+                                        "Failed to store UID");
+                                        return Err(StatusResponse::database_failure());
+                                    }
+                                }
+                            } else {
+                                // Another thread has already assigned a UID
+                                if item.uid > uid_other {
+                                    // Keep track of highest UID assigned by another thread
+                                    uid_other = item.uid;
+                                }
+
+                                if assigned.insert(item.uid, message_id).is_some() {
+                                    tracing::warn!(event = "error",
+                                        context = "store",
+                                        account_id = mailbox.account_id,
+                                        collection = ?Collection::Mailbox,
+                                        mailbox_id = mailbox.mailbox_id,
+                                        message_id = message_id,
+                                        "Duplicate UID assigned by another thread");
+                                }
+                            }
+                        }
+
+                        break;
+                    }
+                }
+            } else {
+                uid_next = last_uid.unwrap_or(0) + 1;
             }
+            break;
         }
+
+        // Other processes might have assigned a higher UID
+        if uid_next <= uid_other {
+            uid_next = uid_other + 1;
+        }
+
+        let mut id_to_imap = AHashMap::with_capacity(assigned.len());
+        let mut uid_to_id = AHashMap::with_capacity(assigned.len());
+
+        for (seqnum, (uid, message_id)) in assigned.into_iter().enumerate() {
+            id_to_imap.insert(
+                message_id,
+                ImapId {
+                    uid,
+                    seqnum: seqnum as u32 + 1,
+                },
+            );
+            uid_to_id.insert(uid, message_id);
+        }
+
+        Ok(MailboxState {
+            uid_next,
+            uid_validity,
+            total_messages: id_to_imap.len(),
+            id_to_imap,
+            uid_to_id,
+            uid_max: uid_next.saturating_sub(1),
+            modseq,
+            next_state: None,
+        })
     }
 
     pub async fn synchronize_messages(
@@ -482,85 +499,5 @@ impl SelectedMailbox {
         }
         deleted_ids.sort_unstable();
         deleted_ids
-    }
-}
-
-impl Serialize for &UidMap {
-    fn serialize(self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity((self.items.len() + 2) * std::mem::size_of::<u64>());
-        buf.push_leb128(self.items.len());
-        buf.push_leb128(self.uid_next);
-        buf.extend_from_slice(self.uid_validity.to_le_bytes().as_ref());
-        buf.extend_from_slice(self.hash.to_le_bytes().as_ref());
-
-        let mut last_uid = 0;
-        for item in &self.items {
-            if last_uid + 1 != item.uid {
-                buf.push(0);
-                buf.push_leb128(item.uid);
-            }
-
-            buf.push_leb128(item.id + 1);
-            buf.extend_from_slice(item.received.to_le_bytes().as_ref());
-            last_uid = item.uid;
-        }
-
-        buf
-    }
-}
-
-impl UidMap {
-    fn deserialize_(bytes: &[u8]) -> Option<Self> {
-        let mut buf_u32 = [0u8; std::mem::size_of::<u32>()];
-        let mut buf_u64 = [0u8; std::mem::size_of::<u64>()];
-
-        let mut bytes = bytes.iter();
-        let items_len: usize = bytes.next_leb128()?;
-        let uid_next: u32 = bytes.next_leb128()?;
-        buf_u32
-            .iter_mut()
-            .try_for_each(|b| bytes.next().map(|v| *b = *v))?;
-        buf_u64
-            .iter_mut()
-            .try_for_each(|b| bytes.next().map(|v| *b = *v))?;
-        let mut uid_map = UidMap {
-            uid_next,
-            uid_validity: u32::from_le_bytes(buf_u32),
-            hash: u64::from_le_bytes(buf_u64),
-            items: Vec::with_capacity(items_len),
-        };
-        let mut next_uid: u32 = 1;
-        for _ in 0..items_len {
-            let mut id: u32 = bytes.next_leb128()?;
-            if id == 0 {
-                next_uid = bytes.next_leb128()?;
-                id = bytes.next_leb128()?;
-            }
-            buf_u32
-                .iter_mut()
-                .try_for_each(|b| bytes.next().map(|v| *b = *v))?;
-            uid_map.items.push(Uid {
-                uid: next_uid,
-                id: id - 1,
-                received: u32::from_le_bytes(buf_u32),
-            });
-            next_uid += 1;
-        }
-
-        uid_map.into()
-    }
-}
-
-impl Deserialize for UidMap {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        Self::deserialize_(bytes).ok_or(store::Error::InternalError(
-            "Failed to deserialize uid map".to_string(),
-        ))
-    }
-}
-
-impl ToBitmaps for &UidMap {
-    fn to_bitmaps(&self, _: &mut Vec<store::write::Operation>, _: u8, _: bool) {
-        unreachable!()
     }
 }

@@ -245,7 +245,7 @@ impl SessionData {
             && !self
                 .check_mailbox_acl(
                     mailbox.id.account_id,
-                    mailbox.id.mailbox_id.unwrap_or_default(),
+                    mailbox.id.mailbox_id,
                     Acl::ModifyItems,
                 )
                 .await

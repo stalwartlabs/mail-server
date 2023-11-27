@@ -47,6 +47,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     email::index::{IndexMessage, MAX_ID_LENGTH},
+    mailbox::UidMailbox,
     services::housekeeper::Event,
     IngestError, NamedKey, JMAP,
 };
@@ -305,7 +306,11 @@ impl JMAP {
                 message,
                 blob_id.hash.clone(),
                 params.keywords,
-                params.mailbox_ids,
+                params
+                    .mailbox_ids
+                    .into_iter()
+                    .map(UidMailbox::from)
+                    .collect(),
                 params.received_at.unwrap_or_else(now),
             )
             .value(Property::Cid, change_id, F_VALUE)

@@ -28,9 +28,9 @@ use std::{
 
 use ahash::{AHashMap, HashMap, HashSet};
 use directory::config::ConfigDirectory;
-use hyper::{header::AUTHORIZATION, StatusCode};
 use mail_auth::MX;
 use mail_parser::DateTime;
+use reqwest::{header::AUTHORIZATION, StatusCode};
 use utils::config::{Config, ServerProtocol};
 
 use crate::smtp::{

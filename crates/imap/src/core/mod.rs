@@ -49,7 +49,6 @@ use tokio::{
 use utils::{
     config::Rate,
     listener::{limiter::InFlight, ServerInstance},
-    map::mutex_map::MutexMap,
 };
 
 pub mod client;
@@ -74,8 +73,6 @@ pub struct IMAP {
     pub max_request_size: usize,
     pub max_auth_failures: u32,
     pub name_shared: String,
-    pub name_all: String,
-    pub name_all_enable: bool,
     pub allow_plain_auth: bool,
     pub enable_uidplus: bool,
 
@@ -114,7 +111,6 @@ pub struct SessionData {
     pub imap: Arc<IMAP>,
     pub span: tracing::Span,
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
-    pub mailbox_locks: MutexMap<()>,
     pub writer: mpsc::Sender<writer::Event>,
     pub state: AtomicU32,
     pub in_flight: InFlight,
@@ -154,7 +150,7 @@ pub struct SelectedMailbox {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct MailboxId {
     pub account_id: u32,
-    pub mailbox_id: Option<u32>,
+    pub mailbox_id: u32,
 }
 
 #[derive(Debug)]

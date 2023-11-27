@@ -28,7 +28,7 @@ use imap_proto::{
     StatusResponse,
 };
 
-use jmap::email::set::TagManager;
+use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
     error::{method::MethodError, set::SetErrorType},
     types::{
@@ -64,20 +64,7 @@ impl<T: AsyncRead> Session<T> {
                     // Make sure the mailbox exists.
                     let dest_mailbox =
                         if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
-                            if mailbox.mailbox_id.is_some() {
-                                mailbox
-                            } else {
-                                return data
-                                    .write_bytes(
-                                        StatusResponse::no(
-                                            "Appending messages to this mailbox is not allowed.",
-                                        )
-                                        .with_tag(arguments.tag)
-                                        .with_code(ResponseCode::Cannot)
-                                        .into_bytes(),
-                                    )
-                                    .await;
-                            }
+                            mailbox
                         } else {
                             return data
                                 .write_bytes(
@@ -97,20 +84,6 @@ impl<T: AsyncRead> Session<T> {
                             .write_bytes(
                                 StatusResponse::no(
                                     "Source and destination mailboxes are the same.",
-                                )
-                                .with_tag(arguments.tag)
-                                .with_code(ResponseCode::Cannot)
-                                .into_bytes(),
-                            )
-                            .await;
-                    }
-
-                    // Messages cannot me moved out of all folders.
-                    if is_move && src_mailbox.id.mailbox_id.is_none() {
-                        return data
-                            .write_bytes(
-                                StatusResponse::no(
-                                    "Moving messages out of this mailbox is not allowed.",
                                 )
                                 .with_tag(arguments.tag)
                                 .with_code(ResponseCode::Cannot)
@@ -175,7 +148,7 @@ impl SessionData {
             && !self
                 .check_mailbox_acl(
                     src_mailbox.id.account_id,
-                    src_mailbox.id.mailbox_id.unwrap_or_default(),
+                    src_mailbox.id.mailbox_id,
                     Acl::RemoveItems,
                 )
                 .await
@@ -188,7 +161,7 @@ impl SessionData {
         }
 
         // Verify that the user can append messages to the destination mailbox.
-        let dest_mailbox_id = dest_mailbox.mailbox_id.unwrap();
+        let dest_mailbox_id = dest_mailbox.mailbox_id;
         if !self
             .check_mailbox_acl(dest_mailbox.account_id, dest_mailbox_id, Acl::AddItems)
             .await
@@ -211,6 +184,7 @@ impl SessionData {
         if src_mailbox.id.account_id == dest_mailbox.account_id {
             // Mailboxes are in the same account
             let account_id = src_mailbox.id.account_id;
+            let dest_mailbox_id = UidMailbox::from(dest_mailbox_id);
             for (id, imap_id) in ids {
                 // Obtain mailbox tags
                 let (mut mailboxes, thread_id) = if let Some(result) = self
@@ -223,10 +197,9 @@ impl SessionData {
                     continue;
                 };
                 // Make sure the message still belongs to this mailbox
-                if src_mailbox
-                    .id
-                    .mailbox_id
-                    .map_or(false, |id| !mailboxes.current().contains(&id))
+                if !mailboxes
+                    .current()
+                    .contains(&UidMailbox::from(src_mailbox.id.mailbox_id))
                     || mailboxes.current().contains(&dest_mailbox_id)
                 {
                     tracing::debug!(
@@ -240,7 +213,7 @@ impl SessionData {
                 // Add destination folder
                 mailboxes.update(dest_mailbox_id, true);
                 if is_move {
-                    mailboxes.update(src_mailbox.id.mailbox_id.unwrap(), false);
+                    mailboxes.update(UidMailbox::from(src_mailbox.id.mailbox_id), false);
                 }
 
                 // Write changes
@@ -260,12 +233,10 @@ impl SessionData {
                 match self.jmap.write_batch(batch).await {
                     Ok(_) => {
                         changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
-                        changelog.log_child_update(Collection::Mailbox, dest_mailbox_id);
+                        changelog.log_child_update(Collection::Mailbox, dest_mailbox_id.mailbox_id);
                         if is_move {
-                            changelog.log_child_update(
-                                Collection::Mailbox,
-                                src_mailbox.id.mailbox_id.unwrap(),
-                            );
+                            changelog
+                                .log_child_update(Collection::Mailbox, src_mailbox.id.mailbox_id);
                             did_move = true;
                         }
                         copied_ids.push((imap_id, id));
@@ -339,7 +310,7 @@ impl SessionData {
                     };
 
                     // Make sure the message is still in the mailbox
-                    let src_mailbox_id = src_mailbox.id.mailbox_id.unwrap();
+                    let src_mailbox_id = UidMailbox::from(src_mailbox.id.mailbox_id);
                     if !mailboxes.current().contains(&src_mailbox_id) {
                         continue;
                     } else if mailboxes.current().len() == 1 {
@@ -378,7 +349,10 @@ impl SessionData {
                             Ok(_) => {
                                 changelog
                                     .log_update(Collection::Email, Id::from_parts(thread_id, id));
-                                changelog.log_child_update(Collection::Mailbox, src_mailbox_id);
+                                changelog.log_child_update(
+                                    Collection::Mailbox,
+                                    src_mailbox_id.mailbox_id,
+                                );
                                 did_move = true;
                             }
                             Err(MethodError::ServerUnavailable) => {
@@ -492,11 +466,11 @@ impl SessionData {
         &self,
         account_id: u32,
         id: u32,
-    ) -> Result<Option<(TagManager<u32>, u32)>, MethodError> {
+    ) -> Result<Option<(TagManager<UidMailbox>, u32)>, MethodError> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.jmap
-                .get_property::<HashedValue<Vec<u32>>>(
+                .get_property::<HashedValue<Vec<UidMailbox>>>(
                     account_id,
                     Collection::Email,
                     id,

@@ -50,20 +50,7 @@ impl<T: AsyncRead> Session<T> {
                 // Obtain mailbox
                 let mailbox =
                     if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
-                        if mailbox.mailbox_id.is_some() {
-                            mailbox
-                        } else {
-                            return self
-                                .write_bytes(
-                                    StatusResponse::no(
-                                        "Appending messages to this mailbox is not allowed.",
-                                    )
-                                    .with_tag(arguments.tag)
-                                    .with_code(ResponseCode::Cannot)
-                                    .into_bytes(),
-                                )
-                                .await;
-                        }
+                        mailbox
                     } else {
                         return self
                             .write_bytes(
@@ -106,7 +93,7 @@ impl SessionData {
     ) -> crate::op::Result<StatusResponse> {
         // Verify ACLs
         let account_id = mailbox.account_id;
-        let mailbox_id = mailbox.mailbox_id.unwrap();
+        let mailbox_id = mailbox.mailbox_id;
         if !self
             .check_mailbox_acl(account_id, mailbox_id, Acl::AddItems)
             .await

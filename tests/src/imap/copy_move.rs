@@ -31,20 +31,14 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_contains("\"INBOX\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193)")
-        .assert_contains("\"All Mail\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193)");
+        .assert_contains("\"INBOX\" (UIDNEXT 11 MESSAGES 10 UNSEEN 10 SIZE 12193)");
 
     // Select INBOX
     imap.send("SELECT INBOX").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-    // Copying to "All Mail" or the same mailbox should fail
+    // Copying to the same mailbox should fail
     imap.send("COPY 1:* INBOX").await;
-    imap.assert_read(Type::Tagged, ResponseType::No)
-        .await
-        .assert_response_code("CANNOT");
-
-    imap.send("COPY 1:* \"All Mail\"").await;
     imap.assert_read(Type::Tagged, ResponseType::No)
         .await
         .assert_response_code("CANNOT");

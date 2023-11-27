@@ -23,7 +23,7 @@
 
 use imap_proto::ResponseType;
 
-use crate::imap::AssertResult;
+use crate::imap::{expand_uid_list, AssertResult};
 
 use super::{append::build_messages, ImapConnection, Type};
 
@@ -47,10 +47,14 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         } else {
             imap.send_untagged(message).await;
             assert_eq!(
-                imap.assert_read(Type::Tagged, ResponseType::Ok)
-                    .await
-                    .into_append_uid(),
-                format!("1:{}", messages.len()),
+                expand_uid_list(
+                    &imap
+                        .assert_read(Type::Tagged, ResponseType::Ok)
+                        .await
+                        .into_append_uid()
+                )
+                .len(),
+                messages.len(),
             );
         }
     }

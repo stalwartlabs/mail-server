@@ -165,9 +165,13 @@ impl SessionData {
             };
             batch.create_document(mailbox_id).custom(
                 ObjectIndexBuilder::new(SCHEMA).with_changes(
-                    Object::with_capacity(2)
+                    Object::with_capacity(3)
                         .with_property(Property::Name, path_item)
-                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id))),
+                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
+                        .with_property(
+                            Property::Cid,
+                            Value::UnsignedInt(rand::random::<u32>() as u64),
+                        ),
                 ),
             );
             changes.log_insert(Collection::Mailbox, mailbox_id);
@@ -178,9 +182,13 @@ impl SessionData {
             ObjectIndexBuilder::new(SCHEMA)
                 .with_current(mailbox)
                 .with_changes(
-                    Object::with_capacity(2)
+                    Object::with_capacity(3)
                         .with_property(Property::Name, new_mailbox_name)
-                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id))),
+                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
+                        .with_property(
+                            Property::Cid,
+                            Value::UnsignedInt(rand::random::<u32>() as u64),
+                        ),
                 ),
         );
         changes.log_update(Collection::Mailbox, mailbox_id);

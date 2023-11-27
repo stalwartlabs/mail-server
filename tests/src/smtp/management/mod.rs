@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use hyper::header::AUTHORIZATION;
+use reqwest::header::AUTHORIZATION;
 use serde::{de::DeserializeOwned, Deserialize};
 
 pub mod queue;

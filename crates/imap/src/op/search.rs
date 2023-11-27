@@ -254,25 +254,17 @@ impl SessionData {
     ) -> Result<(ResultSet, bool), StatusResponse> {
         // Obtain message ids
         let mut filters = Vec::with_capacity(imap_filter.len() + 1);
-        let message_ids = if let Some(mailbox_id) = mailbox.id.mailbox_id {
-            let ids = self
-                .jmap
-                .get_tag(
-                    mailbox.id.account_id,
-                    Collection::Email,
-                    Property::MailboxIds,
-                    mailbox_id,
-                )
-                .await?
-                .unwrap_or_default();
-            filters.push(query::Filter::is_in_set(ids.clone()));
-            ids
-        } else {
-            self.jmap
-                .get_document_ids(mailbox.id.account_id, Collection::Email)
-                .await?
-                .unwrap_or_default()
-        };
+        let message_ids = self
+            .jmap
+            .get_tag(
+                mailbox.id.account_id,
+                Collection::Email,
+                Property::MailboxIds,
+                mailbox.id.mailbox_id,
+            )
+            .await?
+            .unwrap_or_default();
+        filters.push(query::Filter::is_in_set(message_ids.clone()));
 
         // Convert query
         let mut include_highest_modseq = false;

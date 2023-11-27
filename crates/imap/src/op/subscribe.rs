@@ -74,15 +74,7 @@ impl SessionData {
 
         // Validate mailbox
         let (account_id, mailbox_id) = match self.get_mailbox_by_name(&mailbox_name) {
-            Some(mailbox) => {
-                if let Some(mailbox_id) = mailbox.mailbox_id {
-                    (mailbox.account_id, mailbox_id)
-                } else {
-                    return StatusResponse::no("Subscribing to this mailbox is not supported.")
-                        .with_tag(tag)
-                        .with_code(ResponseCode::Cannot);
-                }
-            }
+            Some(mailbox) => (mailbox.account_id, mailbox.mailbox_id),
             None => {
                 return StatusResponse::no("Mailbox does not exist.")
                     .with_tag(tag)

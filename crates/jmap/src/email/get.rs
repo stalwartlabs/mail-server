@@ -39,7 +39,7 @@ use jmap_proto::{
 use mail_parser::HeaderName;
 use store::BlobClass;
 
-use crate::{auth::AccessToken, email::headers::HeaderToValue, Bincode, JMAP};
+use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, Bincode, JMAP};
 
 use super::{
     body::{ToBodyPart, TruncateBody},
@@ -222,7 +222,7 @@ impl JMAP {
                     }
                     Property::MailboxIds => {
                         if let Some(mailboxes) = self
-                            .get_property::<Vec<u32>>(
+                            .get_property::<Vec<UidMailbox>>(
                                 account_id,
                                 Collection::Email,
                                 id.document_id(),
@@ -232,7 +232,10 @@ impl JMAP {
                             .map(|ids| {
                                 let mut obj = Object::with_capacity(ids.len());
                                 for id in ids {
-                                    obj.append(Property::_T(Id::from(id).to_string()), true);
+                                    obj.append(
+                                        Property::_T(Id::from(id.mailbox_id).to_string()),
+                                        true,
+                                    );
                                 }
                                 Value::Object(obj)
                             })

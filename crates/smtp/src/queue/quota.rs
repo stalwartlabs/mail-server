@@ -137,7 +137,7 @@ impl Message {
                 &domain.status,
                 Status::Completed(_) | Status::PermanentFailure(_)
             ) {
-                quota_ids.push(((pos + 1) << 32) as u64);
+                quota_ids.push(((pos + 1) as u64) << 32);
             }
         }
         for (pos, rcpt) in self.recipients.iter().enumerate() {

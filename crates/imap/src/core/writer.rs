@@ -58,7 +58,7 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     size = bytes.len()
                                 );
 
-                                //let c = print!("{}", String::from_utf8_lossy(&bytes));
+                                let c = print!("{}", String::from_utf8_lossy(&bytes));
 
                                 match stream_tx.write_all(bytes.as_ref()).await {
                                     Ok(_) => {
@@ -101,7 +101,7 @@ pub fn spawn_writer(mut stream: Event, span: tracing::Span) -> mpsc::Sender<Even
                                     size = bytes.len()
                                 );
 
-                                //let c = print!("{}", String::from_utf8_lossy(&bytes));
+                                let c = print!("{}", String::from_utf8_lossy(&bytes));
 
                                 match stream_tx.write_all(bytes.as_ref()).await {
                                     Ok(_) => {
@@ -132,10 +132,10 @@ impl<T: AsyncRead> Session<T> {
     pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> crate::OpResult {
         let bytes = bytes.into();
 
-        /*let c = println!(
-            "-> {:?}",
+        let c = println!(
+            "{:?}",
             String::from_utf8_lossy(&bytes[..std::cmp::min(bytes.len(), 100)])
-        );*/
+        );
 
         if let Err(err) = self.writer.send(Event::Bytes(bytes)).await {
             debug!("Failed to send bytes: {}", err);
@@ -149,10 +149,10 @@ impl<T: AsyncRead> Session<T> {
 impl SessionData {
     pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> bool {
         let bytes = bytes.into();
-        /*let c = println!(
-            "-> {:?}",
+        let c = println!(
+            "{:?}",
             String::from_utf8_lossy(&bytes[..std::cmp::min(bytes.len(), 100)])
-        );*/
+        );
 
         if let Err(err) = self.writer.send(Event::Bytes(bytes)).await {
             debug!("Failed to send bytes: {}", err);

@@ -36,10 +36,10 @@ use super::{SelectedMailbox, Session, SessionData, State, IMAP};
 
 impl<T: AsyncRead> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
-        /*for line in String::from_utf8_lossy(bytes).split("\r\n") {
+        for line in String::from_utf8_lossy(bytes).split("\r\n") {
             //let c = println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
             let c = println!("{}", line);
-        }*/
+        }
 
         tracing::trace!(parent: &self.span,
             event = "read",

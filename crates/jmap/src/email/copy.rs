@@ -53,7 +53,9 @@ use store::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, services::housekeeper::Event, Bincode, NamedKey, JMAP};
+use crate::{
+    auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, NamedKey, JMAP,
+};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
@@ -402,7 +404,14 @@ impl JMAP {
             .with_collection(Collection::Email)
             .create_document(message_id)
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
-            .value(Property::MailboxIds, mailboxes, F_VALUE | F_BITMAP)
+            .value(
+                Property::MailboxIds,
+                mailboxes
+                    .into_iter()
+                    .map(UidMailbox::from)
+                    .collect::<Vec<_>>(),
+                F_VALUE | F_BITMAP,
+            )
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
             .set(

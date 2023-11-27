@@ -133,7 +133,7 @@ impl SessionData {
             if account.account_id == mailbox.account_id {
                 let mailbox_state = account
                     .mailbox_state
-                    .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or(u32::MAX))
+                    .entry(mailbox.mailbox_id)
                     .or_insert_with(Mailbox::default);
                 for item in items {
                     match item {
@@ -191,11 +191,8 @@ impl SessionData {
                             items_response.push((
                                 *item,
                                 StatusItemType::String(
-                                    Id::from_parts(
-                                        mailbox.account_id,
-                                        mailbox.mailbox_id.unwrap_or(u32::MAX),
-                                    )
-                                    .to_string(),
+                                    Id::from_parts(mailbox.account_id, mailbox.mailbox_id)
+                                        .to_string(),
                                 ),
                             ));
                         }
@@ -217,140 +214,83 @@ impl SessionData {
                 None
             };
 
-            if let Some(mailbox_id) = mailbox.mailbox_id {
-                let mailbox_message_ids = self
-                    .jmap
-                    .get_tag(
-                        mailbox.account_id,
-                        Collection::Email,
-                        Property::MailboxIds,
-                        mailbox_id,
-                    )
-                    .await?
-                    .map(Arc::new);
-                let message_ids = self
-                    .jmap
-                    .get_document_ids(mailbox.account_id, Collection::Email)
-                    .await?;
+            let mailbox_message_ids = self
+                .jmap
+                .get_tag(
+                    mailbox.account_id,
+                    Collection::Email,
+                    Property::MailboxIds,
+                    mailbox.mailbox_id,
+                )
+                .await?
+                .map(Arc::new);
+            let message_ids = self
+                .jmap
+                .get_document_ids(mailbox.account_id, Collection::Email)
+                .await?;
 
-                for item in items_update {
-                    let result = match item {
-                        Status::Messages => {
-                            mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0)
-                        }
-                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
-                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
-                        Status::Unseen => {
-                            if let (Some(message_ids), Some(mailbox_message_ids)) =
-                                (&message_ids, &mailbox_message_ids)
+            for item in items_update {
+                let result = match item {
+                    Status::Messages => mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
+                    Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
+                    Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
+                    Status::Unseen => {
+                        if let (Some(message_ids), Some(mailbox_message_ids)) =
+                            (&message_ids, &mailbox_message_ids)
+                        {
+                            if let Some(mut seen) = self
+                                .jmap
+                                .get_tag(
+                                    mailbox.account_id,
+                                    Collection::Email,
+                                    Property::Keywords,
+                                    Keyword::Seen,
+                                )
+                                .await?
                             {
-                                if let Some(mut seen) = self
-                                    .jmap
-                                    .get_tag(
-                                        mailbox.account_id,
-                                        Collection::Email,
-                                        Property::Keywords,
-                                        Keyword::Seen,
-                                    )
-                                    .await?
-                                {
-                                    seen ^= message_ids;
-                                    seen &= mailbox_message_ids.as_ref();
-                                    seen.len()
-                                } else {
-                                    mailbox_message_ids.len()
-                                }
-                            } else {
-                                0
-                            }
-                        }
-                        Status::Deleted => {
-                            if let (Some(mailbox_message_ids), Some(mut deleted)) = (
-                                &mailbox_message_ids,
-                                self.jmap
-                                    .get_tag(
-                                        mailbox.account_id,
-                                        Collection::Email,
-                                        Property::Keywords,
-                                        Keyword::Deleted,
-                                    )
-                                    .await?,
-                            ) {
-                                deleted &= mailbox_message_ids.as_ref();
-                                deleted.len()
-                            } else {
-                                0
-                            }
-                        }
-                        Status::Size => {
-                            if let Some(mailbox_message_ids) = &mailbox_message_ids {
-                                self.calculate_mailbox_size(mailbox.account_id, mailbox_message_ids)
-                                    .await? as u64
-                            } else {
-                                0
-                            }
-                        }
-                        Status::HighestModSeq | Status::MailboxId | Status::Recent => {
-                            unreachable!()
-                        }
-                    };
-
-                    items_response.push((item, StatusItemType::Number(result)));
-                    values_update.push((item, result as u32));
-                }
-            } else {
-                let message_ids = Arc::new(
-                    self.jmap
-                        .get_document_ids(mailbox.account_id, Collection::Email)
-                        .await?
-                        .unwrap_or_default(),
-                );
-                for item in items_update {
-                    let result = match item {
-                        Status::Messages => message_ids.len(),
-                        Status::UidNext => mailbox_state.as_ref().unwrap().uid_next as u64,
-                        Status::UidValidity => mailbox_state.as_ref().unwrap().uid_validity as u64,
-                        Status::Unseen => self
-                            .jmap
-                            .get_tag(
-                                mailbox.account_id,
-                                Collection::Email,
-                                Property::Keywords,
-                                Keyword::Seen,
-                            )
-                            .await?
-                            .map(|mut seen| {
-                                seen ^= message_ids.as_ref();
+                                seen ^= message_ids;
+                                seen &= mailbox_message_ids.as_ref();
                                 seen.len()
-                            })
-                            .unwrap_or_else(|| message_ids.len()),
-                        Status::Deleted => self
-                            .jmap
-                            .get_tag(
-                                mailbox.account_id,
-                                Collection::Email,
-                                Property::Keywords,
-                                Keyword::Deleted,
-                            )
-                            .await?
-                            .map(|v| v.len())
-                            .unwrap_or(0),
-                        Status::Size => {
-                            if !message_ids.is_empty() {
-                                self.calculate_mailbox_size(mailbox.account_id, &message_ids)
-                                    .await? as u64
                             } else {
-                                0
+                                mailbox_message_ids.len()
                             }
+                        } else {
+                            0
                         }
-                        Status::HighestModSeq | Status::MailboxId | Status::Recent => {
-                            unreachable!()
+                    }
+                    Status::Deleted => {
+                        if let (Some(mailbox_message_ids), Some(mut deleted)) = (
+                            &mailbox_message_ids,
+                            self.jmap
+                                .get_tag(
+                                    mailbox.account_id,
+                                    Collection::Email,
+                                    Property::Keywords,
+                                    Keyword::Deleted,
+                                )
+                                .await?,
+                        ) {
+                            deleted &= mailbox_message_ids.as_ref();
+                            deleted.len()
+                        } else {
+                            0
                         }
-                    };
+                    }
+                    Status::Size => {
+                        if let Some(mailbox_message_ids) = &mailbox_message_ids {
+                            self.calculate_mailbox_size(mailbox.account_id, mailbox_message_ids)
+                                .await? as u64
+                        } else {
+                            0
+                        }
+                    }
+                    Status::HighestModSeq | Status::MailboxId | Status::Recent => {
+                        unreachable!()
+                    }
+                };
 
-                    items_response.push((item, StatusItemType::Number(result)));
-                    values_update.push((item, result as u32));
-                }
+                items_response.push((item, StatusItemType::Number(result)));
+                values_update.push((item, result as u32));
             }
 
             // Update cache
@@ -358,7 +298,7 @@ impl SessionData {
                 if account.account_id == mailbox.account_id {
                     let mailbox_state = account
                         .mailbox_state
-                        .entry(mailbox.mailbox_id.as_ref().cloned().unwrap_or(u32::MAX))
+                        .entry(mailbox.mailbox_id)
                         .or_insert_with(Mailbox::default);
 
                     for (item, value) in values_update {

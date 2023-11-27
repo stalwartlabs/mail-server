@@ -36,6 +36,8 @@ pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 #[cfg(feature = "test_mode")]
 pub static ID_ASSIGNMENT_EXPIRY: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(60 * 60); // seconds
+#[cfg(not(feature = "test_mode"))]
+pub const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
 
 impl From<std::io::Error> for crate::Error {
     fn from(err: std::io::Error) -> Self {

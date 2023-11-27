@@ -34,7 +34,7 @@ use mail_parser::{
 use serde::{Deserialize, Serialize};
 use store::BlobHash;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageMetadata<'x> {
     pub contents: MessageMetadataContents<'x>,
     pub blob_hash: BlobHash,
@@ -44,7 +44,7 @@ pub struct MessageMetadata<'x> {
     pub has_attachments: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageMetadataContents<'x> {
     pub html_body: Vec<MessagePartId>,
     pub text_body: Vec<MessagePartId>,
@@ -52,7 +52,7 @@ pub struct MessageMetadataContents<'x> {
     pub parts: Vec<MessageMetadataPart<'x>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageMetadataPart<'x> {
     pub headers: Vec<Header<'x>>,
     pub is_encoding_problem: bool,
@@ -64,7 +64,7 @@ pub struct MessageMetadataPart<'x> {
     pub offset_end: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MetadataPartType<'x> {
     Text,
     Html,

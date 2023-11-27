@@ -108,9 +108,13 @@ impl SessionData {
                     return StatusResponse::database_failure().with_tag(arguments.tag);
                 }
             };
-            let mut mailbox = Object::with_capacity(3)
+            let mut mailbox = Object::with_capacity(4)
                 .with_property(Property::Name, path_item)
-                .with_property(Property::ParentId, Value::Id(Id::from(parent_id)));
+                .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
+                .with_property(
+                    Property::Cid,
+                    Value::UnsignedInt(rand::random::<u32>() as u64),
+                );
             if pos == params.path.len() - 1 {
                 if let Some(mailbox_role) = arguments.mailbox_role {
                     mailbox.set(Property::Role, mailbox_role);
@@ -268,12 +272,7 @@ impl SessionData {
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
             let first_path_item = path.first().unwrap();
-            let account = if first_path_item == &self.imap.name_all {
-                return Err(StatusResponse::no(
-                    "Mailboxes cannot be created under virtual folders.",
-                )
-                .with_code(ResponseCode::Cannot));
-            } else if first_path_item == &self.imap.name_shared {
+            let account = if first_path_item == &self.imap.name_shared {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
                     return Err(StatusResponse::no(

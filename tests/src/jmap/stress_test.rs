@@ -25,7 +25,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::jmap::mailbox::destroy_all_mailboxes;
 use futures::future::join_all;
-use jmap::JMAP;
+use jmap::{mailbox::UidMailbox, JMAP};
 use jmap_client::{
     client::Client,
     core::set::{SetErrorType, SetObject},
@@ -221,7 +221,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
 
             for email_id in &email_ids_in_mailbox {
                 if let Some(mailbox_tags) = server
-                    .get_property::<Vec<u32>>(
+                    .get_property::<Vec<UidMailbox>>(
                         TEST_USER_ID,
                         Collection::Email,
                         email_id,
@@ -237,10 +237,10 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     );
                     }
                     let mailbox_tag = mailbox_tags[0];
-                    if mailbox_tag != mailbox_id {
+                    if mailbox_tag.mailbox_id != mailbox_id {
                         panic!(
                             concat!(
-                                "Email ORM has an unexpected mailbox tag {}! Id {} in ",
+                                "Email ORM has an unexpected mailbox tag {:?}! Id {} in ",
                                 "mailbox {} with messages {:?}"
                             ),
                             mailbox_tag, email_id, mailbox_id, email_ids_in_mailbox,

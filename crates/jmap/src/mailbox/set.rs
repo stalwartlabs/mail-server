@@ -54,7 +54,7 @@ use crate::{
     JMAP,
 };
 
-use super::{INBOX_ID, TRASH_ID};
+use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -269,9 +269,9 @@ impl JMAP {
         remove_emails: bool,
     ) -> Result<Result<bool, SetError>, MethodError> {
         // Internal folders cannot be deleted
-        if (document_id == INBOX_ID || document_id == TRASH_ID) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id) && !access_token.is_super_user() {
             return Ok(Err(SetError::forbidden().with_description(
-                "You are not allowed to delete Inbox or Trash folders.",
+                "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));
         }
 
@@ -310,7 +310,7 @@ impl JMAP {
                 for message_id in message_ids {
                     // Obtain mailboxIds
                     if let Some(mailbox_ids) = self
-                        .get_property::<HashedValue<Vec<u32>>>(
+                        .get_property::<HashedValue<Vec<UidMailbox>>>(
                             account_id,
                             Collection::Email,
                             message_id,
@@ -318,7 +318,10 @@ impl JMAP {
                         )
                         .await?
                         .and_then(|mut ids| {
-                            let idx = ids.inner.iter().position(|&id| id == document_id)?;
+                            let idx = ids
+                                .inner
+                                .iter()
+                                .position(|&id| id.mailbox_id == document_id)?;
                             ids.inner.swap_remove(idx);
                             Some(ids)
                         })
@@ -636,6 +639,14 @@ impl JMAP {
             changes.append(Property::ParentId, Value::Id(0u64.into()));
         }
 
+        // Generate IMAP UID validity
+        if update.is_none() {
+            changes.append(
+                Property::Cid,
+                Value::UnsignedInt(rand::random::<u32>() as u64),
+            );
+        }
+
         // Verify that the mailbox role is unique.
         if let Value::Text(mailbox_role) = changes.get(&Property::Role) {
             if update
@@ -768,19 +779,23 @@ impl JMAP {
         for (name, role) in [
             ("Inbox", "inbox"),
             ("Deleted Items", "trash"),
+            ("Junk Mail", "junk"),
             ("Drafts", "drafts"),
             ("Sent Items", "sent"),
-            ("Junk Mail", "junk"),
         ] {
             let mailbox_id = self
                 .assign_document_id(account_id, Collection::Mailbox)
                 .await?;
             batch.create_document(mailbox_id).custom(
                 ObjectIndexBuilder::new(SCHEMA).with_changes(
-                    Object::with_capacity(3)
+                    Object::with_capacity(4)
                         .with_property(Property::Name, name)
                         .with_property(Property::Role, role)
-                        .with_property(Property::ParentId, Value::Id(0u64.into())),
+                        .with_property(Property::ParentId, Value::Id(0u64.into()))
+                        .with_property(
+                            Property::Cid,
+                            Value::UnsignedInt(rand::random::<u32>() as u64),
+                        ),
                 ),
             );
             mailbox_ids.insert(mailbox_id);
@@ -840,9 +855,13 @@ impl JMAP {
                     .await?;
                 batch.create_document(document_id).custom(
                     ObjectIndexBuilder::new(SCHEMA).with_changes(
-                        Object::with_capacity(2)
+                        Object::with_capacity(3)
                             .with_property(Property::Name, name)
-                            .with_property(Property::ParentId, Value::Id(Id::from(next_parent_id))),
+                            .with_property(Property::ParentId, Value::Id(Id::from(next_parent_id)))
+                            .with_property(
+                                Property::Cid,
+                                Value::UnsignedInt(rand::random::<u32>() as u64),
+                            ),
                     ),
                 );
                 changes.log_insert(Collection::Mailbox, document_id);

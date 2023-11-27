@@ -21,9 +21,7 @@
  * for more details.
 */
 
-use imap_proto::{
-    protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
-};
+use imap_proto::{protocol::delete::Arguments, receiver::Request, Command, StatusResponse};
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
 use tokio::io::AsyncRead;
@@ -66,13 +64,7 @@ impl SessionData {
         // Validate mailbox
         let (account_id, mailbox_id) =
             if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
-                if let Some(mailbox_id) = mailbox.mailbox_id {
-                    (mailbox.account_id, mailbox_id)
-                } else {
-                    return StatusResponse::no("Folder cannot be deleted.")
-                        .with_code(ResponseCode::Cannot)
-                        .with_tag(arguments.tag);
-                }
+                (mailbox.account_id, mailbox.mailbox_id)
             } else {
                 return StatusResponse::no("Mailbox does not exist.").with_tag(arguments.tag);
             };

@@ -47,11 +47,6 @@ impl IMAP {
                 .value("imap.folders.name.shared")
                 .unwrap_or("Shared Folders")
                 .to_string(),
-            name_all_enable: config.property_or_static("imap.folders.all-messages", "true")?,
-            name_all: config
-                .value("imap.folders.name.all")
-                .unwrap_or("All Mail")
-                .to_string(),
             timeout_auth: config.property_or_static("imap.timeout.authenticated", "30m")?,
             timeout_unauth: config.property_or_static("imap.timeout.anonymous", "1m")?,
             timeout_idle: config.property_or_static("imap.timeout.idle", "30m")?,

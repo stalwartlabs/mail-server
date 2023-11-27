@@ -27,9 +27,9 @@ rustls-pemfile = "1.0"
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}
 webpki-roots = { version = "0.25"}
-hyper = { version = "1.0.0-rc.4", features = ["server", "http1", "http2"] }
-hyper-util = { git = "https://github.com/hyperium/hyper-util" }
-http-body-util = "0.1.0-rc.3"
+hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
+hyper-util = { version = "0.1.1", features = ["tokio"] }
+http-body-util = "0.1.0"
 form_urlencoded = "1.1.0"
 sha1 = "0.10"
 sha2 = "0.10.6"
@@ -51,7 +51,7 @@ num_cpus = "1.15.0"
 lazy_static = "1.4"
 whatlang = "0.16"
 imagesize = "0.12"
-idna = "0.4"
+idna = "0.5"
 decancer = "1.6.1"
 unicode-security = "0.1.0"
 infer = "0.15.0"

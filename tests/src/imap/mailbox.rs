@@ -38,14 +38,7 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
     imap.send("LIST \"\" \"*\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_folders(
-            [
-                ("All Mail", ["NoInferiors"]),
-                ("INBOX", [""]),
-                ("Deleted Items", [""]),
-            ],
-            true,
-        );
+        .assert_folders([("INBOX", [""]), ("Deleted Items", [""])], true);
 
     // Create folders
     imap.send("CREATE \"Tofu\"").await;
@@ -68,7 +61,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             .await
             .assert_folders(
                 [
-                    ("All Mail", ["NoInferiors"]),
                     ("INBOX", [""]),
                     ("Deleted Items", [""]),
                     ("Fruit", [""]),
@@ -79,10 +71,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
                 true,
             );
     }
-
-    // Folders under All Mail should not be allowed
-    imap.send("CREATE \"All Mail/Untitled\"").await;
-    imap.assert_read(Type::Tagged, ResponseType::No).await;
 
     // Special use folders that already exist should not be allowed
     imap.send("CREATE \"Second trash\" (USE (\\Trash))").await;
@@ -108,7 +96,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             .await
             .assert_folders(
                 [
-                    ("All Mail", ["NoInferiors", "All"]),
                     ("INBOX", ["HasNoChildren", ""]),
                     ("Deleted Items", ["HasNoChildren", "Trash"]),
                     ("Cars/Electric/4 doors/Red", ["HasNoChildren", ""]),
@@ -148,7 +135,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             .await
             .assert_folders(
                 [
-                    ("All Mail", ["NoInferiors", "All"]),
                     ("INBOX", ["HasChildren", ""]),
                     ("INBOX/Tofu", ["HasNoChildren", ""]),
                     ("Recycle Bin", ["HasNoChildren", "Trash"]),
@@ -173,8 +159,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("DELETE \"Vegetable\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
-    imap.send("DELETE \"All Mail\"").await;
-    imap.assert_read(Type::Tagged, ResponseType::No).await;
     imap.send("DELETE \"Vehicles\"").await;
     imap.assert_read(Type::Tagged, ResponseType::No).await;
     for imap in [&mut imap, &mut imap_check] {
@@ -184,7 +168,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             .await
             .assert_folders(
                 [
-                    ("All Mail", ["NoInferiors", "All"]),
                     ("INBOX", ["HasNoChildren", ""]),
                     ("Recycle Bin", ["HasNoChildren", "Trash"]),
                     ("Vehicles/Electric/4 doors/Red", ["HasNoChildren", ""]),
@@ -215,7 +198,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
             .await
             .assert_folders(
                 [
-                    ("All Mail", ["NoInferiors", "All"]),
                     ("INBOX", ["Subscribed", ""]),
                     ("Recycle Bin", ["", "Trash"]),
                     ("Vehicles/Electric/4 doors/Red", ["Subscribed", ""]),
@@ -304,7 +286,6 @@ pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnec
         .await
         .assert_folders(
             [
-                ("All Mail", [""]),
                 ("INBOX", [""]),
                 ("Recycle Bin", [""]),
                 ("Vehicles", [""]),

@@ -21,7 +21,10 @@
  * for more details.
 */
 
-use crate::{write::key::DeserializeBigEndian, Deserialize, Key, Serialize, U32_LEN};
+use crate::{
+    backend::ID_ASSIGNMENT_EXPIRY, write::key::DeserializeBigEndian, Deserialize, Key, Serialize,
+    U32_LEN,
+};
 use ahash::AHashSet;
 use foundationdb::{options::StreamingMode, FdbError, KeySelector, RangeOption};
 use futures::StreamExt;
@@ -82,9 +85,8 @@ impl FdbStore {
                 #[cfg(not(feature = "test_mode"))]
                 let expired_timestamp = now() - ID_ASSIGNMENT_EXPIRY;
                 #[cfg(feature = "test_mode")]
-                let expired_timestamp = now()
-                    - crate::backend::ID_ASSIGNMENT_EXPIRY
-                        .load(std::sync::atomic::Ordering::Relaxed);
+                let expired_timestamp =
+                    now() - ID_ASSIGNMENT_EXPIRY.load(std::sync::atomic::Ordering::Relaxed);
                 while let Some(values) = values.next().await {
                     for value in values? {
                         let key = value.key();
