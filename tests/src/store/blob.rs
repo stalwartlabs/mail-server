@@ -52,7 +52,6 @@ path = "{TMP}/db.db?mode=rwc"
 #[tokio::test]
 pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
-    let mut blob_store = None;
 
     for (store_id, store_cfg) in [("s3", CONFIG_S3), ("fs", CONFIG_LOCAL)] {
         let config =
@@ -65,20 +64,24 @@ pub async fn blob_tests() {
             _ => unreachable!(),
         };
 
-        println!("Testing store {}...", store_id);
+        println!("Testing blob store {}...", store_id);
         test_store(blob_store_.clone()).await;
-        blob_store = Some(blob_store_);
     }
-    let blob_store = blob_store.unwrap();
 
-    // Start SQLite store
+    // Init store
     let store: Store = SqliteStore::open(
+        //let store: Store = FdbStore::open(
         &Config::new(&CONFIG_DB.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
             .unwrap(),
     )
     .await
     .unwrap()
     .into();
+    store.destroy().await;
+
+    // Test internal blob store
+    let blob_store: BlobStore = store.clone().into();
+    test_store(blob_store.clone()).await;
 
     // Blob hash exists
     let hash = BlobHash::from(b"abc".as_slice());
@@ -387,17 +390,76 @@ pub async fn blob_tests() {
 }
 
 async fn test_store(store: BlobStore) {
+    // Test small blob
     const DATA: &[u8] = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce erat nisl, dignissim a porttitor id, varius nec arcu. Sed mauris.";
+    let hash = BlobHash::from(DATA);
 
-    store.put_blob(b"abc", DATA).await.unwrap();
+    store.put_blob(hash.as_slice(), DATA).await.unwrap();
     assert_eq!(
-        String::from_utf8(store.get_blob(b"abc", 0..u32::MAX).await.unwrap().unwrap()).unwrap(),
+        String::from_utf8(
+            store
+                .get_blob(hash.as_slice(), 0..u32::MAX)
+                .await
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
         std::str::from_utf8(DATA).unwrap()
     );
     assert_eq!(
-        String::from_utf8(store.get_blob(b"abc", 11..57).await.unwrap().unwrap()).unwrap(),
+        String::from_utf8(
+            store
+                .get_blob(hash.as_slice(), 11..57)
+                .await
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
         std::str::from_utf8(&DATA[11..57]).unwrap()
     );
-    assert!(store.delete_blob(b"abc").await.unwrap());
-    assert!(store.get_blob(b"abc", 0..u32::MAX).await.unwrap().is_none());
+    assert!(store.delete_blob(hash.as_slice()).await.unwrap());
+    assert!(store
+        .get_blob(hash.as_slice(), 0..u32::MAX)
+        .await
+        .unwrap()
+        .is_none());
+
+    // Test large blob
+    let mut data = Vec::with_capacity(50 * 1024 * 1024);
+    while data.len() < 50 * 1024 * 1024 {
+        data.extend_from_slice(DATA);
+        let marker = format!(" [{}] ", data.len());
+        data.extend_from_slice(marker.as_bytes());
+    }
+    let hash = BlobHash::from(&data);
+    store.put_blob(hash.as_slice(), &data).await.unwrap();
+    assert_eq!(
+        String::from_utf8(
+            store
+                .get_blob(hash.as_slice(), 0..u32::MAX)
+                .await
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
+        std::str::from_utf8(&data).unwrap()
+    );
+
+    assert_eq!(
+        String::from_utf8(
+            store
+                .get_blob(hash.as_slice(), 3000111..4000999)
+                .await
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
+        std::str::from_utf8(&data[3000111..4000999]).unwrap()
+    );
+    assert!(store.delete_blob(hash.as_slice()).await.unwrap());
+    assert!(store
+        .get_blob(hash.as_slice(), 0..u32::MAX)
+        .await
+        .unwrap()
+        .is_none());
 }

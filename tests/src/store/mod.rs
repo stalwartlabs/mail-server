@@ -29,7 +29,7 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::sqlite::SqliteStore;
+use store::backend::{foundationdb::FdbStore, sqlite::SqliteStore};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -49,7 +49,8 @@ pub async fn store_tests() {
         temp_dir.path.display(),
         temp_dir.path.display()
     );
-    let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
         .await
         .unwrap()
         .into();

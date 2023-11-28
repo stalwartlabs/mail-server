@@ -50,7 +50,7 @@ async fn test_1(db: Store) {
         for id in 0..100 {
             handles.push({
                 let db = db.clone();
-                tokio::spawn(async move { db.assign_document_id(0, 0).await })
+                tokio::spawn(async move { db.assign_document_id(0, u8::MAX).await })
             });
             expected_ids.insert(id);
         }
@@ -80,9 +80,9 @@ async fn test_2(db: Store) {
     // Create document ids and try reassigning
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
-    batch.with_account_id(0).with_collection(0);
+    batch.with_account_id(0).with_collection(u8::MAX);
     for pos in 0..100 {
-        let id = db.assign_document_id(0, 0).await.unwrap();
+        let id = db.assign_document_id(0, u8::MAX).await.unwrap();
         if pos % 2 == 0 {
             batch.create_document(id);
         } else {
@@ -95,14 +95,14 @@ async fn test_2(db: Store) {
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     for _ in 0..expected_ids.len() {
-        let id = db.assign_document_id(0, 0).await.unwrap();
+        let id = db.assign_document_id(0, u8::MAX).await.unwrap();
         assert!(
             expected_ids.remove(&id),
             "already assigned or invalid: {id}"
         );
     }
-    assert_eq!(db.assign_document_id(0, 0).await.unwrap(), 100);
-    assert_eq!(db.assign_document_id(0, 0).await.unwrap(), 101);
+    assert_eq!(db.assign_document_id(0, u8::MAX).await.unwrap(), 100);
+    assert_eq!(db.assign_document_id(0, u8::MAX).await.unwrap(), 101);
 
     db.destroy().await;
 }
@@ -111,7 +111,7 @@ async fn test_3(db: Store) {
     // Try reassigning deleted ids
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
-    batch.with_account_id(0).with_collection(0);
+    batch.with_account_id(0).with_collection(u8::MAX);
     for id in 0..100 {
         if id % 2 == 0 {
             batch.create_document(id);
@@ -121,14 +121,14 @@ async fn test_3(db: Store) {
     }
     db.write(batch.build()).await.unwrap();
     for _ in 0..expected_ids.len() {
-        let id = db.assign_document_id(0, 0).await.unwrap();
+        let id = db.assign_document_id(0, u8::MAX).await.unwrap();
         assert!(
             expected_ids.remove(&id),
             "already assigned or invalid: {id}"
         );
     }
-    assert_eq!(db.assign_document_id(0, 0).await.unwrap(), 100);
-    assert_eq!(db.assign_document_id(0, 0).await.unwrap(), 101);
+    assert_eq!(db.assign_document_id(0, u8::MAX).await.unwrap(), 100);
+    assert_eq!(db.assign_document_id(0, u8::MAX).await.unwrap(), 101);
 
     db.destroy().await;
 }

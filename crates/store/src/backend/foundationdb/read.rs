@@ -351,7 +351,7 @@ impl FdbStore {
                         );
                     }
                     SUBSPACE_LOGS => {
-                        delete_keys.push(key.to_vec());
+                        delete_keys.push(key_.to_vec());
                     }
 
                     _ => panic!("Invalid key found in database: {key:?} for subspace {subspace}"),

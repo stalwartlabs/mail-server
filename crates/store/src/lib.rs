@@ -213,3 +213,12 @@ impl From<Store> for FtsStore {
         Self::Store(store)
     }
 }
+
+impl From<Store> for BlobStore {
+    fn from(store: Store) -> Self {
+        match store {
+            Store::SQLite(store) => Self::Sqlite(store),
+            Store::FoundationDb(store) => Self::FoundationDb(store),
+        }
+    }
+}
