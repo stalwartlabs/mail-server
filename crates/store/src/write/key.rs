@@ -26,8 +26,8 @@ use utils::codec::leb128::Leb128_;
 
 use crate::{
     BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN,
-    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
-    U64_LEN,
+    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    U32_LEN, U64_LEN,
 };
 
 use super::{BitmapClass, BlobOp, TagValue, ValueClass};
@@ -207,10 +207,13 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        if !matches!(self.class.as_ref(), ValueClass::Acl(_)) {
+        if !matches!(
+            self.class.as_ref(),
+            ValueClass::Acl(_) | ValueClass::ReservedId
+        ) {
             SUBSPACE_VALUES
         } else {
-            SUBSPACE_ACLS
+            SUBSPACE_INDEX_VALUES
         }
     }
 
@@ -226,11 +229,12 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             .write_leb128(self.document_id)
             .write(*field),
             ValueClass::Acl(grant_account_id) => if include_subspace {
-                KeySerializer::new(U32_LEN * 3 + 2).write(crate::SUBSPACE_ACLS)
+                KeySerializer::new(U32_LEN * 3 + 3).write(crate::SUBSPACE_INDEX_VALUES)
             } else {
-                KeySerializer::new(U32_LEN * 3 + 1)
+                KeySerializer::new(U32_LEN * 3 + 2)
             }
             .write(*grant_account_id)
+            .write(0u8)
             .write(self.account_id)
             .write(self.collection)
             .write(self.document_id),
@@ -250,6 +254,15 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             .write(self.collection)
             .write_leb128(self.document_id)
             .write(u8::MAX),
+            ValueClass::ReservedId => if include_subspace {
+                KeySerializer::new(U32_LEN * 2 + 2).write(crate::SUBSPACE_INDEX_VALUES)
+            } else {
+                KeySerializer::new(U32_LEN * 2 + 1)
+            }
+            .write(self.account_id)
+            .write(1u8)
+            .write(self.collection)
+            .write(self.document_id),
         }
         .finalize()
     }

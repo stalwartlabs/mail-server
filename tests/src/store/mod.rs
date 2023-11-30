@@ -29,28 +29,36 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::{foundationdb::FdbStore, sqlite::SqliteStore};
+use store::backend::{foundationdb::FdbStore, postgres::PostgresStore, sqlite::SqliteStore};
 use utils::config::Config;
 
 pub struct TempDir {
     pub path: std::path::PathBuf,
 }
 
+const CONFIG: &str = r#"
+[store.blob]
+type = "local"
+local.path = "PATH"
+
+[store.db]
+#path = "PATH/sqlite.db"
+host = "localhost"
+post = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+"#;
+
 #[tokio::test]
 pub async fn store_tests() {
     let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
-    let config_file = format!(
-        concat!(
-            "store.blob.type = \"local\"\n",
-            "store.blob.local.path = \"{}\"\n",
-            "store.db.path = \"{}/sqlite.db\"\n"
-        ),
-        temp_dir.path.display(),
-        temp_dir.path.display()
-    );
+    let config_file = CONFIG.replace("PATH", &temp_dir.path.to_string_lossy());
     //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
-    let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
         .await
         .unwrap()
         .into();

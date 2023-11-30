@@ -51,7 +51,10 @@ pub async fn test(server: Arc<JMAP>, mut client: Client) {
 
 async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
     for pass in 0..NUM_PASSES {
-        println!("----------------- PASS {} -----------------", pass);
+        println!(
+            "----------------- EMAIL STRESS TEST {} -----------------",
+            pass
+        );
         let mailboxes = Arc::new(vec![
             client
                 .mailbox_create("Stress 1", None::<String>, Role::None)
@@ -97,7 +100,12 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                             .await
                             .unwrap()
                             .take_id();
-                        //println!("Inserted message {}.", message_id);
+                        /*println!(
+                            "Inserted message {}.",
+                            Id::from_bytes(_message_id.as_bytes())
+                                .unwrap()
+                                .document_id()
+                        );*/
                     }));
                 }
 
@@ -110,7 +118,10 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                             let ids = req.send_query_email().await.unwrap().take_ids();
                             if !ids.is_empty() {
                                 let message_id = &ids[rand::thread_rng().gen_range(0..ids.len())];
-                                //println!("Deleting message {}.", message_id);
+                                /*println!(
+                                    "Deleting message {}.",
+                                    Id::from_bytes(message_id.as_bytes()).unwrap().document_id()
+                                );*/
                                 match client.email_destroy(message_id).await {
                                     Ok(_) => {
                                         break;
@@ -121,7 +132,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                                         }
                                         SetErrorType::Forbidden => {
                                             // Concurrency issue, try again.
-                                            println!("Concurrent update, trying again.");
+                                            //println!("Concurrent update, trying again.");
                                         }
                                         _ => {
                                             panic!("Unexpected error: {:?}", err);
@@ -169,7 +180,15 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                                 if new_mailbox_id != mailbox_id {
                                     /*println!(
                                         "Moving message {} from {} to {}.",
-                                        message_id, mailbox_id, new_mailbox_id
+                                        Id::from_bytes(message_id.as_bytes())
+                                            .unwrap()
+                                            .document_id(),
+                                        Id::from_bytes(mailbox_id.as_bytes())
+                                            .unwrap()
+                                            .document_id(),
+                                        Id::from_bytes(new_mailbox_id.as_bytes())
+                                            .unwrap()
+                                            .document_id()
                                     );*/
                                     let mut req = client.build();
                                     req.set_email()
@@ -271,6 +290,8 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
     ]);
     let mut futures = Vec::new();
 
+    println!("----------------- MAILBOX STRESS TEST -----------------");
+
     for _ in 0..1000 {
         match rand::thread_rng().gen_range(0..=3) {
             0 => {
@@ -278,6 +299,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     let client = client.clone();
                     let mailboxes = mailboxes.clone();
                     futures.push(tokio::spawn(async move {
+                        //println!("Creating mailbox {}.", mailboxes[pos]);
                         create_mailbox(&client, &mailboxes[pos]).await;
                     }));
                 }
@@ -286,6 +308,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
             1 => {
                 let client = client.clone();
                 futures.push(tokio::spawn(async move {
+                    //print!("Querying mailboxes...");
                     query_mailboxes(&client).await;
                 }));
             }
@@ -301,6 +324,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     {
                         let client = client.clone();
                         tokio::spawn(async move {
+                            //println!("Deleting mailbox {}.", mailbox_id);
                             delete_mailbox(&client, &mailbox_id).await;
                         });
                     }
@@ -318,6 +342,7 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     if !ids.is_empty() {
                         let id = ids.swap_remove(rand::thread_rng().gen_range(0..ids.len()));
                         let sort_order = rand::thread_rng().gen_range(0..100);
+                        //println!("Updating mailbox {}.", id);
                         client.mailbox_update_sort_order(&id, sort_order).await.ok();
                     }
                 }));

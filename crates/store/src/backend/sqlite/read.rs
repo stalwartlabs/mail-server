@@ -27,13 +27,14 @@ use rusqlite::OptionalExtension;
 use crate::{
     query::{self, Operator},
     write::{
+        bitmap::{BITS_PER_BLOCK_S, WORDS_PER_BLOCK_S, WORD_SIZE_BITS_S},
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, U32_LEN,
 };
 
-use super::{SqliteStore, BITS_PER_BLOCK, WORDS_PER_BLOCK, WORD_SIZE_BITS};
+use super::SqliteStore;
 
 impl SqliteStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
@@ -76,22 +77,22 @@ impl SqliteStore {
                 if key.len() == key_len {
                     let block_num = key.deserialize_be_u32(key.len() - U32_LEN)?;
 
-                    for word_num in 0..WORDS_PER_BLOCK {
+                    for word_num in 0..WORDS_PER_BLOCK_S {
                         match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
                             0 => (),
                             u64::MAX => {
                                 bm.insert_range(
-                                    block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
-                                        ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS)
-                                            + WORD_SIZE_BITS,
+                                    block_num * BITS_PER_BLOCK_S + word_num * WORD_SIZE_BITS_S
+                                        ..(block_num * BITS_PER_BLOCK_S + word_num * WORD_SIZE_BITS_S)
+                                            + WORD_SIZE_BITS_S,
                                 );
                             }
                             mut word => {
                                 while word != 0 {
                                     let trailing_zeros = word.trailing_zeros();
                                     bm.insert(
-                                        block_num * BITS_PER_BLOCK
-                                            + word_num * WORD_SIZE_BITS
+                                        block_num * BITS_PER_BLOCK_S
+                                            + word_num * WORD_SIZE_BITS_S
                                             + trailing_zeros,
                                     );
                                     word ^= 1 << trailing_zeros;
@@ -314,7 +315,7 @@ impl SqliteStore {
 
         // Values
         let mut has_errors = false;
-        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_ACLS, crate::SUBSPACE_COUNTERS, crate::SUBSPACE_BLOB_DATA] {
+        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_INDEX_VALUES, crate::SUBSPACE_COUNTERS, crate::SUBSPACE_BLOB_DATA] {
             let table = char::from(table);
             let mut query = conn.prepare_cached(&format!("SELECT k, v FROM {table}")).unwrap();
             let mut rows = query.query([]).unwrap();
@@ -400,6 +401,5 @@ impl SqliteStore {
 
         Ok(())
         }).await.unwrap();
-        self.id_assigner.lock().clear();
     }
 }

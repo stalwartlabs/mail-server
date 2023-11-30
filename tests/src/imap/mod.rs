@@ -136,8 +136,13 @@ allow-invalid-certs = true
 future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
                    { else = false } ]
 
-[store]
-db.path = "{TMP}/sqlite.db"
+[store.db]
+#path = "{TMP}/sqlite.db"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
 
 [store.blob]
 type = "local"

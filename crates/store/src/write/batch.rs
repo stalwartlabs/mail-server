@@ -31,7 +31,9 @@ use super::{
 
 impl BatchBuilder {
     pub fn new() -> Self {
-        Self { ops: Vec::new() }
+        Self {
+            ops: Vec::with_capacity(16),
+        }
     }
 
     pub fn with_account_id(&mut self, account_id: u32) -> &mut Self {
@@ -49,18 +51,18 @@ impl BatchBuilder {
     pub fn create_document(&mut self, document_id: u32) -> &mut Self {
         self.ops.push(Operation::DocumentId { document_id });
 
-        // Remove reserved id
-        self.ops.push(Operation::Index {
-            field: u8::MAX,
-            key: vec![],
-            set: false,
-        });
-
         // Add document id
         self.ops.push(Operation::Bitmap {
             class: BitmapClass::DocumentIds,
             set: true,
         });
+
+        // Remove reserved id
+        self.ops.push(Operation::Value {
+            class: ValueClass::ReservedId,
+            op: ValueOp::Clear,
+        });
+
         self
     }
 

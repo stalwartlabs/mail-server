@@ -24,11 +24,14 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{Batch, Operation, ValueClass, ValueOp},
+    write::{
+        bitmap::{BITS_MASK_S, BITS_PER_BLOCK_S},
+        Batch, Operation, ValueOp,
+    },
     BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
-use super::{SqliteStore, BITS_MASK, BITS_PER_BLOCK};
+use super::SqliteStore;
 
 const INSERT_QUERIES: &[&str] = &[
     "INSERT INTO b (z, a) VALUES (?, ?)",
@@ -114,8 +117,8 @@ impl SqliteStore {
                         document_id: document_id_,
                     } => {
                         document_id = *document_id_;
-                        bitmap_block_num = document_id / BITS_PER_BLOCK;
-                        let index = document_id & BITS_MASK;
+                        bitmap_block_num = document_id / BITS_PER_BLOCK_S;
+                        let index = document_id & BITS_MASK_S;
                         bitmap_col_num = (index / 64) as usize;
                         bitmap_value_set = (1u64 << (index as u64 & 63)) as i64;
                         bitmap_value_clear = (!(1u64 << (index as u64 & 63))) as i64;
@@ -149,23 +152,19 @@ impl SqliteStore {
                             collection,
                             document_id,
                             class,
-                        }
-                        .serialize(false);
+                        };
+                        let table = char::from(key.subspace());
+                        let key = key.serialize(false);
 
                         if let ValueOp::Set(value) = op {
-                            trx.prepare_cached(if !matches!(class, ValueClass::Acl(_)) {
-                                "INSERT OR REPLACE INTO v (k, v) VALUES (?, ?)"
-                            } else {
-                                "INSERT OR REPLACE INTO a (k, v) VALUES (?, ?)"
-                            })?
+                            trx.prepare_cached(&format!(
+                                "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
+                                table
+                            ))?
                             .execute([&key, value])?;
                         } else {
-                            trx.prepare_cached(if !matches!(class, ValueClass::Acl(_)) {
-                                "DELETE FROM v WHERE k = ?"
-                            } else {
-                                "DELETE FROM a WHERE k = ?"
-                            })?
-                            .execute([&key])?;
+                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))?
+                                .execute([&key])?;
                         }
                     }
                     Operation::Index { field, key, set } => {
@@ -249,11 +248,12 @@ impl SqliteStore {
                             collection,
                             document_id,
                             class,
-                        }
-                        .serialize(false);
+                        };
+                        let table = char::from(key.subspace());
+                        let key = key.serialize(false);
 
                         let matches = trx
-                            .prepare_cached("SELECT v FROM v WHERE k = ?")?
+                            .prepare_cached(&format!("SELECT v FROM {} WHERE k = ?", table))?
                             .query_row([&key], |row| {
                                 Ok(assert_value.matches(row.get_ref(0)?.as_bytes()?))
                             })
@@ -274,8 +274,8 @@ impl SqliteStore {
     #[cfg(feature = "test_mode")]
     pub(crate) async fn destroy(&self) {
         use crate::{
-            SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
-            SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+            SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
+            SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
         };
 
         let conn = self.conn_pool.get().unwrap();
@@ -285,7 +285,7 @@ impl SqliteStore {
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
             SUBSPACE_BLOBS,
-            SUBSPACE_ACLS,
+            SUBSPACE_INDEX_VALUES,
             SUBSPACE_COUNTERS,
             SUBSPACE_BLOB_DATA,
         ] {

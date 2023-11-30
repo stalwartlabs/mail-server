@@ -5,7 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
-rustls = "0.21.0"
+rustls = { version = "0.21", features = ["tls12", "dangerous_configuration"]}
 rustls-pemfile = "1.0"
 tokio = { version = "1.23", features = ["net", "macros"] }
 tokio-rustls = { version = "0.24.0"}
@@ -16,14 +16,16 @@ smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-tracing-opentelemetry = "0.21.0"
-opentelemetry = { version = "0.20.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.13.0", features = ["http-proto", "reqwest-client"] }
-opentelemetry-semantic-conventions = { version = "0.12.0" }
+tracing-opentelemetry = "0.22.0"
+opentelemetry = { version = "0.21.0" }
+opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14.0", features = ["http-proto", "reqwest-client"] }
+opentelemetry-semantic-conventions = { version = "0.13.0" }
 dashmap = "5.4"
 ahash = { version = "0.8" }
 chrono = "0.4"
 rand = "0.8.5"
+webpki-roots = { version = "0.25.2"}
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

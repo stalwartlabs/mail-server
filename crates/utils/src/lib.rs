@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use config::Config;
 
@@ -33,15 +33,17 @@ pub mod map;
 pub mod snowflake;
 pub mod suffixlist;
 
-use opentelemetry::{
-    sdk::{
-        trace::{self, Sampler},
-        Resource,
-    },
-    KeyValue,
-};
+use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{
+    trace::{self, Sampler},
+    Resource,
+};
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+use rustls::{
+    client::{ServerCertVerified, ServerCertVerifier},
+    Certificate, ClientConfig, OwnedTrustAnchor, RootCertStore, ServerName,
+};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter};
 
@@ -171,7 +173,7 @@ pub fn enable_tracing(config: &Config, message: &str) -> config::Result<Option<W
                     ]))
                     .with_sampler(Sampler::AlwaysOn),
             )
-            .install_batch(opentelemetry::runtime::Tokio)
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
             .failed("Failed to create tracer");
 
             tracing::subscriber::set_global_default(
@@ -227,4 +229,43 @@ pub async fn wait_for_shutdown(message: &str) {
     }
 
     tracing::info!(message);
+}
+
+pub fn rustls_client_config(allow_invalid_certs: bool) -> ClientConfig {
+    let config = ClientConfig::builder().with_safe_defaults();
+
+    if !allow_invalid_certs {
+        let mut root_cert_store = RootCertStore::empty();
+
+        root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
+            OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        }));
+        config
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth()
+    } else {
+        config
+            .with_custom_certificate_verifier(Arc::new(DummyVerifier {}))
+            .with_no_client_auth()
+    }
+}
+
+struct DummyVerifier;
+
+impl ServerCertVerifier for DummyVerifier {
+    fn verify_server_cert(
+        &self,
+        _e: &Certificate,
+        _i: &[Certificate],
+        _sn: &ServerName,
+        _sc: &mut dyn Iterator<Item = &[u8]>,
+        _o: &[u8],
+        _n: std::time::SystemTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
 }

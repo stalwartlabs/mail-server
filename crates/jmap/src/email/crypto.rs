@@ -194,7 +194,7 @@ impl EncryptMessage for Message<'_> {
                         .map_err(|err| {
                             EncryptMessageError::Error(format!("Failed to create armorer: {}", err))
                         })?;
-                    let message = stream::Encryptor::for_recipients(message, keys)
+                    let message = stream::Encryptor2::for_recipients(message, keys)
                         .symmetric_algo(match algo {
                             Algorithm::Aes128 => SymmetricAlgorithm::AES128,
                             Algorithm::Aes256 => SymmetricAlgorithm::AES256,

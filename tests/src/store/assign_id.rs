@@ -31,53 +31,126 @@ use store::{write::BatchBuilder, Store};
 pub async fn test(db: Store) {
     println!("Running Store ID assignment tests...");
 
-    ID_ASSIGNMENT_EXPIRY.store(2, std::sync::atomic::Ordering::Relaxed);
-
+    test_0(db.clone()).await;
     test_1(db.clone()).await;
     test_2(db.clone()).await;
-    test_3(db).await;
+    test_3(db.clone()).await;
+    test_4(db).await;
 
     ID_ASSIGNMENT_EXPIRY.store(60 * 60, std::sync::atomic::Ordering::Relaxed);
 }
 
+async fn test_0(db: Store) {
+    // Test document id assignment
+    println!("Assigning 1000 ids concurrently...");
+    ID_ASSIGNMENT_EXPIRY.store(10 * 60 * 60, std::sync::atomic::Ordering::Relaxed);
+    let mut handles = Vec::new();
+    let mut assigned_ids = HashSet::new();
+
+    // Create 1000 ids concurrently
+    for _ in 0..1000 {
+        handles.push({
+            let db = db.clone();
+            tokio::spawn(async move { db.assign_document_id(0, u8::MAX).await.unwrap() })
+        });
+    }
+
+    for handle in handles {
+        let assigned_id = handle.await.unwrap();
+        assert!(
+            assigned_ids.insert(assigned_id),
+            "already assigned or invalid: {assigned_id}"
+        );
+    }
+    assert_eq!(assigned_ids.len(), 1000);
+
+    db.destroy().await;
+}
+
 async fn test_1(db: Store) {
     // Test document id assignment
+    ID_ASSIGNMENT_EXPIRY.store(2, std::sync::atomic::Ordering::Relaxed);
+    println!("Assigning 100 ids concurrently and reassign after expiration...");
     for wait_for_expiry in [true, false] {
         let mut handles = Vec::new();
-        let mut expected_ids = HashSet::new();
+        let mut assigned_ids = HashSet::new();
 
         // Create 100 ids concurrently
-        for id in 0..100 {
+        for _ in 0..100 {
             handles.push({
                 let db = db.clone();
-                tokio::spawn(async move { db.assign_document_id(0, u8::MAX).await })
+                tokio::spawn(async move { db.assign_document_id(0, u8::MAX).await.unwrap() })
             });
-            expected_ids.insert(id);
         }
 
         for handle in handles {
-            let assigned_id = handle.await.unwrap().unwrap();
+            let assigned_id = handle.await.unwrap();
             //println!("assigned id: {assigned_id} ({wait_for_expiry})");
             assert!(
-                expected_ids.remove(&assigned_id),
+                assigned_ids.insert(assigned_id),
                 "already assigned or invalid: {assigned_id} ({wait_for_expiry})"
             );
         }
         assert_eq!(
-            expected_ids.len(),
-            0,
-            "{expected_ids:?} ({wait_for_expiry})"
+            assigned_ids.len(),
+            100,
+            "{assigned_ids:?} ({wait_for_expiry})"
         );
 
         if wait_for_expiry {
             tokio::time::sleep(Duration::from_secs(3)).await;
         }
     }
+
     db.destroy().await;
 }
 
 async fn test_2(db: Store) {
+    // Test document id assignment
+    let mut handles = Vec::new();
+    let mut assigned_ids = HashSet::new();
+
+    // Create 1000 ids concurrently
+    println!("Create 1000 documentIds concurrently...");
+    ID_ASSIGNMENT_EXPIRY.store(10 * 60 * 60, std::sync::atomic::Ordering::Relaxed);
+    for _ in 0..1000 {
+        handles.push({
+            let db = db.clone();
+            tokio::spawn(async move {
+                {
+                    let id = db.assign_document_id(0, u8::MAX).await.unwrap();
+                    db.write(
+                        BatchBuilder::new()
+                            .with_account_id(0)
+                            .with_collection(u8::MAX)
+                            .create_document(id)
+                            .build_batch(),
+                    )
+                    .await
+                    .unwrap();
+                    id
+                }
+            })
+        });
+    }
+
+    for handle in handles {
+        let assigned_id = handle.await.unwrap();
+        assert!(
+            assigned_ids.insert(assigned_id),
+            "already assigned or invalid: {assigned_id}"
+        );
+    }
+    assert_eq!(assigned_ids.len(), 1000, "{assigned_ids:?} ");
+
+    db.destroy().await;
+}
+
+async fn test_3(db: Store) {
     // Create document ids and try reassigning
+    println!("Assigning 100 ids concurrently and try reassigning...");
+
+    ID_ASSIGNMENT_EXPIRY.store(2, std::sync::atomic::Ordering::Relaxed);
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
     batch.with_account_id(0).with_collection(u8::MAX);
@@ -107,8 +180,10 @@ async fn test_2(db: Store) {
     db.destroy().await;
 }
 
-async fn test_3(db: Store) {
+async fn test_4(db: Store) {
     // Try reassigning deleted ids
+    println!("Create and delete 100 documentIds then try reassigning ids...");
+    ID_ASSIGNMENT_EXPIRY.store(60 * 60, std::sync::atomic::Ordering::Relaxed);
     let mut expected_ids = AHashSet::new();
     let mut batch = BatchBuilder::new();
     batch.with_account_id(0).with_collection(u8::MAX);

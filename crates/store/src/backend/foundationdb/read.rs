@@ -31,6 +31,7 @@ use roaring::RoaringBitmap;
 use crate::{
     query::{self, Operator},
     write::{
+        bitmap::DeserializeBlock,
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
@@ -38,7 +39,7 @@ use crate::{
     SUBSPACE_INDEXES, U32_LEN,
 };
 
-use super::{bitmap::DeserializeBlock, FdbStore};
+use super::FdbStore;
 
 impl FdbStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
@@ -279,7 +280,7 @@ impl FdbStore {
 
     #[cfg(feature = "test_mode")]
     pub(crate) async fn assert_is_empty(&self) {
-        use crate::{SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_VALUES};
+        use crate::{SUBSPACE_BITMAPS, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES};
 
         let conn = self.db.create_trx().unwrap();
 
@@ -344,7 +345,7 @@ impl FdbStore {
                             );
                         }
                     }
-                    SUBSPACE_BLOBS | SUBSPACE_ACLS => {
+                    SUBSPACE_BLOBS | SUBSPACE_INDEX_VALUES => {
                         panic!(
                             "Subspace {:?} is not empty: {key:?} {value:?}",
                             char::from(subspace)

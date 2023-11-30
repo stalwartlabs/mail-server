@@ -24,6 +24,7 @@
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
 pub mod fs;
+pub mod postgres;
 #[cfg(feature = "rocks")]
 pub mod rocksdb;
 pub mod s3;

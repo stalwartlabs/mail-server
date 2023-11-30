@@ -48,7 +48,7 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::{fs::FsStore, sqlite::SqliteStore},
+    backend::{foundationdb::FdbStore, fs::FsStore, postgres::PostgresStore, sqlite::SqliteStore},
     fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
@@ -196,11 +196,27 @@ impl JMAP {
             .property::<u64>("global.shared-map.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        let store = Store::SQLite(Arc::new(
-            SqliteStore::open(config)
+        let store = Store::PostgreSQL(Arc::new(
+            PostgresStore::open(config)
                 .await
                 .failed("Unable to open database"),
         ));
+        /*let store = Store::SQLite(Arc::new(
+            SqliteStore::open(config)
+                .await
+                .failed("Unable to open database"),
+        ));*/
+        /*let store = Store::FoundationDb(Arc::new(
+            FdbStore::open(config)
+                .await
+                .failed("Unable to open database"),
+        ));*/
+        let blob_store = store.clone().into();
+        /*let blob_store = BlobStore::Fs(Arc::new(
+            FsStore::open(config)
+                .await
+                .failed("Unable to open blob store"),
+        ));*/
 
         let jmap_server = Arc::new(JMAP {
             directory: directory_config
@@ -217,11 +233,7 @@ impl JMAP {
                 .unwrap_or_else(SnowflakeIdGenerator::new),
             fts_store: FtsStore::Store(store.clone()),
             store,
-            blob_store: BlobStore::Fs(Arc::new(
-                FsStore::open(config)
-                    .await
-                    .failed("Unable to open blob store"),
-            )),
+            blob_store,
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),

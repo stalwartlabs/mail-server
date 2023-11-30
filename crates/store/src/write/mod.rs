@@ -21,7 +21,12 @@
  * for more details.
 */
 
-use std::{collections::HashSet, hash::Hash, slice::Iter, time::SystemTime};
+use std::{
+    collections::HashSet,
+    hash::Hash,
+    slice::Iter,
+    time::{Duration, SystemTime},
+};
 
 use nlp::tokenizers::word::WordTokenizer;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
@@ -33,17 +38,32 @@ use crate::{
 use self::assert::AssertValue;
 
 pub mod assert;
+pub mod assign_id;
 pub mod batch;
+pub mod bitmap;
 pub mod blob;
 pub mod hash;
 pub mod key;
 pub mod log;
+
+#[cfg(not(feature = "test_mode"))]
+pub(crate) const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
+#[cfg(not(feature = "test_mode"))]
+pub(crate) const MAX_COMMIT_ATTEMPTS: u32 = 10;
+#[cfg(not(feature = "test_mode"))]
+pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);
+
+#[cfg(feature = "test_mode")]
+pub(crate) const MAX_COMMIT_ATTEMPTS: u32 = 1000;
+#[cfg(feature = "test_mode")]
+pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);
 
 pub const F_VALUE: u32 = 1 << 0;
 pub const F_INDEX: u32 = 1 << 1;
 pub const F_BITMAP: u32 = 1 << 2;
 pub const F_CLEAR: u32 = 1 << 3;
 
+#[derive(Debug)]
 pub struct Batch {
     pub ops: Vec<Operation>,
 }
@@ -119,6 +139,7 @@ pub enum ValueClass {
     Acl(u32),
     Named(Vec<u8>),
     TermIndex,
+    ReservedId,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]

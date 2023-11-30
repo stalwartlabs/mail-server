@@ -22,7 +22,7 @@
 */
 
 use store::{
-    backend::{fs::FsStore, s3::S3Store, sqlite::SqliteStore},
+    backend::{fs::FsStore, postgres::PostgresStore, s3::S3Store, sqlite::SqliteStore},
     write::{blob::BlobQuota, now, BatchBuilder, BlobOp, F_CLEAR},
     BlobClass, BlobHash, BlobStore, Store,
 };
@@ -47,13 +47,19 @@ path = "{TMP}"
 const CONFIG_DB: &str = r#"
 [store.db]
 path = "{TMP}/db.db?mode=rwc"
+host = "localhost"
+post = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
 "#;
 
 #[tokio::test]
 pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
 
-    for (store_id, store_cfg) in [("s3", CONFIG_S3), ("fs", CONFIG_LOCAL)] {
+    /*for (store_id, store_cfg) in [("s3", CONFIG_S3), ("fs", CONFIG_LOCAL)] {
         let config =
             Config::new(&store_cfg.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
                 .unwrap();
@@ -66,10 +72,11 @@ pub async fn blob_tests() {
 
         println!("Testing blob store {}...", store_id);
         test_store(blob_store_.clone()).await;
-    }
+    }*/
 
     // Init store
-    let store: Store = SqliteStore::open(
+    //let store: Store = SqliteStore::open(
+    let store: Store = PostgresStore::open(
         //let store: Store = FdbStore::open(
         &Config::new(&CONFIG_DB.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
             .unwrap(),

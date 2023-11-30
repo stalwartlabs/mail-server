@@ -156,11 +156,11 @@ impl Store {
 impl Deserialize for AclItem {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
         Ok(AclItem {
-            to_account_id: bytes.deserialize_be_u32(U32_LEN)?,
+            to_account_id: bytes.deserialize_be_u32(U32_LEN + 1)?,
             to_collection: *bytes
-                .get(U32_LEN * 2)
+                .get((U32_LEN * 2) + 1)
                 .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
-            to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 1)?,
+            to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 2)?,
             permissions: 0,
         })
     }

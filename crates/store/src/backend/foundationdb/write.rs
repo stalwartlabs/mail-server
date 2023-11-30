@@ -25,25 +25,14 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use foundationdb::{options::MutationType, FdbError};
+use rand::Rng;
 
 use crate::{
-    write::{Batch, Operation, ValueOp},
+    write::{bitmap::DenseBitmap, Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
     BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
-use super::{bitmap::DenseBitmap, FdbStore};
-
-#[cfg(not(feature = "test_mode"))]
-pub const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
-#[cfg(not(feature = "test_mode"))]
-pub const MAX_COMMIT_ATTEMPTS: u32 = 10;
-#[cfg(not(feature = "test_mode"))]
-pub const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);
-
-#[cfg(feature = "test_mode")]
-pub const MAX_COMMIT_ATTEMPTS: u32 = 1000;
-#[cfg(feature = "test_mode")]
-pub const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);
+use super::FdbStore;
 
 #[cfg(feature = "test_mode")]
 lazy_static::lazy_static! {
@@ -273,6 +262,8 @@ impl FdbStore {
                 Err(err) => {
                     if retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME {
                         err.on_error().await?;
+                        let backoff = rand::thread_rng().gen_range(50..=300);
+                        tokio::time::sleep(Duration::from_millis(backoff)).await;
                         retry_count += 1;
                     } else {
                         return Err(FdbError::from(err).into());

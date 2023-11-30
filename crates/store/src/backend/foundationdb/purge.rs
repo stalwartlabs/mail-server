@@ -28,11 +28,12 @@ use foundationdb::{
 use futures::StreamExt;
 
 use crate::{
-    write::key::KeySerializer, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    write::{bitmap::DenseBitmap, key::KeySerializer},
+    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
     U32_LEN,
 };
 
-use super::{bitmap::DenseBitmap, FdbStore};
+use super::FdbStore;
 
 const MAX_COMMIT_ATTEMPTS: u8 = 25;
 
@@ -97,6 +98,7 @@ impl FdbStore {
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
             SUBSPACE_INDEXES,
+            SUBSPACE_INDEX_VALUES,
         ] {
             let from_key = KeySerializer::new(U32_LEN + 2)
                 .write(subspace)

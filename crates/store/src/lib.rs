@@ -30,7 +30,9 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
-use backend::{foundationdb::FdbStore, fs::FsStore, s3::S3Store, sqlite::SqliteStore};
+use backend::{
+    foundationdb::FdbStore, fs::FsStore, postgres::PostgresStore, s3::S3Store, sqlite::SqliteStore,
+};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -154,7 +156,7 @@ pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
 pub const SUBSPACE_BLOBS: u8 = b'o';
 pub const SUBSPACE_BLOB_DATA: u8 = b't';
-pub const SUBSPACE_ACLS: u8 = b'a';
+pub const SUBSPACE_INDEX_VALUES: u8 = b'a';
 pub const SUBSPACE_COUNTERS: u8 = b'c';
 
 pub struct IterateParams<T: Key> {
@@ -169,6 +171,7 @@ pub struct IterateParams<T: Key> {
 pub enum Store {
     SQLite(Arc<SqliteStore>),
     FoundationDb(Arc<FdbStore>),
+    PostgreSQL(Arc<PostgresStore>),
 }
 
 #[derive(Clone)]
@@ -177,6 +180,7 @@ pub enum BlobStore {
     S3(Arc<S3Store>),
     Sqlite(Arc<SqliteStore>),
     FoundationDb(Arc<FdbStore>),
+    PostgreSQL(Arc<PostgresStore>),
 }
 
 #[derive(Clone)]
@@ -193,6 +197,12 @@ impl From<SqliteStore> for Store {
 impl From<FdbStore> for Store {
     fn from(store: FdbStore) -> Self {
         Self::FoundationDb(Arc::new(store))
+    }
+}
+
+impl From<PostgresStore> for Store {
+    fn from(store: PostgresStore) -> Self {
+        Self::PostgreSQL(Arc::new(store))
     }
 }
 
@@ -219,6 +229,7 @@ impl From<Store> for BlobStore {
         match store {
             Store::SQLite(store) => Self::Sqlite(store),
             Store::FoundationDb(store) => Self::FoundationDb(store),
+            Store::PostgreSQL(store) => Self::PostgreSQL(store),
         }
     }
 }

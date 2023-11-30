@@ -21,17 +21,13 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use lru_cache::LruCache;
-use parking_lot::Mutex;
 use r2d2::Pool;
 use tokio::sync::oneshot;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    SUBSPACE_ACLS, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
+    SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 use super::{pool::SqliteConnectionManager, SqliteStore};
@@ -67,9 +63,6 @@ impl SqliteStore {
                 .map_err(|err| {
                     crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
                 })?,
-            id_assigner: Arc::new(Mutex::new(LruCache::new(
-                config.property_or_static("store.db.cache.size", "1000")?,
-            ))),
         };
         db.create_tables()?;
         Ok(db)
@@ -81,7 +74,7 @@ impl SqliteStore {
         for table in [
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
-            SUBSPACE_ACLS,
+            SUBSPACE_INDEX_VALUES,
             SUBSPACE_BLOB_DATA,
         ] {
             let table = char::from(table);

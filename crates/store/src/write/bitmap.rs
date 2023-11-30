@@ -24,41 +24,49 @@
 use ahash::AHashSet;
 use roaring::RoaringBitmap;
 
-const WORD_SIZE_BITS: u32 = (WORD_SIZE * 8) as u32;
-const WORD_SIZE: usize = std::mem::size_of::<u128>();
-const WORDS_PER_BLOCK: u32 = 8;
-pub const BITS_PER_BLOCK: u32 = WORD_SIZE_BITS * WORDS_PER_BLOCK;
-const BITS_MASK: u32 = BITS_PER_BLOCK - 1;
+use crate::U64_LEN;
+
+pub(crate) const WORD_SIZE_BITS_L: u32 = (WORD_SIZE_L * 8) as u32;
+pub(crate) const WORD_SIZE_L: usize = std::mem::size_of::<u128>();
+pub(crate) const WORDS_PER_BLOCK_L: u32 = 8;
+pub(crate) const BITS_PER_BLOCK_L: u32 = WORD_SIZE_BITS_L * WORDS_PER_BLOCK_L;
+pub(crate) const BITS_MASK_L: u32 = BITS_PER_BLOCK_L - 1;
+
+pub(crate) const WORD_SIZE_BITS_S: u32 = (WORD_SIZE_S * 8) as u32;
+pub(crate) const WORD_SIZE_S: usize = U64_LEN;
+pub(crate) const WORDS_PER_BLOCK_S: u32 = 16;
+pub(crate) const BITS_PER_BLOCK_S: u32 = WORD_SIZE_BITS_S * WORDS_PER_BLOCK_S;
+pub(crate) const BITS_MASK_S: u32 = BITS_PER_BLOCK_S - 1;
 
 pub struct DenseBitmap {
-    pub bitmap: [u8; WORD_SIZE * WORDS_PER_BLOCK as usize],
+    pub bitmap: [u8; WORD_SIZE_L * WORDS_PER_BLOCK_L as usize],
 }
 
 impl DenseBitmap {
     pub fn empty() -> Self {
         Self {
-            bitmap: [0; WORD_SIZE * WORDS_PER_BLOCK as usize],
+            bitmap: [0; WORD_SIZE_L * WORDS_PER_BLOCK_L as usize],
         }
     }
 
     pub fn full() -> Self {
         Self {
-            bitmap: [u8::MAX; WORD_SIZE * WORDS_PER_BLOCK as usize],
+            bitmap: [u8::MAX; WORD_SIZE_L * WORDS_PER_BLOCK_L as usize],
         }
     }
 
     pub fn set(&mut self, index: u32) {
-        let index = index & BITS_MASK;
+        let index = index & BITS_MASK_L;
         self.bitmap[(index / 8) as usize] |= 1 << (index & 7);
     }
 
     pub fn clear(&mut self, index: u32) {
-        let index = index & BITS_MASK;
+        let index = index & BITS_MASK_L;
         self.bitmap[(index / 8) as usize] &= !(1 << (index & 7));
     }
 
     pub fn block_num(index: u32) -> u32 {
-        index / BITS_PER_BLOCK
+        index / BITS_PER_BLOCK_L
     }
 }
 
@@ -83,7 +91,7 @@ pub fn next_available_index(
                     }
                 }
 
-                let id = (block_num * BITS_PER_BLOCK) + ((byte_pos * 8) + index) as u32;
+                let id = (block_num * BITS_PER_BLOCK_L) + ((byte_pos * 8) + index) as u32;
                 if !reserved_ids.contains(&id) {
                     return Some(id);
                 } else if index < 7 {
@@ -101,16 +109,16 @@ pub fn next_available_index(
 
 impl DeserializeBlock for RoaringBitmap {
     fn deserialize_block(&mut self, bytes: &[u8], block_num: u32) {
-        debug_assert_eq!(bytes.len(), WORD_SIZE * WORDS_PER_BLOCK as usize);
+        debug_assert_eq!(bytes.len(), WORD_SIZE_L * WORDS_PER_BLOCK_L as usize);
 
-        self.deserialize_word(&bytes[..WORD_SIZE], block_num, 0);
-        self.deserialize_word(&bytes[WORD_SIZE..WORD_SIZE * 2], block_num, 1);
-        self.deserialize_word(&bytes[WORD_SIZE * 2..WORD_SIZE * 3], block_num, 2);
-        self.deserialize_word(&bytes[WORD_SIZE * 3..WORD_SIZE * 4], block_num, 3);
-        self.deserialize_word(&bytes[WORD_SIZE * 4..WORD_SIZE * 5], block_num, 4);
-        self.deserialize_word(&bytes[WORD_SIZE * 5..WORD_SIZE * 6], block_num, 5);
-        self.deserialize_word(&bytes[WORD_SIZE * 6..WORD_SIZE * 7], block_num, 6);
-        self.deserialize_word(&bytes[WORD_SIZE * 7..], block_num, 7);
+        self.deserialize_word(&bytes[..WORD_SIZE_L], block_num, 0);
+        self.deserialize_word(&bytes[WORD_SIZE_L..WORD_SIZE_L * 2], block_num, 1);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 2..WORD_SIZE_L * 3], block_num, 2);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 3..WORD_SIZE_L * 4], block_num, 3);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 4..WORD_SIZE_L * 5], block_num, 4);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 5..WORD_SIZE_L * 6], block_num, 5);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 6..WORD_SIZE_L * 7], block_num, 6);
+        self.deserialize_word(&bytes[WORD_SIZE_L * 7..], block_num, 7);
     }
 
     #[inline(always)]
@@ -119,15 +127,16 @@ impl DeserializeBlock for RoaringBitmap {
             0 => (),
             u128::MAX => {
                 self.insert_range(
-                    block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS
-                        ..(block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS) + WORD_SIZE_BITS,
+                    block_num * BITS_PER_BLOCK_L + word_num * WORD_SIZE_BITS_L
+                        ..(block_num * BITS_PER_BLOCK_L + word_num * WORD_SIZE_BITS_L)
+                            + WORD_SIZE_BITS_L,
                 );
             }
             mut word => {
                 while word != 0 {
                     let trailing_zeros = word.trailing_zeros();
                     self.insert(
-                        block_num * BITS_PER_BLOCK + word_num * WORD_SIZE_BITS + trailing_zeros,
+                        block_num * BITS_PER_BLOCK_L + word_num * WORD_SIZE_BITS_L + trailing_zeros,
                     );
                     word ^= 1 << trailing_zeros;
                 }
@@ -143,9 +152,7 @@ mod tests {
     use ahash::AHashSet;
     use roaring::RoaringBitmap;
 
-    use crate::backend::foundationdb::bitmap::{
-        next_available_index, DenseBitmap, DeserializeBlock, BITS_PER_BLOCK,
-    };
+    use super::*;
 
     #[test]
     fn serialize_bitmap_block() {
@@ -155,7 +162,7 @@ mod tests {
             for item in range {
                 bitmap.insert(item);
                 blocks
-                    .entry(item / BITS_PER_BLOCK)
+                    .entry(item / BITS_PER_BLOCK_L)
                     .or_insert_with(DenseBitmap::empty)
                     .set(item);
             }

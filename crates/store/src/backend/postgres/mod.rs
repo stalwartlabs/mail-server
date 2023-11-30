@@ -21,36 +21,27 @@
  * for more details.
 */
 
-use r2d2::Pool;
-
-use self::pool::SqliteConnectionManager;
+use deadpool_postgres::{Pool, PoolError};
 
 pub mod blob;
 pub mod main;
-pub mod pool;
 pub mod purge;
 pub mod read;
+pub mod tls;
 pub mod write;
 
-impl From<r2d2::Error> for crate::Error {
-    fn from(err: r2d2::Error) -> Self {
+pub struct PostgresStore {
+    pub(crate) conn_pool: Pool,
+}
+
+impl From<PoolError> for crate::Error {
+    fn from(err: PoolError) -> Self {
         Self::InternalError(format!("Connection pool error: {}", err))
     }
 }
 
-impl From<rusqlite::Error> for crate::Error {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::InternalError(format!("SQLite error: {}", err))
+impl From<tokio_postgres::Error> for crate::Error {
+    fn from(err: tokio_postgres::Error) -> Self {
+        Self::InternalError(format!("PostgreSQL error: {}", err))
     }
-}
-
-impl From<rusqlite::types::FromSqlError> for crate::Error {
-    fn from(err: rusqlite::types::FromSqlError) -> Self {
-        Self::InternalError(format!("SQLite error: {}", err))
-    }
-}
-
-pub struct SqliteStore {
-    pub(crate) conn_pool: Pool<SqliteConnectionManager>,
-    pub(crate) worker_pool: rayon::ThreadPool,
 }
