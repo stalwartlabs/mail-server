@@ -44,6 +44,7 @@ impl Store {
             Self::SQLite(store) => store.get_value(key).await,
             Self::FoundationDb(store) => store.get_value(key).await,
             Self::PostgreSQL(store) => store.get_value(key).await,
+            Self::MySQL(store) => store.get_value(key).await,
         }
     }
 
@@ -68,6 +69,7 @@ impl Store {
             Self::SQLite(store) => store.get_bitmap(key).await,
             Self::FoundationDb(store) => store.get_bitmap(key).await,
             Self::PostgreSQL(store) => store.get_bitmap(key).await,
+            Self::MySQL(store) => store.get_bitmap(key).await,
         }
     }
 
@@ -117,6 +119,11 @@ impl Store {
                     .range_to_bitmap(account_id, collection, field, value, op)
                     .await
             }
+            Self::MySQL(store) => {
+                store
+                    .range_to_bitmap(account_id, collection, field, value, op)
+                    .await
+            }
         }
     }
 
@@ -144,6 +151,11 @@ impl Store {
                     .sort_index(account_id, collection, field, ascending, cb)
                     .await
             }
+            Self::MySQL(store) => {
+                store
+                    .sort_index(account_id, collection, field, ascending, cb)
+                    .await
+            }
         }
     }
 
@@ -156,6 +168,7 @@ impl Store {
             Self::SQLite(store) => store.iterate(params, cb).await,
             Self::FoundationDb(store) => store.iterate(params, cb).await,
             Self::PostgreSQL(store) => store.iterate(params, cb).await,
+            Self::MySQL(store) => store.iterate(params, cb).await,
         }
     }
 
@@ -167,6 +180,7 @@ impl Store {
             Self::SQLite(store) => store.get_counter(key).await,
             Self::FoundationDb(store) => store.get_counter(key).await,
             Self::PostgreSQL(store) => store.get_counter(key).await,
+            Self::MySQL(store) => store.get_counter(key).await,
         }
     }
 
@@ -175,6 +189,7 @@ impl Store {
             Self::SQLite(store) => store.write(batch).await,
             Self::FoundationDb(store) => store.write(batch).await,
             Self::PostgreSQL(store) => store.write(batch).await,
+            Self::MySQL(store) => store.write(batch).await,
         }
     }
 
@@ -183,6 +198,7 @@ impl Store {
             Self::SQLite(store) => store.purge_bitmaps().await,
             Self::FoundationDb(store) => store.purge_bitmaps().await,
             Self::PostgreSQL(store) => store.purge_bitmaps().await,
+            Self::MySQL(store) => store.purge_bitmaps().await,
         }
     }
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
@@ -190,6 +206,7 @@ impl Store {
             Self::SQLite(store) => store.purge_account(account_id).await,
             Self::FoundationDb(store) => store.purge_account(account_id).await,
             Self::PostgreSQL(store) => store.purge_account(account_id).await,
+            Self::MySQL(store) => store.purge_account(account_id).await,
         }
     }
 
@@ -198,6 +215,7 @@ impl Store {
             Self::SQLite(store) => store.get_blob(key, range).await,
             Self::FoundationDb(store) => store.get_blob(key, range).await,
             Self::PostgreSQL(store) => store.get_blob(key, range).await,
+            Self::MySQL(store) => store.get_blob(key, range).await,
         }
     }
 
@@ -206,6 +224,7 @@ impl Store {
             Self::SQLite(store) => store.put_blob(key, data).await,
             Self::FoundationDb(store) => store.put_blob(key, data).await,
             Self::PostgreSQL(store) => store.put_blob(key, data).await,
+            Self::MySQL(store) => store.put_blob(key, data).await,
         }
     }
 
@@ -214,6 +233,7 @@ impl Store {
             Self::SQLite(store) => store.delete_blob(key).await,
             Self::FoundationDb(store) => store.delete_blob(key).await,
             Self::PostgreSQL(store) => store.delete_blob(key).await,
+            Self::MySQL(store) => store.delete_blob(key).await,
         }
     }
 
@@ -223,6 +243,7 @@ impl Store {
             Self::SQLite(store) => store.destroy().await,
             Self::FoundationDb(store) => store.destroy().await,
             Self::PostgreSQL(store) => store.destroy().await,
+            Self::MySQL(store) => store.destroy().await,
         }
     }
 
@@ -289,6 +310,7 @@ impl Store {
             Self::SQLite(store) => store.assert_is_empty().await,
             Self::FoundationDb(store) => store.assert_is_empty().await,
             Self::PostgreSQL(store) => store.assert_is_empty().await,
+            Self::MySQL(store) => store.assert_is_empty().await,
         }
     }
 }
@@ -301,6 +323,7 @@ impl BlobStore {
             Self::Sqlite(store) => store.get_blob(key, range).await,
             Self::FoundationDb(store) => store.get_blob(key, range).await,
             Self::PostgreSQL(store) => store.get_blob(key, range).await,
+            Self::MySQL(store) => store.get_blob(key, range).await,
         }
     }
 
@@ -311,6 +334,7 @@ impl BlobStore {
             Self::Sqlite(store) => store.put_blob(key, data).await,
             Self::FoundationDb(store) => store.put_blob(key, data).await,
             Self::PostgreSQL(store) => store.put_blob(key, data).await,
+            Self::MySQL(store) => store.put_blob(key, data).await,
         }
     }
 
@@ -321,6 +345,7 @@ impl BlobStore {
             Self::Sqlite(store) => store.delete_blob(key).await,
             Self::FoundationDb(store) => store.delete_blob(key).await,
             Self::PostgreSQL(store) => store.delete_blob(key).await,
+            Self::MySQL(store) => store.delete_blob(key).await,
         }
     }
 }

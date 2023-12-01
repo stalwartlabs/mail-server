@@ -21,21 +21,23 @@
  * for more details.
 */
 
+use mysql_async::prelude::Queryable;
+
 use crate::{
     write::key::KeySerializer, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES,
     SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
 };
 
-use super::PostgresStore;
+use super::MysqlStore;
 
-impl PostgresStore {
+impl MysqlStore {
     pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
         // Not needed for PostgreSQL
         Ok(())
     }
 
     pub(crate) async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+        let mut conn = self.conn_pool.get_conn().await?;
         let from_key = KeySerializer::new(U32_LEN).write(account_id).finalize();
         let to_key = KeySerializer::new(U32_LEN).write(account_id + 1).finalize();
 
@@ -47,14 +49,14 @@ impl PostgresStore {
             (SUBSPACE_INDEX_VALUES, 'k'),
         ] {
             let s = conn
-                .prepare_cached(&format!(
-                    "DELETE FROM {} WHERE {} >= $1 AND {} < $2",
+                .prep(&format!(
+                    "DELETE FROM {} WHERE {} >= ? AND {} < ?",
                     char::from(table),
                     i,
                     i
                 ))
                 .await?;
-            conn.execute(&s, &[&from_key, &to_key]).await?;
+            conn.exec_drop(&s, (&from_key, &to_key)).await?;
         }
 
         Ok(())

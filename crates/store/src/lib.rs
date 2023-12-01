@@ -31,7 +31,8 @@ pub mod write;
 
 pub use ahash;
 use backend::{
-    foundationdb::FdbStore, fs::FsStore, postgres::PostgresStore, s3::S3Store, sqlite::SqliteStore,
+    foundationdb::FdbStore, fs::FsStore, mysql::MysqlStore, postgres::PostgresStore, s3::S3Store,
+    sqlite::SqliteStore,
 };
 pub use blake3;
 pub use parking_lot;
@@ -172,6 +173,7 @@ pub enum Store {
     SQLite(Arc<SqliteStore>),
     FoundationDb(Arc<FdbStore>),
     PostgreSQL(Arc<PostgresStore>),
+    MySQL(Arc<MysqlStore>),
 }
 
 #[derive(Clone)]
@@ -181,6 +183,7 @@ pub enum BlobStore {
     Sqlite(Arc<SqliteStore>),
     FoundationDb(Arc<FdbStore>),
     PostgreSQL(Arc<PostgresStore>),
+    MySQL(Arc<MysqlStore>),
 }
 
 #[derive(Clone)]
@@ -203,6 +206,12 @@ impl From<FdbStore> for Store {
 impl From<PostgresStore> for Store {
     fn from(store: PostgresStore) -> Self {
         Self::PostgreSQL(Arc::new(store))
+    }
+}
+
+impl From<MysqlStore> for Store {
+    fn from(store: MysqlStore) -> Self {
+        Self::MySQL(Arc::new(store))
     }
 }
 
@@ -230,6 +239,7 @@ impl From<Store> for BlobStore {
             Store::SQLite(store) => Self::Sqlite(store),
             Store::FoundationDb(store) => Self::FoundationDb(store),
             Store::PostgreSQL(store) => Self::PostgreSQL(store),
+            Store::MySQL(store) => Self::MySQL(store),
         }
     }
 }

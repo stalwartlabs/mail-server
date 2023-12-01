@@ -135,12 +135,15 @@ future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
                    { else = false } ]
 
 [store.db]
-path = "{TMP}/sqlite.db"
+#path = "PATH/sqlite.db"
 host = "localhost"
-port = 5432
+#port = 5432
+port = 3307
 database = "stalwart"
-user = "postgres"
-password = "mysecretpassword"
+#user = "postgres"
+#password = "mysecretpassword"
+user = "root"
+password = "password"
 
 [store.blob]
 type = "local"

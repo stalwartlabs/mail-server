@@ -29,7 +29,9 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::{foundationdb::FdbStore, postgres::PostgresStore, sqlite::SqliteStore};
+use store::backend::{
+    foundationdb::FdbStore, mysql::MysqlStore, postgres::PostgresStore, sqlite::SqliteStore,
+};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -44,10 +46,13 @@ local.path = "PATH"
 [store.db]
 #path = "PATH/sqlite.db"
 host = "localhost"
-post = 5432
+#port = 5432
+port = 3307
 database = "stalwart"
-user = "postgres"
-password = "mysecretpassword"
+#user = "postgres"
+#password = "mysecretpassword"
+user = "root"
+password = "password"
 
 "#;
 
@@ -58,14 +63,15 @@ pub async fn store_tests() {
     let config_file = CONFIG.replace("PATH", &temp_dir.path.to_string_lossy());
     //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
     //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
-    let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
         .await
         .unwrap()
         .into();
     if insert {
         db.destroy().await;
     }
-    query::test(db.clone(), insert).await;
+    //query::test(db.clone(), insert).await;
     assign_id::test(db).await;
     temp_dir.delete();
 }

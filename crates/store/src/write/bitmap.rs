@@ -107,6 +107,34 @@ pub fn next_available_index(
     None
 }
 
+pub fn block_contains(bytes: &[u8], block_num: u32, document_id: u32) -> bool {
+    'outer: for (byte_pos, byte) in bytes.iter().enumerate() {
+        if *byte != 0 {
+            let mut index = 0;
+            loop {
+                while (byte >> index) & 1 == 0 {
+                    index += 1;
+                    if index == 8 {
+                        continue 'outer;
+                    }
+                }
+
+                let id = (block_num * BITS_PER_BLOCK_L) + ((byte_pos * 8) + index) as u32;
+                if id == document_id {
+                    return true;
+                } else if index < 7 {
+                    index += 1;
+                    continue;
+                } else {
+                    continue 'outer;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 impl DeserializeBlock for RoaringBitmap {
     fn deserialize_block(&mut self, bytes: &[u8], block_num: u32) {
         debug_assert_eq!(bytes.len(), WORD_SIZE_L * WORDS_PER_BLOCK_L as usize);

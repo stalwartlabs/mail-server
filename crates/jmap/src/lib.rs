@@ -48,7 +48,10 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::{foundationdb::FdbStore, fs::FsStore, postgres::PostgresStore, sqlite::SqliteStore},
+    backend::{
+        foundationdb::FdbStore, fs::FsStore, mysql::MysqlStore, postgres::PostgresStore,
+        sqlite::SqliteStore,
+    },
     fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
@@ -196,21 +199,26 @@ impl JMAP {
             .property::<u64>("global.shared-map.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        let store = Store::PostgreSQL(Arc::new(
+        /*let store = Store::PostgreSQL(Arc::new(
             PostgresStore::open(config)
                 .await
                 .failed("Unable to open database"),
         ));
-        /*let store = Store::SQLite(Arc::new(
+        let store = Store::SQLite(Arc::new(
             SqliteStore::open(config)
                 .await
                 .failed("Unable to open database"),
-        ));*/
-        /*let store = Store::FoundationDb(Arc::new(
+        ));
+        let store = Store::FoundationDb(Arc::new(
             FdbStore::open(config)
                 .await
                 .failed("Unable to open database"),
         ));*/
+        let store = Store::MySQL(Arc::new(
+            MysqlStore::open(config)
+                .await
+                .failed("Unable to open database"),
+        ));
         let blob_store = store.clone().into();
         /*let blob_store = BlobStore::Fs(Arc::new(
             FsStore::open(config)

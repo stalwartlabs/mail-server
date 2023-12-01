@@ -28,7 +28,10 @@ use foundationdb::{options::MutationType, FdbError};
 use rand::Rng;
 
 use crate::{
-    write::{bitmap::DenseBitmap, Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
+    write::{
+        bitmap::{block_contains, DenseBitmap},
+        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+    },
     BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
@@ -96,6 +99,28 @@ impl FdbStore {
 
                         if let ValueOp::Set(value) = op {
                             trx.set(&key, value);
+
+                            if matches!(class, ValueClass::ReservedId) {
+                                let block_num = DenseBitmap::block_num(document_id);
+                                if let Ok(Some(bytes)) = trx
+                                    .get(
+                                        &BitmapKey {
+                                            account_id,
+                                            collection,
+                                            class: BitmapClass::DocumentIds,
+                                            block_num,
+                                        }
+                                        .serialize(true),
+                                        true,
+                                    )
+                                    .await
+                                {
+                                    if block_contains(&bytes, block_num, document_id) {
+                                        trx.cancel();
+                                        return Err(crate::Error::AssertValueFailed);
+                                    }
+                                }
+                            }
                         } else {
                             trx.clear(&key);
                         }
@@ -205,7 +230,7 @@ impl FdbStore {
 
             match trx.commit().await {
                 Ok(_) => {
-                    #[cfg(feature = "test_mode")]
+                    /*#[cfg(feature = "test_mode")]
                     {
                         for op in &batch.ops {
                             match op {
@@ -255,7 +280,7 @@ impl FdbStore {
                                 _ => {}
                             }
                         }
-                    }
+                    }*/
 
                     return Ok(());
                 }

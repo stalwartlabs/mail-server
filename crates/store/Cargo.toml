@@ -34,6 +34,7 @@ tokio-postgres = "0.7.10"
 tokio-rustls = { version = "0.24.0"}
 rustls = "0.21.0"
 ring = "0.17"
+mysql_async = { version = "*", default-features = false, features = ["default-rustls"] }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

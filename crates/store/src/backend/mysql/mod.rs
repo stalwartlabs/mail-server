@@ -21,28 +21,27 @@
  * for more details.
 */
 
-#[cfg(feature = "foundation")]
-pub mod foundationdb;
-pub mod fs;
-pub mod mysql;
-pub mod postgres;
-#[cfg(feature = "rocks")]
-pub mod rocksdb;
-pub mod s3;
-#[cfg(feature = "sqlite")]
-pub mod sqlite;
+use mysql_async::Pool;
 
-pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
-pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
+pub mod blob;
+pub mod main;
+pub mod purge;
+pub mod read;
+pub mod tls;
+pub mod write;
 
-#[cfg(feature = "test_mode")]
-pub static ID_ASSIGNMENT_EXPIRY: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(60 * 60); // seconds
-#[cfg(not(feature = "test_mode"))]
-pub const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
+pub struct MysqlStore {
+    pub(crate) conn_pool: Pool,
+}
 
-impl From<std::io::Error> for crate::Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::InternalError(format!("IO error: {}", err))
+impl From<mysql_async::Error> for crate::Error {
+    fn from(err: mysql_async::Error) -> Self {
+        Self::InternalError(format!("mySQL error: {}", err))
+    }
+}
+
+impl From<mysql_async::FromValueError> for crate::Error {
+    fn from(err: mysql_async::FromValueError) -> Self {
+        Self::InternalError(format!("mySQL value conversion error: {}", err))
     }
 }
