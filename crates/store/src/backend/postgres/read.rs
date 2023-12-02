@@ -25,12 +25,8 @@ use futures::{pin_mut, TryStreamExt};
 use roaring::RoaringBitmap;
 
 use crate::{
-    query::{self, Operator},
-    write::{
-        key::{DeserializeBigEndian, KeySerializer},
-        BitmapClass, ValueClass,
-    },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, U32_LEN,
+    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
 use super::PostgresStore;
@@ -80,133 +76,6 @@ impl PostgresStore {
             }
         }
         Ok(if !bm.is_empty() { Some(bm) } else { None })
-    }
-
-    pub(crate) async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        value: &[u8],
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let conn = self.conn_pool.get().await?;
-        let k1 =
-            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
-                .write(account_id)
-                .write(collection)
-                .write(field);
-        let k2 =
-            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
-                .write(account_id)
-                .write(collection)
-                .write(
-                    field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8,
-                );
-
-        let (query, begin, end) = match op {
-            Operator::LowerThan => (
-                ("SELECT k FROM i WHERE k >= $1 AND k < $2"),
-                (k1.finalize()),
-                (k2.write(value).write(0u32).finalize()),
-            ),
-            Operator::LowerEqualThan => (
-                ("SELECT k FROM i WHERE k >= $1 AND k <= $2"),
-                (k1.finalize()),
-                (k2.write(value).write(u32::MAX).finalize()),
-            ),
-            Operator::GreaterThan => (
-                ("SELECT k FROM i WHERE k > $1 AND k <= $2"),
-                (k1.write(value).write(u32::MAX).finalize()),
-                (k2.finalize()),
-            ),
-            Operator::GreaterEqualThan => (
-                ("SELECT k FROM i WHERE k >= $1 AND k <= $2"),
-                (k1.write(value).write(0u32).finalize()),
-                (k2.finalize()),
-            ),
-            Operator::Equal => (
-                ("SELECT k FROM i WHERE k >= $1 AND k <= $2"),
-                (k1.write(value).write(0u32).finalize()),
-                (k2.write(value).write(u32::MAX).finalize()),
-            ),
-        };
-
-        let mut bm = RoaringBitmap::new();
-        let s = conn.prepare_cached(query).await?;
-        let rows = conn.query_raw(&s, &[&begin, &end]).await?;
-
-        pin_mut!(rows);
-
-        if op != Operator::Equal {
-            while let Some(row) = rows.try_next().await? {
-                let key = row.try_get::<_, &[u8]>(0)?;
-                bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-            }
-        } else {
-            let key_len = begin.len();
-            while let Some(row) = rows.try_next().await? {
-                let key = row.try_get::<_, &[u8]>(0)?;
-                if key.len() == key_len {
-                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                }
-            }
-        }
-
-        Ok(Some(bm))
-    }
-
-    pub(crate) async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let collection = collection.into();
-        let field = field.into();
-
-        let conn = self.conn_pool.get().await?;
-        let begin = IndexKeyPrefix {
-            account_id,
-            collection,
-            field,
-        }
-        .serialize(false);
-        let end = IndexKeyPrefix {
-            account_id,
-            collection,
-            field: field + 1,
-        }
-        .serialize(false);
-        let prefix_len = begin.len();
-        let s = conn
-            .prepare_cached(if ascending {
-                "SELECT k FROM i WHERE k >= $1 AND k < $2 ORDER BY k ASC"
-            } else {
-                "SELECT k FROM i WHERE k >= $1 AND k < $2 ORDER BY k DESC"
-            })
-            .await?;
-        let rows = conn.query_raw(&s, &[&begin, &end]).await?;
-
-        pin_mut!(rows);
-
-        while let Some(row) = rows.try_next().await? {
-            let key = row.try_get::<_, &[u8]>(0)?;
-            let id_pos = key.len() - U32_LEN;
-            debug_assert!(key.starts_with(&begin));
-            if !cb(
-                key.get(prefix_len..id_pos).ok_or_else(|| {
-                    crate::Error::InternalError("Invalid key found in index".to_string())
-                })?,
-                key.deserialize_be_u32(id_pos)?,
-            )? {
-                return Ok(());
-            }
-        }
-
-        Ok(())
     }
 
     pub(crate) async fn iterate<T: Key>(

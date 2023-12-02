@@ -33,8 +33,10 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
 };
-use store::roaring::RoaringBitmap;
-use store::Deserialize;
+use store::{
+    roaring::RoaringBitmap, write::key::DeserializeBigEndian, IndexKeyPrefix, IterateParams,
+};
+use store::{Deserialize, U32_LEN};
 use tokio::io::AsyncRead;
 
 use crate::core::{Mailbox, Session, SessionData};
@@ -379,16 +381,34 @@ impl SessionData {
         let mut total_size = 0u32;
         self.jmap
             .store
-            .sort_index(
-                account_id,
-                Collection::Email,
-                Property::Size,
-                true,
-                |bytes, document_id| {
+            .iterate(
+                IterateParams::new(
+                    IndexKeyPrefix {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        field: Property::Size.into(),
+                    },
+                    IndexKeyPrefix {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        field: u8::from(Property::Size) + 1,
+                    },
+                )
+                .ascending()
+                .no_values(),
+                |key, _| {
+                    let id_pos = key.len() - U32_LEN;
+                    let document_id = key.deserialize_be_u32(id_pos)?;
+
                     if message_ids.contains(document_id) {
-                        u32::deserialize(bytes).map(|size| {
-                            total_size += size;
-                        })?;
+                        key.get(IndexKeyPrefix::len()..id_pos)
+                            .ok_or_else(|| {
+                                store::Error::InternalError("Invalid key length".to_string())
+                            })
+                            .and_then(u32::deserialize)
+                            .map(|size| {
+                                total_size += size;
+                            })?;
                     }
                     Ok(true)
                 },

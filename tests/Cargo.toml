@@ -5,8 +5,8 @@ edition = "2021"
 resolver = "2"
 
 [features]
-#default = ["sqlite", "foundationdb", "postgres", "mysql"]
-default = ["rocks"]
+default = ["sqlite", "foundationdb", "postgres", "mysql", "rocks"]
+#default = []
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 postgres = ["store/postgres"]

@@ -286,28 +286,27 @@ impl MysqlStore {
         trx.commit().await.map(|_| true)
     }
 
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn destroy(&self) {
-        use crate::{
-            SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
-            SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
-        };
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+        // Not needed for PostgreSQL
+        Ok(())
+    }
 
-        let mut conn = self.conn_pool.get_conn().await.unwrap();
-        for table in [
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_BITMAPS,
-            SUBSPACE_INDEXES,
-            SUBSPACE_BLOBS,
-            SUBSPACE_INDEX_VALUES,
-            SUBSPACE_COUNTERS,
-            SUBSPACE_BLOB_DATA,
-        ] {
-            conn.exec_drop(&format!("DROP TABLE {}", char::from(table)), ())
-                .await
-                .unwrap();
-        }
-        self.create_tables().await.unwrap();
+    pub(crate) async fn delete_range(
+        &self,
+        subspace: u8,
+        from_key: &[u8],
+        to_key: &[u8],
+    ) -> crate::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await?;
+
+        let s = conn
+            .prep(&format!(
+                "DELETE FROM {} WHERE k >= ? AND k < ?",
+                char::from(subspace),
+            ))
+            .await?;
+        conn.exec_drop(&s, (&from_key, &to_key))
+            .await
+            .map_err(Into::into)
     }
 }

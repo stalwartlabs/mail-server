@@ -31,8 +31,8 @@ tracing = "0.1"
 jemallocator = "0.5.0"
 
 [features]
-#default = ["sqlite", "foundationdb", "postgres", "mysql"]
-default = ["rocks"]
+default = ["sqlite", "foundationdb", "postgres", "mysql", "rocks"]
+#default = []
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 postgres = ["store/postgres"]

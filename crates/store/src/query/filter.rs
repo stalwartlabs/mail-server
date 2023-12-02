@@ -27,9 +27,12 @@ use ahash::HashSet;
 use nlp::tokenizers::word::WordTokenizer;
 use roaring::RoaringBitmap;
 
-use crate::{backend::MAX_TOKEN_LENGTH, BitmapKey, Store};
+use crate::{
+    backend::MAX_TOKEN_LENGTH, write::key::DeserializeBigEndian, BitmapKey, IndexKey,
+    IndexKeyPrefix, IterateParams, Key, Store, U32_LEN,
+};
 
-use super::{Filter, ResultSet};
+use super::{Filter, Operator, ResultSet};
 
 struct State {
     pub op: Filter,
@@ -176,6 +179,141 @@ impl Store {
             collection,
             results: state.bm.unwrap_or_else(RoaringBitmap::new),
         })
+    }
+
+    async fn range_to_bitmap(
+        &self,
+        account_id: u32,
+        collection: u8,
+        field: u8,
+        match_value: &[u8],
+        op: Operator,
+    ) -> crate::Result<Option<RoaringBitmap>> {
+        let (begin, end) = match op {
+            Operator::LowerThan => (
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    field,
+                    key: &[][..],
+                },
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    field,
+                    key: match_value,
+                },
+            ),
+            Operator::LowerEqualThan => (
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    field,
+                    key: &[][..],
+                },
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: u32::MAX,
+                    field,
+                    key: match_value,
+                },
+            ),
+            Operator::GreaterThan => (
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: u32::MAX,
+                    field,
+                    key: match_value,
+                },
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: u32::MAX,
+                    field: field + 1,
+                    key: &[][..],
+                },
+            ),
+            Operator::GreaterEqualThan => (
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    field,
+                    key: match_value,
+                },
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: u32::MAX,
+                    field: field + 1,
+                    key: &[][..],
+                },
+            ),
+            Operator::Equal => (
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    field,
+                    key: match_value,
+                },
+                IndexKey {
+                    account_id,
+                    collection,
+                    document_id: u32::MAX,
+                    field,
+                    key: match_value,
+                },
+            ),
+        };
+
+        let mut bm = RoaringBitmap::new();
+        let prefix = IndexKeyPrefix {
+            account_id,
+            collection,
+            field,
+        }
+        .serialize(false);
+
+        self.iterate(
+            IterateParams::new(begin, end).no_values().ascending(),
+            |key, _| {
+                if !key.starts_with(&prefix) {
+                    return Ok(false);
+                }
+
+                let id_pos = key.len() - U32_LEN;
+                let value = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(|| {
+                    crate::Error::InternalError("Invalid key found in index".to_string())
+                })?;
+
+                let matches = match op {
+                    Operator::LowerThan => value < match_value,
+                    Operator::LowerEqualThan => value <= match_value,
+                    Operator::GreaterThan => value > match_value,
+                    Operator::GreaterEqualThan => value >= match_value,
+                    Operator::Equal => value == match_value,
+                };
+
+                if matches {
+                    bm.insert(key.deserialize_be_u32(id_pos)?);
+                }
+
+                Ok(true)
+            },
+        )
+        .await?;
+
+        if !bm.is_empty() {
+            Ok(Some(bm))
+        } else {
+            Ok(None)
+        }
     }
 }
 

@@ -25,13 +25,8 @@ use roaring::RoaringBitmap;
 use rusqlite::OptionalExtension;
 
 use crate::{
-    query::{self, Operator},
-    write::{
-        bitmap::{BITS_PER_BLOCK_S, WORDS_PER_BLOCK_S, WORD_SIZE_BITS_S},
-        key::{DeserializeBigEndian, KeySerializer},
-        BitmapClass, ValueClass,
-    },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, U32_LEN,
+    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
 use super::SqliteStore;
@@ -68,168 +63,16 @@ impl SqliteStore {
 
         self.spawn_worker(move || {
             let mut bm = RoaringBitmap::new();
-            let mut query = conn
-                    .prepare_cached("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM b WHERE z >= ? AND z <= ?")?;
+            let mut query = conn.prepare_cached("SELECT k FROM b WHERE k >= ? AND k <= ?")?;
             let mut rows = query.query([&begin, &end])?;
 
             while let Some(row) = rows.next()? {
                 let key = row.get_ref(0)?.as_bytes()?;
                 if key.len() == key_len {
-                    let block_num = key.deserialize_be_u32(key.len() - U32_LEN)?;
-
-                    for word_num in 0..WORDS_PER_BLOCK_S {
-                        match row.get::<_, i64>((word_num + 1) as usize)? as u64 {
-                            0 => (),
-                            u64::MAX => {
-                                bm.insert_range(
-                                    block_num * BITS_PER_BLOCK_S + word_num * WORD_SIZE_BITS_S
-                                        ..(block_num * BITS_PER_BLOCK_S + word_num * WORD_SIZE_BITS_S)
-                                            + WORD_SIZE_BITS_S,
-                                );
-                            }
-                            mut word => {
-                                while word != 0 {
-                                    let trailing_zeros = word.trailing_zeros();
-                                    bm.insert(
-                                        block_num * BITS_PER_BLOCK_S
-                                            + word_num * WORD_SIZE_BITS_S
-                                            + trailing_zeros,
-                                    );
-                                    word ^= 1 << trailing_zeros;
-                                }
-                            }
-                        }
-                    }
+                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                 }
             }
             Ok(if !bm.is_empty() { Some(bm) } else { None })
-        }).await
-    }
-
-    pub(crate) async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        value: &[u8],
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let conn = self.conn_pool.get()?;
-        self.spawn_worker(move || {
-            let k1 = KeySerializer::new(
-                std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN,
-            )
-            .write(account_id)
-            .write(collection)
-            .write(field);
-            let k2 = KeySerializer::new(
-                std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN,
-            )
-            .write(account_id)
-            .write(collection)
-            .write(field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8);
-
-            let (query, begin, end) = match op {
-                Operator::LowerThan => (
-                    ("SELECT k FROM i WHERE k >= ? AND k < ?"),
-                    (k1.finalize()),
-                    (k2.write(value).write(0u32).finalize()),
-                ),
-                Operator::LowerEqualThan => (
-                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                    (k1.finalize()),
-                    (k2.write(value).write(u32::MAX).finalize()),
-                ),
-                Operator::GreaterThan => (
-                    ("SELECT k FROM i WHERE k > ? AND k <= ?"),
-                    (k1.write(value).write(u32::MAX).finalize()),
-                    (k2.finalize()),
-                ),
-                Operator::GreaterEqualThan => (
-                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                    (k1.write(value).write(0u32).finalize()),
-                    (k2.finalize()),
-                ),
-                Operator::Equal => (
-                    ("SELECT k FROM i WHERE k >= ? AND k <= ?"),
-                    (k1.write(value).write(0u32).finalize()),
-                    (k2.write(value).write(u32::MAX).finalize()),
-                ),
-            };
-
-            let mut bm = RoaringBitmap::new();
-            let mut query = conn.prepare_cached(query)?;
-            let mut rows = query.query([&begin, &end])?;
-
-            if op != Operator::Equal {
-                while let Some(row) = rows.next()? {
-                    let key = row.get_ref(0)?.as_bytes()?;
-                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                }
-            } else {
-                let key_len = begin.len();
-                while let Some(row) = rows.next()? {
-                    let key = row.get_ref(0)?.as_bytes()?;
-                    if key.len() == key_len {
-                        bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                    }
-                }
-            }
-
-            Ok(Some(bm))
-        })
-        .await
-    }
-
-    pub(crate) async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let collection = collection.into();
-        let field = field.into();
-
-        let conn = self.conn_pool.get()?;
-
-        self.spawn_worker(move || {
-            let begin = IndexKeyPrefix {
-                account_id,
-                collection,
-                field,
-            }
-            .serialize(false);
-            let end = IndexKeyPrefix {
-                account_id,
-                collection,
-                field: field + 1,
-            }
-            .serialize(false);
-            let prefix_len = begin.len();
-            let mut query = conn.prepare_cached(if ascending {
-                "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k ASC"
-            } else {
-                "SELECT k FROM i WHERE k >= ? AND k < ? ORDER BY k DESC"
-            })?;
-            let mut rows = query.query([&begin, &end])?;
-
-            while let Some(row) = rows.next()? {
-                let key = row.get_ref(0)?.as_bytes()?;
-                let id_pos = key.len() - U32_LEN;
-                debug_assert!(key.starts_with(&begin));
-                if !cb(
-                    key.get(prefix_len..id_pos).ok_or_else(|| {
-                        crate::Error::InternalError("Invalid key found in index".to_string())
-                    })?,
-                    key.deserialize_be_u32(id_pos)?,
-                )? {
-                    return Ok(());
-                }
-            }
-
-            Ok(())
         })
         .await
     }
@@ -312,94 +155,88 @@ impl SqliteStore {
     pub(crate) async fn assert_is_empty(&self) {
         let conn = self.conn_pool.get().unwrap();
         self.spawn_worker(move || {
+            // Values
+            let mut has_errors = false;
+            for table in [
+                crate::SUBSPACE_VALUES,
+                crate::SUBSPACE_INDEX_VALUES,
+                crate::SUBSPACE_COUNTERS,
+                crate::SUBSPACE_BLOB_DATA,
+            ] {
+                let table = char::from(table);
+                let mut query = conn
+                    .prepare_cached(&format!("SELECT k, v FROM {table}"))
+                    .unwrap();
+                let mut rows = query.query([]).unwrap();
 
-        // Values
-        let mut has_errors = false;
-        for table in [crate::SUBSPACE_VALUES, crate::SUBSPACE_INDEX_VALUES, crate::SUBSPACE_COUNTERS, crate::SUBSPACE_BLOB_DATA] {
-            let table = char::from(table);
-            let mut query = conn.prepare_cached(&format!("SELECT k, v FROM {table}")).unwrap();
-            let mut rows = query.query([]).unwrap();
+                while let Some(row) = rows.next().unwrap() {
+                    let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+                    if table != 'c' {
+                        let value = row.get_ref(1).unwrap().as_bytes().unwrap();
 
-            while let Some(row) = rows.next().unwrap() {
-                let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-                if table != 'c' {
-                    let value = row.get_ref(1).unwrap().as_bytes().unwrap();
-
-                    if key[0..4] != u32::MAX.to_be_bytes() {
-                        eprintln!("Table {table:?} is not empty: {key:?} {value:?}");
-                        has_errors = true;
+                        if key[0..4] != u32::MAX.to_be_bytes() {
+                            eprintln!("Table {table:?} is not empty: {key:?} {value:?}");
+                            has_errors = true;
+                        }
+                    } else {
+                        let value = row.get::<_, i64>(1).unwrap();
+                        if value != 0 {
+                            eprintln!(
+                                "Table counter is not empty, account {:?}, quota: {}",
+                                key, value,
+                            );
+                            has_errors = true;
+                        }
                     }
-                } else {
-                    let value = row.get::<_, i64>(1).unwrap();
-                    if value != 0 {
+                }
+            }
+
+            // Indexes
+            for table in [
+                crate::SUBSPACE_INDEXES,
+                crate::SUBSPACE_BLOBS,
+                crate::SUBSPACE_BITMAPS,
+            ] {
+                let table = char::from(table);
+                let mut query = conn
+                    .prepare_cached(&format!("SELECT k FROM {table}"))
+                    .unwrap();
+                let mut rows = query.query([]).unwrap();
+
+                while let Some(row) = rows.next().unwrap() {
+                    let key = row.get_ref(0).unwrap().as_bytes().unwrap();
+
+                    if table == 'i' {
                         eprintln!(
-                            "Table counter is not empty, account {:?}, quota: {}",
-                            key, value,
+                            concat!(
+                                "Table index is not empty, account {}, ",
+                                "collection {}, document {}, property {}, value {:?}: {:?}"
+                            ),
+                            u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                            key[4],
+                            u32::from_be_bytes(key[key.len() - 4..].try_into().unwrap()),
+                            key[5],
+                            String::from_utf8_lossy(&key[6..key.len() - 4]),
+                            key
                         );
                         has_errors = true;
-                    }
-                }
-            }
-        }
-
-        // Indexes
-        for table in [crate::SUBSPACE_INDEXES, crate::SUBSPACE_BLOBS] {
-            let table = char::from(table);
-            let mut query = conn.prepare_cached(&format!("SELECT k FROM {table}")).unwrap();
-            let mut rows = query.query([]).unwrap();
-
-            while let Some(row) = rows.next().unwrap() {
-                let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-
-                if table == 'i' {
-                    eprintln!(
-                        "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
-                        u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                        key[4],
-                        u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
-                        key[5],
-                        String::from_utf8_lossy(&key[6..key.len()-4]),
-                        key
-                    );
-
-                } else {
-                    eprintln!("Table {table:?} is not empty: {key:?}");
-                }
-                has_errors = true;
-            }
-        }
-
-        // Bitmaps
-        let mut query = conn
-            .prepare_cached(&format!("SELECT z, a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p FROM {}", char::from(crate::SUBSPACE_BITMAPS)))
-            .unwrap();
-        let mut rows = query.query([]).unwrap();
-
-        'outer: while let Some(row) = rows.next().unwrap() {
-            let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-            if key[0..4] != u32::MAX.to_be_bytes() {
-                for bit_pos in 1..=16 {
-                    let bit_value = row.get::<_, i64>(bit_pos).unwrap() as u64;
-                    if bit_value != 0 {
-                        eprintln!("Table bitmaps is not empty: {key:?} {bit_pos} {bit_value}");
+                    } else if table != 'b' || key[0..4] != u32::MAX.to_be_bytes() {
+                        eprintln!("Table {table:?} is not empty: {key:?}");
                         has_errors = true;
-
-                        continue 'outer;
                     }
                 }
-                eprintln!("Table bitmaps failed to purge, found key: {key:?}");
-                has_errors = true;
             }
-        }
 
-        // Delete logs
-        conn.execute("DELETE FROM l", []).unwrap();
+            // Delete logs
+            conn.execute("DELETE FROM l", []).unwrap();
 
-        if has_errors {
-            panic!("Database is not empty");
-        }
+            if has_errors {
+                panic!("Database is not empty");
+            }
 
-        Ok(())
-        }).await.unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
     }
 }

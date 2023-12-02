@@ -29,14 +29,9 @@ use futures::StreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
-    query::{self, Operator},
-    write::{
-        bitmap::DeserializeBlock,
-        key::{DeserializeBigEndian, KeySerializer},
-        BitmapClass, ValueClass,
-    },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, SUBSPACE_BLOBS,
-    SUBSPACE_INDEXES, U32_LEN,
+    write::{bitmap::DeserializeBlock, key::DeserializeBigEndian, BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, SUBSPACE_BLOBS, SUBSPACE_INDEXES,
+    U32_LEN,
 };
 
 use super::FdbStore;
@@ -89,141 +84,6 @@ impl FdbStore {
             }
         }
         Ok(if !bm.is_empty() { Some(bm) } else { None })
-    }
-
-    pub(crate) async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        value: &[u8],
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let k1 =
-            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
-                .write(SUBSPACE_INDEXES)
-                .write(account_id)
-                .write(collection)
-                .write(field);
-        let k2 =
-            KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + value.len() + 1 + U32_LEN)
-                .write(SUBSPACE_INDEXES)
-                .write(account_id)
-                .write(collection)
-                .write(
-                    field + matches!(op, Operator::GreaterThan | Operator::GreaterEqualThan) as u8,
-                );
-
-        let (begin, end) = match op {
-            Operator::LowerThan => (
-                KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::first_greater_or_equal(k2.write(value).write(0u32).finalize()),
-            ),
-            Operator::LowerEqualThan => (
-                KeySelector::first_greater_or_equal(k1.finalize()),
-                KeySelector::first_greater_or_equal(k2.write(value).write(u32::MAX).finalize()),
-            ),
-            Operator::GreaterThan => (
-                KeySelector::first_greater_than(k1.write(value).write(u32::MAX).finalize()),
-                KeySelector::first_greater_or_equal(k2.finalize()),
-            ),
-            Operator::GreaterEqualThan => (
-                KeySelector::first_greater_or_equal(k1.write(value).write(0u32).finalize()),
-                KeySelector::first_greater_or_equal(k2.finalize()),
-            ),
-            Operator::Equal => (
-                KeySelector::first_greater_or_equal(k1.write(value).write(0u32).finalize()),
-                KeySelector::first_greater_or_equal(k2.write(value).write(u32::MAX).finalize()),
-            ),
-        };
-        let key_len = begin.key().len();
-
-        let opt = RangeOption {
-            begin,
-            end,
-            mode: StreamingMode::WantAll,
-            reverse: false,
-            ..RangeOption::default()
-        };
-
-        let mut bm = RoaringBitmap::new();
-        let trx = self.db.create_trx()?;
-        let mut range_stream = trx.get_ranges(opt, true);
-
-        if op != Operator::Equal {
-            while let Some(values) = range_stream.next().await {
-                for value in values? {
-                    let key = value.key();
-                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                }
-            }
-        } else {
-            while let Some(values) = range_stream.next().await {
-                for value in values? {
-                    let key = value.key();
-                    if key.len() == key_len {
-                        bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                    }
-                }
-            }
-        }
-
-        Ok(Some(bm))
-    }
-
-    pub(crate) async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let collection = collection.into();
-        let field = field.into();
-
-        let from_key = IndexKeyPrefix {
-            account_id,
-            collection,
-            field,
-        }
-        .serialize(true);
-        let to_key = IndexKeyPrefix {
-            account_id,
-            collection,
-            field: field + 1,
-        }
-        .serialize(true);
-        let prefix_len = from_key.len();
-        let trx = self.db.create_trx()?;
-        let mut sorted_iter = trx.get_ranges(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&from_key),
-                end: KeySelector::first_greater_or_equal(&to_key),
-                mode: options::StreamingMode::Iterator,
-                reverse: !ascending,
-                ..Default::default()
-            },
-            true,
-        );
-
-        while let Some(values) = sorted_iter.next().await {
-            for value in values? {
-                let key = value.key();
-                let id_pos = key.len() - U32_LEN;
-                debug_assert!(key.starts_with(&from_key));
-                if !cb(
-                    key.get(prefix_len..id_pos).ok_or_else(|| {
-                        crate::Error::InternalError("Invalid key found in index".to_string())
-                    })?,
-                    key.deserialize_be_u32(id_pos)?,
-                )? {
-                    return Ok(());
-                }
-            }
-        }
-
-        Ok(())
     }
 
     pub(crate) async fn iterate<T: Key>(
@@ -366,8 +226,5 @@ impl FdbStore {
             trx.clear(&key);
         }
         trx.commit().await.unwrap();
-
-        //self.destroy().await;
-        crate::backend::foundationdb::write::BITMAPS.lock().clear();
     }
 }

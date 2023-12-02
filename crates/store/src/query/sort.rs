@@ -25,7 +25,10 @@ use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
 
-use crate::{write::ValueClass, Store, ValueKey};
+use crate::{
+    write::{key::DeserializeBigEndian, ValueClass},
+    IndexKeyPrefix, IterateParams, Store, ValueKey, U32_LEN,
+};
 
 use super::{Comparator, ResultSet, SortedResultSet};
 
@@ -66,12 +69,24 @@ impl Store {
                 Comparator::Field { field, ascending } => {
                     let mut results = result_set.results;
 
-                    self.sort_index(
-                        result_set.account_id,
-                        result_set.collection,
-                        field,
-                        ascending,
-                        |_, document_id| {
+                    self.iterate(
+                        IterateParams::new(
+                            IndexKeyPrefix {
+                                account_id: result_set.account_id,
+                                collection: result_set.collection,
+                                field,
+                            },
+                            IndexKeyPrefix {
+                                account_id: result_set.account_id,
+                                collection: result_set.collection,
+                                field: field + 1,
+                            },
+                        )
+                        .no_values()
+                        .set_ascending(ascending),
+                        |key, _| {
+                            let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+
                             Ok(!results.remove(document_id) || paginate.add(0, document_id))
                         },
                     )
@@ -131,13 +146,33 @@ impl Store {
                         let mut has_grouped_ids = false;
                         let mut idx = 0;
 
-                        self.sort_index(
-                            result_set.account_id,
-                            result_set.collection,
-                            field,
-                            ascending,
-                            |data, document_id| {
+                        self.iterate(
+                            IterateParams::new(
+                                IndexKeyPrefix {
+                                    account_id: result_set.account_id,
+                                    collection: result_set.collection,
+                                    field,
+                                },
+                                IndexKeyPrefix {
+                                    account_id: result_set.account_id,
+                                    collection: result_set.collection,
+                                    field: field + 1,
+                                },
+                            )
+                            .no_values()
+                            .set_ascending(ascending),
+                            |key, _| {
+                                let id_pos = key.len() - U32_LEN;
+                                let document_id = key.deserialize_be_u32(id_pos)?;
+
                                 Ok(if results.remove(document_id) {
+                                    let data = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(
+                                        || {
+                                            crate::Error::InternalError(
+                                                "Invalid key found in index".to_string(),
+                                            )
+                                        },
+                                    )?;
                                     debug_assert!(!data.is_empty());
 
                                     if data != prev_data {

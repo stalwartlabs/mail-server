@@ -89,7 +89,7 @@ impl SqliteStore {
             )?;
         }
 
-        for table in [SUBSPACE_INDEXES, SUBSPACE_BLOBS] {
+        for table in [SUBSPACE_INDEXES, SUBSPACE_BLOBS, SUBSPACE_BITMAPS] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -108,32 +108,6 @@ impl SqliteStore {
                     v INTEGER NOT NULL DEFAULT 0
                 )",
                 char::from(SUBSPACE_COUNTERS)
-            ),
-            [],
-        )?;
-
-        conn.execute(
-            &format!(
-                "CREATE TABLE IF NOT EXISTS {} (
-                    z BLOB PRIMARY KEY,
-                    a INTEGER NOT NULL DEFAULT 0,
-                    b INTEGER NOT NULL DEFAULT 0,
-                    c INTEGER NOT NULL DEFAULT 0,
-                    d INTEGER NOT NULL DEFAULT 0,
-                    e INTEGER NOT NULL DEFAULT 0,
-                    f INTEGER NOT NULL DEFAULT 0,
-                    g INTEGER NOT NULL DEFAULT 0,
-                    h INTEGER NOT NULL DEFAULT 0,
-                    i INTEGER NOT NULL DEFAULT 0,
-                    j INTEGER NOT NULL DEFAULT 0,
-                    k INTEGER NOT NULL DEFAULT 0,
-                    l INTEGER NOT NULL DEFAULT 0,
-                    m INTEGER NOT NULL DEFAULT 0,
-                    n INTEGER NOT NULL DEFAULT 0,
-                    o INTEGER NOT NULL DEFAULT 0,
-                    p INTEGER NOT NULL DEFAULT 0
-                )",
-                char::from(SUBSPACE_BITMAPS)
             ),
             [],
         )?;

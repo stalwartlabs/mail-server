@@ -28,7 +28,6 @@ use self::pool::SqliteConnectionManager;
 pub mod blob;
 pub mod main;
 pub mod pool;
-pub mod purge;
 pub mod read;
 pub mod write;
 

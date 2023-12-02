@@ -29,7 +29,7 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::rocksdb::RocksDbStore;
+use store::backend::{rocksdb::RocksDbStore, sqlite::SqliteStore};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -42,8 +42,7 @@ type = "local"
 local.path = "{TMP}"
 
 [store.db]
-#path = "{TMP}/sqlite.db"
-path = "{TMP}/rocksdb"
+path = "{TMP}/sqlite.db"
 host = "localhost"
 #port = 5432
 port = 3307
@@ -60,11 +59,11 @@ pub async fn store_tests() {
     let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
     let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
-    //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
-    let db: Store = RocksDbStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
+        //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
+        //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
+        //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
+        //let db: Store = RocksDbStore::open(&Config::new(&config_file).unwrap())
         .await
         .unwrap()
         .into();

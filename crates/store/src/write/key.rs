@@ -168,8 +168,8 @@ impl<T: AsRef<ValueClass>> ValueKey<T> {
     }
 }
 
-impl IndexKeyPrefix {
-    pub fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+impl Key for IndexKeyPrefix {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         {
             if include_subspace {
                 KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>() + 1)
@@ -182,6 +182,16 @@ impl IndexKeyPrefix {
         .write(self.collection)
         .write(self.field)
         .finalize()
+    }
+
+    fn subspace(&self) -> u8 {
+        SUBSPACE_INDEXES
+    }
+}
+
+impl IndexKeyPrefix {
+    pub fn len() -> usize {
+        U32_LEN + 2
     }
 }
 

@@ -27,7 +27,6 @@ use crate::Error;
 
 pub mod blob;
 pub mod main;
-pub mod purge;
 pub mod read;
 pub mod write;
 

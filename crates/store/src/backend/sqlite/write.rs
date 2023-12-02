@@ -24,69 +24,11 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{
-        bitmap::{BITS_MASK_S, BITS_PER_BLOCK_S},
-        Batch, Operation, ValueOp,
-    },
+    write::{Batch, Operation, ValueOp},
     BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::SqliteStore;
-
-const INSERT_QUERIES: &[&str] = &[
-    "INSERT INTO b (z, a) VALUES (?, ?)",
-    "INSERT INTO b (z, b) VALUES (?, ?)",
-    "INSERT INTO b (z, c) VALUES (?, ?)",
-    "INSERT INTO b (z, d) VALUES (?, ?)",
-    "INSERT INTO b (z, e) VALUES (?, ?)",
-    "INSERT INTO b (z, f) VALUES (?, ?)",
-    "INSERT INTO b (z, g) VALUES (?, ?)",
-    "INSERT INTO b (z, h) VALUES (?, ?)",
-    "INSERT INTO b (z, i) VALUES (?, ?)",
-    "INSERT INTO b (z, j) VALUES (?, ?)",
-    "INSERT INTO b (z, k) VALUES (?, ?)",
-    "INSERT INTO b (z, l) VALUES (?, ?)",
-    "INSERT INTO b (z, m) VALUES (?, ?)",
-    "INSERT INTO b (z, n) VALUES (?, ?)",
-    "INSERT INTO b (z, o) VALUES (?, ?)",
-    "INSERT INTO b (z, p) VALUES (?, ?)",
-];
-const SET_QUERIES: &[&str] = &[
-    "UPDATE b SET a = a | ? WHERE z = ?",
-    "UPDATE b SET b = b | ? WHERE z = ?",
-    "UPDATE b SET c = c | ? WHERE z = ?",
-    "UPDATE b SET d = d | ? WHERE z = ?",
-    "UPDATE b SET e = e | ? WHERE z = ?",
-    "UPDATE b SET f = f | ? WHERE z = ?",
-    "UPDATE b SET g = g | ? WHERE z = ?",
-    "UPDATE b SET h = h | ? WHERE z = ?",
-    "UPDATE b SET i = i | ? WHERE z = ?",
-    "UPDATE b SET j = j | ? WHERE z = ?",
-    "UPDATE b SET k = k | ? WHERE z = ?",
-    "UPDATE b SET l = l | ? WHERE z = ?",
-    "UPDATE b SET m = m | ? WHERE z = ?",
-    "UPDATE b SET n = n | ? WHERE z = ?",
-    "UPDATE b SET o = o | ? WHERE z = ?",
-    "UPDATE b SET p = p | ? WHERE z = ?",
-];
-const CLEAR_QUERIES: &[&str] = &[
-    "UPDATE b SET a = a & ? WHERE z = ?",
-    "UPDATE b SET b = b & ? WHERE z = ?",
-    "UPDATE b SET c = c & ? WHERE z = ?",
-    "UPDATE b SET d = d & ? WHERE z = ?",
-    "UPDATE b SET e = e & ? WHERE z = ?",
-    "UPDATE b SET f = f & ? WHERE z = ?",
-    "UPDATE b SET g = g & ? WHERE z = ?",
-    "UPDATE b SET h = h & ? WHERE z = ?",
-    "UPDATE b SET i = i & ? WHERE z = ?",
-    "UPDATE b SET j = j & ? WHERE z = ?",
-    "UPDATE b SET k = k & ? WHERE z = ?",
-    "UPDATE b SET l = l & ? WHERE z = ?",
-    "UPDATE b SET m = m & ? WHERE z = ?",
-    "UPDATE b SET n = n & ? WHERE z = ?",
-    "UPDATE b SET o = o & ? WHERE z = ?",
-    "UPDATE b SET p = p & ? WHERE z = ?",
-];
 
 impl SqliteStore {
     pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
@@ -95,10 +37,6 @@ impl SqliteStore {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
-            let mut bitmap_block_num = 0;
-            let mut bitmap_col_num = 0;
-            let mut bitmap_value_set = 0i64;
-            let mut bitmap_value_clear = 0i64;
             let trx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             for op in &batch.ops {
@@ -117,11 +55,6 @@ impl SqliteStore {
                         document_id: document_id_,
                     } => {
                         document_id = *document_id_;
-                        bitmap_block_num = document_id / BITS_PER_BLOCK_S;
-                        let index = document_id & BITS_MASK_S;
-                        bitmap_col_num = (index / 64) as usize;
-                        bitmap_value_set = (1u64 << (index as u64 & 63)) as i64;
-                        bitmap_value_clear = (!(1u64 << (index as u64 & 63))) as i64;
                     }
                     Operation::Value {
                         class,
@@ -190,20 +123,16 @@ impl SqliteStore {
                             account_id,
                             collection,
                             class,
-                            block_num: bitmap_block_num,
+                            block_num: document_id,
                         }
                         .serialize(false);
 
                         if *set {
-                            trx.prepare_cached(SET_QUERIES[bitmap_col_num])?
-                                .execute(params![bitmap_value_set, &key])?;
-                            if trx.changes() == 0 {
-                                trx.prepare_cached(INSERT_QUERIES[bitmap_col_num])?
-                                    .execute(params![&key, bitmap_value_set])?;
-                            }
+                            trx.prepare_cached("INSERT OR IGNORE INTO b (k) VALUES (?)")?
+                                .execute(params![&key])?;
                         } else {
-                            trx.prepare_cached(CLEAR_QUERIES[bitmap_col_num])?
-                                .execute(params![bitmap_value_clear, &key])?;
+                            trx.prepare_cached("DELETE FROM b WHERE k = ?")?
+                                .execute(params![&key])?;
                         };
                     }
                     Operation::Blob { hash, op, set } => {
@@ -271,27 +200,26 @@ impl SqliteStore {
         .await
     }
 
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn destroy(&self) {
-        use crate::{
-            SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS,
-            SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
-        };
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+        Ok(())
+    }
 
-        let conn = self.conn_pool.get().unwrap();
-        for table in [
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_BITMAPS,
-            SUBSPACE_INDEXES,
-            SUBSPACE_BLOBS,
-            SUBSPACE_INDEX_VALUES,
-            SUBSPACE_COUNTERS,
-            SUBSPACE_BLOB_DATA,
-        ] {
-            conn.execute(&format!("DROP TABLE {}", char::from(table)), [])
-                .unwrap();
-        }
-        self.create_tables().unwrap();
+    pub(crate) async fn delete_range(
+        &self,
+        subspace: u8,
+        from_key: &[u8],
+        to_key: &[u8],
+    ) -> crate::Result<()> {
+        let conn = self.conn_pool.get()?;
+        self.spawn_worker(move || {
+            conn.prepare_cached(&format!(
+                "DELETE FROM {} WHERE k >= ? AND k < ?",
+                char::from(subspace),
+            ))?
+            .execute([from_key, to_key])?;
+
+            Ok(())
+        })
+        .await
     }
 }

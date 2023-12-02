@@ -25,17 +25,11 @@ use roaring::RoaringBitmap;
 use rocksdb::{Direction, IteratorMode};
 
 use crate::{
-    query::{self, Operator},
-    write::{
-        key::{DeserializeBigEndian, KeySerializer},
-        BitmapClass, ValueClass,
-    },
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, IterateParams, Key, ValueKey, U32_LEN,
+    write::{BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey,
 };
 
-use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_INDEXES, CF_VALUES};
-
-const INDEX_PREFIX_LEN: usize = U32_LEN + 2;
+use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_VALUES};
 
 impl RocksDbStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
@@ -78,133 +72,6 @@ impl RocksDbStore {
                         Ok(None)
                     }
                 })
-        })
-        .await
-    }
-
-    pub(crate) async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        match_value: &[u8],
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        let db = self.db.clone();
-        self.spawn_worker(move || {
-            let prefix =
-                KeySerializer::new(std::mem::size_of::<IndexKey<&[u8]>>() + match_value.len() + 1)
-                    .write(account_id)
-                    .write(collection)
-                    .write(field)
-                    .write(match_value)
-                    .finalize();
-            let match_prefix = &prefix[0..INDEX_PREFIX_LEN];
-
-            let mut bm = RoaringBitmap::new();
-            let it_mode = IteratorMode::From(
-                &prefix,
-                match op {
-                    Operator::GreaterThan | Operator::GreaterEqualThan | Operator::Equal => {
-                        Direction::Forward
-                    }
-                    _ => Direction::Reverse,
-                },
-            );
-
-            for row in db.iterator_cf(&self.db.cf_handle(CF_INDEXES).unwrap(), it_mode) {
-                let (key, _) = row?;
-                if !key.starts_with(match_prefix) {
-                    break;
-                }
-                let value = key
-                    .get(INDEX_PREFIX_LEN..key.len() - U32_LEN)
-                    .ok_or_else(|| {
-                        crate::Error::InternalError(
-                            "Invalid key found in 'indexes' column family.".to_string(),
-                        )
-                    })?;
-
-                match op {
-                    Operator::LowerThan if value >= match_value => {
-                        if value == match_value {
-                            continue;
-                        } else {
-                            break;
-                        }
-                    }
-                    Operator::LowerEqualThan if value > match_value => break,
-                    Operator::GreaterThan if value <= match_value => {
-                        if value == match_value {
-                            continue;
-                        } else {
-                            break;
-                        }
-                    }
-                    Operator::GreaterEqualThan if value < match_value => break,
-                    Operator::Equal if value != match_value => break,
-                    _ => {
-                        bm.insert(key.as_ref().deserialize_be_u32(key.len() - U32_LEN)?);
-                    }
-                }
-            }
-
-            Ok(Some(bm))
-        })
-        .await
-    }
-
-    pub(crate) async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        mut cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let collection = collection.into();
-        let field = field.into();
-        let db = self.db.clone();
-
-        self.spawn_worker(move || {
-            let prefix = IndexKeyPrefix {
-                account_id,
-                collection,
-                field,
-            }
-            .serialize(false);
-            let prefix_rev;
-
-            let it_mode = if ascending {
-                IteratorMode::From(&prefix, Direction::Forward)
-            } else {
-                prefix_rev = IndexKeyPrefix {
-                    account_id,
-                    collection,
-                    field: field + 1,
-                }
-                .serialize(false);
-                IteratorMode::From(&prefix_rev, Direction::Reverse)
-            };
-
-            for row in db.iterator_cf(&self.db.cf_handle(CF_INDEXES).unwrap(), it_mode) {
-                let (key, _) = row?;
-                if !key.starts_with(&prefix) {
-                    break;
-                }
-                let id_pos = key.len() - U32_LEN;
-
-                if !cb(
-                    key.get(INDEX_PREFIX_LEN..id_pos).ok_or_else(|| {
-                        crate::Error::InternalError("Invalid key found in index".to_string())
-                    })?,
-                    key.as_ref().deserialize_be_u32(id_pos)?,
-                )? {
-                    return Ok(());
-                }
-            }
-
-            Ok(())
         })
         .await
     }

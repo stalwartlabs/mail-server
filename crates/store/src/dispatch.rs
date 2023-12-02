@@ -30,9 +30,10 @@ use roaring::RoaringBitmap;
 
 use crate::{
     fts::{index::FtsDocument, FtsFilter},
-    query,
-    write::{Batch, BitmapClass, ValueClass},
+    write::{key::KeySerializer, Batch, BitmapClass, ValueClass},
     BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, Key, Store, ValueKey,
+    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    U32_LEN,
 };
 
 impl Store {
@@ -107,90 +108,6 @@ impl Store {
         Ok(result)
     }
 
-    pub async fn range_to_bitmap(
-        &self,
-        account_id: u32,
-        collection: u8,
-        field: u8,
-        value: &[u8],
-        op: query::Operator,
-    ) -> crate::Result<Option<RoaringBitmap>> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => {
-                store
-                    .range_to_bitmap(account_id, collection, field, value, op)
-                    .await
-            }
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => {
-                store
-                    .range_to_bitmap(account_id, collection, field, value, op)
-                    .await
-            }
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => {
-                store
-                    .range_to_bitmap(account_id, collection, field, value, op)
-                    .await
-            }
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => {
-                store
-                    .range_to_bitmap(account_id, collection, field, value, op)
-                    .await
-            }
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => {
-                store
-                    .range_to_bitmap(account_id, collection, field, value, op)
-                    .await
-            }
-        }
-    }
-
-    pub async fn sort_index(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8> + Sync + Send,
-        field: impl Into<u8> + Sync + Send,
-        ascending: bool,
-        cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => {
-                store
-                    .sort_index(account_id, collection, field, ascending, cb)
-                    .await
-            }
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => {
-                store
-                    .sort_index(account_id, collection, field, ascending, cb)
-                    .await
-            }
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => {
-                store
-                    .sort_index(account_id, collection, field, ascending, cb)
-                    .await
-            }
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => {
-                store
-                    .sort_index(account_id, collection, field, ascending, cb)
-                    .await
-            }
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => {
-                store
-                    .sort_index(account_id, collection, field, ascending, cb)
-                    .await
-            }
-        }
-    }
-
     pub async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
@@ -257,19 +174,41 @@ impl Store {
             Self::RocksDb(store) => store.purge_bitmaps().await,
         }
     }
-    pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    pub(crate) async fn delete_range(
+        &self,
+        subspace: u8,
+        from: &[u8],
+        to: &[u8],
+    ) -> crate::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.purge_account(account_id).await,
+            Self::SQLite(store) => store.delete_range(subspace, from, to).await,
             #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.purge_account(account_id).await,
+            Self::FoundationDb(store) => store.delete_range(subspace, from, to).await,
             #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.purge_account(account_id).await,
+            Self::PostgreSQL(store) => store.delete_range(subspace, from, to).await,
             #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.purge_account(account_id).await,
+            Self::MySQL(store) => store.delete_range(subspace, from, to).await,
             #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.purge_account(account_id).await,
+            Self::RocksDb(store) => store.delete_range(subspace, from, to).await,
         }
+    }
+
+    pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+        let from_key = KeySerializer::new(U32_LEN).write(account_id).finalize();
+        let to_key = KeySerializer::new(U32_LEN).write(account_id + 1).finalize();
+
+        for subspace in [
+            SUBSPACE_BITMAPS,
+            SUBSPACE_VALUES,
+            SUBSPACE_LOGS,
+            SUBSPACE_INDEXES,
+            SUBSPACE_INDEX_VALUES,
+        ] {
+            self.delete_range(subspace, &from_key, &to_key).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
@@ -319,17 +258,21 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.destroy().await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.destroy().await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.destroy().await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.destroy().await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.destroy().await,
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
+
+        for subspace in [
+            SUBSPACE_VALUES,
+            SUBSPACE_LOGS,
+            SUBSPACE_BITMAPS,
+            SUBSPACE_INDEXES,
+            SUBSPACE_BLOBS,
+            SUBSPACE_INDEX_VALUES,
+            SUBSPACE_COUNTERS,
+            SUBSPACE_BLOB_DATA,
+        ] {
+            self.delete_range(subspace, &[0u8], &[u8::MAX])
+                .await
+                .unwrap();
         }
     }
 
@@ -337,7 +280,7 @@ impl Store {
     pub async fn blob_hash_expire_all(&self) {
         use crate::{
             write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, F_CLEAR},
-            BlobHash, BlobKey, BLOB_HASH_LEN, U32_LEN, U64_LEN,
+            BlobHash, BlobKey, BLOB_HASH_LEN, U64_LEN,
         };
 
         // Delete all temporary hashes

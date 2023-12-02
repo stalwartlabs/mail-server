@@ -27,12 +27,12 @@ use std::{
 };
 
 use rand::Rng;
-use rocksdb::ErrorKind;
+use rocksdb::{Direction, ErrorKind, IteratorMode};
 
 use super::{
     bitmap::{clear_bit, set_bit},
-    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_BLOB_DATA, CF_COUNTERS, CF_INDEXES, CF_INDEX_VALUES,
-    CF_LOGS, CF_VALUES,
+    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_COUNTERS, CF_INDEXES, CF_INDEX_VALUES, CF_LOGS,
+    CF_VALUES,
 };
 use crate::{
     write::{Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
@@ -225,34 +225,41 @@ impl RocksDbStore {
         .await
     }
 
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn destroy(&self) {
-        use rocksdb::IteratorMode;
+    pub(crate) async fn delete_range(
+        &self,
+        subspace: u8,
+        from_key: &[u8],
+        to_key: &[u8],
+    ) -> crate::Result<()> {
+        let db = self.db.clone();
+        self.spawn_worker(move || {
+            let cf = db
+                .cf_handle(std::str::from_utf8(&[subspace]).unwrap())
+                .unwrap();
 
-        self.db.cancel_all_background_work(false);
-
-        for cf_name in [
-            CF_VALUES,
-            CF_LOGS,
-            CF_BITMAPS,
-            CF_INDEXES,
-            CF_BLOBS,
-            CF_INDEX_VALUES,
-            CF_COUNTERS,
-            CF_BLOB_DATA,
-        ] {
+            // TODO use delete_range when implemented (see https://github.com/rust-rocksdb/rust-rocksdb/issues/839)
             let mut delete_keys = Vec::new();
-            let it_mode = IteratorMode::Start;
-            let cf = self.db.cf_handle(cf_name).unwrap();
+            let it_mode = IteratorMode::From(from_key, Direction::Forward);
 
-            for row in self.db.iterator_cf(&cf, it_mode) {
-                let (k, _) = row.unwrap();
-                delete_keys.push(k);
+            for row in db.iterator_cf(&cf, it_mode) {
+                let (key, _) = row?;
+
+                if key.as_ref() < from_key || key.as_ref() >= to_key {
+                    break;
+                }
+                delete_keys.push(key);
             }
 
             for k in delete_keys {
-                self.db.delete_cf(&cf, &k).unwrap();
+                db.delete_cf(&cf, &k)?;
             }
-        }
+
+            Ok(())
+        })
+        .await
+    }
+
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+        Ok(())
     }
 }

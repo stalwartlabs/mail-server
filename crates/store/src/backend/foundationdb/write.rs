@@ -24,24 +24,23 @@
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use foundationdb::{options::MutationType, FdbError};
+use foundationdb::{
+    options::{self, MutationType},
+    FdbError, KeySelector, RangeOption,
+};
+use futures::StreamExt;
 use rand::Rng;
 
 use crate::{
     write::{
         bitmap::{block_contains, DenseBitmap},
+        key::KeySerializer,
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS,
 };
 
 use super::FdbStore;
-
-#[cfg(feature = "test_mode")]
-lazy_static::lazy_static! {
-pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>> =
-                    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
-}
 
 impl FdbStore {
     pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
@@ -230,58 +229,6 @@ impl FdbStore {
 
             match trx.commit().await {
                 Ok(_) => {
-                    /*#[cfg(feature = "test_mode")]
-                    {
-                        for op in &batch.ops {
-                            match op {
-                                Operation::AccountId {
-                                    account_id: account_id_,
-                                } => {
-                                    account_id = *account_id_;
-                                }
-                                Operation::Collection {
-                                    collection: collection_,
-                                } => {
-                                    collection = *collection_;
-                                }
-                                Operation::DocumentId {
-                                    document_id: document_id_,
-                                } => {
-                                    document_id = *document_id_;
-                                }
-                                Operation::Bitmap { class, set } => {
-                                    let key = BitmapKey {
-                                        account_id,
-                                        collection,
-                                        class,
-                                        block_num: DenseBitmap::block_num(document_id),
-                                    }
-                                    .serialize(true);
-                                    if *set {
-                                        assert!(
-                                            BITMAPS
-                                                .lock()
-                                                .entry(key.clone())
-                                                .or_default()
-                                                .insert(document_id),
-                                            "key {key:?} ({op:?}) already contains document {document_id}"
-                                        );
-                                    } else {
-                                        assert!(
-                                            BITMAPS
-                                                .lock()
-                                                .get_mut(&key)
-                                                .unwrap()
-                                                .remove(&document_id),
-                                            "key {key:?} ({op:?}) does not contain document {document_id}"
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }*/
-
                     return Ok(());
                 }
                 Err(err) => {
@@ -298,11 +245,80 @@ impl FdbStore {
         }
     }
 
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn destroy(&self) {
-        let trx = self.db.create_trx().unwrap();
-        trx.clear_range(&[0u8], &[u8::MAX]);
-        trx.commit().await.unwrap();
-        BITMAPS.lock().clear();
+    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+        // Obtain all empty bitmaps
+        let trx = self.db.create_trx()?;
+        let mut iter = trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(&[SUBSPACE_BITMAPS, 0u8][..]),
+                end: KeySelector::first_greater_or_equal(&[SUBSPACE_BITMAPS, u8::MAX][..]),
+                mode: options::StreamingMode::WantAll,
+                reverse: false,
+                ..Default::default()
+            },
+            true,
+        );
+        let mut delete_keys = Vec::new();
+
+        while let Some(values) = iter.next().await {
+            for value in values? {
+                if value.value().iter().all(|byte| *byte == 0) {
+                    delete_keys.push(value.key().to_vec());
+                }
+            }
+        }
+        if delete_keys.is_empty() {
+            return Ok(());
+        }
+
+        // Delete keys
+        let bitmap = DenseBitmap::empty();
+        for chunk in delete_keys.chunks(1024) {
+            let mut retry_count = 0;
+            loop {
+                let trx = self.db.create_trx()?;
+                for key in chunk {
+                    trx.atomic_op(key, &bitmap.bitmap, MutationType::CompareAndClear);
+                }
+                match trx.commit().await {
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(err) => {
+                        if retry_count < MAX_COMMIT_ATTEMPTS {
+                            err.on_error().await?;
+                            retry_count += 1;
+                        } else {
+                            return Err(FdbError::from(err).into());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn delete_range(
+        &self,
+        subspace: u8,
+        from_key: &[u8],
+        to_key: &[u8],
+    ) -> crate::Result<()> {
+        let from_key = KeySerializer::new(from_key.len() + 1)
+            .write(subspace)
+            .write(from_key)
+            .finalize();
+        let to_key = KeySerializer::new(to_key.len() + 1)
+            .write(subspace)
+            .write(to_key)
+            .finalize();
+
+        let trx = self.db.create_trx()?;
+        trx.clear_range(&from_key, &to_key);
+        trx.commit()
+            .await
+            .map_err(|err| FdbError::from(err).into())
+            .map(|_| ())
     }
 }

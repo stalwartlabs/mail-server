@@ -33,7 +33,6 @@ use crate::{
 pub mod bitmap;
 pub mod blob;
 pub mod main;
-pub mod purge;
 pub mod read;
 pub mod write;
 

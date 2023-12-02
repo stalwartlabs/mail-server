@@ -48,7 +48,7 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::rocksdb::RocksDbStore,
+    backend::{rocksdb::RocksDbStore, sqlite::SqliteStore},
     fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
@@ -201,11 +201,11 @@ impl JMAP {
                 .await
                 .failed("Unable to open database"),
         ));*/
-        /*let store = Store::SQLite(Arc::new(
+        let store = Store::SQLite(Arc::new(
             SqliteStore::open(config)
                 .await
                 .failed("Unable to open database"),
-        ));*/
+        ));
         /*let store = Store::FoundationDb(Arc::new(
             FdbStore::open(config)
                 .await
@@ -216,11 +216,11 @@ impl JMAP {
                 .await
                 .failed("Unable to open database"),
         ));*/
-        let store = Store::RocksDb(Arc::new(
+        /*let store = Store::RocksDb(Arc::new(
             RocksDbStore::open(config)
                 .await
                 .failed("Unable to open database"),
-        ));
+        ));*/
         let blob_store = store.clone().into();
         /*let blob_store = BlobStore::Fs(Arc::new(
             FsStore::open(config)
