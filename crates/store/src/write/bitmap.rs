@@ -26,17 +26,17 @@ use roaring::RoaringBitmap;
 
 use crate::U64_LEN;
 
-pub(crate) const WORD_SIZE_BITS_L: u32 = (WORD_SIZE_L * 8) as u32;
-pub(crate) const WORD_SIZE_L: usize = std::mem::size_of::<u128>();
-pub(crate) const WORDS_PER_BLOCK_L: u32 = 8;
-pub(crate) const BITS_PER_BLOCK_L: u32 = WORD_SIZE_BITS_L * WORDS_PER_BLOCK_L;
-pub(crate) const BITS_MASK_L: u32 = BITS_PER_BLOCK_L - 1;
+pub const WORD_SIZE_BITS_L: u32 = (WORD_SIZE_L * 8) as u32;
+pub const WORD_SIZE_L: usize = std::mem::size_of::<u128>();
+pub const WORDS_PER_BLOCK_L: u32 = 8;
+pub const BITS_PER_BLOCK_L: u32 = WORD_SIZE_BITS_L * WORDS_PER_BLOCK_L;
+pub const BITS_MASK_L: u32 = BITS_PER_BLOCK_L - 1;
 
-pub(crate) const WORD_SIZE_BITS_S: u32 = (WORD_SIZE_S * 8) as u32;
-pub(crate) const WORD_SIZE_S: usize = U64_LEN;
-pub(crate) const WORDS_PER_BLOCK_S: u32 = 16;
-pub(crate) const BITS_PER_BLOCK_S: u32 = WORD_SIZE_BITS_S * WORDS_PER_BLOCK_S;
-pub(crate) const BITS_MASK_S: u32 = BITS_PER_BLOCK_S - 1;
+pub const WORD_SIZE_BITS_S: u32 = (WORD_SIZE_S * 8) as u32;
+pub const WORD_SIZE_S: usize = U64_LEN;
+pub const WORDS_PER_BLOCK_S: u32 = 16;
+pub const BITS_PER_BLOCK_S: u32 = WORD_SIZE_BITS_S * WORDS_PER_BLOCK_S;
+pub const BITS_MASK_S: u32 = BITS_PER_BLOCK_S - 1;
 
 pub struct DenseBitmap {
     pub bitmap: [u8; WORD_SIZE_L * WORDS_PER_BLOCK_L as usize],

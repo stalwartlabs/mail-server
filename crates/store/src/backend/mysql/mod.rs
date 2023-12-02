@@ -27,7 +27,6 @@ pub mod blob;
 pub mod main;
 pub mod purge;
 pub mod read;
-pub mod tls;
 pub mod write;
 
 pub struct MysqlStore {

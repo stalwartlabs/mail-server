@@ -137,7 +137,7 @@ future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
                    { else = false } ]
 
 [store.db]
-#path = "PATH/sqlite.db"
+path = "{TMP}/sqlite.db"
 host = "localhost"
 #port = 5432
 port = 3307

@@ -25,6 +25,8 @@ use crate::{Deserialize, Serialize};
 use roaring::RoaringBitmap;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
+use crate::U32_LEN;
+
 pub const BIT_SET: u8 = 0x80;
 pub const BIT_CLEAR: u8 = 0;
 
@@ -61,15 +63,22 @@ pub fn deserialize_bitmap(bytes: &[u8]) -> Option<RoaringBitmap> {
 }
 
 impl Deserialize for RoaringBitmap {
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
-        match *bytes.first()? {
-            IS_BITMAP => deserialize_bitmap(bytes),
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        match *bytes
+            .first()
+            .ok_or_else(|| crate::Error::InternalError("Empty bitmap".to_string()))?
+        {
+            IS_BITMAP => deserialize_bitmap(bytes).ok_or_else(|| {
+                crate::Error::InternalError("Failed to deserialize bitmap".to_string())
+            }),
             IS_BITLIST => {
                 let mut bm = RoaringBitmap::new();
                 deserialize_bitlist(&mut bm, bytes);
-                Some(bm)
+                Ok(bm)
             }
-            _ => None,
+            _ => Err(crate::Error::InternalError(
+                "Invalid bitmap type".to_string(),
+            )),
         }
     }
 }
@@ -201,7 +210,7 @@ pub fn bitmap_merge<'x>(
     operands: impl IntoIterator<Item = &'x [u8]>,
 ) -> Option<Vec<u8>> {
     let mut bm = match existing_val {
-        Some(existing_val) => RoaringBitmap::deserialize(existing_val)?,
+        Some(existing_val) => RoaringBitmap::deserialize(existing_val).ok()?,
         None if operands_len == 1 => {
             return Some(Vec::from(operands.into_iter().next().unwrap()));
         }

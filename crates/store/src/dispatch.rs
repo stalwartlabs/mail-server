@@ -41,10 +41,16 @@ impl Store {
         U: Deserialize + 'static,
     {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_value(key).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_value(key).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.get_value(key).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.get_value(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.get_value(key).await,
         }
     }
 
@@ -66,10 +72,16 @@ impl Store {
         key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.get_bitmap(key).await,
         }
     }
 
@@ -104,22 +116,32 @@ impl Store {
         op: query::Operator,
     ) -> crate::Result<Option<RoaringBitmap>> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => {
                 store
                     .range_to_bitmap(account_id, collection, field, value, op)
                     .await
             }
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => {
                 store
                     .range_to_bitmap(account_id, collection, field, value, op)
                     .await
             }
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => {
                 store
                     .range_to_bitmap(account_id, collection, field, value, op)
                     .await
             }
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => {
+                store
+                    .range_to_bitmap(account_id, collection, field, value, op)
+                    .await
+            }
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => {
                 store
                     .range_to_bitmap(account_id, collection, field, value, op)
                     .await
@@ -136,22 +158,32 @@ impl Store {
         cb: impl for<'x> FnMut(&'x [u8], u32) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => {
                 store
                     .sort_index(account_id, collection, field, ascending, cb)
                     .await
             }
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => {
                 store
                     .sort_index(account_id, collection, field, ascending, cb)
                     .await
             }
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => {
                 store
                     .sort_index(account_id, collection, field, ascending, cb)
                     .await
             }
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => {
+                store
+                    .sort_index(account_id, collection, field, ascending, cb)
+                    .await
+            }
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => {
                 store
                     .sort_index(account_id, collection, field, ascending, cb)
                     .await
@@ -165,10 +197,16 @@ impl Store {
         cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.iterate(params, cb).await,
         }
     }
 
@@ -177,73 +215,121 @@ impl Store {
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_counter(key).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_counter(key).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.get_counter(key).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.get_counter(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.get_counter(key).await,
         }
     }
 
     pub async fn write(&self, batch: Batch) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.write(batch).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.write(batch).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.write(batch).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.write(batch).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.write(batch).await,
         }
     }
 
     pub async fn purge_bitmaps(&self) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.purge_bitmaps().await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.purge_bitmaps().await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.purge_bitmaps().await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.purge_bitmaps().await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.purge_bitmaps().await,
         }
     }
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.purge_account(account_id).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.purge_account(account_id).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.purge_account(account_id).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.purge_account(account_id).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.purge_account(account_id).await,
         }
     }
 
     pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.get_blob(key, range).await,
         }
     }
 
     pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.put_blob(key, data).await,
         }
     }
 
     pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_blob(key).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.delete_blob(key).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.delete_blob(key).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.delete_blob(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.delete_blob(key).await,
         }
     }
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.destroy().await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.destroy().await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.destroy().await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.destroy().await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.destroy().await,
         }
     }
 
@@ -307,10 +393,16 @@ impl Store {
         self.purge_bitmaps().await.unwrap();
 
         match self {
+            #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.assert_is_empty().await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.assert_is_empty().await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.assert_is_empty().await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.assert_is_empty().await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.assert_is_empty().await,
         }
     }
 }
@@ -320,10 +412,16 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.get_blob(key, range).await,
             Self::S3(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.get_blob(key, range).await,
         }
     }
 
@@ -331,10 +429,16 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.put_blob(key, data).await,
             Self::S3(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.put_blob(key, data).await,
         }
     }
 
@@ -342,10 +446,16 @@ impl BlobStore {
         match self {
             Self::Fs(store) => store.delete_blob(key).await,
             Self::S3(store) => store.delete_blob(key).await,
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.delete_blob(key).await,
+            #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.delete_blob(key).await,
+            #[cfg(feature = "postgres")]
             Self::PostgreSQL(store) => store.delete_blob(key).await,
+            #[cfg(feature = "mysql")]
             Self::MySQL(store) => store.delete_blob(key).await,
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(store) => store.delete_blob(key).await,
         }
     }
 }

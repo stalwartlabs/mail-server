@@ -29,9 +29,7 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::{
-    foundationdb::FdbStore, mysql::MysqlStore, postgres::PostgresStore, sqlite::SqliteStore,
-};
+use store::backend::rocksdb::RocksDbStore;
 use utils::config::Config;
 
 pub struct TempDir {
@@ -41,10 +39,11 @@ pub struct TempDir {
 const CONFIG: &str = r#"
 [store.blob]
 type = "local"
-local.path = "PATH"
+local.path = "{TMP}"
 
 [store.db]
-#path = "PATH/sqlite.db"
+#path = "{TMP}/sqlite.db"
+path = "{TMP}/rocksdb"
 host = "localhost"
 #port = 5432
 port = 3307
@@ -60,20 +59,23 @@ password = "password"
 pub async fn store_tests() {
     let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
-    let config_file = CONFIG.replace("PATH", &temp_dir.path.to_string_lossy());
+    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
     //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
     //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
     //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
-    let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = RocksDbStore::open(&Config::new(&config_file).unwrap())
         .await
         .unwrap()
         .into();
     if insert {
         db.destroy().await;
     }
-    //query::test(db.clone(), insert).await;
+    query::test(db.clone(), insert).await;
     assign_id::test(db).await;
-    temp_dir.delete();
+    if insert {
+        temp_dir.delete();
+    }
 }
 
 pub fn deflate_artwork_data() -> Vec<u8> {

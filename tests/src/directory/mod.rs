@@ -278,14 +278,10 @@ pub fn dummy_tls_acceptor() -> Arc<TlsAcceptor> {
 
     // convert files to key/cert objects
     let cert_chain = certs(cert_file)
-        .unwrap()
-        .into_iter()
-        .map(Certificate)
+        .map(|v| Certificate(v.unwrap().as_ref().to_vec()))
         .collect();
     let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)
-        .unwrap()
-        .into_iter()
-        .map(PrivateKey)
+        .map(|v| PrivateKey(v.unwrap().secret_pkcs8_der().to_vec()))
         .collect();
 
     // exit if no keys could be parsed

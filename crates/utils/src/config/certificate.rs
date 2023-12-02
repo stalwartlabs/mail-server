@@ -57,15 +57,16 @@ impl Config {
             cert_id,
             "cert",
         ))?))
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|err| {
             format!("Failed to read certificates in \"certificate.{cert_id}.cert\": {err}")
-        })?
-        .into_iter()
-        .map(Certificate)
-        .collect::<Vec<_>>();
+        })?;
 
         if !certs.is_empty() {
-            Ok(certs)
+            Ok(certs
+                .into_iter()
+                .map(|cert| Certificate(cert.as_ref().to_vec()))
+                .collect())
         } else {
             Err(format!(
                 "No certificates found in \"certificate.{cert_id}.cert\"."
@@ -85,7 +86,9 @@ impl Config {
         .into_iter()
         .next()
         {
-            Some(Item::PKCS8Key(key) | Item::RSAKey(key) | Item::ECKey(key)) => Ok(PrivateKey(key)),
+            Some(Item::Pkcs8Key(key)) => Ok(PrivateKey(key.secret_pkcs8_der().to_vec())),
+            Some(Item::Pkcs1Key(key)) => Ok(PrivateKey(key.secret_pkcs1_der().to_vec())),
+            Some(Item::Sec1Key(key)) => Ok(PrivateKey(key.secret_sec1_der().to_vec())),
             Some(_) => Err(format!(
                 "Unsupported private keys found in \"certificate.{cert_id}.private-key\".",
             )),

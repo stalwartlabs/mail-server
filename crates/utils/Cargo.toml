@@ -6,7 +6,7 @@ resolver = "2"
 
 [dependencies]
 rustls = { version = "0.21", features = ["tls12", "dangerous_configuration"]}
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.0"
 tokio = { version = "1.23", features = ["net", "macros"] }
 tokio-rustls = { version = "0.24.0"}
 serde = { version = "1.0", features = ["derive"]}
@@ -25,7 +25,7 @@ dashmap = "5.4"
 ahash = { version = "0.8" }
 chrono = "0.4"
 rand = "0.8.5"
-webpki-roots = { version = "0.25.2"}
+webpki-roots = { version = "0.26"}
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

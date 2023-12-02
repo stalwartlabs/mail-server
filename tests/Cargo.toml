@@ -5,9 +5,13 @@ edition = "2021"
 resolver = "2"
 
 [features]
-default = ["sqlite", "foundationdb"]
+#default = ["sqlite", "foundationdb", "postgres", "mysql"]
+default = ["rocks"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
+postgres = ["store/postgres"]
+mysql = ["store/mysql"]
+rocks = ["store/rocks"]
 
 [dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
@@ -29,7 +33,7 @@ mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = 
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.24.0"}
 rustls = "0.21.0"
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.0"
 csv = "1.1"
 rayon = { version = "1.5.1" }
 flate2 = { version = "1.0.17", features = ["zlib"], default-features = false }

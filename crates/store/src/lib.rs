@@ -30,15 +30,27 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
-use backend::{
-    foundationdb::FdbStore, fs::FsStore, mysql::MysqlStore, postgres::PostgresStore, s3::S3Store,
-    sqlite::SqliteStore,
-};
+use backend::{fs::FsStore, s3::S3Store};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
 pub use roaring;
 use write::{BitmapClass, BlobOp, ValueClass};
+
+#[cfg(feature = "postgres")]
+use backend::postgres::PostgresStore;
+
+#[cfg(feature = "mysql")]
+use backend::mysql::MysqlStore;
+
+#[cfg(feature = "sqlite")]
+use backend::sqlite::SqliteStore;
+
+#[cfg(feature = "foundation")]
+use backend::foundationdb::FdbStore;
+
+#[cfg(feature = "rocks")]
+use backend::rocksdb::RocksDbStore;
 
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
@@ -170,20 +182,32 @@ pub struct IterateParams<T: Key> {
 
 #[derive(Clone)]
 pub enum Store {
+    #[cfg(feature = "sqlite")]
     SQLite(Arc<SqliteStore>),
+    #[cfg(feature = "foundation")]
     FoundationDb(Arc<FdbStore>),
+    #[cfg(feature = "postgres")]
     PostgreSQL(Arc<PostgresStore>),
+    #[cfg(feature = "mysql")]
     MySQL(Arc<MysqlStore>),
+    #[cfg(feature = "rocks")]
+    RocksDb(Arc<RocksDbStore>),
 }
 
 #[derive(Clone)]
 pub enum BlobStore {
     Fs(Arc<FsStore>),
     S3(Arc<S3Store>),
+    #[cfg(feature = "sqlite")]
     Sqlite(Arc<SqliteStore>),
+    #[cfg(feature = "foundation")]
     FoundationDb(Arc<FdbStore>),
+    #[cfg(feature = "postgres")]
     PostgreSQL(Arc<PostgresStore>),
+    #[cfg(feature = "mysql")]
     MySQL(Arc<MysqlStore>),
+    #[cfg(feature = "rocks")]
+    RocksDb(Arc<RocksDbStore>),
 }
 
 #[derive(Clone)]
@@ -191,27 +215,38 @@ pub enum FtsStore {
     Store(Store),
 }
 
+#[cfg(feature = "sqlite")]
 impl From<SqliteStore> for Store {
     fn from(store: SqliteStore) -> Self {
         Self::SQLite(Arc::new(store))
     }
 }
 
+#[cfg(feature = "foundation")]
 impl From<FdbStore> for Store {
     fn from(store: FdbStore) -> Self {
         Self::FoundationDb(Arc::new(store))
     }
 }
 
+#[cfg(feature = "postgres")]
 impl From<PostgresStore> for Store {
     fn from(store: PostgresStore) -> Self {
         Self::PostgreSQL(Arc::new(store))
     }
 }
 
+#[cfg(feature = "mysql")]
 impl From<MysqlStore> for Store {
     fn from(store: MysqlStore) -> Self {
         Self::MySQL(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "rocks")]
+impl From<RocksDbStore> for Store {
+    fn from(store: RocksDbStore) -> Self {
+        Self::RocksDb(Arc::new(store))
     }
 }
 
@@ -236,10 +271,16 @@ impl From<Store> for FtsStore {
 impl From<Store> for BlobStore {
     fn from(store: Store) -> Self {
         match store {
+            #[cfg(feature = "sqlite")]
             Store::SQLite(store) => Self::Sqlite(store),
+            #[cfg(feature = "foundation")]
             Store::FoundationDb(store) => Self::FoundationDb(store),
+            #[cfg(feature = "postgres")]
             Store::PostgreSQL(store) => Self::PostgreSQL(store),
+            #[cfg(feature = "mysql")]
             Store::MySQL(store) => Self::MySQL(store),
+            #[cfg(feature = "rocks")]
+            Store::RocksDb(store) => Self::RocksDb(store),
         }
     }
 }

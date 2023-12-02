@@ -22,9 +22,7 @@
 */
 
 use store::{
-    backend::{
-        fs::FsStore, mysql::MysqlStore, postgres::PostgresStore, s3::S3Store, sqlite::SqliteStore,
-    },
+    backend::rocksdb::RocksDbStore,
     write::{blob::BlobQuota, now, BatchBuilder, BlobOp, F_CLEAR},
     BlobClass, BlobHash, BlobStore, Store,
 };
@@ -48,7 +46,8 @@ path = "{TMP}"
 
 const CONFIG_DB: &str = r#"
 [store.db]
-#path = "PATH/sqlite.db"
+#path = "{TMP}/sqlite.db"
+path = "{TMP}/rocksdb"
 host = "localhost"
 #port = 5432
 port = 3307
@@ -83,7 +82,8 @@ pub async fn blob_tests() {
     //let store: Store = SqliteStore::open(
     //let store: Store = FdbStore::open(
     //let store: Store = PostgresStore::open(
-    let store: Store = MysqlStore::open(
+    //let store: Store = MysqlStore::open(
+    let store: Store = RocksDbStore::open(
         &Config::new(&CONFIG_DB.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
             .unwrap(),
     )
