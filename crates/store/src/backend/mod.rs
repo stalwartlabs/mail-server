@@ -21,19 +21,21 @@
  * for more details.
 */
 
+#[cfg(feature = "elastic")]
+pub mod elastic;
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
+pub mod fs;
 #[cfg(feature = "mysql")]
 pub mod mysql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 #[cfg(feature = "rocks")]
 pub mod rocksdb;
+#[cfg(feature = "s3")]
+pub mod s3;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
-
-pub mod fs;
-pub mod s3;
 
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;

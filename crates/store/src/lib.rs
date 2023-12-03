@@ -30,12 +30,15 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
-use backend::{fs::FsStore, s3::S3Store};
+use backend::fs::FsStore;
 pub use blake3;
 pub use parking_lot;
 pub use rand;
 pub use roaring;
 use write::{BitmapClass, BlobOp, ValueClass};
+
+#[cfg(feature = "s3")]
+use backend::s3::S3Store;
 
 #[cfg(feature = "postgres")]
 use backend::postgres::PostgresStore;
@@ -51,6 +54,9 @@ use backend::foundationdb::FdbStore;
 
 #[cfg(feature = "rocks")]
 use backend::rocksdb::RocksDbStore;
+
+#[cfg(feature = "elastic")]
+use backend::elastic::ElasticSearchStore;
 
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
@@ -197,6 +203,7 @@ pub enum Store {
 #[derive(Clone)]
 pub enum BlobStore {
     Fs(Arc<FsStore>),
+    #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
     #[cfg(feature = "sqlite")]
     Sqlite(Arc<SqliteStore>),
@@ -213,6 +220,8 @@ pub enum BlobStore {
 #[derive(Clone)]
 pub enum FtsStore {
     Store(Store),
+    #[cfg(feature = "elastic")]
+    ElasticSearch(Arc<ElasticSearchStore>),
 }
 
 #[cfg(feature = "sqlite")]
@@ -256,9 +265,17 @@ impl From<FsStore> for BlobStore {
     }
 }
 
+#[cfg(feature = "s3")]
 impl From<S3Store> for BlobStore {
     fn from(store: S3Store) -> Self {
         Self::S3(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "elastic")]
+impl From<ElasticSearchStore> for FtsStore {
+    fn from(store: ElasticSearchStore) -> Self {
+        Self::ElasticSearch(Arc::new(store))
     }
 }
 

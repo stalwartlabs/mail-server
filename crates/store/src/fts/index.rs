@@ -45,14 +45,14 @@ use crate::{
 use super::Field;
 
 #[derive(Debug)]
-struct Text<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
-    field: Field<T>,
-    text: Cow<'x, str>,
-    typ: Type,
+pub(crate) struct Text<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
+    pub field: Field<T>,
+    pub text: Cow<'x, str>,
+    pub typ: Type,
 }
 
 #[derive(Debug)]
-enum Type {
+pub(crate) enum Type {
     Text(Language),
     Tokenize,
     Keyword,
@@ -60,11 +60,11 @@ enum Type {
 
 #[derive(Debug)]
 pub struct FtsDocument<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
-    parts: Vec<Text<'x, T>>,
-    default_language: Language,
-    account_id: u32,
-    collection: u8,
-    document_id: u32,
+    pub(crate) parts: Vec<Text<'x, T>>,
+    pub(crate) default_language: Language,
+    pub(crate) account_id: u32,
+    pub(crate) collection: u8,
+    pub(crate) document_id: u32,
 }
 
 impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> FtsDocument<'x, T> {

@@ -29,7 +29,7 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::{rocksdb::RocksDbStore, sqlite::SqliteStore};
+use store::backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -52,25 +52,33 @@ database = "stalwart"
 user = "root"
 password = "password"
 
+[store.fts]
+url = "https://localhost:9200"
+user = "elastic"
+password = "RtQ-Lu6+o4rxx=XJplVJ"
+allow-invalid-certs = true
+
 "#;
 
 #[tokio::test]
 pub async fn store_tests() {
-    let insert = true;
+    //let insert = true;
+    let insert = false;
     let temp_dir = TempDir::new("store_tests", insert);
     let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
-    let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
-        //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
-        //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
-        //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
-        //let db: Store = RocksDbStore::open(&Config::new(&config_file).unwrap())
-        .await
-        .unwrap()
-        .into();
+    let config = Config::new(&config_file).unwrap();
+    //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
+    //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
+    let db: Store = RocksDbStore::open(&config).await.unwrap().into();
+    //let fts_store = FtsStore::from(db.clone());
+    let fts_store = ElasticSearchStore::open(&config).await.unwrap().into();
+
     if insert {
         db.destroy().await;
     }
-    query::test(db.clone(), insert).await;
+    query::test(db.clone(), fts_store, insert).await;
     assign_id::test(db).await;
     if insert {
         temp_dir.delete();

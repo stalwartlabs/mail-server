@@ -354,6 +354,7 @@ impl BlobStore {
     pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
         match self {
             Self::Fs(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "s3")]
             Self::S3(store) => store.get_blob(key, range).await,
             #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.get_blob(key, range).await,
@@ -371,6 +372,7 @@ impl BlobStore {
     pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
         match self {
             Self::Fs(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "s3")]
             Self::S3(store) => store.put_blob(key, data).await,
             #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.put_blob(key, data).await,
@@ -388,6 +390,7 @@ impl BlobStore {
     pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
         match self {
             Self::Fs(store) => store.delete_blob(key).await,
+            #[cfg(feature = "s3")]
             Self::S3(store) => store.delete_blob(key).await,
             #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.delete_blob(key).await,
@@ -410,6 +413,8 @@ impl FtsStore {
     ) -> crate::Result<()> {
         match self {
             FtsStore::Store(store) => store.fts_index(document).await,
+            #[cfg(feature = "elastic")]
+            FtsStore::ElasticSearch(store) => store.fts_index(document).await,
         }
     }
 
@@ -421,6 +426,10 @@ impl FtsStore {
     ) -> crate::Result<RoaringBitmap> {
         match self {
             FtsStore::Store(store) => store.fts_query(account_id, collection, filters).await,
+            #[cfg(feature = "elastic")]
+            FtsStore::ElasticSearch(store) => {
+                store.fts_query(account_id, collection, filters).await
+            }
         }
     }
 
@@ -432,12 +441,18 @@ impl FtsStore {
     ) -> crate::Result<bool> {
         match self {
             FtsStore::Store(store) => store.fts_remove(account_id, collection, document_id).await,
+            #[cfg(feature = "elastic")]
+            FtsStore::ElasticSearch(store) => {
+                store.fts_remove(account_id, collection, document_id).await
+            }
         }
     }
 
     pub async fn remove_all(&self, account_id: u32) -> crate::Result<()> {
         match self {
             FtsStore::Store(store) => store.fts_remove_all(account_id).await,
+            #[cfg(feature = "elastic")]
+            FtsStore::ElasticSearch(store) => store.fts_remove_all(account_id).await,
         }
     }
 }

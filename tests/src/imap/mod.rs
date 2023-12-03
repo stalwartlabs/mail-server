@@ -147,6 +147,12 @@ database = "stalwart"
 user = "root"
 password = "password"
 
+[store.fts]
+url = "https://localhost:9200"
+user = "elastic"
+password = "RtQ-Lu6+o4rxx=XJplVJ"
+allow-invalid-certs = true
+
 [store.blob]
 type = "local"
 

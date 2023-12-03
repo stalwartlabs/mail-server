@@ -110,7 +110,7 @@ impl From<FieldId> for u8 {
 }
 impl Display for FieldId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({})", FIELDS[self.0 as usize], self.0)
+        write!(f, "{}", FIELDS[self.0 as usize])
     }
 }
 
@@ -125,9 +125,8 @@ impl FieldId {
 }
 
 #[allow(clippy::mutex_atomic)]
-pub async fn test(db: Store, do_insert: bool) {
+pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
     println!("Running Store query tests...");
-    let fts_store = FtsStore::from(db.clone());
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(8)

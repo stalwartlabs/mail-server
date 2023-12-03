@@ -28,7 +28,7 @@ use nlp::language::Language;
 pub mod index;
 pub mod query;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Field<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     Header(T),
     Body,
@@ -36,7 +36,7 @@ pub enum Field<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     Keyword,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FtsFilter<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     Exact {
         field: Field<T>,
@@ -70,12 +70,20 @@ impl<T: Into<u8> + Display + Clone + std::fmt::Debug> FtsFilter<T> {
 
     pub fn has_text(field: Field<T>, text: impl Into<String>, language: Language) -> Self {
         let text = text.into();
-        if !matches!(language, Language::None) && (text.starts_with('"') && text.ends_with('"'))
-            || (text.starts_with('\'') && text.ends_with('\''))
+        let (is_exact, text) = if let Some(text) = text
+            .strip_prefix('"')
+            .and_then(|t| t.strip_suffix('"'))
+            .or_else(|| text.strip_prefix('\'').and_then(|t| t.strip_suffix('\'')))
         {
+            (true, text.to_string())
+        } else {
+            (false, text)
+        };
+
+        if !matches!(language, Language::None) && is_exact {
             FtsFilter::Exact {
                 field,
-                text,
+                text: text.to_string(),
                 language,
             }
         } else {

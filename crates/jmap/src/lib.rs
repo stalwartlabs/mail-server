@@ -48,7 +48,7 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::{rocksdb::RocksDbStore, sqlite::SqliteStore},
+    backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore},
     fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
@@ -201,11 +201,11 @@ impl JMAP {
                 .await
                 .failed("Unable to open database"),
         ));*/
-        let store = Store::SQLite(Arc::new(
+        /*let store = Store::SQLite(Arc::new(
             SqliteStore::open(config)
                 .await
                 .failed("Unable to open database"),
-        ));
+        ));*/
         /*let store = Store::FoundationDb(Arc::new(
             FdbStore::open(config)
                 .await
@@ -216,17 +216,22 @@ impl JMAP {
                 .await
                 .failed("Unable to open database"),
         ));*/
-        /*let store = Store::RocksDb(Arc::new(
+        let store = Store::RocksDb(Arc::new(
             RocksDbStore::open(config)
                 .await
                 .failed("Unable to open database"),
-        ));*/
+        ));
         let blob_store = store.clone().into();
         /*let blob_store = BlobStore::Fs(Arc::new(
             FsStore::open(config)
                 .await
                 .failed("Unable to open blob store"),
         ));*/
+        //let fts_store = FtsStore::Store(store.clone());
+        let fts_store = ElasticSearchStore::open(config)
+            .await
+            .failed("Unable to open FTS store")
+            .into();
 
         let jmap_server = Arc::new(JMAP {
             directory: directory_config
@@ -241,7 +246,7 @@ impl JMAP {
                 .property::<u64>("global.node-id")?
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_else(SnowflakeIdGenerator::new),
-            fts_store: FtsStore::Store(store.clone()),
+            fts_store,
             store,
             blob_store,
             config: Config::new(config).failed("Invalid configuration file"),
