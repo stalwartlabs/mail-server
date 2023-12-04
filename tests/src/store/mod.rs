@@ -29,7 +29,10 @@ use std::io::Read;
 
 use ::store::Store;
 
-use store::backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore};
+use store::{
+    backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore},
+    FtsStore,
+};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -72,8 +75,8 @@ pub async fn store_tests() {
     //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
     //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
     let db: Store = RocksDbStore::open(&config).await.unwrap().into();
-    //let fts_store = FtsStore::from(db.clone());
-    let fts_store = ElasticSearchStore::open(&config).await.unwrap().into();
+    let fts_store = FtsStore::from(db.clone());
+    //let fts_store = ElasticSearchStore::open(&config).await.unwrap().into();
 
     if insert {
         db.destroy().await;

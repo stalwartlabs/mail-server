@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, collections::BTreeSet, fmt::Display};
 
 use ahash::{AHashMap, AHashSet};
 use nlp::{
@@ -32,6 +32,7 @@ use nlp::{
     },
     tokenizers::word::WordTokenizer,
 };
+use utils::codec::leb128::Leb128Reader;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
@@ -170,6 +171,7 @@ impl Store {
         let default_language = detect
             .most_frequent_language()
             .unwrap_or(document.default_language);
+        let mut bigrams = BTreeSet::new();
 
         for (field, language, text) in parts.into_iter() {
             let language = if language != Language::Unknown {
@@ -182,10 +184,7 @@ impl Store {
             let mut last_token = Cow::Borrowed("");
             for token in Stemmer::new(&text, language, MAX_TOKEN_LENGTH) {
                 if !last_token.is_empty() {
-                    tokens
-                        .entry(BitmapHash::new(&format!("{} {}", last_token, token.word)))
-                        .or_default()
-                        .insert(TokenType::bigram(field));
+                    bigrams.insert(BitmapHash::new(&format!("{} {}", last_token, token.word)).hash);
                 }
 
                 tokens
@@ -212,6 +211,13 @@ impl Store {
         let mut serializer = KeySerializer::new(tokens.len() * U64_LEN * 2);
         let mut keys = Vec::with_capacity(tokens.len());
 
+        // Write bigrams
+        serializer = serializer.write_leb128(bigrams.len());
+        for bigram in bigrams {
+            serializer = serializer.write(bigram.as_slice());
+        }
+
+        // Write index keys
         for (hash, fields) in tokens.into_iter() {
             serializer = serializer
                 .write(hash.hash.as_slice())
@@ -336,7 +342,21 @@ impl Deserialize for TermIndex {
         let bytes = lz4_flex::decompress_size_prepended(bytes)
             .map_err(|_| Error::InternalError("Failed to decompress term index".to_string()))?;
         let mut ops = Vec::new();
-        let mut bytes = bytes.iter().peekable();
+
+        // Skip bigrams
+        let (num_items, pos) =
+            bytes
+                .as_slice()
+                .read_leb128::<usize>()
+                .ok_or(Error::InternalError(
+                    "Failed to read term index marker".to_string(),
+                ))?;
+
+        let mut bytes = bytes
+            .get(pos + (num_items * 8)..)
+            .unwrap_or_default()
+            .iter()
+            .peekable();
 
         while bytes.peek().is_some() {
             let mut hash = BitmapHash {

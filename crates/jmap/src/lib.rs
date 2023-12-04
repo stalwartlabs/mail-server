@@ -227,11 +227,11 @@ impl JMAP {
                 .await
                 .failed("Unable to open blob store"),
         ));*/
-        //let fts_store = FtsStore::Store(store.clone());
-        let fts_store = ElasticSearchStore::open(config)
-            .await
-            .failed("Unable to open FTS store")
-            .into();
+        let fts_store = FtsStore::Store(store.clone());
+        /*let fts_store = ElasticSearchStore::open(config)
+        .await
+        .failed("Unable to open FTS store")
+        .into();*/
 
         let jmap_server = Arc::new(JMAP {
             directory: directory_config

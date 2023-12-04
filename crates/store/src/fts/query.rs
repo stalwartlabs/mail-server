@@ -22,18 +22,30 @@
 */
 
 use std::{
+    borrow::Cow,
     fmt::Display,
     ops::{BitAndAssign, BitOrAssign, BitXorAssign},
 };
 
+use ahash::AHashSet;
 use nlp::language::stemmer::Stemmer;
 use roaring::RoaringBitmap;
+use utils::codec::leb128::Leb128Reader;
 
-use crate::{backend::MAX_TOKEN_LENGTH, fts::FtsFilter, write::BitmapClass, BitmapKey, Store};
+use crate::{
+    backend::MAX_TOKEN_LENGTH,
+    fts::FtsFilter,
+    write::{BitmapClass, BitmapHash, ValueClass},
+    BitmapKey, Deserialize, Error, Store, ValueKey,
+};
 
 struct State<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     pub op: FtsFilter<T>,
     pub bm: Option<RoaringBitmap>,
+}
+
+struct BigramIndex {
+    grams: Vec<[u8; 8]>,
 }
 
 impl Store {
@@ -59,34 +71,60 @@ impl Store {
                     language,
                 } => {
                     let field: u8 = field.clone().into();
+                    let mut keys = Vec::new();
+                    let mut bigrams = AHashSet::new();
+                    let mut last_token = Cow::Borrowed("");
+                    for token in language.tokenize_text(text.as_ref(), MAX_TOKEN_LENGTH) {
+                        keys.push(BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::word(token.word.as_ref(), field),
+                            block_num: 0,
+                        });
 
-                    let tokens = language
-                        .tokenize_text(text.as_ref(), MAX_TOKEN_LENGTH)
-                        .map(|t| t.word)
-                        .collect::<Vec<_>>();
-                    let keys = if tokens.len() > 1 {
-                        tokens
-                            .windows(2)
-                            .map(|bg| BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::bigram(format!("{} {}", bg[0], bg[1]), field),
-                                block_num: 0,
-                            })
-                            .collect::<Vec<_>>()
-                    } else {
-                        tokens
-                            .into_iter()
-                            .map(|word| BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::word(word.as_ref(), field),
-                                block_num: 0,
-                            })
-                            .collect::<Vec<_>>()
-                    };
+                        if !last_token.is_empty() {
+                            bigrams.insert(
+                                BitmapHash::new(&format!("{} {}", last_token, token.word)).hash,
+                            );
+                        }
 
-                    self.get_bitmaps_intersection(keys).await?
+                        last_token = token.word;
+                    }
+
+                    match keys.len().cmp(&1) {
+                        std::cmp::Ordering::Less => None,
+                        std::cmp::Ordering::Equal => self.get_bitmaps_intersection(keys).await?,
+                        std::cmp::Ordering::Greater => {
+                            if let Some(document_ids) = self.get_bitmaps_intersection(keys).await? {
+                                let mut results = RoaringBitmap::new();
+                                for document_id in document_ids {
+                                    if let Some(bigram_index) = self
+                                        .get_value::<BigramIndex>(ValueKey {
+                                            account_id,
+                                            collection,
+                                            document_id,
+                                            class: ValueClass::TermIndex,
+                                        })
+                                        .await?
+                                    {
+                                        if bigrams.iter().all(|bigram| {
+                                            bigram_index.grams.binary_search(bigram).is_ok()
+                                        }) {
+                                            results.insert(document_id);
+                                        }
+                                    }
+                                }
+
+                                if !results.is_empty() {
+                                    Some(results)
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                    }
                 }
                 FtsFilter::Contains {
                     field,
@@ -235,6 +273,27 @@ impl Store {
         }
 
         Ok(if !bm.is_empty() { Some(bm) } else { None })
+    }
+}
+
+impl Deserialize for BigramIndex {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        let bytes = lz4_flex::decompress_size_prepended(bytes)
+            .map_err(|_| Error::InternalError("Failed to decompress term index".to_string()))?;
+
+        let (num_items, pos) = bytes.read_leb128::<usize>().ok_or(Error::InternalError(
+            "Failed to read term index marker".to_string(),
+        ))?;
+
+        bytes
+            .get(pos..pos + (num_items * 8))
+            .map(|bytes| Self {
+                grams: bytes
+                    .chunks_exact(8)
+                    .map(|chunk| chunk.try_into().unwrap())
+                    .collect(),
+            })
+            .ok_or_else(|| Error::InternalError("Failed to read term index".to_string()))
     }
 }
 
