@@ -61,44 +61,47 @@ test = [
 ]
 expect = false
 
-[directory."list_mx"]
+[store."list_mx"]
 type = "memory"
-[directory."list_mx".lookup]
-domains = ["mx"]
+[store."list_mx".lookup."domains"]
+type = "list"
+values = ["mx"]
 
-[directory."list_foo"]
+[store."list_foo"]
 type = "memory"
-[directory."list_foo".lookup]
-domains = ["foo"]
+[store."list_foo".lookup."domains"]
+type = "list"
+values = ["foo"]
 
-[directory."list_123"]
+[store."list_123"]
 type = "memory"
-[directory."list_123".lookup]
-domains = ["123"]
+[store."list_123".lookup."domains"]
+type = "list"
+values = ["123"]
 
 [maybe-eval."dyn_mx"]
 test = [
-    {if = "mx", matches = "([^.]+)\.(.+)$", then = "list_${1}"},
+    {if = "mx", matches = "([^.]+)\.(.+)$", then = "list_${1}/domains"},
     {else = false}
 ]
 expect = "mx"
 
 [maybe-eval."dyn_foo"]
 test = [
-    {if = "sender-domain", matches = "([^.]+)\.(.+)$", then = "list_${1}"},
+    {if = "sender-domain", matches = "([^.]+)\.(.+)$", then = "list_${1}/domains"},
     {else = false}
 ]
 expect = "foo"
 
 [maybe-eval."static_mx"]
-test = "list_mx"
+test = "list_mx/domains"
 expect = "mx"
 
 [maybe-eval."static_foo"]
-test = "list_foo"
+test = "list_foo/domains"
 expect = "foo"
 
 [maybe-eval."dyn_123"]
-test = "list_${listener}"
+test = "list_${listener}/domains"
 expect = "123"
 

@@ -32,7 +32,7 @@ use elasticsearch::{
     Elasticsearch, Error,
 };
 use serde_json::json;
-use utils::config::Config;
+use utils::config::{utils::AsKey, Config};
 
 pub mod index;
 pub mod query;
@@ -44,50 +44,57 @@ pub struct ElasticSearchStore {
 pub(crate) static INDEX_NAMES: &[&str] = &["stalwart_email"];
 
 impl ElasticSearchStore {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
-        let credentials = if let Some(user) = config.value("store.fts.user") {
-            let password = config.value_require("store.fts.password")?;
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
+        let credentials = if let Some(user) = config.value((&prefix, "user")) {
+            let password = config.value_require((&prefix, "password"))?;
             Some(Credentials::Basic(user.to_string(), password.to_string()))
         } else {
             None
         };
 
-        let es = if let Some(url) = config.value("store.fts.url") {
+        let es = if let Some(url) = config.value((&prefix, "url")) {
             let url = Url::parse(url).map_err(|e| {
-                crate::Error::InternalError(format!("Invalid store.fts.url: {}", e))
+                crate::Error::InternalError(format!(
+                    "Invalid URL {}: {}",
+                    (&prefix, "url").as_key(),
+                    e
+                ))
             })?;
             let conn_pool = SingleNodeConnectionPool::new(url);
             let mut builder = TransportBuilder::new(conn_pool);
             if let Some(credentials) = credentials {
                 builder = builder.auth(credentials);
             }
-            if config.property_or_static::<bool>("store.fts.allow-invalid-certs", "false")? {
+            if config.property_or_static::<bool>((&prefix, "allow-invalid-certs"), "false")? {
                 builder = builder.cert_validation(CertificateValidation::None);
             }
 
             Self {
                 index: Elasticsearch::new(builder.build()?),
             }
-        } else if let Some(cloud_id) = config.value("store.fts.cloud-id") {
+        } else if let Some(cloud_id) = config.value((&prefix, "cloud-id")) {
             Self {
                 index: Elasticsearch::new(Transport::cloud(
                     cloud_id,
                     credentials.ok_or_else(|| {
-                        crate::Error::InternalError(
-                            "Missing store.fts.user or store.fts.password".to_string(),
-                        )
+                        crate::Error::InternalError(format!(
+                            "Missing user and/or password for ElasticSearch store {}",
+                            prefix
+                        ))
                     })?,
                 )?),
             }
         } else {
-            return Err(crate::Error::InternalError(
-                "Missing store.fts.url or store.fts.cloud_id".to_string(),
-            ));
+            return Err(crate::Error::InternalError(format!(
+                "Missing url or cloud_id for ElasticSearch store {}",
+                prefix
+            )));
         };
 
         es.create_index(
-            config.property_or_static("store.fts.shards", "3")?,
-            config.property_or_static("store.fts.replicas", "0")?,
+            config.property_or_static((&prefix, "index.shards"), "3")?,
+            config.property_or_static((&prefix, "index.replicas"), "0")?,
         )
         .await?;
 
@@ -160,7 +167,7 @@ impl ElasticSearchStore {
 
             if !response.status_code().is_success() {
                 return Err(crate::Error::InternalError(format!(
-                    "Error while creating ElastiSearch index: {:?}",
+                    "Error while creating ElasticSearch index: {:?}",
                     response
                 )));
             }
@@ -172,12 +179,12 @@ impl ElasticSearchStore {
 
 impl From<Error> for crate::Error {
     fn from(value: Error) -> Self {
-        crate::Error::InternalError(format!("Elasticsearch error: {}", value))
+        crate::Error::InternalError(format!("ElasticSearch error: {}", value))
     }
 }
 
 impl From<BuildError> for crate::Error {
     fn from(value: BuildError) -> Self {
-        crate::Error::InternalError(format!("Elasticsearch build error: {}", value))
+        crate::Error::InternalError(format!("ElasticSearch build error: {}", value))
     }
 }

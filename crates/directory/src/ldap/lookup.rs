@@ -21,10 +21,10 @@
  * for more details.
 */
 
-use ldap3::{ResultEntry, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, LdapError, ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{DatabaseColumn, Directory, Principal, Type};
+use crate::{Directory, DirectoryError, Principal, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -39,23 +39,50 @@ impl Directory for LdapDirectory {
             Credentials::OAuthBearer { token } => (token, token),
             Credentials::XOauth2 { username, secret } => (username, secret),
         };
-        match self
-            .find_principal(&self.mappings.filter_name.build(username))
-            .await
-        {
-            Ok(Some(principal)) => {
-                if principal.verify_secret(secret).await {
-                    Ok(Some(principal))
-                } else {
+
+        if let Some(auth_bind) = &self.auth_bind {
+            let (conn, mut ldap) = LdapConnAsync::with_settings(
+                self.pool.manager().settings.clone(),
+                &self.pool.manager().address,
+            )
+            .await?;
+
+            ldap3::drive!(conn);
+
+            ldap.simple_bind(&auth_bind.build(username), secret).await?;
+
+            match self
+                .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
+                .await
+            {
+                Err(DirectoryError::Ldap(LdapError::LdapResult { result }))
+                    if [49, 50].contains(&result.rc) =>
+                {
                     Ok(None)
                 }
+                result => result,
             }
-            result => result,
+        } else {
+            let mut conn = self.pool.get().await?;
+            match self
+                .find_principal(&mut conn, &self.mappings.filter_name.build(username))
+                .await
+            {
+                Ok(Some(principal)) => {
+                    if principal.verify_secret(secret).await {
+                        Ok(Some(principal))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                result => result,
+            }
         }
     }
 
     async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
-        self.find_principal(&self.mappings.filter_name.build(name))
+        let mut conn = self.pool.get().await?;
+        self.find_principal(&mut conn, &self.mappings.filter_name.build(name))
             .await
     }
 
@@ -239,35 +266,6 @@ impl Directory for LdapDirectory {
         Ok(emails)
     }
 
-    async fn lookup(&self, query: &str, params: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
-        self.query_(query, params)
-            .await
-            .map(|entry| entry.is_some())
-    }
-
-    async fn query(
-        &self,
-        query: &str,
-        params: &[DatabaseColumn<'_>],
-    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
-        self.query_(query, params).await.map(|entry| {
-            if let Some(entry) = entry {
-                let mut object = String::new();
-                for (attr, values) in SearchEntry::construct(entry).attrs {
-                    for value in values {
-                        object.push_str(&attr);
-                        object.push(':');
-                        object.push_str(&value);
-                        object.push('\n');
-                    }
-                }
-                vec![DatabaseColumn::Text(object.into())]
-            } else {
-                vec![]
-            }
-        })
-    }
-
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         self.pool
             .get()
@@ -287,50 +285,12 @@ impl Directory for LdapDirectory {
 }
 
 impl LdapDirectory {
-    async fn query_(
+    async fn find_principal(
         &self,
-        query: &str,
-        params: &[DatabaseColumn<'_>],
-    ) -> crate::Result<Option<ResultEntry>> {
-        let mut conn = self.pool.get().await?;
-        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
-
-        if !params.is_empty() {
-            let mut expanded_query = String::with_capacity(query.len() + params.len() * 2);
-            for (pos, item) in query.split('?').enumerate() {
-                if pos > 0 {
-                    if let Some(param) = params.get(pos - 1) {
-                        expanded_query.push_str(param.as_str());
-                    }
-                }
-                expanded_query.push_str(item);
-            }
-            conn.streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &expanded_query,
-                Vec::<String>::new(),
-            )
-            .await
-        } else {
-            conn.streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                query,
-                Vec::<String>::new(),
-            )
-            .await
-        }?
-        .next()
-        .await
-        .map_err(|e| e.into())
-    }
-
-    async fn find_principal(&self, filter: &str) -> crate::Result<Option<Principal>> {
-        let (rs, _res) = self
-            .pool
-            .get()
-            .await?
+        conn: &mut Ldap,
+        filter: &str,
+    ) -> crate::Result<Option<Principal>> {
+        let (rs, _res) = conn
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
@@ -346,7 +306,6 @@ impl LdapDirectory {
         }) {
             // Map groups
             if !principal.member_of.is_empty() {
-                let mut conn = self.pool.get().await?;
                 let mut names = Vec::with_capacity(principal.member_of.len());
                 for group in principal.member_of {
                     if group.contains('=') {

@@ -31,10 +31,11 @@ use config::{
     resolver::ConfigResolver, scripts::ConfigSieve, session::ConfigSession, ConfigContext, Host,
 };
 use dashmap::DashMap;
-use directory::DirectoryConfig;
+use directory::Directories;
 use mail_send::smtp::tls::build_tls_connector;
 use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;
+use store::Stores;
 use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol, Servers},
@@ -56,12 +57,14 @@ impl SMTP {
     pub async fn init(
         config: &Config,
         servers: &Servers,
-        directory: &DirectoryConfig,
+        stores: &Stores,
+        directory: &Directories,
         #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
     ) -> Result<Arc<Self>, String> {
         // Read configuration parameters
         let mut config_ctx = ConfigContext::new(&servers.inner);
         config_ctx.directory = directory.clone();
+        config_ctx.stores = stores.clone();
 
         // Parse remote hosts
         config.parse_remote_hosts(&mut config_ctx)?;

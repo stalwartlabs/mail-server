@@ -22,6 +22,7 @@
 */
 
 use directory::config::ConfigDirectory;
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
@@ -62,8 +63,6 @@ description = "Mike Foobar"
 secret = "p4ssw0rd"
 email = "mike@test.com"
 
-[directory."local".lookup]
-domains = ["foobar.org", "domain.net", "test.com"]
 "#;
 
 #[tokio::test]
@@ -79,7 +78,10 @@ async fn data() {
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

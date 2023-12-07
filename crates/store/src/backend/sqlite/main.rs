@@ -23,7 +23,10 @@
 
 use r2d2::Pool;
 use tokio::sync::oneshot;
-use utils::{config::Config, UnwrapFailure};
+use utils::{
+    config::{utils::AsKey, Config},
+    UnwrapFailure,
+};
 
 use crate::{
     SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
@@ -33,14 +36,15 @@ use crate::{
 use super::{pool::SqliteConnectionManager, SqliteStore};
 
 impl SqliteStore {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
         let db = Self {
             conn_pool: Pool::builder()
-                .max_size(config.property_or_static("store.db.pool.max-connections", "10")?)
+                .max_size(config.property_or_static((&prefix, "pool.max-connections"), "10")?)
                 .build(
                     SqliteConnectionManager::file(
                         config
-                            .value_require("store.db.path")
+                            .value_require((&prefix, "path"))
                             .failed("Invalid configuration file"),
                     )
                     .with_init(|c| {
@@ -55,7 +59,7 @@ impl SqliteStore {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>("store.db.pool.workers")?
+                        .property::<usize>((&prefix, "pool.workers"))?
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )

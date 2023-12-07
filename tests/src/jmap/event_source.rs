@@ -21,29 +21,30 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{
-        assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes,
-        test_account_login,
-    },
+use crate::jmap::{
+    assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes, test_account_login,
 };
 use futures::StreamExt;
-use jmap::{mailbox::INBOX_ID, JMAP};
-use jmap_client::{client::Client, event_source::Changes, mailbox::Role, TypeState};
+use jmap::mailbox::INBOX_ID;
+use jmap_client::{event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;
 
 use tokio::sync::mpsc;
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running EventSource tests...");
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
@@ -118,8 +119,11 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Destroy Inbox
-    admin_client.set_default_account_id(&account_id.to_string());
-    admin_client
+    params
+        .client
+        .set_default_account_id(&account_id.to_string());
+    params
+        .client
         .mailbox_destroy(&Id::from(INBOX_ID).to_string(), true)
         .await
         .unwrap();
@@ -132,7 +136,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     assert_ping(&mut event_rx).await;
     assert_ping(&mut event_rx).await;
 
-    destroy_all_mailboxes(admin_client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

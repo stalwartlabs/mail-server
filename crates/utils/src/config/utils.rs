@@ -350,6 +350,18 @@ impl ParseValue for u32 {
     }
 }
 
+impl ParseValue for i32 {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        value.parse().map_err(|_| {
+            format!(
+                "Invalid integer value {:?} for property {:?}.",
+                value,
+                key.as_key()
+            )
+        })
+    }
+}
+
 impl ParseValue for IpAddr {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         value.parse().map_err(|_| {

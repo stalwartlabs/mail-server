@@ -39,17 +39,8 @@ async fn ldap_directory() {
     .unwrap();*/
 
     // Obtain directory handle
-    let mut config = parse_config();
-    let lookups = config.lookups;
-    let handle = config.directories.remove("ldap").unwrap();
-
-    // Text lookup
-    assert!(lookups
-        .get("ldap/domains")
-        .unwrap()
-        .contains("example.org")
-        .await
-        .unwrap());
+    let mut config = parse_config().await;
+    let handle = config.directories.directories.remove("ldap").unwrap();
 
     // Test authentication
     assert_eq!(

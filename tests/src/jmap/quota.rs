@@ -21,32 +21,40 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use crate::{
-    directory::sql::{add_to_group, create_test_user_with_email, set_test_quota},
-    jmap::{
-        assert_is_empty, delivery::SmtpConnection, jmap_raw_request,
-        mailbox::destroy_all_mailboxes, test_account_login,
-    },
+use crate::jmap::{
+    assert_is_empty, delivery::SmtpConnection, jmap_raw_request, mailbox::destroy_all_mailboxes,
+    test_account_login,
 };
-use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JMAP};
+use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID};
 use jmap_client::{
-    client::Client,
     core::set::{SetErrorType, SetObject},
     email::EmailBodyPart,
 };
 use jmap_proto::types::{collection::Collection, id::Id};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running quota tests...");
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
-    create_test_user_with_email(directory, "robert@example.com", "aabbcc", "Robert Foobar").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
+    params
+        .directory
+        .create_test_user_with_email("robert@example.com", "aabbcc", "Robert Foobar")
+        .await;
     let other_account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
     let account_id = Id::from(server.get_account_id("robert@example.com").await.unwrap());
-    set_test_quota(directory, "robert@example.com", 1024).await;
-    add_to_group(directory, "robert@example.com", "jdoe@example.com").await;
+    params
+        .directory
+        .set_test_quota("robert@example.com", 1024)
+        .await;
+    params
+        .directory
+        .add_to_group("robert@example.com", "jdoe@example.com")
+        .await;
 
     // Delete temporary blobs from previous tests
     server.store.blob_hash_expire_all().await;
@@ -317,8 +325,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Remove test data
     for account_id in [&account_id, &other_account_id] {
-        admin_client.set_default_account_id(account_id.to_string());
-        destroy_all_mailboxes(admin_client).await;
+        params.client.set_default_account_id(account_id.to_string());
+        destroy_all_mailboxes(&params.client).await;
     }
     assert_is_empty(server).await;
 }

@@ -21,22 +21,21 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use jmap::{mailbox::INBOX_ID, JMAP};
-use jmap_client::client::Client;
+use jmap::mailbox::INBOX_ID;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{assert_is_empty, jmap_json_request, mailbox::destroy_all_mailboxes},
-};
+use crate::jmap::{assert_is_empty, jmap_json_request, mailbox::destroy_all_mailboxes};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running blob tests...");
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
 
     server.store.blob_hash_expire_all().await;
@@ -425,8 +424,9 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     server.store.blob_hash_expire_all().await;
 
     // Blob/lookup
-    admin_client.set_default_account_id(account_id.to_string());
-    let blob_id = admin_client
+    params.client.set_default_account_id(account_id.to_string());
+    let blob_id = params
+        .client
         .email_import(
             concat!(
                 "From: bill@example.com\r\n",
@@ -487,7 +487,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     }
 
     // Remove test data
-    admin_client.set_default_account_id(account_id.to_string());
-    destroy_all_mailboxes(admin_client).await;
+    params.client.set_default_account_id(account_id.to_string());
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

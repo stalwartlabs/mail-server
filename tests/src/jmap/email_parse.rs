@@ -21,11 +21,9 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf};
 
-use jmap::JMAP;
 use jmap_client::{
-    client::Client,
     email::{self, Header, HeaderForm},
     mailbox::Role,
 };
@@ -35,15 +33,19 @@ use crate::jmap::{
     assert_is_empty, email_get::all_headers, mailbox::destroy_all_mailboxes, replace_blob_ids,
 };
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Parse tests...");
+    let server = params.server.clone();
 
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_dir.push("resources");
     test_dir.push("jmap");
     test_dir.push("email_parse");
 
-    let mailbox_id = client
+    let mailbox_id = params
+        .client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("JMAP Parse", None::<String>, Role::None)
         .await
@@ -55,7 +57,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         let mut test_file = test_dir.clone();
         test_file.push(test_name);
 
-        let email = client
+        let email = params
+            .client
             .email_import(
                 fs::read(&test_file).unwrap(),
                 [mailbox_id.clone()],
@@ -65,7 +68,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             .await
             .unwrap();
 
-        let blob_id = client
+        let blob_id = params
+            .client
             .email_get(email.id().unwrap(), Some([email::Property::Attachments]))
             .await
             .unwrap()
@@ -78,7 +82,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             .unwrap()
             .to_string();
 
-        let email = client
+        let email = params
+            .client
             .email_parse(
                 &blob_id,
                 [
@@ -137,7 +142,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
                 for part in parts {
                     let blob_id = part.blob_id().unwrap();
 
-                    let inner_blob = client.download(blob_id).await.unwrap();
+                    let inner_blob = params.client.download(blob_id).await.unwrap();
 
                     test_file.set_extension(format!("part{}", part.part_id().unwrap()));
 
@@ -168,13 +173,15 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     // Test header parsing on a temporary blob
     let mut test_file = test_dir;
     test_file.push("headers.eml");
-    let blob_id = client
+    let blob_id = params
+        .client
         .upload(None, fs::read(&test_file).unwrap(), None)
         .await
         .unwrap()
         .take_blob_id();
 
-    let mut email = client
+    let mut email = params
+        .client
         .email_parse(
             &blob_id,
             [
@@ -225,7 +232,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     for property in all_headers() {
         email.headers.extend(
-            client
+            params
+                .client
                 .email_parse(&blob_id, [property].into(), [].into(), None)
                 .await
                 .unwrap()
@@ -244,6 +252,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         panic!("Test failed, output saved to {}", test_file.display());
     }
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

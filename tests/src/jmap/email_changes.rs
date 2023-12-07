@@ -21,10 +21,6 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use jmap::JMAP;
-use jmap_client::client::Client;
 use jmap_proto::{
     parser::{json::Parser, JsonObjectParser},
     types::{collection::Collection, id::Id, state::State},
@@ -36,10 +32,13 @@ use store::{
 
 use crate::jmap::assert_is_empty;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Changes tests...");
 
-    client.set_default_account_id(Id::new(1));
+    let server = params.server.clone();
+    params.client.set_default_account_id(Id::new(1));
     let mut states = vec![State::Initial];
 
     for (change_id, (changes, expected_changelog)) in [
@@ -183,7 +182,11 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
         let mut new_state = State::Initial;
         for (test_num, state) in (states).iter().enumerate() {
-            let changes = client.email_changes(state.to_string(), None).await.unwrap();
+            let changes = params
+                .client
+                .email_changes(state.to_string(), None)
+                .await
+                .unwrap();
 
             assert_eq!(
                 expected_changelog[test_num],
@@ -224,7 +227,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
                 let mut int_state = state.clone();
 
                 for _ in 0..100 {
-                    let changes = client
+                    let changes = params
+                        .client
                         .email_changes(int_state.to_string(), max_changes.into())
                         .await
                         .unwrap();
@@ -303,7 +307,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         states.push(new_state);
     }
 
-    let changes = client
+    let changes = params
+        .client
         .email_changes(State::Initial.to_string(), 0.into())
         .await
         .unwrap();

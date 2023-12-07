@@ -21,10 +21,10 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf};
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
-use jmap::{mailbox::INBOX_ID, JMAP};
+use jmap::mailbox::INBOX_ID;
 use jmap_client::{
     client::Client,
     core::set::{SetError, SetErrorType},
@@ -34,18 +34,19 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 
-use super::{find_values, replace_blob_ids, replace_boundaries, replace_values};
+use super::{find_values, replace_blob_ids, replace_boundaries, replace_values, JMAPTest};
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Set tests...");
+    let server = params.server.clone();
 
     let mailbox_id = Id::from(INBOX_ID).to_string();
-    client.set_default_account_id(Id::from(1u64));
+    params.client.set_default_account_id(Id::from(1u64));
 
-    create(client, &mailbox_id).await;
-    update(client, &mailbox_id).await;
+    create(&mut params.client, &mailbox_id).await;
+    update(&mut params.client, &mailbox_id).await;
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

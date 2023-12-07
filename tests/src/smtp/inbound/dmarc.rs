@@ -34,6 +34,7 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
+use store::Stores;
 use utils::config::{Config, DynValue, Rate};
 
 use crate::smtp::{
@@ -58,8 +59,6 @@ description = "John Doe"
 secret = "secret"
 email = ["jdoe@example.com"]
 
-[directory."local".lookup]
-domains = ["example.com"]
 "#;
 
 #[tokio::test]
@@ -134,7 +133,10 @@ async fn dmarc() {
 
     // Create report channels
     let mut rr = core.init_test_report();
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

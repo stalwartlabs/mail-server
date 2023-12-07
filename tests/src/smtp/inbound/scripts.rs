@@ -35,24 +35,26 @@ use smtp::{
     core::{Session, SMTP},
     scripts::ScriptResult,
 };
+use store::config::ConfigStore;
 use tokio::runtime::Handle;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
-[directory."sql"]
-type = "sql"
-address = "sqlite://%PATH%/test.db?mode=rwc"
+[store."sql"]
+type = "sqlite"
+path = "%PATH%/smtp_sieve.db"
 
-[directory."sql".pool]
+[store."sql".pool]
 max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[directory."local"]
+[store."local"]
 type = "memory"
 
-[directory."local".lookup]
-invalid-ehlos = ["spammer.org", "spammer.net"]
+[store."local".lookup."invalid-ehlos"]
+type = "list"
+values = ["spammer.org", "spammer.net"]
 
 [session.data.pipe."test"]
 command = [ { if = "remote-ip", eq = "10.0.0.123", then = "/bin/bash" }, 
@@ -132,7 +134,8 @@ async fn sieve_scripts() {
             ),
     )
     .unwrap();
-    ctx.directory = config.parse_directory().unwrap();
+    ctx.stores = config.parse_stores().await.unwrap();
+    ctx.directory = config.parse_directory(&ctx.stores).unwrap();
     let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;

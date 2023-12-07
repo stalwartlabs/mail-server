@@ -40,7 +40,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use directory::{Directory, DirectoryConfig, Lookup};
+use directory::{Directories, Directory};
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
     dkim::{Canonicalization, Done},
@@ -50,9 +50,10 @@ use mail_send::Credentials;
 use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
+use store::Stores;
 use utils::config::{DynValue, Rate, Server, ServerProtocol};
 
-use crate::inbound::milter;
+use crate::{core::Lookup, inbound::milter};
 
 #[derive(Debug)]
 pub struct Host {
@@ -96,7 +97,7 @@ pub enum ConditionMatch {
     UInt(u16),
     Int(i16),
     IpAddrMask(IpAddrMask),
-    Lookup(Arc<Lookup>),
+    Lookup(Lookup),
     Regex(Regex),
 }
 
@@ -534,7 +535,8 @@ pub struct ConfigContext<'x> {
     pub servers: &'x [Server],
     pub hosts: AHashMap<String, Host>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
-    pub directory: DirectoryConfig,
+    pub directory: Directories,
+    pub stores: Stores,
     pub signers: AHashMap<String, Arc<DkimSigner>>,
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
 }

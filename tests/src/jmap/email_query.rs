@@ -21,13 +21,12 @@
  * for more details.
 */
 
-use std::{collections::hash_map::Entry, sync::Arc, time::Instant};
+use std::{collections::hash_map::Entry, time::Instant};
 
 use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
     store::{deflate_artwork_data, query::FIELDS},
 };
-use jmap::JMAP;
 use jmap_client::{
     client::Client,
     core::query::{Comparator, Filter},
@@ -38,12 +37,16 @@ use mail_parser::HeaderName;
 
 use store::{ahash::AHashMap, write::BatchBuilder};
 
+use super::JMAPTest;
+
 const MAX_THREADS: usize = 100;
 const MAX_MESSAGES: usize = 1000;
 const MAX_MESSAGES_PER_THREAD: usize = 100;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
+pub async fn test(params: &mut JMAPTest, insert: bool) {
     println!("Running Email Query tests...");
+    let server = params.server.clone();
+    let client = &mut params.client;
     client.set_default_account_id(Id::new(1));
     if insert {
         // Add some "virtual" mailbox ids so create doesn't fail
@@ -117,7 +120,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client, insert: bool) {
         .unwrap_set_email()
         .unwrap();
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

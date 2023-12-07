@@ -22,29 +22,31 @@
 */
 
 use chrono::{Duration, Utc};
-use jmap::JMAP;
-use jmap_client::client::Client;
-use jmap_proto::types::id::Id;
-use std::{sync::Arc, time::Instant};
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{
-        assert_is_empty,
-        delivery::SmtpConnection,
-        email_submission::{
-            assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
-        },
-        mailbox::destroy_all_mailboxes,
+use jmap_proto::types::id::Id;
+use std::time::Instant;
+
+use crate::jmap::{
+    assert_is_empty,
+    delivery::SmtpConnection,
+    email_submission::{
+        assert_message_delivery, expect_nothing, spawn_mock_smtp_server, MockMessage,
     },
+    mailbox::destroy_all_mailboxes,
 };
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Vacation Response tests...");
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    let client = &mut params.client;
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     client.set_default_account_id(&account_id);
 
@@ -173,6 +175,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Remove test data
     client.vacation_response_destroy().await.unwrap();
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

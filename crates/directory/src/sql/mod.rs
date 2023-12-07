@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use sqlx::{Any, Pool};
+use store::LookupStore;
 
 use crate::DirectoryOptions;
 
@@ -29,12 +29,12 @@ pub mod config;
 pub mod lookup;
 
 pub struct SqlDirectory {
-    pool: Pool<Any>,
+    store: LookupStore,
     mappings: SqlMappings,
     opt: DirectoryOptions,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct SqlMappings {
     query_name: String,
     query_members: String,

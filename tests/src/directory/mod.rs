@@ -26,42 +26,118 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use directory::{config::ConfigDirectory, AddressMapping, DirectoryConfig};
+use ::smtp::core::Lookup;
+use directory::{config::ConfigDirectory, AddressMapping, Directories};
 use mail_send::Credentials;
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
+use store::{config::ConfigStore, LookupStore, Stores};
 use tokio_rustls::TlsAcceptor;
 
-const CONFIG: &str = r#"
-[directory."sql"]
-type = "sql"
-address = "sqlite::memory:"
-#address = "mysql://root:secret@localhost:3306/stalwart?ssl_mode=disabled"
+use crate::store::TempDir;
 
-[directory."sql".options]
+const CONFIG: &str = r#"
+[directory."sqlite"]
+type = "sql"
+store = "sqlite"
+
+[directory."sqlite".options]
 catch-all = true
 subaddressing = true
 
-[directory."sql".pool]
-max-connections = 1
-
-[directory."sql".query]
-name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
-members = "SELECT member_of FROM group_members WHERE name = ?"
-recipients = "SELECT name FROM emails WHERE address = ?"
-emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
-verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
-expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
-domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
-
-[directory."sql".columns]
+[directory."sqlite".columns]
 name = "name"
 description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
 type = "type"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/auth.db"
+
+[store."sqlite".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ? ORDER BY name ASC"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+##############################################################################
+
+[directory."postgresql"]
+type = "sql"
+store = "postgresql"
+
+[directory."postgresql".options]
+catch-all = true
+subaddressing = true
+
+[directory."postgresql".columns]
+name = "name"
+description = "description"
+secret = "secret"
+email = "address"
+quota = "quota"
+type = "type"
+
+[store."postgresql"]
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."postgresql".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = $1 AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = $1"
+recipients = "SELECT name FROM emails WHERE address = $1 ORDER BY name ASC"
+emails = "SELECT address FROM emails WHERE name = $1 AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || $1 || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = $1 AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || $1 LIMIT 1"
+
+##############################################################################
+
+[directory."mysql"]
+type = "sql"
+store = "mysql"
+
+[directory."mysql".options]
+catch-all = true
+subaddressing = true
+
+[directory."mysql".columns]
+name = "name"
+description = "description"
+secret = "secret"
+email = "address"
+quota = "quota"
+type = "type"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
+
+[store."mysql".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ? ORDER BY name ASC"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE CONCAT('%', ?, '%') AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE CONCAT('%@', ?) LIMIT 1"
+
+##############################################################################
 
 [directory."ldap"]
 type = "ldap"
@@ -71,6 +147,10 @@ base-dn = "dc=example,dc=org"
 [directory."ldap".bind]
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
+
+[directory."ldap".auth-bind]
+enable = false
+dn = "cn=?,ou=svcaccts,dc=example,dc=org"
 
 [directory."ldap".options]
 catch-all = true
@@ -99,6 +179,8 @@ email = "mail"
 email-alias = "givenName"
 quota = "diskQuota"
 
+##############################################################################
+
 [directory."imap"]
 type = "imap"
 address = "127.0.0.1"
@@ -110,6 +192,8 @@ max-connections = 5
 [directory."imap".tls]
 implicit = true
 allow-invalid-certs = true
+
+##############################################################################
 
 [directory."smtp"]
 type = "lmtp"
@@ -130,6 +214,8 @@ allow-invalid-certs = true
 [directory."smtp".cache]
 entries = 500
 ttl = {positive = '10s', negative = '5s'}
+
+##############################################################################
 
 [directory."local"]
 type = "memory"
@@ -170,16 +256,29 @@ description = "Sales Team"
 name = "support"
 description = "Support Team"
 
-[directory."local".lookup]
-domains = ["example.org"]
-
 "#;
 
-pub fn parse_config() -> DirectoryConfig {
-    utils::config::Config::new(CONFIG)
-        .unwrap()
-        .parse_directory()
-        .unwrap()
+pub struct DirectoryStore {
+    pub store: LookupStore,
+}
+
+pub struct DirectoryTest {
+    pub directories: Directories,
+    pub stores: Stores,
+    pub temp_dir: TempDir,
+}
+
+pub async fn parse_config() -> DirectoryTest {
+    let temp_dir = TempDir::new("directory_tests", true);
+    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
+    let config = utils::config::Config::new(&config_file).unwrap();
+    let stores = config.parse_stores().await.unwrap();
+
+    DirectoryTest {
+        directories: config.parse_directory(&stores).unwrap(),
+        stores,
+        temp_dir,
+    }
 }
 
 const CERT: &str = "-----BEGIN CERTIFICATE-----
@@ -390,23 +489,23 @@ impl core::fmt::Debug for Item {
 #[ignore]
 async fn lookup_local() {
     const LOOKUP_CONFIG: &str = r#"
-    [directory."local"]
+    [store."local"]
     type = "memory"
     
-    [directory."local".lookup."regex"]
+    [store."local".lookup."regex"]
     type = "regex"
     values = ["^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
              "^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"]
     
-    [directory."local".lookup."glob"]
+    [store."local".lookup."glob"]
     type = "glob"
     values = ["*@example.org", "test@*", "localhost", "*+*@*.domain.net"]
     
-    [directory."local".lookup."list"]
+    [store."local".lookup."list"]
     type = "list"
     values = ["abc", "xyz", "123"]
 
-    [directory."local".lookup."suffix"]
+    [store."local".lookup."suffix"]
     type = "glob"
     comment = "//"
     values = ["https://publicsuffix.org/list/public_suffix_list.dat", "fallback+file://%PATH%/public_suffix_list.dat.gz"]
@@ -434,7 +533,8 @@ async fn lookup_local() {
         ),
     )
     .unwrap()
-    .parse_directory()
+    .parse_stores()
+    .await
     .unwrap()
     .lookups;
 
@@ -455,9 +555,7 @@ async fn lookup_local() {
         ("suffix", "coco", false),
     ] {
         assert_eq!(
-            lookups
-                .get(&format!("local/{lookup}"))
-                .unwrap()
+            Lookup::from(lookups.get(&format!("local/{lookup}")).unwrap().clone())
                 .contains(item)
                 .await
                 .unwrap(),

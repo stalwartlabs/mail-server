@@ -27,12 +27,7 @@ pub mod query;
 
 use std::io::Read;
 
-use ::store::Store;
-
-use store::{
-    backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore},
-    FtsStore,
-};
+use store::{config::ConfigStore, FtsStore};
 use utils::config::Config;
 
 pub struct TempDir {
@@ -40,49 +35,62 @@ pub struct TempDir {
 }
 
 const CONFIG: &str = r#"
-[store.blob]
-type = "local"
-local.path = "{TMP}"
+[store."s3"]
+type = "s3"
+access-key = "minioadmin"
+secret-key = "minioadmin"
+region = "eu-central-1"
+endpoint = "http://localhost:9000"
+bucket = "tmp"
 
-[store.db]
+[store."fs"]
+type = "fs"
+path = "{TMP}"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocksdb"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."sqlite"]
+type = "sqlite"
 path = "{TMP}/sqlite.db"
+
+[store."postgresql"]
+type = "postgresql"
 host = "localhost"
-#port = 5432
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
 port = 3307
 database = "stalwart"
-#user = "postgres"
-#password = "mysecretpassword"
 user = "root"
 password = "password"
-
-[store.fts]
-url = "https://localhost:9200"
-user = "elastic"
-password = "RtQ-Lu6+o4rxx=XJplVJ"
-allow-invalid-certs = true
-
 "#;
 
 #[tokio::test]
 pub async fn store_tests() {
-    //let insert = true;
-    let insert = false;
+    let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
-    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
-    let config = Config::new(&config_file).unwrap();
-    //let db: Store = SqliteStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = FdbStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = PostgresStore::open(&Config::new(&config_file).unwrap())
-    //let db: Store = MysqlStore::open(&Config::new(&config_file).unwrap())
-    let db: Store = RocksDbStore::open(&config).await.unwrap().into();
-    let fts_store = FtsStore::from(db.clone());
-    //let fts_store = ElasticSearchStore::open(&config).await.unwrap().into();
+    let config = Config::new(&CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy())).unwrap();
+    let stores = config.parse_stores().await.unwrap();
 
-    if insert {
-        db.destroy().await;
+    for (store_id, store) in stores.stores {
+        println!("Testing store {}...", store_id);
+        if insert {
+            store.destroy().await;
+        }
+        query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
+        assign_id::test(store).await;
     }
-    query::test(db.clone(), fts_store, insert).await;
-    assign_id::test(db).await;
+
     if insert {
         temp_dir.delete();
     }

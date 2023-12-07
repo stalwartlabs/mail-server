@@ -23,7 +23,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use directory::Lookup;
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
@@ -33,6 +32,7 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use store::backend::memory::MemoryStore;
 use tokio::runtime::Handle;
 
 use crate::{
@@ -166,16 +166,13 @@ impl SMTP {
                             }
                             Recipient::List(list) => {
                                 if let Some(list) = self.sieve.lookup.get(&list) {
-                                    match list.as_ref() {
-                                        Lookup::List { list } => {
+                                    if let store::LookupStore::Memory(list) = list.as_ref() {
+                                        if let MemoryStore::List(list) = list.as_ref() {
                                             for rcpt in &list.set {
                                                 handle.block_on(
                                                     message.add_recipient(rcpt, &self.queue.config),
                                                 );
                                             }
-                                        }
-                                        Lookup::Directory { .. } | Lookup::Map { .. } => {
-                                            // Not implemented
                                         }
                                     }
                                 } else {

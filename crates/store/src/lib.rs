@@ -21,16 +21,18 @@
  * for more details.
 */
 
-use std::{fmt::Display, sync::Arc};
+use std::{borrow::Cow, fmt::Display, sync::Arc};
 
 pub mod backend;
+pub mod config;
 pub mod dispatch;
 pub mod fts;
 pub mod query;
 pub mod write;
 
 pub use ahash;
-use backend::fs::FsStore;
+use ahash::AHashMap;
+use backend::{fs::FsStore, memory::MemoryStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -186,6 +188,21 @@ pub struct IterateParams<T: Key> {
     values: bool,
 }
 
+#[derive(Clone, Default)]
+pub struct Stores {
+    pub stores: AHashMap<String, Store>,
+    pub blob_stores: AHashMap<String, BlobStore>,
+    pub fts_stores: AHashMap<String, FtsStore>,
+    pub lookup_stores: AHashMap<String, LookupStore>,
+    pub lookups: AHashMap<String, Arc<Lookup>>,
+}
+
+#[derive(Clone)]
+pub struct Lookup {
+    pub store: LookupStore,
+    pub query: String,
+}
+
 #[derive(Clone)]
 pub enum Store {
     #[cfg(feature = "sqlite")]
@@ -202,19 +219,10 @@ pub enum Store {
 
 #[derive(Clone)]
 pub enum BlobStore {
+    Store(Store),
     Fs(Arc<FsStore>),
     #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
-    #[cfg(feature = "sqlite")]
-    Sqlite(Arc<SqliteStore>),
-    #[cfg(feature = "foundation")]
-    FoundationDb(Arc<FdbStore>),
-    #[cfg(feature = "postgres")]
-    PostgreSQL(Arc<PostgresStore>),
-    #[cfg(feature = "mysql")]
-    MySQL(Arc<MysqlStore>),
-    #[cfg(feature = "rocks")]
-    RocksDb(Arc<RocksDbStore>),
 }
 
 #[derive(Clone)]
@@ -222,6 +230,12 @@ pub enum FtsStore {
     Store(Store),
     #[cfg(feature = "elastic")]
     ElasticSearch(Arc<ElasticSearchStore>),
+}
+
+#[derive(Clone)]
+pub enum LookupStore {
+    Store(Store),
+    Memory(Arc<MemoryStore>),
 }
 
 #[cfg(feature = "sqlite")]
@@ -287,17 +301,285 @@ impl From<Store> for FtsStore {
 
 impl From<Store> for BlobStore {
     fn from(store: Store) -> Self {
-        match store {
-            #[cfg(feature = "sqlite")]
-            Store::SQLite(store) => Self::Sqlite(store),
-            #[cfg(feature = "foundation")]
-            Store::FoundationDb(store) => Self::FoundationDb(store),
-            #[cfg(feature = "postgres")]
-            Store::PostgreSQL(store) => Self::PostgreSQL(store),
-            #[cfg(feature = "mysql")]
-            Store::MySQL(store) => Self::MySQL(store),
-            #[cfg(feature = "rocks")]
-            Store::RocksDb(store) => Self::RocksDb(store),
+        Self::Store(store)
+    }
+}
+
+impl From<Store> for LookupStore {
+    fn from(store: Store) -> Self {
+        Self::Store(store)
+    }
+}
+
+impl From<MemoryStore> for LookupStore {
+    fn from(store: MemoryStore) -> Self {
+        Self::Memory(Arc::new(store))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Value<'x> {
+    Integer(i64),
+    Bool(bool),
+    Float(f64),
+    Text(Cow<'x, str>),
+    Blob(Cow<'x, [u8]>),
+    Null,
+}
+
+impl<'x> Value<'x> {
+    pub fn to_str<'y: 'x>(&'y self) -> Cow<'x, str> {
+        match self {
+            Value::Text(s) => s.as_ref().into(),
+            Value::Integer(i) => Cow::Owned(i.to_string()),
+            Value::Bool(b) => Cow::Owned(b.to_string()),
+            Value::Float(f) => Cow::Owned(f.to_string()),
+            Value::Blob(b) => String::from_utf8_lossy(b.as_ref()),
+            Value::Null => Cow::Borrowed(""),
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Row {
+    pub values: Vec<Value<'static>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Rows {
+    pub rows: Vec<Row>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NamedRows {
+    pub names: Vec<String>,
+    pub rows: Vec<Row>,
+}
+
+#[derive(Clone, Copy)]
+pub enum QueryType {
+    Execute,
+    Exists,
+    QueryAll,
+    QueryOne,
+}
+
+pub trait QueryResult: Sync + Send + 'static {
+    fn from_exec(items: usize) -> Self;
+    fn from_exists(exists: bool) -> Self;
+    fn from_query_one(items: impl IntoRows) -> Self;
+    fn from_query_all(items: impl IntoRows) -> Self;
+
+    fn query_type() -> QueryType;
+}
+
+pub trait IntoRows {
+    fn into_row(self) -> Option<Row>;
+    fn into_rows(self) -> Rows;
+    fn into_named_rows(self) -> NamedRows;
+}
+
+impl QueryResult for Option<Row> {
+    fn query_type() -> QueryType {
+        QueryType::QueryOne
+    }
+
+    fn from_exec(_: usize) -> Self {
+        unreachable!()
+    }
+
+    fn from_exists(_: bool) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_all(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_one(items: impl IntoRows) -> Self {
+        items.into_row()
+    }
+}
+
+impl QueryResult for Rows {
+    fn query_type() -> QueryType {
+        QueryType::QueryAll
+    }
+
+    fn from_exec(_: usize) -> Self {
+        unreachable!()
+    }
+
+    fn from_exists(_: bool) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_all(items: impl IntoRows) -> Self {
+        items.into_rows()
+    }
+
+    fn from_query_one(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+}
+
+impl QueryResult for NamedRows {
+    fn query_type() -> QueryType {
+        QueryType::QueryAll
+    }
+
+    fn from_exec(_: usize) -> Self {
+        unreachable!()
+    }
+
+    fn from_exists(_: bool) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_all(items: impl IntoRows) -> Self {
+        items.into_named_rows()
+    }
+
+    fn from_query_one(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+}
+
+impl QueryResult for bool {
+    fn query_type() -> QueryType {
+        QueryType::Exists
+    }
+
+    fn from_exec(_: usize) -> Self {
+        unreachable!()
+    }
+
+    fn from_exists(exists: bool) -> Self {
+        exists
+    }
+
+    fn from_query_all(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_one(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+}
+
+impl QueryResult for usize {
+    fn query_type() -> QueryType {
+        QueryType::Execute
+    }
+
+    fn from_exec(items: usize) -> Self {
+        items
+    }
+
+    fn from_exists(_: bool) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_all(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+
+    fn from_query_one(_: impl IntoRows) -> Self {
+        unreachable!()
+    }
+}
+
+impl<'x> From<&'x str> for Value<'x> {
+    fn from(value: &'x str) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<String> for Value<'x> {
+    fn from(value: String) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<&'x String> for Value<'x> {
+    fn from(value: &'x String) -> Self {
+        Self::Text(value.into())
+    }
+}
+
+impl<'x> From<Cow<'x, str>> for Value<'x> {
+    fn from(value: Cow<'x, str>) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl<'x> From<bool> for Value<'x> {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+impl<'x> From<i64> for Value<'x> {
+    fn from(value: i64) -> Self {
+        Self::Integer(value)
+    }
+}
+
+impl<'x> From<u64> for Value<'x> {
+    fn from(value: u64) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl<'x> From<u32> for Value<'x> {
+    fn from(value: u32) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl<'x> From<f64> for Value<'x> {
+    fn from(value: f64) -> Self {
+        Self::Float(value)
+    }
+}
+
+impl<'x> From<&'x [u8]> for Value<'x> {
+    fn from(value: &'x [u8]) -> Self {
+        Self::Blob(value.into())
+    }
+}
+
+impl<'x> From<Vec<u8>> for Value<'x> {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Blob(value.into())
+    }
+}
+
+impl<'x> Value<'x> {
+    pub fn into_string(self) -> String {
+        match self {
+            Value::Text(s) => s.into_owned(),
+            Value::Integer(i) => i.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Blob(b) => String::from_utf8_lossy(b.as_ref()).into_owned(),
+            Value::Null => String::new(),
+        }
+    }
+}
+
+impl From<Row> for Vec<String> {
+    fn from(value: Row) -> Self {
+        value.values.into_iter().map(|v| v.into_string()).collect()
+    }
+}
+
+impl From<Rows> for Vec<String> {
+    fn from(value: Rows) -> Self {
+        value
+            .rows
+            .into_iter()
+            .flat_map(|v| v.values.into_iter().map(|v| v.into_string()))
+            .collect()
     }
 }

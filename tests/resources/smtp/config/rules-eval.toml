@@ -164,8 +164,9 @@ nested-none-of-false = { none-of = [
     ]}
 ]}
 
-[directory."list"]
+[store."list"]
 type = "memory"
 
-[directory."list".lookup]
-domains = ["mydomain1.org", "foo.net", "otherdomain.net"]
+[store."list".lookup."domains"]
+type = "list"
+values = ["mydomain1.org", "foo.net", "otherdomain.net"]

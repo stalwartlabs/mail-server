@@ -119,7 +119,7 @@ impl ConfigSieve for Config {
             )
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
-            .with_valid_ext_lists(ctx.directory.lookups.keys().map(|k| k.to_string()))
+            .with_valid_ext_lists(ctx.stores.lookups.keys().map(|k| k.to_string()))
             .with_functions(&mut fnc_map);
 
         if let Some(value) = self.property("sieve.trusted.limits.redirects")? {
@@ -187,7 +187,12 @@ impl ConfigSieve for Config {
         Ok(SieveCore {
             runtime,
             scripts: ctx.scripts.clone(),
-            lookup: ctx.directory.lookups.clone(),
+            lookup: ctx
+                .stores
+                .lookups
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone().into()))
+                .collect(),
             config: SieveConfig {
                 from_addr: self
                     .value("sieve.trusted.from-addr")
@@ -203,6 +208,7 @@ impl ConfigSieve for Config {
                     .to_string(),
                 sign,
                 directories: ctx.directory.directories.clone(),
+                lookup_stores: ctx.stores.lookup_stores.clone(),
             },
         })
     }

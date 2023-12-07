@@ -27,7 +27,10 @@ use tokio::{
     fs::{self, File},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
 };
-use utils::{codec::base32_custom::Base32Writer, config::Config};
+use utils::{
+    codec::base32_custom::Base32Writer,
+    config::{utils::AsKey, Config},
+};
 
 pub struct FsStore {
     path: PathBuf,
@@ -35,15 +38,13 @@ pub struct FsStore {
 }
 
 impl FsStore {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
-        let path = config.property_require::<PathBuf>("store.blob.local.path")?;
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
+        let path = config.property_require::<PathBuf>((&prefix, "path"))?;
         if path.exists() {
             Ok(FsStore {
                 path,
-                hash_levels: std::cmp::min(
-                    config.property_or_static("store.blob.local.depth", "2")?,
-                    5,
-                ),
+                hash_levels: std::cmp::min(config.property_or_static((&prefix, "depth"), "2")?, 5),
             })
         } else {
             Err(crate::Error::InternalError(format!(

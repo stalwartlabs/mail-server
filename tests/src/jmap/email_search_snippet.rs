@@ -21,19 +21,22 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf};
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index};
-use jmap::{mailbox::INBOX_ID, JMAP};
-use jmap_client::{client::Client, core::query, email::query::Filter};
+use jmap::mailbox::INBOX_ID;
+use jmap_client::{core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashMap;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running SearchSnippet tests...");
+    let server = params.server.clone();
 
     let mailbox_id = Id::from(INBOX_ID).to_string();
-    client.set_default_account_id(Id::from(1u64));
+    params.client.set_default_account_id(Id::from(1u64));
 
     let mut email_ids = AHashMap::default();
 
@@ -52,7 +55,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     ] {
         let mut file_name = test_dir.clone();
         file_name.push(format!("{}.eml", email_name));
-        let email_id = client
+        let email_id = params
+            .client
             .email_import(
                 fs::read(&file_name).unwrap(),
                 [&mailbox_id],
@@ -148,7 +152,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             )),
         ),
     ] {
-        let mut request = client.build();
+        let mut request = params.client.build();
         let result_ref = request
             .query_email()
             .filter(filter.clone())
@@ -179,6 +183,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     // Destroy test data
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

@@ -23,19 +23,19 @@
 
 use std::sync::atomic::Ordering;
 
-use bb8::ManageConnection;
+use async_trait::async_trait;
+use deadpool::managed;
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 
 use super::{ImapClient, ImapConnectionManager, ImapError};
 
-#[async_trait::async_trait]
-impl ManageConnection for ImapConnectionManager {
-    type Connection = ImapClient<TlsStream<TcpStream>>;
+#[async_trait]
+impl managed::Manager for ImapConnectionManager {
+    type Type = ImapClient<TlsStream<TcpStream>>;
     type Error = ImapError;
 
-    /// Attempts to create a new connection.
-    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+    async fn create(&self) -> Result<ImapClient<TlsStream<TcpStream>>, ImapError> {
         let mut conn = ImapClient::connect(
             &self.addr,
             self.timeout,
@@ -55,13 +55,14 @@ impl ManageConnection for ImapConnectionManager {
         Ok(conn)
     }
 
-    /// Determines if the connection is still connected to the database.
-    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.noop().await
-    }
-
-    /// Synchronously determine if the connection is no longer usable, if possible.
-    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        !conn.is_valid
+    async fn recycle(
+        &self,
+        conn: &mut ImapClient<TlsStream<TcpStream>>,
+        _: &managed::Metrics,
+    ) -> managed::RecycleResult<ImapError> {
+        conn.noop()
+            .await
+            .map(|_| ())
+            .map_err(managed::RecycleError::Backend)
     }
 }

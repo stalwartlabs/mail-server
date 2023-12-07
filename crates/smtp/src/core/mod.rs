@@ -22,6 +22,7 @@
 */
 
 use std::{
+    cmp::Ordering,
     hash::Hash,
     net::IpAddr,
     sync::{atomic::AtomicU32, Arc},
@@ -30,12 +31,17 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use directory::{Directory, Lookup};
+use directory::Directory;
 use mail_auth::{common::lru::LruCache, IprevOutput, Resolver, SpfOutput};
-use sieve::{Runtime, Sieve};
-use smtp_proto::request::receiver::{
-    BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver, RequestReceiver,
+use sieve::{runtime::Variable, Runtime, Sieve};
+use smtp_proto::{
+    request::receiver::{
+        BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver,
+        RequestReceiver,
+    },
+    IntoString,
 };
+use store::{LookupStore, Row, Value};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::mpsc,
@@ -106,7 +112,7 @@ pub struct SMTP {
 pub struct SieveCore {
     pub runtime: Runtime<SieveContext>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
-    pub lookup: AHashMap<String, Arc<Lookup>>,
+    pub lookup: AHashMap<String, Lookup>,
     pub config: SieveConfig,
 }
 
@@ -116,6 +122,7 @@ pub struct SieveConfig {
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
     pub directories: AHashMap<String, Arc<dyn Directory>>,
+    pub lookup_stores: AHashMap<String, LookupStore>,
 }
 
 pub struct Resolvers {
@@ -152,6 +159,9 @@ pub struct TlsConnectors {
     pub pki_verify: TlsConnector,
     pub dummy_verify: TlsConnector,
 }
+
+#[derive(Clone)]
+pub struct Lookup(Arc<store::Lookup>);
 
 pub enum State {
     Request(RequestReceiver),
@@ -267,6 +277,95 @@ impl SessionData {
             spf_mail_from: None,
             dnsbl_error: None,
         }
+    }
+}
+
+impl Lookup {
+    pub async fn contains(&self, item: impl Into<Value<'_>>) -> Option<bool> {
+        self.0
+            .store
+            .query::<bool>(&self.0.query, vec![item.into()])
+            .await
+            .ok()
+    }
+
+    pub async fn lookup(&self, items: Vec<Value<'_>>) -> Option<Variable> {
+        self.0
+            .store
+            .query::<Option<Row>>(&self.0.query, items)
+            .await
+            .ok()
+            .map(|row| {
+                let mut row = row.map(|row| row.values).unwrap_or_default();
+                match row.len().cmp(&1) {
+                    Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
+                        row.pop().map(into_sieve_value).unwrap()
+                    }
+                    Ordering::Less => Variable::default(),
+                    _ => Variable::Array(
+                        row.into_iter()
+                            .map(into_sieve_value)
+                            .collect::<Vec<_>>()
+                            .into(),
+                    ),
+                }
+            })
+    }
+
+    pub async fn query(&self, items: Vec<Value<'_>>) -> Option<Vec<Value<'static>>> {
+        self.0
+            .store
+            .query::<Option<Row>>(&self.0.query, items)
+            .await
+            .ok()
+            .map(|row| row.map(|row| row.values).unwrap_or_default())
+    }
+}
+
+impl PartialEq for Lookup {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.query == other.0.query
+    }
+}
+
+pub fn into_sieve_value(value: Value) -> Variable {
+    match value {
+        Value::Integer(v) => Variable::Integer(v),
+        Value::Bool(v) => Variable::Integer(i64::from(v)),
+        Value::Float(v) => Variable::Float(v),
+        Value::Text(v) => Variable::String(v.into_owned().into()),
+        Value::Blob(v) => Variable::String(v.into_owned().into_string().into()),
+        Value::Null => Variable::default(),
+    }
+}
+
+pub fn into_store_value(value: Variable) -> Value<'static> {
+    match value {
+        Variable::String(v) => Value::Text(v.to_string().into()),
+        Variable::Integer(v) => Value::Integer(v),
+        Variable::Float(v) => Value::Float(v),
+        v => Value::Text(v.to_string().into_owned().into()),
+    }
+}
+
+pub fn to_store_value(value: &Variable) -> Value<'static> {
+    match value {
+        Variable::String(v) => Value::Text(v.to_string().into()),
+        Variable::Integer(v) => Value::Integer(*v),
+        Variable::Float(v) => Value::Float(*v),
+        v => Value::Text(v.to_string().into_owned().into()),
+    }
+}
+
+impl AsRef<LookupStore> for Lookup {
+    fn as_ref(&self) -> &LookupStore {
+        &self.0.store
+    }
+}
+
+impl From<Arc<store::Lookup>> for Lookup {
+    fn from(lookup: Arc<store::Lookup>) -> Self {
+        Self(lookup)
     }
 }
 

@@ -21,7 +21,8 @@
  * for more details.
 */
 
-use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts};
+use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts};
+use utils::config::utils::AsKey;
 
 use crate::{
     SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
@@ -31,29 +32,36 @@ use crate::{
 use super::MysqlStore;
 
 impl MysqlStore {
-    pub async fn open(config: &utils::config::Config) -> crate::Result<Self> {
+    pub async fn open(config: &utils::config::Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
         let mut opts = OptsBuilder::default()
-            .ip_or_hostname(config.value_require("store.db.host")?.to_string())
-            .user(config.value("store.db.user").map(|s| s.to_string()))
-            .pass(config.value("store.db.password").map(|s| s.to_string()))
+            .ip_or_hostname(config.value_require((&prefix, "host"))?.to_string())
+            .user(config.value((&prefix, "user")).map(|s| s.to_string()))
+            .pass(config.value((&prefix, "password")).map(|s| s.to_string()))
             .db_name(
                 config
-                    .value_require("store.db.database")?
+                    .value_require((&prefix, "database"))?
                     .to_string()
                     .into(),
             )
-            .wait_timeout(config.property("store.db.timeout")?);
-        if let Some(port) = config.property("store.db.port")? {
+            .wait_timeout(config.property((&prefix, "timeout.wait"))?);
+        if let Some(port) = config.property((&prefix, "port"))? {
             opts = opts.tcp_port(port);
+        }
+
+        if config.property_or_static::<bool>((&prefix, "tls.allow-invalid-certs"), "false")? {
+            opts = opts.ssl_opts(Some(
+                SslOpts::default().with_danger_accept_invalid_certs(true),
+            ));
         }
 
         // Configure connection pool
         let mut pool_min = PoolConstraints::default().min();
         let mut pool_max = PoolConstraints::default().max();
-        if let Some(n_size) = config.property::<usize>("store.db.pool.min-connections")? {
+        if let Some(n_size) = config.property::<usize>((&prefix, "pool.min-connections"))? {
             pool_min = n_size;
         }
-        if let Some(n_size) = config.property::<usize>("store.db.pool.max-connections")? {
+        if let Some(n_size) = config.property::<usize>((&prefix, "pool.max-connections"))? {
             pool_max = n_size;
         }
         opts = opts.pool_opts(

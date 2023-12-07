@@ -30,17 +30,23 @@ use std::{
     time::Duration,
 };
 
+use store::{
+    backend::memory::{LookupList, MemoryStore},
+    config::ConfigStore,
+};
 use tokio::net::TcpSocket;
 
 use utils::config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol};
 
 use ahash::AHashMap;
-use directory::{config::ConfigDirectory, Lookup, LookupList};
 
-use smtp::config::{
-    condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
-    ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
-    StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
+use smtp::{
+    config::{
+        condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
+        ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
+        StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
+    },
+    core::Lookup,
 };
 
 use super::add_test_certs;
@@ -74,11 +80,12 @@ fn parse_conditions() {
         ..Default::default()
     }];
     let mut context = ConfigContext::new(&servers);
-    let list = Arc::new(Lookup::List {
-        list: LookupList::default(),
+    let list = Arc::new(store::Lookup {
+        store: MemoryStore::List(LookupList::default()).into(),
+        query: "abc".into(),
     });
     context
-        .directory
+        .stores
         .lookups
         .insert("test-list".to_string(), list.clone());
 
@@ -118,7 +125,7 @@ fn parse_conditions() {
                     Condition::JumpIfFalse { positions: 1 },
                     Condition::Match {
                         key: EnvelopeKey::Sender,
-                        value: ConditionMatch::Lookup(list),
+                        value: ConditionMatch::Lookup(list.into()),
                         not: false,
                     },
                 ],
@@ -568,7 +575,7 @@ async fn eval_if() {
         },
     ];
     let mut context = ConfigContext::new(&servers);
-    context.directory = config.parse_directory().unwrap();
+    context.stores = config.parse_stores().await.unwrap();
     let conditions = config.parse_conditions(&context).unwrap();
 
     let envelope = TestEnvelope::from_config(&config);
@@ -602,7 +609,7 @@ async fn eval_dynvalue() {
 
     let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
     let mut context = ConfigContext::new(&[]);
-    context.directory = config.parse_directory().unwrap();
+    context.stores = config.parse_stores().await.unwrap();
 
     let envelope = TestEnvelope::from_config(&config);
 
@@ -664,7 +671,7 @@ async fn eval_dynvalue() {
             .unwrap()
             .unwrap()
             .map_if_block(
-                &context.directory.directories,
+                &context.stores.lookups,
                 ("maybe-eval", test_name, "test"),
                 "test",
             )
@@ -673,14 +680,14 @@ async fn eval_dynvalue() {
             .value_require(("maybe-eval", test_name, "expect"))
             .unwrap();
 
-        assert!(if_block
+        let lookup: Lookup = if_block
             .eval_and_capture(&envelope)
             .await
             .into_value(&envelope)
             .unwrap()
-            .is_local_domain(expected)
-            .await
-            .unwrap());
+            .into();
+
+        assert!(lookup.contains(expected).await.unwrap());
     }
 }
 

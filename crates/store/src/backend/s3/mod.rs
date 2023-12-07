@@ -28,17 +28,21 @@ use s3::{
     error::S3Error,
     Bucket, Region,
 };
-use utils::{codec::base32_custom::Base32Writer, config::Config};
+use utils::{
+    codec::base32_custom::Base32Writer,
+    config::{utils::AsKey, Config},
+};
 
 pub struct S3Store {
     bucket: Bucket,
 }
 
 impl S3Store {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         // Obtain region and endpoint from config
-        let region = config.value_require("store.blob.s3.region")?;
-        let region = if let Some(endpoint) = config.value("store.blob.s3.endpoint") {
+        let prefix = prefix.as_key();
+        let region = config.value_require((&prefix, "region"))?;
+        let region = if let Some(endpoint) = config.value((&prefix, "endpoint")) {
             Region::Custom {
                 region: region.to_string(),
                 endpoint: endpoint.to_string(),
@@ -47,17 +51,17 @@ impl S3Store {
             region.parse().unwrap()
         };
         let credentials = Credentials::new(
-            config.value("store.blob.s3.access-key"),
-            config.value("store.blob.s3.secret-key"),
-            config.value("store.blob.s3.security-token"),
-            config.value("store.blob.s3.session-token"),
-            config.value("store.blob.s3.profile"),
+            config.value((&prefix, "access-key")),
+            config.value((&prefix, "secret-key")),
+            config.value((&prefix, "security-token")),
+            config.value((&prefix, "session-token")),
+            config.value((&prefix, "profile")),
         )?;
-        let timeout = config.property_or_static::<Duration>("store.blob.s3.timeout", "30s")?;
+        let timeout = config.property_or_static::<Duration>((&prefix, "timeout"), "30s")?;
 
         Ok(S3Store {
             bucket: Bucket::new(
-                config.value_require("store.blob.s3.bucket")?,
+                config.value_require((&prefix, "bucket"))?,
                 region,
                 credentials,
             )?

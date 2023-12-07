@@ -23,7 +23,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use jmap::JMAP;
 use jmap_client::{
     client::{Client, Credentials},
     core::set::{SetError, SetErrorType},
@@ -31,25 +30,24 @@ use jmap_client::{
 };
 use jmap_proto::types::id::Id;
 
-use crate::{
-    directory::sql::{create_test_user_with_email, link_test_address},
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
-};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Authorization tests...");
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
-    link_test_address(
-        directory,
-        "jdoe@example.com",
-        "john.doe@example.com",
-        "alias",
-    )
-    .await;
+    params
+        .directory
+        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
+        .await;
 
     // Reset rate limiters
     server.rate_limit_auth.clear();
@@ -200,7 +198,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));
 
     // Destroy test accounts
-    admin_client.set_default_account_id(&account_id);
-    destroy_all_mailboxes(admin_client).await;
+    params.client.set_default_account_id(&account_id);
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

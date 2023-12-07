@@ -25,14 +25,16 @@ use std::time::Duration;
 
 use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
+use store::config::ConfigStore;
 use utils::config::{Config, DynValue};
 
 use crate::{
-    directory::sql::{create_test_directory, create_test_user_with_email, link_test_address},
+    directory::DirectoryStore,
     smtp::{
         session::{TestSession, VerifyResponse},
         ParseTestConfig, TestConfig,
     },
+    store::TempDir,
 };
 use smtp::{
     config::{ConfigContext, EnvelopeKey, IfBlock},
@@ -40,14 +42,11 @@ use smtp::{
 };
 
 const CONFIG: &str = r#"
-[directory."sql"]
-type = "sql"
-address = "sqlite::memory:"
+[store."sql"]
+type = "sqlite"
+path = "{TMP}/smtp_sql.db"
 
-[directory."sql".pool]
-max-connections = 1
-
-[directory."sql".query]
+[store."sql".query]
 name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
 members = "SELECT member_of FROM group_members WHERE name = ?"
 recipients = "SELECT name FROM emails WHERE address = ?"
@@ -55,6 +54,11 @@ emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY 
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+is_ip_allowed = "SELECT addr FROM allowed_ips WHERE addr = ? LIMIT 1"
+
+[directory."sql"]
+type = "sql"
+store = "sql"
 
 [directory."sql".columns]
 name = "name"
@@ -63,10 +67,6 @@ secret = "secret"
 email = "address"
 quota = "quota"
 type = "type"
-
-[directory."sql".lookup]
-domains = "SELECT name FROM domains WHERE name = ? LIMIT 1"
-is_ip_allowed = "SELECT addr FROM allowed_ips WHERE addr = ? LIMIT 1"
 
 "#;
 
@@ -81,26 +81,47 @@ async fn lookup_sql() {
     .unwrap();*/
 
     // Parse settings
+    let temp_dir = TempDir::new("smtp_lookup_tests", true);
+    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]);
-    let config = Config::new(CONFIG).unwrap();
-    ctx.directory = config.parse_directory().unwrap();
+    let config = Config::new(&config_file).unwrap();
+    ctx.stores = config.parse_stores().await.unwrap();
+    ctx.directory = config.parse_directory(&ctx.stores).unwrap();
 
     // Obtain directory handle
-    let handle = ctx.directory.directories.get("sql").unwrap().as_ref();
+    let handle = DirectoryStore {
+        store: ctx.stores.lookup_stores.get("sql").unwrap().clone(),
+    };
 
     // Create tables
-    create_test_directory(handle).await;
+    handle.create_test_directory().await;
 
     // Create test records
-    create_test_user_with_email(handle, "jane@foobar.org", "s3cr3tp4ss", "Jane").await;
-    create_test_user_with_email(handle, "john@foobar.org", "mypassword", "John").await;
-    create_test_user_with_email(handle, "bill@foobar.org", "123456", "Bill").await;
-    create_test_user_with_email(handle, "mike@foobar.net", "098765", "Mike").await;
-    link_test_address(handle, "jane@foobar.org", "sales@foobar.org", "list").await;
-    link_test_address(handle, "john@foobar.org", "sales@foobar.org", "list").await;
-    link_test_address(handle, "bill@foobar.org", "sales@foobar.org", "list").await;
-    link_test_address(handle, "mike@foobar.net", "support@foobar.org", "list").await;
+    handle
+        .create_test_user_with_email("jane@foobar.org", "s3cr3tp4ss", "Jane")
+        .await;
+    handle
+        .create_test_user_with_email("john@foobar.org", "mypassword", "John")
+        .await;
+    handle
+        .create_test_user_with_email("bill@foobar.org", "123456", "Bill")
+        .await;
+    handle
+        .create_test_user_with_email("mike@foobar.net", "098765", "Mike")
+        .await;
+    handle
+        .link_test_address("jane@foobar.org", "sales@foobar.org", "list")
+        .await;
+    handle
+        .link_test_address("john@foobar.org", "sales@foobar.org", "list")
+        .await;
+    handle
+        .link_test_address("bill@foobar.org", "sales@foobar.org", "list")
+        .await;
+    handle
+        .link_test_address("mike@foobar.net", "support@foobar.org", "list")
+        .await;
 
     for query in [
         "CREATE TABLE domains (name TEXT PRIMARY KEY, description TEXT);",
@@ -109,7 +130,11 @@ async fn lookup_sql() {
         "CREATE TABLE allowed_ips (addr TEXT PRIMARY KEY);",
         "INSERT INTO allowed_ips (addr) VALUES ('10.0.0.50');",
     ] {
-        handle.query(query, &[]).await.unwrap();
+        handle
+            .store
+            .query::<usize>(query, Vec::new())
+            .await
+            .unwrap();
     }
 
     // Enable AUTH

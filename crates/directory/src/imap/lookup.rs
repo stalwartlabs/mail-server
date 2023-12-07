@@ -24,7 +24,7 @@
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{DatabaseColumn, Directory, DirectoryError, Principal};
+use crate::{Directory, DirectoryError, Principal};
 
 use super::{ImapDirectory, ImapError};
 
@@ -96,18 +96,6 @@ impl Directory for ImapDirectory {
 
     async fn expn(&self, _address: &str) -> crate::Result<Vec<String>> {
         Err(DirectoryError::unsupported("imap", "expn"))
-    }
-
-    async fn lookup(&self, _: &str, _: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
-        Err(DirectoryError::unsupported("imap", "lookup"))
-    }
-
-    async fn query(
-        &self,
-        _: &str,
-        _: &[DatabaseColumn<'_>],
-    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
-        Err(DirectoryError::unsupported("imap", "query"))
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {

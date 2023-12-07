@@ -9,7 +9,6 @@ use std::{
 
 use crate::smtp::session::TestSession;
 use ahash::AHashMap;
-use directory::config::ConfigDirectory;
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
@@ -21,6 +20,7 @@ use smtp::{
         ScriptModification, ScriptResult,
     },
 };
+use store::config::ConfigStore;
 use tokio::runtime::Handle;
 use utils::config::Config;
 
@@ -42,17 +42,16 @@ cpu = 500000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[directory."spamdb"]
-type = "sql"
-address = "sqlite://%PATH%/test_antispam.db?mode=rwc"
-#address = "sqlite:///tmp/test_antispam.db?mode=rwc"
+[store."spamdb"]
+type = "sqlite"
+path = "%PATH%/test_antispam.db"
 
-[directory."spamdb".pool]
+[store."spamdb".pool]
 max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[directory."spamdb".lookup]
+[store."spamdb".query]
 token-insert = "INSERT INTO bayes_tokens (h1, h2, ws, wh) VALUES (?, ?, ?, ?) 
                 ON CONFLICT(h1, h2) 
                 DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
@@ -66,46 +65,47 @@ reputation-insert = "INSERT INTO reputation (token, score, count, ttl) VALUES (?
 reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
 reputation-cleanup = "DELETE FROM reputation WHERE ttl < CURRENT_TIMESTAMP"
 
-[directory."default"]
+[store."default"]
 type = "memory"
 
-[directory."default".lookup]
-domains = ["local-domain.org"]
+[store."default".lookup."domains"]
+type = "list"
+values = ["local-domain.org"]
 
-[directory."spam"]
+[store."spam"]
 type = "memory"
 
-[directory."spam".lookup."free-domains"]
+[store."spam".lookup."free-domains"]
 type = "glob"
 comment = '#'
 values = ["gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"]
 
-[directory."spam".lookup."disposable-domains"]
+[store."spam".lookup."disposable-domains"]
 type = "glob"
 comment = '#'
 values = ["guerrillamail.com", "*.disposable.org"]
 
-[directory."spam".lookup."redirectors"]
+[store."spam".lookup."redirectors"]
 type = "glob"
 comment = '#'
 values = ["bit.ly", "redirect.io", "redirect.me", "redirect.org",
  "redirect.com", "redirect.net", "t.ly", "tinyurl.com"]
 
-[directory."spam".lookup."dmarc-allow"]
+[store."spam".lookup."dmarc-allow"]
 type = "glob"
 comment = '#'
 values = ["dmarc-allow.org"]
 
-[directory."spam".lookup."spf-dkim-allow"]
+[store."spam".lookup."spf-dkim-allow"]
 type = "glob"
 comment = '#'
 values = ["spf-dkim-allow.org"]
 
-[directory."spam".lookup."domains-allow"]
+[store."spam".lookup."domains-allow"]
 type = "glob"
 values = []
 
-[directory."spam".lookup."mime-types"]
+[store."spam".lookup."mime-types"]
 type = "map"
 comment = '#'
 values = ["html text/html|BAD", 
@@ -115,12 +115,12 @@ values = ["html text/html|BAD",
           "js BAD|NZ", 
           "hta BAD|NZ"]
 
-[directory."spam".lookup."trap-address"]
+[store."spam".lookup."trap-address"]
 type = "glob"
 comment = '#'
 values = ["spamtrap@*"]
 
-[directory."spam".lookup."scores"]
+[store."spam".lookup."scores"]
 type = "map"
 values = "file://%CFG_PATH%/maps/scores.map"
 
@@ -254,15 +254,15 @@ async fn antispam() {
     // Parse config
     let config = Config::new(&config).unwrap();
     let mut ctx = ConfigContext::new(&[]);
-    ctx.directory = config.parse_directory().unwrap();
+    ctx.stores = config.parse_stores().await.unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
 
     // Create tables
-    let sdb = ctx.directory.directories.get("spamdb").unwrap();
+    let sdb = ctx.stores.lookup_stores.get("spamdb").unwrap();
     for query in CREATE_TABLES {
-        sdb.query(query, &[]).await.expect(query);
+        sdb.query::<usize>(query, vec![]).await.expect(query);
     }
 
     // Add mock DNS entries

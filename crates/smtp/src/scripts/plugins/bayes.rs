@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use directory::{DatabaseColumn, Lookup};
 use nlp::{
     bayes::{
         cache::BayesTokenCache, tokenize::BayesTokenizer, BayesClassifier, BayesModel, TokenHash,
@@ -30,9 +29,10 @@ use nlp::{
     tokenizers::osb::{OsbToken, OsbTokenizer},
 };
 use sieve::{runtime::Variable, FunctionMap};
+use store::Value;
 use tokio::runtime::Handle;
 
-use crate::config::scripts::SieveContext;
+use crate::{config::scripts::SieveContext, core::Lookup};
 
 use super::PluginContext;
 
@@ -109,7 +109,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
             (-(weights.spam as i64), -(weights.ham as i64))
         };
         if handle
-            .block_on(lookup_train.lookup(&[
+            .block_on(lookup_train.lookup(vec![
                 hash.h1.into(),
                 hash.h2.into(),
                 s_weight.into(),
@@ -130,7 +130,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         (0i64, train_val)
     };
     if handle
-        .block_on(lookup_train.query(&[
+        .block_on(lookup_train.query(vec![
             0i64.into(),
             0i64.into(),
             spam_count.into(),
@@ -322,11 +322,11 @@ impl LookupOrInsert for BayesTokenCache {
         if let Some(weights) = self.get(&hash) {
             weights.unwrap_or_default().into()
         } else if let Some(result) =
-            handle.block_on(get_token.query(&[hash.h1.into(), hash.h2.into()]))
+            handle.block_on(get_token.query(vec![hash.h1.into(), hash.h2.into()]))
         {
             let mut result = result.into_iter();
             match (result.next(), result.next()) {
-                (Some(DatabaseColumn::Integer(spam)), Some(DatabaseColumn::Integer(ham))) => {
+                (Some(Value::Integer(spam)), Some(Value::Integer(ham))) => {
                     let weights = Weights {
                         spam: spam as u32,
                         ham: ham as u32,

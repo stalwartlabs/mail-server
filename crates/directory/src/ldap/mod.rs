@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use bb8::Pool;
+use deadpool::managed::Pool;
 use ldap3::{ldap_escape, LdapConnSettings};
 
 use crate::DirectoryOptions;
@@ -34,6 +34,7 @@ pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
     opt: DirectoryOptions,
+    auth_bind: Option<LdapFilter>,
 }
 
 #[derive(Debug, Default)]

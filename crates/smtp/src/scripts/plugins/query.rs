@@ -12,7 +12,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU Affero General Public License for more details.
- * in the LICENSE file at the top-level directory of this distribution.
+ * in the LICENSE file at the top-level store of this distribution.
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
@@ -21,9 +21,14 @@
  * for more details.
 */
 
-use crate::config::scripts::SieveContext;
-use directory::DatabaseColumn;
+use std::cmp::Ordering;
+
+use crate::{
+    config::scripts::SieveContext,
+    core::{into_sieve_value, to_store_value},
+};
 use sieve::{runtime::Variable, FunctionMap};
+use store::{Rows, Value};
 
 use super::PluginContext;
 
@@ -34,21 +39,20 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
 
-    // Obtain directory name
-    let directory = ctx.arguments[0].to_string();
-    let directory =
-        if let Some(directory_) = ctx.core.sieve.config.directories.get(directory.as_ref()) {
-            directory_
-        } else {
-            tracing::warn!(
-                parent: span,
-                context = "sieve:query",
-                event = "failed",
-                reason = "Unknown directory",
-                directory = %directory,
-            );
-            return false.into();
-        };
+    // Obtain store name
+    let store = ctx.arguments[0].to_string();
+    let store = if let Some(store_) = ctx.core.sieve.config.lookup_stores.get(store.as_ref()) {
+        store_
+    } else {
+        tracing::warn!(
+            parent: span,
+            context = "sieve:query",
+            event = "failed",
+            reason = "Unknown store",
+            store = %store,
+        );
+        return false.into();
+    };
 
     // Obtain query string
     let query = ctx.arguments[1].to_string();
@@ -64,8 +68,8 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
 
     // Obtain arguments
     let arguments = match &ctx.arguments[2] {
-        Variable::Array(l) => l.iter().map(DatabaseColumn::from).collect(),
-        v => vec![DatabaseColumn::from(v)],
+        Variable::Array(l) => l.iter().map(to_store_value).collect(),
+        v => vec![to_store_value(v)],
     };
 
     // Run query
@@ -74,26 +78,45 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        if let Ok(mut query_columns) = ctx.handle.block_on(directory.query(&query, &arguments)) {
-            match query_columns.len() {
-                1 if !matches!(query_columns.first(), Some(DatabaseColumn::Null)) => {
-                    query_columns.pop().map(Variable::from).unwrap()
+        if let Ok(mut rows) = ctx.handle.block_on(store.query::<Rows>(&query, arguments)) {
+            match rows.rows.len().cmp(&1) {
+                Ordering::Equal => {
+                    let mut row = rows.rows.pop().unwrap().values;
+                    match row.len().cmp(&1) {
+                        Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
+                            row.pop().map(into_sieve_value).unwrap()
+                        }
+                        Ordering::Less => Variable::default(),
+                        _ => Variable::Array(
+                            row.into_iter()
+                                .map(into_sieve_value)
+                                .collect::<Vec<_>>()
+                                .into(),
+                        ),
+                    }
                 }
-                0 => Variable::default(),
-                _ => Variable::Array(
-                    query_columns
-                        .into_iter()
-                        .map(Variable::from)
-                        .collect::<Vec<_>>()
-                        .into(),
-                ),
+                Ordering::Less => Variable::default(),
+                Ordering::Greater => rows
+                    .rows
+                    .into_iter()
+                    .map(|r| {
+                        Variable::Array(
+                            r.values
+                                .into_iter()
+                                .map(into_sieve_value)
+                                .collect::<Vec<_>>()
+                                .into(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
             }
         } else {
             false.into()
         }
     } else {
         ctx.handle
-            .block_on(directory.lookup(&query, &arguments))
+            .block_on(store.query::<usize>(&query, arguments))
             .is_ok()
             .into()
     }

@@ -24,6 +24,7 @@
 use deadpool_postgres::{Pool, PoolError};
 
 pub mod blob;
+pub mod lookup;
 pub mod main;
 pub mod read;
 pub mod tls;

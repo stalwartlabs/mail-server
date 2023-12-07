@@ -21,17 +21,14 @@
  * for more details.
 */
 
-use bb8::{ManageConnection, Pool};
-use regex::Regex;
-use sieve::runtime::{tests::glob::GlobPattern, Variable};
-use std::{
-    fs::File,
-    io::{BufRead, BufReader},
-    sync::Arc,
-    time::Duration,
+use deadpool::{
+    managed::{Manager, Pool},
+    Runtime,
 };
+use regex::Regex;
+use std::time::Duration;
+use store::Stores;
 use utils::config::{
-    cron::SimpleCron,
     utils::{AsKey, ParseValue},
     Config,
 };
@@ -40,25 +37,17 @@ use ahash::AHashMap;
 
 use crate::{
     imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, AddressMapping, DirectoryConfig, DirectoryOptions, DirectorySchedule,
-    Lookup, LookupList, MatchType,
+    sql::SqlDirectory, AddressMapping, Directories, DirectoryOptions,
 };
 
 pub trait ConfigDirectory {
-    fn parse_directory(&self) -> utils::config::Result<DirectoryConfig>;
-    fn parse_lookup_list<K: AsKey, T: InsertLine>(
-        &self,
-        key: K,
-        format: LookupFormat,
-    ) -> utils::config::Result<T>;
+    fn parse_directory(&self, stores: &Stores) -> utils::config::Result<Directories>;
 }
 
 impl ConfigDirectory for Config {
-    fn parse_directory(&self) -> utils::config::Result<DirectoryConfig> {
-        let mut config = DirectoryConfig {
+    fn parse_directory(&self, stores: &Stores) -> utils::config::Result<Directories> {
+        let mut config = Directories {
             directories: AHashMap::new(),
-            lookups: AHashMap::new(),
-            schedules: Vec::new(),
         };
         for id in self.sub_keys("directory") {
             // Parse directory
@@ -66,7 +55,7 @@ impl ConfigDirectory for Config {
             let prefix = ("directory", id);
             let directory = match protocol {
                 "ldap" => LdapDirectory::from_config(self, prefix)?,
-                "sql" => SqlDirectory::from_config(self, prefix)?,
+                "sql" => SqlDirectory::from_config(self, prefix, stores)?,
                 "imap" => ImapDirectory::from_config(self, prefix)?,
                 "smtp" => SmtpDirectory::from_config(self, prefix, false)?,
                 "lmtp" => SmtpDirectory::from_config(self, prefix, true)?,
@@ -76,284 +65,10 @@ impl ConfigDirectory for Config {
                 }
             };
 
-            // Add queries/filters as lookups
-            let is_directory = ["sql", "ldap"].contains(&protocol);
-            if is_directory {
-                let name = if protocol == "sql" { "query" } else { "filter" };
-                for lookup_id in self.sub_keys(("directory", id, name)) {
-                    config.lookups.insert(
-                        format!("{id}/{lookup_id}"),
-                        Arc::new(Lookup::Directory {
-                            directory: directory.clone(),
-                            query: self
-                                .value_require(("directory", id, name, lookup_id))?
-                                .to_string(),
-                        }),
-                    );
-                }
-
-                // Parse schedules
-                if let Some(cron) =
-                    self.property::<SimpleCron>(("directory", id, "schedule.frequency"))?
-                {
-                    let mut query = Vec::new();
-                    for (_, value) in self.values(("directory", id, "schedule.query")) {
-                        query.push(value.to_string());
-                    }
-
-                    if !query.is_empty() {
-                        config.schedules.push(DirectorySchedule {
-                            cron,
-                            query,
-                            directory: directory.clone(),
-                        })
-                    } else {
-                        tracing::warn!("No scheduled query specified for directory {id:?}");
-                    }
-                }
-            }
-
-            // Parse lookups
-            for lookup_id in self.sub_keys(("directory", id, "lookup")) {
-                let key = ("directory", id, "lookup", lookup_id).as_key();
-                let lookup = if is_directory {
-                    Lookup::Directory {
-                        directory: directory.clone(),
-                        query: self
-                            .value_require(("directory", id, "lookup", lookup_id))?
-                            .to_string(),
-                    }
-                } else {
-                    let lookup_type = self.property::<LookupType>((&key, "type"))?;
-                    let format = LookupFormat {
-                        lookup_type: lookup_type.unwrap_or(LookupType::List),
-                        comment: self.value((&key, "comment")).map(|s| s.to_string()),
-                        separator: self.value((&key, "separator")).map(|s| s.to_string()),
-                    };
-
-                    match lookup_type {
-                        Some(LookupType::Map) => Lookup::Map {
-                            map: self.parse_lookup_list((&key, "values"), format)?,
-                        },
-                        Some(_) => Lookup::List {
-                            list: self.parse_lookup_list((&key, "values"), format)?,
-                        },
-                        None => Lookup::List {
-                            list: self.parse_lookup_list(key.as_str(), format)?,
-                        },
-                    }
-                };
-
-                config
-                    .lookups
-                    .insert(format!("{id}/{lookup_id}"), Arc::new(lookup));
-            }
-
             config.directories.insert(id.to_string(), directory);
         }
 
         Ok(config)
-    }
-
-    fn parse_lookup_list<K: AsKey, T: InsertLine>(
-        &self,
-        key: K,
-        format: LookupFormat,
-    ) -> utils::config::Result<T> {
-        let mut list = T::default();
-        let mut last_failed = false;
-        for (_, mut value) in self.values(key.clone()) {
-            if let Some(new_value) = value.strip_prefix("fallback+") {
-                if last_failed {
-                    value = new_value;
-                } else {
-                    continue;
-                }
-            }
-            last_failed = false;
-
-            if value.starts_with("https://") || value.starts_with("http://") {
-                match tokio::task::block_in_place(|| {
-                    reqwest::blocking::get(value).and_then(|r| {
-                        if r.status().is_success() {
-                            r.bytes().map(Ok)
-                        } else {
-                            Ok(Err(r))
-                        }
-                    })
-                }) {
-                    Ok(Ok(bytes)) => {
-                        match list.insert_lines(&*bytes, &format, value.ends_with(".gz")) {
-                            Ok(_) => continue,
-                            Err(err) => {
-                                tracing::warn!(
-                                    "Failed to read list {key:?} from {value:?}: {err}",
-                                    key = key.as_key(),
-                                    value = value,
-                                    err = err
-                                );
-                            }
-                        }
-                    }
-                    Ok(Err(response)) => {
-                        tracing::warn!(
-                            "Failed to fetch list {key:?} from {value:?}: Status {status}",
-                            key = key.as_key(),
-                            value = value,
-                            status = response.status()
-                        );
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "Failed to fetch list {key:?} from {value:?}: {err}",
-                            key = key.as_key(),
-                            value = value,
-                            err = err
-                        );
-                    }
-                }
-                last_failed = true;
-            } else if let Some(path) = value.strip_prefix("file://") {
-                list.insert_lines(
-                    File::open(path).map_err(|err| {
-                        format!(
-                            "Failed to read file {path:?} for list {}: {err}",
-                            key.as_key()
-                        )
-                    })?,
-                    &format,
-                    value.ends_with(".gz"),
-                )
-                .map_err(|err| {
-                    format!(
-                        "Failed to read file {path:?} for list {}: {err}",
-                        key.as_key()
-                    )
-                })?;
-            } else {
-                list.insert(value.to_string(), &format);
-            }
-        }
-        Ok(list)
-    }
-}
-
-pub trait InsertLine: Default {
-    fn insert(&mut self, entry: String, format: &LookupFormat);
-    fn insert_lines<R: Sized + std::io::Read>(
-        &mut self,
-        reader: R,
-        format: &LookupFormat,
-        decompress: bool,
-    ) -> Result<(), std::io::Error> {
-        let reader: Box<dyn std::io::Read> = if decompress {
-            Box::new(flate2::read::GzDecoder::new(reader))
-        } else {
-            Box::new(reader)
-        };
-
-        for line in BufReader::new(reader).lines() {
-            let line_ = line?;
-            let line = line_.trim();
-            if !line.is_empty()
-                && format
-                    .comment
-                    .as_ref()
-                    .map_or(true, |c| !line.starts_with(c))
-            {
-                self.insert(line.to_string(), format);
-            }
-        }
-        Ok(())
-    }
-}
-
-impl InsertLine for LookupList {
-    fn insert(&mut self, entry: String, format: &LookupFormat) {
-        match format.lookup_type {
-            LookupType::List => {
-                self.set.insert(entry);
-            }
-            LookupType::Glob => {
-                let n_wildcards = entry
-                    .as_bytes()
-                    .iter()
-                    .filter(|&&ch| ch == b'*' || ch == b'?')
-                    .count();
-                if n_wildcards > 0 {
-                    if n_wildcards == 1 {
-                        if let Some(s) = entry.strip_prefix('*') {
-                            if !s.is_empty() {
-                                self.matches.push(MatchType::EndsWith(s.to_string()));
-                            }
-                            return;
-                        } else if let Some(s) = entry.strip_suffix('*') {
-                            if !s.is_empty() {
-                                self.matches.push(MatchType::StartsWith(s.to_string()));
-                            }
-                            return;
-                        }
-                    }
-                    self.matches
-                        .push(MatchType::Glob(GlobPattern::compile(&entry, false)));
-                } else {
-                    self.set.insert(entry);
-                }
-            }
-            LookupType::Regex => match regex::Regex::new(&entry) {
-                Ok(regex) => {
-                    self.matches.push(MatchType::Regex(regex));
-                }
-                Err(err) => {
-                    tracing::warn!("Invalid regular expression {:?}: {}", entry, err);
-                }
-            },
-            LookupType::Map => unreachable!(),
-        }
-    }
-}
-
-impl InsertLine for AHashMap<String, Variable> {
-    fn insert(&mut self, entry: String, format: &LookupFormat) {
-        let (key, value) = entry
-            .split_once(format.separator.as_deref().unwrap_or(" "))
-            .unwrap_or((entry.as_str(), ""));
-        let key = key.trim();
-        if key.is_empty() {
-            return;
-        } else if value.is_empty() {
-            self.insert(key.to_string(), Variable::default());
-            return;
-        }
-        let mut has_digit = false;
-        let mut has_dots = false;
-        let mut has_other = false;
-
-        for (pos, ch) in value.bytes().enumerate() {
-            if ch.is_ascii_digit() {
-                has_digit = true;
-            } else if ch == b'.' {
-                has_dots = true;
-            } else if pos > 0 || ch != b'-' {
-                has_other = true;
-            }
-        }
-
-        let value = if has_other || !has_digit {
-            Variable::String(value.to_string().into())
-        } else if has_dots {
-            value
-                .parse()
-                .map(Variable::Float)
-                .unwrap_or_else(|_| Variable::String(value.to_string().into()))
-        } else {
-            value
-                .parse()
-                .map(Variable::Integer)
-                .unwrap_or_else(|_| Variable::String(value.to_string().into()))
-        };
-
-        self.insert(key.to_string(), value);
     }
 }
 
@@ -400,31 +115,29 @@ impl AddressMapping {
     }
 }
 
-pub(crate) fn build_pool<M: ManageConnection>(
+pub(crate) fn build_pool<M: Manager>(
     config: &Config,
     prefix: &str,
     manager: M,
 ) -> utils::config::Result<Pool<M>> {
-    Ok(Pool::builder()
-        .min_idle(
-            config
-                .property((prefix, "pool.min-connections"))?
-                .and_then(|v| if v > 0 { Some(v) } else { None }),
-        )
+    Pool::builder(manager)
+        .runtime(Runtime::Tokio1)
         .max_size(config.property_or_static((prefix, "pool.max-connections"), "10")?)
-        .max_lifetime(
+        .create_timeout(
             config
-                .property_or_static::<Duration>((prefix, "pool.max-lifetime"), "30m")?
+                .property_or_static::<Duration>((prefix, "pool.create-timeout"), "30s")?
                 .into(),
         )
-        .idle_timeout(
-            config
-                .property_or_static::<Duration>((prefix, "pool.idle-timeout"), "10m")?
-                .into(),
-        )
-        .connection_timeout(config.property_or_static((prefix, "pool.connect-timeout"), "30s")?)
-        .test_on_check_out(true)
-        .build_unchecked(manager))
+        .wait_timeout(config.property_or_static((prefix, "pool.wait-timeout"), "30s")?)
+        .recycle_timeout(config.property_or_static((prefix, "pool.recycle-timeout"), "30s")?)
+        .build()
+        .map_err(|err| {
+            format!(
+                "Failed to build pool for {prefix:?}: {err}",
+                prefix = prefix,
+                err = err
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

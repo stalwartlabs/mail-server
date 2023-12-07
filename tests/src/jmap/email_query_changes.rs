@@ -21,15 +21,12 @@
  * for more details.
 */
 
-use jmap::JMAP;
 use jmap_client::{
-    client::Client,
     core::query::{Comparator, Filter},
     email,
     mailbox::Role,
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property, state::State};
-use std::sync::Arc;
 
 use store::{
     ahash::{AHashMap, AHashSet},
@@ -42,15 +39,20 @@ use crate::jmap::{
     mailbox::destroy_all_mailboxes,
 };
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email QueryChanges tests...");
-    let mailbox1_id = client
+    let server = params.server.clone();
+    let mailbox1_id = params
+        .client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("JMAP Changes 1", None::<String>, Role::None)
         .await
         .unwrap()
         .take_id();
-    let mailbox2_id = client
+    let mailbox2_id = params
+        .client
         .mailbox_create("JMAP Changes 2", None::<String>, Role::None)
         .await
         .unwrap()
@@ -101,7 +103,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         match &change {
             LogAction::Insert(id) => {
                 let jmap_id = Id::from_bytes(
-                    client
+                    params
+                        .client
                         .email_import(
                             format!(
                                 "From: test_{}\nSubject: test_{}\n\ntest",
@@ -139,7 +142,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
             }
             LogAction::Delete(id) => {
                 let id = *id_map.get(id).unwrap();
-                client.email_destroy(&id.to_string()).await.unwrap();
+                params.client.email_destroy(&id.to_string()).await.unwrap();
                 removed_ids.insert(id);
             }
             LogAction::Move(from, to) => {
@@ -217,7 +220,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
                 if test_num == 3 && query.up_to_id.is_none() {
                     continue;
                 }
-                let mut request = client.build();
+                let mut request = params.client.build();
                 let query_request = request
                     .query_email_changes(query.since_query_state.to_string())
                     .sort(query.sort);
@@ -273,7 +276,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         states.push(new_state);
     }
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
 
     // Delete virtual threads
     let mut batch = BatchBuilder::new();

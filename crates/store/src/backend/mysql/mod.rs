@@ -24,6 +24,7 @@
 use mysql_async::Pool;
 
 pub mod blob;
+pub mod lookup;
 pub mod main;
 pub mod read;
 pub mod write;

@@ -22,9 +22,7 @@
 */
 
 use ahash::AHashMap;
-use jmap::JMAP;
 use jmap_client::{
-    client::Client,
     core::set::{SetError, SetErrorType, SetObject},
     email_submission::{query::Filter, Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
     mailbox::Role,
@@ -44,10 +42,11 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
+use crate::jmap::{
+    assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes,
 };
+
+use super::JMAPTest;
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct MockMessage {
@@ -79,9 +78,11 @@ pub struct MockSMTPSettings {
 }
 
 #[allow(clippy::disallowed_types)]
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+pub async fn test(params: &mut JMAPTest) {
     println!("Running E-mail submissions tests...");
     // Start mock SMTP server
+    let server = params.server.clone();
+    let client = &mut params.client;
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
     server.smtp.resolvers.dns.ipv4_add(
         "localhost",
@@ -90,8 +91,11 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     );
 
     // Create a test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
 
     // Create an identity without using a valid address should fail
@@ -470,7 +474,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     {
         client.email_submission_destroy(&id).await.unwrap();
     }
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

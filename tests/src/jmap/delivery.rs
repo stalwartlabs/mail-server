@@ -21,10 +21,8 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use jmap::JMAP;
-use jmap_client::client::Client;
 use jmap_proto::types::{collection::Collection, id::Id};
 
 use tokio::{
@@ -32,37 +30,51 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::{
-    directory::sql::{create_test_user_with_email, link_test_address, remove_test_alias},
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
-};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running message delivery tests...");
 
     // Create a domain name and a test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
-    create_test_user_with_email(directory, "jane@example.com", "abcdef", "Jane Smith").await;
-    create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
+    params
+        .directory
+        .create_test_user_with_email("jane@example.com", "abcdef", "Jane Smith")
+        .await;
+    params
+        .directory
+        .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
+        .await;
     let account_id_1 =
         Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     let account_id_2 =
         Id::from(server.get_account_id("jane@example.com").await.unwrap()).to_string();
     let account_id_3 =
         Id::from(server.get_account_id("bill@example.com").await.unwrap()).to_string();
-    link_test_address(
-        directory,
-        "jdoe@example.com",
-        "john.doe@example.com",
-        "alias",
-    )
-    .await;
+    params
+        .directory
+        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
+        .await;
 
     // Create a mailing list
-    link_test_address(directory, "jdoe@example.com", "members@example.com", "list").await;
-    link_test_address(directory, "jane@example.com", "members@example.com", "list").await;
-    link_test_address(directory, "bill@example.com", "members@example.com", "list").await;
+    params
+        .directory
+        .link_test_address("jdoe@example.com", "members@example.com", "list")
+        .await;
+    params
+        .directory
+        .link_test_address("jane@example.com", "members@example.com", "list")
+        .await;
+    params
+        .directory
+        .link_test_address("bill@example.com", "members@example.com", "list")
+        .await;
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
@@ -172,7 +184,10 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     // Removing members from the mailing list and chunked ingest
-    remove_test_alias(directory, "jdoe@example.com", "members@example.com").await;
+    params
+        .directory
+        .remove_test_alias("jdoe@example.com", "members@example.com")
+        .await;
     lmtp.ingest_chunked(
         "bill@example.com",
         &["members@example.com"],
@@ -245,8 +260,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
     // Remove test data
     for account_id in [&account_id_1, &account_id_2, &account_id_3] {
-        client.set_default_account_id(account_id);
-        destroy_all_mailboxes(client).await;
+        params.client.set_default_account_id(account_id);
+        destroy_all_mailboxes(&params.client).await;
     }
     assert_is_empty(server).await;
 }

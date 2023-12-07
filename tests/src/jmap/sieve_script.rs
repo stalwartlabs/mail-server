@@ -21,9 +21,7 @@
  * for more details.
 */
 
-use jmap::JMAP;
 use jmap_client::{
-    client::Client,
     core::set::{SetError, SetErrorType},
     email, mailbox,
     sieve::query::{Comparator, Filter},
@@ -33,26 +31,28 @@ use jmap_proto::types::id::Id;
 use std::{
     fs,
     path::PathBuf,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{
-        assert_is_empty,
-        delivery::SmtpConnection,
-        email_submission::{assert_message_delivery, spawn_mock_smtp_server, MockMessage},
-        mailbox::destroy_all_mailboxes,
-    },
+use crate::jmap::{
+    assert_is_empty,
+    delivery::SmtpConnection,
+    email_submission::{assert_message_delivery, spawn_mock_smtp_server, MockMessage},
+    mailbox::destroy_all_mailboxes,
 };
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Sieve tests...");
+    let server = params.server.clone();
+    let client = &mut params.client;
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     client.set_default_account_id(&account_id);
 
@@ -486,7 +486,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     for id in request.send_query_sieve_script().await.unwrap().take_ids() {
         client.sieve_script_destroy(&id).await.unwrap();
     }
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

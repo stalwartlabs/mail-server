@@ -23,9 +23,7 @@
 
 use ahash::AHashSet;
 use futures::StreamExt;
-use jmap::JMAP;
 use jmap_client::{
-    client::Client,
     client_ws::WebSocketMessage,
     core::{
         response::{Response, TaggedMethodResponse},
@@ -34,21 +32,23 @@ use jmap_client::{
     TypeState,
 };
 use jmap_proto::types::id::Id;
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
-};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running WebSockets tests...");
+    let server = params.server.clone();
 
     // Authenticate all accounts
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
@@ -123,8 +123,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         .unwrap();
     expect_nothing(&mut stream_rx).await;
 
-    admin_client.set_default_account_id(account_id);
-    destroy_all_mailboxes(admin_client).await;
+    params.client.set_default_account_id(account_id);
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

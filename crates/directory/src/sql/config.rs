@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use sqlx::any::{install_default_drivers, AnyPoolOptions};
+use store::Stores;
 use utils::config::{utils::AsKey, Config};
 
 use crate::{cache::CachedDirectory, Directory, DirectoryOptions};
@@ -34,54 +34,19 @@ impl SqlDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        stores: &Stores,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
-        let address = config.value_require((&prefix, "address"))?;
-        install_default_drivers();
-        let pool = AnyPoolOptions::new()
-            .max_connections(
-                config
-                    .property((&prefix, "pool.max-connections"))?
-                    .unwrap_or(10),
-            )
-            .min_connections(
-                config
-                    .property((&prefix, "pool.min-connections"))?
-                    .unwrap_or(0),
-            )
-            .idle_timeout(config.property((&prefix, "pool.idle-timeout"))?)
-            .connect_lazy(address)
-            .map_err(|err| format!("Failed to create connection pool for {address:?}: {err}"))?;
+        let store_id = config.value_require((&prefix, "store"))?;
+        let store = stores
+            .lookup_stores
+            .get(store_id)
+            .ok_or_else(|| {
+                format!("Directory {prefix:?} references a non-existent store {store_id:?}")
+            })?
+            .clone();
 
-        let mappings = SqlMappings {
-            query_name: config
-                .value((&prefix, "query.name"))
-                .unwrap_or_default()
-                .to_string(),
-            query_members: config
-                .value((&prefix, "query.members"))
-                .unwrap_or_default()
-                .to_string(),
-            query_recipients: config
-                .value((&prefix, "query.recipients"))
-                .unwrap_or_default()
-                .to_string(),
-            query_emails: config
-                .value((&prefix, "query.emails"))
-                .unwrap_or_default()
-                .to_string(),
-            query_verify: config
-                .value((&prefix, "query.verify"))
-                .unwrap_or_default()
-                .to_string(),
-            query_expand: config
-                .value((&prefix, "query.expand"))
-                .unwrap_or_default()
-                .to_string(),
-            query_domains: config
-                .value((&prefix, "query.domains"))
-                .unwrap_or_default()
-                .to_string(),
+        let mut mappings = SqlMappings {
             column_name: config
                 .value((&prefix, "columns.name"))
                 .unwrap_or_default()
@@ -102,13 +67,28 @@ impl SqlDirectory {
                 .value((&prefix, "columns.type"))
                 .unwrap_or_default()
                 .to_string(),
+            ..Default::default()
         };
+
+        for (query_id, query) in [
+            ("name", &mut mappings.query_name),
+            ("members", &mut mappings.query_members),
+            ("recipients", &mut mappings.query_recipients),
+            ("emails", &mut mappings.query_emails),
+            ("verify", &mut mappings.query_verify),
+            ("expand", &mut mappings.query_expand),
+            ("domains", &mut mappings.query_domains),
+        ] {
+            if let Some(query_) = stores.lookups.get(&format!("{}/{}", store_id, query_id)) {
+                *query = query_.query.to_string();
+            }
+        }
 
         CachedDirectory::try_from_config(
             config,
             &prefix,
             SqlDirectory {
-                pool,
+                store,
                 mappings,
                 opt: DirectoryOptions::from_config(config, prefix.as_str())?,
             },

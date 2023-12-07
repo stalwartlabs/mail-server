@@ -31,7 +31,7 @@ use auth::{
     AccessToken,
 };
 use dashmap::DashMap;
-use directory::{Directory, DirectoryConfig};
+use directory::{Directories, Directory};
 use jmap_proto::{
     error::method::MethodError,
     method::{
@@ -48,7 +48,6 @@ use services::{
 };
 use smtp::core::SMTP;
 use store::{
-    backend::{elastic::ElasticSearchStore, rocksdb::RocksDbStore},
     fts::FtsFilter,
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
@@ -57,8 +56,8 @@ use store::{
         key::{DeserializeBigEndian, KeySerializer},
         BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass,
     },
-    BitmapKey, BlobStore, Deserialize, FtsStore, Key, Serialize, Store, ValueKey, SUBSPACE_VALUES,
-    U32_LEN, U64_LEN,
+    BitmapKey, BlobStore, Deserialize, FtsStore, Key, Serialize, Store, Stores, ValueKey,
+    SUBSPACE_VALUES, U32_LEN, U64_LEN,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -185,7 +184,8 @@ pub enum IngestError {
 impl JMAP {
     pub async fn init(
         config: &utils::config::Config,
-        directory_config: &DirectoryConfig,
+        stores: &Stores,
+        directories: &Directories,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
         smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
@@ -196,45 +196,9 @@ impl JMAP {
             .property::<u64>("global.shared-map.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        /*let store = Store::PostgreSQL(Arc::new(
-            PostgresStore::open(config)
-                .await
-                .failed("Unable to open database"),
-        ));*/
-        /*let store = Store::SQLite(Arc::new(
-            SqliteStore::open(config)
-                .await
-                .failed("Unable to open database"),
-        ));*/
-        /*let store = Store::FoundationDb(Arc::new(
-            FdbStore::open(config)
-                .await
-                .failed("Unable to open database"),
-        ));*/
-        /*let store = Store::MySQL(Arc::new(
-            MysqlStore::open(config)
-                .await
-                .failed("Unable to open database"),
-        ));*/
-        let store = Store::RocksDb(Arc::new(
-            RocksDbStore::open(config)
-                .await
-                .failed("Unable to open database"),
-        ));
-        let blob_store = store.clone().into();
-        /*let blob_store = BlobStore::Fs(Arc::new(
-            FsStore::open(config)
-                .await
-                .failed("Unable to open blob store"),
-        ));*/
-        let fts_store = FtsStore::Store(store.clone());
-        /*let fts_store = ElasticSearchStore::open(config)
-        .await
-        .failed("Unable to open FTS store")
-        .into();*/
 
         let jmap_server = Arc::new(JMAP {
-            directory: directory_config
+            directory: directories
                 .directories
                 .get(config.value_require("jmap.directory")?)
                 .failed(&format!(
@@ -246,9 +210,30 @@ impl JMAP {
                 .property::<u64>("global.node-id")?
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_else(SnowflakeIdGenerator::new),
-            fts_store,
-            store,
-            blob_store,
+            store: stores
+                .stores
+                .get(config.value_require("jmap.store.data")?)
+                .failed(&format!(
+                    "Unable to find data store '{}'",
+                    config.value_require("jmap.store.data")?
+                ))
+                .clone(),
+            fts_store: stores
+                .fts_stores
+                .get(config.value_require("jmap.store.fts")?)
+                .failed(&format!(
+                    "Unable to find full text store '{}'",
+                    config.value_require("jmap.store.fts")?
+                ))
+                .clone(),
+            blob_store: stores
+                .blob_stores
+                .get(config.value_require("jmap.store.blob")?)
+                .failed(&format!(
+                    "Unable to find blob store '{}'",
+                    config.value_require("jmap.store.blob")?
+                ))
+                .clone(),
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),

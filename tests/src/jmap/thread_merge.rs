@@ -21,16 +21,17 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
-use jmap::JMAP;
-use jmap_client::{client::Client, email, mailbox::Role};
+use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Merge Threads tests...");
+    let server = params.server.clone();
+    let client = &mut params.client;
     let mut all_mailboxes = AHashMap::default();
 
     for (base_test_num, test) in [test_1(), test_2(), test_3()].iter().enumerate() {

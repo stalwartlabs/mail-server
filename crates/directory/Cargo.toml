@@ -6,17 +6,16 @@ resolver = "2"
 
 [dependencies]
 utils = { path =  "../utils" }
+store = { path =  "../store" }
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
 mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
 tokio = { version = "1.23", features = ["net"] }
 tokio-rustls = { version = "0.24.0"}
 rustls = "0.21.0"
-sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "mysql", "sqlite" ] }
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
-bb8 = "0.8.1"
+deadpool = { version = "0.10.0", features = ["managed"] }
 parking_lot = "0.12"
 async-trait = "0.1.68"
 ahash = { version = "0.8" }
@@ -32,8 +31,6 @@ sha2 = "0.10.6"
 md5 = "0.7.0"
 futures = "0.3"
 regex = "1.7.0"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "blocking"] }
-flate2 = "1.0"
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

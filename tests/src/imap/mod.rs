@@ -38,6 +38,7 @@ pub mod thread;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ::managesieve::core::ManageSieveSessionManager;
+use ::store::config::ConfigStore;
 use ahash::AHashSet;
 use directory::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
@@ -51,14 +52,7 @@ use tokio::{
 };
 use utils::{config::ServerProtocol, UnwrapFailure};
 
-use crate::{
-    add_test_certs,
-    directory::sql::{
-        add_to_group, create_test_directory, create_test_group_with_email, create_test_user,
-        create_test_user_with_email,
-    },
-    store::TempDir,
-};
+use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
 
 const SERVER: &str = r#"
 [server]
@@ -101,7 +95,7 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
-directory = "sql"
+directory = "auth"
 
 [session.rcpt.errors]
 total = 5
@@ -136,35 +130,51 @@ allow-invalid-certs = true
 future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
                    { else = false } ]
 
-[store.db]
+[store."sqlite"]
+type = "sqlite"
 path = "{TMP}/sqlite.db"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocks.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
 host = "localhost"
-#port = 5432
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
 port = 3307
 database = "stalwart"
-#user = "postgres"
-#password = "mysecretpassword"
 user = "root"
 password = "password"
 
-[store.fts]
+[store."elastic"]
+type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
 allow-invalid-certs = true
-
-[store.blob]
-type = "local"
-
-[store.blob.local]
-path = "{TMP}"
 
 [certificate.default]
 cert = "file://{CERT}"
 private-key = "file://{PK}"
 
 [jmap]
-directory = "sql"
+directory = "auth"
+
+[jmap.store]
+data = "sqlite"
+fts = "sqlite"
+blob = "sqlite"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -196,14 +206,11 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
-[directory."sql"]
-type = "sql"
-address = "sqlite::memory:"
+[store."auth"]
+type = "sqlite"
+path = "{TMP}/auth.db"
 
-[directory."sql".pool]
-max-connections = 1
-
-[directory."sql".query]
+[store."auth".query]
 name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
 members = "SELECT member_of FROM group_members WHERE name = ?"
 recipients = "SELECT name FROM emails WHERE address = ?"
@@ -212,7 +219,11 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."sql".columns]
+[directory."auth"]
+type = "sql"
+store = "auth"
+
+[directory."auth".columns]
 name = "name"
 description = "description"
 secret = "secret"
@@ -220,12 +231,16 @@ email = "address"
 quota = "quota"
 type = "type"
 
-[directory."local"]
+[store."local"]
 type = "memory"
 
-[directory."local".lookup]
-domains = ["example.com"]
-remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
+[store."local".lookup."domains"]
+type = "list"
+values = ["example.com"]
+
+[store."local".lookup."remote-domains"]
+type = "list"
+values = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -255,15 +270,16 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     )
     .unwrap();
     let servers = config.parse_servers().unwrap();
-    let directory = config.parse_directory().unwrap();
+    let stores = config.parse_stores().await.failed("Invalid configuration");
+    let directory = config.parse_directory(&stores).unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &directory, delivery_tx)
+    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
+    let jmap = JMAP::init(&config, &stores, &directory, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
     let imap: Arc<IMAP> = IMAP::init(&config)
@@ -290,42 +306,29 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
     });
 
     // Create tables and test accounts
-    create_test_directory(jmap.directory.as_ref()).await;
-    create_test_user(jmap.directory.as_ref(), "admin", "secret", "Superuser").await;
-    add_to_group(jmap.directory.as_ref(), "admin", "superuser").await;
-    create_test_user_with_email(
-        jmap.directory.as_ref(),
-        "jdoe@example.com",
-        "secret",
-        "John Doe",
-    )
-    .await;
-    create_test_user_with_email(
-        jmap.directory.as_ref(),
-        "jane.smith@example.com",
-        "secret",
-        "Jane Smith",
-    )
-    .await;
-    create_test_user_with_email(
-        jmap.directory.as_ref(),
-        "foobar@example.com",
-        "secret",
-        "Bill Foobar",
-    )
-    .await;
-    create_test_group_with_email(
-        jmap.directory.as_ref(),
-        "support@example.com",
-        "Support Group",
-    )
-    .await;
-    add_to_group(
-        jmap.directory.as_ref(),
-        "jane.smith@example.com",
-        "support@example.com",
-    )
-    .await;
+    let lookup = DirectoryStore {
+        store: stores.lookup_stores.get("auth").unwrap().clone(),
+    };
+    lookup.create_test_directory().await;
+    lookup
+        .create_test_user("admin", "secret", "Superuser")
+        .await;
+    lookup.add_to_group("admin", "superuser").await;
+    lookup
+        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
+        .await;
+    lookup
+        .create_test_user_with_email("jane.smith@example.com", "secret", "Jane Smith")
+        .await;
+    lookup
+        .create_test_user_with_email("foobar@example.com", "secret", "Bill Foobar")
+        .await;
+    lookup
+        .create_test_group_with_email("support@example.com", "Support Group")
+        .await;
+    lookup
+        .add_to_group("jane.smith@example.com", "support@example.com")
+        .await;
 
     if delete_if_exists {
         jmap.store.destroy().await;

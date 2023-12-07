@@ -40,9 +40,8 @@ use jmap::{
     },
     auth::AccessToken,
     push::ece::ece_encrypt,
-    JMAP,
 };
-use jmap_client::{client::Client, mailbox::Role, push_subscription::Keys};
+use jmap_client::{mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
 use store::ahash::AHashSet;
 
@@ -51,9 +50,10 @@ use utils::listener::SessionData;
 
 use crate::{
     add_test_certs,
-    directory::sql::create_test_user_with_email,
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
 };
+
+use super::JMAPTest;
 
 const SERVER: &str = "
 [server]
@@ -77,14 +77,17 @@ cert = 'file://{CERT}'
 private-key = 'file://{PK}'
 ";
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Push Subscription tests...");
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
-    admin_client.set_default_account_id(account_id);
+    params.client.set_default_account_id(account_id);
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     // Create channels
@@ -216,7 +219,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
     expect_nothing(&mut event_rx).await;
 
-    destroy_all_mailboxes(admin_client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

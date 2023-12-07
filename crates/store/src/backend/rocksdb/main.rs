@@ -30,7 +30,10 @@ use rocksdb::{
 };
 
 use tokio::sync::oneshot;
-use utils::{config::Config, UnwrapFailure};
+use utils::{
+    config::{utils::AsKey, Config},
+    UnwrapFailure,
+};
 
 use crate::{Deserialize, Error};
 
@@ -40,11 +43,12 @@ use super::{
 };
 
 impl RocksDbStore {
-    pub async fn open(config: &Config) -> crate::Result<Self> {
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
         // Create the database directory if it doesn't exist
         let idx_path: PathBuf = PathBuf::from(
             config
-                .value_require("store.db.path")
+                .value_require((&prefix, "path"))
                 .failed("Invalid configuration file"),
         );
         std::fs::create_dir_all(&idx_path).map_err(|err| {
@@ -72,7 +76,7 @@ impl RocksDbStore {
         // Blobs
         let mut cf_opts = Options::default();
         cf_opts.set_enable_blob_files(true);
-        cf_opts.set_min_blob_size(config.property_or_static("store.db.min-blob-size", "16834")?);
+        cf_opts.set_min_blob_size(config.property_or_static((&prefix, "min-blob-size"), "16834")?);
         cfs.push(ColumnFamilyDescriptor::new(CF_BLOB_DATA, cf_opts));
 
         // Other cfs
@@ -86,7 +90,7 @@ impl RocksDbStore {
         db_opts.create_if_missing(true);
         db_opts.set_max_background_jobs(std::cmp::max(num_cpus::get() as i32, 3));
         db_opts.set_write_buffer_size(
-            config.property_or_static("store.db.write-buffer-size", "134217728")?,
+            config.property_or_static((&prefix, "write-buffer-size"), "134217728")?,
         );
 
         Ok(RocksDbStore {
@@ -96,7 +100,7 @@ impl RocksDbStore {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>("store.db.pool.workers")?
+                        .property::<usize>((&prefix, "pool.workers"))?
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )

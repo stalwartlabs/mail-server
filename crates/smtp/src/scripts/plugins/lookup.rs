@@ -27,12 +27,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use directory::DatabaseColumn;
 use mail_auth::flate2;
 use sieve::{runtime::Variable, FunctionMap};
 
 use crate::{
     config::scripts::{RemoteList, SieveContext},
+    core::to_store_value,
     USER_AGENT,
 };
 
@@ -62,14 +62,20 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             Variable::Array(items) => {
                 for item in items.iter() {
                     if !item.is_empty()
-                        && ctx.handle.block_on(lookup.contains(item)).unwrap_or(false)
+                        && ctx
+                            .handle
+                            .block_on(lookup.contains(to_store_value(item)))
+                            .unwrap_or(false)
                     {
                         return true.into();
                     }
                 }
                 false
             }
-            v if !v.is_empty() => ctx.handle.block_on(lookup.contains(v)).unwrap_or(false),
+            v if !v.is_empty() => ctx
+                .handle
+                .block_on(lookup.contains(to_store_value(v)))
+                .unwrap_or(false),
             _ => false,
         }
     } else {
@@ -88,8 +94,8 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
 pub fn exec_map(ctx: PluginContext<'_>) -> Variable {
     let lookup_id = ctx.arguments[0].to_string();
     let items = match &ctx.arguments[1] {
-        Variable::Array(l) => l.iter().map(DatabaseColumn::from).collect(),
-        v if !v.is_empty() => vec![DatabaseColumn::from(v)],
+        Variable::Array(l) => l.iter().map(to_store_value).collect(),
+        v if !v.is_empty() => vec![to_store_value(v)],
         _ => vec![],
     };
     let span = ctx.span;
@@ -98,7 +104,7 @@ pub fn exec_map(ctx: PluginContext<'_>) -> Variable {
         if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
             return ctx
                 .handle
-                .block_on(lookup.lookup(&items))
+                .block_on(lookup.lookup(items))
                 .unwrap_or_default();
         } else {
             tracing::warn!(

@@ -21,17 +21,18 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
-use jmap::JMAP;
-use jmap_client::{client::Client, mailbox::Role};
+use jmap_client::mailbox::Role;
 use jmap_proto::types::id::Id;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
-    println!("Running Email Thread tests...");
+use super::JMAPTest;
 
-    let mailbox_id = client
+pub async fn test(params: &mut JMAPTest) {
+    println!("Running Email Thread tests...");
+    let server = params.server.clone();
+
+    let mailbox_id = params
+        .client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("JMAP Get", None::<String>, Role::None)
         .await
@@ -42,7 +43,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     let mut thread_id = "".to_string();
 
     for num in [5, 3, 1, 2, 4] {
-        let mut email = client
+        let mut email = params
+            .client
             .email_import(
                 format!("Subject: test\nReferences: <1234>\n\n{}", num).into_bytes(),
                 [&mailbox_id],
@@ -56,7 +58,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     }
 
     assert_eq!(
-        client
+        params
+            .client
             .thread_get(&thread_id)
             .await
             .unwrap()
@@ -65,6 +68,6 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         expected_result
     );
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

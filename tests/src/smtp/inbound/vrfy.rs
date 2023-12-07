@@ -22,6 +22,7 @@
 */
 
 use directory::config::ConfigDirectory;
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
@@ -65,7 +66,10 @@ async fn vrfy_expn() {
     let mut core = SMTP::test();
     let ctx = ConfigContext::new(&[]);
 
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

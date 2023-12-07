@@ -21,32 +21,29 @@
  * for more details.
 */
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 use ahash::AHashMap;
-use jmap::{
-    email::crypto::{
-        try_parse_certs, Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams,
-    },
-    JMAP,
+use jmap::email::crypto::{
+    try_parse_certs, Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams,
 };
-use jmap_client::client::Client;
 use jmap_proto::types::id::Id;
 use mail_parser::{MessageParser, MimeHeaders};
 
-use crate::{directory::sql::create_test_user_with_email, jmap::delivery::SmtpConnection};
+use crate::jmap::delivery::SmtpConnection;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Encryption-at-rest tests...");
 
     // Create test account
-    create_test_user_with_email(
-        server.directory.as_ref(),
-        "jdoe@example.com",
-        "12345",
-        "John Doe",
-    )
-    .await;
+    let server = params.server.clone();
+    let client = &mut params.client;
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
 
     // Update

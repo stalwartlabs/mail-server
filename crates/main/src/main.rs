@@ -28,6 +28,7 @@ use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
+use store::config::ConfigStore;
 use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol},
@@ -45,7 +46,10 @@ static GLOBAL: Jemalloc = Jemalloc;
 async fn main() -> std::io::Result<()> {
     let config = Config::init();
     let servers = config.parse_servers().failed("Invalid configuration");
-    let directory = config.parse_directory().failed("Invalid configuration");
+    let stores = config.parse_stores().await.failed("Invalid configuration");
+    let directory = config
+        .parse_directory(&stores)
+        .failed("Invalid configuration");
 
     // Bind ports and drop privileges
     servers.bind(&config);
@@ -62,10 +66,10 @@ async fn main() -> std::io::Result<()> {
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &directory, delivery_tx)
+    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
+    let jmap = JMAP::init(&config, &stores, &directory, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
     let imap = IMAP::init(&config)
@@ -73,7 +77,7 @@ async fn main() -> std::io::Result<()> {
         .failed("Invalid configuration file");
 
     // Spawn servers
-    let (shutdown_tx, shutdown_rx) = servers.spawn(|server, shutdown_rx| {
+    let (shutdown_tx, _shutdown_rx) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {
                 server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
@@ -94,11 +98,6 @@ async fn main() -> std::io::Result<()> {
             ),
         };
     });
-
-    // Spawn scheduled directory queries
-    for schedule in directory.schedules {
-        schedule.spawn(shutdown_rx.clone());
-    }
 
     // Wait for shutdown signal
     wait_for_shutdown(&format!(

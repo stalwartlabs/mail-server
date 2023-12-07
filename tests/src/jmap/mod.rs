@@ -34,14 +34,11 @@ use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
+use store::config::ConfigStore;
 use tokio::sync::{mpsc, watch};
 use utils::{config::ServerProtocol, UnwrapFailure};
 
-use crate::{
-    add_test_certs,
-    directory::sql::{add_to_group, create_test_directory, create_test_user},
-    store::TempDir,
-};
+use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -99,7 +96,7 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
-directory = "sql"
+directory = "auth"
 
 [session.rcpt.errors]
 total = 5
@@ -134,35 +131,51 @@ allow-invalid-certs = true
 future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
                    { else = false } ]
 
-[store.db]
+[store."sqlite"]
+type = "sqlite"
 path = "{TMP}/sqlite.db"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocks.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
 host = "localhost"
-#port = 5432
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
 port = 3307
 database = "stalwart"
-#user = "postgres"
-#password = "mysecretpassword"
 user = "root"
 password = "password"
 
-[store.fts]
+[store."elastic"]
+type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
 allow-invalid-certs = true
-
-[store.blob]
-type = "local"
-
-[store.blob.local]
-path = "{TMP}"
 
 [certificate.default]
 cert = "file://{CERT}"
 private-key = "file://{PK}"
 
 [jmap]
-directory = "sql"
+directory = "auth"
+
+[jmap.store]
+data = "sqlite"
+fts = "sqlite"
+blob = "sqlite"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -194,14 +207,11 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
-[directory."sql"]
-type = "sql"
-address = "sqlite::memory:"
+[store."auth"]
+type = "sqlite"
+path = "{TMP}/auth.db"
 
-[directory."sql".pool]
-max-connections = 1
-
-[directory."sql".query]
+[store."auth".query]
 name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
 members = "SELECT member_of FROM group_members WHERE name = ?"
 recipients = "SELECT name FROM emails WHERE address = ?"
@@ -210,7 +220,11 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."sql".columns]
+[directory."auth"]
+type = "sql"
+store = "auth"
+
+[directory."auth".columns]
 name = "name"
 description = "description"
 secret = "secret"
@@ -218,12 +232,16 @@ email = "address"
 quota = "quota"
 type = "type"
 
-[directory."local"]
+[store."local"]
 type = "memory"
 
-[directory."local".lookup]
-domains = ["example.com"]
-remote-domains = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
+[store."local".lookup."domains"]
+type = "list"
+values = ["example.com"]
+
+[store."local".lookup."remote-domains"]
+type = "list"
+values = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -256,30 +274,30 @@ pub async fn jmap_tests() {
 
     let delete = true;
     let mut params = init_jmap_tests(delete).await;
-    email_query::test(params.server.clone(), &mut params.client, delete).await;
-    email_get::test(params.server.clone(), &mut params.client).await;
-    email_set::test(params.server.clone(), &mut params.client).await;
-    email_parse::test(params.server.clone(), &mut params.client).await;
-    email_search_snippet::test(params.server.clone(), &mut params.client).await;
-    email_changes::test(params.server.clone(), &mut params.client).await;
-    email_query_changes::test(params.server.clone(), &mut params.client).await;
-    email_copy::test(params.server.clone(), &mut params.client).await;
-    thread_get::test(params.server.clone(), &mut params.client).await;
-    thread_merge::test(params.server.clone(), &mut params.client).await;
-    mailbox::test(params.server.clone(), &mut params.client).await;
-    delivery::test(params.server.clone(), &mut params.client).await;
-    auth_acl::test(params.server.clone(), &mut params.client).await;
-    auth_limits::test(params.server.clone(), &mut params.client).await;
-    auth_oauth::test(params.server.clone(), &mut params.client).await;
-    event_source::test(params.server.clone(), &mut params.client).await;
-    push_subscription::test(params.server.clone(), &mut params.client).await;
-    sieve_script::test(params.server.clone(), &mut params.client).await;
-    vacation_response::test(params.server.clone(), &mut params.client).await;
-    email_submission::test(params.server.clone(), &mut params.client).await;
-    websocket::test(params.server.clone(), &mut params.client).await;
-    quota::test(params.server.clone(), &mut params.client).await;
-    crypto::test(params.server.clone(), &mut params.client).await;
-    blob::test(params.server.clone(), &mut params.client).await;
+    email_query::test(&mut params, delete).await;
+    email_get::test(&mut params).await;
+    email_set::test(&mut params).await;
+    email_parse::test(&mut params).await;
+    email_search_snippet::test(&mut params).await;
+    email_changes::test(&mut params).await;
+    email_query_changes::test(&mut params).await;
+    email_copy::test(&mut params).await;
+    thread_get::test(&mut params).await;
+    thread_merge::test(&mut params).await;
+    mailbox::test(&mut params).await;
+    delivery::test(&mut params).await;
+    auth_acl::test(&mut params).await;
+    auth_limits::test(&mut params).await;
+    auth_oauth::test(&mut params).await;
+    event_source::test(&mut params).await;
+    push_subscription::test(&mut params).await;
+    sieve_script::test(&mut params).await;
+    vacation_response::test(&mut params).await;
+    email_submission::test(&mut params).await;
+    websocket::test(&mut params).await;
+    quota::test(&mut params).await;
+    crypto::test(&mut params).await;
+    blob::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -302,9 +320,10 @@ pub async fn jmap_stress_tests() {
 }
 
 #[allow(dead_code)]
-struct JMAPTest {
+pub struct JMAPTest {
     server: Arc<JMAP>,
     client: Client,
+    directory: DirectoryStore,
     temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
 }
@@ -344,15 +363,16 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     )
     .unwrap();
     let servers = config.parse_servers().unwrap();
-    let directory = config.parse_directory().unwrap();
+    let stores = config.parse_stores().await.failed("Invalid configuration");
+    let directory = config.parse_directory(&stores).unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &directory, delivery_tx)
+    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, &directory, delivery_rx, smtp.clone())
+    let jmap = JMAP::init(&config, &stores, &directory, delivery_rx, smtp.clone())
         .await
         .failed("Invalid configuration file");
     let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
@@ -368,9 +388,14 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
     });
 
     // Create tables
-    create_test_directory(jmap.directory.as_ref()).await;
-    create_test_user(jmap.directory.as_ref(), "admin", "secret", "Superuser").await;
-    add_to_group(jmap.directory.as_ref(), "admin", "superusers").await;
+    let directory = DirectoryStore {
+        store: stores.lookup_stores.get("auth").unwrap().clone(),
+    };
+    directory.create_test_directory().await;
+    directory
+        .create_test_user("admin", "secret", "Superuser")
+        .await;
+    directory.add_to_group("admin", "superusers").await;
 
     if delete_if_exists {
         jmap.store.destroy().await;
@@ -390,6 +415,7 @@ async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
         server: jmap,
         temp_dir,
         client,
+        directory,
         shutdown_tx,
     }
 }

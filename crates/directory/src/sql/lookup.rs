@@ -21,11 +21,10 @@
  * for more details.
 */
 
-use futures::TryStreamExt;
 use mail_send::Credentials;
-use sqlx::{any::AnyRow, postgres::any::AnyTypeInfoKind, Column, Row};
+use store::{NamedRows, Rows, Value};
 
-use crate::{DatabaseColumn, Directory, Principal, Type};
+use crate::{Directory, Principal, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -49,21 +48,20 @@ impl Directory for SqlDirectory {
     }
 
     async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
-        let result = sqlx::query(&self.mappings.query_name)
-            .bind(name)
-            .fetch(&self.pool)
-            .try_next()
+        let result = self
+            .store
+            .query::<NamedRows>(&self.mappings.query_name, vec![name.into()])
             .await?;
-        if let Some(row) = result {
+        if !result.rows.is_empty() {
             // Map row to principal
-            let mut principal = self.mappings.row_to_principal(row)?;
+            let mut principal = self.mappings.row_to_principal(result)?;
 
             // Obtain members
-            principal.member_of = sqlx::query_scalar::<_, String>(&self.mappings.query_members)
-                .bind(name)
-                .fetch(&self.pool)
-                .try_collect::<Vec<_>>()
-                .await?;
+            principal.member_of = self
+                .store
+                .query::<Rows>(&self.mappings.query_members, vec![name.into()])
+                .await?
+                .into();
 
             // Check whether the user is a superuser
             if let Some(idx) = principal
@@ -82,181 +80,134 @@ impl Directory for SqlDirectory {
     }
 
     async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
-        sqlx::query_scalar::<_, String>(&self.mappings.query_emails)
-            .bind(name)
-            .fetch(&self.pool)
-            .try_collect::<Vec<_>>()
+        self.store
+            .query::<Rows>(&self.mappings.query_emails, vec![name.into()])
             .await
+            .map(Into::into)
             .map_err(Into::into)
     }
 
     async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
-        let ids = sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
-            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
-            .fetch(&self.pool)
-            .try_collect::<Vec<_>>()
+        let ids = self
+            .store
+            .query::<Rows>(
+                &self.mappings.query_recipients,
+                vec![self
+                    .opt
+                    .subaddressing
+                    .to_subaddress(address)
+                    .into_owned()
+                    .into()],
+            )
             .await?;
-        if !ids.is_empty() {
-            Ok(ids)
+
+        if !ids.rows.is_empty() {
+            Ok(ids.into())
         } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
-            sqlx::query_scalar::<_, String>(&self.mappings.query_recipients)
-                .bind(address.as_ref())
-                .fetch(&self.pool)
-                .try_collect::<Vec<_>>()
+            self.store
+                .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
                 .await
+                .map(Into::into)
                 .map_err(Into::into)
         } else {
-            Ok(ids)
+            Ok(vec![])
         }
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        let result = sqlx::query(&self.mappings.query_recipients)
-            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
-            .fetch(&self.pool)
-            .try_next()
-            .await;
-        match result {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => {
-                if let Some(address) = self.opt.catch_all.to_catch_all(address) {
-                    sqlx::query(&self.mappings.query_recipients)
-                        .bind(address.as_ref())
-                        .fetch(&self.pool)
-                        .try_next()
-                        .await
-                        .map(|id| id.is_some())
-                        .map_err(Into::into)
-                } else {
-                    Ok(false)
-                }
-            }
-
-            Err(err) => Err(err.into()),
+        if self
+            .store
+            .query::<bool>(
+                &self.mappings.query_recipients,
+                vec![self
+                    .opt
+                    .subaddressing
+                    .to_subaddress(address)
+                    .into_owned()
+                    .into()],
+            )
+            .await?
+        {
+            Ok(true)
+        } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
+            self.store
+                .query::<bool>(
+                    &self.mappings.query_recipients,
+                    vec![address.into_owned().into()],
+                )
+                .await
+                .map_err(Into::into)
+        } else {
+            Ok(false)
         }
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
-        sqlx::query_scalar::<_, String>(&self.mappings.query_verify)
-            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
-            .fetch(&self.pool)
-            .try_collect::<Vec<_>>()
+        self.store
+            .query::<Rows>(
+                &self.mappings.query_verify,
+                vec![self
+                    .opt
+                    .subaddressing
+                    .to_subaddress(address)
+                    .into_owned()
+                    .into()],
+            )
             .await
+            .map(Into::into)
             .map_err(Into::into)
     }
 
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
-        sqlx::query_scalar::<_, String>(&self.mappings.query_expand)
-            .bind(self.opt.subaddressing.to_subaddress(address).as_ref())
-            .fetch(&self.pool)
-            .try_collect::<Vec<_>>()
+        self.store
+            .query::<Rows>(
+                &self.mappings.query_expand,
+                vec![self
+                    .opt
+                    .subaddressing
+                    .to_subaddress(address)
+                    .into_owned()
+                    .into()],
+            )
             .await
+            .map(Into::into)
             .map_err(Into::into)
-    }
-
-    async fn lookup(&self, query: &str, params: &[DatabaseColumn<'_>]) -> crate::Result<bool> {
-        self.query_(query, params).await.map(|row| row.is_some())
-    }
-
-    async fn query(
-        &self,
-        query: &str,
-        params: &[DatabaseColumn<'_>],
-    ) -> crate::Result<Vec<DatabaseColumn<'static>>> {
-        self.query_(query, params).await.map(|row| {
-            if let Some(row) = row {
-                let mut columns = Vec::with_capacity(row.columns().len());
-                for col in row.columns() {
-                    let idx = col.ordinal();
-                    columns.push(match col.type_info().kind() {
-                        AnyTypeInfoKind::Bool => {
-                            DatabaseColumn::Bool(row.try_get(idx).unwrap_or_default())
-                        }
-                        AnyTypeInfoKind::SmallInt
-                        | AnyTypeInfoKind::Integer
-                        | AnyTypeInfoKind::BigInt => {
-                            DatabaseColumn::Integer(row.try_get(idx).unwrap_or_default())
-                        }
-                        AnyTypeInfoKind::Real | AnyTypeInfoKind::Double => {
-                            DatabaseColumn::Float(row.try_get(idx).unwrap_or_default())
-                        }
-                        AnyTypeInfoKind::Text => DatabaseColumn::Text(
-                            row.try_get::<String, _>(idx).unwrap_or_default().into(),
-                        ),
-                        AnyTypeInfoKind::Blob => DatabaseColumn::Blob(
-                            row.try_get::<Vec<u8>, _>(idx).unwrap_or_default().into(),
-                        ),
-                        AnyTypeInfoKind::Null => row
-                            .try_get::<String, _>(idx)
-                            .map_or(DatabaseColumn::Null, DatabaseColumn::from),
-                    });
-                }
-                columns
-            } else {
-                vec![]
-            }
-        })
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
-        sqlx::query(&self.mappings.query_domains)
-            .bind(domain)
-            .fetch(&self.pool)
-            .try_next()
+        self.store
+            .query::<bool>(&self.mappings.query_domains, vec![domain.into()])
             .await
-            .map(|id| id.is_some())
             .map_err(Into::into)
-    }
-}
-
-impl SqlDirectory {
-    async fn query_(
-        &self,
-        query: &str,
-        params: &[DatabaseColumn<'_>],
-    ) -> crate::Result<Option<AnyRow>> {
-        tracing::trace!(context = "directory", event = "query", query = query, params = ?params);
-        let mut q = sqlx::query(query);
-        for param in params {
-            q = match param {
-                DatabaseColumn::Text(v) => q.bind(v.as_ref()),
-                DatabaseColumn::Integer(v) => q.bind(v),
-                DatabaseColumn::Bool(v) => q.bind(v),
-                DatabaseColumn::Float(v) => q.bind(v),
-                DatabaseColumn::Blob(v) => {
-                    q.bind(std::str::from_utf8(v.as_ref()).unwrap_or_default())
-                }
-                DatabaseColumn::Null => q.bind(""),
-            }
-        }
-
-        q.fetch(&self.pool).try_next().await.map_err(Into::into)
     }
 }
 
 impl SqlMappings {
-    pub fn row_to_principal(&self, row: AnyRow) -> crate::Result<Principal> {
+    pub fn row_to_principal(&self, rows: NamedRows) -> crate::Result<Principal> {
         let mut principal = Principal::default();
-        for col in row.columns() {
-            let idx = col.ordinal();
-            let name = col.name();
-
-            if name.eq_ignore_ascii_case(&self.column_name) {
-                principal.name = row.try_get::<String, _>(idx)?;
-            } else if name.eq_ignore_ascii_case(&self.column_secret) {
-                if let Ok(secret) = row.try_get::<String, _>(idx) {
-                    principal.secrets.push(secret);
+        if let Some(row) = rows.rows.into_iter().next() {
+            for (name, value) in rows.names.into_iter().zip(row.values) {
+                if name.eq_ignore_ascii_case(&self.column_name) {
+                    principal.name = value.into_string();
+                } else if name.eq_ignore_ascii_case(&self.column_secret) {
+                    if let Value::Text(secret) = value {
+                        principal.secrets.push(secret.into_owned());
+                    }
+                } else if name.eq_ignore_ascii_case(&self.column_type) {
+                    match value.to_str().as_ref() {
+                        "individual" | "person" | "user" => principal.typ = Type::Individual,
+                        "group" => principal.typ = Type::Group,
+                        _ => (),
+                    }
+                } else if name.eq_ignore_ascii_case(&self.column_description) {
+                    if let Value::Text(text) = value {
+                        principal.description = text.into_owned().into();
+                    }
+                } else if name.eq_ignore_ascii_case(&self.column_quota) {
+                    if let Value::Integer(quota) = value {
+                        principal.quota = quota as u32;
+                    }
                 }
-            } else if name.eq_ignore_ascii_case(&self.column_type) {
-                match row.try_get::<String, _>(idx)?.as_str() {
-                    "individual" | "person" | "user" => principal.typ = Type::Individual,
-                    "group" => principal.typ = Type::Group,
-                    _ => (),
-                }
-            } else if name.eq_ignore_ascii_case(&self.column_description) {
-                principal.description = row.try_get::<String, _>(idx).ok();
-            } else if name.eq_ignore_ascii_case(&self.column_quota) {
-                principal.quota = row.try_get::<i64, _>(idx).unwrap_or_default() as u32;
             }
         }
 

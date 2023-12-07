@@ -48,11 +48,13 @@ async fn imap_directory() {
     )
     .unwrap();*/
 
-    // Obtain directory handle
-    let handle = parse_config().directories.remove("imap").unwrap();
-
     // Spawn mock LMTP server
     let shutdown = spawn_mock_imap_server(5);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Obtain directory handle
+    let mut config = parse_config().await;
+    let handle = config.directories.directories.remove("imap").unwrap();
 
     // Basic lookup
     let tests = vec![
@@ -105,8 +107,6 @@ async fn imap_directory() {
             item_clone,
             expected.append(n),
         ));
-        // FOX: This is a workaround for a bb8 bug, see: https://github.com/djc/bb8/issues/167
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     for (result, item, expected_result) in requests {
         assert_eq!(

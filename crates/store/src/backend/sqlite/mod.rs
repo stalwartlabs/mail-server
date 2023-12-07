@@ -26,6 +26,7 @@ use r2d2::Pool;
 use self::pool::SqliteConnectionManager;
 
 pub mod blob;
+pub mod lookup;
 pub mod main;
 pub mod pool;
 pub mod read;

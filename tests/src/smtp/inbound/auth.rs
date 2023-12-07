@@ -23,6 +23,7 @@
 
 use directory::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
+use store::Stores;
 use utils::config::{Config, DynValue};
 
 use crate::smtp::{
@@ -59,7 +60,10 @@ member-of = ["sales", "support"]
 async fn auth() {
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]);
-    ctx.directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    ctx.directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
 
     let config = &mut core.session.config.auth;
 

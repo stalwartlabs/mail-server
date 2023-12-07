@@ -21,16 +21,33 @@
  * for more details.
 */
 
-use foundationdb::Database;
-use utils::config::Config;
+use foundationdb::{options::DatabaseOption, Database};
+use utils::config::{utils::AsKey, Config};
 
 use super::FdbStore;
 
 impl FdbStore {
-    pub async fn open(_: &Config) -> crate::Result<Self> {
-        Ok(Self {
-            guard: unsafe { foundationdb::boot() },
-            db: Database::default()?,
-        })
+    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
+        let guard = unsafe { foundationdb::boot() };
+
+        let db = Database::new(config.value((&prefix, "path")))?;
+        if let Some(value) = config.property((&prefix, "transaction.timeout"))? {
+            db.set_option(DatabaseOption::TransactionTimeout(value))?;
+        }
+        if let Some(value) = config.property((&prefix, "transaction.retry-limit"))? {
+            db.set_option(DatabaseOption::TransactionRetryLimit(value))?;
+        }
+        if let Some(value) = config.property((&prefix, "transaction.max-retry-delay"))? {
+            db.set_option(DatabaseOption::TransactionMaxRetryDelay(value))?;
+        }
+        if let Some(value) = config.property((&prefix, "transaction.machine-id"))? {
+            db.set_option(DatabaseOption::MachineId(value))?;
+        }
+        if let Some(value) = config.property((&prefix, "transaction.datacenter-id"))? {
+            db.set_option(DatabaseOption::DatacenterId(value))?;
+        }
+
+        Ok(Self { guard, db })
     }
 }

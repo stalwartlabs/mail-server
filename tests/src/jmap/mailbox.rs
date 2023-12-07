@@ -21,9 +21,6 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use jmap::JMAP;
 use jmap_client::{
     client::Client,
     core::{
@@ -39,8 +36,12 @@ use store::ahash::AHashMap;
 
 use crate::jmap::assert_is_empty;
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Mailbox tests...");
+    let server = params.server.clone();
+    let client = &mut params.client;
 
     // Create test mailboxes
     client.set_default_account_id(Id::from(0u64));

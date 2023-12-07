@@ -28,6 +28,7 @@ use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
+use store::Stores;
 use utils::config::{Config, DynValue};
 
 use crate::smtp::{
@@ -103,9 +104,6 @@ name = "john"
 description = "John Doe"
 secret = "secret"
 email = ["jdoe@example.com"]
-
-[directory."local".lookup]
-domains = ["example.com"]
 "#;
 
 #[tokio::test]
@@ -154,7 +152,10 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),

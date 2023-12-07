@@ -115,6 +115,13 @@ impl LdapDirectory {
             .attrs_email
             .extend(mappings.attr_email_address.iter().cloned());
 
+        let auth_bind =
+            if config.property_or_static::<bool>((&prefix, "auth-bind.enable"), "false")? {
+                LdapFilter::from_config(config, (&prefix, "auth-bind.dn"))?.into()
+            } else {
+                None
+            };
+
         CachedDirectory::try_from_config(
             config,
             &prefix,
@@ -122,6 +129,7 @@ impl LdapDirectory {
                 mappings,
                 pool: build_pool(config, &prefix, manager)?,
                 opt: DirectoryOptions::from_config(config, prefix.as_str())?,
+                auth_bind,
             },
         )
     }

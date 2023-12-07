@@ -33,32 +33,33 @@ use deadpool_postgres::{
     Config, CreatePoolError, ManagerConfig, PoolConfig, RecyclingMethod, Runtime,
 };
 use tokio_postgres::NoTls;
-use utils::rustls_client_config;
+use utils::{config::utils::AsKey, rustls_client_config};
 
 impl PostgresStore {
-    pub async fn open(config: &utils::config::Config) -> crate::Result<Self> {
+    pub async fn open(config: &utils::config::Config, prefix: impl AsKey) -> crate::Result<Self> {
+        let prefix = prefix.as_key();
         let mut cfg = Config::new();
         cfg.dbname = config
-            .value_require("store.db.database")?
+            .value_require((&prefix, "database"))?
             .to_string()
             .into();
-        cfg.host = config.value("store.db.host").map(|s| s.to_string());
-        cfg.user = config.value("store.db.user").map(|s| s.to_string());
-        cfg.password = config.value("store.db.password").map(|s| s.to_string());
-        cfg.port = config.property("store.db.port")?;
-        cfg.connect_timeout = config.property("store.db.timeout")?;
+        cfg.host = config.value((&prefix, "host")).map(|s| s.to_string());
+        cfg.user = config.value((&prefix, "user")).map(|s| s.to_string());
+        cfg.password = config.value((&prefix, "password")).map(|s| s.to_string());
+        cfg.port = config.property((&prefix, "port"))?;
+        cfg.connect_timeout = config.property((&prefix, "timeout.connect"))?;
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
-        if let Some(max_conn) = config.property::<usize>("store.db.pool.max-connections")? {
+        if let Some(max_conn) = config.property::<usize>((&prefix, "pool.max-connections"))? {
             cfg.pool = PoolConfig::new(max_conn).into();
         }
         let db = Self {
-            conn_pool: if config.property_or_static::<bool>("store.db.tls.enable", "false")? {
+            conn_pool: if config.property_or_static::<bool>((&prefix, "tls.enable"), "false")? {
                 cfg.create_pool(
                     Some(Runtime::Tokio1),
                     MakeRustlsConnect::new(rustls_client_config(
-                        config.property_or_static("store.db.tls.allow-invalid-certs", "false")?,
+                        config.property_or_static((&prefix, "tls.allow-invalid-certs"), "false")?,
                     )),
                 )?
             } else {

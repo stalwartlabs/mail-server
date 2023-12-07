@@ -34,6 +34,7 @@ use mail_auth::{
         ActionDisposition, DmarcResult, Record,
     },
 };
+use store::Stores;
 use tokio::sync::mpsc;
 use utils::config::{Config, ServerProtocol};
 
@@ -82,7 +83,10 @@ async fn manage_reports() {
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;

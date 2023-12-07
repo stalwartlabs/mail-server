@@ -21,18 +21,18 @@
  * for more details.
 */
 
-use bb8::ManageConnection;
+use async_trait::async_trait;
+use deadpool::managed;
 use mail_send::{smtp::AssertReply, Error};
 
 use super::{SmtpClient, SmtpConnectionManager};
 
-#[async_trait::async_trait]
-impl ManageConnection for SmtpConnectionManager {
-    type Connection = SmtpClient;
+#[async_trait]
+impl managed::Manager for SmtpConnectionManager {
+    type Type = SmtpClient;
     type Error = Error;
 
-    /// Attempts to create a new connection.
-    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+    async fn create(&self) -> Result<SmtpClient, Error> {
         let mut client = self.builder.connect().await?;
         let capabilities = client
             .capabilities(&self.builder.local_host, self.builder.is_lmtp)
@@ -49,16 +49,22 @@ impl ManageConnection for SmtpConnectionManager {
         })
     }
 
-    /// Determines if the connection is still connected to the database.
-    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.client
-            .cmd(b"NOOP\r\n")
-            .await?
-            .assert_positive_completion()
-    }
-
-    /// Synchronously determine if the connection is no longer usable, if possible.
-    fn has_broken(&self, conn: &mut Self::Connection) -> bool {
-        conn.num_auth_failures >= conn.max_auth_errors
+    async fn recycle(
+        &self,
+        conn: &mut SmtpClient,
+        _: &managed::Metrics,
+    ) -> managed::RecycleResult<Error> {
+        if conn.num_auth_failures < conn.max_auth_errors {
+            conn.client
+                .cmd(b"NOOP\r\n")
+                .await?
+                .assert_positive_completion()
+                .map(|_| ())
+                .map_err(managed::RecycleError::Backend)
+        } else {
+            Err(managed::RecycleError::StaticMessage(
+                "No longer valid: Too many authentication failures",
+            ))
+        }
     }
 }

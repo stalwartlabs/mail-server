@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2023 Stalwart Labs Ltd.
  *
- * This file is part of Stalwart Mail Server.
+ * This file is part of the Stalwart Mail Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,34 +21,32 @@
  * for more details.
 */
 
-pub mod config;
+pub mod glob;
 pub mod lookup;
-pub mod pool;
+pub mod main;
 
-use ahash::AHashSet;
-use deadpool::managed::Pool;
-use mail_send::SmtpClientBuilder;
-use smtp_proto::EhloResponse;
-use tokio::net::TcpStream;
-use tokio_rustls::client::TlsStream;
+use ahash::{AHashMap, AHashSet};
 
-pub struct SmtpDirectory {
-    pool: Pool<SmtpConnectionManager>,
-    domains: AHashSet<String>,
+use crate::Value;
+
+use self::glob::GlobPattern;
+
+pub enum MemoryStore {
+    List(LookupList),
+    Map(LookupMap),
 }
 
-pub struct SmtpConnectionManager {
-    builder: SmtpClientBuilder<String>,
-    max_rcpt: usize,
-    max_auth_errors: usize,
+#[derive(Default)]
+pub struct LookupList {
+    pub set: AHashSet<String>,
+    pub matches: Vec<MatchType>,
 }
 
-pub struct SmtpClient {
-    client: mail_send::SmtpClient<TlsStream<TcpStream>>,
-    capabilities: EhloResponse<String>,
-    max_rcpt: usize,
-    max_auth_errors: usize,
-    num_rcpts: usize,
-    num_auth_failures: usize,
-    sent_mail_from: bool,
+pub type LookupMap = AHashMap<String, Value<'static>>;
+
+pub enum MatchType {
+    StartsWith(String),
+    EndsWith(String),
+    Glob(GlobPattern),
+    Regex(regex::Regex),
 }

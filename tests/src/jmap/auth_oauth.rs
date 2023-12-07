@@ -21,16 +21,10 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use jmap::{
-    auth::oauth::{DeviceAuthResponse, ErrorType, OAuthMetadata, TokenResponse},
-    JMAP,
-};
+use jmap::auth::oauth::{DeviceAuthResponse, ErrorType, OAuthMetadata, TokenResponse};
 use jmap_client::{
     client::{Client, Credentials},
     mailbox::query::Filter,
@@ -40,17 +34,19 @@ use reqwest::{header, redirect::Policy};
 use serde::de::DeserializeOwned;
 use store::ahash::AHashMap;
 
-use crate::{
-    directory::sql::create_test_user_with_email,
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
-};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running OAuth tests...");
 
     // Create test account
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
+    let server = params.server.clone();
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
     let john_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
 
     // Obtain OAuth metadata
@@ -308,8 +304,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     );
 
     // Destroy test accounts
-    admin_client.set_default_account_id(john_id);
-    destroy_all_mailboxes(admin_client).await;
+    params.client.set_default_account_id(john_id);
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

@@ -26,12 +26,7 @@ use std::sync::Arc;
 use mail_send::{smtp::tls::build_tls_connector, SmtpClientBuilder};
 use utils::config::{utils::AsKey, Config};
 
-use crate::{
-    cache::CachedDirectory,
-    config::{build_pool, ConfigDirectory, LookupFormat},
-    smtp::SmtpConnectionManager,
-    Directory,
-};
+use crate::{cache::CachedDirectory, config::build_pool, smtp::SmtpConnectionManager, Directory};
 
 use super::SmtpDirectory;
 
@@ -73,7 +68,9 @@ impl SmtpDirectory {
             SmtpDirectory {
                 pool: build_pool(config, &prefix, manager)?,
                 domains: config
-                    .parse_lookup_list((&prefix, "lookup.domains"), LookupFormat::default())?,
+                    .values((&prefix, "local-domains"))
+                    .map(|(_, v)| v.to_lowercase())
+                    .collect(),
             },
         )
     }

@@ -21,19 +21,20 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use jmap::JMAP;
-use jmap_client::{client::Client, mailbox::Role};
+use jmap_client::mailbox::Role;
 use jmap_proto::types::id::Id;
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Copy tests...");
+    let server = params.server.clone();
 
     // Create a mailbox on account 1
-    let ac1_mailbox_id = client
+    let ac1_mailbox_id = params
+        .client
         .set_default_account_id(Id::new(1).to_string())
         .mailbox_create("Copy Test Ac# 1", None::<String>, Role::None)
         .await
@@ -41,7 +42,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .take_id();
 
     // Insert a message on account 1
-    let ac1_email_id = client
+    let ac1_email_id = params
+        .client
         .email_import(
             concat!(
                 "From: bill@example.com\r\n",
@@ -62,7 +64,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .take_id();
 
     // Create a mailbox on account 2
-    let ac2_mailbox_id = client
+    let ac2_mailbox_id = params
+        .client
         .set_default_account_id(Id::new(2).to_string())
         .mailbox_create("Copy Test Ac# 2", None::<String>, Role::None)
         .await
@@ -70,7 +73,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .take_id();
 
     // Copy the email and delete it from the first account
-    let mut request = client.build();
+    let mut request = params.client.build();
     request
         .copy_email(Id::new(1).to_string())
         .on_success_destroy_original(true)
@@ -90,7 +93,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .take_id();
 
     // Check that the email was copied
-    let email = client
+    let email = params
+        .client
         .email_get(&ac2_email_id, None::<Vec<_>>)
         .await
         .unwrap()
@@ -105,7 +109,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     assert_eq!(email.received_at().unwrap(), 311923920);
 
     // Check that the email was deleted
-    assert!(client
+    assert!(params
+        .client
         .set_default_account_id(Id::new(1).to_string())
         .email_get(&ac1_email_id, None::<Vec<_>>)
         .await
@@ -113,8 +118,8 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         .is_none());
 
     // Empty store
-    destroy_all_mailboxes(client).await;
-    client.set_default_account_id(Id::new(2).to_string());
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
+    params.client.set_default_account_id(Id::new(2).to_string());
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }

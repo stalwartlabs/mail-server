@@ -21,14 +21,8 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use jmap::{
-    mailbox::{INBOX_ID, TRASH_ID},
-    JMAP,
-};
+use jmap::mailbox::{INBOX_ID, TRASH_ID};
 use jmap_client::{
-    client::Client,
     core::{
         error::{MethodError, MethodErrorType},
         set::{SetError, SetErrorType},
@@ -41,25 +35,34 @@ use jmap_proto::types::id::Id;
 use std::fmt::Debug;
 use store::ahash::AHashMap;
 
-use crate::{
-    directory::sql::{
-        add_to_group, create_test_group_with_email, create_test_user_with_email, remove_from_group,
-    },
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
-};
+use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login};
 
-pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running ACL tests...");
+    let server = params.server.clone();
 
     // Create a group and three test accounts
     let inbox_id = Id::new(INBOX_ID as u64).to_string();
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
-    let directory = server.directory.as_ref();
-    create_test_user_with_email(directory, "jdoe@example.com", "12345", "John Doe").await;
-    create_test_user_with_email(directory, "jane.smith@example.com", "abcde", "Jane Smith").await;
-    create_test_user_with_email(directory, "bill@example.com", "098765", "Bill Foobar").await;
-    create_test_group_with_email(directory, "sales@example.com", "Sales Group").await;
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
+        .await;
+    params
+        .directory
+        .create_test_user_with_email("jane.smith@example.com", "abcde", "Jane Smith")
+        .await;
+    params
+        .directory
+        .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
+        .await;
+    params
+        .directory
+        .create_test_group_with_email("sales@example.com", "Sales Group")
+        .await;
     let john_id: Id = server
         .get_account_id("jdoe@example.com")
         .await
@@ -92,7 +95,7 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
         (&mut john_client, &john_id, "john"),
         (&mut jane_client, &jane_id, "jane"),
         (&mut bill_client, &bill_id, "bill"),
-        (admin_client, &sales_id, "sales"),
+        (&mut params.client, &sales_id, "sales"),
     ] {
         let user_name = client.session().username().to_string();
         let mut ids = Vec::with_capacity(2);
@@ -667,7 +670,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Add John and Jane to the Sales group
     for name in ["jdoe@example.com", "jane.smith@example.com"] {
-        add_to_group(directory, name, "sales@example.com").await;
+        params
+            .directory
+            .add_to_group(name, "sales@example.com")
+            .await;
     }
     server.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
@@ -763,7 +769,10 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
     );
 
     // Remove John from the sales group
-    remove_from_group(directory, "jdoe@example.com", "sales@example.com").await;
+    params
+        .directory
+        .remove_from_group("jdoe@example.com", "sales@example.com")
+        .await;
     server.sessions.clear();
     assert_forbidden(
         john_client
@@ -774,8 +783,8 @@ pub async fn test(server: Arc<JMAP>, admin_client: &mut Client) {
 
     // Destroy test account data
     for id in [john_id, bill_id, jane_id, sales_id] {
-        admin_client.set_default_account_id(&id.to_string());
-        destroy_all_mailboxes(admin_client).await;
+        params.client.set_default_account_id(&id.to_string());
+        destroy_all_mailboxes(&params.client).await;
     }
     assert_is_empty(server).await;
 }

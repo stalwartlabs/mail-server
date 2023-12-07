@@ -21,20 +21,20 @@
  * for more details.
 */
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf};
 
-use jmap::{mailbox::INBOX_ID, JMAP};
-use jmap_client::{
-    client::Client,
-    email::{self, import::EmailImportResponse, Header, HeaderForm},
-};
+use jmap::mailbox::INBOX_ID;
+use jmap_client::email::{self, import::EmailImportResponse, Header, HeaderForm};
 use jmap_proto::types::id::Id;
 use mail_parser::HeaderName;
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, replace_blob_ids};
 
-pub async fn test(server: Arc<JMAP>, client: &mut Client) {
+use super::JMAPTest;
+
+pub async fn test(params: &mut JMAPTest) {
     println!("Running Email Get tests...");
+    let server = params.server.clone();
 
     let mut test_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     test_dir.push("resources");
@@ -42,7 +42,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
     test_dir.push("email_get");
 
     let mailbox_id = Id::from(INBOX_ID).to_string();
-    client.set_default_account_id(Id::from(1u64));
+    params.client.set_default_account_id(Id::from(1u64));
 
     for file_name in fs::read_dir(&test_dir).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
@@ -55,12 +55,13 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         let blob_len = blob.len();
 
         // Import email
-        let mut request = client.build();
+        let mut request = params.client.build();
         let import_request = request
             .import_email()
             .account_id(Id::from(1u64).to_string())
             .email(
-                client
+                params
+                    .client
                     .upload(None, blob, None)
                     .await
                     .unwrap()
@@ -74,7 +75,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         assert_ne!(response.old_state(), Some(response.new_state()));
         let email = response.created(&id).unwrap();
 
-        let mut request = client.build();
+        let mut request = params.client.build();
         request
             .get_email()
             .ids([email.id().unwrap()])
@@ -157,7 +158,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
 
         if is_headers_test {
             for property in all_headers() {
-                let mut request = client.build();
+                let mut request = params.client.build();
                 request
                     .get_email()
                     .ids([email.id().unwrap()])
@@ -187,7 +188,7 @@ pub async fn test(server: Arc<JMAP>, client: &mut Client) {
         }
     }
 
-    destroy_all_mailboxes(client).await;
+    destroy_all_mailboxes(&params.client).await;
     assert_is_empty(server).await;
 }
 

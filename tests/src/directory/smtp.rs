@@ -43,9 +43,11 @@ use super::dummy_tls_acceptor;
 async fn smtp_directory() {
     // Spawn mock LMTP server
     let shutdown = spawn_mock_lmtp_server(5);
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Obtain directory handle
-    let handle = parse_config().directories.remove("smtp").unwrap();
+    let mut config = parse_config().await;
+    let handle = config.directories.directories.remove("smtp").unwrap();
 
     // Basic lookup
     let tests = vec![
@@ -153,10 +155,6 @@ async fn smtp_directory() {
 
     // Verify that caching works
     TcpStream::connect("127.0.0.1:9199").await.unwrap_err();
-    assert_eq!(
-        handle.type_name(),
-        "directory::cache::CachedDirectory<directory::smtp::SmtpDirectory>"
-    );
 
     let mut requests = Vec::new();
     for n in 0..100 {

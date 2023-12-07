@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use directory::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
@@ -64,8 +65,6 @@ description = "Mike Foobar"
 secret = "p4ssw0rd"
 email = "mike@foobar.org"
 
-[directory."local".lookup]
-domains = ["foobar.org"]
 "#;
 
 #[tokio::test]
@@ -73,7 +72,10 @@ async fn rcpt() {
     let mut core = SMTP::test();
 
     let config_ext = &mut core.session.config.extensions;
-    let directory = Config::new(DIRECTORY).unwrap().parse_directory().unwrap();
+    let directory = Config::new(DIRECTORY)
+        .unwrap()
+        .parse_directory(&Stores::default())
+        .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
         directory.directories.get("local").unwrap().clone(),
