@@ -236,7 +236,7 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             }
             .write(self.account_id)
             .write(self.collection)
-            .write_leb128(self.document_id)
+            .write(self.document_id)
             .write(*field),
             ValueClass::Acl(grant_account_id) => if include_subspace {
                 KeySerializer::new(U32_LEN * 3 + 3).write(crate::SUBSPACE_INDEX_VALUES)
@@ -262,7 +262,7 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             }
             .write(self.account_id)
             .write(self.collection)
-            .write_leb128(self.document_id)
+            .write(self.document_id)
             .write(u8::MAX),
             ValueClass::ReservedId => if include_subspace {
                 KeySerializer::new(U32_LEN * 2 + 2).write(crate::SUBSPACE_INDEX_VALUES)

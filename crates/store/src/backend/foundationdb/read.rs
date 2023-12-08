@@ -22,19 +22,38 @@
 */
 
 use foundationdb::{
+    future::FdbSlice,
     options::{self, StreamingMode},
-    KeySelector, RangeOption,
+    KeySelector, RangeOption, Transaction,
 };
 use futures::StreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{bitmap::DeserializeBlock, key::DeserializeBigEndian, BitmapClass, ValueClass},
+    write::{
+        bitmap::DeserializeBlock,
+        key::{DeserializeBigEndian, KeySerializer},
+        BitmapClass, ValueClass,
+    },
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, SUBSPACE_BLOBS, SUBSPACE_INDEXES,
-    U32_LEN,
+    SUBSPACE_VALUES, U32_LEN,
 };
 
-use super::FdbStore;
+use super::{FdbStore, MAX_VALUE_SIZE};
+
+#[cfg(feature = "fdb-chunked-bm")]
+pub(crate) enum ChunkedBitmap {
+    Single(RoaringBitmap),
+    Chunked { n_chunks: u8, bitmap: RoaringBitmap },
+    None,
+}
+
+#[allow(dead_code)]
+pub(crate) enum ChunkedValue {
+    Single(FdbSlice),
+    Chunked { n_chunks: u8, bytes: Vec<u8> },
+    None,
+}
 
 impl FdbStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
@@ -44,10 +63,10 @@ impl FdbStore {
         let key = key.serialize(true);
         let trx = self.db.create_trx()?;
 
-        if let Some(bytes) = trx.get(&key, true).await? {
-            U::deserialize(&bytes).map(Some)
-        } else {
-            Ok(None)
+        match read_chunked_value(&key, &trx, true).await? {
+            ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
+            ChunkedValue::Chunked { bytes, .. } => U::deserialize(&bytes).map(Some),
+            ChunkedValue::None => Ok(None),
         }
     }
 
@@ -55,35 +74,45 @@ impl FdbStore {
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-        let begin = key.serialize(true);
-        key.block_num = u32::MAX;
-        let end = key.serialize(true);
-        let key_len = begin.len();
-        let trx = self.db.create_trx()?;
-        let mut values = trx.get_ranges(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(begin),
-                end: KeySelector::first_greater_or_equal(end),
-                mode: StreamingMode::WantAll,
-                reverse: false,
-                ..RangeOption::default()
-            },
-            true,
-        );
+        #[cfg(feature = "fdb-chunked-bm")]
+        {
+            read_chunked_bitmap(&key.serialize(true), &self.db.create_trx()?, true)
+                .await
+                .map(Into::into)
+        }
 
-        while let Some(values) = values.next().await {
-            for value in values? {
-                let key = value.key();
-                if key.len() == key_len {
-                    bm.deserialize_block(
-                        value.value(),
-                        key.deserialize_be_u32(key.len() - U32_LEN)?,
-                    );
+        #[cfg(not(feature = "fdb-chunked-bm"))]
+        {
+            let mut bm = RoaringBitmap::new();
+            let begin = key.serialize(true);
+            key.block_num = u32::MAX;
+            let end = key.serialize(true);
+            let key_len = begin.len();
+            let trx = self.db.create_trx()?;
+            let mut values = trx.get_ranges(
+                RangeOption {
+                    begin: KeySelector::first_greater_or_equal(begin),
+                    end: KeySelector::first_greater_or_equal(end),
+                    mode: StreamingMode::WantAll,
+                    reverse: false,
+                    ..RangeOption::default()
+                },
+                true,
+            );
+
+            while let Some(values) = values.next().await {
+                for value in values? {
+                    let key = value.key();
+                    if key.len() == key_len {
+                        bm.deserialize_block(
+                            value.value(),
+                            key.deserialize_be_u32(key.len() - U32_LEN)?,
+                        );
+                    }
                 }
             }
+            Ok(if !bm.is_empty() { Some(bm) } else { None })
         }
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(
@@ -140,7 +169,7 @@ impl FdbStore {
 
     #[cfg(feature = "test_mode")]
     pub(crate) async fn assert_is_empty(&self) {
-        use crate::{SUBSPACE_BITMAPS, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES};
+        use crate::{SUBSPACE_BITMAPS, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS};
 
         let conn = self.db.create_trx().unwrap();
 
@@ -226,5 +255,70 @@ impl FdbStore {
             trx.clear(&key);
         }
         trx.commit().await.unwrap();
+    }
+}
+
+pub(crate) async fn read_chunked_value(
+    key: &[u8],
+    trx: &Transaction,
+    snapshot: bool,
+) -> crate::Result<ChunkedValue> {
+    if let Some(bytes) = trx.get(key, snapshot).await? {
+        if bytes.len() < MAX_VALUE_SIZE {
+            Ok(ChunkedValue::Single(bytes))
+        } else {
+            let mut value = Vec::with_capacity(bytes.len() * 2);
+            value.extend_from_slice(&bytes);
+            let mut key = KeySerializer::new(key.len() + 1)
+                .write(key)
+                .write(0u8)
+                .finalize();
+
+            while let Some(bytes) = trx.get(&key, snapshot).await? {
+                value.extend_from_slice(&bytes);
+                *key.last_mut().unwrap() += 1;
+            }
+
+            Ok(ChunkedValue::Chunked {
+                bytes: value,
+                n_chunks: *key.last().unwrap(),
+            })
+        }
+    } else {
+        Ok(ChunkedValue::None)
+    }
+}
+
+#[cfg(feature = "fdb-chunked-bm")]
+pub(crate) async fn read_chunked_bitmap(
+    key: &[u8],
+    trx: &Transaction,
+    snapshot: bool,
+) -> crate::Result<ChunkedBitmap> {
+    match read_chunked_value(key, trx, snapshot).await? {
+        ChunkedValue::Single(bytes) => RoaringBitmap::deserialize_unchecked_from(bytes.as_ref())
+            .map(ChunkedBitmap::Single)
+            .map_err(|e| {
+                crate::Error::InternalError(format!("Failed to deserialize bitmap: {}", e))
+            }),
+        ChunkedValue::Chunked { bytes, n_chunks } => {
+            RoaringBitmap::deserialize_unchecked_from(bytes.as_slice())
+                .map(|bitmap| ChunkedBitmap::Chunked { n_chunks, bitmap })
+                .map_err(|e| {
+                    crate::Error::InternalError(format!("Failed to deserialize bitmap: {}", e))
+                })
+        }
+        ChunkedValue::None => Ok(ChunkedBitmap::None),
+    }
+}
+
+#[cfg(feature = "fdb-chunked-bm")]
+impl From<ChunkedBitmap> for Option<RoaringBitmap> {
+    fn from(bitmap: ChunkedBitmap) -> Self {
+        match bitmap {
+            ChunkedBitmap::Single(bitmap) => Some(bitmap),
+            ChunkedBitmap::Chunked { bitmap, .. } => Some(bitmap),
+            ChunkedBitmap::None => None,
+        }
     }
 }

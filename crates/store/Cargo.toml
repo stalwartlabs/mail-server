@@ -54,6 +54,7 @@ elastic = ["elasticsearch", "serde_json"]
 mysql = ["mysql_async"]
 s3 = ["rust-s3"]
 foundation = ["foundationdb", "futures"]
+fdb-chunked-bm = []
 
 test_mode = []
 

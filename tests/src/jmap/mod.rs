@@ -173,9 +173,9 @@ private-key = "file://{PK}"
 directory = "auth"
 
 [jmap.store]
-data = "sqlite"
-fts = "sqlite"
-blob = "sqlite"
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -258,22 +258,28 @@ refresh-token-renew = "2s"
 
 #[tokio::test]
 pub async fn jmap_tests() {
-    /*let level = "warn";
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::builder()
-                    .parse(
-                        format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
-                    )
-                    .unwrap(),
-            )
-            .finish(),
-    )
-    .unwrap();*/
+    if let Ok(level) = std::env::var("LOG") {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::builder()
+                        .parse(
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                        )
+                        .unwrap(),
+                )
+                .finish(),
+        )
+        .unwrap();
+    }
 
     let delete = true;
-    let mut params = init_jmap_tests(delete).await;
+    let mut params = init_jmap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        delete,
+    )
+    .await;
     email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
@@ -314,7 +320,7 @@ pub async fn jmap_stress_tests() {
     )
     .unwrap();
 
-    let params = init_jmap_tests(true).await;
+    let params = init_jmap_tests("foundationdb", true).await;
     stress_test::test(params.server.clone(), params.client).await;
     params.temp_dir.delete();
 }
@@ -355,11 +361,13 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
         .await;
 }
 
-async fn init_jmap_tests(delete_if_exists: bool) -> JMAPTest {
+async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("jmap_tests", delete_if_exists);
     let config = utils::config::Config::new(
-        &add_test_certs(SERVER).replace("{TMP}", &temp_dir.path.display().to_string()),
+        &add_test_certs(SERVER)
+            .replace("{STORE}", store_id)
+            .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
     let servers = config.parse_servers().unwrap();

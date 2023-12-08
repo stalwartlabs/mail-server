@@ -30,6 +30,8 @@ pub mod main;
 pub mod read;
 pub mod write;
 
+const MAX_VALUE_SIZE: usize = 100000;
+
 #[allow(dead_code)]
 pub struct FdbStore {
     db: Database,

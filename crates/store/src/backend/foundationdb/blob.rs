@@ -28,9 +28,7 @@ use futures::StreamExt;
 
 use crate::{write::key::KeySerializer, Error, BLOB_HASH_LEN, SUBSPACE_BLOB_DATA};
 
-use super::FdbStore;
-
-const MAX_BLOCK_SIZE: usize = 100000;
+use super::{FdbStore, MAX_VALUE_SIZE};
 
 impl FdbStore {
     pub(crate) async fn get_blob(
@@ -38,9 +36,9 @@ impl FdbStore {
         key: &[u8],
         range: Range<u32>,
     ) -> crate::Result<Option<Vec<u8>>> {
-        let block_start = range.start as usize / MAX_BLOCK_SIZE;
-        let bytes_start = range.start as usize % MAX_BLOCK_SIZE;
-        let block_end = (range.end as usize / MAX_BLOCK_SIZE) + 1;
+        let block_start = range.start as usize / MAX_VALUE_SIZE;
+        let bytes_start = range.start as usize % MAX_VALUE_SIZE;
+        let block_end = (range.end as usize / MAX_VALUE_SIZE) + 1;
 
         let begin = KeySerializer::new(key.len() + 3)
             .write(SUBSPACE_BLOB_DATA)
@@ -89,8 +87,8 @@ impl FdbStore {
                     } else {
                         let blob_size = if blob_range <= (5 * (1 << 20)) {
                             blob_range
-                        } else if value.len() == MAX_BLOCK_SIZE {
-                            MAX_BLOCK_SIZE * 2
+                        } else if value.len() == MAX_VALUE_SIZE {
+                            MAX_VALUE_SIZE * 2
                         } else {
                             value.len()
                         };
@@ -116,8 +114,19 @@ impl FdbStore {
     }
 
     pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        for (chunk_pos, chunk_bytes) in data.chunks(MAX_BLOCK_SIZE).enumerate() {
-            let trx = self.db.create_trx()?;
+        const N_CHUNKS: usize = (1 << 5) - 1;
+        let last_chunk = std::cmp::max(
+            (data.len() / MAX_VALUE_SIZE)
+                + if data.len() % MAX_VALUE_SIZE > 0 {
+                    1
+                } else {
+                    0
+                },
+            1,
+        ) - 1;
+        let mut trx = self.db.create_trx()?;
+
+        for (chunk_pos, chunk_bytes) in data.chunks(MAX_VALUE_SIZE).enumerate() {
             trx.set(
                 &KeySerializer::new(key.len() + 3)
                     .write(SUBSPACE_BLOB_DATA)
@@ -126,9 +135,16 @@ impl FdbStore {
                     .finalize(),
                 chunk_bytes,
             );
-            trx.commit()
-                .await
-                .map_err(|err| Error::from(FdbError::from(err)))?;
+            if chunk_pos == last_chunk || (chunk_pos > 0 && chunk_pos % N_CHUNKS == 0) {
+                trx.commit()
+                    .await
+                    .map_err(|err| Error::from(FdbError::from(err)))?;
+                if chunk_pos < last_chunk {
+                    trx = self.db.create_trx()?;
+                } else {
+                    break;
+                }
+            }
         }
 
         Ok(())

@@ -172,9 +172,9 @@ private-key = "file://{PK}"
 directory = "auth"
 
 [jmap.store]
-data = "sqlite"
-fts = "sqlite"
-blob = "sqlite"
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -262,11 +262,13 @@ pub struct IMAPTest {
     shutdown_tx: watch::Sender<bool>,
 }
 
-async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
+async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("imap_tests", delete_if_exists);
     let config = utils::config::Config::new(
-        &add_test_certs(SERVER).replace("{TMP}", &temp_dir.path.display().to_string()),
+        &add_test_certs(SERVER)
+            .replace("{STORE}", store_id)
+            .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
     let servers = config.parse_servers().unwrap();
@@ -347,16 +349,29 @@ async fn init_imap_tests(delete_if_exists: bool) -> IMAPTest {
 
 #[tokio::test]
 pub async fn imap_tests() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    if let Ok(level) = std::env::var("LOG") {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::builder()
+                        .parse(
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                        )
+                        .unwrap(),
+                )
+                .finish(),
+        )
+        .unwrap();
+    }
 
     // Prepare settings
     let delete = true;
-    let handle = init_imap_tests(delete).await;
+    let handle = init_imap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        delete,
+    )
+    .await;
 
     // Connect to IMAP server
     let mut imap_check = ImapConnection::connect(b"_y ").await;

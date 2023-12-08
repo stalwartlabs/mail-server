@@ -23,6 +23,7 @@
 
 pub mod assign_id;
 pub mod blob;
+pub mod ops;
 pub mod query;
 
 use std::io::Read;
@@ -87,6 +88,7 @@ pub async fn store_tests() {
         if insert {
             store.destroy().await;
         }
+        ops::test(store.clone()).await;
         query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
         assign_id::test(store).await;
     }
