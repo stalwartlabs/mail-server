@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use rustls::ServerName;
+use rustls_pki_types::ServerName;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
@@ -88,7 +88,9 @@ impl MilterClient<TcpStream> {
             Ok(MilterClient {
                 stream: tls_connector
                     .connect(
-                        ServerName::try_from(tls_hostname).map_err(|_| Error::TLSInvalidName)?,
+                        ServerName::try_from(tls_hostname)
+                            .map_err(|_| Error::TLSInvalidName)?
+                            .to_owned(),
                         self.stream,
                     )
                     .await?,

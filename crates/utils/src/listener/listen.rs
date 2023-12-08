@@ -23,6 +23,7 @@
 
 use std::{net::IpAddr, sync::Arc};
 
+use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -247,7 +248,7 @@ impl ServerInstance {
                     context = "tls",
                     event = "handshake",
                     version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
-                    cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(rustls::cipher_suite::TLS13_AES_128_GCM_SHA256),
+                    cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(TLS13_AES_128_GCM_SHA256),
                 );
                 Ok(stream)
             }

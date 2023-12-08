@@ -27,15 +27,17 @@ use rustls::{
     server::{ClientHello, ResolvesServerCert, ResolvesServerCertUsingSni},
     sign::CertifiedKey,
     version::{TLS12, TLS13},
-    Certificate, PrivateKey, SupportedProtocolVersion,
+    SupportedProtocolVersion,
 };
 use rustls_pemfile::{certs, read_one, Item};
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
 use super::Config;
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
+#[derive(Debug)]
 pub struct CertificateResolver {
     pub resolver: Option<ResolvesServerCertUsingSni>,
     pub default_cert: Option<Arc<CertifiedKey>>,
@@ -51,7 +53,7 @@ impl ResolvesServerCert for CertificateResolver {
 }
 
 impl Config {
-    pub fn rustls_certificate(&self, cert_id: &str) -> super::Result<Vec<Certificate>> {
+    pub fn rustls_certificate(&self, cert_id: &str) -> super::Result<Vec<CertificateDer<'static>>> {
         let certs = certs(&mut Cursor::new(self.file_contents((
             "certificate",
             cert_id,
@@ -63,10 +65,7 @@ impl Config {
         })?;
 
         if !certs.is_empty() {
-            Ok(certs
-                .into_iter()
-                .map(|cert| Certificate(cert.as_ref().to_vec()))
-                .collect())
+            Ok(certs)
         } else {
             Err(format!(
                 "No certificates found in \"certificate.{cert_id}.cert\"."
@@ -74,7 +73,7 @@ impl Config {
         }
     }
 
-    pub fn rustls_private_key(&self, cert_id: &str) -> super::Result<PrivateKey> {
+    pub fn rustls_private_key(&self, cert_id: &str) -> super::Result<PrivateKeyDer<'static>> {
         match read_one(&mut Cursor::new(self.file_contents((
             "certificate",
             cert_id,
@@ -86,9 +85,9 @@ impl Config {
         .into_iter()
         .next()
         {
-            Some(Item::Pkcs8Key(key)) => Ok(PrivateKey(key.secret_pkcs8_der().to_vec())),
-            Some(Item::Pkcs1Key(key)) => Ok(PrivateKey(key.secret_pkcs1_der().to_vec())),
-            Some(Item::Sec1Key(key)) => Ok(PrivateKey(key.secret_sec1_der().to_vec())),
+            Some(Item::Pkcs8Key(key)) => Ok(PrivateKeyDer::Pkcs8(key)),
+            Some(Item::Pkcs1Key(key)) => Ok(PrivateKeyDer::Pkcs1(key)),
+            Some(Item::Sec1Key(key)) => Ok(PrivateKeyDer::Sec1(key)),
             Some(_) => Err(format!(
                 "Unsupported private keys found in \"certificate.{cert_id}.private-key\".",
             )),

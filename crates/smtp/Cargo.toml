@@ -23,10 +23,11 @@ mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features 
 smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
 sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
 ahash = { version = "0.8" }
-rustls = "0.21.0"
+rustls = "0.22"
 rustls-pemfile = "2.0"
+rustls-pki-types = { version = "1" }
 tokio = { version = "1.23", features = ["full"] }
-tokio-rustls = { version = "0.24.0"}
+tokio-rustls = { version = "0.25.0"}
 webpki-roots = { version = "0.26"}
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }

@@ -24,15 +24,19 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use rustls::{
-    cipher_suite::{
-        TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384, TLS13_CHACHA20_POLY1305_SHA256,
-        TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-        TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-        TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+    crypto::ring::{
+        cipher_suite::{
+            TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384, TLS13_CHACHA20_POLY1305_SHA256,
+            TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+        },
+        default_provider,
+        sign::any_supported_type,
     },
-    server::{NoClientAuth, ResolvesServerCertUsingSni},
-    sign::{any_supported_type, CertifiedKey},
-    ServerConfig, SupportedCipherSuite, ALL_CIPHER_SUITES, ALL_KX_GROUPS, ALL_VERSIONS,
+    server::ResolvesServerCertUsingSni,
+    sign::CertifiedKey,
+    ServerConfig, SupportedCipherSuite, ALL_VERSIONS,
 };
 use tokio::net::TcpSocket;
 
@@ -89,7 +93,7 @@ impl Config {
             }
 
             // Parse cipher suites
-            let mut ciphers = Vec::new();
+            let mut ciphers: Vec<SupportedCipherSuite> = Vec::new();
             for (key, protocol) in
                 self.values_or_default(("server.listener", id, "tls.ciphers"), "server.tls.ciphers")
             {
@@ -127,7 +131,6 @@ impl Config {
                                             )
                                         })?,
                                     ocsp: None,
-                                    sct_list: None,
                                 },
                                 _ => CertifiedKey {
                                     cert: cert.clone(),
@@ -138,7 +141,6 @@ impl Config {
                                             )
                                         })?,
                                     ocsp: None,
-                                    sct_list: None,
                                 },
                             },
                         )
@@ -154,17 +156,16 @@ impl Config {
                 key: any_supported_type(&pki)
                     .map_err(|err| format!("Failed to sign certificate id {cert_id:?}: {err}"))?,
                 ocsp: None,
-                sct_list: None,
             }));
 
+            // Build cert provider
+            let mut provider = default_provider();
+            if !ciphers.is_empty() {
+                provider.cipher_suites = ciphers;
+            }
+
             // Build server config
-            let mut config = ServerConfig::builder()
-                .with_cipher_suites(if !ciphers.is_empty() {
-                    &ciphers
-                } else {
-                    ALL_CIPHER_SUITES
-                })
-                .with_kx_groups(&ALL_KX_GROUPS)
+            let mut config = ServerConfig::builder_with_provider(provider.into())
                 .with_protocol_versions(if tls_v3 == tls_v2 {
                     ALL_VERSIONS
                 } else if tls_v3 {
@@ -173,7 +174,7 @@ impl Config {
                     TLS12_VERSION
                 })
                 .map_err(|err| format!("Failed to build TLS config: {err}"))?
-                .with_client_cert_verifier(NoClientAuth::boxed())
+                .with_no_client_auth()
                 .with_cert_resolver(Arc::new(CertificateResolver {
                     resolver: if has_sni { resolver.into() } else { None },
                     default_cert,

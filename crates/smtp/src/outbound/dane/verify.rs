@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use rustls::Certificate;
+use rustls_pki_types::CertificateDer;
 use sha1::Digest;
 use sha2::{Sha256, Sha512};
 use x509_parser::prelude::{FromDer, X509Certificate};
@@ -35,7 +35,7 @@ impl Tlsa {
         &self,
         span: &tracing::Span,
         hostname: &str,
-        certificates: Option<&[Certificate]>,
+        certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<(), Error>> {
         let certificates = if let Some(certificates) = certificates {
             certificates

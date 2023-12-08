@@ -630,9 +630,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf617fabf5cdbdc92f774bfe5062d870f228b80056d41180797abf48bed4056e"
+checksum = "9897ef0f1bd2362169de6d7e436ea2237dc1085d7d1e4db75f4be34d86f309d1"
 dependencies = [
  "borsh-derive",
  "cfg_aliases",
@@ -640,9 +640,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f404657a7ea7b5249e36808dff544bc88a28f26e0ac40009f674b7a009d14be3"
+checksum = "478b41ff04256c5c8330f3dfdaaae2a5cc976a8e75088bafa4625b0d0208de8c"
 dependencies = [
  "once_cell",
  "proc-macro-crate 2.0.0",
@@ -1107,9 +1107,9 @@ dependencies = [
 
 [[package]]
 name = "crypto-mac"
-version = "0.10.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bff07008ec701e8028e2ceb8f83f0e4274ee62bd2dbdc4fefff2e9a91824081a"
+checksum = "4857fd85a0c34b3c3297875b747c1e02e06b6a0ea32dd892d8192b9ce0813ea6"
 dependencies = [
  "generic-array",
  "subtle",
@@ -1414,14 +1414,15 @@ dependencies = [
  "pbkdf2 0.12.2",
  "pwhash",
  "regex",
- "rustls 0.21.9",
+ "rustls 0.22.0",
+ "rustls-pki-types",
  "scrypt",
  "sha1",
  "sha2 0.10.8",
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "utils",
 ]
@@ -2220,7 +2221,7 @@ dependencies = [
  "thiserror",
  "tinyvec",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tracing",
  "url",
 ]
@@ -2244,7 +2245,7 @@ dependencies = [
  "smallvec",
  "thiserror",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tracing",
 ]
 
@@ -2424,7 +2425,7 @@ dependencies = [
  "hyper 0.14.27",
  "rustls 0.21.9",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
 ]
 
 [[package]]
@@ -2539,11 +2540,11 @@ dependencies = [
  "nlp",
  "parking_lot",
  "rand",
- "rustls 0.21.9",
+ "rustls 0.22.0",
  "rustls-pemfile 2.0.0",
  "store",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "utils",
 ]
@@ -2908,7 +2909,7 @@ dependencies = [
  "rustls-native-certs",
  "thiserror",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tokio-stream",
  "tokio-util",
  "url",
@@ -3090,16 +3091,17 @@ dependencies = [
 
 [[package]]
 name = "mail-send"
-version = "0.4.2"
-source = "git+https://github.com/stalwartlabs/mail-send#09981bceec74b2da9522c3aaadcd675e612d1653"
+version = "0.4.3"
+source = "git+https://github.com/stalwartlabs/mail-send#d776716289b02ef43efd49354b1720abc8cc8be1"
 dependencies = [
  "base64 0.21.5",
  "gethostname",
  "md5",
- "rustls 0.21.9",
+ "rustls 0.22.0",
+ "rustls-pki-types",
  "smtp-proto",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "webpki-roots 0.26.0",
 ]
 
@@ -3135,12 +3137,12 @@ dependencies = [
  "mail-send",
  "md5",
  "parking_lot",
- "rustls 0.21.9",
+ "rustls 0.22.0",
  "rustls-pemfile 2.0.0",
  "sieve-rs",
  "store",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "utils",
 ]
@@ -3330,7 +3332,7 @@ dependencies = [
  "socket2 0.5.5",
  "thiserror",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tokio-util",
  "twox-hash",
  "url",
@@ -3540,9 +3542,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
+checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
 
 [[package]]
 name = "opaque-debug"
@@ -4456,7 +4458,7 @@ dependencies = [
  "serde_urlencoded",
  "system-configuration",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tokio-util",
  "tower-service",
  "url",
@@ -4776,8 +4778,22 @@ checksum = "629648aced5775d558af50b2b4c7b02983a04b312126d45eeead26e7caa498b9"
 dependencies = [
  "log",
  "ring 0.17.7",
- "rustls-webpki",
+ "rustls-webpki 0.101.7",
  "sct",
+]
+
+[[package]]
+name = "rustls"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bc238b76c51bbc449c55ffbc39d03772a057cc8cf783c49d4af4c2537b74a8b"
+dependencies = [
+ "log",
+ "ring 0.17.7",
+ "rustls-pki-types",
+ "rustls-webpki 0.102.0",
+ "subtle",
+ "zeroize",
 ]
 
 [[package]]
@@ -4824,6 +4840,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b6275d1ee7a1cd780b64aca7726599a1dbc893b1e64144529e55c3c2f745765"
 dependencies = [
  "ring 0.17.7",
+ "untrusted 0.9.0",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.102.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de2635c8bc2b88d367767c5de8ea1d8db9af3f6219eba28442242d9ab81d1b89"
+dependencies = [
+ "ring 0.17.7",
+ "rustls-pki-types",
  "untrusted 0.9.0",
 ]
 
@@ -5293,8 +5320,9 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "rustls 0.21.9",
+ "rustls 0.22.0",
  "rustls-pemfile 2.0.0",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "sha1",
@@ -5303,7 +5331,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "unicode-security",
  "utils",
@@ -5461,12 +5489,13 @@ dependencies = [
  "rocksdb",
  "rusqlite",
  "rust-s3",
- "rustls 0.21.9",
+ "rustls 0.22.0",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "utils",
  "xxhash-rust",
@@ -5514,9 +5543,9 @@ dependencies = [
 
 [[package]]
 name = "subtle"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
+checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "syn"
@@ -5673,8 +5702,9 @@ dependencies = [
  "num_cpus",
  "rayon",
  "reqwest",
- "rustls 0.21.9",
+ "rustls 0.22.0",
  "rustls-pemfile 2.0.0",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serial_test",
@@ -5683,7 +5713,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "tracing-subscriber",
  "utils",
@@ -5859,6 +5889,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-rustls"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "775e0c0f0adb3a2f22a00c4745d728b479985fc15ee7ca6a2608388c5569860f"
+dependencies = [
+ "rustls 0.22.0",
+ "rustls-pki-types",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5879,7 +5920,7 @@ dependencies = [
  "log",
  "rustls 0.21.9",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.24.1",
  "tungstenite",
  "webpki-roots 0.25.3",
 ]
@@ -6091,9 +6132,9 @@ dependencies = [
 
 [[package]]
 name = "try-lock"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
+checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "try_map"
@@ -6173,9 +6214,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.13"
+version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92888ba5573ff080736b3648696b70cafad7d250551175acbaa4e0385b3e1460"
+checksum = "6f2528f27a9eb2b21e69c95319b30bd0efd85d09c379741b0f78ea1d86be2416"
 
 [[package]]
 name = "unicode-ident"
@@ -6286,12 +6327,13 @@ dependencies = [
  "opentelemetry_sdk",
  "privdrop",
  "rand",
- "rustls 0.21.9",
+ "rustls 0.22.0",
  "rustls-pemfile 2.0.0",
+ "rustls-pki-types",
  "serde",
  "smtp-proto",
  "tokio",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tracing",
  "tracing-appender",
  "tracing-journald",
@@ -6759,9 +6801,9 @@ checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
 
 [[package]]
 name = "winnow"
-version = "0.5.25"
+version = "0.5.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7e87b8dfbe3baffbe687eef2e164e32286eff31a5ee16463ce03d991643ec94"
+checksum = "b67b5f0a4e7a27a64c651977932b9dc5667ca7fc31ac44b03ed37a0cf42fdfff"
 dependencies = [
  "memchr",
 ]

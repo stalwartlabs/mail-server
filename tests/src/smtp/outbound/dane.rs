@@ -44,7 +44,7 @@ use mail_auth::{
     report::tlsrpt::ResultType,
     Resolver, MX,
 };
-use rustls::Certificate;
+use rustls_pki_types::CertificateDer;
 use utils::config::ServerProtocol;
 
 use crate::smtp::{
@@ -304,7 +304,7 @@ async fn dane_test() {
             let mut file = path.clone();
             file.push(format!("{host}.{num}.cert"));
             if file.exists() {
-                certs.push(Certificate(fs::read(file).unwrap()));
+                certs.push(CertificateDer::from(fs::read(file).unwrap()));
             } else {
                 break;
             }

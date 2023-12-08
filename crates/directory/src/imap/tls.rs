@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use rustls::ServerName;
+use rustls_pki_types::ServerName;
 use smtp_proto::IntoString;
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -60,7 +60,7 @@ impl ImapClient<TcpStream> {
             Ok(ImapClient {
                 stream: tls_connector
                     .connect(
-                        ServerName::try_from(tls_hostname)
+                        ServerName::try_from(tls_hostname.to_string())
                             .map_err(|_| ImapError::TLSInvalidName)?,
                         self.stream,
                     )

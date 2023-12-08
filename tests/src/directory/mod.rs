@@ -29,8 +29,9 @@ pub mod sql;
 use ::smtp::core::Lookup;
 use directory::{config::ConfigDirectory, AddressMapping, Directories};
 use mail_send::Credentials;
-use rustls::{Certificate, PrivateKey, ServerConfig};
+use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
 use store::{config::ConfigStore, LookupStore, Stores};
 use tokio_rustls::TlsAcceptor;
@@ -367,20 +368,16 @@ XzVV5pwOxkIDBWDIqMUfwJDChBKfpw==
 
 pub fn dummy_tls_acceptor() -> Arc<TlsAcceptor> {
     // Init server config builder with safe defaults
-    let config = ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth();
+    let config = ServerConfig::builder().with_no_client_auth();
 
     // load TLS key/cert files
     let cert_file = &mut BufReader::new(CERT.as_bytes());
     let key_file = &mut BufReader::new(PK.as_bytes());
 
     // convert files to key/cert objects
-    let cert_chain = certs(cert_file)
-        .map(|v| Certificate(v.unwrap().as_ref().to_vec()))
-        .collect();
-    let mut keys: Vec<PrivateKey> = pkcs8_private_keys(key_file)
-        .map(|v| PrivateKey(v.unwrap().secret_pkcs8_der().to_vec()))
+    let cert_chain = certs(cert_file).map(|r| r.unwrap()).collect();
+    let mut keys: Vec<PrivateKeyDer> = pkcs8_private_keys(key_file)
+        .map(|v| PrivateKeyDer::Pkcs8(v.unwrap()))
         .collect();
 
     // exit if no keys could be parsed

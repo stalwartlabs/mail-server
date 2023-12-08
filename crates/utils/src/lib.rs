@@ -41,9 +41,10 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use rustls::{
-    client::{ServerCertVerified, ServerCertVerifier},
-    Certificate, ClientConfig, OwnedTrustAnchor, RootCertStore, ServerName,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    ClientConfig, RootCertStore, SignatureScheme,
 };
+use rustls_pki_types::TrustAnchor;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter};
 
@@ -232,40 +233,76 @@ pub async fn wait_for_shutdown(message: &str) {
 }
 
 pub fn rustls_client_config(allow_invalid_certs: bool) -> ClientConfig {
-    let config = ClientConfig::builder().with_safe_defaults();
+    let config = ClientConfig::builder();
 
     if !allow_invalid_certs {
         let mut root_cert_store = RootCertStore::empty();
 
-        root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-            OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject.as_ref(),
-                ta.subject_public_key_info.as_ref(),
-                ta.name_constraints.as_ref().map(|v| v.as_ref()),
-            )
+        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| TrustAnchor {
+            subject: ta.subject.clone(),
+            subject_public_key_info: ta.subject_public_key_info.clone(),
+            name_constraints: ta.name_constraints.clone(),
         }));
+
         config
             .with_root_certificates(root_cert_store)
             .with_no_client_auth()
     } else {
         config
+            .dangerous()
             .with_custom_certificate_verifier(Arc::new(DummyVerifier {}))
             .with_no_client_auth()
     }
 }
 
+#[derive(Debug)]
 struct DummyVerifier;
 
 impl ServerCertVerifier for DummyVerifier {
     fn verify_server_cert(
         &self,
-        _e: &Certificate,
-        _i: &[Certificate],
-        _sn: &ServerName,
-        _sc: &mut dyn Iterator<Item = &[u8]>,
-        _o: &[u8],
-        _n: std::time::SystemTime,
+        _end_entity: &rustls_pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+        _server_name: &rustls_pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls_pki_types::UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls_pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls_pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
     }
 }

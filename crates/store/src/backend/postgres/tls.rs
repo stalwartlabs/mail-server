@@ -34,7 +34,8 @@ use std::{
 
 use futures::future::{FutureExt, TryFutureExt};
 use ring::digest;
-use rustls::{ClientConfig, ServerName};
+use rustls::ClientConfig;
+use rustls_pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_postgres::tls::{ChannelBinding, MakeTlsConnect, TlsConnect};
 use tokio_rustls::{client::TlsStream, TlsConnector};
@@ -61,7 +62,7 @@ where
     type Error = io::Error;
 
     fn make_tls_connect(&mut self, hostname: &str) -> io::Result<RustlsConnect> {
-        ServerName::try_from(hostname)
+        ServerName::try_from(hostname.to_string())
             .map(|dns_name| {
                 RustlsConnect(Some(RustlsConnectData {
                     hostname: dns_name,
@@ -75,7 +76,7 @@ where
 pub struct RustlsConnect(Option<RustlsConnectData>);
 
 struct RustlsConnectData {
-    hostname: ServerName,
+    hostname: ServerName<'static>,
     connector: TlsConnector,
 }
 
