@@ -78,10 +78,8 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
-                    db
+                    config.blob_stores.insert(store_id.clone(), db.into());
+                    continue;
                 }
                 #[cfg(feature = "foundation")]
                 "foundationdb" => {
@@ -90,10 +88,8 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
-                    db
+                    config.blob_stores.insert(store_id.clone(), db.into());
+                    continue;
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {

@@ -260,6 +260,11 @@ impl<T: Key> IterateParams<T> {
         self
     }
 
+    pub fn set_values(mut self, values: bool) -> Self {
+        self.values = values;
+        self
+    }
+
     pub fn ascending(mut self) -> Self {
         self.ascending = true;
         self

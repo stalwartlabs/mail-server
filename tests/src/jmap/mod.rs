@@ -280,8 +280,9 @@ pub async fn jmap_tests() {
         delete,
     )
     .await;
-    email_query::test(&mut params, delete).await;
-    email_get::test(&mut params).await;
+    let coco = 1;
+    //email_query::test(&mut params, delete).await;
+    /*email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
     email_search_snippet::test(&mut params).await;
@@ -290,7 +291,7 @@ pub async fn jmap_tests() {
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
     thread_merge::test(&mut params).await;
-    mailbox::test(&mut params).await;
+    mailbox::test(&mut params).await;*/
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;

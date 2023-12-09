@@ -40,7 +40,7 @@ impl JMAP {
         self.store.purge_account(account_id).await?;
 
         // Remove FTS index
-        let todo = 1;
+        self.fts_store.remove_all(account_id).await?;
 
         // Delete account
         let mut batch = BatchBuilder::new();

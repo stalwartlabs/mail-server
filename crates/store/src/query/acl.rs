@@ -112,9 +112,9 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                if account_id == key.deserialize_be_u32(U32_LEN)? {
+                if account_id == key.deserialize_be_u32(U32_LEN + 1)? {
                     delete_keys.push((
-                        ValueClass::Acl(key.deserialize_be_u32(0)?),
+                        ValueClass::Acl(key.deserialize_be_u32(1)?),
                         AclItem::deserialize(key)?,
                     ));
                 }

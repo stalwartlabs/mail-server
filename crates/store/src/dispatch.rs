@@ -22,7 +22,6 @@
 */
 
 use std::{
-    f32::consts::E,
     fmt::Display,
     ops::{BitAndAssign, Range},
 };
@@ -32,8 +31,8 @@ use roaring::RoaringBitmap;
 use crate::{
     fts::{index::FtsDocument, FtsFilter},
     write::{key::KeySerializer, Batch, BitmapClass, ValueClass},
-    BitmapKey, BlobStore, Deserialize, Error, FtsStore, IterateParams, Key, LookupStore,
-    QueryResult, Store, Value, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES,
+    BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, Key, LookupStore, QueryResult,
+    Store, Value, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES,
     SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
 };
 
@@ -204,9 +203,46 @@ impl Store {
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
             SUBSPACE_INDEXES,
-            SUBSPACE_INDEX_VALUES,
         ] {
             self.delete_range(subspace, &from_key, &to_key).await?;
+        }
+
+        for (from_key, to_key) in [
+            (
+                ValueKey {
+                    account_id: 0,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::Acl(account_id),
+                }
+                .serialize(false),
+                ValueKey {
+                    account_id: 0,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::Acl(account_id + 1),
+                }
+                .serialize(false),
+            ),
+            (
+                ValueKey {
+                    account_id,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::ReservedId,
+                }
+                .serialize(false),
+                ValueKey {
+                    account_id: account_id + 1,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::ReservedId,
+                }
+                .serialize(false),
+            ),
+        ] {
+            self.delete_range(SUBSPACE_INDEX_VALUES, &from_key, &to_key)
+                .await?;
         }
 
         Ok(())
@@ -271,9 +307,21 @@ impl Store {
             SUBSPACE_COUNTERS,
             SUBSPACE_BLOB_DATA,
         ] {
-            self.delete_range(subspace, &[0u8], &[u8::MAX])
-                .await
-                .unwrap();
+            self.delete_range(
+                subspace,
+                &[0u8],
+                &[
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                ],
+            )
+            .await
+            .unwrap();
         }
     }
 
@@ -331,22 +379,117 @@ impl Store {
     }
 
     #[cfg(feature = "test_mode")]
+
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
+
         self.blob_hash_expire_all().await;
         self.blob_hash_purge(blob_store).await.unwrap();
         self.purge_bitmaps().await.unwrap();
 
-        match self {
-            #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.assert_is_empty().await,
-            #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.assert_is_empty().await,
-            #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.assert_is_empty().await,
-            #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.assert_is_empty().await,
-            #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.assert_is_empty().await,
+        let store = self.clone();
+        let mut failed = false;
+
+        for (subspace, with_values) in [
+            (SUBSPACE_VALUES, true),
+            (SUBSPACE_INDEX_VALUES, true),
+            (SUBSPACE_COUNTERS, false),
+            (SUBSPACE_BLOB_DATA, true),
+            (SUBSPACE_BITMAPS, false),
+            (SUBSPACE_INDEXES, false),
+            (SUBSPACE_BLOBS, false),
+        ] {
+            let from_key = crate::write::AnyKey {
+                subspace,
+                key: vec![0u8],
+            };
+            let to_key = crate::write::AnyKey {
+                subspace,
+                key: vec![u8::MAX; 10],
+            };
+
+            self.iterate(
+                IterateParams::new(from_key, to_key).set_values(with_values),
+                |key, value| {
+                    match subspace {
+                        SUBSPACE_BITMAPS => {
+                            if key.get(0..4).unwrap_or_default() == u32::MAX.to_be_bytes() {
+                                return Ok(true);
+                            }
+
+                            #[cfg(feature = "rocks")]
+                            if matches!(store, Self::RocksDb(_))
+                                && RoaringBitmap::deserialize(value).unwrap().is_empty()
+                            {
+                                return Ok(true);
+                            }
+
+                            eprintln!(
+                                concat!(
+                                    "Table bitmaps is not empty, account {}, collection {},",
+                                    " family {}, field {}, key {:?}: {:?}"
+                                ),
+                                u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                                key[4],
+                                key[5],
+                                key[6],
+                                key,
+                                value
+                            );
+                        }
+                        SUBSPACE_INDEX_VALUES if key[0] >= 2 => {
+                            // Ignore named keys
+                            return Ok(true);
+                        }
+                        SUBSPACE_VALUES
+                            if key.get(0..4).unwrap_or_default() == u32::MAX.to_be_bytes() =>
+                        {
+                            // Ignore lastId counter and ID mappings
+                            return Ok(true);
+                        }
+                        SUBSPACE_COUNTERS if key.len() <= 4 => {
+                            // Ignore named keys
+                            return Ok(true);
+                        }
+                        SUBSPACE_INDEXES => {
+                            eprintln!(
+                                concat!(
+                                    "Table index is not empty, account {}, collection {}, ",
+                                    "document {}, property {}, value {:?}: {:?}"
+                                ),
+                                u32::from_be_bytes(key[0..4].try_into().unwrap()),
+                                key[4],
+                                u32::from_be_bytes(key[key.len() - 4..].try_into().unwrap()),
+                                key[5],
+                                String::from_utf8_lossy(&key[6..key.len() - 4]),
+                                key
+                            );
+                        }
+                        _ => {
+                            eprintln!(
+                                "Table {:?} is not empty: {:?} {:?}",
+                                char::from(subspace),
+                                key,
+                                value
+                            );
+                        }
+                    }
+                    failed = true;
+
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        // Delete logs
+        self.delete_range(SUBSPACE_LOGS, &[0u8], &[u8::MAX, u8::MAX, u8::MAX, u8::MAX])
+            .await
+            .unwrap();
+
+        if failed {
+            panic!("Store is not empty.");
         }
     }
 }
@@ -470,18 +613,18 @@ impl LookupStore {
         query: &str,
         params: Vec<Value<'_>>,
     ) -> crate::Result<T> {
-        let todo = true;
         let result = match self {
-            LookupStore::Store(store) => {
-                match store {
-                    Store::SQLite(store) => store.query(query, params).await,
-                    //Store::FoundationDb(store) => store.query(query, params).await,
-                    Store::PostgreSQL(store) => store.query(query, params).await,
-                    Store::MySQL(store) => store.query(query, params).await,
-                    //Store::RocksDb(store) => store.query(query, params).await,
-                    _ => todo!(),
-                }
-            }
+            LookupStore::Store(store) => match store {
+                #[cfg(feature = "sqlite")]
+                Store::SQLite(store) => store.query(query, params).await,
+                #[cfg(feature = "postgres")]
+                Store::PostgreSQL(store) => store.query(query, params).await,
+                #[cfg(feature = "mysql")]
+                Store::MySQL(store) => store.query(query, params).await,
+                _ => Err(crate::Error::InternalError(
+                    "Store does not support lookups".into(),
+                )),
+            },
             LookupStore::Memory(store) => store.query(query, params),
         };
 

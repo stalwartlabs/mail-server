@@ -37,9 +37,14 @@ impl MysqlStore {
     where
         U: Deserialize + 'static,
     {
-        let key = key.serialize(false);
         let mut conn = self.conn_pool.get_conn().await?;
-        let s = conn.prep("SELECT v FROM v WHERE k = ?").await?;
+        let s = conn
+            .prep(&format!(
+                "SELECT v FROM {} WHERE k = ?",
+                char::from(key.subspace())
+            ))
+            .await?;
+        let key = key.serialize(false);
         conn.exec_first::<Vec<u8>, _, _>(&s, (key,))
             .await
             .map_err(Into::into)
@@ -146,110 +151,6 @@ impl MysqlStore {
             Ok(Some(num)) => Ok(num),
             Ok(None) => Ok(0),
             Err(e) => Err(e.into()),
-        }
-    }
-
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn assert_is_empty(&self) {
-        let mut conn = self.conn_pool.get_conn().await.unwrap();
-
-        // Values
-        let mut has_errors = false;
-        for table in [
-            crate::SUBSPACE_VALUES,
-            crate::SUBSPACE_INDEX_VALUES,
-            crate::SUBSPACE_COUNTERS,
-            crate::SUBSPACE_BLOB_DATA,
-        ] {
-            let table = char::from(table);
-            let s = conn
-                .prep(&format!("SELECT k, v FROM {table}"))
-                .await
-                .unwrap();
-            let mut rows = conn.exec_stream::<Row, _, _>(&s, ()).await.unwrap();
-
-            while let Some(mut row) = rows.try_next().await.unwrap() {
-                let key = row
-                    .take_opt::<Vec<u8>, _>(0)
-                    .unwrap_or_else(|| Ok(vec![]))
-                    .unwrap();
-                if table != 'c' {
-                    let value = row
-                        .take_opt::<Vec<u8>, _>(1)
-                        .unwrap_or_else(|| Ok(vec![]))
-                        .unwrap();
-
-                    if key[0..4] != u32::MAX.to_be_bytes() {
-                        eprintln!("Table {table:?} is not empty: {key:?} {value:?}");
-                        has_errors = true;
-                    }
-                } else {
-                    let value = row.take_opt::<i64, _>(1).unwrap_or(Ok(0)).unwrap();
-                    if value != 0 {
-                        eprintln!(
-                            "Table counter is not empty, account {:?}, quota: {}",
-                            key, value,
-                        );
-                        has_errors = true;
-                    }
-                }
-            }
-        }
-
-        // Indexes
-        for table in [crate::SUBSPACE_INDEXES, crate::SUBSPACE_BLOBS] {
-            let table = char::from(table);
-            let s = conn.prep(&format!("SELECT k FROM {table}")).await.unwrap();
-            let mut rows = conn.exec_stream::<Row, _, _>(&s, ()).await.unwrap();
-            while let Some(mut row) = rows.try_next().await.unwrap() {
-                let key = row
-                    .take_opt::<Vec<u8>, _>(0)
-                    .unwrap_or_else(|| Ok(vec![]))
-                    .unwrap();
-
-                if table == 'i' {
-                    eprintln!(
-                        "Table index is not empty, account {}, collection {}, document {}, property {}, value {:?}: {:?}",
-                        u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                        key[4],
-                        u32::from_be_bytes(key[key.len()-4..].try_into().unwrap()),
-                        key[5],
-                        String::from_utf8_lossy(&key[6..key.len()-4]),
-                        key
-                    );
-                } else {
-                    eprintln!("Table {table:?} is not empty: {key:?}");
-                }
-                has_errors = true;
-            }
-        }
-
-        // Bitmaps
-        let s = conn
-            .prep(&format!(
-                "SELECT k FROM {}",
-                char::from(crate::SUBSPACE_BITMAPS)
-            ))
-            .await
-            .unwrap();
-        let mut rows = conn.exec_stream::<Row, _, _>(&s, ()).await.unwrap();
-        while let Some(mut row) = rows.try_next().await.unwrap() {
-            let key = row
-                .take_opt::<Vec<u8>, _>(0)
-                .unwrap_or_else(|| Ok(vec![]))
-                .unwrap();
-            if key[0..4] != u32::MAX.to_be_bytes() {
-                eprintln!("Table bitmaps failed to purge, found key: {key:?}");
-                has_errors = true;
-            }
-        }
-        drop(rows);
-
-        // Delete logs
-        conn.exec_drop("DELETE FROM l", ()).await.unwrap();
-
-        if has_errors {
-            panic!("Database is not empty");
         }
     }
 }

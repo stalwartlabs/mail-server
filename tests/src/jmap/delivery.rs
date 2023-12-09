@@ -404,7 +404,7 @@ impl SmtpConnection {
             match tokio::time::timeout(Duration::from_millis(1500), self.reader.next_line()).await {
                 Ok(Ok(Some(line))) => {
                     let is_done = line.as_bytes()[3] == b' ';
-                    //println!("<- {:?}", line);
+                    //let c = println!("<- {:?}", line);
                     lines.push(line);
                     if is_done {
                         num_responses -= 1;
@@ -434,13 +434,13 @@ impl SmtpConnection {
     }
 
     pub async fn send(&mut self, text: &str) {
-        //println!("-> {:?}", text);
+        //let c = println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
     }
 
     pub async fn send_raw(&mut self, text: &str) {
-        //println!("-> {:?}", text);
+        //let c = println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
     }
 }

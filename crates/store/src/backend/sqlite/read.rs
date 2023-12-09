@@ -38,8 +38,11 @@ impl SqliteStore {
     {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
+            let mut result = conn.prepare_cached(&format!(
+                "SELECT v FROM {} WHERE k = ?",
+                char::from(key.subspace())
+            ))?;
             let key = key.serialize(false);
-            let mut result = conn.prepare_cached("SELECT v FROM v WHERE k = ?")?;
             result
                 .query_row([&key], |row| {
                     U::deserialize(row.get_ref(0)?.as_bytes()?)
@@ -149,94 +152,5 @@ impl SqliteStore {
             }
         })
         .await
-    }
-
-    #[cfg(feature = "test_mode")]
-    pub(crate) async fn assert_is_empty(&self) {
-        let conn = self.conn_pool.get().unwrap();
-        self.spawn_worker(move || {
-            // Values
-            let mut has_errors = false;
-            for table in [
-                crate::SUBSPACE_VALUES,
-                crate::SUBSPACE_INDEX_VALUES,
-                crate::SUBSPACE_COUNTERS,
-                crate::SUBSPACE_BLOB_DATA,
-            ] {
-                let table = char::from(table);
-                let mut query = conn
-                    .prepare_cached(&format!("SELECT k, v FROM {table}"))
-                    .unwrap();
-                let mut rows = query.query([]).unwrap();
-
-                while let Some(row) = rows.next().unwrap() {
-                    let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-                    if table != 'c' {
-                        let value = row.get_ref(1).unwrap().as_bytes().unwrap();
-
-                        if key[0..4] != u32::MAX.to_be_bytes() {
-                            eprintln!("Table {table:?} is not empty: {key:?} {value:?}");
-                            has_errors = true;
-                        }
-                    } else {
-                        let value = row.get::<_, i64>(1).unwrap();
-                        if value != 0 {
-                            eprintln!(
-                                "Table counter is not empty, account {:?}, quota: {}",
-                                key, value,
-                            );
-                            has_errors = true;
-                        }
-                    }
-                }
-            }
-
-            // Indexes
-            for table in [
-                crate::SUBSPACE_INDEXES,
-                crate::SUBSPACE_BLOBS,
-                crate::SUBSPACE_BITMAPS,
-            ] {
-                let table = char::from(table);
-                let mut query = conn
-                    .prepare_cached(&format!("SELECT k FROM {table}"))
-                    .unwrap();
-                let mut rows = query.query([]).unwrap();
-
-                while let Some(row) = rows.next().unwrap() {
-                    let key = row.get_ref(0).unwrap().as_bytes().unwrap();
-
-                    if table == 'i' {
-                        eprintln!(
-                            concat!(
-                                "Table index is not empty, account {}, ",
-                                "collection {}, document {}, property {}, value {:?}: {:?}"
-                            ),
-                            u32::from_be_bytes(key[0..4].try_into().unwrap()),
-                            key[4],
-                            u32::from_be_bytes(key[key.len() - 4..].try_into().unwrap()),
-                            key[5],
-                            String::from_utf8_lossy(&key[6..key.len() - 4]),
-                            key
-                        );
-                        has_errors = true;
-                    } else if table != 'b' || key[0..4] != u32::MAX.to_be_bytes() {
-                        eprintln!("Table {table:?} is not empty: {key:?}");
-                        has_errors = true;
-                    }
-                }
-            }
-
-            // Delete logs
-            conn.execute("DELETE FROM l", []).unwrap();
-
-            if has_errors {
-                panic!("Database is not empty");
-            }
-
-            Ok(())
-        })
-        .await
-        .unwrap();
     }
 }

@@ -137,7 +137,8 @@ pub enum TagValue {
 pub enum ValueClass {
     Property(u8),
     Acl(u32),
-    Named(Vec<u8>),
+    Named { key: Vec<u8>, id: u8 },
+    Ttl { key: Vec<u8>, expires: u64 },
     TermIndex,
     ReservedId,
 }
@@ -155,6 +156,12 @@ pub enum BlobOp {
     Reserve { until: u64, size: usize },
     Commit,
     Link,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct AnyKey {
+    pub subspace: u8,
+    pub key: Vec<u8>,
 }
 
 impl From<u32> for TagValue {

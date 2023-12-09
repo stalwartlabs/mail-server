@@ -57,7 +57,7 @@ use store::{
         BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass,
     },
     BitmapKey, BlobStore, Deserialize, FtsStore, Key, Serialize, Store, Stores, ValueKey,
-    SUBSPACE_VALUES, U32_LEN, U64_LEN,
+    SUBSPACE_INDEX_VALUES, U32_LEN, U64_LEN,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -863,36 +863,34 @@ pub enum NamedKey<T: AsRef<[u8]>> {
 impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
     fn from(key: &NamedKey<T>) -> Self {
         match key {
-            NamedKey::Name(name) => ValueClass::Named(
-                KeySerializer::new(name.as_ref().len() + 1)
-                    .write(0u8)
-                    .write(name.as_ref())
-                    .finalize(),
-            ),
-            NamedKey::Id(id) => ValueClass::Named(
-                KeySerializer::new(std::mem::size_of::<u32>() + 1)
-                    .write(1u8)
+            NamedKey::Name(name) => ValueClass::Named {
+                key: name.as_ref().to_vec(),
+                id: 0,
+            },
+            NamedKey::Id(id) => ValueClass::Named {
+                key: KeySerializer::new(std::mem::size_of::<u32>())
                     .write_leb128(*id)
                     .finalize(),
-            ),
-            NamedKey::Quota(id) => ValueClass::Named(
-                KeySerializer::new(std::mem::size_of::<u32>() + 1)
-                    .write(2u8)
+                id: 1,
+            },
+            NamedKey::Quota(id) => ValueClass::Named {
+                key: KeySerializer::new(std::mem::size_of::<u32>())
                     .write_leb128(*id)
                     .finalize(),
-            ),
+                id: 2,
+            },
             NamedKey::IndexEmail {
                 account_id,
                 document_id,
                 seq,
-            } => ValueClass::Named(
-                KeySerializer::new(std::mem::size_of::<u32>() * 4 + 1)
-                    .write(3u8)
+            } => ValueClass::Named {
+                key: KeySerializer::new(std::mem::size_of::<u32>() * 4)
                     .write(*seq)
                     .write(*account_id)
                     .write(*document_id)
                     .finalize(),
-            ),
+                id: 3,
+            },
         }
     }
 }
@@ -937,6 +935,6 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for NamedKey<T> {
     }
 
     fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
+        SUBSPACE_INDEX_VALUES
     }
 }

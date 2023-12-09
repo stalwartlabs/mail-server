@@ -30,7 +30,7 @@ use crate::{
     U32_LEN, U64_LEN,
 };
 
-use super::{BitmapClass, BlobOp, TagValue, ValueClass};
+use super::{AnyKey, BitmapClass, BlobOp, TagValue, ValueClass};
 
 pub struct KeySerializer {
     pub buf: Vec<u8>,
@@ -217,9 +217,9 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        if !matches!(
+        if matches!(
             self.class.as_ref(),
-            ValueClass::Acl(_) | ValueClass::ReservedId
+            ValueClass::Property(_) | ValueClass::TermIndex
         ) {
             SUBSPACE_VALUES
         } else {
@@ -238,23 +238,6 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             .write(self.collection)
             .write(self.document_id)
             .write(*field),
-            ValueClass::Acl(grant_account_id) => if include_subspace {
-                KeySerializer::new(U32_LEN * 3 + 3).write(crate::SUBSPACE_INDEX_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN * 3 + 2)
-            }
-            .write(*grant_account_id)
-            .write(0u8)
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id),
-            ValueClass::Named(name) => if include_subspace {
-                KeySerializer::new(U32_LEN + name.len() + 1).write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN + name.len())
-            }
-            .write(u32::MAX)
-            .write(name.as_slice()),
             ValueClass::TermIndex => if include_subspace {
                 KeySerializer::new(U32_LEN * 2 + 3).write(crate::SUBSPACE_VALUES)
             } else {
@@ -264,15 +247,40 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             .write(self.collection)
             .write(self.document_id)
             .write(u8::MAX),
+            ValueClass::Acl(grant_account_id) => if include_subspace {
+                KeySerializer::new(U32_LEN * 3 + 3).write(crate::SUBSPACE_INDEX_VALUES)
+            } else {
+                KeySerializer::new(U32_LEN * 3 + 2)
+            }
+            .write(0u8)
+            .write(*grant_account_id)
+            .write(self.account_id)
+            .write(self.collection)
+            .write(self.document_id),
             ValueClass::ReservedId => if include_subspace {
                 KeySerializer::new(U32_LEN * 2 + 2).write(crate::SUBSPACE_INDEX_VALUES)
             } else {
                 KeySerializer::new(U32_LEN * 2 + 1)
             }
-            .write(self.account_id)
             .write(1u8)
+            .write(self.account_id)
             .write(self.collection)
             .write(self.document_id),
+            ValueClass::Ttl { key, expires } => if include_subspace {
+                KeySerializer::new(key.len() + U64_LEN + 2).write(crate::SUBSPACE_INDEX_VALUES)
+            } else {
+                KeySerializer::new(key.len() + U64_LEN + 1)
+            }
+            .write(2u8)
+            .write(key.as_slice())
+            .write(*expires),
+            ValueClass::Named { key, id } => if include_subspace {
+                KeySerializer::new(key.len() + 2).write(crate::SUBSPACE_INDEX_VALUES)
+            } else {
+                KeySerializer::new(key.len() + 1)
+            }
+            .write(3 + *id)
+            .write(key.as_slice()),
         }
         .finalize()
     }
@@ -408,5 +416,21 @@ impl<T: AsRef<BlobHash> + Sync + Send> Key for BlobKey<T> {
 
     fn subspace(&self) -> u8 {
         crate::SUBSPACE_BLOBS
+    }
+}
+
+impl Key for AnyKey {
+    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        if include_subspace {
+            KeySerializer::new(self.key.len() + 1).write(self.subspace)
+        } else {
+            KeySerializer::new(self.key.len())
+        }
+        .write(self.key.as_slice())
+        .finalize()
+    }
+
+    fn subspace(&self) -> u8 {
+        self.subspace
     }
 }
