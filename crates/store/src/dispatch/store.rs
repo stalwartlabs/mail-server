@@ -26,7 +26,7 @@ use std::ops::{BitAndAssign, Range};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::KeySerializer, Batch, BitmapClass, ValueClass},
+    write::{key::KeySerializer, AnyKey, Batch, BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
     SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
 };
@@ -169,37 +169,39 @@ impl Store {
             Self::RocksDb(store) => store.purge_bitmaps().await,
         }
     }
-    pub(crate) async fn delete_range(
-        &self,
-        subspace: u8,
-        from: &[u8],
-        to: &[u8],
-    ) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.delete_range(subspace, from, to).await,
+            Self::SQLite(store) => store.delete_range(from, to).await,
             #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.delete_range(subspace, from, to).await,
+            Self::FoundationDb(store) => store.delete_range(from, to).await,
             #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.delete_range(subspace, from, to).await,
+            Self::PostgreSQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.delete_range(subspace, from, to).await,
+            Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.delete_range(subspace, from, to).await,
+            Self::RocksDb(store) => store.delete_range(from, to).await,
         }
     }
 
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
-        let from_key = KeySerializer::new(U32_LEN).write(account_id).finalize();
-        let to_key = KeySerializer::new(U32_LEN).write(account_id + 1).finalize();
-
         for subspace in [
             SUBSPACE_BITMAPS,
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
             SUBSPACE_INDEXES,
         ] {
-            self.delete_range(subspace, &from_key, &to_key).await?;
+            self.delete_range(
+                AnyKey {
+                    subspace,
+                    key: KeySerializer::new(U32_LEN).write(account_id).finalize(),
+                },
+                AnyKey {
+                    subspace,
+                    key: KeySerializer::new(U32_LEN).write(account_id + 1).finalize(),
+                },
+            )
+            .await?;
         }
 
         for (from_key, to_key) in [
@@ -209,15 +211,13 @@ impl Store {
                     collection: 0,
                     document_id: 0,
                     class: ValueClass::Acl(account_id),
-                }
-                .serialize(false),
+                },
                 ValueKey {
                     account_id: 0,
                     collection: 0,
                     document_id: 0,
                     class: ValueClass::Acl(account_id + 1),
-                }
-                .serialize(false),
+                },
             ),
             (
                 ValueKey {
@@ -225,19 +225,16 @@ impl Store {
                     collection: 0,
                     document_id: 0,
                     class: ValueClass::ReservedId,
-                }
-                .serialize(false),
+                },
                 ValueKey {
                     account_id: account_id + 1,
                     collection: 0,
                     document_id: 0,
                     class: ValueClass::ReservedId,
-                }
-                .serialize(false),
+                },
             ),
         ] {
-            self.delete_range(SUBSPACE_INDEX_VALUES, &from_key, &to_key)
-                .await?;
+            self.delete_range(from_key, to_key).await?;
         }
 
         Ok(())
@@ -303,17 +300,22 @@ impl Store {
             SUBSPACE_BLOB_DATA,
         ] {
             self.delete_range(
-                subspace,
-                &[0u8],
-                &[
-                    u8::MAX,
-                    u8::MAX,
-                    u8::MAX,
-                    u8::MAX,
-                    u8::MAX,
-                    u8::MAX,
-                    u8::MAX,
-                ],
+                AnyKey {
+                    subspace,
+                    key: &[0u8],
+                },
+                AnyKey {
+                    subspace,
+                    key: &[
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                    ],
+                },
             )
             .await
             .unwrap();
@@ -479,9 +481,26 @@ impl Store {
         }
 
         // Delete logs
-        self.delete_range(SUBSPACE_LOGS, &[0u8], &[u8::MAX, u8::MAX, u8::MAX, u8::MAX])
-            .await
-            .unwrap();
+        self.delete_range(
+            AnyKey {
+                subspace: SUBSPACE_LOGS,
+                key: &[0u8],
+            },
+            AnyKey {
+                subspace: SUBSPACE_LOGS,
+                key: &[
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                    u8::MAX,
+                ],
+            },
+        )
+        .await
+        .unwrap();
 
         if failed {
             panic!("Store is not empty.");

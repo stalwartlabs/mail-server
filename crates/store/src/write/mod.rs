@@ -160,9 +160,9 @@ pub enum BlobOp {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct AnyKey {
+pub struct AnyKey<T: AsRef<[u8]>> {
     pub subspace: u8,
-    pub key: Vec<u8>,
+    pub key: T,
 }
 
 impl From<u32> for TagValue {

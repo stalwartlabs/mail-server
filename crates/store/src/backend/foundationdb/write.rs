@@ -459,23 +459,12 @@ impl FdbStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(
-        &self,
-        subspace: u8,
-        from_key: &[u8],
-        to_key: &[u8],
-    ) -> crate::Result<()> {
-        let from_key = KeySerializer::new(from_key.len() + 1)
-            .write(subspace)
-            .write(from_key)
-            .finalize();
-        let to_key = KeySerializer::new(to_key.len() + 1)
-            .write(subspace)
-            .write(to_key)
-            .finalize();
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
+        let from = from.serialize(true);
+        let to = to.serialize(true);
 
         let trx = self.db.create_trx()?;
-        trx.clear_range(&from_key, &to_key);
+        trx.clear_range(&from, &to);
         trx.commit()
             .await
             .map_err(|err| FdbError::from(err).into())

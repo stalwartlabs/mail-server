@@ -204,19 +204,14 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(
-        &self,
-        subspace: u8,
-        from_key: &[u8],
-        to_key: &[u8],
-    ) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             conn.prepare_cached(&format!(
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
-                char::from(subspace),
+                char::from(from.subspace()),
             ))?
-            .execute([from_key, to_key])?;
+            .execute([from.serialize(false), to.serialize(false)])?;
 
             Ok(())
         })

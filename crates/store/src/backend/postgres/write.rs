@@ -306,21 +306,16 @@ impl PostgresStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(
-        &self,
-        subspace: u8,
-        from_key: &[u8],
-        to_key: &[u8],
-    ) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
 
         let s = conn
             .prepare_cached(&format!(
                 "DELETE FROM {} WHERE k >= $1 AND k < $2",
-                char::from(subspace),
+                char::from(from.subspace()),
             ))
             .await?;
-        conn.execute(&s, &[&from_key, &to_key])
+        conn.execute(&s, &[&from.serialize(false), &to.serialize(false)])
             .await
             .map(|_| ())
             .map_err(Into::into)

@@ -291,21 +291,16 @@ impl MysqlStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(
-        &self,
-        subspace: u8,
-        from_key: &[u8],
-        to_key: &[u8],
-    ) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
         let mut conn = self.conn_pool.get_conn().await?;
 
         let s = conn
             .prep(&format!(
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
-                char::from(subspace),
+                char::from(from.subspace()),
             ))
             .await?;
-        conn.exec_drop(&s, (&from_key, &to_key))
+        conn.exec_drop(&s, (&from.serialize(false), &to.serialize(false)))
             .await
             .map_err(Into::into)
     }

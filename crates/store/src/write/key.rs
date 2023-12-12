@@ -418,14 +418,15 @@ impl<T: AsRef<BlobHash> + Sync + Send> Key for BlobKey<T> {
     }
 }
 
-impl Key for AnyKey {
+impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        let key = self.key.as_ref();
         if include_subspace {
-            KeySerializer::new(self.key.len() + 1).write(self.subspace)
+            KeySerializer::new(key.len() + 1).write(self.subspace)
         } else {
-            KeySerializer::new(self.key.len())
+            KeySerializer::new(key.len())
         }
-        .write(self.key.as_slice())
+        .write(key)
         .finalize()
     }
 
