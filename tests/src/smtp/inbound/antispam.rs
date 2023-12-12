@@ -46,6 +46,10 @@ duplicate-expiry = "7d"
 type = "sqlite"
 path = "%PATH%/test_antispam.db"
 
+#[store."redis"]
+#type = "redis"
+#url = "redis://127.0.0.1"
+
 [store."default"]
 type = "memory"
 

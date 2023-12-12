@@ -42,6 +42,8 @@ regex = "1.7.0"
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "blocking"] }
 flate2 = "1.0"
 async-trait = "0.1.68"
+redis = { version = "0.24.0", features = [ "tokio-comp", "tokio-rustls-comp", "tls-rustls-insecure", "tls-rustls-webpki-roots", "cluster-async"], optional = true }
+deadpool = { version = "0.10.0", features = ["managed"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }
@@ -55,6 +57,7 @@ mysql = ["mysql_async"]
 s3 = ["rust-s3"]
 foundation = ["foundationdb", "futures"]
 fdb-chunked-bm = []
+redis = ["dep:redis", "deadpool"]
 
 test_mode = []
 

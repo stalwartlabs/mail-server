@@ -49,6 +49,10 @@ impl LookupStore {
                 )),
             },
             LookupStore::Memory(store) => store.query(query, params),
+            #[cfg(feature = "redis")]
+            LookupStore::Redis(_) => Err(crate::Error::InternalError(
+                "Redis does not support queries".into(),
+            )),
         };
 
         tracing::trace!( context = "store", event = "query", query = query, result = ?result);
@@ -81,6 +85,8 @@ impl LookupStore {
                 batch.ops.push(Operation::Value { class, op });
                 store.write(batch.build()).await
             }
+            #[cfg(feature = "redis")]
+            LookupStore::Redis(store) => store.key_set(key, value).await,
             LookupStore::Memory(_) => unimplemented!(),
         }
     }
@@ -110,6 +116,8 @@ impl LookupStore {
                     .await
                     .map(|num| LookupValue::Counter { num }),
             },
+            #[cfg(feature = "redis")]
+            LookupStore::Redis(store) => store.key_get(key).await,
             LookupStore::Memory(_) => unimplemented!(),
         }
     }
@@ -137,7 +145,7 @@ impl LookupStore {
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
                         if value.deserialize_be_u64(0)? < current_time {
-                            expired_keys.push(key.to_vec());
+                            expired_keys.push(key.get(1..).unwrap_or_default().to_vec());
                         }
                         Ok(true)
                     })
@@ -159,6 +167,8 @@ impl LookupStore {
                     }
                 }
             }
+            #[cfg(feature = "redis")]
+            LookupStore::Redis(store) => {}
             LookupStore::Memory(_) => {}
         }
 

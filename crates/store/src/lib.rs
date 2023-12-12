@@ -60,6 +60,9 @@ use backend::rocksdb::RocksDbStore;
 #[cfg(feature = "elastic")]
 use backend::elastic::ElasticSearchStore;
 
+#[cfg(feature = "redis")]
+use backend::redis::RedisStore;
+
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
 }
@@ -236,6 +239,8 @@ pub enum FtsStore {
 pub enum LookupStore {
     Store(Store),
     Memory(Arc<MemoryStore>),
+    #[cfg(feature = "redis")]
+    Redis(Arc<RedisStore>),
 }
 
 #[cfg(feature = "sqlite")]
@@ -290,6 +295,13 @@ impl From<S3Store> for BlobStore {
 impl From<ElasticSearchStore> for FtsStore {
     fn from(store: ElasticSearchStore) -> Self {
         Self::ElasticSearch(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "redis")]
+impl From<RedisStore> for LookupStore {
+    fn from(store: RedisStore) -> Self {
+        Self::Redis(Arc::new(store))
     }
 }
 

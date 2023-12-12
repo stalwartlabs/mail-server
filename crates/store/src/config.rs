@@ -53,6 +53,9 @@ use crate::backend::rocksdb::RocksDbStore;
 #[cfg(feature = "elastic")]
 use crate::backend::elastic::ElasticSearchStore;
 
+#[cfg(feature = "redis")]
+use crate::backend::redis::RedisStore;
+
 #[async_trait]
 pub trait ConfigStore {
     async fn parse_stores(&self) -> utils::config::Result<Stores>;
@@ -159,6 +162,13 @@ impl ConfigStore for Config {
                         store_id,
                         ElasticSearchStore::open(self, prefix).await?.into(),
                     );
+                    continue;
+                }
+                #[cfg(feature = "redis")]
+                "redis" => {
+                    config
+                        .lookup_stores
+                        .insert(store_id, RedisStore::open(self, prefix).await?.into());
                     continue;
                 }
                 "memory" => {

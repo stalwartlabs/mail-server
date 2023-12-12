@@ -31,6 +31,8 @@ pub mod memory;
 pub mod mysql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
+#[cfg(feature = "redis")]
+pub mod redis;
 #[cfg(feature = "rocks")]
 pub mod rocksdb;
 #[cfg(feature = "s3")]

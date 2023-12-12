@@ -434,7 +434,7 @@ impl Store {
                                 value
                             );
                         }
-                        SUBSPACE_INDEX_VALUES if key[0] >= 2 => {
+                        SUBSPACE_INDEX_VALUES if key[0] >= 3 => {
                             // Ignore named keys
                             return Ok(true);
                         }

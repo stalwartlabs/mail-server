@@ -23,6 +23,7 @@
 
 pub mod assign_id;
 pub mod blob;
+pub mod lookup;
 pub mod ops;
 pub mod query;
 
@@ -74,6 +75,11 @@ port = 3307
 database = "stalwart"
 user = "root"
 password = "password"
+
+[store."redis"]
+type = "redis"
+url = "redis://127.0.0.1"
+
 "#;
 
 #[tokio::test]

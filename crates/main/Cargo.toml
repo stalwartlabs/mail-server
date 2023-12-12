@@ -31,8 +31,8 @@ tracing = "0.1"
 jemallocator = "0.5.0"
 
 [features]
-#default = ["sqlite", "foundationdb", "postgres", "mysql", "rocks", "elastic", "s3"]
-default = ["sqlite", "postgres", "mysql", "foundationdb", "rocks"]
+#default = ["sqlite", "foundationdb", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
+default = ["sqlite", "postgres", "mysql", "redis"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 postgres = ["store/postgres"]
@@ -40,3 +40,4 @@ mysql = ["store/mysql"]
 rocks = ["store/rocks"]
 elastic = ["store/elastic"]
 s3 = ["store/s3"]
+redis = ["store/redis"]
