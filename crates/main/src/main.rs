@@ -50,6 +50,14 @@ async fn main() -> std::io::Result<()> {
     let directory = config
         .parse_directory(&stores)
         .failed("Invalid configuration");
+    let schedulers = config
+        .parse_purge_schedules(
+            &stores,
+            config.value("jmap.store.data"),
+            config.value("jmap.store.blob"),
+        )
+        .await
+        .failed("Invalid configuration");
 
     // Bind ports and drop privileges
     servers.bind(&config);
@@ -77,7 +85,7 @@ async fn main() -> std::io::Result<()> {
         .failed("Invalid configuration file");
 
     // Spawn servers
-    let (shutdown_tx, _shutdown_rx) = servers.spawn(|server, shutdown_rx| {
+    let (shutdown_tx, shutdown_rx) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {
                 server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
@@ -98,6 +106,11 @@ async fn main() -> std::io::Result<()> {
             ),
         };
     });
+
+    // Spawn purge schedulers
+    for scheduler in schedulers {
+        scheduler.spawn(shutdown_rx.clone());
+    }
 
     // Wait for shutdown signal
     wait_for_shutdown(&format!(

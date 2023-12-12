@@ -32,7 +32,7 @@ use parking_lot::RwLock;
 use sieve::{compiler::grammar::Capability, Compiler, Runtime};
 
 use crate::{
-    core::{SieveConfig, SieveCore},
+    core::SieveCore,
     scripts::{functions::register_functions, plugins::RegisterSievePlugins},
 };
 use utils::{
@@ -193,23 +193,21 @@ impl ConfigSieve for Config {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone().into()))
                 .collect(),
-            config: SieveConfig {
-                from_addr: self
-                    .value("sieve.trusted.from-addr")
-                    .map(|a| a.to_string())
-                    .unwrap_or(format!("MAILER-DAEMON@{hostname}")),
-                from_name: self
-                    .value("sieve.trusted.from-name")
-                    .unwrap_or("Mailer Daemon")
-                    .to_string(),
-                return_path: self
-                    .value("sieve.trusted.return-path")
-                    .unwrap_or_default()
-                    .to_string(),
-                sign,
-                directories: ctx.directory.directories.clone(),
-                lookup_stores: ctx.stores.lookup_stores.clone(),
-            },
+            lookup_stores: ctx.stores.lookup_stores.clone(),
+            directories: ctx.directory.directories.clone(),
+            from_addr: self
+                .value("sieve.trusted.from-addr")
+                .map(|a| a.to_string())
+                .unwrap_or(format!("MAILER-DAEMON@{hostname}")),
+            from_name: self
+                .value("sieve.trusted.from-name")
+                .unwrap_or("Mailer Daemon")
+                .to_string(),
+            return_path: self
+                .value("sieve.trusted.return-path")
+                .unwrap_or_default()
+                .to_string(),
+            sign,
         })
     }
 }

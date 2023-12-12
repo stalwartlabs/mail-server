@@ -46,25 +46,6 @@ duplicate-expiry = "7d"
 type = "sqlite"
 path = "%PATH%/test_antispam.db"
 
-[store."spamdb".pool]
-max-connections = 10
-min-connections = 0
-idle-timeout = "5m"
-
-[store."spamdb".query]
-token-insert = "INSERT INTO bayes_tokens (h1, h2, ws, wh) VALUES (?, ?, ?, ?) 
-                ON CONFLICT(h1, h2) 
-                DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
-token-lookup = "SELECT ws, wh FROM bayes_tokens WHERE h1 = ? AND h2 = ?"
-id-insert = "INSERT INTO seen_ids (id, ttl) VALUES (?, datetime('now', ? || ' seconds'))"
-id-lookup = "SELECT 1 FROM seen_ids WHERE id = ? AND ttl > CURRENT_TIMESTAMP"
-id-cleanup = "DELETE FROM seen_ids WHERE ttl < CURRENT_TIMESTAMP"
-reputation-insert = "INSERT INTO reputation (token, score, count, ttl) VALUES (?, ?, 1, datetime('now', '30 days')) 
-                     ON CONFLICT(token) 
-                     DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, ttl = excluded.ttl"
-reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
-reputation-cleanup = "DELETE FROM reputation WHERE ttl < CURRENT_TIMESTAMP"
-
 [store."default"]
 type = "memory"
 
@@ -129,26 +110,6 @@ public-suffix = "file://%LIST_PATH%/public-suffix.dat"
 
 [sieve.trusted.scripts]
 "#;
-
-const CREATE_TABLES: &[&str; 3] = &[
-    "CREATE TABLE IF NOT EXISTS bayes_tokens (
-h1 INTEGER NOT NULL,
-h2 INTEGER NOT NULL,
-ws INTEGER,
-wh INTEGER,
-PRIMARY KEY (h1, h2)
-)",
-    "CREATE TABLE IF NOT EXISTS seen_ids (
-    id STRING NOT NULL PRIMARY KEY,
-    ttl DATETIME NOT NULL
-)",
-    "CREATE TABLE IF NOT EXISTS reputation (
-token STRING NOT NULL PRIMARY KEY,
-score FLOAT NOT NULL DEFAULT '0',
-count INT(11) NOT NULL DEFAULT '0',
-ttl DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-)",
-];
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
@@ -258,12 +219,6 @@ async fn antispam() {
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
-
-    // Create tables
-    let sdb = ctx.stores.lookup_stores.get("spamdb").unwrap();
-    for query in CREATE_TABLES {
-        sdb.query::<usize>(query, vec![]).await.expect(query);
-    }
 
     // Add mock DNS entries
     for (domain, ip) in [

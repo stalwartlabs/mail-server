@@ -122,7 +122,10 @@ impl Store {
                     account_id: *account_id,
                     collection: 0,
                     document_id: 0,
-                    op: BlobOp::Reserve { until: 0, size: 0 },
+                    op: BlobOp::Reserve {
+                        until: now(),
+                        size: 0,
+                    },
                     hash: hash.as_ref().clone(),
                 },
                 BlobKey {
@@ -131,7 +134,7 @@ impl Store {
                     document_id: 0,
                     op: BlobOp::Reserve {
                         until: u64::MAX,
-                        size: 0,
+                        size: u32::MAX as usize,
                     },
                     hash: hash.as_ref().clone(),
                 },
@@ -175,7 +178,7 @@ impl Store {
         Ok(has_access)
     }
 
-    pub async fn blob_hash_purge(&self, blob_store: BlobStore) -> crate::Result<()> {
+    pub async fn purge_blobs(&self, blob_store: BlobStore) -> crate::Result<()> {
         // Remove expired temporary blobs
         let from_key = BlobKey {
             account_id: 0,
@@ -284,8 +287,8 @@ impl Store {
         // Delete hashes
         let mut batch = BatchBuilder::new();
         let mut last_account_id = u32::MAX;
-        for (pos, key) in delete_keys.into_iter().enumerate() {
-            if pos > 0 && pos & 511 == 0 {
+        for key in delete_keys.into_iter() {
+            if batch.ops.len() >= 1000 {
                 last_account_id = u32::MAX;
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
@@ -353,8 +356,8 @@ impl Store {
         let mut batch = BatchBuilder::new();
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
-        for (pos, key) in delete_keys.into_iter().enumerate() {
-            if pos > 0 && pos & 511 == 0 {
+        for key in delete_keys.into_iter() {
+            if batch.ops.len() >= 1000 {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
                 batch.with_account_id(account_id);

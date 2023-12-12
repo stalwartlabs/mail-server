@@ -249,8 +249,8 @@ impl Store {
             .with_collection(document.collection)
             .update_document(document.document_id);
 
-        for (pos, key) in keys.into_iter().enumerate() {
-            if pos > 0 && pos & 1023 == 0 {
+        for key in keys.into_iter() {
+            if batch.ops.len() >= 1000 {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
                 batch
@@ -296,8 +296,8 @@ impl Store {
             .with_collection(collection)
             .update_document(document_id);
 
-        for (pos, key) in term_index.ops.into_iter().enumerate() {
-            if pos > 0 && pos & 1023 == 0 {
+        for key in term_index.ops.into_iter() {
+            if batch.ops.len() >= 1000 {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
                 batch

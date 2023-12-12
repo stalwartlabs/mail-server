@@ -50,11 +50,12 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_EXEC: [ExecPluginFnc; 15] = [
+const PLUGINS_EXEC: [ExecPluginFnc; 16] = [
     query::exec,
     exec::exec,
     lookup::exec,
-    lookup::exec_map,
+    lookup::exec_get,
+    lookup::exec_set,
     lookup::exec_remote,
     lookup::exec_local_domain,
     dns::exec,
@@ -67,11 +68,12 @@ const PLUGINS_EXEC: [ExecPluginFnc; 15] = [
     pyzor::exec,
     headers::exec,
 ];
-const PLUGINS_REGISTER: [RegisterPluginFnc; 15] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 16] = [
     query::register,
     exec::register,
     lookup::register,
-    lookup::register_map,
+    lookup::register_get,
+    lookup::register_set,
     lookup::register_remote,
     lookup::register_local_domain,
     dns::register,

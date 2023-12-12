@@ -45,6 +45,7 @@ pub mod blob;
 pub mod hash;
 pub mod key;
 pub mod log;
+pub mod purge;
 
 #[cfg(not(feature = "test_mode"))]
 pub(crate) const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
@@ -137,8 +138,8 @@ pub enum TagValue {
 pub enum ValueClass {
     Property(u8),
     Acl(u32),
-    Named { key: Vec<u8>, id: u8 },
-    Ttl { key: Vec<u8>, expires: u64 },
+    Subspace { key: Vec<u8>, id: u8 },
+    Key { key: Vec<u8> },
     TermIndex,
     ReservedId,
 }

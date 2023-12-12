@@ -318,6 +318,19 @@ impl From<MemoryStore> for LookupStore {
 }
 
 #[derive(Clone, Debug)]
+pub enum LookupKey {
+    Key(Vec<u8>),
+    Counter(Vec<u8>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LookupValue<T> {
+    Value { value: T, expires: u64 },
+    Counter { num: i64 },
+    None,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value<'x> {
     Integer(i64),
     Bool(bool),
@@ -326,6 +339,8 @@ pub enum Value<'x> {
     Blob(Cow<'x, [u8]>),
     Null,
 }
+
+impl Eq for Value<'_> {}
 
 impl<'x> Value<'x> {
     pub fn to_str<'y: 'x>(&'y self) -> Cow<'x, str> {

@@ -2,8 +2,8 @@
 # Train the bayes classifier automatically
 if eval "AUTOLEARN_ENABLE && (score >= AUTOLEARN_SPAM_THRESHOLD || score <= AUTOLEARN_HAM_THRESHOLD)" {
     let "is_spam" "score >= AUTOLEARN_SPAM_THRESHOLD";
-    eval "bayes_is_balanced('spamdb/token-lookup', is_spam, AUTOLEARN_SPAM_HAM_BALANCE) && 
-          bayes_train('spamdb/token-insert', body_and_subject, is_spam)";
+    eval "bayes_is_balanced(SPAM_DB, is_spam, AUTOLEARN_SPAM_HAM_BALANCE) && 
+          bayes_train(SPAM_DB, body_and_subject, is_spam)";
 }
 
 # Process score actions

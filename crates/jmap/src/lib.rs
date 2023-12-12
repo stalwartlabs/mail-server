@@ -863,17 +863,17 @@ pub enum NamedKey<T: AsRef<[u8]>> {
 impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
     fn from(key: &NamedKey<T>) -> Self {
         match key {
-            NamedKey::Name(name) => ValueClass::Named {
+            NamedKey::Name(name) => ValueClass::Subspace {
                 key: name.as_ref().to_vec(),
                 id: 0,
             },
-            NamedKey::Id(id) => ValueClass::Named {
+            NamedKey::Id(id) => ValueClass::Subspace {
                 key: KeySerializer::new(std::mem::size_of::<u32>())
                     .write_leb128(*id)
                     .finalize(),
                 id: 1,
             },
-            NamedKey::Quota(id) => ValueClass::Named {
+            NamedKey::Quota(id) => ValueClass::Subspace {
                 key: KeySerializer::new(std::mem::size_of::<u32>())
                     .write_leb128(*id)
                     .finalize(),
@@ -883,7 +883,7 @@ impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
                 account_id,
                 document_id,
                 seq,
-            } => ValueClass::Named {
+            } => ValueClass::Subspace {
                 key: KeySerializer::new(std::mem::size_of::<u32>() * 4)
                     .write(*seq)
                     .write(*account_id)

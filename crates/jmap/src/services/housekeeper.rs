@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use utils::{
@@ -35,7 +35,6 @@ use crate::JMAP;
 use super::IPC_CHANNEL_BUFFER;
 
 pub enum Event {
-    PurgeDb,
     PurgeSessions,
     IndexStart,
     IndexDone,
@@ -44,13 +43,7 @@ pub enum Event {
     Exit,
 }
 
-const TASK_PURGE_DB: usize = 0;
-const TASK_PURGE_SESSIONS: usize = 1;
-
 pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
-    let purge_db_at = settings
-        .property_or_static::<SimpleCron>("jmap.purge.schedule.db", "0 3 *")
-        .failed("Initialize housekeeper");
     let purge_cache = settings
         .property_or_static::<SimpleCron>("jmap.purge.schedule.sessions", "15 * *")
         .failed("Initialize housekeeper");
@@ -68,15 +61,14 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
         });
 
         loop {
-            let time_to_next = [purge_db_at.time_to_next(), purge_cache.time_to_next()];
-            let mut tasks_to_run = [false, false];
-            let start_time = Instant::now();
+            let time_to_next = purge_cache.time_to_next();
+            let mut do_purge = false;
 
-            match tokio::time::timeout(time_to_next.iter().min().copied().unwrap(), rx.recv()).await
-            {
+            match tokio::time::timeout(time_to_next, rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    Event::PurgeDb => tasks_to_run[TASK_PURGE_DB] = true,
-                    Event::PurgeSessions => tasks_to_run[TASK_PURGE_SESSIONS] = true,
+                    Event::PurgeSessions => {
+                        do_purge = true;
+                    }
                     Event::IndexStart => {
                         if !index_busy {
                             index_busy = true;
@@ -115,49 +107,17 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                 Err(_) => (),
             }
 
-            // Check which tasks are due for execution
-            let now = Instant::now();
-            for (pos, time_to_next) in time_to_next.into_iter().enumerate() {
-                if start_time + time_to_next <= now {
-                    tasks_to_run[pos] = true;
-                }
-            }
-
-            // Spawn tasks
-            for (task_id, do_run) in tasks_to_run.into_iter().enumerate() {
-                if !do_run {
-                    continue;
-                }
-
+            if do_purge {
                 let core = core.clone();
-
                 tokio::spawn(async move {
-                    match task_id {
-                        TASK_PURGE_DB => {
-                            tracing::info!("Purging database...");
-                            if let Err(err) = core.store.purge_bitmaps().await {
-                                tracing::error!("Error while purging bitmaps: {}", err);
-                            }
-
-                            tracing::info!("Purging blobs...",);
-                            if let Err(err) =
-                                core.store.blob_hash_purge(core.blob_store.clone()).await
-                            {
-                                tracing::error!("Error while purging blobs: {}", err);
-                            }
-                        }
-                        TASK_PURGE_SESSIONS => {
-                            tracing::info!("Purging session cache.");
-                            core.sessions.cleanup();
-                            core.access_tokens.cleanup();
-                            core.oauth_codes.cleanup();
-                            core.rate_limit_auth
-                                .retain(|_, limiter| limiter.lock().is_active());
-                            core.rate_limit_unauth
-                                .retain(|_, limiter| limiter.lock().is_active());
-                        }
-                        _ => unreachable!(),
-                    }
+                    tracing::info!("Purging session cache.");
+                    core.sessions.cleanup();
+                    core.access_tokens.cleanup();
+                    core.oauth_codes.cleanup();
+                    core.rate_limit_auth
+                        .retain(|_, limiter| limiter.lock().is_active());
+                    core.rate_limit_unauth
+                        .retain(|_, limiter| limiter.lock().is_active());
                 });
             }
         }

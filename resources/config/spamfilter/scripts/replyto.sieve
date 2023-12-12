@@ -49,12 +49,12 @@ if eval "!is_empty(rto_raw)" {
             let "t.REPLYTO_ADDR_EQ_FROM" "1";
         }
 
-        if eval "lookup('spam/free-domains', rto_domain_sld)" {
+        if eval "key_exists('spam/free-domains', rto_domain_sld)" {
             let "t.FREEMAIL_REPLYTO" "1";
-            if eval "rto_domain_sld != from_domain_sld && lookup('spam/free-domains', from_domain_sld)" {
+            if eval "rto_domain_sld != from_domain_sld && key_exists('spam/free-domains', from_domain_sld)" {
                 let "t.FREEMAIL_REPLYTO_NEQ_FROM_DOM" "1";
             }
-        } elsif eval "lookup('spam/disposable-domains', rto_domain_sld)" {
+        } elsif eval "key_exists('spam/disposable-domains', rto_domain_sld)" {
             let "t.DISPOSABLE_REPLYTO" "1";
         }
 

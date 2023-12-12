@@ -41,7 +41,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
 
     // Obtain store name
     let store = ctx.arguments[0].to_string();
-    let store = if let Some(store_) = ctx.core.sieve.config.lookup_stores.get(store.as_ref()) {
+    let store = if let Some(store_) = ctx.core.sieve.lookup_stores.get(store.as_ref()) {
         store_
     } else {
         tracing::warn!(

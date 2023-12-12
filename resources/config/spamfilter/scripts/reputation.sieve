@@ -37,14 +37,19 @@ while "i > 0" {
     let "token_id" "token_ids[i]";
 
     # Lookup reputation
-    let "token_rep" "lookup_map('spamdb/reputation-lookup', token_id)";
-
-    # Update reputation
-    eval "lookup_map('spamdb/reputation-insert', [token_id, score])";
+    let "token_rep" "key_get(SPAM_DB, token_id)";
 
     if eval "is_empty(token_rep)" {
+        # Set reputation
+        eval "key_set(SPAM_DB, token_id, [score, 1], 2592000)";
         continue;
     }
+
+    # Update reputation
+    let "token_score" "token_rep[0]";
+    let "token_count" "token_rep[1]";
+    let "updated_score" "(token_count + 1) * (score + 0.98 * token_score) / (0.98 * token_count + 1)";
+    eval "key_set(SPAM_DB, token_id, [updated_score, token_count + 1], 2592000)";
 
     # Assign weight
     let "weight" "";
@@ -64,7 +69,7 @@ while "i > 0" {
         continue;
     }
 
-    let "reputation" "reputation + (token_rep[0] / token_rep[1] * weight)";
+    let "reputation" "reputation + (token_score / token_count * weight)";
 }
 
 # Adjust score using a 0.5 factor

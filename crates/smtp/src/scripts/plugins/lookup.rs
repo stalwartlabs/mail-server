@@ -29,6 +29,7 @@ use std::{
 
 use mail_auth::flate2;
 use sieve::{runtime::Variable, FunctionMap};
+use store::{Deserialize, LookupKey, LookupValue};
 
 use crate::{
     config::scripts::{RemoteList, SieveContext},
@@ -39,15 +40,19 @@ use crate::{
 use super::PluginContext;
 
 pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
-    fnc_map.set_external_function("lookup", plugin_id, 2);
+    fnc_map.set_external_function("key_exists", plugin_id, 2);
 }
 
-pub fn register_map(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
-    fnc_map.set_external_function("lookup_map", plugin_id, 2);
+pub fn register_get(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("key_get", plugin_id, 2);
+}
+
+pub fn register_set(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
+    fnc_map.set_external_function("key_set", plugin_id, 4);
 }
 
 pub fn register_remote(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
-    fnc_map.set_external_function("lookup_remote", plugin_id, 3);
+    fnc_map.set_external_function("key_exists_http", plugin_id, 3);
 }
 
 pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
@@ -55,16 +60,48 @@ pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveCont
 }
 
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
-    let lookup_id = ctx.arguments[0].to_string();
-    let span = ctx.span;
-    if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
+    let store = match &ctx.arguments[0] {
+        Variable::String(v) if v.contains('/') => {
+            if let Some(lookup) = ctx.core.sieve.lookup.get(v.as_ref()) {
+                return match &ctx.arguments[1] {
+                    Variable::Array(items) => {
+                        for item in items.iter() {
+                            if !item.is_empty()
+                                && ctx
+                                    .handle
+                                    .block_on(lookup.contains(to_store_value(item)))
+                                    .unwrap_or(false)
+                            {
+                                return true.into();
+                            }
+                        }
+                        false
+                    }
+                    v if !v.is_empty() => ctx
+                        .handle
+                        .block_on(lookup.contains(to_store_value(v)))
+                        .unwrap_or(false),
+                    _ => false,
+                }
+                .into();
+            }
+            None
+        }
+        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
+        _ => ctx.core.sieve.lookup_stores.values().next(),
+    };
+
+    if let Some(store) = store {
         match &ctx.arguments[1] {
             Variable::Array(items) => {
                 for item in items.iter() {
                     if !item.is_empty()
                         && ctx
                             .handle
-                            .block_on(lookup.contains(to_store_value(item)))
+                            .block_on(store.key_get::<VariableExists>(LookupKey::Key(
+                                item.to_string().into_owned().into_bytes(),
+                            )))
+                            .map(|v| v != LookupValue::None)
                             .unwrap_or(false)
                     {
                         return true.into();
@@ -74,50 +111,109 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             }
             v if !v.is_empty() => ctx
                 .handle
-                .block_on(lookup.contains(to_store_value(v)))
+                .block_on(store.key_get::<VariableExists>(LookupKey::Key(
+                    v.to_string().into_owned().into_bytes(),
+                )))
+                .map(|v| v != LookupValue::None)
                 .unwrap_or(false),
             _ => false,
         }
     } else {
         tracing::warn!(
-            parent: span,
+            parent: ctx.span,
             context = "sieve:lookup",
             event = "failed",
             reason = "Unknown lookup id",
-            lookup_id = %lookup_id,
+            lookup_id = ctx.arguments[0].to_string().as_ref(),
         );
         false
     }
     .into()
 }
 
-pub fn exec_map(ctx: PluginContext<'_>) -> Variable {
-    let lookup_id = ctx.arguments[0].to_string();
-    let items = match &ctx.arguments[1] {
-        Variable::Array(l) => l.iter().map(to_store_value).collect(),
-        v if !v.is_empty() => vec![to_store_value(v)],
-        _ => vec![],
-    };
-    let span = ctx.span;
-
-    if !lookup_id.is_empty() && !items.is_empty() {
-        if let Some(lookup) = ctx.core.sieve.lookup.get(lookup_id.as_ref()) {
-            return ctx
-                .handle
-                .block_on(lookup.lookup(items))
-                .unwrap_or_default();
-        } else {
-            tracing::warn!(
-                parent: span,
-                context = "sieve:lookup",
-                event = "failed",
-                reason = "Unknown lookup id",
-                lookup_id = %lookup_id,
-            );
+pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
+    let store = match &ctx.arguments[0] {
+        Variable::String(v) if v.contains('/') => {
+            if let Some(lookup) = ctx.core.sieve.lookup.get(v.as_ref()) {
+                let items = match &ctx.arguments[1] {
+                    Variable::Array(l) => l.iter().map(to_store_value).collect(),
+                    v if !v.is_empty() => vec![to_store_value(v)],
+                    _ => vec![],
+                };
+                return if !items.is_empty() {
+                    ctx.handle
+                        .block_on(lookup.lookup(items))
+                        .unwrap_or_default()
+                } else {
+                    Variable::default()
+                };
+            }
+            None
         }
-    }
+        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
+        _ => ctx.core.sieve.lookup_stores.values().next(),
+    };
 
-    Variable::default()
+    if let Some(store) = store {
+        ctx.handle
+            .block_on(store.key_get::<VariableWrapper>(LookupKey::Key(
+                ctx.arguments[1].to_string().into_owned().into_bytes(),
+            )))
+            .map(|v| match v {
+                LookupValue::Value { value, .. } => value.into_inner(),
+                LookupValue::Counter { num } => num.into(),
+                LookupValue::None => Variable::default(),
+            })
+            .unwrap_or_default()
+    } else {
+        tracing::warn!(
+            parent: ctx.span,
+            context = "sieve:key_get",
+            event = "failed",
+            reason = "Unknown store or lookup id",
+            lookup_id = ctx.arguments[0].to_string().as_ref(),
+        );
+        Variable::default()
+    }
+}
+
+pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
+    let store = match &ctx.arguments[0] {
+        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
+        _ => ctx.core.sieve.lookup_stores.values().next(),
+    };
+
+    if let Some(store) = store {
+        let expires = match &ctx.arguments[3] {
+            Variable::Integer(v) => *v as u64,
+            Variable::Float(v) => *v as u64,
+            _ => 0,
+        };
+
+        ctx.handle
+            .block_on(store.key_set(
+                ctx.arguments[1].to_string().into_owned().into_bytes(),
+                LookupValue::Value {
+                    value: if !ctx.arguments[2].is_empty() {
+                        bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
+                    } else {
+                        vec![]
+                    },
+                    expires,
+                },
+            ))
+            .is_ok()
+            .into()
+    } else {
+        tracing::warn!(
+            parent: ctx.span,
+            context = "sieve:key_set",
+            event = "failed",
+            reason = "Unknown store id",
+            store_id = ctx.arguments[0].to_string().as_ref(),
+        );
+        Variable::default()
+    }
 }
 
 pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
@@ -290,7 +386,7 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
                     Err(err) => {
                         tracing::warn!(
                             parent: ctx.span,
-                            context = "sieve:lookup_remote",
+                            context = "sieve:key_exists_http",
                             event = "failed",
                             resource = resource.as_ref(),
                             reason = %err,
@@ -306,7 +402,7 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
 
             tracing::debug!(
                 parent: ctx.span,
-                context = "sieve:lookup_remote",
+                context = "sieve:key_exists_http",
                 event = "fetch",
                 resource = resource.as_ref(),
                 num_entries = list.entries.len(),
@@ -319,7 +415,7 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         Ok(Err(response)) => {
             tracing::warn!(
                 parent: ctx.span,
-                context = "sieve:lookup_remote",
+                context = "sieve:key_exists_http",
                 event = "failed",
                 resource = resource.as_ref(),
                 status = %response.status(),
@@ -328,7 +424,7 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         Err(err) => {
             tracing::warn!(
                 parent: ctx.span,
-                context = "sieve:lookup_remote",
+                context = "sieve:key_exists_http",
                 event = "failed",
                 resource = resource.as_ref(),
                 reason = %err,
@@ -342,14 +438,18 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
 }
 
 pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
-    let directory_id = ctx.arguments[0].to_string();
     let domain = ctx.arguments[0].to_string();
 
-    if !directory_id.is_empty() && !domain.is_empty() {
-        if let Some(dir) = ctx.core.sieve.config.directories.get(directory_id.as_ref()) {
+    if !domain.is_empty() {
+        let directory = match &ctx.arguments[0] {
+            Variable::String(v) if !v.is_empty() => ctx.core.sieve.directories.get(v.as_ref()),
+            _ => ctx.core.sieve.directories.values().next(),
+        };
+
+        if let Some(directory) = directory {
             return ctx
                 .handle
-                .block_on(dir.is_local_domain(domain.as_ref()))
+                .block_on(directory.is_local_domain(domain.as_ref()))
                 .unwrap_or_default()
                 .into();
         } else {
@@ -358,10 +458,38 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
                 context = "sieve:is_local_domain",
                 event = "failed",
                 reason = "Unknown directory",
-                lookup_id = %directory_id,
+                lookup_id = ctx.arguments[0].to_string().as_ref(),
             );
         }
     }
 
     Variable::default()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct VariableWrapper(Variable);
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct VariableExists;
+
+impl Deserialize for VariableWrapper {
+    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+        Ok(VariableWrapper(
+            bincode::deserialize::<Variable>(bytes).unwrap_or_else(|_| {
+                Variable::String(String::from_utf8_lossy(bytes).into_owned().into())
+            }),
+        ))
+    }
+}
+
+impl Deserialize for VariableExists {
+    fn deserialize(_: &[u8]) -> store::Result<Self> {
+        Ok(VariableExists)
+    }
+}
+
+impl VariableWrapper {
+    pub fn into_inner(self) -> Variable {
+        self.0
+    }
 }

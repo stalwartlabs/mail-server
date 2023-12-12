@@ -105,3 +105,18 @@ impl std::hash::Hash for TokenHash {
 }
 
 impl nohash::IsEnabled for TokenHash {}
+
+impl From<i64> for Weights {
+    fn from(value: i64) -> Self {
+        Weights {
+            spam: value as u32,
+            ham: (value >> 32) as u32,
+        }
+    }
+}
+
+impl From<Weights> for i64 {
+    fn from(value: Weights) -> Self {
+        (value.ham as i64) << 32 | value.spam as i64
+    }
+}

@@ -28,6 +28,8 @@ let "SCORE_DISCARD_THRESHOLD" "0";
 # Reject messages with a score above this threshold
 let "SCORE_REJECT_THRESHOLD" "0";
 
-# Directory name to use for local domain lookups
-let "DOMAIN_DIRECTORY" "'default'";
+# Directory name to use for local domain lookups (leave empty for default)
+let "DOMAIN_DIRECTORY" "";
 
+# Store to use for Bayes tokens and ids (leave empty for default)
+let "SPAM_DB" "";

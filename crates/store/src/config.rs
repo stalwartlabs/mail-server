@@ -24,10 +24,11 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use utils::config::{utils::AsKey, Config};
+use utils::config::{cron::SimpleCron, utils::AsKey, Config};
 
 use crate::{
     backend::{fs::FsStore, memory::MemoryStore},
+    write::purge::{PurgeSchedule, PurgeStore},
     Lookup, LookupStore, Store, Stores,
 };
 
@@ -55,6 +56,12 @@ use crate::backend::elastic::ElasticSearchStore;
 #[async_trait]
 pub trait ConfigStore {
     async fn parse_stores(&self) -> utils::config::Result<Stores>;
+    async fn parse_purge_schedules(
+        &self,
+        stores: &Stores,
+        store: Option<&str>,
+        blob_store: Option<&str>,
+    ) -> utils::config::Result<Vec<PurgeSchedule>>;
 }
 
 #[async_trait]
@@ -78,7 +85,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config.blob_stores.insert(store_id.clone(), db.into());
+                    config
+                        .blob_stores
+                        .insert(store_id.clone(), db.clone().into());
+                    config.lookup_stores.insert(store_id, db.into());
                     continue;
                 }
                 #[cfg(feature = "foundation")]
@@ -88,7 +98,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config.blob_stores.insert(store_id.clone(), db.into());
+                    config
+                        .blob_stores
+                        .insert(store_id.clone(), db.clone().into());
+                    config.lookup_stores.insert(store_id, db.into());
                     continue;
                 }
                 #[cfg(feature = "postgres")]
@@ -195,6 +208,60 @@ impl ConfigStore for Config {
         }
 
         Ok(config)
+    }
+
+    async fn parse_purge_schedules(
+        &self,
+        stores: &Stores,
+        store_id: Option<&str>,
+        blob_store_id: Option<&str>,
+    ) -> utils::config::Result<Vec<PurgeSchedule>> {
+        let mut schedules = Vec::new();
+
+        if let Some(store) = store_id.and_then(|store_id| stores.stores.get(store_id)) {
+            let store_id = store_id.unwrap();
+            if let Some(cron) =
+                self.property::<SimpleCron>(("store", store_id, "purge.frequency"))?
+            {
+                schedules.push(PurgeSchedule {
+                    cron,
+                    store_id: store_id.to_string(),
+                    store: PurgeStore::Bitmaps(store.clone()),
+                });
+            }
+
+            if let Some(blob_store) =
+                blob_store_id.and_then(|blob_store_id| stores.blob_stores.get(blob_store_id))
+            {
+                let blob_store_id = blob_store_id.unwrap();
+                if let Some(cron) =
+                    self.property::<SimpleCron>(("store", blob_store_id, "purge.frequency"))?
+                {
+                    schedules.push(PurgeSchedule {
+                        cron,
+                        store_id: blob_store_id.to_string(),
+                        store: PurgeStore::Blobs {
+                            store: store.clone(),
+                            blob_store: blob_store.clone(),
+                        },
+                    });
+                }
+            }
+        }
+
+        for (store_id, store) in &stores.lookup_stores {
+            if let Some(cron) =
+                self.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))?
+            {
+                schedules.push(PurgeSchedule {
+                    cron,
+                    store_id: store_id.clone(),
+                    store: PurgeStore::Lookup(store.clone()),
+                });
+            }
+        }
+
+        Ok(schedules)
     }
 }
 

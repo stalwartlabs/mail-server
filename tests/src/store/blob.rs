@@ -111,7 +111,7 @@ pub async fn blob_tests() {
         );
 
         // Purge expired blobs
-        store.blob_hash_purge(blob_store.clone()).await.unwrap();
+        store.purge_blobs(blob_store.clone()).await.unwrap();
 
         // Blob hash should no longer exist
         assert!(!store.blob_hash_exists(&hash).await.unwrap());
@@ -192,7 +192,7 @@ pub async fn blob_tests() {
         );
 
         // Purge expired blobs and make sure nothing else is deleted
-        store.blob_hash_purge(blob_store.clone()).await.unwrap();
+        store.purge_blobs(blob_store.clone()).await.unwrap();
         for (pos, (blob, blob_class)) in [
             (b"abc", BlobClass::Reserved { account_id: 0 }),
             (
@@ -266,7 +266,7 @@ pub async fn blob_tests() {
             .unwrap();
 
         // Purge and make sure blob is deleted
-        store.blob_hash_purge(blob_store.clone()).await.unwrap();
+        store.purge_blobs(blob_store.clone()).await.unwrap();
         for (pos, (blob, blob_class)) in [
             (
                 b"789",
@@ -314,7 +314,7 @@ pub async fn blob_tests() {
 
         // Unlink all blobs from accountId 1 and purge
         store.blob_hash_unlink_account(1).await.unwrap();
-        store.blob_hash_purge(blob_store.clone()).await.unwrap();
+        store.purge_blobs(blob_store.clone()).await.unwrap();
 
         // Make sure only accountId 0's blobs are left
         for (pos, (blob, blob_class)) in [

@@ -48,7 +48,7 @@ use smtp::{
     },
     core::{
         throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
-        SieveConfig, SieveCore, TlsConnectors, SMTP,
+        SieveCore, TlsConnectors, SMTP,
     },
     outbound::dane::DnssecResolver,
 };
@@ -434,14 +434,12 @@ impl TestConfig for SieveCore {
             runtime: Runtime::new_with_context(SieveContext::default()),
             scripts: AHashMap::new(),
             lookup: AHashMap::new(),
-            config: SieveConfig {
-                from_addr: "MAILER-DAEMON@example.org".to_string(),
-                from_name: "Mailer Daemon".to_string(),
-                return_path: "".to_string(),
-                sign: vec![],
-                directories: Default::default(),
-                lookup_stores: Default::default(),
-            },
+            from_addr: "MAILER-DAEMON@example.org".to_string(),
+            from_name: "Mailer Daemon".to_string(),
+            return_path: "".to_string(),
+            sign: vec![],
+            directories: Default::default(),
+            lookup_stores: Default::default(),
         }
     }
 }

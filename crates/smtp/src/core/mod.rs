@@ -112,17 +112,14 @@ pub struct SMTP {
 pub struct SieveCore {
     pub runtime: Runtime<SieveContext>,
     pub scripts: AHashMap<String, Arc<Sieve>>,
-    pub lookup: AHashMap<String, Lookup>,
-    pub config: SieveConfig,
-}
 
-pub struct SieveConfig {
     pub from_addr: String,
     pub from_name: String,
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
     pub directories: AHashMap<String, Arc<dyn Directory>>,
     pub lookup_stores: AHashMap<String, LookupStore>,
+    pub lookup: AHashMap<String, Lookup>,
 }
 
 pub struct Resolvers {

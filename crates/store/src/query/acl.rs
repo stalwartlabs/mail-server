@@ -128,8 +128,8 @@ impl Store {
         let mut batch = BatchBuilder::new();
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
-        for (pos, (class, acl_item)) in delete_keys.into_iter().enumerate() {
-            if pos > 0 && pos & 511 == 0 {
+        for (class, acl_item) in delete_keys.into_iter() {
+            if batch.ops.len() >= 1000 {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
                 batch.with_account_id(account_id);

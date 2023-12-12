@@ -266,15 +266,14 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
             .write(self.account_id)
             .write(self.collection)
             .write(self.document_id),
-            ValueClass::Ttl { key, expires } => if include_subspace {
+            ValueClass::Key { key } => if include_subspace {
                 KeySerializer::new(key.len() + U64_LEN + 2).write(crate::SUBSPACE_INDEX_VALUES)
             } else {
                 KeySerializer::new(key.len() + U64_LEN + 1)
             }
             .write(2u8)
-            .write(key.as_slice())
-            .write(*expires),
-            ValueClass::Named { key, id } => if include_subspace {
+            .write(key.as_slice()),
+            ValueClass::Subspace { key, id } => if include_subspace {
                 KeySerializer::new(key.len() + 2).write(crate::SUBSPACE_INDEX_VALUES)
             } else {
                 KeySerializer::new(key.len() + 1)

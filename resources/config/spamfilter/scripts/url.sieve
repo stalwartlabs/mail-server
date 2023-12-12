@@ -27,13 +27,13 @@ while "i > 0" {
         let "host_sld" "domain_part(host_lc, 'sld')";
 
         # Skip local and trusted domains
-        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld) || lookup('spam/domains-allow', host_sld)" {
+        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld) || key_exists('spam/domains-allow', host_sld)" {
             continue;
         }
 
         if eval "!is_ip && 
                  (!t.REDIRECTOR_URL || !t.URL_REDIRECTOR_NESTED) && 
-                 lookup('spam/redirectors', host_sld)" {
+                 key_exists('spam/redirectors', host_sld)" {
             let "t.REDIRECTOR_URL" "1";
             let "redir_count" "1";
 
@@ -48,7 +48,7 @@ while "i > 0" {
                     let "host_lc" "to_lowercase(host)";
                     let "host_sld" "domain_part(host_lc, 'sld')";
 
-                    if eval "!is_ip && lookup('spam/redirectors', host_sld)" {
+                    if eval "!is_ip && key_exists('spam/redirectors', host_sld)" {
                         let "redir_count" "redir_count + 1";
                     } else {
                         break;
@@ -110,10 +110,10 @@ while "i > 0" {
         }
 
         # Phishing checks (refresh OpenPhish every 12 hours, PhishTank every 6 hours)
-        if eval "lookup_remote('https://openphish.com/feed.txt', url, [43200, 'list'])" {
+        if eval "key_exists_http('https://openphish.com/feed.txt', url, [43200, 'list'])" {
             let "t.PHISHED_OPENPHISH" "1";
         }
-        if eval "lookup_remote('http://data.phishtank.com/data/online-valid.csv', url, [21600, 'csv', 1, ',', true])" {
+        if eval "key_exists_http('http://data.phishtank.com/data/online-valid.csv', url, [21600, 'csv', 1, ',', true])" {
             let "t.PHISHED_PHISHTANK" "1";
         }
 

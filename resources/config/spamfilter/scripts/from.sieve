@@ -16,9 +16,9 @@ if eval "from_count > 0" {
             let "t.WWW_DOT_DOMAIN" "1";
         }
 
-        if eval "lookup('spam/free-domains', from_domain_sld)" {
+        if eval "key_exists('spam/free-domains', from_domain_sld)" {
             let "t.FREEMAIL_FROM" "1";
-        } elsif eval "lookup('spam/disposable-domains', from_domain_sld)" {
+        } elsif eval "key_exists('spam/disposable-domains', from_domain_sld)" {
             let "t.DISPOSABLE_FROM" "1";
         }
     } else {
@@ -125,9 +125,9 @@ if eval "!is_empty(envelope.from)" {
     }
 
     if eval "!is_empty(envfrom_domain_sld)" {
-        if eval "lookup('spam/free-domains', envfrom_domain_sld)" {
+        if eval "key_exists('spam/free-domains', envfrom_domain_sld)" {
             let "t.FREEMAIL_ENVFROM" "1";
-        } elsif eval "lookup('spam/disposable-domains', envfrom_domain_sld)" {
+        } elsif eval "key_exists('spam/disposable-domains', envfrom_domain_sld)" {
             let "t.DISPOSABLE_ENVFROM" "1";
         }
 

@@ -186,9 +186,9 @@ foreverypart {
         }
         let "name_parts" "rsplit(to_lowercase(attach_name), '.')";
         if eval "count(name_parts) > 1" {
-            let "ext_type" "lookup_map('spam/mime-types', name_parts[0])";
+            let "ext_type" "key_get('spam/mime-types', name_parts[0])";
             if eval "!is_empty(ext_type)" {
-                let "ext_type_double" "lookup_map('spam/mime-types', name_parts[1])";
+                let "ext_type_double" "key_get('spam/mime-types', name_parts[1])";
                 if eval "contains(ext_type, 'BAD')" {
                     # Bad extension
                     if eval "contains(ext_type_double, 'BAD')" {

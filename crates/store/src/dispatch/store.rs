@@ -21,19 +21,14 @@
  * for more details.
 */
 
-use std::{
-    fmt::Display,
-    ops::{BitAndAssign, Range},
-};
+use std::ops::{BitAndAssign, Range};
 
 use roaring::RoaringBitmap;
 
 use crate::{
-    fts::{index::FtsDocument, FtsFilter},
     write::{key::KeySerializer, Batch, BitmapClass, ValueClass},
-    BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, Key, LookupStore, QueryResult,
-    Store, Value, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES,
-    SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
+    SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
 };
 
 impl Store {
@@ -384,7 +379,7 @@ impl Store {
         use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
 
         self.blob_hash_expire_all().await;
-        self.blob_hash_purge(blob_store).await.unwrap();
+        self.purge_blobs(blob_store).await.unwrap();
         self.purge_bitmaps().await.unwrap();
 
         let store = self.clone();
@@ -491,145 +486,5 @@ impl Store {
         if failed {
             panic!("Store is not empty.");
         }
-    }
-}
-
-impl BlobStore {
-    pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
-        match self {
-            Self::Store(store) => match store {
-                #[cfg(feature = "sqlite")]
-                Store::SQLite(store) => store.get_blob(key, range).await,
-                #[cfg(feature = "foundation")]
-                Store::FoundationDb(store) => store.get_blob(key, range).await,
-                #[cfg(feature = "postgres")]
-                Store::PostgreSQL(store) => store.get_blob(key, range).await,
-                #[cfg(feature = "mysql")]
-                Store::MySQL(store) => store.get_blob(key, range).await,
-                #[cfg(feature = "rocks")]
-                Store::RocksDb(store) => store.get_blob(key, range).await,
-            },
-            Self::Fs(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "s3")]
-            Self::S3(store) => store.get_blob(key, range).await,
-        }
-    }
-
-    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        match self {
-            Self::Store(store) => match store {
-                #[cfg(feature = "sqlite")]
-                Store::SQLite(store) => store.put_blob(key, data).await,
-                #[cfg(feature = "foundation")]
-                Store::FoundationDb(store) => store.put_blob(key, data).await,
-                #[cfg(feature = "postgres")]
-                Store::PostgreSQL(store) => store.put_blob(key, data).await,
-                #[cfg(feature = "mysql")]
-                Store::MySQL(store) => store.put_blob(key, data).await,
-                #[cfg(feature = "rocks")]
-                Store::RocksDb(store) => store.put_blob(key, data).await,
-            },
-            Self::Fs(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "s3")]
-            Self::S3(store) => store.put_blob(key, data).await,
-        }
-    }
-
-    pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
-        match self {
-            Self::Store(store) => match store {
-                #[cfg(feature = "sqlite")]
-                Store::SQLite(store) => store.delete_blob(key).await,
-                #[cfg(feature = "foundation")]
-                Store::FoundationDb(store) => store.delete_blob(key).await,
-                #[cfg(feature = "postgres")]
-                Store::PostgreSQL(store) => store.delete_blob(key).await,
-                #[cfg(feature = "mysql")]
-                Store::MySQL(store) => store.delete_blob(key).await,
-                #[cfg(feature = "rocks")]
-                Store::RocksDb(store) => store.delete_blob(key).await,
-            },
-            Self::Fs(store) => store.delete_blob(key).await,
-            #[cfg(feature = "s3")]
-            Self::S3(store) => store.delete_blob(key).await,
-        }
-    }
-}
-
-impl FtsStore {
-    pub async fn index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
-        &self,
-        document: FtsDocument<'_, T>,
-    ) -> crate::Result<()> {
-        match self {
-            FtsStore::Store(store) => store.fts_index(document).await,
-            #[cfg(feature = "elastic")]
-            FtsStore::ElasticSearch(store) => store.fts_index(document).await,
-        }
-    }
-
-    pub async fn query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
-        &self,
-        account_id: u32,
-        collection: impl Into<u8>,
-        filters: Vec<FtsFilter<T>>,
-    ) -> crate::Result<RoaringBitmap> {
-        match self {
-            FtsStore::Store(store) => store.fts_query(account_id, collection, filters).await,
-            #[cfg(feature = "elastic")]
-            FtsStore::ElasticSearch(store) => {
-                store.fts_query(account_id, collection, filters).await
-            }
-        }
-    }
-
-    pub async fn remove(
-        &self,
-        account_id: u32,
-        collection: u8,
-        document_id: u32,
-    ) -> crate::Result<bool> {
-        match self {
-            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_id).await,
-            #[cfg(feature = "elastic")]
-            FtsStore::ElasticSearch(store) => {
-                store.fts_remove(account_id, collection, document_id).await
-            }
-        }
-    }
-
-    pub async fn remove_all(&self, account_id: u32) -> crate::Result<()> {
-        match self {
-            FtsStore::Store(store) => store.fts_remove_all(account_id).await,
-            #[cfg(feature = "elastic")]
-            FtsStore::ElasticSearch(store) => store.fts_remove_all(account_id).await,
-        }
-    }
-}
-
-impl LookupStore {
-    pub async fn query<T: QueryResult + std::fmt::Debug>(
-        &self,
-        query: &str,
-        params: Vec<Value<'_>>,
-    ) -> crate::Result<T> {
-        let result = match self {
-            LookupStore::Store(store) => match store {
-                #[cfg(feature = "sqlite")]
-                Store::SQLite(store) => store.query(query, params).await,
-                #[cfg(feature = "postgres")]
-                Store::PostgreSQL(store) => store.query(query, params).await,
-                #[cfg(feature = "mysql")]
-                Store::MySQL(store) => store.query(query, params).await,
-                _ => Err(crate::Error::InternalError(
-                    "Store does not support lookups".into(),
-                )),
-            },
-            LookupStore::Memory(store) => store.query(query, params),
-        };
-
-        tracing::trace!( context = "store", event = "query", query = query, result = ?result);
-
-        result
     }
 }

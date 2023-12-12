@@ -365,7 +365,7 @@ pub async fn parse_jmap_request(
                     };
                 }
                 ("blob", "purge", &Method::GET) => {
-                    return match jmap.store.blob_hash_purge(jmap.blob_store.clone()).await {
+                    return match jmap.store.purge_blobs(jmap.blob_store.clone()).await {
                         Ok(_) => {
                             JsonResponse::new(Value::String("success".into())).into_http_response()
                         }

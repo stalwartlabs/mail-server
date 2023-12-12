@@ -175,7 +175,7 @@ while "i < domains_len" {
     if eval "!contains(domain, '.') || 
              is_ip_addr(domain) || 
              is_local_domain(DOMAIN_DIRECTORY, domain_part(domain, 'sld')) ||
-             lookup('spam/domains-allow', domain)" {
+             key_exists('spam/domains-allow', domain)" {
         continue;
     }
 
@@ -327,7 +327,7 @@ while "i < urls_len" {
     # Skip URLs pointing to local or trusted domains
     let "domain" "domain_part(uri_part(url, 'host'), 'sld')";
     if eval "is_local_domain(DOMAIN_DIRECTORY, domain) ||
-             lookup('spam/domains-allow', domain)" {
+             key_exists('spam/domains-allow', domain)" {
         continue;
     }
 
