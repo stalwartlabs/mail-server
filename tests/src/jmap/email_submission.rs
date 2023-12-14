@@ -22,6 +22,7 @@
 */
 
 use ahash::AHashMap;
+use directory::backend::internal::manage::ManageDirectory;
 use jmap_client::{
     core::set::{SetError, SetErrorType, SetObject},
     email_submission::{query::Filter, Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
@@ -96,7 +97,14 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
-    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
 
     // Create an identity without using a valid address should fail
     match client
@@ -474,7 +482,7 @@ pub async fn test(params: &mut JMAPTest) {
     {
         client.email_submission_destroy(&id).await.unwrap();
     }
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }
 

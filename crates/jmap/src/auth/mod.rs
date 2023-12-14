@@ -56,20 +56,16 @@ pub struct AccessToken {
 }
 
 impl AccessToken {
-    pub fn new(principal: Principal, primary_id: u32) -> Self {
+    pub fn new(principal: Principal) -> Self {
         Self {
-            primary_id,
-            member_of: Vec::new(),
+            primary_id: principal.id,
+            member_of: principal.member_of,
             access_to: Vec::new(),
             name: principal.name,
             description: principal.description,
             quota: principal.quota,
             is_superuser: principal.typ == Type::Superuser,
         }
-    }
-
-    pub fn with_member_of(self, member_of: Vec<u32>) -> Self {
-        Self { member_of, ..self }
     }
 
     pub fn with_access_to(self, access_to: Vec<(u32, Bitmap<Collection>)>) -> Self {

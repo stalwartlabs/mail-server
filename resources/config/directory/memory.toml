@@ -12,14 +12,14 @@ subaddressing = true
 #subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
 superuser-group = "superusers"
 
-[[directory."default".users]]
+[[directory."default".principals]]
 name = "admin"
 description = "Superuser"
 secret = "changeme"
 email = ["postmaster@%{DEFAULT_DOMAIN}%"]
 member-of = ["superusers"]
 
-[[directory."default".users]]
+[[directory."default".principals]]
 name = "john"
 description = "John Doe"
 secret = "12345"
@@ -27,7 +27,7 @@ email = ["john@%{DEFAULT_DOMAIN}%", "jdoe@%{DEFAULT_DOMAIN}%", "john.doe@%{DEFAU
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 member-of = ["sales"]
 
-[[directory."default".users]]
+[[directory."default".principals]]
 name = "jane"
 description = "Jane Doe"
 secret = "abcde"
@@ -35,7 +35,7 @@ email = ["jane@%{DEFAULT_DOMAIN}%", "jane.doe@%{DEFAULT_DOMAIN}%"]
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 member-of = ["sales", "support"]
 
-[[directory."default".users]]
+[[directory."default".principals]]
 name = "bill"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
@@ -43,11 +43,11 @@ quota = 50000000
 email = ["bill@%{DEFAULT_DOMAIN}%", "bill.foobar@%{DEFAULT_DOMAIN}%"]
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 
-[[directory."default".groups]]
+[[directory."default".principals]]
 name = "sales"
 description = "Sales Team"
 
-[[directory."default".groups]]
+[[directory."default".principals]]
 name = "support"
 description = "Support Team"
 

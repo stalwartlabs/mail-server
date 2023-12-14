@@ -47,10 +47,6 @@ impl SqlDirectory {
             .clone();
 
         let mut mappings = SqlMappings {
-            column_name: config
-                .value((&prefix, "columns.name"))
-                .unwrap_or_default()
-                .to_string(),
             column_description: config
                 .value((&prefix, "columns.description"))
                 .unwrap_or_default()

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::backend::internal::manage::ManageDirectory;
 use jmap::mailbox::INBOX_ID;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
@@ -36,7 +37,13 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
-    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    );
 
     server.store.blob_hash_expire_all().await;
 
@@ -488,6 +495,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove test data
     params.client.set_default_account_id(account_id.to_string());
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }

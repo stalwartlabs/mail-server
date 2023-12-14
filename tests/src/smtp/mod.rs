@@ -25,7 +25,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use directory::memory::MemoryDirectory;
+use directory::backend::memory::MemoryDirectory;
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     hickory_resolver::config::{ResolverConfig, ResolverOpts},

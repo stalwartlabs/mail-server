@@ -23,6 +23,7 @@
 
 use std::{sync::atomic, time::SystemTime};
 
+use directory::QueryBy;
 use hyper::StatusCode;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
@@ -179,14 +180,9 @@ impl JMAP {
         client_id: &str,
         with_refresh_token: bool,
     ) -> Result<TokenResponse, &'static str> {
-        let account_name = self
-            .get_account_name(account_id)
-            .await
-            .map_err(|_| "Temporary lookup error")?
-            .ok_or("Account no longer exists")?;
         let password_hash = self
             .directory
-            .principal(&account_name)
+            .query(QueryBy::id(account_id).with_store(&self.store))
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?
@@ -302,14 +298,10 @@ impl JMAP {
         }
 
         // Optain password hash
-        let account_name = self
-            .get_account_name(account_id)
-            .await
-            .map_err(|_| "Temporary lookup error")?
-            .ok_or("Account no longer exists")?;
+
         let password_hash = self
             .directory
-            .principal(&account_name)
+            .query(QueryBy::id(account_id).with_store(&self.store))
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?

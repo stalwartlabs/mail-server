@@ -21,31 +21,20 @@
  * for more details.
 */
 
-use mail_send::Credentials;
+use store::Store;
 
-use crate::{Directory, Principal};
+use crate::{Directory, Principal, QueryBy};
 
 use super::CachedDirectory;
 
 #[async_trait::async_trait]
 impl<T: Directory> Directory for CachedDirectory<T> {
-    async fn authenticate(
-        &self,
-        credentials: &Credentials<String>,
-    ) -> crate::Result<Option<Principal>> {
-        self.inner.authenticate(credentials).await
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+        self.inner.query(by).await
     }
 
-    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
-        self.inner.principal(name).await
-    }
-
-    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
-        self.inner.emails_by_name(name).await
-    }
-
-    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
-        self.inner.names_by_email(address).await
+    async fn email_to_ids(&self, address: &str, store: &Store) -> crate::Result<Vec<u32>> {
+        self.inner.email_to_ids(address, store).await
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {

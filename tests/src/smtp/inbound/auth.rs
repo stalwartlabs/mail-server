@@ -39,7 +39,7 @@ const DIRECTORY: &str = r#"
 [directory."local"]
 type = "memory"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "john"
 description = "John Doe"
 secret = "secret"
@@ -47,7 +47,7 @@ email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
 email-list = ["info@example.org"]
 member-of = ["sales"]
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "jane"
 description = "Jane Doe"
 secret = "p4ssw0rd"

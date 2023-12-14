@@ -40,7 +40,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::config::ConfigStore;
 use ahash::AHashSet;
-use directory::config::ConfigDirectory;
+use directory::{backend::internal::manage::ManageDirectory, config::ConfigDirectory};
 use imap::core::{ImapSessionManager, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
@@ -337,7 +337,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     }
 
     // Assign Id 0 to admin (required for some tests)
-    jmap.get_account_id("admin").await.unwrap();
+    jmap.store.get_or_create_account_id("admin").await.unwrap();
 
     IMAPTest {
         jmap,

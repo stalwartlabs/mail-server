@@ -41,25 +41,25 @@ const DIRECTORY: &str = r#"
 [directory."local"]
 type = "memory"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "john"
 description = "John Doe"
 secret = "secret"
 email = "john@foobar.org"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "jane"
 description = "Jane Doe"
 secret = "p4ssw0rd"
 email = "jane@foobar.org"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "bill"
 description = "Bill Foobar"
 secret = "p4ssw0rd"
 email = "bill@foobar.org"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "mike"
 description = "Mike Foobar"
 secret = "p4ssw0rd"

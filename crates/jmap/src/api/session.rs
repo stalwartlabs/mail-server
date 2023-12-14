@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use directory::QueryBy;
 use jmap_proto::{
     error::request::RequestError,
     request::capability::Capability,
@@ -212,9 +213,11 @@ impl JMAP {
 
             session.add_account(
                 (*id).into(),
-                self.get_account_name(*id)
+                self.directory
+                    .query(QueryBy::id(*id).with_store(&self.store))
                     .await
                     .unwrap_or_default()
+                    .map(|p| p.name)
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,

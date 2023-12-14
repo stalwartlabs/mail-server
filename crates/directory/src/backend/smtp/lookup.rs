@@ -23,30 +23,24 @@
 
 use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::Severity;
+use store::Store;
 
-use crate::{Directory, DirectoryError, Principal};
+use crate::{Directory, DirectoryError, Principal, QueryBy, QueryType};
 
 use super::{SmtpClient, SmtpDirectory};
 
 #[async_trait::async_trait]
 impl Directory for SmtpDirectory {
-    async fn authenticate(
-        &self,
-        credentials: &Credentials<String>,
-    ) -> crate::Result<Option<Principal>> {
-        self.pool.get().await?.authenticate(credentials).await
+    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+        if let QueryType::Credentials(credentials) = query.t {
+            self.pool.get().await?.authenticate(credentials).await
+        } else {
+            Err(DirectoryError::unsupported("smtp", "query"))
+        }
     }
 
-    async fn principal(&self, _name: &str) -> crate::Result<Option<Principal>> {
-        Err(DirectoryError::unsupported("smtp", "principal"))
-    }
-
-    async fn emails_by_name(&self, _: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("smtp", "emails_by_name"))
-    }
-
-    async fn names_by_email(&self, _address: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("smtp", "names_by_email"))
+    async fn email_to_ids(&self, _address: &str, _store: &Store) -> crate::Result<Vec<u32>> {
+        Err(DirectoryError::unsupported("smtp", "email_to_ids"))
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {

@@ -22,65 +22,68 @@
 */
 
 use mail_send::Credentials;
+use store::Store;
 
-use crate::{Directory, Principal};
+use crate::{Directory, Principal, QueryBy, QueryType};
 
 use super::{EmailType, MemoryDirectory};
 
 #[async_trait::async_trait]
 impl Directory for MemoryDirectory {
-    async fn authenticate(
-        &self,
-        credentials: &Credentials<String>,
-    ) -> crate::Result<Option<Principal>> {
-        let (username, secret) = match credentials {
-            Credentials::Plain { username, secret } => (username, secret),
-            Credentials::OAuthBearer { token } => (token, token),
-            Credentials::XOauth2 { username, secret } => (username, secret),
-        };
-        match self.principals.get(username) {
-            Some(principal) if principal.verify_secret(secret).await => Ok(Some(principal.clone())),
-            _ => Ok(None),
-        }
-    }
-
-    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
-        Ok(self.principals.get(name).cloned())
-    }
-
-    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
-        let mut result = Vec::new();
-        if let Some(emails) = self.names_to_email.get(name) {
-            for email in emails {
-                match email {
-                    EmailType::Primary(email) | EmailType::Alias(email) => {
-                        result.push(email.clone())
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+        match by.t {
+            QueryType::Name(name) => {
+                for principal in &self.principals {
+                    if principal.name == name {
+                        return Ok(Some(principal.clone()));
                     }
-                    _ => {}
+                }
+            }
+            QueryType::Id(uid) => {
+                for principal in &self.principals {
+                    if principal.id == uid {
+                        return Ok(Some(principal.clone()));
+                    }
+                }
+            }
+            QueryType::Credentials(credentials) => {
+                let (username, secret) = match credentials {
+                    Credentials::Plain { username, secret } => (username, secret),
+                    Credentials::OAuthBearer { token } => (token, token),
+                    Credentials::XOauth2 { username, secret } => (username, secret),
+                };
+
+                for principal in &self.principals {
+                    if &principal.name == username {
+                        return if principal.verify_secret(secret).await {
+                            Ok(Some(principal.clone()))
+                        } else {
+                            Ok(None)
+                        };
+                    }
                 }
             }
         }
-
-        Ok(result)
+        Ok(None)
     }
 
-    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
+    async fn email_to_ids(&self, address: &str, _: &Store) -> crate::Result<Vec<u32>> {
         Ok(self
-            .emails_to_names
+            .emails_to_ids
             .get(self.opt.subaddressing.to_subaddress(address).as_ref())
             .or_else(|| {
                 self.opt
                     .catch_all
                     .to_catch_all(address)
-                    .and_then(|address| self.emails_to_names.get(address.as_ref()))
+                    .and_then(|address| self.emails_to_ids.get(address.as_ref()))
             })
             .map(|names| {
                 names
                     .iter()
                     .map(|t| match t {
-                        EmailType::Primary(name)
-                        | EmailType::Alias(name)
-                        | EmailType::List(name) => name.to_string(),
+                        EmailType::Primary(uid) | EmailType::Alias(uid) | EmailType::List(uid) => {
+                            *uid
+                        }
                     })
                     .collect::<Vec<_>>()
             })
@@ -89,21 +92,21 @@ impl Directory for MemoryDirectory {
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
         Ok(self
-            .emails_to_names
+            .emails_to_ids
             .contains_key(self.opt.subaddressing.to_subaddress(address).as_ref())
             || self
                 .opt
                 .catch_all
                 .to_catch_all(address)
                 .map_or(false, |address| {
-                    self.emails_to_names.contains_key(address.as_ref())
+                    self.emails_to_ids.contains_key(address.as_ref())
                 }))
     }
 
     async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
         let address = self.opt.subaddressing.to_subaddress(address);
-        for (key, value) in &self.emails_to_names {
+        for (key, value) in &self.emails_to_ids {
             if key.contains(address.as_ref())
                 && value.iter().any(|t| matches!(t, EmailType::Primary(_)))
             {
@@ -116,13 +119,16 @@ impl Directory for MemoryDirectory {
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
         let address = self.opt.subaddressing.to_subaddress(address);
-        for (key, value) in &self.emails_to_names {
+        for (key, value) in &self.emails_to_ids {
             if key == address.as_ref() {
                 for item in value {
-                    if let EmailType::List(name) = item {
-                        for addr in self.names_to_email.get(name).unwrap() {
-                            if let EmailType::Primary(addr) = addr {
-                                result.push(addr.clone())
+                    if let EmailType::List(uid) = item {
+                        for principal in &self.principals {
+                            if principal.id == *uid {
+                                if let Some(addr) = principal.emails.first() {
+                                    result.push(addr.clone())
+                                }
+                                break;
                             }
                         }
                     }

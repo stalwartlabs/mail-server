@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use jmap_proto::{
     error::method::MethodError,
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
@@ -48,14 +49,13 @@ impl JMAP {
                 Filter::Name(name) => {
                     if let Some(principal) = self
                         .directory
-                        .principal(&name)
+                        .query(QueryBy::name(name.as_str()).with_store(&self.store))
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {
-                        let account_id = self.get_account_id(&principal.name).await?;
-                        if is_set || result_set.results.contains(account_id) {
+                        if is_set || result_set.results.contains(principal.id) {
                             result_set.results =
-                                RoaringBitmap::from_sorted_iter([account_id]).unwrap();
+                                RoaringBitmap::from_sorted_iter([principal.id]).unwrap();
                         } else {
                             result_set.results = RoaringBitmap::new();
                         }
@@ -66,13 +66,13 @@ impl JMAP {
                 }
                 Filter::Email(email) => {
                     let mut ids = RoaringBitmap::new();
-                    for name in self
+                    for id in self
                         .directory
-                        .names_by_email(&email)
+                        .email_to_ids(&email, &self.store)
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {
-                        ids.insert(self.get_account_id(&name).await?);
+                        ids.insert(id);
                     }
                     if is_set {
                         result_set.results = ids;

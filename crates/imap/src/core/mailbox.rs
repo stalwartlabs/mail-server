@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use ahash::AHashMap;
+use directory::QueryBy;
 use imap_proto::{protocol::list::Attribute, StatusResponse};
 use jmap::{
     auth::{acl::EffectiveAcl, AccessToken},
@@ -50,9 +51,11 @@ impl SessionData {
                         session.imap.name_shared,
                         session
                             .jmap
-                            .get_account_name(account_id)
+                            .directory
+                            .query(QueryBy::id(account_id).with_store(&session.jmap.store))
                             .await
                             .unwrap_or_default()
+                            .map(|p| p.name)
                             .unwrap_or_else(|| Id::from(account_id).to_string())
                     )
                     .into(),
@@ -316,9 +319,11 @@ impl SessionData {
                     "{}/{}",
                     self.imap.name_shared,
                     self.jmap
-                        .get_account_name(account_id)
+                        .directory
+                        .query(QueryBy::id(account_id).with_store(&self.jmap.store))
                         .await
                         .unwrap_or_default()
+                        .map(|p| p.name)
                         .unwrap_or_else(|| Id::from(account_id).to_string())
                 );
                 match self
@@ -401,9 +406,11 @@ impl SessionData {
                             "{}/{}",
                             self.imap.name_shared,
                             self.jmap
-                                .get_account_name(account_id)
+                                .directory
+                                .query(QueryBy::id(account_id).with_store(&self.jmap.store))
                                 .await
                                 .unwrap_or_default()
+                                .map(|p| p.name)
                                 .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
                         .into()

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 use store::ahash::AHashMap;
@@ -46,45 +47,37 @@ impl JMAP {
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
-            let names = self
+            let uids = self
                 .directory
-                .names_by_email(rcpt)
+                .email_to_ids(rcpt, &self.store)
                 .await
                 .unwrap_or_default();
-            for name in &names {
-                deliver_names.insert(name.clone(), (DeliveryResult::Success, rcpt));
+            for uid in &uids {
+                deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
             }
-            recipients.push(names);
+            recipients.push(uids);
         }
 
         // Deliver to each recipient
-        for (name, (status, rcpt)) in &mut deliver_names {
-            // Obtain account id
-            let uid = match self.get_account_id(name).await {
-                Ok(uid) => uid,
-                Err(_) => {
-                    *status = DeliveryResult::TemporaryFailure {
-                        reason: "Transient server failure.".into(),
-                    };
-                    continue;
-                }
-            };
-
+        for (uid, (status, rcpt)) in &mut deliver_names {
             // Check if there is an active sieve script
-            let result = match self.sieve_script_get_active(uid).await {
+            let result = match self.sieve_script_get_active(*uid).await {
                 Ok(Some(active_script)) => {
                     self.sieve_script_ingest(
                         &raw_message,
                         &message.sender_address,
                         rcpt,
-                        uid,
-                        name,
+                        *uid,
                         active_script,
                     )
                     .await
                 }
                 Ok(None) => {
-                    let account_quota = match self.directory.principal(name).await {
+                    let account_quota = match self
+                        .directory
+                        .query(QueryBy::id(*uid).with_store(&self.store))
+                        .await
+                    {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
                         Err(_) => {
@@ -98,7 +91,7 @@ impl JMAP {
                     self.email_ingest(IngestEmail {
                         raw_message: &raw_message,
                         message: MessageParser::new().parse(&raw_message),
-                        account_id: uid,
+                        account_id: *uid,
                         account_quota,
                         mailbox_ids: vec![INBOX_ID],
                         keywords: vec![],
@@ -121,7 +114,7 @@ impl JMAP {
                     // Notify state change
                     if ingested_message.change_id != u64::MAX {
                         self.broadcast_state_change(
-                            StateChange::new(uid)
+                            StateChange::new(*uid)
                                 .with_change(DataType::EmailDelivery, ingested_message.change_id)
                                 .with_change(DataType::Email, ingested_message.change_id)
                                 .with_change(DataType::Mailbox, ingested_message.change_id)

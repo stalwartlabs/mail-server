@@ -250,7 +250,7 @@ impl JMAP {
                 set::RequestArguments::Identity => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.identity_set(req, access_token).await?.into()
+                    self.identity_set(req).await?.into()
                 }
                 set::RequestArguments::EmailSubmission(arguments) => {
                     access_token.assert_is_member(req.account_id)?;

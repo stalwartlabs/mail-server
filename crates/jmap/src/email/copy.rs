@@ -48,14 +48,12 @@ use jmap_proto::{
 };
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
-    write::{BatchBuilder, F_BITMAP, F_VALUE},
+    write::{BatchBuilder, ValueClass, F_BITMAP, F_VALUE},
     BlobClass,
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{
-    auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, NamedKey, JMAP,
-};
+use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
@@ -415,11 +413,7 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
             .set(
-                NamedKey::IndexEmail::<&[u8]> {
-                    account_id,
-                    document_id: message_id,
-                    seq: self.generate_snowflake_id()?,
-                },
+                ValueClass::IndexEmail(self.generate_snowflake_id()?),
                 metadata.blob_hash.clone(),
             )
             .custom(EmailIndexBuilder::set(metadata))

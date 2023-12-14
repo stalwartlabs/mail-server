@@ -31,7 +31,7 @@ use auth::{
     AccessToken,
 };
 use dashmap::DashMap;
-use directory::{Directories, Directory};
+use directory::{Directories, Directory, QueryBy};
 use jmap_proto::{
     error::method::MethodError,
     method::{
@@ -52,12 +52,8 @@ use store::{
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{
-        key::{DeserializeBigEndian, KeySerializer},
-        BatchBuilder, BitmapClass, TagValue, ToBitmaps, ValueClass,
-    },
-    BitmapKey, BlobStore, Deserialize, FtsStore, Key, Serialize, Store, Stores, ValueKey,
-    SUBSPACE_INDEX_VALUES, U32_LEN, U64_LEN,
+    write::{BatchBuilder, BitmapClass, DirectoryValue, TagValue, ToBitmaps, ValueClass},
+    BitmapKey, BlobStore, Deserialize, FtsStore, Serialize, Store, Stores, ValueKey,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -603,7 +599,7 @@ impl JMAP {
             access_token.quota as i64
         } else {
             self.directory
-                .principal(&access_token.name)
+                .query(QueryBy::id(account_id).with_store(&self.store))
                 .await
                 .map_err(|err| {
                     tracing::error!(
@@ -621,7 +617,7 @@ impl JMAP {
 
     pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
         self.store
-            .get_counter(NamedKey::Quota::<&[u8]>(account_id))
+            .get_counter(DirectoryValue::UsedQuota(account_id))
             .await
             .map_err(|err| {
                 tracing::error!(
@@ -846,95 +842,5 @@ impl UpdateResults for QueryResponse {
         } else {
             Err(MethodError::AnchorNotFound)
         }
-    }
-}
-
-pub enum NamedKey<T: AsRef<[u8]>> {
-    Name(T),
-    Id(u32),
-    Quota(u32),
-    IndexEmail {
-        account_id: u32,
-        document_id: u32,
-        seq: u64,
-    },
-}
-
-impl<T: AsRef<[u8]>> From<&NamedKey<T>> for ValueClass {
-    fn from(key: &NamedKey<T>) -> Self {
-        match key {
-            NamedKey::Name(name) => ValueClass::Subspace {
-                key: name.as_ref().to_vec(),
-                id: 0,
-            },
-            NamedKey::Id(id) => ValueClass::Subspace {
-                key: KeySerializer::new(std::mem::size_of::<u32>())
-                    .write_leb128(*id)
-                    .finalize(),
-                id: 1,
-            },
-            NamedKey::Quota(id) => ValueClass::Subspace {
-                key: KeySerializer::new(std::mem::size_of::<u32>())
-                    .write_leb128(*id)
-                    .finalize(),
-                id: 2,
-            },
-            NamedKey::IndexEmail {
-                account_id,
-                document_id,
-                seq,
-            } => ValueClass::Subspace {
-                key: KeySerializer::new(std::mem::size_of::<u32>() * 4)
-                    .write(*seq)
-                    .write(*account_id)
-                    .write(*document_id)
-                    .finalize(),
-                id: 3,
-            },
-        }
-    }
-}
-
-impl<T: AsRef<[u8]>> NamedKey<T> {
-    pub fn deserialize_index_email(bytes: &[u8]) -> store::Result<Self> {
-        let len = bytes.len();
-        Ok(NamedKey::IndexEmail {
-            seq: bytes.deserialize_be_u64(len - U64_LEN - (U32_LEN * 2))?,
-            account_id: bytes.deserialize_be_u32(len - U32_LEN * 2)?,
-            document_id: bytes.deserialize_be_u32(len - U32_LEN)?,
-        })
-    }
-}
-
-impl<T: AsRef<[u8]>> From<NamedKey<T>> for ValueClass {
-    fn from(key: NamedKey<T>) -> Self {
-        (&key).into()
-    }
-}
-
-impl<T: AsRef<[u8]>> From<NamedKey<T>> for ValueKey<ValueClass> {
-    fn from(key: NamedKey<T>) -> Self {
-        ValueKey {
-            account_id: 0,
-            collection: 0,
-            document_id: 0,
-            class: key.into(),
-        }
-    }
-}
-
-impl<T: AsRef<[u8]> + Sync + Send> Key for NamedKey<T> {
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        ValueKey {
-            account_id: 0,
-            collection: 0,
-            document_id: 0,
-            class: ValueClass::from(self),
-        }
-        .serialize(include_subspace)
-    }
-
-    fn subspace(&self) -> u8 {
-        SUBSPACE_INDEX_VALUES
     }
 }

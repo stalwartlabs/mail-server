@@ -23,8 +23,7 @@
 
 use crate::{
     backend::postgres::tls::MakeRustlsConnect, SUBSPACE_BITMAPS, SUBSPACE_BLOBS,
-    SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES,
+    SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 use super::PostgresStore;
@@ -75,12 +74,7 @@ impl PostgresStore {
     pub(super) async fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
 
-        for table in [
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_INDEX_VALUES,
-            SUBSPACE_BLOB_DATA,
-        ] {
+        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_BLOB_DATA] {
             let table = char::from(table);
             conn.execute(
                 &format!(

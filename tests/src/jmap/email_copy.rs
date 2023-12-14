@@ -118,8 +118,8 @@ pub async fn test(params: &mut JMAPTest) {
         .is_none());
 
     // Empty store
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     params.client.set_default_account_id(Id::new(2).to_string());
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }

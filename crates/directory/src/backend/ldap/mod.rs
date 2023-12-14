@@ -45,16 +45,15 @@ pub struct LdapMappings {
     filter_verify: LdapFilter,
     filter_expand: LdapFilter,
     filter_domains: LdapFilter,
-    obj_user: String,
-    obj_group: String,
     attr_name: Vec<String>,
+    attr_type: Vec<String>,
+    attr_groups: Vec<String>,
     attr_description: Vec<String>,
     attr_secret: Vec<String>,
-    attr_groups: Vec<String>,
     attr_email_address: Vec<String>,
+    attr_email_alias: Vec<String>,
     attr_quota: Vec<String>,
     attrs_principal: Vec<String>,
-    attrs_email: Vec<String>,
 }
 
 #[derive(Debug, Default)]

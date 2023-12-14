@@ -25,6 +25,7 @@ use crate::jmap::{
     assert_is_empty, delivery::SmtpConnection, jmap_raw_request, mailbox::destroy_all_mailboxes,
     test_account_login,
 };
+use directory::backend::internal::manage::ManageDirectory;
 use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID};
 use jmap_client::{
     core::set::{SetErrorType, SetObject},
@@ -45,8 +46,20 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("robert@example.com", "aabbcc", "Robert Foobar")
         .await;
-    let other_account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
-    let account_id = Id::from(server.get_account_id("robert@example.com").await.unwrap());
+    let other_account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    );
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("robert@example.com")
+            .await
+            .unwrap(),
+    );
     params
         .directory
         .set_test_quota("robert@example.com", 1024)
@@ -326,7 +339,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Remove test data
     for account_id in [&account_id, &other_account_id] {
         params.client.set_default_account_id(account_id.to_string());
-        destroy_all_mailboxes(&params.client).await;
+        destroy_all_mailboxes(params).await;
     }
     assert_is_empty(server).await;
 }

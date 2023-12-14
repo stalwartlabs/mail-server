@@ -36,8 +36,11 @@ use utils::config::{
 use ahash::AHashMap;
 
 use crate::{
-    imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-    sql::SqlDirectory, AddressMapping, Directories, DirectoryOptions,
+    backend::{
+        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
+        sql::SqlDirectory,
+    },
+    AddressMapping, Directories, DirectoryOptions,
 };
 
 pub trait ConfigDirectory {
@@ -49,6 +52,7 @@ impl ConfigDirectory for Config {
         let mut config = Directories {
             directories: AHashMap::new(),
         };
+
         for id in self.sub_keys("directory") {
             // Parse directory
             let protocol = self.value_require(("directory", id, "type"))?;
@@ -78,10 +82,6 @@ impl DirectoryOptions {
         Ok(DirectoryOptions {
             catch_all: AddressMapping::from_config(config, (&key, "options.catch-all"))?,
             subaddressing: AddressMapping::from_config(config, (&key, "options.subaddressing"))?,
-            superuser_group: config
-                .value((&key, "options.superuser-group"))
-                .unwrap_or("superusers")
-                .to_string(),
         })
     }
 }

@@ -138,10 +138,19 @@ pub enum TagValue {
 pub enum ValueClass {
     Property(u8),
     Acl(u32),
-    Subspace { key: Vec<u8>, id: u8 },
-    Key { key: Vec<u8> },
+    Key(Vec<u8>),
     TermIndex,
     ReservedId,
+    Directory(DirectoryValue),
+    IndexEmail(u64),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum DirectoryValue {
+    NameToId(Vec<u8>),
+    EmailToId(Vec<u8>),
+    Principal(u32),
+    UsedQuota(u32),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]

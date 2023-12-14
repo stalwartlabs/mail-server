@@ -27,13 +27,16 @@ pub mod smtp;
 pub mod sql;
 
 use ::smtp::core::Lookup;
-use directory::{config::ConfigDirectory, AddressMapping, Directories};
+use directory::{
+    backend::internal::manage::ManageDirectory, config::ConfigDirectory, AddressMapping,
+    Directories, Principal,
+};
 use mail_send::Credentials;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
-use store::{config::ConfigStore, LookupStore, Stores};
+use store::{config::ConfigStore, LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
 
 use crate::store::TempDir;
@@ -164,10 +167,6 @@ verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(gi
 expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(sn=?))"
 domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(givenName=*@?)(sn=*@?)))"
 
-[directory."ldap".object-classes]
-user = "posixAccount"
-group = "posixGroup"
-
 # Glauth does not support searchable custom attributes so
 # 'sn' and 'givenName' are used to search for aliases/lists.
 
@@ -179,6 +178,7 @@ groups = ["memberOf", "otherGroups"]
 email = "mail"
 email-alias = "givenName"
 quota = "diskQuota"
+type = "objectClass"
 
 ##############################################################################
 
@@ -225,36 +225,41 @@ type = "memory"
 catch-all = true
 subaddressing = true
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "john"
+type = "individual"
 description = "John Doe"
 secret = "12345"
 email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
 email-list = ["info@example.org"]
 member-of = ["sales"]
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "jane"
+type = "individual"
 description = "Jane Doe"
 secret = "abcde"
 email = "jane@example.org"
 email-list = ["info@example.org"]
 member-of = ["sales", "support"]
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "bill"
+type = "individual"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
 quota = 500000
 email = "bill@example.org"
 email-list = ["info@example.org"]
 
-[[directory."local".groups]]
+[[directory."local".principals]]
 name = "sales"
+type = "group"
 description = "Sales Team"
 
-[[directory."local".groups]]
+[[directory."local".principals]]
 name = "support"
+type = "group"
 description = "Support Team"
 
 "#;
@@ -605,5 +610,25 @@ fn address_mappings() {
                 .map(Cow::Owned),
             "failed catch-all for {test:?}"
         );
+    }
+}
+
+async fn map_account_ids(store: &Store, names: Vec<impl AsRef<str>>) -> Vec<u32> {
+    let mut ids = Vec::with_capacity(names.len());
+    for name in names {
+        ids.push(store.get_account_id(name.as_ref()).await.unwrap().unwrap());
+    }
+    ids
+}
+
+trait IntoSortedPrincipal: Sized {
+    fn into_sorted(self) -> Self;
+}
+
+impl IntoSortedPrincipal for Principal {
+    fn into_sorted(mut self) -> Self {
+        self.member_of.sort_unstable();
+        self.emails.sort_unstable();
+        self
     }
 }

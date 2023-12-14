@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::backend::internal::manage::ManageDirectory;
 use jmap::mailbox::{INBOX_ID, TRASH_ID};
 use jmap_client::{
     core::{
@@ -64,22 +65,26 @@ pub async fn test(params: &mut JMAPTest) {
         .create_test_group_with_email("sales@example.com", "Sales Group")
         .await;
     let john_id: Id = server
-        .get_account_id("jdoe@example.com")
+        .store
+        .get_or_create_account_id("jdoe@example.com")
         .await
         .unwrap()
         .into();
     let jane_id: Id = server
-        .get_account_id("jane.smith@example.com")
+        .store
+        .get_or_create_account_id("jane.smith@example.com")
         .await
         .unwrap()
         .into();
     let bill_id: Id = server
-        .get_account_id("bill@example.com")
+        .store
+        .get_or_create_account_id("bill@example.com")
         .await
         .unwrap()
         .into();
     let sales_id: Id = server
-        .get_account_id("sales@example.com")
+        .store
+        .get_or_create_account_id("sales@example.com")
         .await
         .unwrap()
         .into();
@@ -784,7 +789,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Destroy test account data
     for id in [john_id, bill_id, jane_id, sales_id] {
         params.client.set_default_account_id(&id.to_string());
-        destroy_all_mailboxes(&params.client).await;
+        destroy_all_mailboxes(params).await;
     }
     assert_is_empty(server).await;
 }

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -66,18 +67,10 @@ impl JMAP {
         };
 
         for id in ids {
-            // Obtain the principal name
-            let name = if let Some(name) = self.get_account_name(id.document_id()).await? {
-                name
-            } else {
-                response.not_found.push(id.into());
-                continue;
-            };
-
             // Obtain the principal
             let principal = if let Some(principal) = self
                 .directory
-                .principal(&name)
+                .query(QueryBy::id(id.document_id()).with_store(&self.store))
                 .await
                 .map_err(|_| MethodError::ServerPartialFail)?
             {
@@ -98,14 +91,10 @@ impl JMAP {
                         .clone()
                         .map(Value::Text)
                         .unwrap_or(Value::Null),
-                    Property::Email => self
-                        .directory
-                        .emails_by_name(&name)
-                        .await
-                        .map_err(|_| MethodError::ServerPartialFail)?
-                        .into_iter()
-                        .next()
-                        .map(Value::Text)
+                    Property::Email => principal
+                        .emails
+                        .first()
+                        .map(|email| Value::Text(email.clone()))
                         .unwrap_or(Value::Null),
                     _ => Value::Null,
                 };

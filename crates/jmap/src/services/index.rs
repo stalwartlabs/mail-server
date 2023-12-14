@@ -24,16 +24,23 @@
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     fts::index::FtsDocument,
-    write::{BatchBuilder, ValueClass},
-    IterateParams, ValueKey,
+    write::{key::DeserializeBigEndian, BatchBuilder, ValueClass},
+    Deserialize, IterateParams, ValueKey, U32_LEN, U64_LEN,
 };
 
 use crate::{
     email::{index::IndexMessageText, metadata::MessageMetadata},
-    Bincode, NamedKey, JMAP,
+    Bincode, JMAP,
 };
 
 use super::housekeeper::Event;
+
+#[derive(Debug)]
+struct IndexEmail {
+    account_id: u32,
+    document_id: u32,
+    seq: u64,
+}
 
 impl JMAP {
     pub async fn fts_index_queued(&self) {
@@ -41,23 +48,13 @@ impl JMAP {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: NamedKey::IndexEmail::<&[u8]> {
-                account_id: 0,
-                document_id: 0,
-                seq: 0,
-            }
-            .into(),
+            class: ValueClass::IndexEmail(0),
         };
         let to_key = ValueKey::<ValueClass> {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
-            class: NamedKey::IndexEmail::<&[u8]> {
-                account_id: u32::MAX,
-                document_id: u32::MAX,
-                seq: u64::MAX,
-            }
-            .into(),
+            class: ValueClass::IndexEmail(u64::MAX),
         };
 
         // Retrieve entries pending to be indexed
@@ -68,10 +65,7 @@ impl JMAP {
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
-                    entries.push((
-                        NamedKey::<Vec<u8>>::deserialize_index_email(key)?,
-                        value.to_vec(),
-                    ));
+                    entries.push((IndexEmail::deserialize(key)?, value.to_vec()));
                     Ok(true)
                 },
             )
@@ -87,124 +81,123 @@ impl JMAP {
 
         // Index entries
         for (key, blob_hash) in entries {
-            if let NamedKey::IndexEmail {
-                account_id,
-                document_id,
-                ..
-            } = &key
-            {
-                if !blob_hash.is_empty() {
-                    match self
-                        .get_property::<Bincode<MessageMetadata>>(
-                            *account_id,
-                            Collection::Email,
-                            *document_id,
-                            Property::BodyStructure,
-                        )
-                        .await
+            if !blob_hash.is_empty() {
+                match self
+                    .get_property::<Bincode<MessageMetadata>>(
+                        key.account_id,
+                        Collection::Email,
+                        key.document_id,
+                        Property::BodyStructure,
+                    )
+                    .await
+                {
+                    Ok(Some(metadata))
+                        if metadata.inner.blob_hash.as_slice() == blob_hash.as_slice() =>
                     {
-                        Ok(Some(metadata))
-                            if metadata.inner.blob_hash.as_slice() == blob_hash.as_slice() =>
+                        // Obtain raw message
+                        let raw_message = if let Ok(Some(raw_message)) =
+                            self.get_blob(&metadata.inner.blob_hash, 0..u32::MAX).await
                         {
-                            // Obtain raw message
-                            let raw_message = if let Ok(Some(raw_message)) =
-                                self.get_blob(&metadata.inner.blob_hash, 0..u32::MAX).await
-                            {
-                                raw_message
-                            } else {
-                                tracing::warn!(
-                                    context = "fts_index_queued",
-                                    event = "error",
-                                    account_id = *account_id,
-                                    document_id = *document_id,
-                                    blob_hash = ?metadata.inner.blob_hash,
-                                    "Message blob not found"
-                                );
-                                continue;
-                            };
-                            let message = metadata.inner.contents.into_message(&raw_message);
-
-                            // Index message
-                            let document =
-                                FtsDocument::with_default_language(self.config.default_language)
-                                    .with_account_id(*account_id)
-                                    .with_collection(Collection::Email)
-                                    .with_document_id(*document_id)
-                                    .index_message(&message);
-                            if let Err(err) = self.fts_store.index(document).await {
-                                tracing::error!(
-                                    context = "fts_index_queued",
-                                    event = "error",
-                                    account_id = *account_id,
-                                    document_id = *document_id,
-                                    reason = ?err,
-                                    "Failed to index email in FTS index"
-                                );
-                                continue;
-                            }
-
-                            tracing::debug!(
+                            raw_message
+                        } else {
+                            tracing::warn!(
                                 context = "fts_index_queued",
-                                event = "index",
-                                account_id = *account_id,
-                                document_id = *document_id,
-                                "Indexed document in FTS index"
+                                event = "error",
+                                account_id = key.account_id,
+                                document_id = key.document_id,
+                                blob_hash = ?metadata.inner.blob_hash,
+                                "Message blob not found"
                             );
-                        }
+                            continue;
+                        };
+                        let message = metadata.inner.contents.into_message(&raw_message);
 
-                        Err(err) => {
+                        // Index message
+                        let document =
+                            FtsDocument::with_default_language(self.config.default_language)
+                                .with_account_id(key.account_id)
+                                .with_collection(Collection::Email)
+                                .with_document_id(key.document_id)
+                                .index_message(&message);
+                        if let Err(err) = self.fts_store.index(document).await {
                             tracing::error!(
                                 context = "fts_index_queued",
                                 event = "error",
-                                account_id = *account_id,
-                                document_id = *document_id,
+                                account_id = key.account_id,
+                                document_id = key.document_id,
                                 reason = ?err,
-                                "Failed to retrieve email metadata"
+                                "Failed to index email in FTS index"
                             );
-                            break;
+                            continue;
                         }
-                        _ => {
-                            // The message was probably deleted or overwritten
-                            tracing::debug!(
-                                context = "fts_index_queued",
-                                event = "error",
-                                account_id = *account_id,
-                                document_id = *document_id,
-                                "Email metadata not found"
-                            );
-                        }
+
+                        tracing::debug!(
+                            context = "fts_index_queued",
+                            event = "index",
+                            account_id = key.account_id,
+                            document_id = key.document_id,
+                            "Indexed document in FTS index"
+                        );
                     }
-                } else {
-                    if let Err(err) = self
-                        .fts_store
-                        .remove(*account_id, Collection::Email.into(), *document_id)
-                        .await
-                    {
+
+                    Err(err) => {
                         tracing::error!(
                             context = "fts_index_queued",
                             event = "error",
-                            account_id = *account_id,
-                            document_id = *document_id,
+                            account_id = key.account_id,
+                            document_id = key.document_id,
                             reason = ?err,
-                            "Failed to remove document from FTS index"
+                            "Failed to retrieve email metadata"
                         );
-                        continue;
+                        break;
                     }
-
-                    tracing::debug!(
-                        context = "fts_index_queued",
-                        event = "delete",
-                        account_id = *account_id,
-                        document_id = *document_id,
-                        "Deleted document from FTS index"
-                    );
+                    _ => {
+                        // The message was probably deleted or overwritten
+                        tracing::debug!(
+                            context = "fts_index_queued",
+                            event = "error",
+                            account_id = key.account_id,
+                            document_id = key.document_id,
+                            "Email metadata not found"
+                        );
+                    }
                 }
+            } else {
+                if let Err(err) = self
+                    .fts_store
+                    .remove(key.account_id, Collection::Email.into(), key.document_id)
+                    .await
+                {
+                    tracing::error!(
+                        context = "fts_index_queued",
+                        event = "error",
+                        account_id = key.account_id,
+                        document_id = key.document_id,
+                        reason = ?err,
+                        "Failed to remove document from FTS index"
+                    );
+                    continue;
+                }
+
+                tracing::debug!(
+                    context = "fts_index_queued",
+                    event = "delete",
+                    account_id = key.account_id,
+                    document_id = key.document_id,
+                    "Deleted document from FTS index"
+                );
             }
 
             // Remove entry from queue
             if let Err(err) = self
                 .store
-                .write(BatchBuilder::new().clear(key).build_batch())
+                .write(
+                    BatchBuilder::new()
+                        .with_account_id(key.account_id)
+                        .update_document(key.document_id)
+                        .clear(ValueClass::IndexEmail(key.seq))
+                        .build_batch(),
+                )
                 .await
             {
                 tracing::error!(
@@ -220,5 +213,16 @@ impl JMAP {
         if let Err(err) = self.housekeeper_tx.send(Event::IndexDone).await {
             tracing::warn!("Failed to send index done event to housekeeper: {}", err);
         }
+    }
+}
+
+impl Deserialize for IndexEmail {
+    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+        let len = bytes.len();
+        Ok(IndexEmail {
+            seq: bytes.deserialize_be_u64(len - U64_LEN - (U32_LEN * 2))?,
+            account_id: bytes.deserialize_be_u32(len - U32_LEN * 2)?,
+            document_id: bytes.deserialize_be_u32(len - U32_LEN)?,
+        })
     }
 }

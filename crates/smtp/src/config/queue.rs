@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use directory::memory::MemoryDirectory;
+use directory::backend::memory::MemoryDirectory;
 use mail_send::Credentials;
 
 use super::{

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -180,8 +181,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            if let Ok(is_authenticated) =
-                lookup.authenticate(&credentials).await.map(|r| r.is_some())
+            if let Ok(is_authenticated) = lookup
+                .query(QueryBy::credentials(&credentials))
+                .await
+                .map(|r| r.is_some())
             {
                 tracing::debug!(
                     parent: &self.span,

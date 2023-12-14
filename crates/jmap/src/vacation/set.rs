@@ -42,13 +42,16 @@ use jmap_proto::{
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use store::{
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, F_CLEAR, F_VALUE},
+    write::{
+        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR,
+        F_VALUE,
+    },
     BlobClass,
 };
 
 use crate::{
     sieve::set::{ObjectBlobId, SCHEMA},
-    NamedKey, JMAP,
+    JMAP,
 };
 
 impl JMAP {
@@ -286,10 +289,10 @@ impl JMAP {
                         std::cmp::Ordering::Equal => 0,
                     };
                     if quota != 0 {
-                        batch.add(NamedKey::Quota::<&[u8]>(account_id), quota);
+                        batch.add(DirectoryValue::UsedQuota(account_id), quota);
                     }
                 } else {
-                    batch.add(NamedKey::Quota::<&[u8]>(account_id), script_size);
+                    batch.add(DirectoryValue::UsedQuota(account_id), script_size);
                 }
             };
 

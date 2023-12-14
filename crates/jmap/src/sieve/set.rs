@@ -46,11 +46,14 @@ use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
     rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, F_CLEAR, F_VALUE},
+    write::{
+        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR,
+        F_VALUE,
+    },
     BlobClass,
 };
 
-use crate::{auth::AccessToken, NamedKey, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -119,7 +122,7 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document(document_id)
-                            .add(NamedKey::Quota::<&[u8]>(account_id), script_size as i64)
+                            .add(DirectoryValue::UsedQuota(account_id), script_size as i64)
                             .blob(blob_id.hash.clone(), BlobOp::Link, 0)
                             .custom(builder);
                         sieve_ids.insert(document_id);
@@ -215,7 +218,7 @@ impl JMAP {
                                 std::cmp::Ordering::Equal => 0,
                             };
                             if update_quota != 0 {
-                                batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+                                batch.add(DirectoryValue::UsedQuota(account_id), update_quota);
                             }
 
                             // Update blobId
@@ -393,7 +396,7 @@ impl JMAP {
             .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
             .blob(blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
             .add(
-                NamedKey::Quota::<&[u8]>(account_id),
+                DirectoryValue::UsedQuota(account_id),
                 -(blob_id.section.as_ref().unwrap().size as i64),
             )
             .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));

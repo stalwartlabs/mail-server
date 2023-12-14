@@ -46,7 +46,7 @@ pub async fn test(params: &mut JMAPTest) {
     create(&mut params.client, &mailbox_id).await;
     update(&mut params.client, &mailbox_id).await;
 
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }
 

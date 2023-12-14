@@ -289,7 +289,14 @@ pub async fn parse_jmap_request(
                 req.method(),
             ) {
                 ("account", "delete", &Method::GET) => {
-                    return if let Some(account_name) = path.next() {
+                    let todo = true;
+                    /*
+
+                                        // Remove FTS index
+                    self.fts_store.remove_all(principal.id).await?;
+                                 */
+                    todo!()
+                    /*return if let Some(account_name) = path.next() {
                         if let Ok(Some(account_id)) = jmap.try_get_account_id(account_name).await {
                             match jmap.delete_account(account_name, account_id).await {
                                 Ok(_) => JsonResponse::new(Value::String("success".into()))
@@ -316,10 +323,11 @@ pub async fn parse_jmap_request(
                             "Expected account name",
                         )
                         .into_http_response()
-                    };
+                    };*/
                 }
                 ("account", "rename", &Method::GET) => {
-                    return if let (Some(account_name), Some(new_account_name)) =
+                    todo!()
+                    /*return if let (Some(account_name), Some(new_account_name)) =
                         (path.next(), path.next())
                     {
                         match (
@@ -362,7 +370,7 @@ pub async fn parse_jmap_request(
                             "Expected old and new account names",
                         )
                         .into_http_response()
-                    };
+                    };*/
                 }
                 ("blob", "purge", &Method::GET) => {
                     return match jmap.store.purge_blobs(jmap.blob_store.clone()).await {

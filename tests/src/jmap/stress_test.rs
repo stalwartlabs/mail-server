@@ -23,7 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crate::jmap::mailbox::destroy_all_mailboxes;
+use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use futures::future::join_all;
 use jmap::{mailbox::UidMailbox, JMAP};
 use jmap_client::{
@@ -274,7 +274,8 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
             }
         }
 
-        destroy_all_mailboxes(&client).await;
+        wait_for_index(&server).await;
+        destroy_all_mailboxes_no_wait(&client).await;
         assert_is_empty(server.clone()).await;
     }
 }
@@ -353,7 +354,8 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
 
     join_all(futures).await;
 
-    destroy_all_mailboxes(&client).await;
+    wait_for_index(&server).await;
+    destroy_all_mailboxes_no_wait(&client).await;
     assert_is_empty(server).await;
 }
 

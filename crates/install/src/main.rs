@@ -749,7 +749,7 @@ fn create_databases(base_path: &Path, domain: Option<&str>) -> std::io::Result<O
         concat!("CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, ","type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)").to_string(),
         concat!("CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of ","TEXT NOT NULL, PRIMARY KEY (name, member_of))").to_string(),
         concat!("CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL",", type TEXT, PRIMARY KEY (name, address))").to_string(),
-        format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'individual')"), 
+        format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'admin')"), 
         format!("INSERT OR REPLACE INTO emails (name, address, type) VALUES ('admin', 'postmaster@{domain}', 'primary')"),
         "INSERT OR IGNORE INTO group_members (name, member_of) VALUES ('admin', 'superusers')".to_string()
     ] {

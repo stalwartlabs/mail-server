@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use directory::QueryBy;
 use imap_proto::{
     protocol::acl::{
         Arguments, GetAclResponse, ListRightsResponse, ModRightsOp, MyRightsResponse, Rights,
@@ -74,9 +75,14 @@ impl<T: AsyncRead> Session<T> {
                                     {
                                         if let Some(account_name) = data
                                             .jmap
-                                            .get_account_name(id.document_id())
+                                            .directory
+                                            .query(
+                                                QueryBy::id(id.document_id())
+                                                    .with_store(&data.jmap.store),
+                                            )
                                             .await
                                             .unwrap_or_default()
+                                            .map(|p| p.name)
                                         {
                                             let mut rights = Vec::new();
 
@@ -245,23 +251,13 @@ impl<T: AsyncRead> Session<T> {
                     let (acl_account_id, id) = match data
                         .jmap
                         .directory
-                        .principal(arguments.identifier.as_ref().unwrap())
+                        .query(
+                            QueryBy::name(arguments.identifier.as_ref().unwrap())
+                                .with_store(&data.jmap.store),
+                        )
                         .await
                     {
-                        Ok(Some(principal)) => {
-                            match data.jmap.get_account_id(principal.name()).await {
-                                Ok(account_id) => (account_id, Value::Id(Id::from(account_id))),
-                                Err(_) => {
-                                    data.write_bytes(
-                                        StatusResponse::database_failure()
-                                            .with_tag(arguments.tag)
-                                            .into_bytes(),
-                                    )
-                                    .await;
-                                    return;
-                                }
-                            }
-                        }
+                        Ok(Some(principal)) => (principal.id, Value::Id(Id::from(principal.id))),
                         Ok(None) => {
                             data.write_bytes(
                                 StatusResponse::no("Account does not exist")

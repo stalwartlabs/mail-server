@@ -65,7 +65,7 @@ impl LookupStore {
             LookupStore::Store(store) => {
                 let (class, op) = match value {
                     LookupValue::Value { value, expires } => (
-                        ValueClass::Key { key },
+                        ValueClass::Key(key),
                         ValueOp::Set(
                             KeySerializer::new(value.len() + U64_LEN)
                                 .write(if expires > 0 {
@@ -77,7 +77,7 @@ impl LookupStore {
                                 .finalize(),
                         ),
                     ),
-                    LookupValue::Counter { num } => (ValueClass::Key { key }, ValueOp::Add(num)),
+                    LookupValue::Counter { num } => (ValueClass::Key(key), ValueOp::Add(num)),
                     LookupValue::None => return Ok(()),
                 };
 
@@ -102,7 +102,7 @@ impl LookupStore {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::Key { key },
+                        class: ValueClass::Key(key),
                     })
                     .await
                     .map(|value| value.unwrap_or(LookupValue::None)),
@@ -111,7 +111,7 @@ impl LookupStore {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::Key { key },
+                        class: ValueClass::Key(key),
                     })
                     .await
                     .map(|num| LookupValue::Counter { num }),
@@ -129,15 +129,13 @@ impl LookupStore {
                     account_id: 0,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::Key { key: vec![0u8] },
+                    class: ValueClass::Key(vec![0u8]),
                 };
                 let to_key = ValueKey {
                     account_id: 0,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::Key {
-                        key: vec![u8::MAX; 10],
-                    },
+                    class: ValueClass::Key(vec![u8::MAX; 10]),
                 };
 
                 let current_time = now();
@@ -154,7 +152,7 @@ impl LookupStore {
                     let mut batch = BatchBuilder::new();
                     for key in expired_keys {
                         batch.ops.push(Operation::Value {
-                            class: ValueClass::Key { key },
+                            class: ValueClass::Key(key),
                             op: ValueOp::Clear,
                         });
                         if batch.ops.len() >= 1000 {
@@ -168,7 +166,7 @@ impl LookupStore {
                 }
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => {}
+            LookupStore::Redis(_) => {}
             LookupStore::Memory(_) => {}
         }
 

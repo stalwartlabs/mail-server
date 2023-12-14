@@ -64,14 +64,16 @@ impl LdapDirectory {
             filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify"))?,
             filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand"))?,
             filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains"))?,
-            obj_user: config
-                .value_require((&prefix, "object-classes.user"))?
-                .to_string(),
-            obj_group: config
-                .value_require((&prefix, "object-classes.group"))?
-                .to_string(),
             attr_name: config
                 .values((&prefix, "attributes.name"))
+                .map(|(_, v)| v.to_string())
+                .collect(),
+            attr_groups: config
+                .values((&prefix, "attributes.groups"))
+                .map(|(_, v)| v.to_string())
+                .collect(),
+            attr_type: config
+                .values((&prefix, "attributes.type"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
             attr_description: config
@@ -82,10 +84,6 @@ impl LdapDirectory {
                 .values((&prefix, "attributes.secret"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
-            attr_groups: config
-                .values((&prefix, "attributes.groups"))
-                .map(|(_, v)| v.to_string())
-                .collect(),
             attr_email_address: config
                 .values((&prefix, "attributes.email"))
                 .map(|(_, v)| v.to_string())
@@ -94,26 +92,25 @@ impl LdapDirectory {
                 .values((&prefix, "attributes.quota"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
-            attrs_principal: vec!["objectClass".to_string()],
-            attrs_email: config
+            attr_email_alias: config
                 .values((&prefix, "attributes.email-alias"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
+            attrs_principal: vec!["objectClass".to_string()],
         };
 
         for attr in [
             &mappings.attr_name,
+            &mappings.attr_type,
             &mappings.attr_description,
             &mappings.attr_secret,
             &mappings.attr_quota,
             &mappings.attr_groups,
+            &mappings.attr_email_address,
+            &mappings.attr_email_alias,
         ] {
             mappings.attrs_principal.extend(attr.iter().cloned());
         }
-
-        mappings
-            .attrs_email
-            .extend(mappings.attr_email_address.iter().cloned());
 
         let auth_bind =
             if config.property_or_static::<bool>((&prefix, "auth-bind.enable"), "false")? {

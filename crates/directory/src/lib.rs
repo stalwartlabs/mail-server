@@ -24,46 +24,46 @@
 use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
+use backend::imap::ImapError;
 use deadpool::managed::PoolError;
-use imap::ImapError;
 use ldap3::LdapError;
 use mail_send::Credentials;
+use store::Store;
 use utils::config::DynValue;
 
+pub mod backend;
 pub mod cache;
 pub mod config;
-pub mod imap;
-pub mod ldap;
-pub mod memory;
 pub mod secret;
-pub mod smtp;
-pub mod sql;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Principal {
+    pub id: u32,
+    pub typ: Type,
+    pub quota: u32,
     pub name: String,
     pub secrets: Vec<String>,
-    pub typ: Type,
+    pub emails: Vec<String>,
+    pub member_of: Vec<u32>,
     pub description: Option<String>,
-    pub quota: u32,
-    pub member_of: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
-    Individual,
-    Group,
-    Resource,
-    Location,
+    Individual = 0,
+    Group = 1,
+    Resource = 2,
+    Location = 3,
+    Superuser = 4,
+    List = 5,
     #[default]
-    Other,
-    Superuser,
+    Other = 6,
 }
 
 #[derive(Debug)]
 pub enum DirectoryError {
     Ldap(LdapError),
-    Sql(store::Error),
+    Store(store::Error),
     Imap(ImapError),
     Smtp(mail_send::Error),
     Pool(String),
@@ -73,14 +73,24 @@ pub enum DirectoryError {
 
 #[async_trait::async_trait]
 pub trait Directory: Sync + Send {
-    async fn authenticate(&self, credentials: &Credentials<String>) -> Result<Option<Principal>>;
-    async fn principal(&self, name: &str) -> Result<Option<Principal>>;
-    async fn emails_by_name(&self, name: &str) -> Result<Vec<String>>;
-    async fn names_by_email(&self, email: &str) -> Result<Vec<String>>;
+    async fn query(&self, by: QueryBy<'_>) -> Result<Option<Principal>>;
+    async fn email_to_ids(&self, email: &str, store: &Store) -> Result<Vec<u32>>;
+
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
     async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
+}
+
+pub enum QueryType<'x> {
+    Name(&'x str),
+    Id(u32),
+    Credentials(&'x Credentials<String>),
+}
+
+pub struct QueryBy<'x> {
+    pub t: QueryType<'x>,
+    pub store: Option<&'x Store>,
 }
 
 impl Principal {
@@ -111,6 +121,7 @@ impl Type {
             Self::Resource => "resource",
             Self::Location => "location",
             Self::Other => "other",
+            Self::List => "list",
         }
     }
 }
@@ -119,7 +130,6 @@ impl Type {
 struct DirectoryOptions {
     catch_all: AddressMapping,
     subaddressing: AddressMapping,
-    superuser_group: String,
 }
 
 #[derive(Debug, Default)]
@@ -194,7 +204,7 @@ impl From<store::Error> for DirectoryError {
             "SQL directory error"
         );
 
-        DirectoryError::Sql(error)
+        DirectoryError::Store(error)
     }
 }
 

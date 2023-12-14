@@ -57,7 +57,7 @@ type = "memory"
 [directory."local".options]
 superuser-group = "superusers"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "admin"
 description = "Superuser"
 secret = "secret"

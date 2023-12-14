@@ -30,6 +30,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine};
+use directory::backend::internal::manage::ManageDirectory;
 use ece::EcKeyComponents;
 use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -86,7 +87,13 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
-    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap());
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    );
     params.client.set_default_account_id(account_id);
     let client = test_account_login("jdoe@example.com", "12345").await;
 
@@ -219,7 +226,7 @@ pub async fn test(params: &mut JMAPTest) {
     client.mailbox_destroy(&mailbox_id, true).await.unwrap();
     expect_nothing(&mut event_rx).await;
 
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }
 

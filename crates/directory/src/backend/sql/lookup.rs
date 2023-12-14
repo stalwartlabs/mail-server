@@ -22,73 +22,124 @@
 */
 
 use mail_send::Credentials;
-use store::{NamedRows, Rows, Value};
+use store::{NamedRows, Rows, Store, Value};
 
-use crate::{Directory, Principal, Type};
+use crate::{
+    backend::internal::manage::ManageDirectory, Directory, Principal, QueryBy, QueryType, Type,
+};
 
 use super::{SqlDirectory, SqlMappings};
 
 #[async_trait::async_trait]
 impl Directory for SqlDirectory {
-    async fn authenticate(
-        &self,
-        credentials: &Credentials<String>,
-    ) -> crate::Result<Option<Principal>> {
-        let (username, secret) = match credentials {
-            Credentials::Plain { username, secret } => (username, secret),
-            Credentials::OAuthBearer { token } => (token, token),
-            Credentials::XOauth2 { username, secret } => (username, secret),
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+        let mut account_id = None;
+        let account_name;
+        let mut secret = None;
+
+        let result = match by.t {
+            QueryType::Name(username) => {
+                account_name = username.to_string();
+
+                self.store
+                    .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                    .await?
+            }
+            QueryType::Id(uid) => {
+                if let Some(username) = by.account_name(uid).await? {
+                    account_name = username;
+                } else {
+                    return Ok(None);
+                }
+                account_id = Some(uid);
+
+                self.store
+                    .query::<NamedRows>(
+                        &self.mappings.query_name,
+                        vec![account_name.clone().into()],
+                    )
+                    .await?
+            }
+            QueryType::Credentials(credentials) => {
+                let (username, secret_) = match credentials {
+                    Credentials::Plain { username, secret } => (username, secret),
+                    Credentials::OAuthBearer { token } => (token, token),
+                    Credentials::XOauth2 { username, secret } => (username, secret),
+                };
+                account_name = username.to_string();
+                secret = secret_.into();
+
+                self.store
+                    .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                    .await?
+            }
         };
 
-        match self.principal(username).await {
-            Ok(Some(principal)) if principal.verify_secret(secret).await => Ok(Some(principal)),
-            Ok(_) => Ok(None),
-            Err(err) => Err(err),
+        if result.rows.is_empty() {
+            return Ok(None);
         }
-    }
 
-    async fn principal(&self, name: &str) -> crate::Result<Option<Principal>> {
-        let result = self
-            .store
-            .query::<NamedRows>(&self.mappings.query_name, vec![name.into()])
-            .await?;
-        if !result.rows.is_empty() {
-            // Map row to principal
-            let mut principal = self.mappings.row_to_principal(result)?;
+        // Map row to principal
+        let mut principal = self.mappings.row_to_principal(result)?;
 
+        // Validate password
+        if let Some(secret) = secret {
+            if !principal.verify_secret(secret).await {
+                tracing::debug!(
+                    context = "directory",
+                    event = "invalid_password",
+                    protocol = "sql",
+                    account = account_name,
+                    "Invalid password for account"
+                );
+                return Ok(None);
+            }
+        }
+
+        // Obtain account ID if not available
+        if let Some(account_id) = account_id {
+            principal.id = account_id;
+        } else if by.has_store() {
+            principal.id = by.account_id(&account_name).await?;
+        }
+        principal.name = account_name;
+
+        if by.has_store() {
             // Obtain members
-            principal.member_of = self
-                .store
-                .query::<Rows>(&self.mappings.query_members, vec![name.into()])
-                .await?
-                .into();
-
-            // Check whether the user is a superuser
-            if let Some(idx) = principal
-                .member_of
-                .iter()
-                .position(|group| group.eq_ignore_ascii_case(&self.opt.superuser_group))
-            {
-                principal.member_of.swap_remove(idx);
-                principal.typ = Type::Superuser;
+            if !self.mappings.query_members.is_empty() {
+                for row in self
+                    .store
+                    .query::<Rows>(
+                        &self.mappings.query_members,
+                        vec![principal.name.clone().into()],
+                    )
+                    .await?
+                    .rows
+                {
+                    if let Some(Value::Text(account_id)) = row.values.first() {
+                        principal.member_of.push(by.account_id(account_id).await?);
+                    }
+                }
             }
 
-            Ok(Some(principal))
-        } else {
-            Ok(None)
+            // Obtain emails
+            if !self.mappings.query_emails.is_empty() {
+                principal.emails = self
+                    .store
+                    .query::<Rows>(
+                        &self.mappings.query_emails,
+                        vec![principal.name.clone().into()],
+                    )
+                    .await?
+                    .into();
+            }
         }
+
+        Ok(Some(principal))
     }
 
-    async fn emails_by_name(&self, name: &str) -> crate::Result<Vec<String>> {
-        self.store
-            .query::<Rows>(&self.mappings.query_emails, vec![name.into()])
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
-    }
-
-    async fn names_by_email(&self, address: &str) -> crate::Result<Vec<String>> {
-        let ids = self
+    async fn email_to_ids(&self, address: &str, store: &Store) -> crate::Result<Vec<u32>> {
+        let mut names = self
             .store
             .query::<Rows>(
                 &self.mappings.query_recipients,
@@ -101,17 +152,26 @@ impl Directory for SqlDirectory {
             )
             .await?;
 
-        if !ids.rows.is_empty() {
-            Ok(ids.into())
-        } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
-            self.store
-                .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
-                .await
-                .map(Into::into)
-                .map_err(Into::into)
-        } else {
-            Ok(vec![])
+        if names.rows.is_empty() {
+            if let Some(address) = self.opt.catch_all.to_catch_all(address) {
+                names = self
+                    .store
+                    .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
+                    .await?;
+            } else {
+                return Ok(vec![]);
+            }
         }
+
+        let mut ids = Vec::with_capacity(names.rows.len());
+
+        for row in names.rows {
+            if let Some(Value::Text(name)) = row.values.first() {
+                ids.push(store.get_or_create_account_id(name).await?);
+            }
+        }
+
+        Ok(ids)
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
@@ -185,11 +245,10 @@ impl Directory for SqlDirectory {
 impl SqlMappings {
     pub fn row_to_principal(&self, rows: NamedRows) -> crate::Result<Principal> {
         let mut principal = Principal::default();
+
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
-                if name.eq_ignore_ascii_case(&self.column_name) {
-                    principal.name = value.into_string();
-                } else if name.eq_ignore_ascii_case(&self.column_secret) {
+                if name.eq_ignore_ascii_case(&self.column_secret) {
                     if let Value::Text(secret) = value {
                         principal.secrets.push(secret.into_owned());
                     }
@@ -197,6 +256,7 @@ impl SqlMappings {
                     match value.to_str().as_ref() {
                         "individual" | "person" | "user" => principal.typ = Type::Individual,
                         "group" => principal.typ = Type::Group,
+                        "admin" | "superuser" | "administrator" => principal.typ = Type::Superuser,
                         _ => (),
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_description) {

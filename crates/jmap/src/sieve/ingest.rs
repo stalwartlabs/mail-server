@@ -23,6 +23,7 @@
 
 use std::borrow::Cow;
 
+use directory::QueryBy;
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
@@ -55,7 +56,6 @@ impl JMAP {
         envelope_from: &str,
         envelope_to: &str,
         account_id: u32,
-        account_name: &str,
         mut active_script: ActiveScript,
     ) -> Result<IngestedEmail, IngestError> {
         // Parse message
@@ -77,34 +77,25 @@ impl JMAP {
         // Create Sieve instance
         let mut instance = self.sieve_runtime.filter_parsed(message);
 
-        // Obtain mail from address
-        let mail_from = if let Some(email) = self
-            .directory
-            .emails_by_name(account_name)
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-        {
-            email
-        } else {
-            envelope_to.to_string()
-        };
-
-        // Set account address
-        instance.set_user_address(&mail_from);
-
         // Set account name and obtain quota
-        let account_quota = match self.directory.principal(account_name).await {
+        let (account_quota, mail_from) = match self
+            .directory
+            .query(QueryBy::id(account_id).with_store(&self.store))
+            .await
+        {
             Ok(Some(p)) => {
                 instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-                p.quota as i64
+                (p.quota as i64, p.emails.into_iter().next())
             }
-            Ok(None) => 0,
+            Ok(None) => (0, None),
             Err(_) => {
                 return Err(IngestError::Temporary);
             }
         };
+
+        // Set account address
+        let mail_from = mail_from.unwrap_or_else(|| envelope_to.to_string());
+        instance.set_user_address(&mail_from);
 
         // Set envelope
         instance.set_envelope(Envelope::From, envelope_from);

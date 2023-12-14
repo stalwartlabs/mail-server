@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use directory::DirectoryError;
+use directory::{DirectoryError, QueryBy};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{
@@ -96,7 +96,12 @@ async fn smtp_directory() {
     for (item, expected) in &tests {
         let result: LookupResult = match item {
             Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
-            Item::Authenticate(v) => handle.authenticate(v).await.unwrap().is_some().into(),
+            Item::Authenticate(v) => handle
+                .query(QueryBy::credentials(v))
+                .await
+                .unwrap()
+                .is_some()
+                .into(),
             Item::Verify(v) => match handle.vrfy(v).await {
                 Ok(v) => v.into(),
                 Err(DirectoryError::Unsupported) => LookupResult::False,
@@ -123,7 +128,12 @@ async fn smtp_directory() {
             tokio::spawn(async move {
                 let result: LookupResult = match &item {
                     Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
-                    Item::Authenticate(v) => handle.authenticate(v).await.unwrap().is_some().into(),
+                    Item::Authenticate(v) => handle
+                        .query(QueryBy::credentials(v))
+                        .await
+                        .unwrap()
+                        .is_some()
+                        .into(),
                     Item::Verify(v) => match handle.vrfy(v).await {
                         Ok(v) => v.into(),
                         Err(DirectoryError::Unsupported) => LookupResult::False,

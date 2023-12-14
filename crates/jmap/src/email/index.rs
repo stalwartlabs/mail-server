@@ -34,11 +34,13 @@ use nlp::language::Language;
 use store::{
     backend::MAX_TOKEN_LENGTH,
     fts::{index::FtsDocument, Field},
-    write::{BatchBuilder, BlobOp, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
+    write::{
+        BatchBuilder, BlobOp, DirectoryValue, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    },
     BlobHash,
 };
 
-use crate::{mailbox::UidMailbox, Bincode, NamedKey};
+use crate::{mailbox::UidMailbox, Bincode};
 
 use super::metadata::MessageMetadata;
 
@@ -90,7 +92,7 @@ impl IndexMessage for BatchBuilder {
         let account_id = self.last_account_id().unwrap();
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
             .add(
-                NamedKey::Quota::<&[u8]>(account_id),
+                DirectoryValue::UsedQuota(account_id),
                 message.raw_message.len() as i64,
             );
 
@@ -413,7 +415,7 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         batch
             .value(Property::Size, metadata.size as u32, F_INDEX | options)
             .add(
-                NamedKey::Quota::<&[u8]>(account_id),
+                DirectoryValue::UsedQuota(account_id),
                 if self.set {
                     metadata.size as i64
                 } else {

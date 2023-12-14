@@ -22,6 +22,7 @@
 */
 
 use ahash::AHashSet;
+use directory::backend::internal::manage::ManageDirectory;
 use futures::StreamExt;
 use jmap_client::{
     client_ws::WebSocketMessage,
@@ -49,7 +50,14 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
-    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
     let client = test_account_login("jdoe@example.com", "12345").await;
 
     let mut ws_stream = client.connect_ws().await.unwrap();
@@ -124,7 +132,7 @@ pub async fn test(params: &mut JMAPTest) {
     expect_nothing(&mut stream_rx).await;
 
     params.client.set_default_account_id(account_id);
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }
 

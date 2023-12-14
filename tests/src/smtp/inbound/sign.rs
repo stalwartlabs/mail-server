@@ -99,7 +99,7 @@ const DIRECTORY: &str = r#"
 [directory."local"]
 type = "memory"
 
-[[directory."local".users]]
+[[directory."local".principals]]
 name = "john"
 description = "John Doe"
 secret = "secret"

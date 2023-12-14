@@ -23,6 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use directory::backend::internal::manage::ManageDirectory;
 use jmap_client::{
     client::{Client, Credentials},
     core::set::{SetError, SetErrorType},
@@ -43,7 +44,14 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
-    let account_id = Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
+    let account_id = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
     params
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
@@ -199,6 +207,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Destroy test accounts
     params.client.set_default_account_id(&account_id);
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }

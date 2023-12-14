@@ -180,7 +180,6 @@ pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
 pub const SUBSPACE_BLOBS: u8 = b'o';
 pub const SUBSPACE_BLOB_DATA: u8 = b't';
-pub const SUBSPACE_INDEX_VALUES: u8 = b'a';
 pub const SUBSPACE_COUNTERS: u8 = b'c';
 
 pub struct IterateParams<T: Key> {
@@ -601,12 +600,46 @@ impl From<Row> for Vec<String> {
     }
 }
 
+impl From<Row> for Vec<u32> {
+    fn from(value: Row) -> Self {
+        value
+            .values
+            .into_iter()
+            .filter_map(|v| {
+                if let Value::Integer(v) = v {
+                    Some(v as u32)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
 impl From<Rows> for Vec<String> {
     fn from(value: Rows) -> Self {
         value
             .rows
             .into_iter()
             .flat_map(|v| v.values.into_iter().map(|v| v.into_string()))
+            .collect()
+    }
+}
+
+impl From<Rows> for Vec<u32> {
+    fn from(value: Rows) -> Self {
+        value
+            .rows
+            .into_iter()
+            .flat_map(|v| {
+                v.values.into_iter().filter_map(|v| {
+                    if let Value::Integer(v) = v {
+                        Some(v as u32)
+                    } else {
+                        None
+                    }
+                })
+            })
             .collect()
     }
 }

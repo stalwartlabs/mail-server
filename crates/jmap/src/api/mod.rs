@@ -30,7 +30,6 @@ use utils::map::vec_map::VecMap;
 
 use crate::JMAP;
 
-pub mod admin;
 pub mod config;
 pub mod event_source;
 pub mod http;

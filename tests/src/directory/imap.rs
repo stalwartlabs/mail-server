@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use directory::QueryBy;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{
@@ -78,7 +79,7 @@ async fn imap_directory() {
         assert_eq!(
             &LookupResult::from(
                 handle
-                    .authenticate(item.as_credentials())
+                    .query(QueryBy::credentials(item.as_credentials()))
                     .await
                     .unwrap()
                     .is_some()
@@ -98,7 +99,7 @@ async fn imap_directory() {
             tokio::spawn(async move {
                 LookupResult::from(
                     handle
-                        .authenticate(item.as_credentials())
+                        .query(QueryBy::credentials(item.as_credentials()))
                         .await
                         .unwrap()
                         .is_some(),

@@ -22,10 +22,7 @@
 */
 
 use imap_proto::receiver::Request;
-use jmap::{
-    sieve::set::{ObjectBlobId, SCHEMA},
-    NamedKey,
-};
+use jmap::sieve::set::{ObjectBlobId, SCHEMA};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{blob::BlobId, collection::Collection, property::Property, value::Value},
@@ -33,7 +30,7 @@ use jmap_proto::{
 use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder, BlobOp, F_CLEAR},
+    write::{assert::HashedValue, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR},
     BlobClass,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -142,7 +139,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 std::cmp::Ordering::Equal => 0,
             };
             if update_quota != 0 {
-                batch.add(NamedKey::Quota::<&[u8]>(account_id), update_quota);
+                batch.add(DirectoryValue::UsedQuota(account_id), update_quota);
             }
 
             batch.custom(
@@ -183,7 +180,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .create_document(document_id)
-                .add(NamedKey::Quota::<&[u8]>(account_id), script_size)
+                .add(DirectoryValue::UsedQuota(account_id), script_size)
                 .blob(blob_id.hash.clone(), BlobOp::Link, 0)
                 .custom(
                     ObjectIndexBuilder::new(SCHEMA).with_changes(

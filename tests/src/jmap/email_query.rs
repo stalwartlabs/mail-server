@@ -120,7 +120,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         .unwrap_set_email()
         .unwrap();
 
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
 }
 

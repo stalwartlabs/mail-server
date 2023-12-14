@@ -28,7 +28,7 @@ use roaring::RoaringBitmap;
 use crate::{
     write::{key::KeySerializer, AnyKey, Batch, BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
-    SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
 };
 
 impl Store {
@@ -185,12 +185,7 @@ impl Store {
     }
 
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
-        for subspace in [
-            SUBSPACE_BITMAPS,
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_INDEXES,
-        ] {
+        for subspace in [SUBSPACE_BITMAPS, SUBSPACE_LOGS, SUBSPACE_INDEXES] {
             self.delete_range(
                 AnyKey {
                     subspace,
@@ -204,37 +199,27 @@ impl Store {
             .await?;
         }
 
-        for (from_key, to_key) in [
-            (
-                ValueKey {
-                    account_id: 0,
-                    collection: 0,
-                    document_id: 0,
-                    class: ValueClass::Acl(account_id),
-                },
-                ValueKey {
-                    account_id: 0,
-                    collection: 0,
-                    document_id: 0,
-                    class: ValueClass::Acl(account_id + 1),
-                },
-            ),
-            (
+        for (from_class, to_class) in [
+            (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
+            (ValueClass::ReservedId, ValueClass::ReservedId),
+            (ValueClass::Property(0), ValueClass::Property(u8::MAX)),
+            (ValueClass::TermIndex, ValueClass::TermIndex),
+        ] {
+            self.delete_range(
                 ValueKey {
                     account_id,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::ReservedId,
+                    class: from_class,
                 },
                 ValueKey {
                     account_id: account_id + 1,
                     collection: 0,
                     document_id: 0,
-                    class: ValueClass::ReservedId,
+                    class: to_class,
                 },
-            ),
-        ] {
-            self.delete_range(from_key, to_key).await?;
+            )
+            .await?;
         }
 
         Ok(())
@@ -295,7 +280,6 @@ impl Store {
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
             SUBSPACE_BLOBS,
-            SUBSPACE_INDEX_VALUES,
             SUBSPACE_COUNTERS,
             SUBSPACE_BLOB_DATA,
         ] {
@@ -389,7 +373,6 @@ impl Store {
 
         for (subspace, with_values) in [
             (SUBSPACE_VALUES, true),
-            (SUBSPACE_INDEX_VALUES, true),
             (SUBSPACE_COUNTERS, false),
             (SUBSPACE_BLOB_DATA, true),
             (SUBSPACE_BITMAPS, false),
@@ -434,12 +417,9 @@ impl Store {
                                 value
                             );
                         }
-                        SUBSPACE_INDEX_VALUES if key[0] >= 3 => {
-                            // Ignore named keys
-                            return Ok(true);
-                        }
                         SUBSPACE_VALUES
-                            if key.get(0..4).unwrap_or_default() == u32::MAX.to_be_bytes() =>
+                            if key[0] >= 6
+                                || key.get(1..5).unwrap_or_default() == u32::MAX.to_be_bytes() =>
                         {
                             // Ignore lastId counter and ID mappings
                             return Ok(true);

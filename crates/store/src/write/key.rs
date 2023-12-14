@@ -26,11 +26,10 @@ use utils::codec::leb128::Leb128_;
 
 use crate::{
     BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN,
-    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
-    U32_LEN, U64_LEN,
+    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
 };
 
-use super::{AnyKey, BitmapClass, BlobOp, TagValue, ValueClass};
+use super::{AnyKey, BitmapClass, BlobOp, DirectoryValue, TagValue, ValueClass};
 
 pub struct KeySerializer {
     pub buf: Vec<u8>,
@@ -217,69 +216,51 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        if matches!(
-            self.class.as_ref(),
-            ValueClass::Property(_) | ValueClass::TermIndex
-        ) {
-            SUBSPACE_VALUES
-        } else {
-            SUBSPACE_INDEX_VALUES
-        }
+        SUBSPACE_VALUES
     }
 
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+        let serializer = if include_subspace {
+            KeySerializer::new(self.class.as_ref().serialized_size() + 2).write(self.subspace())
+        } else {
+            KeySerializer::new(self.class.as_ref().serialized_size() + 1)
+        };
+
         match self.class.as_ref() {
-            ValueClass::Property(field) => if include_subspace {
-                KeySerializer::new(U32_LEN * 2 + 3).write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN * 2 + 2)
-            }
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id)
-            .write(*field),
-            ValueClass::TermIndex => if include_subspace {
-                KeySerializer::new(U32_LEN * 2 + 3).write(crate::SUBSPACE_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN * 2 + 2)
-            }
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id)
-            .write(u8::MAX),
-            ValueClass::Acl(grant_account_id) => if include_subspace {
-                KeySerializer::new(U32_LEN * 3 + 3).write(crate::SUBSPACE_INDEX_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN * 3 + 2)
-            }
-            .write(0u8)
-            .write(*grant_account_id)
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id),
-            ValueClass::ReservedId => if include_subspace {
-                KeySerializer::new(U32_LEN * 2 + 2).write(crate::SUBSPACE_INDEX_VALUES)
-            } else {
-                KeySerializer::new(U32_LEN * 2 + 1)
-            }
-            .write(1u8)
-            .write(self.account_id)
-            .write(self.collection)
-            .write(self.document_id),
-            ValueClass::Key { key } => if include_subspace {
-                KeySerializer::new(key.len() + U64_LEN + 2).write(crate::SUBSPACE_INDEX_VALUES)
-            } else {
-                KeySerializer::new(key.len() + U64_LEN + 1)
-            }
-            .write(2u8)
-            .write(key.as_slice()),
-            ValueClass::Subspace { key, id } => if include_subspace {
-                KeySerializer::new(key.len() + 2).write(crate::SUBSPACE_INDEX_VALUES)
-            } else {
-                KeySerializer::new(key.len() + 1)
-            }
-            .write(3 + *id)
-            .write(key.as_slice()),
+            ValueClass::Property(field) => serializer
+                .write(0u8)
+                .write(self.account_id)
+                .write(self.collection)
+                .write_leb128(self.document_id)
+                .write(*field),
+            ValueClass::TermIndex => serializer
+                .write(1u8)
+                .write(self.account_id)
+                .write(self.collection)
+                .write_leb128(self.document_id),
+            ValueClass::Acl(grant_account_id) => serializer
+                .write(2u8)
+                .write(*grant_account_id)
+                .write(self.account_id)
+                .write(self.collection)
+                .write(self.document_id),
+            ValueClass::ReservedId => serializer
+                .write(3u8)
+                .write(self.account_id)
+                .write(self.collection)
+                .write(self.document_id),
+            ValueClass::Key(key) => serializer.write(4u8).write(key.as_slice()),
+            ValueClass::IndexEmail(seq) => serializer
+                .write(5u8)
+                .write(*seq)
+                .write(self.account_id)
+                .write(self.document_id),
+            ValueClass::Directory(directory) => match directory {
+                DirectoryValue::NameToId(name) => serializer.write(6u8).write(name.as_slice()),
+                DirectoryValue::EmailToId(email) => serializer.write(7u8).write(email.as_slice()),
+                DirectoryValue::Principal(uid) => serializer.write(8u8).write_leb128(*uid),
+                DirectoryValue::UsedQuota(uid) => serializer.write(9u8).write_leb128(*uid),
+            },
         }
         .finalize()
     }
@@ -432,5 +413,50 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
 
     fn subspace(&self) -> u8 {
         self.subspace
+    }
+}
+
+impl ValueClass {
+    pub fn serialized_size(&self) -> usize {
+        match self {
+            ValueClass::Property(_) | ValueClass::TermIndex | ValueClass::ReservedId => {
+                U32_LEN * 2 + 3
+            }
+            ValueClass::Acl(_) => U32_LEN * 3 + 2,
+            ValueClass::Key(v) => v.len(),
+            ValueClass::Directory(d) => match d {
+                DirectoryValue::NameToId(v) | DirectoryValue::EmailToId(v) => v.len(),
+                DirectoryValue::Principal(_) | DirectoryValue::UsedQuota(_) => U32_LEN,
+            },
+            ValueClass::IndexEmail { .. } => U64_LEN * 2,
+        }
+    }
+}
+
+impl From<ValueClass> for ValueKey<ValueClass> {
+    fn from(class: ValueClass) -> Self {
+        ValueKey {
+            account_id: 0,
+            collection: 0,
+            document_id: 0,
+            class,
+        }
+    }
+}
+
+impl From<DirectoryValue> for ValueKey<ValueClass> {
+    fn from(value: DirectoryValue) -> Self {
+        ValueKey {
+            account_id: 0,
+            collection: 0,
+            document_id: 0,
+            class: ValueClass::Directory(value),
+        }
+    }
+}
+
+impl From<DirectoryValue> for ValueClass {
+    fn from(value: DirectoryValue) -> Self {
+        ValueClass::Directory(value)
     }
 }

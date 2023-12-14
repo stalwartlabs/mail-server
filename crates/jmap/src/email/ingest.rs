@@ -49,7 +49,7 @@ use crate::{
     email::index::{IndexMessage, MAX_ID_LENGTH},
     mailbox::UidMailbox,
     services::housekeeper::Event,
-    IngestError, NamedKey, JMAP,
+    IngestError, JMAP,
 };
 
 use super::{
@@ -317,13 +317,10 @@ impl JMAP {
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
             .custom(changes)
             .set(
-                NamedKey::IndexEmail::<&[u8]> {
-                    account_id: params.account_id,
-                    document_id,
-                    seq: self
-                        .generate_snowflake_id()
+                ValueClass::IndexEmail(
+                    self.generate_snowflake_id()
                         .map_err(|_| IngestError::Temporary)?,
-                },
+                ),
                 blob_id.hash.clone(),
             );
         self.store.write(batch.build()).await.map_err(|err| {

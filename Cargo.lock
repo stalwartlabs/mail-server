@@ -1423,6 +1423,7 @@ dependencies = [
  "async-trait",
  "deadpool",
  "futures",
+ "jmap_proto",
  "ldap3",
  "lru-cache",
  "mail-builder",

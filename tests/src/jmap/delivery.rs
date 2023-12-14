@@ -23,6 +23,7 @@
 
 use std::time::Duration;
 
+use directory::backend::internal::manage::ManageDirectory;
 use jmap_proto::types::{collection::Collection, id::Id};
 
 use tokio::{
@@ -51,12 +52,30 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
         .await;
-    let account_id_1 =
-        Id::from(server.get_account_id("jdoe@example.com").await.unwrap()).to_string();
-    let account_id_2 =
-        Id::from(server.get_account_id("jane@example.com").await.unwrap()).to_string();
-    let account_id_3 =
-        Id::from(server.get_account_id("bill@example.com").await.unwrap()).to_string();
+    let account_id_1 = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jdoe@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
+    let account_id_2 = Id::from(
+        server
+            .store
+            .get_or_create_account_id("jane@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
+    let account_id_3 = Id::from(
+        server
+            .store
+            .get_or_create_account_id("bill@example.com")
+            .await
+            .unwrap(),
+    )
+    .to_string();
     params
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
@@ -261,7 +280,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Remove test data
     for account_id in [&account_id_1, &account_id_2, &account_id_3] {
         params.client.set_default_account_id(account_id);
-        destroy_all_mailboxes(&params.client).await;
+        destroy_all_mailboxes(params).await;
     }
     assert_is_empty(server).await;
 }

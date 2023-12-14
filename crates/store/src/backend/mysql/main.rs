@@ -26,7 +26,7 @@ use utils::config::utils::AsKey;
 
 use crate::{
     SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-    SUBSPACE_INDEX_VALUES, SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_LOGS, SUBSPACE_VALUES,
 };
 
 use super::MysqlStore;
@@ -80,7 +80,7 @@ impl MysqlStore {
     pub(super) async fn create_tables(&self) -> crate::Result<()> {
         let mut conn = self.conn_pool.get_conn().await?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_INDEX_VALUES] {
+        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS] {
             let table = char::from(table);
             conn.query_drop(&format!(
                 "CREATE TABLE IF NOT EXISTS {table} (

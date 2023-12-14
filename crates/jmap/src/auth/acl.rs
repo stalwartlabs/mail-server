@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use jmap_proto::{
     error::{method::MethodError, set::SetError},
     object::Object,
@@ -376,13 +377,14 @@ impl JMAP {
                 if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl_bits))) =
                     (item.first(), item.last())
                 {
-                    if let Some(account_name) = self
-                        .get_account_name(id.document_id())
+                    if let Some(principal) = self
+                        .directory
+                        .query(QueryBy::id(id.document_id()).with_store(&self.store))
                         .await
                         .unwrap_or_default()
                     {
                         acl_obj.append(
-                            Property::_T(account_name),
+                            Property::_T(principal.name),
                             Bitmap::<Acl>::from(*acl_bits)
                                 .map(|acl_item| Value::Text(acl_item.to_string()))
                                 .collect::<Vec<_>>(),
@@ -450,18 +452,13 @@ impl JMAP {
     async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
         for item in &mut acl_set {
             if let Value::Text(account_name) = item {
-                match self.directory.principal(account_name).await {
-                    Ok(Some(_)) => {
-                        *item = Value::Id(
-                            self.get_account_id(account_name)
-                                .await
-                                .map_err(|_| {
-                                    SetError::forbidden()
-                                        .with_property(Property::Acl)
-                                        .with_description("Temporary server failure during lookup")
-                                })?
-                                .into(),
-                        );
+                match self
+                    .directory
+                    .query(QueryBy::name(account_name).with_store(&self.store))
+                    .await
+                {
+                    Ok(Some(principal)) => {
+                        *item = Value::Id(principal.id.into());
                     }
                     Ok(None) => {
                         return Err(SetError::invalid_properties()

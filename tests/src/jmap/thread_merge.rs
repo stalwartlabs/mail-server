@@ -199,8 +199,10 @@ pub async fn test(params: &mut JMAPTest) {
     // Delete all messages and make sure no keys are left in the store.
     for (base_test_num, mailbox_ids) in all_mailboxes {
         for (test_num, _) in mailbox_ids.into_iter().enumerate() {
-            client.set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string());
-            destroy_all_mailboxes(client).await;
+            params
+                .client
+                .set_default_account_id(Id::new((base_test_num + test_num) as u64).to_string());
+            destroy_all_mailboxes(params).await;
         }
     }
 

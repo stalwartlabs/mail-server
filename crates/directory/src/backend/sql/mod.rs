@@ -21,25 +21,30 @@
  * for more details.
 */
 
-use ahash::{AHashMap, AHashSet};
+use store::LookupStore;
 
-use crate::{DirectoryOptions, Principal};
+use crate::DirectoryOptions;
 
 pub mod config;
 pub mod lookup;
 
-#[derive(Default, Debug)]
-pub struct MemoryDirectory {
-    principals: AHashMap<String, Principal>,
-    emails_to_names: AHashMap<String, Vec<EmailType>>,
-    names_to_email: AHashMap<String, Vec<EmailType>>,
-    domains: AHashSet<String>,
+pub struct SqlDirectory {
+    store: LookupStore,
+    mappings: SqlMappings,
     opt: DirectoryOptions,
 }
 
-#[derive(Debug)]
-enum EmailType {
-    Primary(String),
-    Alias(String),
-    List(String),
+#[derive(Debug, Default)]
+pub(crate) struct SqlMappings {
+    query_name: String,
+    query_members: String,
+    query_recipients: String,
+    query_emails: String,
+    query_domains: String,
+    query_verify: String,
+    query_expand: String,
+    column_description: String,
+    column_secret: String,
+    column_quota: String,
+    column_type: String,
 }

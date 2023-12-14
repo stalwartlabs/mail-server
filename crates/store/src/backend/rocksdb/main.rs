@@ -38,8 +38,7 @@ use utils::{
 use crate::{Deserialize, Error};
 
 use super::{
-    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_BLOB_DATA, CF_COUNTERS, CF_INDEXES, CF_INDEX_VALUES,
-    CF_LOGS, CF_VALUES,
+    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_BLOB_DATA, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES,
 };
 
 impl RocksDbStore {
@@ -80,7 +79,7 @@ impl RocksDbStore {
         cfs.push(ColumnFamilyDescriptor::new(CF_BLOB_DATA, cf_opts));
 
         // Other cfs
-        for cf in [CF_BLOBS, CF_INDEXES, CF_INDEX_VALUES, CF_LOGS, CF_VALUES] {
+        for cf in [CF_BLOBS, CF_INDEXES, CF_LOGS, CF_VALUES] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(cf, cf_opts));
         }

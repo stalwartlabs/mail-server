@@ -27,17 +27,14 @@ use std::{
     time::Instant,
 };
 
+use directory::QueryBy;
 use hyper::header;
-use jmap_proto::{
-    error::{method::MethodError, request::RequestError},
-    types::collection::Collection,
-};
+use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use store::{write::BatchBuilder, Serialize};
 use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
-use crate::{NamedKey, JMAP};
+use crate::JMAP;
 
 use super::{rate_limit::RemoteAddress, AccessToken};
 
@@ -150,85 +147,6 @@ impl JMAP {
         }
     }
 
-    pub async fn try_get_account_id(&self, name: &str) -> Result<Option<u32>, MethodError> {
-        self.store
-            .get_value::<u32>(NamedKey::Name(name))
-            .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-            context = "store",
-            account_name = name,
-            error = ?err,
-            "Failed to retrieve account id");
-                MethodError::ServerPartialFail
-            })
-    }
-
-    pub async fn get_account_id(&self, name: &str) -> Result<u32, MethodError> {
-        let mut try_count = 0;
-
-        loop {
-            // Try to obtain ID
-            if let Some(account_id) = self.try_get_account_id(name).await? {
-                return Ok(account_id);
-            }
-
-            // Assign new ID
-            let account_id = self
-                .assign_document_id(u32::MAX, Collection::Principal)
-                .await?;
-
-            // Write account ID
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(u32::MAX)
-                .with_collection(Collection::Principal)
-                .create_document(account_id)
-                .assert_value(NamedKey::Name(name), ())
-                .set(NamedKey::Name(name), account_id.serialize())
-                .set(NamedKey::Id::<&[u8]>(account_id), name.serialize());
-
-            match self.store.write(batch.build()).await {
-                Ok(_) => {
-                    return Ok(account_id);
-                }
-                Err(store::Error::AssertValueFailed) if try_count < 3 => {
-                    try_count += 1;
-                    continue;
-                }
-                Err(err) => {
-                    tracing::error!(event = "error",
-                                        context = "store",
-                                        error = ?err,
-                                        "Failed to generate account id");
-                    return Err(MethodError::ServerPartialFail);
-                }
-            }
-        }
-    }
-
-    pub async fn map_member_of(&self, names: Vec<String>) -> Result<Vec<u32>, MethodError> {
-        let mut ids = Vec::with_capacity(names.len());
-        for name in names {
-            ids.push(self.get_account_id(&name).await?);
-        }
-        Ok(ids)
-    }
-
-    pub async fn get_account_name(&self, account_id: u32) -> Result<Option<String>, MethodError> {
-        self.store
-            .get_value::<String>(NamedKey::Id::<&[u8]>(account_id))
-            .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                        context = "store",
-                        account_id = account_id,
-                        error = ?err,
-                        "Failed to retrieve account name");
-                MethodError::ServerPartialFail
-            })
-    }
-
     pub fn build_remote_addr(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
@@ -254,60 +172,40 @@ impl JMAP {
         secret: &str,
         remote_addr: &RemoteAddress,
     ) -> Option<AccessToken> {
-        let mut principal = match self
+        match self
             .directory
-            .authenticate(&Credentials::Plain {
-                username: username.to_string(),
-                secret: secret.to_string(),
-            })
-            .await
-        {
-            Ok(Some(principal)) => principal,
-            Ok(None) => {
-                let _ = self.is_auth_allowed_hard(remote_addr);
-                return None;
-            }
-            Err(_) => {
-                return None;
-            }
-        };
-
-        if !principal.has_name() {
-            principal.name = username.to_string();
-        }
-        // Obtain groups
-        if let (Ok(account_id), Ok(member_of)) = (
-            self.get_account_id(&principal.name).await,
-            self.map_member_of(std::mem::take(&mut principal.member_of))
-                .await,
-        ) {
-            // Create access token
-            self.update_access_token(
-                AccessToken::new(principal, account_id).with_member_of(member_of),
+            .query(
+                QueryBy::credentials(&Credentials::Plain {
+                    username: username.to_string(),
+                    secret: secret.to_string(),
+                })
+                .with_store(&self.store),
             )
             .await
-        } else {
-            None
+        {
+            Ok(Some(mut principal)) => {
+                if !principal.has_name() {
+                    principal.name = username.to_string();
+                }
+
+                AccessToken::new(principal).into()
+            }
+            Ok(None) => {
+                let _ = self.is_auth_allowed_hard(remote_addr);
+                None
+            }
+            Err(_) => None,
         }
     }
 
     pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
-        let name = self.get_account_name(account_id).await.ok()??;
-        let mut principal = self.directory.principal(&name).await.ok()??;
-
-        // Obtain groups
-        if let (Ok(account_id), Ok(member_of)) = (
-            self.get_account_id(&principal.name).await,
-            self.map_member_of(std::mem::take(&mut principal.member_of))
-                .await,
-        ) {
-            // Create access token
-            self.update_access_token(
-                AccessToken::new(principal, account_id).with_member_of(member_of),
-            )
-            .await
-        } else {
-            None
-        }
+        // Create access token
+        self.update_access_token(AccessToken::new(
+            self.directory
+                .query(QueryBy::id(account_id).with_store(&self.store))
+                .await
+                .ok()??,
+        ))
+        .await
     }
 }

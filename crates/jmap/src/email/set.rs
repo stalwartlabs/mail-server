@@ -61,7 +61,7 @@ use store::{
 
 use crate::{
     auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, IngestError,
-    NamedKey, JMAP,
+    JMAP,
 };
 
 use super::{
@@ -1071,7 +1071,11 @@ impl JMAP {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Email)
-            .delete_document(document_id);
+            .delete_document(document_id)
+            .set(
+                ValueClass::IndexEmail(self.generate_snowflake_id()?),
+                vec![],
+            );
 
         // Remove last changeId
         batch.value(Property::Cid, (), F_VALUE | F_CLEAR);
@@ -1216,16 +1220,6 @@ impl JMAP {
                 .with_collection(Collection::Thread)
                 .delete_document(thread_id);
         }
-
-        // Remove message from FTS index
-        batch.set(
-            NamedKey::IndexEmail::<&[u8]> {
-                account_id,
-                document_id,
-                seq: self.generate_snowflake_id()?,
-            },
-            vec![],
-        );
 
         // Commit batch
         match self.store.write(batch.build()).await {

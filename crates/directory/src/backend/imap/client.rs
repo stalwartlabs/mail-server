@@ -199,7 +199,7 @@ mod test {
     use smtp_proto::{AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH, AUTH_XOAUTH2};
     use std::time::Duration;
 
-    use crate::imap::ImapClient;
+    use crate::backend::imap::ImapClient;
 
     #[ignore]
     #[tokio::test]

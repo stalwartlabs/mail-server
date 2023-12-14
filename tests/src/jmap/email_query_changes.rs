@@ -276,7 +276,7 @@ pub async fn test(params: &mut JMAPTest) {
         states.push(new_state);
     }
 
-    destroy_all_mailboxes(&params.client).await;
+    destroy_all_mailboxes(params).await;
 
     // Delete virtual threads
     let mut batch = BatchBuilder::new();

@@ -23,7 +23,7 @@
 
 use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Instant};
 
-use directory::Type;
+use directory::{QueryBy, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
@@ -255,7 +255,10 @@ impl SMTP {
                         .queue
                         .config
                         .management_lookup
-                        .authenticate(&Credentials::Plain { username, secret })
+                        .query(QueryBy::credentials(&Credentials::Plain {
+                            username,
+                            secret,
+                        }))
                         .await
                     {
                         Ok(Some(principal)) if principal.typ == Type::Superuser => {

@@ -36,7 +36,7 @@ use store::ahash::AHashMap;
 
 use crate::jmap::assert_is_empty;
 
-use super::JMAPTest;
+use super::{wait_for_index, JMAPTest};
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Mailbox tests...");
@@ -607,8 +607,8 @@ pub async fn test(params: &mut JMAPTest) {
         ["inbox", "sent", "spam"]
     );
 
-    destroy_all_mailboxes(client).await;
-    client.set_default_account_id(Id::from(1u64));
+    destroy_all_mailboxes(params).await;
+    params.client.set_default_account_id(Id::from(1u64));
     assert_is_empty(server).await;
 }
 
@@ -657,7 +657,12 @@ fn build_create_query(
     }
 }
 
-pub async fn destroy_all_mailboxes(client: &Client) {
+pub async fn destroy_all_mailboxes(test: &JMAPTest) {
+    wait_for_index(&test.server).await;
+    destroy_all_mailboxes_no_wait(&test.client).await;
+}
+
+pub async fn destroy_all_mailboxes_no_wait(client: &Client) {
     let mut request = client.build();
     request.query_mailbox().arguments().sort_as_tree(true);
     let mut ids = request.send_query_mailbox().await.unwrap().take_ids();
