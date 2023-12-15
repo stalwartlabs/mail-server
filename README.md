@@ -103,7 +103,7 @@ Additionally you may become a sponsor to obtain priority support from Stalwart L
 - [ ] Performance enhancements
 - [ ] Web-based admin panel
 - [ ] JMAP Calendar, Contacts and Tasks support
-- [ ] Brand Indicators for Message Identification (BIMI) support
+- [ ] Brand Indicators for Message Identification [(BIMI)](https://en.wikipedia.org/wiki/Brand_Indicators_for_Message_Identification) support
 - [ ] Distributed SMTP queues
 
 See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a full list of proposed features (and known issues).
