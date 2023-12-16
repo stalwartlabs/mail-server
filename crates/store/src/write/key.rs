@@ -25,11 +25,11 @@ use std::convert::TryInto;
 use utils::codec::leb128::Leb128_;
 
 use crate::{
-    BitmapKey, BlobHash, BlobKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN,
-    SUBSPACE_BITMAPS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
+    BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN, SUBSPACE_BITMAPS,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
 };
 
-use super::{AnyKey, BitmapClass, BlobOp, DirectoryValue, TagValue, ValueClass};
+use super::{AnyKey, BitmapClass, BlobOp, DirectoryClass, TagValue, ValueClass};
 
 pub struct KeySerializer {
     pub buf: Vec<u8>,
@@ -255,12 +255,31 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 .write(*seq)
                 .write(self.account_id)
                 .write(self.document_id),
+            ValueClass::Blob(op) => match op {
+                BlobOp::Reserve { hash, until } => serializer
+                    .write(6u8)
+                    .write(self.account_id)
+                    .write::<&[u8]>(hash.as_ref())
+                    .write(*until),
+                BlobOp::Commit { hash } => serializer
+                    .write(7u8)
+                    .write::<&[u8]>(hash.as_ref())
+                    .write(u32::MAX)
+                    .write(0u8)
+                    .write(u32::MAX),
+                BlobOp::Link { hash } => serializer
+                    .write(7u8)
+                    .write::<&[u8]>(hash.as_ref())
+                    .write(self.account_id)
+                    .write(self.collection)
+                    .write(self.document_id),
+            },
             ValueClass::Directory(directory) => match directory {
-                DirectoryValue::NameToId(name) => serializer.write(6u8).write(name.as_slice()),
-                DirectoryValue::EmailToId(email) => serializer.write(7u8).write(email.as_slice()),
-                DirectoryValue::Principal(uid) => serializer.write(8u8).write_leb128(*uid),
-                DirectoryValue::Domain(name) => serializer.write(9u8).write(name.as_slice()),
-                DirectoryValue::UsedQuota(uid) => serializer.write(10u8).write_leb128(*uid),
+                DirectoryClass::NameToId(name) => serializer.write(8u8).write(name.as_slice()),
+                DirectoryClass::EmailToId(email) => serializer.write(9u8).write(email.as_slice()),
+                DirectoryClass::Principal(uid) => serializer.write(10u8).write_leb128(*uid),
+                DirectoryClass::Domain(name) => serializer.write(11u8).write(name.as_slice()),
+                DirectoryClass::UsedQuota(uid) => serializer.write(12u8).write_leb128(*uid),
             },
         }
         .finalize()
@@ -362,44 +381,6 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
     }
 }
 
-impl<T: AsRef<BlobHash> + Sync + Send> Key for BlobKey<T> {
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        let ks = {
-            if include_subspace {
-                KeySerializer::new(BLOB_HASH_LEN + (U64_LEN * 3) + 1).write(crate::SUBSPACE_BLOBS)
-            } else {
-                KeySerializer::new(BLOB_HASH_LEN + (U64_LEN * 3))
-            }
-        };
-
-        match self.op {
-            BlobOp::Reserve { until, size } => ks
-                .write(1u8)
-                .write(self.account_id)
-                .write::<&[u8]>(self.hash.as_ref().as_ref())
-                .write(until)
-                .write(size as u32),
-            BlobOp::Commit => ks
-                .write(0u8)
-                .write::<&[u8]>(self.hash.as_ref().as_ref())
-                .write(u32::MAX)
-                .write(0u8)
-                .write(u32::MAX),
-            BlobOp::Link => ks
-                .write(0u8)
-                .write::<&[u8]>(self.hash.as_ref().as_ref())
-                .write(self.account_id)
-                .write(self.collection)
-                .write(self.document_id),
-        }
-        .finalize()
-    }
-
-    fn subspace(&self) -> u8 {
-        crate::SUBSPACE_BLOBS
-    }
-}
-
 impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
     fn serialize(&self, include_subspace: bool) -> Vec<u8> {
         let key = self.key.as_ref();
@@ -426,10 +407,14 @@ impl ValueClass {
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
             ValueClass::Key(v) => v.len(),
             ValueClass::Directory(d) => match d {
-                DirectoryValue::NameToId(v)
-                | DirectoryValue::EmailToId(v)
-                | DirectoryValue::Domain(v) => v.len(),
-                DirectoryValue::Principal(_) | DirectoryValue::UsedQuota(_) => U32_LEN,
+                DirectoryClass::NameToId(v)
+                | DirectoryClass::EmailToId(v)
+                | DirectoryClass::Domain(v) => v.len(),
+                DirectoryClass::Principal(_) | DirectoryClass::UsedQuota(_) => U32_LEN,
+            },
+            ValueClass::Blob(op) => match op {
+                BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,
+                BlobOp::Commit { .. } | BlobOp::Link { .. } => BLOB_HASH_LEN + U32_LEN * 2 + 2,
             },
             ValueClass::IndexEmail { .. } => U64_LEN * 2,
         }
@@ -447,8 +432,8 @@ impl From<ValueClass> for ValueKey<ValueClass> {
     }
 }
 
-impl From<DirectoryValue> for ValueKey<ValueClass> {
-    fn from(value: DirectoryValue) -> Self {
+impl From<DirectoryClass> for ValueKey<ValueClass> {
+    fn from(value: DirectoryClass) -> Self {
         ValueKey {
             account_id: 0,
             collection: 0,
@@ -458,8 +443,14 @@ impl From<DirectoryValue> for ValueKey<ValueClass> {
     }
 }
 
-impl From<DirectoryValue> for ValueClass {
-    fn from(value: DirectoryValue) -> Self {
+impl From<DirectoryClass> for ValueClass {
+    fn from(value: DirectoryClass) -> Self {
         ValueClass::Directory(value)
+    }
+}
+
+impl From<BlobOp> for ValueClass {
+    fn from(value: BlobOp) -> Self {
+        ValueClass::Blob(value)
     }
 }

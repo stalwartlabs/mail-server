@@ -123,7 +123,10 @@ impl BlobId {
                     document_id: it.next_leb128()?,
                 }
             } else {
-                BlobClass::Reserved { account_id }
+                BlobClass::Reserved {
+                    account_id,
+                    expires: it.next_leb128()?,
+                }
             },
             section: if encoding != 0 {
                 BlobSection {
@@ -160,8 +163,12 @@ impl BlobId {
         let _ = writer.write(self.hash.as_ref());
 
         match &self.class {
-            BlobClass::Reserved { account_id } => {
+            BlobClass::Reserved {
+                account_id,
+                expires,
+            } => {
                 let _ = writer.write_leb128(*account_id);
+                let _ = writer.write_leb128(*expires);
             }
             BlobClass::Linked {
                 account_id,

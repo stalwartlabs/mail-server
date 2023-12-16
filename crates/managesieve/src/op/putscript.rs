@@ -30,7 +30,7 @@ use jmap_proto::{
 use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR},
+    write::{assert::HashedValue, BatchBuilder, BlobOp, DirectoryClass},
     BlobClass,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -128,8 +128,15 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .update_document(document_id)
-                .blob(prev_blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
-                .blob(blob_id.hash.clone(), BlobOp::Link, 0);
+                .clear(BlobOp::Link {
+                    hash: prev_blob_id.hash.clone(),
+                })
+                .set(
+                    BlobOp::Link {
+                        hash: blob_id.hash.clone(),
+                    },
+                    Vec::new(),
+                );
 
             // Update quota
             let prev_script_size = prev_blob_id.section.as_ref().unwrap().size as i64;
@@ -139,7 +146,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 std::cmp::Ordering::Equal => 0,
             };
             if update_quota != 0 {
-                batch.add(DirectoryValue::UsedQuota(account_id), update_quota);
+                batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
             }
 
             batch.custom(
@@ -180,8 +187,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .create_document(document_id)
-                .add(DirectoryValue::UsedQuota(account_id), script_size)
-                .blob(blob_id.hash.clone(), BlobOp::Link, 0)
+                .add(DirectoryClass::UsedQuota(account_id), script_size)
+                .set(
+                    BlobOp::Link {
+                        hash: blob_id.hash.clone(),
+                    },
+                    Vec::new(),
+                )
                 .custom(
                     ObjectIndexBuilder::new(SCHEMA).with_changes(
                         Object::with_capacity(3)

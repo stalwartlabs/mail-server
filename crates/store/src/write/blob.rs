@@ -24,11 +24,11 @@
 use ahash::AHashSet;
 
 use crate::{
-    write::{BatchBuilder, F_CLEAR},
-    BlobClass, BlobHash, BlobKey, BlobStore, IterateParams, Store, BLOB_HASH_LEN, U32_LEN, U64_LEN,
+    write::BatchBuilder, BlobClass, BlobHash, BlobStore, Deserialize, IterateParams, Store,
+    ValueKey, BLOB_HASH_LEN, U32_LEN, U64_LEN,
 };
 
-use super::{key::DeserializeBigEndian, now, BlobOp};
+use super::{key::DeserializeBigEndian, now, BlobOp, Operation, ValueClass, ValueOp};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct BlobQuota {
@@ -37,69 +37,53 @@ pub struct BlobQuota {
 }
 
 impl Store {
-    pub async fn blob_hash_exists(
+    pub async fn blob_exists(
         &self,
         hash: impl AsRef<BlobHash> + Sync + Send,
     ) -> crate::Result<bool> {
-        let from_key = BlobKey {
-            account_id: u32::MAX,
+        self.get_value::<()>(ValueKey {
+            account_id: 0,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Link,
-            hash: hash.as_ref().clone(),
-        };
-        let to_key = BlobKey {
-            account_id: u32::MAX,
-            collection: 1,
-            document_id: 0,
-            op: BlobOp::Link,
-            hash: hash.as_ref().clone(),
-        };
-
-        let mut exists = false;
-
-        self.iterate(
-            IterateParams::new(from_key, to_key)
-                .ascending()
-                .no_values()
-                .only_first(),
-            |_, _| {
-                exists = true;
-                Ok(false)
-            },
-        )
-        .await?;
-
-        Ok(exists)
+            class: ValueClass::Blob(BlobOp::Commit {
+                hash: hash.as_ref().clone(),
+            }),
+        })
+        .await
+        .map(|v| v.is_some())
     }
 
-    pub async fn blob_hash_quota(&self, account_id: u32) -> crate::Result<BlobQuota> {
-        let from_key = BlobKey {
+    pub async fn blob_quota(&self, account_id: u32) -> crate::Result<BlobQuota> {
+        let from_key = ValueKey {
             account_id,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                hash: BlobHash::default(),
+                until: 0,
+            }),
         };
-        let to_key = BlobKey {
+        let to_key = ValueKey {
             account_id: account_id + 1,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                hash: BlobHash::default(),
+                until: 0,
+            }),
         };
 
         let now = now();
         let mut quota = BlobQuota { bytes: 0, count: 0 };
 
         self.iterate(
-            IterateParams::new(from_key, to_key).ascending().no_values(),
-            |key, _| {
-                let until = key.deserialize_be_u64(key.len() - (U64_LEN + U32_LEN))?;
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let until = key.deserialize_be_u64(key.len() - U64_LEN)?;
                 if until > now {
-                    let bytes = key.deserialize_be_u32(key.len() - U32_LEN)? as usize;
+                    let bytes = u32::deserialize(value)?;
                     if bytes > 0 {
-                        quota.bytes += bytes;
+                        quota.bytes += bytes as usize;
                         quota.count += 1;
                     }
                 }
@@ -111,88 +95,61 @@ impl Store {
         Ok(quota)
     }
 
-    pub async fn blob_hash_can_read(
+    pub async fn blob_has_access(
         &self,
         hash: impl AsRef<BlobHash> + Sync + Send,
         class: impl AsRef<BlobClass> + Sync + Send,
     ) -> crate::Result<bool> {
-        let (from_key, to_key) = match class.as_ref() {
-            BlobClass::Reserved { account_id } => (
-                BlobKey {
-                    account_id: *account_id,
-                    collection: 0,
-                    document_id: 0,
-                    op: BlobOp::Reserve {
-                        until: now(),
-                        size: 0,
-                    },
+        let key = match class.as_ref() {
+            BlobClass::Reserved {
+                account_id,
+                expires,
+            } if *expires > now() => ValueKey {
+                account_id: *account_id,
+                collection: 0,
+                document_id: 0,
+                class: ValueClass::Blob(BlobOp::Reserve {
                     hash: hash.as_ref().clone(),
-                },
-                BlobKey {
-                    account_id: *account_id,
-                    collection: 0,
-                    document_id: 0,
-                    op: BlobOp::Reserve {
-                        until: u64::MAX,
-                        size: u32::MAX as usize,
-                    },
-                    hash: hash.as_ref().clone(),
-                },
-            ),
+                    until: *expires,
+                }),
+            },
             BlobClass::Linked {
                 account_id,
                 collection,
                 document_id,
-            } => (
-                BlobKey {
-                    account_id: *account_id,
-                    collection: *collection,
-                    document_id: *document_id,
-                    op: BlobOp::Link,
+            } => ValueKey {
+                account_id: *account_id,
+                collection: *collection,
+                document_id: *document_id,
+                class: ValueClass::Blob(BlobOp::Link {
                     hash: hash.as_ref().clone(),
-                },
-                BlobKey {
-                    account_id: *account_id,
-                    collection: *collection,
-                    document_id: *document_id + 1,
-                    op: BlobOp::Link,
-                    hash: hash.as_ref().clone(),
-                },
-            ),
+                }),
+            },
+            _ => return Ok(false),
         };
 
-        let mut has_access = false;
-
-        self.iterate(
-            IterateParams::new(from_key, to_key)
-                .ascending()
-                .no_values()
-                .only_first(),
-            |_, _| {
-                has_access = true;
-                Ok(false)
-            },
-        )
-        .await?;
-
-        Ok(has_access)
+        self.get_value::<()>(key).await.map(|v| v.is_some())
     }
 
     pub async fn purge_blobs(&self, blob_store: BlobStore) -> crate::Result<()> {
         // Remove expired temporary blobs
-        let from_key = BlobKey {
+        let from_key = ValueKey {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                until: 0,
+                hash: BlobHash::default(),
+            }),
         };
-        let to_key = BlobKey {
+        let to_key = ValueKey {
             account_id: u32::MAX,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                until: 0,
+                hash: BlobHash::default(),
+            }),
         };
         let mut delete_keys = Vec::new();
         let mut active_hashes = AHashSet::new();
@@ -209,16 +166,13 @@ impl Store {
                         })?,
                 )
                 .unwrap();
-                let until = key.deserialize_be_u64(key.len() - (U64_LEN + U32_LEN))?;
-                if until < now {
-                    let account_id = key.deserialize_be_u32(1)?;
-                    let size = key.deserialize_be_u32(key.len() - U32_LEN)? as usize;
-                    delete_keys.push(BlobKey {
-                        account_id,
+                let until = key.deserialize_be_u64(key.len() - U64_LEN)?;
+                if until <= now {
+                    delete_keys.push(ValueKey {
+                        account_id: key.deserialize_be_u32(1)?,
                         collection: 0,
                         document_id: 0,
-                        hash,
-                        op: BlobOp::Reserve { until, size },
+                        class: ValueClass::Blob(BlobOp::Reserve { until, hash }),
                     });
                 } else {
                     active_hashes.insert(hash);
@@ -229,19 +183,21 @@ impl Store {
         .await?;
 
         // Validate linked blobs
-        let from_key = BlobKey {
+        let from_key = ValueKey {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Link,
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Link {
+                hash: BlobHash::default(),
+            }),
         };
-        let to_key = BlobKey {
+        let to_key = ValueKey {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
-            op: BlobOp::Link,
-            hash: BlobHash::new_max(),
+            class: ValueClass::Blob(BlobOp::Link {
+                hash: BlobHash::new_max(),
+            }),
         };
         let mut last_hash = BlobHash::default();
         self.iterate(
@@ -263,12 +219,11 @@ impl Store {
                     }
                 } else if last_hash != hash && !active_hashes.contains(&hash) {
                     // Unlinked or expired blob, delete.
-                    delete_keys.push(BlobKey {
+                    delete_keys.push(ValueKey {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        hash,
-                        op: BlobOp::Commit,
+                        class: ValueClass::Blob(BlobOp::Commit { hash }),
                     });
                 }
 
@@ -279,8 +234,8 @@ impl Store {
 
         // Delete expired or unlinked blobs
         for key in &delete_keys {
-            if matches!(key.op, BlobOp::Commit) {
-                blob_store.delete_blob(key.hash.as_ref()).await?;
+            if let ValueClass::Blob(BlobOp::Commit { hash }) = &key.class {
+                blob_store.delete_blob(hash.as_ref()).await?;
             }
         }
 
@@ -293,11 +248,16 @@ impl Store {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
             }
-            if matches!(key.op, BlobOp::Reserve { .. }) && key.account_id != last_account_id {
+            if matches!(key.class, ValueClass::Blob(BlobOp::Reserve { .. }))
+                && key.account_id != last_account_id
+            {
                 batch.with_account_id(key.account_id);
                 last_account_id = key.account_id;
             }
-            batch.blob(key.hash, key.op, F_CLEAR);
+            batch.ops.push(Operation::Value {
+                class: key.class,
+                op: ValueOp::Clear,
+            })
         }
         if !batch.is_empty() {
             self.write(batch.build()).await?;
@@ -308,19 +268,21 @@ impl Store {
 
     pub async fn blob_hash_unlink_account(&self, account_id: u32) -> crate::Result<()> {
         // Validate linked blobs
-        let from_key = BlobKey {
+        let from_key = ValueKey {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Link,
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Link {
+                hash: BlobHash::default(),
+            }),
         };
-        let to_key = BlobKey {
+        let to_key = ValueKey {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
-            op: BlobOp::Link,
-            hash: BlobHash::new_max(),
+            class: ValueClass::Blob(BlobOp::Link {
+                hash: BlobHash::new_max(),
+            }),
         };
         let mut delete_keys = Vec::new();
         self.iterate(
@@ -331,19 +293,20 @@ impl Store {
                 if document_id != u32::MAX
                     && key.deserialize_be_u32(1 + BLOB_HASH_LEN)? == account_id
                 {
-                    delete_keys.push(BlobKey {
+                    delete_keys.push(ValueKey {
                         account_id,
                         collection: key[1 + BLOB_HASH_LEN + U32_LEN],
                         document_id,
-                        hash: BlobHash::try_from_hash_slice(
-                            key.get(1..1 + BLOB_HASH_LEN).ok_or_else(|| {
-                                crate::Error::InternalError(format!(
-                                    "Invalid key {key:?} in blob hash tables"
-                                ))
-                            })?,
-                        )
-                        .unwrap(),
-                        op: BlobOp::Link,
+                        class: ValueClass::Blob(BlobOp::Link {
+                            hash: BlobHash::try_from_hash_slice(
+                                key.get(1..1 + BLOB_HASH_LEN).ok_or_else(|| {
+                                    crate::Error::InternalError(format!(
+                                        "Invalid key {key:?} in blob hash tables"
+                                    ))
+                                })?,
+                            )
+                            .unwrap(),
+                        }),
                     });
                 }
 
@@ -367,9 +330,11 @@ impl Store {
                 batch.with_collection(key.collection);
                 last_collection = key.collection;
             }
-            batch
-                .update_document(key.document_id)
-                .blob(key.hash, key.op, F_CLEAR);
+            batch.update_document(key.document_id);
+            batch.ops.push(Operation::Value {
+                class: key.class,
+                op: ValueOp::Clear,
+            });
         }
         if !batch.is_empty() {
             self.write(batch.build()).await?;

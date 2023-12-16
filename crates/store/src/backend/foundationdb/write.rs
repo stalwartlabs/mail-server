@@ -40,7 +40,7 @@ use crate::{
         key::KeySerializer,
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_VALUES,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_VALUES,
 };
 
 use super::{
@@ -233,22 +233,6 @@ impl FdbStore {
                                 )
                                 .or_insert(Vec::new())
                                 .push(BitmapOp::new(document_id, *set));
-                        }
-                    }
-                    Operation::Blob { hash, op, set } => {
-                        let key = BlobKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            hash,
-                            op: *op,
-                        }
-                        .serialize(true);
-
-                        if *set {
-                            trx.set(&key, &[]);
-                        } else {
-                            trx.clear(&key);
                         }
                     }
                     Operation::Log {

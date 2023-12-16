@@ -37,7 +37,7 @@ pub use blake3;
 pub use parking_lot;
 pub use rand;
 pub use roaring;
-use write::{BitmapClass, BlobOp, ValueClass};
+use write::{BitmapClass, ValueClass};
 
 #[cfg(feature = "s3")]
 use backend::s3::S3Store;
@@ -109,15 +109,6 @@ pub struct ValueKey<T: AsRef<ValueClass>> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BlobKey<T: AsRef<BlobHash>> {
-    pub account_id: u32,
-    pub collection: u8,
-    pub document_id: u32,
-    pub hash: T,
-    pub op: BlobOp,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LogKey {
     pub account_id: u32,
     pub collection: u8,
@@ -137,6 +128,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum BlobClass {
     Reserved {
         account_id: u32,
+        expires: u64,
     },
     Linked {
         account_id: u32,
@@ -147,7 +139,10 @@ pub enum BlobClass {
 
 impl Default for BlobClass {
     fn default() -> Self {
-        BlobClass::Reserved { account_id: 0 }
+        BlobClass::Reserved {
+            account_id: 0,
+            expires: 0,
+        }
     }
 }
 
@@ -178,8 +173,7 @@ pub const SUBSPACE_BITMAPS: u8 = b'b';
 pub const SUBSPACE_VALUES: u8 = b'v';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_INDEXES: u8 = b'i';
-pub const SUBSPACE_BLOBS: u8 = b'o';
-pub const SUBSPACE_BLOB_DATA: u8 = b't';
+pub const SUBSPACE_BLOBS: u8 = b't';
 pub const SUBSPACE_COUNTERS: u8 = b'c';
 
 pub struct IterateParams<T: Key> {

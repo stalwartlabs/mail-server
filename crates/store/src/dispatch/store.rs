@@ -272,16 +272,15 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS};
 
         for subspace in [
             SUBSPACE_VALUES,
             SUBSPACE_LOGS,
             SUBSPACE_BITMAPS,
             SUBSPACE_INDEXES,
-            SUBSPACE_BLOBS,
             SUBSPACE_COUNTERS,
-            SUBSPACE_BLOB_DATA,
+            SUBSPACE_BLOBS,
         ] {
             self.delete_range(
                 AnyKey {
@@ -309,24 +308,28 @@ impl Store {
     #[cfg(feature = "test_mode")]
     pub async fn blob_hash_expire_all(&self) {
         use crate::{
-            write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, F_CLEAR},
-            BlobHash, BlobKey, BLOB_HASH_LEN, U64_LEN,
+            write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, Operation, ValueOp},
+            BlobHash, BLOB_HASH_LEN, U64_LEN,
         };
 
         // Delete all temporary hashes
-        let from_key = BlobKey {
+        let from_key = ValueKey {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                hash: BlobHash::default(),
+                until: 0,
+            }),
         };
-        let to_key = BlobKey {
+        let to_key = ValueKey {
             account_id: u32::MAX,
             collection: 0,
             document_id: 0,
-            op: BlobOp::Reserve { until: 0, size: 0 },
-            hash: BlobHash::default(),
+            class: ValueClass::Blob(BlobOp::Reserve {
+                hash: BlobHash::default(),
+                until: 0,
+            }),
         };
         let mut batch = BatchBuilder::new();
         let mut last_account_id = u32::MAX;
@@ -339,17 +342,16 @@ impl Store {
                     batch.with_account_id(account_id);
                 }
 
-                batch.blob(
-                    BlobHash::try_from_hash_slice(
-                        key.get(1 + U32_LEN..1 + U32_LEN + BLOB_HASH_LEN).unwrap(),
-                    )
-                    .unwrap(),
-                    BlobOp::Reserve {
-                        until: key.deserialize_be_u64(key.len() - (U64_LEN + U32_LEN))?,
-                        size: key.deserialize_be_u32(key.len() - U32_LEN)? as usize,
-                    },
-                    F_CLEAR,
-                );
+                batch.ops.push(Operation::Value {
+                    class: ValueClass::Blob(BlobOp::Reserve {
+                        hash: BlobHash::try_from_hash_slice(
+                            key.get(1 + U32_LEN..1 + U32_LEN + BLOB_HASH_LEN).unwrap(),
+                        )
+                        .unwrap(),
+                        until: key.deserialize_be_u64(key.len() - U64_LEN)?,
+                    }),
+                    op: ValueOp::Clear,
+                });
 
                 Ok(true)
             },
@@ -363,7 +365,7 @@ impl Store {
     #[allow(unused_variables)]
 
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS};
 
         self.blob_hash_expire_all().await;
         self.purge_blobs(blob_store).await.unwrap();
@@ -375,10 +377,9 @@ impl Store {
         for (subspace, with_values) in [
             (SUBSPACE_VALUES, true),
             (SUBSPACE_COUNTERS, false),
-            (SUBSPACE_BLOB_DATA, true),
+            (SUBSPACE_BLOBS, true),
             (SUBSPACE_BITMAPS, false),
             (SUBSPACE_INDEXES, false),
-            (SUBSPACE_BLOBS, false),
         ] {
             let from_key = crate::write::AnyKey {
                 subspace,

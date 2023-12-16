@@ -21,12 +21,9 @@
  * for more details.
 */
 
-use crate::BlobHash;
-
 use super::{
-    assert::ToAssertValue, Batch, BatchBuilder, BitmapClass, BlobOp, HasFlag, IntoOperations,
-    Operation, Serialize, TagValue, ToBitmaps, ValueClass, ValueOp, F_BITMAP, F_CLEAR, F_INDEX,
-    F_VALUE,
+    assert::ToAssertValue, Batch, BatchBuilder, BitmapClass, HasFlag, IntoOperations, Operation,
+    Serialize, TagValue, ToBitmaps, ValueClass, ValueOp, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
 };
 
 impl BatchBuilder {
@@ -140,15 +137,6 @@ impl BatchBuilder {
                 field: field.into(),
                 value: value.into(),
             },
-            set: !options.has_flag(F_CLEAR),
-        });
-        self
-    }
-
-    pub fn blob(&mut self, hash: BlobHash, op: BlobOp, options: u32) -> &mut Self {
-        self.ops.push(Operation::Blob {
-            hash,
-            op,
             set: !options.has_flag(F_CLEAR),
         });
         self

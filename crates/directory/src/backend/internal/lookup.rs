@@ -23,7 +23,7 @@
 
 use mail_send::Credentials;
 use store::{
-    write::{DirectoryValue, ValueClass},
+    write::{DirectoryClass, ValueClass},
     IterateParams, Store, ValueKey,
 };
 
@@ -39,7 +39,7 @@ impl Directory for Store {
             QueryBy::Id(account_id) => {
                 return self
                     .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-                        DirectoryValue::Principal(account_id),
+                        DirectoryClass::Principal(account_id),
                     )))
                     .await
                     .map_err(Into::into);
@@ -58,7 +58,7 @@ impl Directory for Store {
         if let Some(account_id) = self.get_account_id(username).await? {
             match (
                 self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-                    DirectoryValue::Principal(account_id),
+                    DirectoryClass::Principal(account_id),
                 )))
                 .await?,
                 secret,
@@ -76,7 +76,7 @@ impl Directory for Store {
 
     async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>> {
         self.get_value::<Vec<u32>>(ValueKey::from(ValueClass::Directory(
-            DirectoryValue::EmailToId(email.as_bytes().to_vec()),
+            DirectoryClass::EmailToId(email.as_bytes().to_vec()),
         )))
         .await
         .map(|ids| ids.unwrap_or_default())
@@ -85,7 +85,7 @@ impl Directory for Store {
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         self.get_value::<()>(ValueKey::from(ValueClass::Directory(
-            DirectoryValue::Domain(domain.as_bytes().to_vec()),
+            DirectoryClass::Domain(domain.as_bytes().to_vec()),
         )))
         .await
         .map(|ids| ids.is_some())
@@ -94,7 +94,7 @@ impl Directory for Store {
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {
         self.get_value::<()>(ValueKey::from(ValueClass::Directory(
-            DirectoryValue::EmailToId(address.as_bytes().to_vec()),
+            DirectoryClass::EmailToId(address.as_bytes().to_vec()),
         )))
         .await
         .map(|ids| ids.is_some())
@@ -107,8 +107,8 @@ impl Directory for Store {
         if address.len() > 3 {
             self.iterate(
                 IterateParams::new(
-                    ValueKey::from(ValueClass::Directory(DirectoryValue::EmailToId(vec![0u8]))),
-                    ValueKey::from(ValueClass::Directory(DirectoryValue::EmailToId(
+                    ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(vec![0u8]))),
+                    ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(
                         vec![u8::MAX; 10],
                     ))),
                 )
@@ -133,7 +133,7 @@ impl Directory for Store {
         for account_id in self.email_to_ids(address).await? {
             if let Some(email) = self
                 .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-                    DirectoryValue::Principal(account_id),
+                    DirectoryClass::Principal(account_id),
                 )))
                 .await?
                 .and_then(|p| p.emails.into_iter().next())

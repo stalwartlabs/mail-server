@@ -43,7 +43,7 @@ use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use store::{
     write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR,
+        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryClass, F_CLEAR,
         F_VALUE,
     },
     BlobClass,
@@ -262,7 +262,12 @@ impl JMAP {
                 };
 
                 // Link blob
-                batch.blob(blob_id.hash.clone(), BlobOp::Link, 0);
+                batch.set(
+                    BlobOp::Link {
+                        hash: blob_id.hash.clone(),
+                    },
+                    Vec::new(),
+                );
 
                 let script_size = blob_id.section.as_ref().unwrap().size as i64;
 
@@ -279,7 +284,9 @@ impl JMAP {
                     })?;
 
                     // Unlink previous blob
-                    batch.blob(current_blob_id.hash.clone(), BlobOp::Link, F_CLEAR);
+                    batch.clear(BlobOp::Link {
+                        hash: current_blob_id.hash.clone(),
+                    });
 
                     // Update quota
                     let current_script_size = current_blob_id.section.as_ref().unwrap().size as i64;
@@ -289,10 +296,10 @@ impl JMAP {
                         std::cmp::Ordering::Equal => 0,
                     };
                     if quota != 0 {
-                        batch.add(DirectoryValue::UsedQuota(account_id), quota);
+                        batch.add(DirectoryClass::UsedQuota(account_id), quota);
                     }
                 } else {
-                    batch.add(DirectoryValue::UsedQuota(account_id), script_size);
+                    batch.add(DirectoryClass::UsedQuota(account_id), script_size);
                 }
             };
 

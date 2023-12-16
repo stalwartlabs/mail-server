@@ -31,11 +31,11 @@ use rocksdb::{Direction, ErrorKind, IteratorMode};
 
 use super::{
     bitmap::{clear_bit, set_bit},
-    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES,
+    RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES,
 };
 use crate::{
     write::{Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_VALUES,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 impl RocksDbStore {
@@ -50,7 +50,6 @@ impl RocksDbStore {
             let cf_values = db.cf_handle(CF_VALUES).unwrap();
             let cf_indexes = db.cf_handle(CF_INDEXES).unwrap();
             let cf_logs = db.cf_handle(CF_LOGS).unwrap();
-            let cf_blobs = db.cf_handle(CF_BLOBS).unwrap();
             let cf_counters = db.cf_handle(CF_COUNTERS).unwrap();
 
             loop {
@@ -139,22 +138,6 @@ impl RocksDbStore {
                             };
 
                             wb.merge_cf(&cf_bitmaps, key, value);
-                        }
-                        Operation::Blob { hash, op, set } => {
-                            let key = BlobKey {
-                                account_id,
-                                collection,
-                                document_id,
-                                hash,
-                                op: *op,
-                            }
-                            .serialize(false);
-
-                            if *set {
-                                wb.put_cf(&cf_blobs, &key, []);
-                            } else {
-                                wb.delete_cf(&cf_blobs, &key);
-                            }
                         }
                         Operation::Log {
                             collection,

@@ -31,7 +31,7 @@ use crate::{
     write::{
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::MysqlStore;
@@ -216,23 +216,6 @@ impl MysqlStore {
                         }
                     } else {
                         trx.prep("DELETE FROM b WHERE k = ?").await?
-                    };
-                    trx.exec_drop(&s, (key,)).await?;
-                }
-                Operation::Blob { hash, op, set } => {
-                    let key = BlobKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        hash,
-                        op: *op,
-                    }
-                    .serialize(false);
-
-                    let s = if *set {
-                        trx.prep("INSERT IGNORE INTO o (k) VALUES (?)").await?
-                    } else {
-                        trx.prep("DELETE FROM o WHERE k = ?").await?
                     };
                     trx.exec_drop(&s, (key,)).await?;
                 }

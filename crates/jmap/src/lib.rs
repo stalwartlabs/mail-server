@@ -52,7 +52,7 @@ use store::{
     parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BitmapClass, DirectoryValue, TagValue, ToBitmaps, ValueClass},
+    write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ToBitmaps, ValueClass},
     BitmapKey, BlobStore, Deserialize, FtsStore, Serialize, Store, Stores, ValueKey,
 };
 use tokio::sync::mpsc;
@@ -617,7 +617,7 @@ impl JMAP {
 
     pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
         self.store
-            .get_counter(DirectoryValue::UsedQuota(account_id))
+            .get_counter(DirectoryClass::UsedQuota(account_id))
             .await
             .map_err(|err| {
                 tracing::error!(

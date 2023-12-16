@@ -23,7 +23,7 @@
 
 use std::ops::Range;
 
-use super::{RocksDbStore, CF_BLOB_DATA};
+use super::{RocksDbStore, CF_BLOBS};
 
 impl RocksDbStore {
     pub(crate) async fn get_blob(
@@ -33,7 +33,7 @@ impl RocksDbStore {
     ) -> crate::Result<Option<Vec<u8>>> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.get_pinned_cf(&db.cf_handle(CF_BLOB_DATA).unwrap(), key)
+            db.get_pinned_cf(&db.cf_handle(CF_BLOBS).unwrap(), key)
                 .map(|obj| {
                     obj.map(|bytes| {
                         if range.start == 0 && range.end == u32::MAX {
@@ -57,7 +57,7 @@ impl RocksDbStore {
     pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.put_cf(&db.cf_handle(CF_BLOB_DATA).unwrap(), key, data)
+            db.put_cf(&db.cf_handle(CF_BLOBS).unwrap(), key, data)
                 .map_err(|e| crate::Error::InternalError(format!("Failed to insert blob: {}", e)))
         })
         .await
@@ -66,7 +66,7 @@ impl RocksDbStore {
     pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.delete_cf(&db.cf_handle(CF_BLOB_DATA).unwrap(), key)
+            db.delete_cf(&db.cf_handle(CF_BLOBS).unwrap(), key)
                 .map_err(|e| crate::Error::InternalError(format!("Failed to delete blob: {}", e)))
                 .map(|_| true)
         })

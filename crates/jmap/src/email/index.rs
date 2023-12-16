@@ -35,7 +35,7 @@ use store::{
     backend::MAX_TOKEN_LENGTH,
     fts::{index::FtsDocument, Field},
     write::{
-        BatchBuilder, BlobOp, DirectoryValue, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+        BatchBuilder, BlobOp, DirectoryClass, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
     },
     BlobHash,
 };
@@ -92,7 +92,7 @@ impl IndexMessage for BatchBuilder {
         let account_id = self.last_account_id().unwrap();
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
             .add(
-                DirectoryValue::UsedQuota(account_id),
+                DirectoryClass::UsedQuota(account_id),
                 message.raw_message.len() as i64,
             );
 
@@ -152,7 +152,12 @@ impl IndexMessage for BatchBuilder {
         }
 
         // Link blob
-        self.blob(blob_hash.clone(), BlobOp::Link, 0);
+        self.set(
+            BlobOp::Link {
+                hash: blob_hash.clone(),
+            },
+            Vec::new(),
+        );
 
         // Store message metadata
         self.value(
@@ -415,7 +420,7 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         batch
             .value(Property::Size, metadata.size as u32, F_INDEX | options)
             .add(
-                DirectoryValue::UsedQuota(account_id),
+                DirectoryClass::UsedQuota(account_id),
                 if self.set {
                     metadata.size as i64
                 } else {
@@ -435,7 +440,18 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         batch.index_headers(&metadata.contents.parts[0].headers, options);
 
         // Link blob
-        batch.blob(metadata.blob_hash.clone(), BlobOp::Link, options);
+        if self.set {
+            batch.set(
+                BlobOp::Link {
+                    hash: metadata.blob_hash.clone(),
+                },
+                Vec::new(),
+            );
+        } else {
+            batch.clear(BlobOp::Link {
+                hash: metadata.blob_hash.clone(),
+            });
+        }
     }
 }
 

@@ -47,7 +47,7 @@ use store::{
     query::Filter,
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryValue, F_CLEAR,
+        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryClass, F_CLEAR,
         F_VALUE,
     },
     BlobClass,
@@ -122,8 +122,13 @@ impl JMAP {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document(document_id)
-                            .add(DirectoryValue::UsedQuota(account_id), script_size as i64)
-                            .blob(blob_id.hash.clone(), BlobOp::Link, 0)
+                            .add(DirectoryClass::UsedQuota(account_id), script_size as i64)
+                            .set(
+                                BlobOp::Link {
+                                    hash: blob_id.hash.clone(),
+                                },
+                                Vec::new(),
+                            )
                             .custom(builder);
                         sieve_ids.insert(document_id);
                         self.write_batch(batch).await?;
@@ -218,15 +223,20 @@ impl JMAP {
                                 std::cmp::Ordering::Equal => 0,
                             };
                             if update_quota != 0 {
-                                batch.add(DirectoryValue::UsedQuota(account_id), update_quota);
+                                batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
                             }
 
                             // Update blobId
-                            batch.blob(prev_blob_id.hash, BlobOp::Link, F_CLEAR).blob(
-                                blob_id.hash.clone(),
-                                BlobOp::Link,
-                                0,
-                            );
+                            batch
+                                .clear(BlobOp::Link {
+                                    hash: prev_blob_id.hash,
+                                })
+                                .set(
+                                    BlobOp::Link {
+                                        hash: blob_id.hash.clone(),
+                                    },
+                                    Vec::new(),
+                                );
 
                             blob_id.into()
                         } else {
@@ -394,9 +404,11 @@ impl JMAP {
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
             .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-            .blob(blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
+            .clear(BlobOp::Link {
+                hash: blob_id.hash.clone(),
+            })
             .add(
-                DirectoryValue::UsedQuota(account_id),
+                DirectoryClass::UsedQuota(account_id),
                 -(blob_id.section.as_ref().unwrap().size as i64),
             )
             .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));

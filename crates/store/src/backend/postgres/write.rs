@@ -32,7 +32,7 @@ use crate::{
     write::{
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::PostgresStore;
@@ -226,26 +226,6 @@ impl PostgresStore {
                         }
                     } else {
                         trx.prepare_cached("DELETE FROM b WHERE k = $1").await?
-                    };
-                    trx.execute(&s, &[&key]).await?;
-                }
-                Operation::Blob { hash, op, set } => {
-                    let key = BlobKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        hash,
-                        op: *op,
-                    }
-                    .serialize(false);
-
-                    let s = if *set {
-                        trx.prepare_cached(
-                            "INSERT INTO o (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
-                        )
-                        .await?
-                    } else {
-                        trx.prepare_cached("DELETE FROM o WHERE k = $1").await?
                     };
                     trx.execute(&s, &[&key]).await?;
                 }

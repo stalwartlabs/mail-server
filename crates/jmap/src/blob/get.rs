@@ -268,7 +268,8 @@ impl JMAP {
                                 }
                             }
                         }
-                        BlobClass::Reserved { account_id } if *account_id == req_account_id => (),
+                        BlobClass::Reserved { account_id, .. } if *account_id == req_account_id => {
+                        }
                         _ => {
                             response.not_found.push(MaybeUnparsable::Value(id));
                             continue;

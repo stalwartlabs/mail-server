@@ -21,10 +21,11 @@
  * for more details.
 */
 
+use ahash::AHashMap;
 use store::{
     config::ConfigStore,
-    write::{blob::BlobQuota, now, BatchBuilder, BlobOp, F_CLEAR},
-    BlobClass, BlobHash, BlobStore,
+    write::{blob::BlobQuota, now, BatchBuilder, BlobOp},
+    BlobClass, BlobHash, BlobStore, Serialize,
 };
 use utils::config::Config;
 
@@ -53,20 +54,20 @@ pub async fn blob_tests() {
 
         // Blob hash exists
         let hash = BlobHash::from(b"abc".as_slice());
-        assert!(!store.blob_hash_exists(&hash).await.unwrap());
+        assert!(!store.blob_exists(&hash).await.unwrap());
 
-        // Reserve blob but mark it as expired
+        // Reserve blob
+        let until = now() + 1;
         store
             .write(
                 BatchBuilder::new()
                     .with_account_id(0)
-                    .blob(
-                        hash.clone(),
+                    .set(
                         BlobOp::Reserve {
-                            until: now() - 10,
-                            size: 1024,
+                            until,
+                            hash: hash.clone(),
                         },
-                        0,
+                        1024u32.serialize(),
                     )
                     .build_batch(),
             )
@@ -74,7 +75,7 @@ pub async fn blob_tests() {
             .unwrap();
 
         // Uncommitted blob, should not exist
-        assert!(!store.blob_hash_exists(&hash).await.unwrap());
+        assert!(!store.blob_exists(&hash).await.unwrap());
 
         // Write blob to store
         blob_store.put_blob(hash.as_ref(), b"abc").await.unwrap();
@@ -83,30 +84,48 @@ pub async fn blob_tests() {
         store
             .write(
                 BatchBuilder::new()
-                    .blob(hash.clone(), BlobOp::Commit, 0)
+                    .set(BlobOp::Commit { hash: hash.clone() }, Vec::new())
                     .build_batch(),
             )
             .await
             .unwrap();
 
         // Blob hash should now exist
-        assert!(store.blob_hash_exists(&hash).await.unwrap());
+        assert!(store.blob_exists(&hash).await.unwrap());
+        assert!(blob_store
+            .get_blob(hash.as_ref(), 0..u32::MAX)
+            .await
+            .unwrap()
+            .is_some());
 
         // AccountId 0 should be able to read blob
         assert!(store
-            .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 0 })
+            .blob_has_access(
+                &hash,
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: until
+                }
+            )
             .await
             .unwrap());
 
         // AccountId 1 should not be able to read blob
         assert!(!store
-            .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 1 })
+            .blob_has_access(
+                &hash,
+                BlobClass::Reserved {
+                    account_id: 1,
+                    expires: until
+                }
+            )
             .await
             .unwrap());
 
         // Blob already expired, quota should be 0
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         assert_eq!(
-            store.blob_hash_quota(0).await.unwrap(),
+            store.blob_quota(0).await.unwrap(),
             BlobQuota { bytes: 0, count: 0 }
         );
 
@@ -114,11 +133,17 @@ pub async fn blob_tests() {
         store.purge_blobs(blob_store.clone()).await.unwrap();
 
         // Blob hash should no longer exist
-        assert!(!store.blob_hash_exists(&hash).await.unwrap());
+        assert!(!store.blob_exists(&hash).await.unwrap());
 
         // AccountId 0 should not be able to read blob
         assert!(!store
-            .blob_hash_can_read(&hash, BlobClass::Reserved { account_id: 0 })
+            .blob_has_access(
+                &hash,
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: until
+                }
+            )
             .await
             .unwrap());
 
@@ -130,44 +155,39 @@ pub async fn blob_tests() {
             .is_none());
 
         // Upload one linked blob to accountId 1, two linked blobs to accountId 0, and three unlinked (reserved) blobs to accountId 2
-        for (document_id, (blob, blob_op)) in [
-            (b"123", BlobOp::Link),
-            (b"456", BlobOp::Link),
-            (b"789", BlobOp::Link),
-            (
-                b"abc",
-                BlobOp::Reserve {
-                    until: now() - 10,
-                    size: 5000,
-                },
-            ),
-            (
-                b"efg",
-                BlobOp::Reserve {
-                    until: now() + 10,
-                    size: 1000,
-                },
-            ),
-            (
-                b"hij",
-                BlobOp::Reserve {
-                    until: now() + 10,
-                    size: 2000,
-                },
-            ),
+        let expiry_times = AHashMap::from_iter([
+            (b"abc", now() - 10),
+            (b"efg", now() + 10),
+            (b"hij", now() + 10),
+        ]);
+        for (document_id, (blob, blob_value)) in [
+            (b"123", vec![]),
+            (b"456", vec![]),
+            (b"789", vec![]),
+            (b"abc", 5000u32.serialize()),
+            (b"efg", 1000u32.serialize()),
+            (b"hij", 2000u32.serialize()),
         ]
         .into_iter()
         .enumerate()
         {
             let hash = BlobHash::from(blob.as_slice());
+            let blob_op = if let Some(until) = expiry_times.get(blob) {
+                BlobOp::Reserve {
+                    until: *until,
+                    hash: hash.clone(),
+                }
+            } else {
+                BlobOp::Link { hash: hash.clone() }
+            };
             store
                 .write(
                     BatchBuilder::new()
                         .with_account_id(if document_id > 0 { 0 } else { 1 })
                         .with_collection(0)
                         .update_document(document_id as u32)
-                        .blob(hash.clone(), blob_op, 0)
-                        .blob(hash.clone(), BlobOp::Commit, 0)
+                        .set(blob_op, blob_value)
+                        .set(BlobOp::Commit { hash: hash.clone() }, vec![])
                         .build_batch(),
                 )
                 .await
@@ -180,21 +200,27 @@ pub async fn blob_tests() {
 
         // One of the reserved blobs expired and should not count towards quota
         assert_eq!(
-            store.blob_hash_quota(0).await.unwrap(),
+            store.blob_quota(0).await.unwrap(),
             BlobQuota {
                 bytes: 3000,
                 count: 2
             }
         );
         assert_eq!(
-            store.blob_hash_quota(1).await.unwrap(),
+            store.blob_quota(1).await.unwrap(),
             BlobQuota { bytes: 0, count: 0 }
         );
 
         // Purge expired blobs and make sure nothing else is deleted
         store.purge_blobs(blob_store.clone()).await.unwrap();
         for (pos, (blob, blob_class)) in [
-            (b"abc", BlobClass::Reserved { account_id: 0 }),
+            (
+                b"abc",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"abc"],
+                },
+            ),
             (
                 b"123",
                 BlobClass::Linked {
@@ -219,16 +245,28 @@ pub async fn blob_tests() {
                     document_id: 2,
                 },
             ),
-            (b"efg", BlobClass::Reserved { account_id: 0 }),
-            (b"hij", BlobClass::Reserved { account_id: 0 }),
+            (
+                b"efg",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"efg"],
+                },
+            ),
+            (
+                b"hij",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"hij"],
+                },
+            ),
         ]
         .into_iter()
         .enumerate()
         {
             let ct = pos == 0;
             let hash = BlobHash::from(blob.as_slice());
-            assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
-            assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+            assert!(store.blob_has_access(&hash, blob_class).await.unwrap() ^ ct);
+            assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
                     .get_blob(hash.as_ref(), 0..u32::MAX)
@@ -241,7 +279,7 @@ pub async fn blob_tests() {
 
         // AccountId 0 should not have access to accountId 1's blobs
         assert!(!store
-            .blob_hash_can_read(
+            .blob_has_access(
                 BlobHash::from(b"123".as_slice()),
                 BlobClass::Linked {
                     account_id: 0,
@@ -259,7 +297,9 @@ pub async fn blob_tests() {
                     .with_account_id(0)
                     .with_collection(0)
                     .update_document(2)
-                    .blob(BlobHash::from(b"789".as_slice()), BlobOp::Link, F_CLEAR)
+                    .clear(BlobOp::Link {
+                        hash: BlobHash::from(b"789".as_slice()),
+                    })
                     .build_batch(),
             )
             .await
@@ -292,16 +332,28 @@ pub async fn blob_tests() {
                     document_id: 1,
                 },
             ),
-            (b"efg", BlobClass::Reserved { account_id: 0 }),
-            (b"hij", BlobClass::Reserved { account_id: 0 }),
+            (
+                b"efg",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"efg"],
+                },
+            ),
+            (
+                b"hij",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"hij"],
+                },
+            ),
         ]
         .into_iter()
         .enumerate()
         {
             let ct = pos == 0;
             let hash = BlobHash::from(blob.as_slice());
-            assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
-            assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+            assert!(store.blob_has_access(&hash, blob_class).await.unwrap() ^ ct);
+            assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
                     .get_blob(hash.as_ref(), 0..u32::MAX)
@@ -334,16 +386,28 @@ pub async fn blob_tests() {
                     document_id: 1,
                 },
             ),
-            (b"efg", BlobClass::Reserved { account_id: 0 }),
-            (b"hij", BlobClass::Reserved { account_id: 0 }),
+            (
+                b"efg",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"efg"],
+                },
+            ),
+            (
+                b"hij",
+                BlobClass::Reserved {
+                    account_id: 0,
+                    expires: expiry_times[&b"hij"],
+                },
+            ),
         ]
         .into_iter()
         .enumerate()
         {
             let ct = pos == 0;
             let hash = BlobHash::from(blob.as_slice());
-            assert!(store.blob_hash_can_read(&hash, blob_class).await.unwrap() ^ ct);
-            assert!(store.blob_hash_exists(&hash).await.unwrap() ^ ct);
+            assert!(store.blob_has_access(&hash, blob_class).await.unwrap() ^ ct);
+            assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
                     .get_blob(hash.as_ref(), 0..u32::MAX)

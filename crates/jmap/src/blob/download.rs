@@ -48,7 +48,7 @@ impl JMAP {
     ) -> Result<Option<Vec<u8>>, MethodError> {
         if !self
             .store
-            .blob_hash_can_read(&blob_id.hash, &blob_id.class)
+            .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -149,7 +149,7 @@ impl JMAP {
     ) -> Result<bool, MethodError> {
         Ok(self
             .store
-            .blob_hash_can_read(&blob_id.hash, &blob_id.class)
+            .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -184,7 +184,7 @@ impl JMAP {
                                     .await?)
                     }
                 }
-                BlobClass::Reserved { account_id } => access_token.is_member(*account_id),
+                BlobClass::Reserved { account_id, .. } => access_token.is_member(*account_id),
             })
     }
 }

@@ -25,8 +25,8 @@ use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOp
 use utils::config::utils::AsKey;
 
 use crate::{
-    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-    SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    SUBSPACE_VALUES,
 };
 
 use super::MysqlStore;
@@ -98,7 +98,7 @@ impl MysqlStore {
                 v LONGBLOB NOT NULL,
                 PRIMARY KEY (k(255))
             ) ENGINE=InnoDB",
-            char::from(SUBSPACE_BLOB_DATA),
+            char::from(SUBSPACE_BLOBS),
         ))
         .await?;
 
@@ -108,17 +108,6 @@ impl MysqlStore {
                 "CREATE TABLE IF NOT EXISTS {table} (
                     k BLOB,
                     PRIMARY KEY (k(400))
-                ) ENGINE=InnoDB"
-            ))
-            .await?;
-        }
-
-        for table in [SUBSPACE_BLOBS] {
-            let table = char::from(table);
-            conn.query_drop(&format!(
-                "CREATE TABLE IF NOT EXISTS {table} (
-                    k TINYBLOB,
-                    PRIMARY KEY (k(255))
                 ) ENGINE=InnoDB"
             ))
             .await?;

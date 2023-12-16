@@ -32,7 +32,7 @@ use jmap_proto::{
 
 use store::{
     write::{now, BatchBuilder, BlobOp},
-    BlobClass,
+    BlobClass, Serialize,
 };
 use utils::map::vec_map::VecMap;
 
@@ -55,18 +55,21 @@ impl JMAP {
         for blob_id in request.blob_ids {
             if self.has_access_blob(&blob_id, access_token).await? {
                 let mut batch = BatchBuilder::new();
-                batch.with_account_id(account_id).blob(
-                    blob_id.hash.clone(),
+                let until = now() + self.config.upload_tmp_ttl;
+                batch.with_account_id(account_id).set(
                     BlobOp::Reserve {
-                        until: now() + self.config.upload_tmp_ttl,
-                        size: 0,
+                        until,
+                        hash: blob_id.hash.clone(),
                     },
-                    0,
+                    0u32.serialize(),
                 );
                 self.write_batch(batch).await?;
                 let dest_blob_id = BlobId {
                     hash: blob_id.hash.clone(),
-                    class: BlobClass::Reserved { account_id },
+                    class: BlobClass::Reserved {
+                        account_id,
+                        expires: until,
+                    },
                     section: blob_id.section.clone(),
                 };
 

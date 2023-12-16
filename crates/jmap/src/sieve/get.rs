@@ -32,7 +32,7 @@ use jmap_proto::{
 use sieve::Sieve;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder, BlobOp, F_CLEAR},
+    write::{assert::HashedValue, BatchBuilder, BlobOp},
     Deserialize, Serialize,
 };
 
@@ -276,8 +276,15 @@ impl JMAP {
                         .update_document(document_id)
                         .assert_value(Property::Value, &script_object)
                         .set(Property::Value, (&new_script_object).serialize())
-                        .blob(blob_id.hash.clone(), BlobOp::Link, F_CLEAR)
-                        .blob(new_blob_id.hash, BlobOp::Link, 0);
+                        .clear(BlobOp::Link {
+                            hash: blob_id.hash.clone(),
+                        })
+                        .set(
+                            BlobOp::Link {
+                                hash: new_blob_id.hash,
+                            },
+                            Vec::new(),
+                        );
                     self.write_batch(batch).await?;
 
                     Ok((sieve.inner, new_script_object))

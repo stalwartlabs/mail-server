@@ -37,9 +37,7 @@ use utils::{
 
 use crate::{Deserialize, Error};
 
-use super::{
-    RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_BLOB_DATA, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES,
-};
+use super::{RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES};
 
 impl RocksDbStore {
     pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
@@ -76,10 +74,10 @@ impl RocksDbStore {
         let mut cf_opts = Options::default();
         cf_opts.set_enable_blob_files(true);
         cf_opts.set_min_blob_size(config.property_or_static((&prefix, "min-blob-size"), "16834")?);
-        cfs.push(ColumnFamilyDescriptor::new(CF_BLOB_DATA, cf_opts));
+        cfs.push(ColumnFamilyDescriptor::new(CF_BLOBS, cf_opts));
 
         // Other cfs
-        for cf in [CF_BLOBS, CF_INDEXES, CF_LOGS, CF_VALUES] {
+        for cf in [CF_INDEXES, CF_LOGS, CF_VALUES] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(cf, cf_opts));
         }

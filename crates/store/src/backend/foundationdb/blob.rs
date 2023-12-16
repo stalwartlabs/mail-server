@@ -26,7 +26,7 @@ use std::ops::Range;
 use foundationdb::{options::StreamingMode, FdbError, KeySelector, RangeOption};
 use futures::StreamExt;
 
-use crate::{write::key::KeySerializer, Error, BLOB_HASH_LEN, SUBSPACE_BLOB_DATA};
+use crate::{write::key::KeySerializer, Error, BLOB_HASH_LEN, SUBSPACE_BLOBS};
 
 use super::{FdbStore, MAX_VALUE_SIZE};
 
@@ -41,12 +41,12 @@ impl FdbStore {
         let block_end = (range.end as usize / MAX_VALUE_SIZE) + 1;
 
         let begin = KeySerializer::new(key.len() + 3)
-            .write(SUBSPACE_BLOB_DATA)
+            .write(SUBSPACE_BLOBS)
             .write(key)
             .write(block_start as u16)
             .finalize();
         let end = KeySerializer::new(key.len() + 3)
-            .write(SUBSPACE_BLOB_DATA)
+            .write(SUBSPACE_BLOBS)
             .write(key)
             .write(block_end as u16)
             .finalize();
@@ -129,7 +129,7 @@ impl FdbStore {
         for (chunk_pos, chunk_bytes) in data.chunks(MAX_VALUE_SIZE).enumerate() {
             trx.set(
                 &KeySerializer::new(key.len() + 3)
-                    .write(SUBSPACE_BLOB_DATA)
+                    .write(SUBSPACE_BLOBS)
                     .write(key)
                     .write(chunk_pos as u16)
                     .finalize(),
@@ -158,12 +158,12 @@ impl FdbStore {
         let trx = self.db.create_trx()?;
         trx.clear_range(
             &KeySerializer::new(key.len() + 3)
-                .write(SUBSPACE_BLOB_DATA)
+                .write(SUBSPACE_BLOBS)
                 .write(key)
                 .write(0u16)
                 .finalize(),
             &KeySerializer::new(key.len() + 3)
-                .write(SUBSPACE_BLOB_DATA)
+                .write(SUBSPACE_BLOBS)
                 .write(key)
                 .write(u16::MAX)
                 .finalize(),

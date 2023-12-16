@@ -102,11 +102,6 @@ pub enum Operation {
         class: BitmapClass,
         set: bool,
     },
-    Blob {
-        hash: BlobHash,
-        op: BlobOp,
-        set: bool,
-    },
     Log {
         change_id: u64,
         collection: u8,
@@ -141,12 +136,13 @@ pub enum ValueClass {
     Key(Vec<u8>),
     TermIndex,
     ReservedId,
-    Directory(DirectoryValue),
+    Directory(DirectoryClass),
+    Blob(BlobOp),
     IndexEmail(u64),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum DirectoryValue {
+pub enum DirectoryClass {
     NameToId(Vec<u8>),
     EmailToId(Vec<u8>),
     Domain(Vec<u8>),
@@ -162,11 +158,11 @@ pub enum ValueOp {
     Clear,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum BlobOp {
-    Reserve { until: u64, size: usize },
-    Commit,
-    Link,
+    Reserve { hash: BlobHash, until: u64 },
+    Commit { hash: BlobHash },
+    Link { hash: BlobHash },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -270,7 +266,7 @@ impl Deserialize for u64 {
 impl Deserialize for u32 {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
         Ok(u32::from_be_bytes(bytes.try_into().map_err(|_| {
-            crate::Error::InternalError("Failed to deserialize u64".to_string())
+            crate::Error::InternalError("Failed to deserialize u32".to_string())
         })?))
     }
 }
@@ -595,9 +591,16 @@ impl From<BlobHash> for Vec<u8> {
 impl BlobClass {
     pub fn account_id(&self) -> u32 {
         match self {
-            BlobClass::Reserved { account_id } | BlobClass::Linked { account_id, .. } => {
+            BlobClass::Reserved { account_id, .. } | BlobClass::Linked { account_id, .. } => {
                 *account_id
             }
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        match self {
+            BlobClass::Reserved { expires, .. } => *expires > now(),
+            BlobClass::Linked { .. } => true,
         }
     }
 }

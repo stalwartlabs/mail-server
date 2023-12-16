@@ -25,7 +25,7 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
     write::{Batch, Operation, ValueOp},
-    BitmapKey, BlobKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey,
 };
 
 use super::SqliteStore;
@@ -134,24 +134,6 @@ impl SqliteStore {
                             trx.prepare_cached("DELETE FROM b WHERE k = ?")?
                                 .execute(params![&key])?;
                         };
-                    }
-                    Operation::Blob { hash, op, set } => {
-                        let key = BlobKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            hash,
-                            op: *op,
-                        }
-                        .serialize(false);
-
-                        if *set {
-                            trx.prepare_cached("INSERT OR IGNORE INTO o (k) VALUES (?)")?
-                                .execute([&key])?;
-                        } else {
-                            trx.prepare_cached("DELETE FROM o WHERE k = ?")?
-                                .execute([&key])?;
-                        }
                     }
                     Operation::Log {
                         collection,

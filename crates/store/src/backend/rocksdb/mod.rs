@@ -26,8 +26,8 @@ use std::sync::Arc;
 use rocksdb::{MultiThreaded, OptimisticTransactionDB};
 
 use crate::{
-    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-    SUBSPACE_LOGS, SUBSPACE_VALUES,
+    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    SUBSPACE_VALUES,
 };
 
 pub mod bitmap;
@@ -41,7 +41,6 @@ static CF_VALUES: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_VALUE
 static CF_LOGS: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_LOGS]) };
 static CF_INDEXES: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_INDEXES]) };
 static CF_BLOBS: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_BLOBS]) };
-static CF_BLOB_DATA: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_BLOB_DATA]) };
 static CF_COUNTERS: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_COUNTERS]) };
 
 impl From<rocksdb::Error> for crate::Error {

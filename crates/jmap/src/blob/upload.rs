@@ -33,7 +33,7 @@ use jmap_proto::{
 };
 use store::{
     write::{now, BatchBuilder, BlobOp},
-    BlobClass, BlobHash,
+    BlobClass, BlobHash, Serialize,
 };
 
 use crate::{auth::AccessToken, JMAP};
@@ -155,18 +155,14 @@ impl JMAP {
             }
 
             // Enforce quota
-            let used = self
-                .store
-                .blob_hash_quota(account_id)
-                .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
+            let used = self.store.blob_quota(account_id).await.map_err(|err| {
+                tracing::error!(event = "error",
                     context = "blob_store",
                     account_id = account_id,
                     error = ?err,
                     "Failed to obtain blob quota");
-                    MethodError::ServerPartialFail
-                })?;
+                MethodError::ServerPartialFail
+            })?;
 
             if ((self.config.upload_tmp_quota_size > 0
                 && used.bytes + data.len() > self.config.upload_tmp_quota_size)
@@ -219,7 +215,7 @@ impl JMAP {
         // Enforce quota
         let used = self
             .store
-            .blob_hash_quota(account_id.document_id())
+            .blob_quota(account_id.document_id())
             .await
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -271,18 +267,18 @@ impl JMAP {
         // First reserve the hash
         let hash = BlobHash::from(data);
         let mut batch = BatchBuilder::new();
+        let until = now() + self.config.upload_tmp_ttl;
 
-        batch.with_account_id(account_id).blob(
-            hash.clone(),
+        batch.with_account_id(account_id).set(
             BlobOp::Reserve {
-                until: now() + self.config.upload_tmp_ttl,
-                size: if set_quota { data.len() } else { 0 },
+                hash: hash.clone(),
+                until,
             },
-            0,
+            (if set_quota { data.len() as u32 } else { 0u32 }).serialize(),
         );
         self.write_batch(batch).await?;
 
-        if !self.store.blob_hash_exists(&hash).await.map_err(|err| {
+        if !self.store.blob_exists(&hash).await.map_err(|err| {
             tracing::error!(
                 event = "error",
                 context = "put_blob",
@@ -305,13 +301,16 @@ impl JMAP {
 
             // Commit blob
             let mut batch = BatchBuilder::new();
-            batch.blob(hash.clone(), BlobOp::Commit, 0);
+            batch.set(BlobOp::Commit { hash: hash.clone() }, Vec::new());
             self.write_batch(batch).await?;
         }
 
         Ok(BlobId {
             hash,
-            class: BlobClass::Reserved { account_id },
+            class: BlobClass::Reserved {
+                account_id,
+                expires: until,
+            },
             section: None,
         })
     }

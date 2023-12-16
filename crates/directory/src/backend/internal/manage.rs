@@ -23,7 +23,7 @@
 
 use jmap_proto::types::collection::Collection;
 use store::{
-    write::{assert::HashedValue, BatchBuilder, DirectoryValue, ValueClass},
+    write::{assert::HashedValue, BatchBuilder, DirectoryClass, ValueClass},
     IterateParams, Serialize, Store, ValueKey,
 };
 
@@ -62,7 +62,7 @@ pub trait ManageDirectory {
 impl ManageDirectory for Store {
     async fn get_account_name(&self, account_id: u32) -> crate::Result<Option<String>> {
         self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-            DirectoryValue::Principal(account_id),
+            DirectoryClass::Principal(account_id),
         )))
         .await
         .map_err(Into::into)
@@ -84,7 +84,7 @@ impl ManageDirectory for Store {
 
     async fn get_account_id(&self, name: &str) -> crate::Result<Option<u32>> {
         self.get_value::<u32>(ValueKey::from(ValueClass::Directory(
-            DirectoryValue::NameToId(name.as_bytes().to_vec()),
+            DirectoryClass::NameToId(name.as_bytes().to_vec()),
         )))
         .await
         .map_err(Into::into)
@@ -107,7 +107,7 @@ impl ManageDirectory for Store {
 
             // Write account ID
             let name_key =
-                ValueClass::Directory(DirectoryValue::NameToId(name.as_bytes().to_vec()));
+                ValueClass::Directory(DirectoryClass::NameToId(name.as_bytes().to_vec()));
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(u32::MAX)
@@ -116,7 +116,7 @@ impl ManageDirectory for Store {
                 .assert_value(name_key.clone(), ())
                 .set(name_key, account_id.serialize())
                 .set(
-                    ValueClass::Directory(DirectoryValue::Principal(account_id)),
+                    ValueClass::Directory(DirectoryClass::Principal(account_id)),
                     Principal {
                         id: account_id,
                         typ: Type::Individual,
@@ -190,17 +190,17 @@ impl ManageDirectory for Store {
         let mut batch = BatchBuilder::new();
         batch
             .assert_value(
-                ValueClass::Directory(DirectoryValue::NameToId(
+                ValueClass::Directory(DirectoryClass::NameToId(
                     principal.name.clone().into_bytes(),
                 )),
                 (),
             )
             .set(
-                ValueClass::Directory(DirectoryValue::Principal(account_id)),
+                ValueClass::Directory(DirectoryClass::Principal(account_id)),
                 (&principal).serialize(),
             )
             .set(
-                ValueClass::Directory(DirectoryValue::NameToId(principal.name.into_bytes())),
+                ValueClass::Directory(DirectoryClass::NameToId(principal.name.into_bytes())),
                 account_id.serialize(),
             );
 
@@ -213,7 +213,7 @@ impl ManageDirectory for Store {
 
         for email in principal.emails {
             batch.set(
-                ValueClass::Directory(DirectoryValue::EmailToId(email.into_bytes())),
+                ValueClass::Directory(DirectoryClass::EmailToId(email.into_bytes())),
                 (&ids).serialize(),
             );
         }
@@ -234,7 +234,7 @@ impl ManageDirectory for Store {
 
         let principal = self
             .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-                DirectoryValue::Principal(account_id),
+                DirectoryClass::Principal(account_id),
             )))
             .await?
             .ok_or_else(|| {
@@ -254,12 +254,12 @@ impl ManageDirectory for Store {
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
-            .clear(DirectoryValue::NameToId(principal.name.into_bytes()))
-            .clear(DirectoryValue::Principal(account_id))
-            .clear(DirectoryValue::UsedQuota(account_id));
+            .clear(DirectoryClass::NameToId(principal.name.into_bytes()))
+            .clear(DirectoryClass::Principal(account_id))
+            .clear(DirectoryClass::UsedQuota(account_id));
 
         for email in principal.emails {
-            batch.clear(DirectoryValue::EmailToId(email.into_bytes()));
+            batch.clear(DirectoryClass::EmailToId(email.into_bytes()));
         }
 
         self.write(batch.build()).await?;
@@ -283,7 +283,7 @@ impl ManageDirectory for Store {
         // Fetch principal
         let mut principal = self
             .get_value::<HashedValue<Principal<u32>>>(ValueKey::from(ValueClass::Directory(
-                DirectoryValue::Principal(account_id),
+                DirectoryClass::Principal(account_id),
             )))
             .await?
             .ok_or_else(|| {
@@ -295,7 +295,7 @@ impl ManageDirectory for Store {
         let is_list = matches!(principal.inner.typ, Type::List);
         let mut has_list_changes = false;
         batch.assert_value(
-            ValueClass::Directory(DirectoryValue::Principal(account_id)),
+            ValueClass::Directory(DirectoryClass::Principal(account_id)),
             &principal,
         );
         for change in changes {
@@ -310,14 +310,14 @@ impl ManageDirectory for Store {
                             ));
                         }
 
-                        batch.clear(ValueClass::Directory(DirectoryValue::NameToId(
+                        batch.clear(ValueClass::Directory(DirectoryClass::NameToId(
                             principal.inner.name.as_bytes().to_vec(),
                         )));
 
                         principal.inner.name = new_name.clone();
 
                         batch.set(
-                            ValueClass::Directory(DirectoryValue::NameToId(new_name.into_bytes())),
+                            ValueClass::Directory(DirectoryClass::NameToId(new_name.into_bytes())),
                             account_id.serialize(),
                         );
                     }
@@ -374,7 +374,7 @@ impl ManageDirectory for Store {
                             }
                             if !is_list {
                                 batch.set(
-                                    ValueClass::Directory(DirectoryValue::EmailToId(
+                                    ValueClass::Directory(DirectoryClass::EmailToId(
                                         email.as_bytes().to_vec(),
                                     )),
                                     vec![account_id].serialize(),
@@ -385,7 +385,7 @@ impl ManageDirectory for Store {
                     if !is_list {
                         for email in &principal.inner.emails {
                             if !emails.contains(email) {
-                                batch.clear(ValueClass::Directory(DirectoryValue::EmailToId(
+                                batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                                     email.as_bytes().to_vec(),
                                 )));
                             }
@@ -446,7 +446,7 @@ impl ManageDirectory for Store {
                         }
                         if !is_list {
                             batch.set(
-                                ValueClass::Directory(DirectoryValue::EmailToId(
+                                ValueClass::Directory(DirectoryClass::EmailToId(
                                     email.as_bytes().to_vec(),
                                 )),
                                 vec![account_id].serialize(),
@@ -482,7 +482,7 @@ impl ManageDirectory for Store {
                     let email = email.to_lowercase();
                     if let Some(pos) = principal.inner.emails.iter().position(|v| *v == email) {
                         if !is_list {
-                            batch.clear(ValueClass::Directory(DirectoryValue::EmailToId(
+                            batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                                 email.as_bytes().to_vec(),
                             )));
                         }
@@ -498,14 +498,14 @@ impl ManageDirectory for Store {
         if has_list_changes {
             for email in &principal.inner.emails {
                 batch.set(
-                    ValueClass::Directory(DirectoryValue::EmailToId(email.as_bytes().to_vec())),
+                    ValueClass::Directory(DirectoryClass::EmailToId(email.as_bytes().to_vec())),
                     (&principal.inner.member_of).serialize(),
                 );
             }
         }
 
         batch.set(
-            ValueClass::Directory(DirectoryValue::Principal(account_id)),
+            ValueClass::Directory(DirectoryClass::Principal(account_id)),
             principal.inner.serialize(),
         );
 
@@ -522,7 +522,7 @@ impl ManageDirectory for Store {
         }
         let mut batch = BatchBuilder::new();
         batch.set(
-            ValueClass::Directory(DirectoryValue::Domain(domain.to_lowercase().into_bytes())),
+            ValueClass::Directory(DirectoryClass::Domain(domain.to_lowercase().into_bytes())),
             vec![],
         );
         self.write(batch.build()).await.map_err(Into::into)
@@ -535,7 +535,7 @@ impl ManageDirectory for Store {
             )));
         }
         let mut batch = BatchBuilder::new();
-        batch.clear(ValueClass::Directory(DirectoryValue::Domain(
+        batch.clear(ValueClass::Directory(DirectoryClass::Domain(
             domain.to_lowercase().into_bytes(),
         )));
         self.write(batch.build()).await.map_err(Into::into)
@@ -597,10 +597,10 @@ impl ManageDirectory for Store {
         start_from: Option<&str>,
         limit: usize,
     ) -> crate::Result<Vec<String>> {
-        let from_key = ValueKey::from(ValueClass::Directory(DirectoryValue::NameToId(
+        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(
             start_from.unwrap_or("").as_bytes().to_vec(),
         )));
-        let to_key = ValueKey::from(ValueClass::Directory(DirectoryValue::NameToId(vec![
+        let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
             u8::MAX;
             10
         ])));
