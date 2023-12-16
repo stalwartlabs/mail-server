@@ -446,7 +446,7 @@ fn main() -> std::io::Result<()> {
         {
             let mut cmd = std::process::Command::new("chown");
             cmd.arg("-R")
-                .arg(format!("{}:{}", ACCOUNT_NAME, ACCOUNT_NAME))
+                .arg(format!("{}", ACCOUNT_NAME))
                 .arg(&base_path);
             if let Err(err) = cmd.status() {
                 eprintln!("Warning: Failed to set permissions: {}", err);
