@@ -22,6 +22,7 @@
 */
 
 pub mod imap;
+pub mod internal;
 pub mod ldap;
 pub mod smtp;
 pub mod sql;
@@ -274,16 +275,18 @@ pub struct DirectoryTest {
     pub temp_dir: TempDir,
 }
 
-pub async fn parse_config() -> DirectoryTest {
-    let temp_dir = TempDir::new("directory_tests", true);
-    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
-    let config = utils::config::Config::new(&config_file).unwrap();
-    let stores = config.parse_stores().await.unwrap();
+impl DirectoryTest {
+    pub async fn new(id_store: Option<&str>) -> DirectoryTest {
+        let temp_dir = TempDir::new("directory_tests", true);
+        let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
+        let config = utils::config::Config::new(&config_file).unwrap();
+        let stores = config.parse_stores().await.unwrap();
 
-    DirectoryTest {
-        directories: config.parse_directory(&stores).unwrap(),
-        stores,
-        temp_dir,
+        DirectoryTest {
+            directories: config.parse_directory(&stores, id_store).unwrap(),
+            stores,
+            temp_dir,
+        }
     }
 }
 
@@ -625,7 +628,7 @@ trait IntoSortedPrincipal: Sized {
     fn into_sorted(self) -> Self;
 }
 
-impl IntoSortedPrincipal for Principal {
+impl IntoSortedPrincipal for Principal<u32> {
     fn into_sorted(mut self) -> Self {
         self.member_of.sort_unstable();
         self.emails.sort_unstable();

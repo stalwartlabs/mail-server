@@ -26,7 +26,7 @@ use std::fmt::Debug;
 use directory::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 use mail_send::Credentials;
 
-use crate::directory::{map_account_ids, parse_config, IntoSortedPrincipal};
+use crate::directory::{map_account_ids, DirectoryTest, IntoSortedPrincipal};
 
 #[tokio::test]
 async fn ldap_directory() {
@@ -39,20 +39,17 @@ async fn ldap_directory() {
     .unwrap();*/
 
     // Obtain directory handle
-    let mut config = parse_config().await;
+    let mut config = DirectoryTest::new("sqlite".into()).await;
     let handle = config.directories.directories.remove("ldap").unwrap();
     let base_store = config.stores.stores.get("sqlite").unwrap();
 
     // Test authentication
     assert_eq!(
         handle
-            .query(
-                QueryBy::credentials(&Credentials::Plain {
-                    username: "john".to_string(),
-                    secret: "12345".to_string()
-                })
-                .with_store(base_store)
-            )
+            .query(QueryBy::Credentials(&Credentials::Plain {
+                username: "john".to_string(),
+                secret: "12345".to_string()
+            }))
             .await
             .unwrap()
             .unwrap()
@@ -74,13 +71,10 @@ async fn ldap_directory() {
     );
     assert_eq!(
         handle
-            .query(
-                QueryBy::credentials(&Credentials::Plain {
-                    username: "bill".to_string(),
-                    secret: "password".to_string()
-                })
-                .with_store(base_store)
-            )
+            .query(QueryBy::Credentials(&Credentials::Plain {
+                username: "bill".to_string(),
+                secret: "password".to_string()
+            }))
             .await
             .unwrap()
             .unwrap()
@@ -100,13 +94,10 @@ async fn ldap_directory() {
         .into_sorted()
     );
     assert!(handle
-        .query(
-            QueryBy::credentials(&Credentials::Plain {
-                username: "bill".to_string(),
-                secret: "invalid".to_string()
-            })
-            .with_store(base_store)
-        )
+        .query(QueryBy::Credentials(&Credentials::Plain {
+            username: "bill".to_string(),
+            secret: "invalid".to_string()
+        }))
         .await
         .unwrap()
         .is_none());
@@ -114,7 +105,7 @@ async fn ldap_directory() {
     // Get user by name
     assert_eq!(
         handle
-            .query(QueryBy::name("jane").with_store(base_store))
+            .query(QueryBy::Name("jane"))
             .await
             .unwrap()
             .unwrap()
@@ -134,11 +125,7 @@ async fn ldap_directory() {
 
     // Get group by name
     assert_eq!(
-        handle
-            .query(QueryBy::name("sales").with_store(base_store))
-            .await
-            .unwrap()
-            .unwrap(),
+        handle.query(QueryBy::Name("sales")).await.unwrap().unwrap(),
         Principal {
             id: base_store.get_account_id("sales").await.unwrap().unwrap(),
             name: "sales".to_string(),
@@ -150,45 +137,27 @@ async fn ldap_directory() {
 
     // Ids by email
     compare_sorted(
-        handle
-            .email_to_ids("jane@example.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("jane@example.org").await.unwrap(),
         map_account_ids(base_store, vec!["jane"]).await,
     );
     compare_sorted(
-        handle
-            .email_to_ids("jane+alias@example.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("jane+alias@example.org").await.unwrap(),
         map_account_ids(base_store, vec!["jane"]).await,
     );
     compare_sorted(
-        handle
-            .email_to_ids("info@example.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("info@example.org").await.unwrap(),
         map_account_ids(base_store, vec!["bill", "jane", "john"]).await,
     );
     compare_sorted(
-        handle
-            .email_to_ids("info+alias@example.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("info+alias@example.org").await.unwrap(),
         map_account_ids(base_store, vec!["bill", "jane", "john"]).await,
     );
     compare_sorted(
-        handle
-            .email_to_ids("unknown@example.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("unknown@example.org").await.unwrap(),
         Vec::<u32>::new(),
     );
     assert_eq!(
-        handle
-            .email_to_ids("anything@catchall.org", base_store)
-            .await
-            .unwrap(),
+        handle.email_to_ids("anything@catchall.org").await.unwrap(),
         map_account_ids(base_store, vec!["robert"]).await
     );
 

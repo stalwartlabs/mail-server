@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use store::LookupStore;
+use store::{LookupStore, Store};
 
 use crate::DirectoryOptions;
 
@@ -32,6 +32,7 @@ pub struct SqlDirectory {
     store: LookupStore,
     mappings: SqlMappings,
     opt: DirectoryOptions,
+    id_store: Option<Store>,
 }
 
 #[derive(Debug, Default)]

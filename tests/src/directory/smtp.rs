@@ -35,7 +35,7 @@ use tokio_rustls::TlsAcceptor;
 
 use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
-use crate::directory::{parse_config, Item, LookupResult};
+use crate::directory::{DirectoryTest, Item, LookupResult};
 
 use super::dummy_tls_acceptor;
 
@@ -46,7 +46,7 @@ async fn smtp_directory() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Obtain directory handle
-    let mut config = parse_config().await;
+    let mut config = DirectoryTest::new(None).await;
     let handle = config.directories.directories.remove("smtp").unwrap();
 
     // Basic lookup
@@ -97,7 +97,7 @@ async fn smtp_directory() {
         let result: LookupResult = match item {
             Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
             Item::Authenticate(v) => handle
-                .query(QueryBy::credentials(v))
+                .query(QueryBy::Credentials(v))
                 .await
                 .unwrap()
                 .is_some()
@@ -129,7 +129,7 @@ async fn smtp_directory() {
                 let result: LookupResult = match &item {
                     Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
                     Item::Authenticate(v) => handle
-                        .query(QueryBy::credentials(v))
+                        .query(QueryBy::Credentials(v))
                         .await
                         .unwrap()
                         .is_some()

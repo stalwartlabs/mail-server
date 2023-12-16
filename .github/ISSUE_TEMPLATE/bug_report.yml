@@ -2,8 +2,6 @@ name: I think I found a bug
 description: File a bug report issue
 title: "[bug]: "
 labels: ["bug"]
-assignees:
-  - mdecimus
 body:
   - type: markdown
     attributes:

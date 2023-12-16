@@ -22,31 +22,30 @@
 */
 
 use mail_send::Credentials;
-use store::Store;
 
-use crate::{Directory, Principal, QueryBy, QueryType};
+use crate::{Directory, Principal, QueryBy};
 
 use super::{EmailType, MemoryDirectory};
 
 #[async_trait::async_trait]
 impl Directory for MemoryDirectory {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
-        match by.t {
-            QueryType::Name(name) => {
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+        match by {
+            QueryBy::Name(name) => {
                 for principal in &self.principals {
                     if principal.name == name {
                         return Ok(Some(principal.clone()));
                     }
                 }
             }
-            QueryType::Id(uid) => {
+            QueryBy::Id(uid) => {
                 for principal in &self.principals {
                     if principal.id == uid {
                         return Ok(Some(principal.clone()));
                     }
                 }
             }
-            QueryType::Credentials(credentials) => {
+            QueryBy::Credentials(credentials) => {
                 let (username, secret) = match credentials {
                     Credentials::Plain { username, secret } => (username, secret),
                     Credentials::OAuthBearer { token } => (token, token),
@@ -67,7 +66,7 @@ impl Directory for MemoryDirectory {
         Ok(None)
     }
 
-    async fn email_to_ids(&self, address: &str, _: &Store) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
         Ok(self
             .emails_to_ids
             .get(self.opt.subaddressing.to_subaddress(address).as_ref())

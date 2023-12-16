@@ -182,7 +182,7 @@ impl JMAP {
     ) -> Result<TokenResponse, &'static str> {
         let password_hash = self
             .directory
-            .query(QueryBy::id(account_id).with_store(&self.store))
+            .query(QueryBy::Id(account_id))
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?
@@ -301,7 +301,7 @@ impl JMAP {
 
         let password_hash = self
             .directory
-            .query(QueryBy::id(account_id).with_store(&self.store))
+            .query(QueryBy::Id(account_id))
             .await
             .map_err(|_| "Temporary lookup error")?
             .ok_or("Account no longer exists")?

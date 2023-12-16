@@ -78,11 +78,7 @@ impl JMAP {
         let mut instance = self.sieve_runtime.filter_parsed(message);
 
         // Set account name and obtain quota
-        let (account_quota, mail_from) = match self
-            .directory
-            .query(QueryBy::id(account_id).with_store(&self.store))
-            .await
-        {
+        let (account_quota, mail_from) = match self.directory.query(QueryBy::Id(account_id)).await {
             Ok(Some(p)) => {
                 instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
                 (p.quota as i64, p.emails.into_iter().next())

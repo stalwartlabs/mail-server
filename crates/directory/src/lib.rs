@@ -24,11 +24,10 @@
 use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
-use backend::imap::ImapError;
+use backend::{imap::ImapError, internal::PrincipalField};
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
-use store::Store;
 use utils::config::DynValue;
 
 pub mod backend;
@@ -36,27 +35,42 @@ pub mod cache;
 pub mod config;
 pub mod secret;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct Principal {
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Principal<T> {
+    #[serde(default, skip)]
     pub id: u32,
+    #[serde(rename = "type")]
     pub typ: Type,
+    #[serde(default)]
     pub quota: u32,
     pub name: String,
+    #[serde(default, skip_serializing)]
     pub secrets: Vec<String>,
+    #[serde(default)]
     pub emails: Vec<String>,
-    pub member_of: Vec<u32>,
+    #[serde(default)]
+    #[serde(rename = "memberOf")]
+    pub member_of: Vec<T>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Type {
+    #[serde(rename = "individual")]
     Individual = 0,
+    #[serde(rename = "group")]
     Group = 1,
+    #[serde(rename = "resource")]
     Resource = 2,
+    #[serde(rename = "location")]
     Location = 3,
+    #[serde(rename = "superuser")]
     Superuser = 4,
+    #[serde(rename = "list")]
     List = 5,
     #[default]
+    #[serde(rename = "other")]
     Other = 6,
 }
 
@@ -67,14 +81,22 @@ pub enum DirectoryError {
     Imap(ImapError),
     Smtp(mail_send::Error),
     Pool(String),
+    Management(ManagementError),
     TimedOut,
     Unsupported,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ManagementError {
+    MissingField(PrincipalField),
+    NotUniqueField(PrincipalField),
+    NotFound(String),
+}
+
 #[async_trait::async_trait]
 pub trait Directory: Sync + Send {
-    async fn query(&self, by: QueryBy<'_>) -> Result<Option<Principal>>;
-    async fn email_to_ids(&self, email: &str, store: &Store) -> Result<Vec<u32>>;
+    async fn query(&self, by: QueryBy<'_>) -> Result<Option<Principal<u32>>>;
+    async fn email_to_ids(&self, email: &str) -> Result<Vec<u32>>;
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
     async fn rcpt(&self, address: &str) -> crate::Result<bool>;
@@ -82,18 +104,13 @@ pub trait Directory: Sync + Send {
     async fn expn(&self, address: &str) -> Result<Vec<String>>;
 }
 
-pub enum QueryType<'x> {
+pub enum QueryBy<'x> {
     Name(&'x str),
     Id(u32),
     Credentials(&'x Credentials<String>),
 }
 
-pub struct QueryBy<'x> {
-    pub t: QueryType<'x>,
-    pub store: Option<&'x Store>,
-}
-
-impl Principal {
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -307,6 +324,17 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Disable => None,
+        }
+    }
+}
+
+impl PartialEq for DirectoryError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Store(l0), Self::Store(r0)) => l0 == r0,
+            (Self::Pool(l0), Self::Pool(r0)) => l0 == r0,
+            (Self::Management(l0), Self::Management(r0)) => l0 == r0,
+            _ => false,
         }
     }
 }

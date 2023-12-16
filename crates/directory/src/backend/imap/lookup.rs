@@ -23,16 +23,15 @@
 
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
-use store::Store;
 
-use crate::{Directory, DirectoryError, Principal, QueryBy, QueryType};
+use crate::{Directory, DirectoryError, Principal, QueryBy};
 
 use super::{ImapDirectory, ImapError};
 
 #[async_trait::async_trait]
 impl Directory for ImapDirectory {
-    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal>> {
-        if let QueryType::Credentials(credentials) = query.t {
+    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+        if let QueryBy::Credentials(credentials) = query {
             let mut client = self.pool.get().await?;
             let mechanism = match credentials {
                 Credentials::Plain { .. }
@@ -78,7 +77,7 @@ impl Directory for ImapDirectory {
         }
     }
 
-    async fn email_to_ids(&self, _address: &str, _store: &Store) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
         Err(DirectoryError::unsupported("imap", "email_to_ids"))
     }
 

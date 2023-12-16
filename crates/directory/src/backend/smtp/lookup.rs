@@ -23,23 +23,22 @@
 
 use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::Severity;
-use store::Store;
 
-use crate::{Directory, DirectoryError, Principal, QueryBy, QueryType};
+use crate::{Directory, DirectoryError, Principal, QueryBy};
 
 use super::{SmtpClient, SmtpDirectory};
 
 #[async_trait::async_trait]
 impl Directory for SmtpDirectory {
-    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal>> {
-        if let QueryType::Credentials(credentials) = query.t {
+    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+        if let QueryBy::Credentials(credentials) = query {
             self.pool.get().await?.authenticate(credentials).await
         } else {
             Err(DirectoryError::unsupported("smtp", "query"))
         }
     }
 
-    async fn email_to_ids(&self, _address: &str, _store: &Store) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
         Err(DirectoryError::unsupported("smtp", "email_to_ids"))
     }
 
@@ -96,7 +95,7 @@ impl SmtpClient {
     async fn authenticate(
         &mut self,
         credentials: &Credentials<String>,
-    ) -> crate::Result<Option<Principal>> {
+    ) -> crate::Result<Option<Principal<u32>>> {
         match self
             .client
             .authenticate(credentials, &self.capabilities)

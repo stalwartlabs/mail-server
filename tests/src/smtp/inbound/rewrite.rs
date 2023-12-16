@@ -104,7 +104,7 @@ async fn address_rewrite() {
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let settings = Config::new(CONFIG).unwrap();
-    ctx.directory = settings.parse_directory(&Stores::default()).unwrap();
+    ctx.directory = settings.parse_directory(&Stores::default(), None).unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.mail.script = settings

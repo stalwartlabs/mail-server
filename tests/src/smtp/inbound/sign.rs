@@ -154,7 +154,7 @@ async fn sign_and_seal() {
 
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default())
+        .parse_directory(&Stores::default(), None)
         .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(

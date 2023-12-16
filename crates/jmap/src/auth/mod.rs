@@ -56,7 +56,7 @@ pub struct AccessToken {
 }
 
 impl AccessToken {
-    pub fn new(principal: Principal) -> Self {
+    pub fn new(principal: Principal<u32>) -> Self {
         Self {
             primary_id: principal.id,
             member_of: principal.member_of,

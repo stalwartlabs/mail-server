@@ -48,7 +48,7 @@ async fn main() -> std::io::Result<()> {
     let servers = config.parse_servers().failed("Invalid configuration");
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(&stores)
+        .parse_directory(&stores, config.value("jmap.store.data"))
         .failed("Invalid configuration");
     let schedulers = config
         .parse_purge_schedules(

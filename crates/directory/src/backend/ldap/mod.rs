@@ -23,6 +23,7 @@
 
 use deadpool::managed::Pool;
 use ldap3::{ldap_escape, LdapConnSettings};
+use store::Store;
 
 use crate::DirectoryOptions;
 
@@ -35,6 +36,7 @@ pub struct LdapDirectory {
     mappings: LdapMappings,
     opt: DirectoryOptions,
     auth_bind: Option<LdapFilter>,
+    id_store: Option<Store>,
 }
 
 #[derive(Debug, Default)]

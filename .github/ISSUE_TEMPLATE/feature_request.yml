@@ -2,8 +2,6 @@ name: I have a feature request
 description: File a feature request issue
 title: "[enhancement]: "
 labels: ["enhancement"]
-assignees:
-  - mdecimus
 body:
   - type: markdown
     attributes:

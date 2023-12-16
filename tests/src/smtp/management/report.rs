@@ -85,7 +85,7 @@ async fn manage_reports() {
     config.tls.max_size = IfBlock::new(1024);
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default())
+        .parse_directory(&Stores::default(), None)
         .unwrap();
     core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);

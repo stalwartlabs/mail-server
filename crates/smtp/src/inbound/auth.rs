@@ -182,7 +182,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
             if let Ok(is_authenticated) = lookup
-                .query(QueryBy::credentials(&credentials))
+                .query(QueryBy::Credentials(&credentials))
                 .await
                 .map(|r| r.is_some())
             {

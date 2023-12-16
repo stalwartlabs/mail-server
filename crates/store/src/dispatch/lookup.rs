@@ -31,6 +31,7 @@ use crate::{
 };
 
 impl LookupStore {
+    #[allow(unreachable_patterns)]
     pub async fn query<T: QueryResult + std::fmt::Debug>(
         &self,
         query: &str,

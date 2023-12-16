@@ -49,7 +49,7 @@ impl JMAP {
                 Filter::Name(name) => {
                     if let Some(principal) = self
                         .directory
-                        .query(QueryBy::name(name.as_str()).with_store(&self.store))
+                        .query(QueryBy::Name(name.as_str()))
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {
@@ -68,7 +68,7 @@ impl JMAP {
                     let mut ids = RoaringBitmap::new();
                     for id in self
                         .directory
-                        .email_to_ids(&email, &self.store)
+                        .email_to_ids(&email)
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {

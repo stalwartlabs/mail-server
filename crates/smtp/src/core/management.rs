@@ -255,7 +255,7 @@ impl SMTP {
                         .queue
                         .config
                         .management_lookup
-                        .query(QueryBy::credentials(&Credentials::Plain {
+                        .query(QueryBy::Credentials(&Credentials::Plain {
                             username,
                             secret,
                         }))

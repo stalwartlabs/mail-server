@@ -21,20 +21,18 @@
  * for more details.
 */
 
-use store::Store;
-
 use crate::{Directory, Principal, QueryBy};
 
 use super::CachedDirectory;
 
 #[async_trait::async_trait]
 impl<T: Directory> Directory for CachedDirectory<T> {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         self.inner.query(by).await
     }
 
-    async fn email_to_ids(&self, address: &str, store: &Store) -> crate::Result<Vec<u32>> {
-        self.inner.email_to_ids(address, store).await
+    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+        self.inner.email_to_ids(address).await
     }
 
     async fn rcpt(&self, address: &str) -> crate::Result<bool> {

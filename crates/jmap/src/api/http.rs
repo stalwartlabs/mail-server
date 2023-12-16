@@ -38,7 +38,6 @@ use jmap_proto::{
     response::Response,
     types::{blob::BlobId, id::Id},
 };
-use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -274,138 +273,17 @@ pub async fn parse_jmap_request(
                 _ => (),
             }
         }
-
         "admin" => {
             // Make sure the user is a superuser
-            match jmap.authenticate_headers(&req, remote_ip).await {
-                Ok(Some((_, access_token))) if access_token.is_super_user() => (),
+            let body = match jmap.authenticate_headers(&req, remote_ip).await {
+                Ok(Some((_, access_token))) if access_token.is_super_user() => {
+                    fetch_body(&mut req, 8192, &access_token).await
+                }
                 Ok(_) => return RequestError::unauthorized().into_http_response(),
                 Err(err) => return err.into_http_response(),
-            }
+            };
 
-            match (
-                path.next().unwrap_or(""),
-                path.next().unwrap_or(""),
-                req.method(),
-            ) {
-                ("account", "delete", &Method::GET) => {
-                    let todo = true;
-                    /*
-
-                                        // Remove FTS index
-                    self.fts_store.remove_all(principal.id).await?;
-                                 */
-                    todo!()
-                    /*return if let Some(account_name) = path.next() {
-                        if let Ok(Some(account_id)) = jmap.try_get_account_id(account_name).await {
-                            match jmap.delete_account(account_name, account_id).await {
-                                Ok(_) => JsonResponse::new(Value::String("success".into()))
-                                    .into_http_response(),
-                                Err(err) => RequestError::blank(
-                                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                                    "Account deletion failed",
-                                    err.to_string(),
-                                )
-                                .into_http_response(),
-                            }
-                        } else {
-                            RequestError::blank(
-                                StatusCode::NOT_FOUND.as_u16(),
-                                "Not found",
-                                "Account not found.",
-                            )
-                            .into_http_response()
-                        }
-                    } else {
-                        RequestError::blank(
-                            StatusCode::BAD_REQUEST.as_u16(),
-                            "Invalid parameters",
-                            "Expected account name",
-                        )
-                        .into_http_response()
-                    };*/
-                }
-                ("account", "rename", &Method::GET) => {
-                    todo!()
-                    /*return if let (Some(account_name), Some(new_account_name)) =
-                        (path.next(), path.next())
-                    {
-                        match (
-                            jmap.try_get_account_id(account_name).await,
-                            jmap.try_get_account_id(new_account_name).await,
-                        ) {
-                            (Ok(Some(account_id)), Ok(None)) => {
-                                match jmap
-                                    .rename_account(new_account_name, account_name, account_id)
-                                    .await
-                                {
-                                    Ok(_) => JsonResponse::new(Value::String("success".into()))
-                                        .into_http_response(),
-                                    Err(err) => RequestError::blank(
-                                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                                        "Account rename failed",
-                                        err.to_string(),
-                                    )
-                                    .into_http_response(),
-                                }
-                            }
-                            (Ok(None), _) => RequestError::blank(
-                                StatusCode::NOT_FOUND.as_u16(),
-                                "Not found",
-                                "Account not found.",
-                            )
-                            .into_http_response(),
-                            (_, Ok(Some(_))) => RequestError::blank(
-                                StatusCode::BAD_REQUEST.as_u16(),
-                                "Invalid parameters",
-                                "New account name already exists.",
-                            )
-                            .into_http_response(),
-                            _ => RequestError::internal_server_error().into_http_response(),
-                        }
-                    } else {
-                        RequestError::blank(
-                            StatusCode::BAD_REQUEST.as_u16(),
-                            "Invalid parameters",
-                            "Expected old and new account names",
-                        )
-                        .into_http_response()
-                    };*/
-                }
-                ("blob", "purge", &Method::GET) => {
-                    return match jmap.store.purge_blobs(jmap.blob_store.clone()).await {
-                        Ok(_) => {
-                            JsonResponse::new(Value::String("success".into())).into_http_response()
-                        }
-                        Err(err) => RequestError::blank(
-                            StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                            "Purge blob failed",
-                            err.to_string(),
-                        )
-                        .into_http_response(),
-                    };
-                }
-                ("db", "purge", &Method::GET) => {
-                    return match jmap.store.purge_bitmaps().await {
-                        Ok(_) => {
-                            JsonResponse::new(Value::String("success".into())).into_http_response()
-                        }
-                        Err(err) => RequestError::blank(
-                            StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                            "Purge database failed",
-                            err.to_string(),
-                        )
-                        .into_http_response(),
-                    };
-                }
-                (path_1 @ ("queue" | "report"), path_2, &Method::GET) => {
-                    return jmap
-                        .smtp
-                        .handle_manage_request(req.uri(), req.method(), path_1, path_2)
-                        .await;
-                }
-                _ => (),
-            }
+            return jmap.handle_manage_request(&req, body).await;
         }
         _ => (),
     }

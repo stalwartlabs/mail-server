@@ -44,22 +44,31 @@ use crate::{
 };
 
 pub trait ConfigDirectory {
-    fn parse_directory(&self, stores: &Stores) -> utils::config::Result<Directories>;
+    fn parse_directory(
+        &self,
+        stores: &Stores,
+        id_store: Option<&str>,
+    ) -> utils::config::Result<Directories>;
 }
 
 impl ConfigDirectory for Config {
-    fn parse_directory(&self, stores: &Stores) -> utils::config::Result<Directories> {
+    fn parse_directory(
+        &self,
+        stores: &Stores,
+        id_store: Option<&str>,
+    ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
         };
+        let id_store = id_store.and_then(|id| stores.stores.get(id).cloned());
 
         for id in self.sub_keys("directory") {
             // Parse directory
             let protocol = self.value_require(("directory", id, "type"))?;
             let prefix = ("directory", id);
             let directory = match protocol {
-                "ldap" => LdapDirectory::from_config(self, prefix)?,
-                "sql" => SqlDirectory::from_config(self, prefix, stores)?,
+                "ldap" => LdapDirectory::from_config(self, prefix, id_store.clone())?,
+                "sql" => SqlDirectory::from_config(self, prefix, stores, id_store.clone())?,
                 "imap" => ImapDirectory::from_config(self, prefix)?,
                 "smtp" => SmtpDirectory::from_config(self, prefix, false)?,
                 "lmtp" => SmtpDirectory::from_config(self, prefix, true)?,

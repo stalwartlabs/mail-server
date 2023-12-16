@@ -26,21 +26,20 @@ use mail_send::Credentials;
 use store::Store;
 
 use crate::{
-    backend::internal::manage::ManageDirectory, Directory, DirectoryError, Principal, QueryBy,
-    QueryType, Type,
+    backend::internal::manage::ManageDirectory, Directory, DirectoryError, Principal, QueryBy, Type,
 };
 
 use super::{LdapDirectory, LdapMappings};
 
 #[async_trait::async_trait]
 impl Directory for LdapDirectory {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         let mut conn = self.pool.get().await?;
         let mut account_id = None;
         let account_name;
 
-        let principal = match by.t {
-            QueryType::Name(username) => {
+        let principal = match by {
+            QueryBy::Name(username) => {
                 account_name = username.to_string();
 
                 if let Some(principal) = self
@@ -52,8 +51,8 @@ impl Directory for LdapDirectory {
                     return Ok(None);
                 }
             }
-            QueryType::Id(uid) => {
-                if let Some(username) = by.account_name(uid).await? {
+            QueryBy::Id(uid) => {
+                if let Some(username) = self.unwrap_id_store().get_account_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -69,7 +68,7 @@ impl Directory for LdapDirectory {
                     return Ok(None);
                 }
             }
-            QueryType::Credentials(credentials) => {
+            QueryBy::Credentials(credentials) => {
                 let (username, secret) = match credentials {
                     Credentials::Plain { username, secret } => (username, secret),
                     Credentials::OAuthBearer { token } => (token, token),
@@ -105,7 +104,7 @@ impl Directory for LdapDirectory {
                     .find_principal(&mut conn, &self.mappings.filter_name.build(username))
                     .await?
                 {
-                    if principal.principal.verify_secret(secret).await {
+                    if principal.verify_secret(secret).await {
                         principal
                     } else {
                         tracing::debug!(
@@ -122,25 +121,26 @@ impl Directory for LdapDirectory {
                 }
             }
         };
-        let groups = principal.groups;
-        let mut principal = principal.principal;
+        let mut principal = principal;
 
         // Obtain account ID if not available
         if let Some(account_id) = account_id {
             principal.id = account_id;
-        } else if by.has_store() {
-            principal.id = by.account_id(&account_name).await?;
+        } else if self.has_id_store() {
+            principal.id = self
+                .unwrap_id_store()
+                .get_or_create_account_id(&account_name)
+                .await?;
         }
         principal.name = account_name;
 
         // Obtain groups
-        if by.has_store() && !groups.is_empty() {
-            principal.member_of = Vec::with_capacity(groups.len());
-            for group in groups {
-                if group.contains('=') {
+        if !principal.member_of.is_empty() && self.has_id_store() {
+            for member_of in principal.member_of.iter_mut() {
+                if member_of.contains('=') {
                     let (rs, _res) = conn
                         .search(
-                            &group,
+                            member_of,
                             Scope::Base,
                             "objectClass=*",
                             &self.mappings.attr_name,
@@ -150,25 +150,29 @@ impl Directory for LdapDirectory {
                     for entry in rs {
                         'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
                             if self.mappings.attr_name.contains(&attr) {
-                                if let Some(group) = value.first() {
+                                if let Some(group) = value.into_iter().next() {
                                     if !group.is_empty() {
-                                        principal.member_of.push(by.account_id(group).await?);
+                                        *member_of = group;
                                         break 'outer;
                                     }
                                 }
                             }
                         }
                     }
-                } else {
-                    principal.member_of.push(by.account_id(&group).await?);
                 }
             }
-        }
 
-        Ok(Some(principal))
+            // Map ids
+            self.unwrap_id_store()
+                .map_group_names(principal, true)
+                .await
+                .map(Some)
+        } else {
+            Ok(Some(principal.into()))
+        }
     }
 
-    async fn email_to_ids(&self, address: &str, store: &Store) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
         let mut rs = self
             .pool
             .get()
@@ -212,7 +216,11 @@ impl Directory for LdapDirectory {
             'outer: for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(store.get_or_create_account_id(name).await?);
+                        ids.push(
+                            self.unwrap_id_store()
+                                .get_or_create_account_id(name)
+                                .await?,
+                        );
                         break 'outer;
                     }
                 }
@@ -355,7 +363,7 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> crate::Result<Option<PrincipalWithGroups>> {
+    ) -> crate::Result<Option<Principal<String>>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
@@ -372,16 +380,18 @@ impl LdapDirectory {
         })
         .map_err(Into::into)
     }
-}
 
-struct PrincipalWithGroups {
-    principal: Principal,
-    groups: Vec<String>,
+    pub fn has_id_store(&self) -> bool {
+        self.id_store.is_some()
+    }
+
+    pub fn unwrap_id_store(&self) -> &Store {
+        self.id_store.as_ref().unwrap()
+    }
 }
 
 impl LdapMappings {
-    fn entry_to_principal(&self, entry: SearchEntry) -> PrincipalWithGroups {
-        let mut groups = Vec::new();
+    fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
 
         for (attr, value) in entry.attrs {
@@ -404,7 +414,7 @@ impl LdapMappings {
                     principal.description = value.into_iter().next();
                 }
             } else if self.attr_groups.contains(&attr) {
-                groups.extend(value);
+                principal.member_of.extend(value);
             } else if self.attr_quota.contains(&attr) {
                 if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse() {
                     principal.quota = quota;
@@ -426,6 +436,6 @@ impl LdapMappings {
             }
         }
 
-        PrincipalWithGroups { principal, groups }
+        principal
     }
 }

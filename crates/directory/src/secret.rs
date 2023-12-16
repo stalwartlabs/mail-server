@@ -36,7 +36,7 @@ use tokio::sync::oneshot;
 
 use crate::Principal;
 
-impl Principal {
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     pub async fn verify_secret(&self, secret: &str) -> bool {
         for hashed_secret in &self.secrets {
             if verify_secret_hash(hashed_secret, secret).await {

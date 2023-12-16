@@ -21,101 +21,23 @@
  * for more details.
 */
 
+pub mod lookup;
 pub mod manage;
 
 use std::slice::Iter;
 
-use mail_send::Credentials;
-use store::{
-    write::{key::KeySerializer, DirectoryValue, ValueClass},
-    Deserialize, Serialize, Store, ValueKey, U32_LEN,
-};
+use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{Principal, QueryBy, QueryType, Type};
+use crate::{Principal, Type};
 
-use self::manage::ManageDirectory;
-
-pub struct InternalDirectory {
-    pub store: Store,
-}
-
-impl<'x> QueryBy<'x> {
-    pub fn name(name: &'x str) -> Self {
-        Self {
-            t: QueryType::Name(name),
-            store: None,
-        }
-    }
-
-    pub fn id(id: u32) -> Self {
-        Self {
-            t: QueryType::Id(id),
-            store: None,
-        }
-    }
-
-    pub fn credentials(credentials: &'x Credentials<String>) -> Self {
-        Self {
-            t: QueryType::Credentials(credentials),
-            store: None,
-        }
-    }
-
-    pub fn with_store(mut self, store: &'x Store) -> Self {
-        self.store = Some(store);
-        self
-    }
-
-    pub fn has_store(&self) -> bool {
-        self.store.is_some()
-    }
-
-    pub async fn account_name(&self, account_id: u32) -> crate::Result<Option<String>> {
-        self.store
-            .unwrap()
-            .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                DirectoryValue::Principal(account_id),
-            )))
-            .await
-            .map_err(Into::into)
-            .map(|v| {
-                if let Some(v) = v {
-                    Some(v.name)
-                } else {
-                    tracing::debug!(
-                        context = "directory",
-                        event = "not_found",
-                        account = account_id,
-                        "Principal not found for account id"
-                    );
-
-                    None
-                }
-            })
-    }
-
-    pub async fn account_id(&self, name: &str) -> crate::Result<u32> {
-        self.store
-            .unwrap()
-            .get_or_create_account_id(name)
-            .await
-            .map_err(Into::into)
-    }
-
-    pub async fn account_ids<I: AsRef<str>>(
-        &self,
-        items: impl Iterator<Item = I>,
-    ) -> crate::Result<Vec<u32>> {
-        let mut ids = Vec::new();
-        for item in items {
-            ids.push(self.account_id(item.as_ref()).await?);
-        }
-        Ok(ids)
+impl Serialize for Principal<u32> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
     }
 }
 
-impl Serialize for Principal {
+impl Serialize for &Principal<u32> {
     fn serialize(self) -> Vec<u8> {
         let mut serializer = KeySerializer::new(
             U32_LEN * 3
@@ -151,14 +73,14 @@ impl Serialize for Principal {
     }
 }
 
-impl Deserialize for Principal {
+impl Deserialize for Principal<u32> {
     fn deserialize(bytes: &[u8]) -> store::Result<Self> {
         deserialize(bytes)
             .ok_or_else(|| store::Error::InternalError("Failed to deserialize principal".into()))
     }
 }
 
-fn deserialize(bytes: &[u8]) -> Option<Principal> {
+fn deserialize(bytes: &[u8]) -> Option<Principal<u32>> {
     let mut bytes = bytes.iter();
     if bytes.next()? != &1 {
         return None;
@@ -181,6 +103,76 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
         member_of: deserialize_u32_list(&mut bytes)?,
     }
     .into()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PrincipalField {
+    #[serde(rename = "name")]
+    Name,
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "quota")]
+    Quota,
+    #[serde(rename = "description")]
+    Description,
+    #[serde(rename = "secrets")]
+    Secrets,
+    #[serde(rename = "emails")]
+    Emails,
+    #[serde(rename = "memberOf")]
+    MemberOf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PrincipalUpdate {
+    action: PrincipalAction,
+    field: PrincipalField,
+    value: PrincipalValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PrincipalAction {
+    #[serde(rename = "set")]
+    Set,
+    #[serde(rename = "addItem")]
+    AddItem,
+    #[serde(rename = "removeItem")]
+    RemoveItem,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum PrincipalValue {
+    String(String),
+    StringList(Vec<String>),
+    Integer(u32),
+    Type(Type),
+}
+
+impl PrincipalUpdate {
+    pub fn set(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::Set,
+            field,
+            value,
+        }
+    }
+
+    pub fn add_item(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::AddItem,
+            field,
+            value,
+        }
+    }
+
+    pub fn remove_item(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::RemoveItem,
+            field,
+            value,
+        }
+    }
 }
 
 fn deserialize_string(bytes: &mut Iter<'_, u8>) -> Option<String> {

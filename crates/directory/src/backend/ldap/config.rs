@@ -24,6 +24,7 @@
 use std::sync::Arc;
 
 use ldap3::LdapConnSettings;
+use store::Store;
 use utils::config::{utils::AsKey, Config};
 
 use crate::{cache::CachedDirectory, config::build_pool, Directory, DirectoryOptions};
@@ -34,6 +35,7 @@ impl LdapDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
+        id_store: Option<Store>,
     ) -> utils::config::Result<Arc<dyn Directory>> {
         let prefix = prefix.as_key();
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
@@ -127,6 +129,7 @@ impl LdapDirectory {
                 pool: build_pool(config, &prefix, manager)?,
                 opt: DirectoryOptions::from_config(config, prefix.as_str())?,
                 auth_bind,
+                id_store,
             },
         )
     }

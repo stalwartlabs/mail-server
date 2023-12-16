@@ -24,29 +24,27 @@
 use mail_send::Credentials;
 use store::{NamedRows, Rows, Store, Value};
 
-use crate::{
-    backend::internal::manage::ManageDirectory, Directory, Principal, QueryBy, QueryType, Type,
-};
+use crate::{backend::internal::manage::ManageDirectory, Directory, Principal, QueryBy, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
 #[async_trait::async_trait]
 impl Directory for SqlDirectory {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal>> {
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         let mut account_id = None;
         let account_name;
         let mut secret = None;
 
-        let result = match by.t {
-            QueryType::Name(username) => {
+        let result = match by {
+            QueryBy::Name(username) => {
                 account_name = username.to_string();
 
                 self.store
                     .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
                     .await?
             }
-            QueryType::Id(uid) => {
-                if let Some(username) = by.account_name(uid).await? {
+            QueryBy::Id(uid) => {
+                if let Some(username) = self.unwrap_id_store().get_account_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -60,7 +58,7 @@ impl Directory for SqlDirectory {
                     )
                     .await?
             }
-            QueryType::Credentials(credentials) => {
+            QueryBy::Credentials(credentials) => {
                 let (username, secret_) = match credentials {
                     Credentials::Plain { username, secret } => (username, secret),
                     Credentials::OAuthBearer { token } => (token, token),
@@ -99,12 +97,15 @@ impl Directory for SqlDirectory {
         // Obtain account ID if not available
         if let Some(account_id) = account_id {
             principal.id = account_id;
-        } else if by.has_store() {
-            principal.id = by.account_id(&account_name).await?;
+        } else if self.has_id_store() {
+            principal.id = self
+                .unwrap_id_store()
+                .get_or_create_account_id(&account_name)
+                .await?;
         }
         principal.name = account_name;
 
-        if by.has_store() {
+        if self.has_id_store() {
             // Obtain members
             if !self.mappings.query_members.is_empty() {
                 for row in self
@@ -117,7 +118,11 @@ impl Directory for SqlDirectory {
                     .rows
                 {
                     if let Some(Value::Text(account_id)) = row.values.first() {
-                        principal.member_of.push(by.account_id(account_id).await?);
+                        principal.member_of.push(
+                            self.unwrap_id_store()
+                                .get_or_create_account_id(account_id)
+                                .await?,
+                        );
                     }
                 }
             }
@@ -138,7 +143,7 @@ impl Directory for SqlDirectory {
         Ok(Some(principal))
     }
 
-    async fn email_to_ids(&self, address: &str, store: &Store) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
         let mut names = self
             .store
             .query::<Rows>(
@@ -167,7 +172,11 @@ impl Directory for SqlDirectory {
 
         for row in names.rows {
             if let Some(Value::Text(name)) = row.values.first() {
-                ids.push(store.get_or_create_account_id(name).await?);
+                ids.push(
+                    self.unwrap_id_store()
+                        .get_or_create_account_id(name)
+                        .await?,
+                );
             }
         }
 
@@ -242,8 +251,18 @@ impl Directory for SqlDirectory {
     }
 }
 
+impl SqlDirectory {
+    pub fn has_id_store(&self) -> bool {
+        self.id_store.is_some()
+    }
+
+    pub fn unwrap_id_store(&self) -> &Store {
+        self.id_store.as_ref().unwrap()
+    }
+}
+
 impl SqlMappings {
-    pub fn row_to_principal(&self, rows: NamedRows) -> crate::Result<Principal> {
+    pub fn row_to_principal(&self, rows: NamedRows) -> crate::Result<Principal<u32>> {
         let mut principal = Principal::default();
 
         if let Some(row) = rows.rows.into_iter().next() {

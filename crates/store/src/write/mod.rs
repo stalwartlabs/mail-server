@@ -149,6 +149,7 @@ pub enum ValueClass {
 pub enum DirectoryValue {
     NameToId(Vec<u8>),
     EmailToId(Vec<u8>),
+    Domain(Vec<u8>),
     Principal(u32),
     UsedQuota(u32),
 }
@@ -282,7 +283,7 @@ pub trait DeserializeFrom: Sized {
     fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self>;
 }
 
-impl<T: SerializeInto> Serialize for Vec<T> {
+impl<T: SerializeInto> Serialize for &Vec<T> {
     fn serialize(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.len() * 4);
         bytes.push_leb128(self.len());
@@ -290,6 +291,12 @@ impl<T: SerializeInto> Serialize for Vec<T> {
             item.serialize_into(&mut bytes);
         }
         bytes
+    }
+}
+
+impl<T: SerializeInto> Serialize for Vec<T> {
+    fn serialize(self) -> Vec<u8> {
+        (&self).serialize()
     }
 }
 
@@ -473,6 +480,12 @@ impl Serialize for () {
 impl ToBitmaps for () {
     fn to_bitmaps(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
         unreachable!()
+    }
+}
+
+impl Deserialize for () {
+    fn deserialize(_bytes: &[u8]) -> crate::Result<Self> {
+        Ok(())
     }
 }
 

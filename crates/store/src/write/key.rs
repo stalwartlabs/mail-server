@@ -259,7 +259,8 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 DirectoryValue::NameToId(name) => serializer.write(6u8).write(name.as_slice()),
                 DirectoryValue::EmailToId(email) => serializer.write(7u8).write(email.as_slice()),
                 DirectoryValue::Principal(uid) => serializer.write(8u8).write_leb128(*uid),
-                DirectoryValue::UsedQuota(uid) => serializer.write(9u8).write_leb128(*uid),
+                DirectoryValue::Domain(name) => serializer.write(9u8).write(name.as_slice()),
+                DirectoryValue::UsedQuota(uid) => serializer.write(10u8).write_leb128(*uid),
             },
         }
         .finalize()
@@ -425,7 +426,9 @@ impl ValueClass {
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
             ValueClass::Key(v) => v.len(),
             ValueClass::Directory(d) => match d {
-                DirectoryValue::NameToId(v) | DirectoryValue::EmailToId(v) => v.len(),
+                DirectoryValue::NameToId(v)
+                | DirectoryValue::EmailToId(v)
+                | DirectoryValue::Domain(v) => v.len(),
                 DirectoryValue::Principal(_) | DirectoryValue::UsedQuota(_) => U32_LEN,
             },
             ValueClass::IndexEmail { .. } => U64_LEN * 2,

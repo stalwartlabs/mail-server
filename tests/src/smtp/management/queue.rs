@@ -98,7 +98,7 @@ async fn manage_queue() {
     // Start local management interface
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default())
+        .parse_directory(&Stores::default(), None)
         .unwrap();
     core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     core.session.config.rcpt.relay = IfBlock::new(true);

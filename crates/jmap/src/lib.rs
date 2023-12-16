@@ -599,7 +599,7 @@ impl JMAP {
             access_token.quota as i64
         } else {
             self.directory
-                .query(QueryBy::id(account_id).with_store(&self.store))
+                .query(QueryBy::Id(account_id))
                 .await
                 .map_err(|err| {
                     tracing::error!(

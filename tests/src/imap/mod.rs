@@ -273,7 +273,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     .unwrap();
     let servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
-    let directory = config.parse_directory(&stores).unwrap();
+    let directory = config.parse_directory(&stores, store_id.into()).unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);

@@ -47,11 +47,7 @@ impl JMAP {
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
-            let uids = self
-                .directory
-                .email_to_ids(rcpt, &self.store)
-                .await
-                .unwrap_or_default();
+            let uids = self.directory.email_to_ids(rcpt).await.unwrap_or_default();
             for uid in &uids {
                 deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
             }
@@ -73,11 +69,7 @@ impl JMAP {
                     .await
                 }
                 Ok(None) => {
-                    let account_quota = match self
-                        .directory
-                        .query(QueryBy::id(*uid).with_store(&self.store))
-                        .await
-                    {
+                    let account_quota = match self.directory.query(QueryBy::Id(*uid)).await {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
                         Err(_) => {

@@ -214,7 +214,7 @@ impl JMAP {
             session.add_account(
                 (*id).into(),
                 self.directory
-                    .query(QueryBy::id(*id).with_store(&self.store))
+                    .query(QueryBy::Id(*id))
                     .await
                     .unwrap_or_default()
                     .map(|p| p.name)

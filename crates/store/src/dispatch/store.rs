@@ -202,7 +202,7 @@ impl Store {
         for (from_class, to_class) in [
             (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
             (ValueClass::ReservedId, ValueClass::ReservedId),
-            (ValueClass::Property(0), ValueClass::Property(u8::MAX)),
+            (ValueClass::Property(0), ValueClass::Property(0)),
             (ValueClass::TermIndex, ValueClass::TermIndex),
         ] {
             self.delete_range(
@@ -360,6 +360,7 @@ impl Store {
     }
 
     #[cfg(feature = "test_mode")]
+    #[allow(unused_variables)]
 
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
         use crate::{SUBSPACE_BLOBS, SUBSPACE_BLOB_DATA, SUBSPACE_COUNTERS};
