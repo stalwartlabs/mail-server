@@ -2,31 +2,10 @@
 # JMAP server store configuration
 #############################################
 
-[store.db]
-path = "%{BASE_PATH}%/data/index.sqlite3"
-
-[store.db.pool]
-max-connections = 10
-#workers = 8
-
-[store.db.cache]
-size = 1000
-
-[store.blob]
-type = "local"
-
-[store.blob.local]
-path = "%{BASE_PATH}%/data/blobs"
-
-[store.blob.s3]
-bucket = "stalwart"
-region = "eu-central-1"
-access-key = "minioadmin"
-secret-key = "minioadmin"
-#endpoint = ""
-#security-token = ""
-#profile = ""
-timeout = "30s"
+[jmap.store]
+data = "rocksdb"
+fts = "rocksdb"
+blob = "rocksdb"
 
 [jmap.encryption]
 enable = true
@@ -35,7 +14,5 @@ append = false
 [jmap.fts]
 default-language = "en"
 
-[jmap.purge.schedule]
-db = "0 3 *"
-blobs = "30 3 *"
-sessions = "15 * *"
+[jmap.cluster]
+node-id = 1

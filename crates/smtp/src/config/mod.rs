@@ -223,7 +223,7 @@ pub struct Extensions {
 }
 
 pub struct Auth {
-    pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
+    pub directory: IfBlock<Option<MaybeDynValue<Directory>>>,
     pub mechanisms: IfBlock<u64>,
     pub require: IfBlock<bool>,
     pub allow_plain_text: IfBlock<bool>,
@@ -239,7 +239,7 @@ pub struct Mail {
 pub struct Rcpt {
     pub script: IfBlock<Option<Arc<Sieve>>>,
     pub relay: IfBlock<bool>,
-    pub directory: IfBlock<Option<MaybeDynValue<dyn Directory>>>,
+    pub directory: IfBlock<Option<MaybeDynValue<Directory>>>,
     pub rewrite: IfBlock<Option<DynValue<EnvelopeKey>>>,
 
     // Errors
@@ -347,7 +347,7 @@ pub struct QueueConfig {
     // Throttle and Quotas
     pub throttle: QueueThrottle,
     pub quota: QueueQuotas,
-    pub management_lookup: Arc<dyn Directory>,
+    pub management_lookup: Arc<Directory>,
 }
 
 pub struct QueueOutboundSourceIp {

@@ -21,18 +21,20 @@
  * for more details.
 */
 
-use parking_lot::Mutex;
+use crate::{backend::memory::MemoryDirectory, AddressMapping, Directory, DirectoryInner};
 
-use crate::Directory;
-
-use self::lru::LookupCache;
-
+pub mod cache;
 pub mod config;
-pub mod lookup;
-pub mod lru;
+pub mod dispatch;
+pub mod secret;
 
-pub struct CachedDirectory<T: Directory> {
-    inner: T,
-    cached_domains: Mutex<LookupCache<String>>,
-    cached_rcpts: Mutex<LookupCache<String>>,
+impl Default for Directory {
+    fn default() -> Self {
+        Directory {
+            store: DirectoryInner::Memory(MemoryDirectory::default()),
+            catch_all: AddressMapping::Disable,
+            subaddressing: AddressMapping::Disable,
+            cache: None,
+        }
+    }
 }

@@ -26,7 +26,7 @@ use deadpool::{
     Runtime,
 };
 use regex::Regex;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use store::Stores;
 use utils::config::{
     utils::{AsKey, ParseValue},
@@ -40,8 +40,10 @@ use crate::{
         imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
         sql::SqlDirectory,
     },
-    AddressMapping, Directories, DirectoryOptions,
+    AddressMapping, Directories, Directory, DirectoryInner,
 };
+
+use super::cache::CachedDirectory;
 
 pub trait ConfigDirectory {
     fn parse_directory(
@@ -66,32 +68,62 @@ impl ConfigDirectory for Config {
             // Parse directory
             let protocol = self.value_require(("directory", id, "type"))?;
             let prefix = ("directory", id);
-            let directory = match protocol {
-                "ldap" => LdapDirectory::from_config(self, prefix, id_store.clone())?,
-                "sql" => SqlDirectory::from_config(self, prefix, stores, id_store.clone())?,
-                "imap" => ImapDirectory::from_config(self, prefix)?,
-                "smtp" => SmtpDirectory::from_config(self, prefix, false)?,
-                "lmtp" => SmtpDirectory::from_config(self, prefix, true)?,
-                "memory" => MemoryDirectory::from_config(self, prefix)?,
+            let store = match protocol {
+                "internal" => DirectoryInner::Internal(
+                    stores
+                        .stores
+                        .get(self.value_require(("directory", id, "store"))?)
+                        .cloned()
+                        .ok_or_else(|| {
+                            format!(
+                                "Failed to find store {:?} for directory {:?}.",
+                                self.value_require(("directory", id, "store")).unwrap(),
+                                id
+                            )
+                        })?,
+                ),
+                "ldap" => DirectoryInner::Ldap(LdapDirectory::from_config(
+                    self,
+                    prefix,
+                    id_store.clone(),
+                )?),
+                "sql" => DirectoryInner::Sql(SqlDirectory::from_config(
+                    self,
+                    prefix,
+                    stores,
+                    id_store.clone(),
+                )?),
+                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(self, prefix)?),
+                "smtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, false)?),
+                "lmtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, true)?),
+                "memory" => DirectoryInner::Memory(MemoryDirectory::from_config(
+                    self,
+                    prefix,
+                    id_store.clone(),
+                )?),
                 unknown => {
                     return Err(format!("Unknown directory type: {unknown:?}"));
                 }
             };
 
-            config.directories.insert(id.to_string(), directory);
+            config.directories.insert(
+                id.to_string(),
+                Arc::new(Directory {
+                    store,
+                    catch_all: AddressMapping::from_config(
+                        self,
+                        ("directory", id, "options.catch-all"),
+                    )?,
+                    subaddressing: AddressMapping::from_config(
+                        self,
+                        ("directory", id, "options.subaddressing"),
+                    )?,
+                    cache: CachedDirectory::try_from_config(self, ("directory", id))?,
+                }),
+            );
         }
 
         Ok(config)
-    }
-}
-
-impl DirectoryOptions {
-    pub fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
-        let key = key.as_key();
-        Ok(DirectoryOptions {
-            catch_all: AddressMapping::from_config(config, (&key, "options.catch-all"))?,
-            subaddressing: AddressMapping::from_config(config, (&key, "options.subaddressing"))?,
-        })
     }
 }
 
@@ -134,11 +166,11 @@ pub(crate) fn build_pool<M: Manager>(
         .max_size(config.property_or_static((prefix, "pool.max-connections"), "10")?)
         .create_timeout(
             config
-                .property_or_static::<Duration>((prefix, "pool.create-timeout"), "30s")?
+                .property_or_static::<Duration>((prefix, "pool.timeout.create"), "30s")?
                 .into(),
         )
-        .wait_timeout(config.property_or_static((prefix, "pool.wait-timeout"), "30s")?)
-        .recycle_timeout(config.property_or_static((prefix, "pool.recycle-timeout"), "30s")?)
+        .wait_timeout(config.property_or_static((prefix, "pool.timeout.wait"), "30s")?)
+        .recycle_timeout(config.property_or_static((prefix, "pool.timeout.recycle"), "30s")?)
         .build()
         .map_err(|err| {
             format!(

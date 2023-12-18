@@ -2,83 +2,57 @@
 # SMTP Spam & Phishing filter configuration
 #############################################
 
-[directory."spamdb"]
-type = "sql"
-address = "sqlite://%{BASE_PATH}%/data/spamfilter.sqlite3?mode=rwc"
-
-[directory."spamdb".pool]
-max-connections = 10
-min-connections = 0
-idle-timeout = "5m"
-
-[directory."spamdb".lookup]
-token-insert = "INSERT INTO bayes_tokens (h1, h2, ws, wh) VALUES (?, ?, ?, ?) 
-                ON CONFLICT(h1, h2) 
-                DO UPDATE SET ws = ws + excluded.ws, wh = wh + excluded.wh"
-token-lookup = "SELECT ws, wh FROM bayes_tokens WHERE h1 = ? AND h2 = ?"
-id-insert = "INSERT INTO seen_ids (id, ttl) VALUES (?, datetime('now', ? || ' seconds'))"
-id-lookup = "SELECT 1 FROM seen_ids WHERE id = ? AND ttl > CURRENT_TIMESTAMP"
-reputation-insert = "INSERT INTO reputation (token, score, count, ttl) VALUES (?, ?, 1, datetime('now', '30 days')) 
-                     ON CONFLICT(token) 
-                     DO UPDATE SET score = (count + 1) * (excluded.score + 0.98 * score) / (0.98 * count + 1), count = count + 1, ttl = excluded.ttl"
-reputation-lookup = "SELECT score, count FROM reputation WHERE token = ?"
-
-[directory."spamdb".schedule]
-query = ["DELETE FROM seen_ids WHERE ttl < CURRENT_TIMESTAMP", 
-         "DELETE FROM reputation WHERE ttl < CURRENT_TIMESTAMP"]
-frequency = "0 3 *"
-
-[directory."spam"]
+[store."spam"]
 type = "memory"
 
-[directory."spam".lookup."free-domains"]
+[store."spam".lookup."free-domains"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_free.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_free.list"]
 
-[directory."spam".lookup."disposable-domains"]
+[store."spam".lookup."disposable-domains"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_disposable.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_disposable.list"]
 
-[directory."spam".lookup."redirectors"]
+[store."spam".lookup."redirectors"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/url_redirectors.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/url_redirectors.list"]
 
-[directory."spam".lookup."domains-allow"]
+[store."spam".lookup."domains-allow"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_domains.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_domains.list"]
 
-[directory."spam".lookup."dmarc-allow"]
+[store."spam".lookup."dmarc-allow"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_dmarc.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_dmarc.list"]
 
-[directory."spam".lookup."spf-dkim-allow"]
+[store."spam".lookup."spf-dkim-allow"]
 type = "glob"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_spf_dkim.list", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_spf_dkim.list"]
 
-[directory."spam".lookup."mime-types"]
+[store."spam".lookup."mime-types"]
 type = "map"
 comment = '#'
 values = ["https://get.stalw.art/resources/config/spamfilter/maps/mime_types.map", 
           "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/mime_types.map"]
 
-[directory."spam".lookup."trap-address"]
+[store."spam".lookup."trap-address"]
 type = "glob"
 comment = '#'
 values = "file://%{BASE_PATH}%/etc/spamfilter/maps/spam_trap.list"
 
-[directory."spam".lookup."scores"]
+[store."spam".lookup."scores"]
 type = "map"
 values = "file://%{BASE_PATH}%/etc/spamfilter/maps/scores.map"
 

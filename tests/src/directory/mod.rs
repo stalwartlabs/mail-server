@@ -29,7 +29,7 @@ pub mod sql;
 
 use ::smtp::core::Lookup;
 use directory::{
-    backend::internal::manage::ManageDirectory, config::ConfigDirectory, AddressMapping,
+    backend::internal::manage::ManageDirectory, core::config::ConfigDirectory, AddressMapping,
     Directories, Principal,
 };
 use mail_send::Credentials;
@@ -58,6 +58,13 @@ secret = "secret"
 email = "address"
 quota = "quota"
 type = "type"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "{TMP}/rocksdb"
+
+[store."foundationdb"]
+type = "foundationdb"
 
 [store."sqlite"]
 type = "sqlite"
@@ -153,7 +160,7 @@ base-dn = "dc=example,dc=org"
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
 
-[directory."ldap".auth-bind]
+[directory."ldap".bind.auth]
 enable = false
 dn = "cn=?,ou=svcaccts,dc=example,dc=org"
 
@@ -278,7 +285,11 @@ pub struct DirectoryTest {
 impl DirectoryTest {
     pub async fn new(id_store: Option<&str>) -> DirectoryTest {
         let temp_dir = TempDir::new("directory_tests", true);
-        let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
+        let mut config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
+        if id_store.is_some() {
+            // Disable foundationdb store for SQL tests (the fdb select api version can only be run once per process)
+            config_file = config_file.replace("foundationdb", "ignore");
+        }
         let config = utils::config::Config::new(&config_file).unwrap();
         let stores = config.parse_stores().await.unwrap();
 

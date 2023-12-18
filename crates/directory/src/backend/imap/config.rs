@@ -21,20 +21,15 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use mail_send::smtp::tls::build_tls_connector;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{cache::CachedDirectory, config::build_pool, Directory};
+use crate::core::config::build_pool;
 
 use super::{ImapConnectionManager, ImapDirectory};
 
 impl ImapDirectory {
-    pub fn from_config(
-        config: &Config,
-        prefix: impl AsKey,
-    ) -> utils::config::Result<Arc<dyn Directory>> {
+    pub fn from_config(config: &Config, prefix: impl AsKey) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
         let tls_implicit: bool = config.property_or_static((&prefix, "tls.implicit"), "false")?;
@@ -52,16 +47,12 @@ impl ImapDirectory {
             mechanisms: 0.into(),
         };
 
-        CachedDirectory::try_from_config(
-            config,
-            &prefix,
-            ImapDirectory {
-                pool: build_pool(config, &prefix, manager)?,
-                domains: config
-                    .values((&prefix, "local-domains"))
-                    .map(|(_, v)| v.to_lowercase())
-                    .collect(),
-            },
-        )
+        Ok(ImapDirectory {
+            pool: build_pool(config, &prefix, manager)?,
+            domains: config
+                .values((&prefix, "lookup.domains"))
+                .map(|(_, v)| v.to_lowercase())
+                .collect(),
+        })
     }
 }

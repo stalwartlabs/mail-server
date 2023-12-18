@@ -27,6 +27,14 @@ use std::{
     time::{Duration, Instant},
 };
 
+use parking_lot::Mutex;
+use utils::config::{utils::AsKey, Config};
+
+pub struct CachedDirectory {
+    cached_domains: Mutex<LookupCache<String>>,
+    cached_rcpts: Mutex<LookupCache<String>>,
+}
+
 #[allow(clippy::type_complexity)]
 #[derive(Debug)]
 pub struct LookupCache<T: Hash + Eq> {
@@ -34,6 +42,62 @@ pub struct LookupCache<T: Hash + Eq> {
     cache_neg: lru_cache::LruCache<T, Instant, ahash::RandomState>,
     ttl_pos: Duration,
     ttl_neg: Duration,
+}
+
+impl CachedDirectory {
+    pub fn try_from_config(
+        config: &Config,
+        prefix: impl AsKey,
+    ) -> utils::config::Result<Option<Self>> {
+        let prefix = prefix.as_key();
+        if let Some(cached_entries) = config.property((&prefix, "cache.entries"))? {
+            let cache_ttl_positive = config
+                .property((&prefix, "cache.ttl.positive"))?
+                .unwrap_or(Duration::from_secs(86400));
+            let cache_ttl_negative = config
+                .property((&prefix, "cache.ttl.positive"))?
+                .unwrap_or_else(|| Duration::from_secs(3600));
+
+            Ok(Some(CachedDirectory {
+                cached_domains: Mutex::new(LookupCache::new(
+                    cached_entries,
+                    cache_ttl_positive,
+                    cache_ttl_negative,
+                )),
+                cached_rcpts: Mutex::new(LookupCache::new(
+                    cached_entries,
+                    cache_ttl_positive,
+                    cache_ttl_negative,
+                )),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_rcpt(&self, address: &str) -> Option<bool> {
+        self.cached_rcpts.lock().get(address)
+    }
+
+    pub fn set_rcpt(&self, address: &str, exists: bool) {
+        if exists {
+            self.cached_rcpts.lock().insert_pos(address.to_string());
+        } else {
+            self.cached_rcpts.lock().insert_neg(address.to_string());
+        }
+    }
+
+    pub fn get_domain(&self, domain: &str) -> Option<bool> {
+        self.cached_domains.lock().get(domain)
+    }
+
+    pub fn set_domain(&self, domain: &str, exists: bool) {
+        if exists {
+            self.cached_domains.lock().insert_pos(domain.to_string());
+        } else {
+            self.cached_domains.lock().insert_neg(domain.to_string());
+        }
+    }
 }
 
 impl<T: Hash + Eq> LookupCache<T> {

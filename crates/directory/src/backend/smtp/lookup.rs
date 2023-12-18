@@ -24,13 +24,12 @@
 use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::Severity;
 
-use crate::{Directory, DirectoryError, Principal, QueryBy};
+use crate::{DirectoryError, Principal, QueryBy};
 
 use super::{SmtpClient, SmtpDirectory};
 
-#[async_trait::async_trait]
-impl Directory for SmtpDirectory {
-    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+impl SmtpDirectory {
+    pub async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         if let QueryBy::Credentials(credentials) = query {
             self.pool.get().await?.authenticate(credentials).await
         } else {
@@ -38,11 +37,11 @@ impl Directory for SmtpDirectory {
         }
     }
 
-    async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
         Err(DirectoryError::unsupported("smtp", "email_to_ids"))
     }
 
-    async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
         let mut conn = self.pool.get().await?;
         if !conn.sent_mail_from {
             conn.client
@@ -70,7 +69,7 @@ impl Directory for SmtpDirectory {
         }
     }
 
-    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         self.pool
             .get()
             .await?
@@ -78,7 +77,7 @@ impl Directory for SmtpDirectory {
             .await
     }
 
-    async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         self.pool
             .get()
             .await?
@@ -86,7 +85,7 @@ impl Directory for SmtpDirectory {
             .await
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

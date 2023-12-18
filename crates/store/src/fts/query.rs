@@ -39,6 +39,8 @@ use crate::{
     BitmapKey, Deserialize, Error, Store, ValueKey,
 };
 
+use super::index::TERM_INDEX_VERSION;
+
 struct State<T: Into<u8> + Display + Clone + std::fmt::Debug> {
     pub op: FtsFilter<T>,
     pub bm: Option<RoaringBitmap>,
@@ -278,7 +280,12 @@ impl Store {
 
 impl Deserialize for BigramIndex {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        let bytes = lz4_flex::decompress_size_prepended(bytes)
+        if bytes.first().copied().unwrap_or_default() != TERM_INDEX_VERSION {
+            return Err(Error::InternalError(
+                "Unsupported term index version".to_string(),
+            ));
+        }
+        let bytes = lz4_flex::decompress_size_prepended(bytes.get(1..).unwrap_or_default())
             .map_err(|_| Error::InternalError("Failed to decompress term index".to_string()))?;
 
         let (num_items, pos) = bytes.read_leb128::<usize>().ok_or(Error::InternalError(

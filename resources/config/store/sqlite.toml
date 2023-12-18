@@ -1,0 +1,30 @@
+#############################################
+# SQLite Store configuration
+#############################################
+
+[store."sqlite"]
+type = "sqlite"
+path = "%{BASE_PATH}%/data/index.sqlite3"
+
+#[store."sqlite".pool]
+#max-connections = 10
+#workers = 10
+
+#[store."sqlite".init]
+#execute = [
+#    "CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)",
+#    "CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of TEXT NOT NULL, PRIMARY KEY (name, member_of))",
+#    "CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL, type TEXT, PRIMARY KEY (name, address))"
+#]
+
+[store."sqlite".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ?"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[store."sqlite".purge]
+frequency = "0 3 *"

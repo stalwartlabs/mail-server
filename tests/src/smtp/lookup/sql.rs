@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::config::ConfigStore;
 use utils::config::{Config, DynValue};

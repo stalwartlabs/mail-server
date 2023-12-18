@@ -25,8 +25,6 @@ use deadpool::managed::Pool;
 use ldap3::{ldap_escape, LdapConnSettings};
 use store::Store;
 
-use crate::DirectoryOptions;
-
 pub mod config;
 pub mod lookup;
 pub mod pool;
@@ -34,7 +32,6 @@ pub mod pool;
 pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
-    opt: DirectoryOptions,
     auth_bind: Option<LdapFilter>,
     id_store: Option<Store>,
 }

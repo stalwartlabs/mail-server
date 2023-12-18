@@ -21,12 +21,10 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use mail_send::{smtp::tls::build_tls_connector, SmtpClientBuilder};
 use utils::config::{utils::AsKey, Config};
 
-use crate::{cache::CachedDirectory, config::build_pool, Directory};
+use crate::core::config::build_pool;
 
 use super::{SmtpConnectionManager, SmtpDirectory};
 
@@ -35,7 +33,7 @@ impl SmtpDirectory {
         config: &Config,
         prefix: impl AsKey,
         is_lmtp: bool,
-    ) -> utils::config::Result<Arc<dyn Directory>> {
+    ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
         let tls_implicit: bool = config.property_or_static((&prefix, "tls.implicit"), "false")?;
@@ -62,16 +60,12 @@ impl SmtpDirectory {
             max_auth_errors: config.property_or_static((&prefix, "limits.auth-errors"), "3")?,
         };
 
-        CachedDirectory::try_from_config(
-            config,
-            &prefix,
-            SmtpDirectory {
-                pool: build_pool(config, &prefix, manager)?,
-                domains: config
-                    .values((&prefix, "local-domains"))
-                    .map(|(_, v)| v.to_lowercase())
-                    .collect(),
-            },
-        )
+        Ok(SmtpDirectory {
+            pool: build_pool(config, &prefix, manager)?,
+            domains: config
+                .values((&prefix, "lookup.domains"))
+                .map(|(_, v)| v.to_lowercase())
+                .collect(),
+        })
     }
 }

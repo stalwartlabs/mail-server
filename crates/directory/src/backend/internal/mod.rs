@@ -24,12 +24,17 @@
 pub mod lookup;
 pub mod manage;
 
-use std::slice::Iter;
+use std::{fmt::Display, slice::Iter};
 
 use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
 use utils::codec::leb128::Leb128Iterator;
 
 use crate::{Principal, Type};
+
+pub(super) struct PrincipalIdType {
+    pub account_id: u32,
+    pub typ: Type,
+}
 
 impl Serialize for Principal<u32> {
     fn serialize(self) -> Vec<u8> {
@@ -77,6 +82,35 @@ impl Deserialize for Principal<u32> {
     fn deserialize(bytes: &[u8]) -> store::Result<Self> {
         deserialize(bytes)
             .ok_or_else(|| store::Error::InternalError("Failed to deserialize principal".into()))
+    }
+}
+
+impl Serialize for PrincipalIdType {
+    fn serialize(self) -> Vec<u8> {
+        KeySerializer::new(U32_LEN + 1)
+            .write_leb128(self.account_id)
+            .write(self.typ as u8)
+            .finalize()
+    }
+}
+
+impl Deserialize for PrincipalIdType {
+    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+        let mut bytes = bytes.iter();
+        Ok(PrincipalIdType {
+            account_id: bytes.next_leb128().ok_or_else(|| {
+                store::Error::InternalError("Failed to deserialize principal account id".into())
+            })?,
+            typ: Type::from_u8(*bytes.next().ok_or_else(|| {
+                store::Error::InternalError("Failed to deserialize principal id type".into())
+            })?),
+        })
+    }
+}
+
+impl PrincipalIdType {
+    pub fn new(account_id: u32, typ: Type) -> Self {
+        Self { account_id, typ }
     }
 }
 
@@ -175,6 +209,20 @@ impl PrincipalUpdate {
     }
 }
 
+impl Display for PrincipalField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrincipalField::Name => write!(f, "name"),
+            PrincipalField::Type => write!(f, "type"),
+            PrincipalField::Quota => write!(f, "quota"),
+            PrincipalField::Description => write!(f, "description"),
+            PrincipalField::Secrets => write!(f, "secrets"),
+            PrincipalField::Emails => write!(f, "emails"),
+            PrincipalField::MemberOf => write!(f, "memberOf"),
+        }
+    }
+}
+
 fn deserialize_string(bytes: &mut Iter<'_, u8>) -> Option<String> {
     let len = bytes.next_leb128()?;
     let mut string = Vec::with_capacity(len);
@@ -203,6 +251,17 @@ fn deserialize_u32_list(bytes: &mut Iter<'_, u8>) -> Option<Vec<u32>> {
 }
 
 impl Type {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "individual" | "superuser" => Some(Type::Individual),
+            "group" => Some(Type::Group),
+            "resource" => Some(Type::Resource),
+            "location" => Some(Type::Location),
+            "list" => Some(Type::List),
+            _ => None,
+        }
+    }
+
     pub fn from_u8(value: u8) -> Self {
         match value {
             0 => Type::Individual,
@@ -212,6 +271,13 @@ impl Type {
             4 => Type::Superuser,
             5 => Type::List,
             _ => Type::Other,
+        }
+    }
+
+    pub fn into_base_type(self) -> Self {
+        match self {
+            Type::Superuser => Type::Individual,
+            any => any,
         }
     }
 }

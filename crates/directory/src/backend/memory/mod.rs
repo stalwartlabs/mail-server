@@ -22,8 +22,12 @@
 */
 
 use ahash::{AHashMap, AHashSet};
+use store::Store;
+use tokio::sync::oneshot;
 
-use crate::{DirectoryOptions, Principal};
+use crate::Principal;
+
+use super::internal::manage::ManageDirectory;
 
 pub mod config;
 pub mod lookup;
@@ -32,9 +36,60 @@ pub mod lookup;
 pub struct MemoryDirectory {
     principals: Vec<Principal<u32>>,
     emails_to_ids: AHashMap<String, Vec<EmailType>>,
-    names_to_ids: AHashMap<String, u32>,
+    names_to_ids: NameToId,
     domains: AHashSet<String>,
-    opt: DirectoryOptions,
+}
+
+pub enum NameToId {
+    Internal(AHashMap<String, u32>),
+    Store(Store),
+}
+
+impl Default for NameToId {
+    fn default() -> Self {
+        Self::Internal(AHashMap::new())
+    }
+}
+
+impl std::fmt::Debug for NameToId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Internal(arg0) => f.debug_tuple("Internal").field(arg0).finish(),
+            Self::Store(_) => f.debug_tuple("Store").finish(),
+        }
+    }
+}
+
+impl From<Option<Store>> for NameToId {
+    fn from(store: Option<Store>) -> Self {
+        match store {
+            Some(store) => Self::Store(store),
+            None => Self::Internal(AHashMap::new()),
+        }
+    }
+}
+
+impl NameToId {
+    pub fn get_or_insert(&mut self, name: &str) -> crate::Result<u32> {
+        match self {
+            Self::Internal(map) => {
+                let next_id = map.len() as u32;
+                Ok(*map.entry(name.to_string()).or_insert(next_id))
+            }
+            Self::Store(store) => {
+                let (tx, rx) = oneshot::channel();
+                let store = store.clone();
+                let name = name.to_string();
+                tokio::spawn(async move {
+                    let _ = tx.send(store.get_or_create_account_id(&name).await);
+                });
+                match rx.blocking_recv() {
+                    Ok(result) => result,
+                    Err(_) => Err(crate::DirectoryError::Unsupported),
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

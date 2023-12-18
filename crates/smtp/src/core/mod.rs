@@ -117,7 +117,7 @@ pub struct SieveCore {
     pub from_name: String,
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
-    pub directories: AHashMap<String, Arc<dyn Directory>>,
+    pub directories: AHashMap<String, Arc<Directory>>,
     pub lookup_stores: AHashMap<String, LookupStore>,
     pub lookup: AHashMap<String, Lookup>,
 }
@@ -229,7 +229,7 @@ pub struct SessionParameters {
     pub ehlo_reject_non_fqdn: bool,
 
     // Auth parameters
-    pub auth_directory: Option<Arc<dyn Directory>>,
+    pub auth_directory: Option<Arc<Directory>>,
     pub auth_require: bool,
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,

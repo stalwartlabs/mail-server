@@ -41,17 +41,19 @@ impl FsStore {
     pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         let prefix = prefix.as_key();
         let path = config.property_require::<PathBuf>((&prefix, "path"))?;
-        if path.exists() {
-            Ok(FsStore {
-                path,
-                hash_levels: std::cmp::min(config.property_or_static((&prefix, "depth"), "2")?, 5),
-            })
-        } else {
-            Err(crate::Error::InternalError(format!(
-                "Blob store path {:?} does not exist",
-                path
-            )))
+        if !path.exists() {
+            fs::create_dir_all(&path).await.map_err(|e| {
+                crate::Error::InternalError(format!(
+                    "Failed to create blob store path {:?}: {}",
+                    path, e
+                ))
+            })?;
         }
+
+        Ok(FsStore {
+            path,
+            hash_levels: std::cmp::min(config.property_or_static((&prefix, "depth"), "2")?, 5),
+        })
     }
 
     pub(crate) async fn get_blob(

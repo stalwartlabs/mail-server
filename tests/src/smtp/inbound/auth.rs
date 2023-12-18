@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::Stores;
 use utils::config::{Config, DynValue};

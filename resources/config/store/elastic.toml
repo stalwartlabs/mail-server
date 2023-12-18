@@ -1,0 +1,17 @@
+#############################################
+# ElasticSearch FTS Store configuration
+#############################################
+
+[store."elastic"]
+type = "elasticsearch"
+url = "https://localhost:9200"
+user = "elastic"
+password = "myelasticpassword"
+#cloud-id = "my-cloud-id"
+
+[store."elastic".tls]
+allow-invalid-certs = true
+
+[store."elastic".index]
+shards = 3
+replicas = 0

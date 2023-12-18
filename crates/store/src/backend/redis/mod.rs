@@ -91,10 +91,10 @@ impl RedisStore {
                 builder = builder.retries(value);
             }
             if let Some(value) = config.property::<Duration>((&prefix, "max-retry-wait"))? {
-                builder = builder.max_retry_wait(value.as_secs());
+                builder = builder.max_retry_wait(value.as_millis() as u64);
             }
             if let Some(value) = config.property::<Duration>((&prefix, "min-retry-wait"))? {
-                builder = builder.min_retry_wait(value.as_secs());
+                builder = builder.min_retry_wait(value.as_millis() as u64);
             }
             if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas"))? {
                 builder = builder.read_from_replicas();

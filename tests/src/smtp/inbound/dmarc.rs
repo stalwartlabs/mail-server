@@ -26,7 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     dkim::DomainKeyReport,

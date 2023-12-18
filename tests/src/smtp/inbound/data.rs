@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use store::Stores;
 use utils::config::Config;
 

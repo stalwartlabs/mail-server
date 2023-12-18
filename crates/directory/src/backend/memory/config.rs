@@ -21,22 +21,23 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
+use ahash::AHashMap;
+use store::Store;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{Directory, DirectoryOptions, Principal, Type};
+use crate::{Principal, Type};
 
-use super::{EmailType, MemoryDirectory};
+use super::{EmailType, MemoryDirectory, NameToId};
 
 impl MemoryDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
-    ) -> utils::config::Result<Arc<dyn Directory>> {
+        _: Option<Store>,
+    ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let mut directory = MemoryDirectory {
-            opt: DirectoryOptions::from_config(config, prefix.clone())?,
+            names_to_ids: NameToId::Internal(AHashMap::new()),
             ..Default::default()
         };
 
@@ -45,31 +46,31 @@ impl MemoryDirectory {
                 .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
             let typ =
-                match config.value_require((prefix.as_str(), "principals", lookup_id, "name"))? {
+                match config.value_require((prefix.as_str(), "principals", lookup_id, "type"))? {
                     "individual" => Type::Individual,
                     "admin" => Type::Superuser,
                     "group" => Type::Group,
-                    _ => Type::Other,
+                    _ => Type::Individual,
                 };
 
             // Obtain id
-            let next_user_id = directory.names_to_ids.len() as u32;
-            let id = *directory
-                .names_to_ids
-                .entry(name.to_string())
-                .or_insert(next_user_id);
+            let id = directory.names_to_ids.get_or_insert(&name).map_err(|err| {
+                format!(
+                    "Failed to obtain id for principal {} ({}): {:?}",
+                    name, lookup_id, err
+                )
+            })?;
 
             // Obtain group ids
             let mut member_of = Vec::new();
             for (_, group) in config.values((prefix.as_str(), "principals", lookup_id, "member-of"))
             {
-                let next_group_id = directory.names_to_ids.len() as u32;
-                member_of.push(
-                    *directory
-                        .names_to_ids
-                        .entry(group.to_string())
-                        .or_insert(next_group_id),
-                );
+                member_of.push(directory.names_to_ids.get_or_insert(group).map_err(|err| {
+                    format!(
+                        "Failed to obtain id for principal {} ({}): {:?}",
+                        name, lookup_id, err
+                    )
+                })?);
             }
 
             // Parse email addresses
@@ -128,6 +129,6 @@ impl MemoryDirectory {
             });
         }
 
-        Ok(Arc::new(directory))
+        Ok(directory)
     }
 }

@@ -21,13 +21,13 @@
  * for more details.
 */
 
-use super::cli::{ReportCommands, ReportFormat};
-use crate::modules::queue::{deserialize_datetime, smtp_manage_request};
+use super::cli::{Client, ReportCommands, ReportFormat};
+use crate::modules::queue::deserialize_datetime;
 use console::Term;
 use human_size::{Byte, SpecificSize};
-use jmap_client::client::Credentials;
 use mail_parser::DateTime;
 use prettytable::{format::Alignment, Attr, Cell, Row, Table};
+use reqwest::Method;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -42,149 +42,159 @@ pub struct Report {
     pub size: usize,
 }
 
-pub async fn cmd_report(url: &str, credentials: Credentials, command: ReportCommands) {
-    match command {
-        ReportCommands::List {
-            domain,
-            format,
-            page_size,
-        } => {
-            let stdout = Term::buffered_stdout();
-            let mut query = form_urlencoded::Serializer::new(format!("{url}/admin/report/list?"));
+impl ReportCommands {
+    pub async fn exec(self, client: Client) {
+        match self {
+            ReportCommands::List {
+                domain,
+                format,
+                page_size,
+            } => {
+                let stdout = Term::buffered_stdout();
+                let mut query = form_urlencoded::Serializer::new("/admin/report/list?".to_string());
 
-            if let Some(domain) = &domain {
-                query.append_pair("domain", domain);
-            }
-            if let Some(format) = &format {
-                query.append_pair("type", format.id());
-            }
+                if let Some(domain) = &domain {
+                    query.append_pair("domain", domain);
+                }
+                if let Some(format) = &format {
+                    query.append_pair("type", format.id());
+                }
 
-            let ids = smtp_manage_request::<Vec<String>>(&query.finish(), &credentials).await;
-            let ids_len = ids.len();
-            let page_size = page_size.map(|p| std::cmp::max(p, 1)).unwrap_or(20);
-            let pages_total = (ids_len as f64 / page_size as f64).ceil() as usize;
-            for (page_num, chunk) in ids.chunks(page_size).enumerate() {
-                // Build table
-                let mut table = Table::new();
-                table.add_row(Row::new(
-                    ["ID", "Domain", "Type", "From Date", "To Date", "Size"]
-                        .iter()
-                        .map(|p| Cell::new(p).with_style(Attr::Bold))
-                        .collect(),
-                ));
-                for (report, id) in smtp_manage_request::<Vec<Option<Report>>>(
-                    &format!("{url}/admin/report/status?ids={}", chunk.join(",")),
-                    &credentials,
-                )
-                .await
-                .into_iter()
-                .zip(chunk)
+                let ids = client
+                    .http_request::<Vec<String>, String>(Method::GET, &query.finish(), None)
+                    .await;
+                let ids_len = ids.len();
+                let page_size = page_size.map(|p| std::cmp::max(p, 1)).unwrap_or(20);
+                let pages_total = (ids_len as f64 / page_size as f64).ceil() as usize;
+                for (page_num, chunk) in ids.chunks(page_size).enumerate() {
+                    // Build table
+                    let mut table = Table::new();
+                    table.add_row(Row::new(
+                        ["ID", "Domain", "Type", "From Date", "To Date", "Size"]
+                            .iter()
+                            .map(|p| Cell::new(p).with_style(Attr::Bold))
+                            .collect(),
+                    ));
+                    for (report, id) in client
+                        .http_request::<Vec<Option<Report>>, String>(
+                            Method::GET,
+                            &format!("/admin/report/status?ids={}", chunk.join(",")),
+                            None,
+                        )
+                        .await
+                        .into_iter()
+                        .zip(chunk)
+                    {
+                        if let Some(report) = report {
+                            table.add_row(Row::new(vec![
+                                Cell::new(id),
+                                Cell::new(&report.domain),
+                                Cell::new(report.type_.name()),
+                                Cell::new(&report.range_from.to_rfc822()),
+                                Cell::new(&report.range_to.to_rfc822()),
+                                Cell::new(
+                                    &SpecificSize::new(report.size as u32, Byte)
+                                        .unwrap()
+                                        .to_string(),
+                                ),
+                            ]));
+                        }
+                    }
+
+                    eprintln!();
+                    table.printstd();
+                    eprintln!();
+                    if page_num + 1 != pages_total {
+                        eprintln!("\n--- Press any key to continue or 'q' to exit ---");
+                        if let Ok('q' | 'Q') = stdout.read_char() {
+                            break;
+                        }
+                    }
+                }
+                eprintln!("\n{ids_len} queued message(s) found.")
+            }
+            ReportCommands::Status { ids } => {
+                for (report, id) in client
+                    .http_request::<Vec<Option<Report>>, String>(
+                        Method::GET,
+                        &format!("/admin/report/status?ids={}", ids.join(",")),
+                        None,
+                    )
+                    .await
+                    .into_iter()
+                    .zip(&ids)
                 {
+                    let mut table = Table::new();
+                    table.add_row(Row::new(vec![
+                        Cell::new("ID").with_style(Attr::Bold),
+                        Cell::new(id),
+                    ]));
                     if let Some(report) = report {
                         table.add_row(Row::new(vec![
-                            Cell::new(id),
+                            Cell::new("Domain Name").with_style(Attr::Bold),
                             Cell::new(&report.domain),
+                        ]));
+                        table.add_row(Row::new(vec![
+                            Cell::new("Type").with_style(Attr::Bold),
                             Cell::new(report.type_.name()),
+                        ]));
+                        table.add_row(Row::new(vec![
+                            Cell::new("From Date").with_style(Attr::Bold),
                             Cell::new(&report.range_from.to_rfc822()),
+                        ]));
+                        table.add_row(Row::new(vec![
+                            Cell::new("To Date").with_style(Attr::Bold),
                             Cell::new(&report.range_to.to_rfc822()),
+                        ]));
+                        table.add_row(Row::new(vec![
+                            Cell::new("Size").with_style(Attr::Bold),
                             Cell::new(
                                 &SpecificSize::new(report.size as u32, Byte)
                                     .unwrap()
                                     .to_string(),
                             ),
                         ]));
+                    } else {
+                        table.add_row(Row::new(vec![Cell::new_align(
+                            "-- Not found --",
+                            Alignment::CENTER,
+                        )
+                        .with_hspan(2)]));
                     }
-                }
 
-                eprintln!();
-                table.printstd();
-                eprintln!();
-                if page_num + 1 != pages_total {
-                    eprintln!("\n--- Press any key to continue or 'q' to exit ---");
-                    if let Ok('q' | 'Q') = stdout.read_char() {
-                        break;
-                    }
+                    eprintln!();
+                    table.printstd();
+                    eprintln!();
                 }
             }
-            eprintln!("\n{ids_len} queued message(s) found.")
-        }
-        ReportCommands::Status { ids } => {
-            for (report, id) in smtp_manage_request::<Vec<Option<Report>>>(
-                &format!("{url}/admin/report/status?ids={}", ids.join(",")),
-                &credentials,
-            )
-            .await
-            .into_iter()
-            .zip(&ids)
-            {
-                let mut table = Table::new();
-                table.add_row(Row::new(vec![
-                    Cell::new("ID").with_style(Attr::Bold),
-                    Cell::new(id),
-                ]));
-                if let Some(report) = report {
-                    table.add_row(Row::new(vec![
-                        Cell::new("Domain Name").with_style(Attr::Bold),
-                        Cell::new(&report.domain),
-                    ]));
-                    table.add_row(Row::new(vec![
-                        Cell::new("Type").with_style(Attr::Bold),
-                        Cell::new(report.type_.name()),
-                    ]));
-                    table.add_row(Row::new(vec![
-                        Cell::new("From Date").with_style(Attr::Bold),
-                        Cell::new(&report.range_from.to_rfc822()),
-                    ]));
-                    table.add_row(Row::new(vec![
-                        Cell::new("To Date").with_style(Attr::Bold),
-                        Cell::new(&report.range_to.to_rfc822()),
-                    ]));
-                    table.add_row(Row::new(vec![
-                        Cell::new("Size").with_style(Attr::Bold),
-                        Cell::new(
-                            &SpecificSize::new(report.size as u32, Byte)
-                                .unwrap()
-                                .to_string(),
-                        ),
-                    ]));
-                } else {
-                    table.add_row(Row::new(vec![Cell::new_align(
-                        "-- Not found --",
-                        Alignment::CENTER,
+            ReportCommands::Cancel { ids } => {
+                let mut success_count = 0;
+                let mut failed_list = vec![];
+                for (success, id) in client
+                    .http_request::<Vec<bool>, String>(
+                        Method::GET,
+                        &format!("/admin/report/cancel?ids={}", ids.join(",")),
+                        None,
                     )
-                    .with_hspan(2)]));
+                    .await
+                    .into_iter()
+                    .zip(ids)
+                {
+                    if success {
+                        success_count += 1;
+                    } else {
+                        failed_list.push(id);
+                    }
                 }
-
-                eprintln!();
-                table.printstd();
-                eprintln!();
-            }
-        }
-        ReportCommands::Cancel { ids } => {
-            let mut success_count = 0;
-            let mut failed_list = vec![];
-            for (success, id) in smtp_manage_request::<Vec<bool>>(
-                &format!("{url}/admin/report/cancel?ids={}", ids.join(",")),
-                &credentials,
-            )
-            .await
-            .into_iter()
-            .zip(ids)
-            {
-                if success {
-                    success_count += 1;
-                } else {
-                    failed_list.push(id);
+                eprint!("\nRemoved {success_count} report(s).");
+                if !failed_list.is_empty() {
+                    eprint!(
+                        " Unable to remove report id(s): {}.",
+                        failed_list.join(", ")
+                    );
                 }
+                eprintln!();
             }
-            eprint!("\nRemoved {success_count} report(s).");
-            if !failed_list.is_empty() {
-                eprint!(
-                    " Unable to remove report id(s): {}.",
-                    failed_list.join(", ")
-                );
-            }
-            eprintln!();
         }
     }
 }

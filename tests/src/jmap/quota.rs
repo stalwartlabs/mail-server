@@ -70,7 +70,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await;
 
     // Delete temporary blobs from previous tests
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -93,7 +93,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Test temporary blob quota (50000 bytes)
     for i in 0..2 {
@@ -114,7 +114,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Test JMAP Quotas extension
     let response = jmap_raw_request(

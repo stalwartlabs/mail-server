@@ -44,6 +44,7 @@ use crate::{
 };
 
 use super::Field;
+pub const TERM_INDEX_VERSION: u8 = 1;
 
 #[derive(Debug)]
 pub(crate) struct Text<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> {
@@ -234,14 +235,13 @@ impl Store {
 
         // Write term index
         let mut batch = BatchBuilder::new();
+        let mut term_index = lz4_flex::compress_prepend_size(&serializer.finalize());
+        term_index.insert(0, TERM_INDEX_VERSION);
         batch
             .with_account_id(document.account_id)
             .with_collection(document.collection)
             .update_document(document.document_id)
-            .set(
-                ValueClass::TermIndex,
-                lz4_flex::compress_prepend_size(&serializer.finalize()),
-            );
+            .set(ValueClass::TermIndex, term_index);
         self.write(batch.build()).await?;
         let mut batch = BatchBuilder::new();
         batch
@@ -339,7 +339,12 @@ struct TermIndex {
 
 impl Deserialize for TermIndex {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        let bytes = lz4_flex::decompress_size_prepended(bytes)
+        if bytes.first().copied().unwrap_or_default() != TERM_INDEX_VERSION {
+            return Err(Error::InternalError(
+                "Unsupported term index version".to_string(),
+            ));
+        }
+        let bytes = lz4_flex::decompress_size_prepended(bytes.get(1..).unwrap_or_default())
             .map_err(|_| Error::InternalError("Failed to decompress term index".to_string()))?;
         let mut ops = Vec::new();
 

@@ -66,7 +66,7 @@ impl ElasticSearchStore {
             if let Some(credentials) = credentials {
                 builder = builder.auth(credentials);
             }
-            if config.property_or_static::<bool>((&prefix, "allow-invalid-certs"), "false")? {
+            if config.property_or_static::<bool>((&prefix, "tls.allow-invalid-certs"), "false")? {
                 builder = builder.cert_validation(CertificateValidation::None);
             }
 

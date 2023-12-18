@@ -22,8 +22,11 @@
 */
 
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalUpdate, PrincipalValue},
-    Directory, DirectoryError, ManagementError, Principal, QueryBy, Type,
+    backend::internal::{
+        lookup::DirectoryStore, manage::ManageDirectory, PrincipalField, PrincipalUpdate,
+        PrincipalValue,
+    },
+    DirectoryError, ManagementError, Principal, QueryBy, Type,
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
@@ -72,9 +75,10 @@ async fn internal_directory() {
                     ..Default::default()
                 })
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                PrincipalField::Name
-            )))
+            Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                field: PrincipalField::Name,
+                value: "john".to_string()
+            }))
         );
 
         // An account using a non-existent domain should fail
@@ -190,9 +194,10 @@ async fn internal_directory() {
                     ..Default::default()
                 })
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                PrincipalField::Emails
-            )))
+            Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                field: PrincipalField::Emails,
+                value: "jane@example.org".to_string()
+            }))
         );
 
         // Create a mailing list
@@ -458,9 +463,10 @@ async fn internal_directory() {
                     ),],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                PrincipalField::Name
-            )))
+            Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                field: PrincipalField::Name,
+                value: "jane".to_string()
+            }))
         );
         assert_eq!(
             store
@@ -472,19 +478,41 @@ async fn internal_directory() {
                     ),],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                PrincipalField::Emails
-            )))
+            Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                field: PrincipalField::Emails,
+                value: "jane@example.org".to_string()
+            }))
         );
 
         // List accounts
         assert_eq!(
-            store.list_accounts(None, 0).await.unwrap(),
+            store.list_accounts(None, None, 0).await.unwrap(),
             vec!["jane", "john.doe", "list", "sales", "support"]
         );
         assert_eq!(
-            store.list_accounts("john".into(), 2).await.unwrap(),
+            store.list_accounts("john".into(), None, 2).await.unwrap(),
             vec!["john.doe", "list"]
+        );
+        assert_eq!(
+            store
+                .list_accounts(None, Type::Individual.into(), 0)
+                .await
+                .unwrap(),
+            vec!["jane", "john.doe"]
+        );
+        assert_eq!(
+            store
+                .list_accounts(None, Type::Group.into(), 0)
+                .await
+                .unwrap(),
+            vec!["sales", "support"]
+        );
+        assert_eq!(
+            store
+                .list_accounts(None, Type::List.into(), 0)
+                .await
+                .unwrap(),
+            vec!["list"]
         );
 
         // Write records on John's and Jane's accounts
@@ -527,7 +555,7 @@ async fn internal_directory() {
         );
         assert!(!store.rcpt("john.doe@example.org").await.unwrap());
         assert_eq!(
-            store.list_accounts(None, 0).await.unwrap(),
+            store.list_accounts(None, None, 0).await.unwrap(),
             vec!["jane", "list", "sales", "support"]
         );
         assert_eq!(

@@ -29,7 +29,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig, TestSMTP,
 };
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use smtp::{
     config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},

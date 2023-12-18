@@ -25,7 +25,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use directory::backend::memory::MemoryDirectory;
+use directory::Directory;
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     hickory_resolver::config::{ResolverConfig, ResolverOpts},
@@ -342,7 +342,7 @@ impl TestConfig for QueueConfig {
                 rcpt: vec![],
                 rcpt_domain: vec![],
             },
-            management_lookup: Arc::new(MemoryDirectory::default()),
+            management_lookup: Arc::new(Directory::default()),
         }
     }
 }

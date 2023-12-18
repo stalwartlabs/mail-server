@@ -1,0 +1,17 @@
+#############################################
+# S3/MinIO Blob Store configuration
+#############################################
+
+[store."s3"]
+type = "s3"
+bucket = "stalwart"
+region = "eu-central-1"
+access-key = "minioadmin"
+secret-key = "minioadmin"
+#endpoint = ""
+#security-token = ""
+#profile = ""
+timeout = "30s"
+
+[store."s3".purge]
+frequency = "0 3 *"

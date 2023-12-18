@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use managesieve::core::ManageSieveSessionManager;

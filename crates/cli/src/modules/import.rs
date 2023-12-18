@@ -35,7 +35,6 @@ use console::style;
 use futures::{stream::FuturesUnordered, StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use jmap_client::{
-    client::Client,
     core::set::SetObject,
     mailbox::{self, Role},
 };
@@ -49,7 +48,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 use crate::modules::{name_to_id, UnwrapResult, RETRY_ATTEMPTS};
 
 use super::{
-    cli::{ImportCommands, MailboxFormat},
+    cli::{Client, ImportCommands, MailboxFormat},
     export::{
         fetch_emails, fetch_identities, fetch_mailboxes, fetch_sieve_scripts,
         fetch_vacation_responses,
@@ -77,375 +76,381 @@ struct Message {
     internal_date: u64,
     contents: Vec<u8>,
 }
+impl ImportCommands {
+    pub async fn exec(self, client: Client) {
+        let mut client = client.into_jmap_client().await;
 
-pub async fn cmd_import(mut client: Client, command: ImportCommands) {
-    match command {
-        ImportCommands::Messages {
-            num_concurrent,
-            format,
-            account,
-            path,
-        } => {
-            client.set_default_account_id(name_to_id(&client, &account).await);
-            let mut create_mailboxes = Vec::new();
-            let mut create_mailbox_names = Vec::new();
-            let mut create_mailbox_ids = Vec::new();
-
-            eprintln!("{} Parsing mailbox...", style("[1/4]").bold().dim(),);
-
-            match format {
-                MailboxFormat::Mbox => {
-                    create_mailbox_names.push(Vec::new());
-                    create_mailboxes.push(Mailbox::Mbox(MessageIterator::new(Cursor::new(
-                        read_file(&path),
-                    ))));
-                }
-                MailboxFormat::Maildir | MailboxFormat::MaildirNested => {
-                    let (folder_sep, folder_split) = if format == MailboxFormat::Maildir {
-                        (Some("."), ".")
-                    } else {
-                        (None, "/")
-                    };
-
-                    for folder in maildir::FolderIterator::new(path, folder_sep)
-                        .unwrap_result("read Maildir folder")
-                    {
-                        let folder = folder.unwrap_result("read Maildir folder");
-                        if let Some(folder_name) = folder.name() {
-                            let mut folder_parts = Vec::new();
-                            for folder_name in folder_name.split(folder_split) {
-                                let mut folder_name = folder_name.trim();
-                                if folder_name.is_empty() {
-                                    folder_name = ".";
-                                }
-                                folder_parts.push(folder_name.to_string());
-                                if !create_mailbox_names.contains(&folder_parts) {
-                                    create_mailboxes.push(Mailbox::None);
-                                    create_mailbox_names.push(folder_parts.clone());
-                                }
-                            }
-
-                            *create_mailboxes.last_mut().unwrap() = Mailbox::Maildir(folder);
-                        } else {
-                            create_mailboxes.push(Mailbox::Maildir(folder));
-                            create_mailbox_names.push(Vec::new());
-                        };
-                    }
-                }
-            }
-
-            // Fetch all mailboxes for the account
-            eprintln!(
-                "{} Fetching existing mailboxes for account...",
-                style("[2/4]").bold().dim(),
-            );
-
-            let mut inbox_id = None;
-            let mut mailbox_ids = HashMap::new();
-            let mut children: HashMap<Option<&str>, Vec<&str>> =
-                HashMap::from_iter([(None, Vec::new())]);
-            let mut request = client.build();
-            request.get_mailbox().properties([
-                mailbox::Property::Name,
-                mailbox::Property::ParentId,
-                mailbox::Property::Role,
-                mailbox::Property::Id,
-            ]);
-            let response = request
-                .send_get_mailbox()
-                .await
-                .unwrap_result("fetch mailboxes");
-            for mailbox in response.list() {
-                let mailbox_id = mailbox.id().unwrap();
-                if mailbox.role() == Role::Inbox {
-                    inbox_id = mailbox_id.into();
-                }
-                children
-                    .entry(mailbox.parent_id())
-                    .or_insert_with(Vec::new)
-                    .push(mailbox_id);
-                mailbox_ids.insert(mailbox_id, mailbox.name().unwrap_or("Untitled"));
-            }
-            let inbox_id =
-                inbox_id.unwrap_result("locate Inbox on account, please check the server logs.");
-            let mut it = children.get(&None).unwrap().iter();
-            let mut it_stack = Vec::new();
-            let mut name_stack = Vec::new();
-            let mut mailbox_names = HashMap::with_capacity(mailbox_ids.len());
-
-            // Build mailbox hierarchy on the server
-            eprintln!(
-                "{} Creating missing mailboxes...",
-                style("[3/4]").bold().dim(),
-            );
-
-            loop {
-                while let Some(mailbox_id) = it.next() {
-                    let name = mailbox_ids[mailbox_id];
-                    let mut mailbox_name = name_stack.clone();
-                    mailbox_name.push(name.to_string());
-
-                    mailbox_names.insert(mailbox_name, mailbox_id);
-                    if let Some(next_it) = children.get(&Some(mailbox_id)).map(|c| c.iter()) {
-                        name_stack.push(name.to_string());
-                        it_stack.push(it);
-                        it = next_it;
-                    }
-                }
-
-                if let Some(prev_it) = it_stack.pop() {
-                    name_stack.pop();
-                    it = prev_it;
-                } else {
-                    break;
-                }
-            }
-
-            // Check whether the mailboxes to be created already exist
-            let mut has_missing_mailboxes = false;
-            for mailbox_name in &create_mailbox_names {
-                create_mailbox_ids.push(if !mailbox_name.is_empty() {
-                    if let Some(mailbox_id) = mailbox_names.get(mailbox_name) {
-                        MailboxId::ExistingId(mailbox_id)
-                    } else {
-                        has_missing_mailboxes = true;
-                        MailboxId::None
-                    }
-                } else {
-                    MailboxId::ExistingId(inbox_id)
-                });
-            }
-
-            // Create any missing mailboxes
-            if has_missing_mailboxes {
-                let mut request = client.build();
-                let set_request = request.set_mailbox();
-
-                for pos in 0..create_mailbox_ids.len() {
-                    if let MailboxId::None = create_mailbox_ids[pos] {
-                        let mailbox_name = &create_mailbox_names[pos];
-                        let create_request =
-                            set_request.create().name(mailbox_name.last().unwrap());
-
-                        if mailbox_name.len() > 1 {
-                            let parent_mailbox_name = &mailbox_name[..mailbox_name.len() - 1];
-                            let parent_mailbox_pos = create_mailbox_names
-                                .iter()
-                                .position(|n| n == parent_mailbox_name)
-                                .unwrap();
-                            match &create_mailbox_ids[parent_mailbox_pos] {
-                                MailboxId::ExistingId(id) => {
-                                    create_request.parent_id((*id).into());
-                                }
-                                MailboxId::CreateId(id_ref) => {
-                                    create_request.parent_id_ref(id_ref);
-                                }
-                                MailboxId::None => unreachable!(),
-                            }
-                        } else {
-                            create_request.parent_id(None::<String>);
-                        }
-                        create_mailbox_ids[pos] =
-                            MailboxId::CreateId(create_request.create_id().unwrap());
-                    }
-                }
-
-                // Create mailboxes
-                let mut response = request
-                    .send_set_mailbox()
-                    .await
-                    .unwrap_result("create mailboxes");
-                for create_mailbox_id in create_mailbox_ids.iter_mut() {
-                    if let MailboxId::CreateId(id) = create_mailbox_id {
-                        *id = response
-                            .created(id)
-                            .unwrap_result("create mailbox")
-                            .take_id();
-                    }
-                }
-            }
-
-            // Import messages
-            eprintln!("{} Importing messages...", style("[4/4]").bold().dim(),);
-
-            let client = Arc::new(client);
-            let total_imported = Arc::new(AtomicUsize::from(0));
-            let m = MultiProgress::new();
-            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
-            let spinner_style =
-                ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
-                    .unwrap()
-                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
-            let pbs = Arc::new(Mutex::new((
-                (0..num_concurrent)
-                    .map(|n| {
-                        let pb = m.add(ProgressBar::new(40));
-                        pb.set_style(spinner_style.clone());
-                        pb.set_prefix(format!("[{}/?]", n + 1));
-                        pb
-                    })
-                    .collect::<Vec<_>>(),
-                0usize,
-            )));
-            let failures = Arc::new(Mutex::new(Vec::new()));
-            let mut message_num = 0;
-
-            for ((mut mailbox, mailbox_id), mailbox_name) in create_mailboxes
-                .into_iter()
-                .zip(create_mailbox_ids)
-                .zip(create_mailbox_names)
-            {
-                let mut futures = FuturesUnordered::new();
-                let mailbox_id = Arc::new(match mailbox_id {
-                    MailboxId::ExistingId(id) => id.to_string(),
-                    MailboxId::CreateId(id) => id,
-                    MailboxId::None => unreachable!(),
-                });
-                let mailbox_name = Arc::new(if !mailbox_name.is_empty() {
-                    mailbox_name.join("/")
-                } else {
-                    "Inbox".to_string()
-                });
-
-                for result in mailbox.by_ref() {
-                    match result {
-                        Ok(message) => {
-                            message_num += 1;
-                            let client = client.clone();
-                            let mailbox_id = mailbox_id.clone();
-                            let mailbox_name = mailbox_name.clone();
-                            let total_imported = total_imported.clone();
-                            let pbs = pbs.clone();
-                            let failures = failures.clone();
-
-                            futures.push(async move {
-                                // Update progress bar
-                                {
-                                    let mut pbs = pbs.lock().unwrap();
-                                    let pb = &pbs.0[pbs.1 % pbs.0.len()];
-                                    pb.set_message(format!(
-                                        "Importing {}: {}/{}",
-                                        message_num, mailbox_name, message.identifier
-                                    ));
-                                    pb.inc(1);
-                                    pbs.1 += 1;
-                                }
-
-                                let mut retry_count = 0;
-                                loop {
-                                    match client
-                                        .email_import(
-                                            message.contents.clone(),
-                                            [mailbox_id.as_ref()],
-                                            if !message.flags.is_empty() {
-                                                message
-                                                    .flags
-                                                    .iter()
-                                                    .map(|f| match f {
-                                                        maildir::Flag::Passed => "$passed",
-                                                        maildir::Flag::Replied => "$answered",
-                                                        maildir::Flag::Seen => "$seen",
-                                                        maildir::Flag::Trashed => "$deleted",
-                                                        maildir::Flag::Draft => "$draft",
-                                                        maildir::Flag::Flagged => "$flagged",
-                                                    })
-                                                    .into()
-                                            } else {
-                                                None
-                                            },
-                                            if message.internal_date > 0 {
-                                                (message.internal_date as i64).into()
-                                            } else {
-                                                None
-                                            },
-                                        )
-                                        .await
-                                    {
-                                        Ok(_) => {
-                                            total_imported.fetch_add(1, Ordering::Relaxed);
-                                        }
-                                        Err(_) if retry_count < RETRY_ATTEMPTS => {
-                                            retry_count += 1;
-                                            continue;
-                                        }
-                                        Err(err) => {
-                                            failures.lock().unwrap().push(format!(
-                                                concat!(
-                                                    "Failed to import message {} ",
-                                                    "with identifier '{}': {}"
-                                                ),
-                                                message_num, message.identifier, err
-                                            ));
-                                        }
-                                    }
-                                    break;
-                                }
-                            });
-
-                            if futures.len() == num_concurrent {
-                                futures.next().await.unwrap();
-                            }
-                        }
-                        Err(e) => {
-                            failures
-                                .lock()
-                                .unwrap()
-                                .push(format!("I/O error reading message: {}", e));
-                        }
-                    }
-                }
-
-                // Wait for remaining futures
-                while futures.next().await.is_some() {}
-            }
-
-            // Done
-            for pb in pbs.lock().unwrap().0.iter() {
-                pb.finish_with_message("Done");
-            }
-            let failures = failures.lock().unwrap();
-            eprintln!(
-                "\n\nSuccessfully imported {} messages.\n",
-                total_imported.load(Ordering::Relaxed)
-            );
-
-            if !failures.is_empty() {
-                eprintln!("There were {} failures:\n", failures.len());
-                for failure in failures.iter() {
-                    eprintln!("{}", failure);
-                }
-            }
-        }
-
-        ImportCommands::Account {
-            num_concurrent,
-            account,
-            path,
-        } => {
-            client.set_default_account_id(name_to_id(&client, &account).await);
-            let path = PathBuf::from(path);
-            if !path.exists() {
-                eprintln!("Path '{}' does not exist.", path.display());
-                return;
-            }
-            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
-
-            // Import objects
-            import_emails(
-                &client,
-                &path,
-                import_mailboxes(&client, &path).await.into(),
+        match self {
+            ImportCommands::Messages {
                 num_concurrent,
-            )
-            .await;
-            import_sieve_scripts(&client, &path, num_concurrent).await;
-            import_identities(&client, &path).await;
-            import_vacation_responses(&client, &path).await;
+                format,
+                account,
+                path,
+            } => {
+                client.set_default_account_id(name_to_id(&client, &account).await);
+                let mut create_mailboxes = Vec::new();
+                let mut create_mailbox_names = Vec::new();
+                let mut create_mailbox_ids = Vec::new();
+
+                eprintln!("{} Parsing mailbox...", style("[1/4]").bold().dim(),);
+
+                match format {
+                    MailboxFormat::Mbox => {
+                        create_mailbox_names.push(Vec::new());
+                        create_mailboxes.push(Mailbox::Mbox(MessageIterator::new(Cursor::new(
+                            read_file(&path),
+                        ))));
+                    }
+                    MailboxFormat::Maildir | MailboxFormat::MaildirNested => {
+                        let (folder_sep, folder_split) = if format == MailboxFormat::Maildir {
+                            (Some("."), ".")
+                        } else {
+                            (None, "/")
+                        };
+
+                        for folder in maildir::FolderIterator::new(path, folder_sep)
+                            .unwrap_result("read Maildir folder")
+                        {
+                            let folder = folder.unwrap_result("read Maildir folder");
+                            if let Some(folder_name) = folder.name() {
+                                let mut folder_parts = Vec::new();
+                                for folder_name in folder_name.split(folder_split) {
+                                    let mut folder_name = folder_name.trim();
+                                    if folder_name.is_empty() {
+                                        folder_name = ".";
+                                    }
+                                    folder_parts.push(folder_name.to_string());
+                                    if !create_mailbox_names.contains(&folder_parts) {
+                                        create_mailboxes.push(Mailbox::None);
+                                        create_mailbox_names.push(folder_parts.clone());
+                                    }
+                                }
+
+                                *create_mailboxes.last_mut().unwrap() = Mailbox::Maildir(folder);
+                            } else {
+                                create_mailboxes.push(Mailbox::Maildir(folder));
+                                create_mailbox_names.push(Vec::new());
+                            };
+                        }
+                    }
+                }
+
+                // Fetch all mailboxes for the account
+                eprintln!(
+                    "{} Fetching existing mailboxes for account...",
+                    style("[2/4]").bold().dim(),
+                );
+
+                let mut inbox_id = None;
+                let mut mailbox_ids = HashMap::new();
+                let mut children: HashMap<Option<&str>, Vec<&str>> =
+                    HashMap::from_iter([(None, Vec::new())]);
+                let mut request = client.build();
+                request.get_mailbox().properties([
+                    mailbox::Property::Name,
+                    mailbox::Property::ParentId,
+                    mailbox::Property::Role,
+                    mailbox::Property::Id,
+                ]);
+                let response = request
+                    .send_get_mailbox()
+                    .await
+                    .unwrap_result("fetch mailboxes");
+                for mailbox in response.list() {
+                    let mailbox_id = mailbox.id().unwrap();
+                    if mailbox.role() == Role::Inbox {
+                        inbox_id = mailbox_id.into();
+                    }
+                    children
+                        .entry(mailbox.parent_id())
+                        .or_insert_with(Vec::new)
+                        .push(mailbox_id);
+                    mailbox_ids.insert(mailbox_id, mailbox.name().unwrap_or("Untitled"));
+                }
+                let inbox_id = inbox_id
+                    .unwrap_result("locate Inbox on account, please check the server logs.");
+                let mut it = children.get(&None).unwrap().iter();
+                let mut it_stack = Vec::new();
+                let mut name_stack = Vec::new();
+                let mut mailbox_names = HashMap::with_capacity(mailbox_ids.len());
+
+                // Build mailbox hierarchy on the server
+                eprintln!(
+                    "{} Creating missing mailboxes...",
+                    style("[3/4]").bold().dim(),
+                );
+
+                loop {
+                    while let Some(mailbox_id) = it.next() {
+                        let name = mailbox_ids[mailbox_id];
+                        let mut mailbox_name = name_stack.clone();
+                        mailbox_name.push(name.to_string());
+
+                        mailbox_names.insert(mailbox_name, mailbox_id);
+                        if let Some(next_it) = children.get(&Some(mailbox_id)).map(|c| c.iter()) {
+                            name_stack.push(name.to_string());
+                            it_stack.push(it);
+                            it = next_it;
+                        }
+                    }
+
+                    if let Some(prev_it) = it_stack.pop() {
+                        name_stack.pop();
+                        it = prev_it;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Check whether the mailboxes to be created already exist
+                let mut has_missing_mailboxes = false;
+                for mailbox_name in &create_mailbox_names {
+                    create_mailbox_ids.push(if !mailbox_name.is_empty() {
+                        if let Some(mailbox_id) = mailbox_names.get(mailbox_name) {
+                            MailboxId::ExistingId(mailbox_id)
+                        } else {
+                            has_missing_mailboxes = true;
+                            MailboxId::None
+                        }
+                    } else {
+                        MailboxId::ExistingId(inbox_id)
+                    });
+                }
+
+                // Create any missing mailboxes
+                if has_missing_mailboxes {
+                    let mut request = client.build();
+                    let set_request = request.set_mailbox();
+
+                    for pos in 0..create_mailbox_ids.len() {
+                        if let MailboxId::None = create_mailbox_ids[pos] {
+                            let mailbox_name = &create_mailbox_names[pos];
+                            let create_request =
+                                set_request.create().name(mailbox_name.last().unwrap());
+
+                            if mailbox_name.len() > 1 {
+                                let parent_mailbox_name = &mailbox_name[..mailbox_name.len() - 1];
+                                let parent_mailbox_pos = create_mailbox_names
+                                    .iter()
+                                    .position(|n| n == parent_mailbox_name)
+                                    .unwrap();
+                                match &create_mailbox_ids[parent_mailbox_pos] {
+                                    MailboxId::ExistingId(id) => {
+                                        create_request.parent_id((*id).into());
+                                    }
+                                    MailboxId::CreateId(id_ref) => {
+                                        create_request.parent_id_ref(id_ref);
+                                    }
+                                    MailboxId::None => unreachable!(),
+                                }
+                            } else {
+                                create_request.parent_id(None::<String>);
+                            }
+                            create_mailbox_ids[pos] =
+                                MailboxId::CreateId(create_request.create_id().unwrap());
+                        }
+                    }
+
+                    // Create mailboxes
+                    let mut response = request
+                        .send_set_mailbox()
+                        .await
+                        .unwrap_result("create mailboxes");
+                    for create_mailbox_id in create_mailbox_ids.iter_mut() {
+                        if let MailboxId::CreateId(id) = create_mailbox_id {
+                            *id = response
+                                .created(id)
+                                .unwrap_result("create mailbox")
+                                .take_id();
+                        }
+                    }
+                }
+
+                // Import messages
+                eprintln!("{} Importing messages...", style("[4/4]").bold().dim(),);
+
+                let client = Arc::new(client);
+                let total_imported = Arc::new(AtomicUsize::from(0));
+                let m = MultiProgress::new();
+                let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
+                let spinner_style =
+                    ProgressStyle::with_template("{prefix:.bold.dim} {spinner} {wide_msg}")
+                        .unwrap()
+                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ");
+                let pbs = Arc::new(Mutex::new((
+                    (0..num_concurrent)
+                        .map(|n| {
+                            let pb = m.add(ProgressBar::new(40));
+                            pb.set_style(spinner_style.clone());
+                            pb.set_prefix(format!("[{}/?]", n + 1));
+                            pb
+                        })
+                        .collect::<Vec<_>>(),
+                    0usize,
+                )));
+                let failures = Arc::new(Mutex::new(Vec::new()));
+                let mut message_num = 0;
+
+                for ((mut mailbox, mailbox_id), mailbox_name) in create_mailboxes
+                    .into_iter()
+                    .zip(create_mailbox_ids)
+                    .zip(create_mailbox_names)
+                {
+                    let mut futures = FuturesUnordered::new();
+                    let mailbox_id = Arc::new(match mailbox_id {
+                        MailboxId::ExistingId(id) => id.to_string(),
+                        MailboxId::CreateId(id) => id,
+                        MailboxId::None => unreachable!(),
+                    });
+                    let mailbox_name = Arc::new(if !mailbox_name.is_empty() {
+                        mailbox_name.join("/")
+                    } else {
+                        "Inbox".to_string()
+                    });
+
+                    for result in mailbox.by_ref() {
+                        match result {
+                            Ok(message) => {
+                                message_num += 1;
+                                let client = client.clone();
+                                let mailbox_id = mailbox_id.clone();
+                                let mailbox_name = mailbox_name.clone();
+                                let total_imported = total_imported.clone();
+                                let pbs = pbs.clone();
+                                let failures = failures.clone();
+
+                                futures.push(async move {
+                                    // Update progress bar
+                                    {
+                                        let mut pbs = pbs.lock().unwrap();
+                                        let pb = &pbs.0[pbs.1 % pbs.0.len()];
+                                        pb.set_message(format!(
+                                            "Importing {}: {}/{}",
+                                            message_num, mailbox_name, message.identifier
+                                        ));
+                                        pb.inc(1);
+                                        pbs.1 += 1;
+                                    }
+
+                                    let mut retry_count = 0;
+                                    loop {
+                                        match client
+                                            .email_import(
+                                                message.contents.clone(),
+                                                [mailbox_id.as_ref()],
+                                                if !message.flags.is_empty() {
+                                                    message
+                                                        .flags
+                                                        .iter()
+                                                        .map(|f| match f {
+                                                            maildir::Flag::Passed => "$passed",
+                                                            maildir::Flag::Replied => "$answered",
+                                                            maildir::Flag::Seen => "$seen",
+                                                            maildir::Flag::Trashed => "$deleted",
+                                                            maildir::Flag::Draft => "$draft",
+                                                            maildir::Flag::Flagged => "$flagged",
+                                                        })
+                                                        .into()
+                                                } else {
+                                                    None
+                                                },
+                                                if message.internal_date > 0 {
+                                                    (message.internal_date as i64).into()
+                                                } else {
+                                                    None
+                                                },
+                                            )
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                total_imported.fetch_add(1, Ordering::Relaxed);
+                                            }
+                                            Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                                retry_count += 1;
+                                                continue;
+                                            }
+                                            Err(err) => {
+                                                failures.lock().unwrap().push(format!(
+                                                    concat!(
+                                                        "Failed to import message {} ",
+                                                        "with identifier '{}': {}"
+                                                    ),
+                                                    message_num, message.identifier, err
+                                                ));
+                                            }
+                                        }
+                                        break;
+                                    }
+                                });
+
+                                if futures.len() == num_concurrent {
+                                    futures.next().await.unwrap();
+                                }
+                            }
+                            Err(e) => {
+                                failures
+                                    .lock()
+                                    .unwrap()
+                                    .push(format!("I/O error reading message: {}", e));
+                            }
+                        }
+                    }
+
+                    // Wait for remaining futures
+                    while futures.next().await.is_some() {}
+                }
+
+                // Done
+                for pb in pbs.lock().unwrap().0.iter() {
+                    pb.finish_with_message("Done");
+                }
+                let failures = failures.lock().unwrap();
+                eprintln!(
+                    "\n\nSuccessfully imported {} messages.\n",
+                    total_imported.load(Ordering::Relaxed)
+                );
+
+                if !failures.is_empty() {
+                    eprintln!("There were {} failures:\n", failures.len());
+                    for failure in failures.iter() {
+                        eprintln!("{}", failure);
+                    }
+                }
+            }
+
+            ImportCommands::Account {
+                num_concurrent,
+                account,
+                path,
+            } => {
+                client.set_default_account_id(name_to_id(&client, &account).await);
+                let path = PathBuf::from(path);
+                if !path.exists() {
+                    eprintln!("Path '{}' does not exist.", path.display());
+                    return;
+                }
+                let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
+
+                // Import objects
+                import_emails(
+                    &client,
+                    &path,
+                    import_mailboxes(&client, &path).await.into(),
+                    num_concurrent,
+                )
+                .await;
+                import_sieve_scripts(&client, &path, num_concurrent).await;
+                import_identities(&client, &path).await;
+                import_vacation_responses(&client, &path).await;
+            }
         }
     }
 }
 
-async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, String> {
+async fn import_mailboxes(
+    client: &jmap_client::client::Client,
+    path: &Path,
+) -> HashMap<String, String> {
     // Deserialize mailboxes
     let mailboxes = read_json::<jmap_client::mailbox::Mailbox>(path, "mailboxes.json").await;
     if mailboxes.is_empty() {
@@ -561,7 +566,7 @@ async fn import_mailboxes(client: &Client, path: &Path) -> HashMap<String, Strin
 }
 
 async fn import_emails(
-    client: &Client,
+    client: &jmap_client::client::Client,
     path: &Path,
     mailbox_ids: Arc<HashMap<String, String>>,
     num_concurrent: usize,
@@ -706,7 +711,11 @@ async fn import_emails(
     );
 }
 
-async fn import_sieve_scripts(client: &Client, path: &Path, num_concurrent: usize) {
+async fn import_sieve_scripts(
+    client: &jmap_client::client::Client,
+    path: &Path,
+    num_concurrent: usize,
+) {
     // Deserialize scripts
     let scripts = read_json::<jmap_client::sieve::SieveScript>(path, "sieve.json").await;
     if scripts.is_empty() {
@@ -812,7 +821,7 @@ async fn import_sieve_scripts(client: &Client, path: &Path, num_concurrent: usiz
     );
 }
 
-async fn import_identities(client: &Client, path: &Path) {
+async fn import_identities(client: &jmap_client::client::Client, path: &Path) {
     // Deserialize mailboxes
     let identities = read_json::<jmap_client::identity::Identity>(path, "identities.json").await;
     if identities.is_empty() {
@@ -886,7 +895,7 @@ async fn import_identities(client: &Client, path: &Path) {
     );
 }
 
-async fn import_vacation_responses(client: &Client, path: &Path) {
+async fn import_vacation_responses(client: &jmap_client::client::Client, path: &Path) {
     // Deserialize mailboxes
     let vacation_responses =
         read_json::<jmap_client::vacation_response::VacationResponse>(path, "vacation.json").await;

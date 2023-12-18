@@ -1,0 +1,17 @@
+#############################################
+# Internal Directory configuration
+#############################################
+
+[directory."internal"]
+type = "internal"
+store = "sqlite"
+
+[directory."internal".options]
+catch-all = true
+#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
+subaddressing = true
+#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+
+[directory."internal".cache]
+entries = 500
+ttl = {positive = '1h', negative = '10m'}

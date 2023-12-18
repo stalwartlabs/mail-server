@@ -28,7 +28,6 @@ use std::{
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use jmap_client::{
-    client::Client,
     email::{self, Email},
     identity::{self, Identity},
     mailbox::{self, Mailbox},
@@ -40,102 +39,111 @@ use tokio::io::AsyncWriteExt;
 
 use crate::modules::RETRY_ATTEMPTS;
 
-use super::{cli::ExportCommands, name_to_id, UnwrapResult};
+use super::{
+    cli::{Client, ExportCommands},
+    name_to_id, UnwrapResult,
+};
 
-pub async fn cmd_export(mut client: Client, command: ExportCommands) {
-    match command {
-        ExportCommands::Account {
-            num_concurrent,
-            account,
-            path,
-        } => {
-            client.set_default_account_id(name_to_id(&client, &account).await);
-            let max_objects_in_get = client
-                .session()
-                .core_capabilities()
-                .map(|c| c.max_objects_in_get())
-                .unwrap_or(500);
+impl ExportCommands {
+    pub async fn exec(self, client: Client) {
+        let mut client = client.into_jmap_client().await;
+        match self {
+            ExportCommands::Account {
+                num_concurrent,
+                account,
+                path,
+            } => {
+                client.set_default_account_id(name_to_id(&client, &account).await);
+                let max_objects_in_get = client
+                    .session()
+                    .core_capabilities()
+                    .map(|c| c.max_objects_in_get())
+                    .unwrap_or(500);
 
-            // Create directory
-            let mut path = PathBuf::from(path);
-            if !path.is_dir() {
-                eprintln!("Directory {} does not exist.", path.display());
-                std::process::exit(1);
-            }
-            path.push(&account);
-            if !path.is_dir() {
-                std::fs::create_dir(&path).unwrap_or_else(|_| {
-                    eprintln!("Failed to create directory: {}", path.display());
+                // Create directory
+                let mut path = PathBuf::from(path);
+                if !path.is_dir() {
+                    eprintln!("Directory {} does not exist.", path.display());
                     std::process::exit(1);
-                });
-            }
-
-            // Export metadata
-            let mut blobs = Vec::new();
-            export_mailboxes(&client, max_objects_in_get, &path).await;
-            export_emails(&client, max_objects_in_get, &mut blobs, &path).await;
-            export_sieve_scripts(&client, max_objects_in_get, &mut blobs, &path).await;
-            export_identities(&client, &path).await;
-            export_vacation_responses(&client, &path).await;
-
-            // Export blobs
-            path.push("blobs");
-            if !path.exists() {
-                std::fs::create_dir(&path).unwrap_or_else(|_| {
-                    eprintln!("Failed to create directory: {}", path.display());
-                    std::process::exit(1);
-                });
-            }
-            let client = Arc::new(client);
-            let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
-            let mut futures = FuturesUnordered::new();
-            eprintln!("Exporting {} blobs...", blobs.len());
-            for blob_id in blobs {
-                let client = client.clone();
-                let mut blob_path = path.clone();
-                blob_path.push(&blob_id);
-
-                futures.push(async move {
-                    let mut retry_count = 0;
-
-                    let bytes = loop {
-                        match client.download(&blob_id).await {
-                            Ok(bytes) => break bytes,
-                            Err(_) if retry_count < RETRY_ATTEMPTS => {
-                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                retry_count += 1;
-                            }
-                            result => {
-                                result.unwrap_result("download blob");
-                                return;
-                            }
-                        }
-                    };
-
-                    tokio::fs::OpenOptions::new()
-                        .create(true)
-                        .write(true)
-                        .truncate(true)
-                        .open(&blob_path)
-                        .await
-                        .unwrap_result(&format!("open {}", blob_path.display()))
-                        .write_all(&bytes)
-                        .await
-                        .unwrap_result(&format!("write {}", blob_path.display()));
-                });
-
-                if futures.len() == num_concurrent {
-                    futures.next().await.unwrap();
                 }
-            }
+                path.push(&account);
+                if !path.is_dir() {
+                    std::fs::create_dir(&path).unwrap_or_else(|_| {
+                        eprintln!("Failed to create directory: {}", path.display());
+                        std::process::exit(1);
+                    });
+                }
 
-            // Wait for remaining futures
-            while futures.next().await.is_some() {}
+                // Export metadata
+                let mut blobs = Vec::new();
+                export_mailboxes(&client, max_objects_in_get, &path).await;
+                export_emails(&client, max_objects_in_get, &mut blobs, &path).await;
+                export_sieve_scripts(&client, max_objects_in_get, &mut blobs, &path).await;
+                export_identities(&client, &path).await;
+                export_vacation_responses(&client, &path).await;
+
+                // Export blobs
+                path.push("blobs");
+                if !path.exists() {
+                    std::fs::create_dir(&path).unwrap_or_else(|_| {
+                        eprintln!("Failed to create directory: {}", path.display());
+                        std::process::exit(1);
+                    });
+                }
+                let client = Arc::new(client);
+                let num_concurrent = num_concurrent.unwrap_or_else(num_cpus::get);
+                let mut futures = FuturesUnordered::new();
+                eprintln!("Exporting {} blobs...", blobs.len());
+                for blob_id in blobs {
+                    let client = client.clone();
+                    let mut blob_path = path.clone();
+                    blob_path.push(&blob_id);
+
+                    futures.push(async move {
+                        let mut retry_count = 0;
+
+                        let bytes = loop {
+                            match client.download(&blob_id).await {
+                                Ok(bytes) => break bytes,
+                                Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    retry_count += 1;
+                                }
+                                result => {
+                                    result.unwrap_result("download blob");
+                                    return;
+                                }
+                            }
+                        };
+
+                        tokio::fs::OpenOptions::new()
+                            .create(true)
+                            .write(true)
+                            .truncate(true)
+                            .open(&blob_path)
+                            .await
+                            .unwrap_result(&format!("open {}", blob_path.display()))
+                            .write_all(&bytes)
+                            .await
+                            .unwrap_result(&format!("write {}", blob_path.display()));
+                    });
+
+                    if futures.len() == num_concurrent {
+                        futures.next().await.unwrap();
+                    }
+                }
+
+                // Wait for remaining futures
+                while futures.next().await.is_some() {}
+            }
         }
     }
 }
 
-pub async fn fetch_mailboxes(client: &Client, max_objects_in_get: usize) -> Vec<Mailbox> {
+pub async fn fetch_mailboxes(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+) -> Vec<Mailbox> {
     let mut position = 0;
     let mut results = Vec::new();
     loop {
@@ -192,7 +200,11 @@ pub async fn fetch_mailboxes(client: &Client, max_objects_in_get: usize) -> Vec<
     results
 }
 
-async fn export_mailboxes(client: &Client, max_objects_in_get: usize, path: &Path) {
+async fn export_mailboxes(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+    path: &Path,
+) {
     eprintln!(
         "Exported {} mailboxes.",
         write_file(
@@ -204,7 +216,10 @@ async fn export_mailboxes(client: &Client, max_objects_in_get: usize, path: &Pat
     );
 }
 
-pub async fn fetch_emails(client: &Client, max_objects_in_get: usize) -> Vec<Email> {
+pub async fn fetch_emails(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+) -> Vec<Email> {
     let mut position = 0;
     let mut results = Vec::new();
 
@@ -263,7 +278,7 @@ pub async fn fetch_emails(client: &Client, max_objects_in_get: usize) -> Vec<Ema
 }
 
 async fn export_emails(
-    client: &Client,
+    client: &jmap_client::client::Client,
     max_objects_in_get: usize,
     blobs: &mut Vec<String>,
     path: &Path,
@@ -287,7 +302,10 @@ async fn export_emails(
     );
 }
 
-pub async fn fetch_sieve_scripts(client: &Client, max_objects_in_get: usize) -> Vec<SieveScript> {
+pub async fn fetch_sieve_scripts(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+) -> Vec<SieveScript> {
     let mut position = 0;
     let mut results = Vec::new();
 
@@ -347,7 +365,7 @@ pub async fn fetch_sieve_scripts(client: &Client, max_objects_in_get: usize) -> 
 }
 
 async fn export_sieve_scripts(
-    client: &Client,
+    client: &jmap_client::client::Client,
     max_objects_in_get: usize,
     blobs: &mut Vec<String>,
     path: &Path,
@@ -370,7 +388,7 @@ async fn export_sieve_scripts(
     );
 }
 
-pub async fn fetch_identities(client: &Client) -> Vec<Identity> {
+pub async fn fetch_identities(client: &jmap_client::client::Client) -> Vec<Identity> {
     let mut request = client.build();
     request.get_identity().properties([
         identity::Property::Id,
@@ -388,14 +406,16 @@ pub async fn fetch_identities(client: &Client) -> Vec<Identity> {
         .take_list()
 }
 
-async fn export_identities(client: &Client, path: &Path) {
+async fn export_identities(client: &jmap_client::client::Client, path: &Path) {
     eprintln!(
         "Exported {} identities.",
         write_file(path, "identities.json", fetch_identities(client).await).await
     );
 }
 
-pub async fn fetch_vacation_responses(client: &Client) -> Vec<VacationResponse> {
+pub async fn fetch_vacation_responses(
+    client: &jmap_client::client::Client,
+) -> Vec<VacationResponse> {
     let mut request = client.build();
     request.get_vacation_response().properties([
         vacation_response::Property::Id,
@@ -413,7 +433,7 @@ pub async fn fetch_vacation_responses(client: &Client) -> Vec<VacationResponse> 
         .take_list()
 }
 
-async fn export_vacation_responses(client: &Client, path: &Path) {
+async fn export_vacation_responses(client: &jmap_client::client::Client, path: &Path) {
     eprintln!(
         "Exported {} vacation responses.",
         write_file(

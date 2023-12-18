@@ -1,0 +1,37 @@
+#############################################
+# MySQL Store configuration
+#############################################
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
+
+[store."mysql".timeout]
+wait = "15s"
+
+#[store."postgresql".pool]
+#max-connections = 10
+#min-connections = 5
+
+#[store."mysql".init]
+#execute = [
+#    "CREATE TABLE IF NOT EXISTS accounts (name VARCHAR(32) PRIMARY KEY, secret VARCHAR(1024), description VARCHAR(1024), type VARCHAR(32) NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)",
+#    "CREATE TABLE IF NOT EXISTS group_members (name VARCHAR(32) NOT NULL, member_of VARCHAR(32) NOT NULL, PRIMARY KEY (name, member_of))",
+#    "CREATE TABLE IF NOT EXISTS emails (name VARCHAR(32) NOT NULL, address VARCHAR(128) NOT NULL, type VARCHAR(32), PRIMARY KEY (name, address))"
+#]
+
+[store."mysql".query]
+name = "SELECT name, type, secret, description, quota FROM accounts WHERE name = ? AND active = true"
+members = "SELECT member_of FROM group_members WHERE name = ?"
+recipients = "SELECT name FROM emails WHERE address = ? ORDER BY name ASC"
+emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY type DESC, address ASC"
+verify = "SELECT address FROM emails WHERE address LIKE CONCAT('%', ?, '%') AND type = 'primary' ORDER BY address LIMIT 5"
+expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
+domains = "SELECT 1 FROM emails WHERE address LIKE CONCAT('%@', ?) LIMIT 1"
+
+[store."mysql".purge]
+frequency = "0 3 *"

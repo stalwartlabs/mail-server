@@ -27,12 +27,23 @@ use store::{
     IterateParams, Store, ValueKey,
 };
 
-use crate::{Directory, Principal, QueryBy};
+use crate::{Principal, QueryBy};
 
 use super::manage::ManageDirectory;
 
 #[async_trait::async_trait]
-impl Directory for Store {
+pub trait DirectoryStore: Sync + Send {
+    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>>;
+    async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>>;
+
+    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
+    async fn rcpt(&self, address: &str) -> crate::Result<bool>;
+    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>>;
+    async fn expn(&self, address: &str) -> crate::Result<Vec<String>>;
+}
+
+#[async_trait::async_trait]
+impl DirectoryStore for Store {
     async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         let (username, secret) = match by {
             QueryBy::Name(name) => (name, None),

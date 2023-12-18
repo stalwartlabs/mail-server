@@ -22,8 +22,8 @@
 */
 
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalUpdate},
-    Directory, DirectoryError, ManagementError, Principal, QueryBy, Type,
+    backend::internal::{lookup::DirectoryStore, manage::ManageDirectory, PrincipalUpdate},
+    DirectoryError, ManagementError, Principal, QueryBy, Type,
 };
 use http_body_util::combinators::BoxBody;
 use hyper::{body::Bytes, Method, StatusCode};
@@ -44,6 +44,7 @@ pub struct PrincipalResponse {
     pub used_quota: u32,
     pub name: String,
     pub emails: Vec<String>,
+    pub secrets: Vec<String>,
     #[serde(rename = "memberOf")]
     pub member_of: Vec<String>,
     pub description: Option<String>,
@@ -67,8 +68,7 @@ impl JMAP {
                 {
                     match self.store.create_account(principal).await {
                         Ok(account_id) => JsonResponse::new(json!({
-                            "accountId": account_id,
-                            "status": "success",
+                            "data": account_id,
                         }))
                         .into_http_response(),
                         Err(err) => map_directory_error(err),
@@ -85,6 +85,7 @@ impl JMAP {
             ("principal", None, &Method::GET) => {
                 // List principal ids
                 let mut from_key = None;
+                let mut typ = None;
                 let mut limit: usize = 0;
 
                 if let Some(query) = req.uri().query() {
@@ -92,6 +93,9 @@ impl JMAP {
                         match key.as_ref() {
                             "limit" => {
                                 limit = value.parse().unwrap_or_default();
+                            }
+                            "type" => {
+                                typ = Type::parse(value.as_ref());
                             }
                             "from" => {
                                 from_key = value.into();
@@ -101,9 +105,12 @@ impl JMAP {
                     }
                 }
 
-                match self.store.list_accounts(from_key.as_deref(), limit).await {
+                match self
+                    .store
+                    .list_accounts(from_key.as_deref(), typ, limit)
+                    .await
+                {
                     Ok(accounts) => JsonResponse::new(json!({
-                            "status": "success",
                             "data": accounts,
                     }))
                     .into_http_response(),
@@ -151,7 +158,6 @@ impl JMAP {
                                         as u32;
 
                                 JsonResponse::new(json!({
-                                        "status": "success",
                                         "data": principal,
                                 }))
                                 .into_http_response()
@@ -179,13 +185,13 @@ impl JMAP {
                         // Delete account
                         match self.store.delete_account(QueryBy::Id(account_id)).await {
                             Ok(_) => JsonResponse::new(json!({
-                                "status": "success",
+                                "data": [],
                             }))
                             .into_http_response(),
                             Err(err) => map_directory_error(err),
                         }
                     }
-                    Method::PUT => {
+                    Method::PATCH => {
                         if let Some(changes) = body.and_then(|body| {
                             serde_json::from_slice::<Vec<PrincipalUpdate>>(&body).ok()
                         }) {
@@ -195,8 +201,7 @@ impl JMAP {
                                 .await
                             {
                                 Ok(account_id) => JsonResponse::new(json!({
-                                    "accountId": account_id,
-                                    "status": "success",
+                                    "data": account_id,
                                 }))
                                 .into_http_response(),
                                 Err(err) => map_directory_error(err),
@@ -213,11 +218,58 @@ impl JMAP {
                     _ => RequestError::not_found().into_http_response(),
                 }
             }
-            ("store", Some("purge"), &Method::GET) => {
+            ("domain", None, &Method::GET) => {
+                // List principal ids
+                let mut from_key = None;
+                let mut limit: usize = 0;
+
+                if let Some(query) = req.uri().query() {
+                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+                        match key.as_ref() {
+                            "limit" => {
+                                limit = value.parse().unwrap_or_default();
+                            }
+                            "from" => {
+                                from_key = value.into();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                match self.store.list_domains(from_key.as_deref(), limit).await {
+                    Ok(domains) => JsonResponse::new(json!({
+                            "data": domains,
+                    }))
+                    .into_http_response(),
+                    Err(err) => map_directory_error(err),
+                }
+            }
+            ("domain", Some(domain), &Method::POST) => {
+                // Create domain
+                match self.store.create_domain(domain).await {
+                    Ok(_) => JsonResponse::new(json!({
+                        "data": [],
+                    }))
+                    .into_http_response(),
+                    Err(err) => map_directory_error(err),
+                }
+            }
+            ("domain", Some(domain), &Method::DELETE) => {
+                // Delete domain
+                match self.store.delete_domain(domain).await {
+                    Ok(_) => JsonResponse::new(json!({
+                        "data": [],
+                    }))
+                    .into_http_response(),
+                    Err(err) => map_directory_error(err),
+                }
+            }
+            ("store", Some("maintenance"), &Method::GET) => {
                 match self.store.purge_blobs(self.blob_store.clone()).await {
                     Ok(_) => match self.store.purge_bitmaps().await {
                         Ok(_) => JsonResponse::new(json!({
-                            "status": "success",
+                            "data": [],
                         }))
                         .into_http_response(),
                         Err(err) => RequestError::blank(
@@ -249,23 +301,27 @@ fn map_directory_error(err: DirectoryError) -> hyper::Response<BoxBody<Bytes, hy
     match err {
         DirectoryError::Management(err) => {
             let response = match err {
-                ManagementError::MissingField(details) => json!({
-                    "status": "missingField",
-                    "details": details,
+                ManagementError::MissingField(field) => json!({
+                    "error": "missingField",
+                    "field": field,
+                    "details": format!("Missing required field '{field}'."),
                 }),
-                ManagementError::NotUniqueField(details) => json!({
-                    "status": "notUniqueField",
-                    "details": details,
+                ManagementError::AlreadyExists { field, value } => json!({
+                    "error": "alreadyExists",
+                    "field": field,
+                    "value": value,
+                    "details": format!("Another record exists containing '{value}' in the '{field}' field."),
                 }),
                 ManagementError::NotFound(details) => json!({
-                    "status": "notFound",
-                    "details": details,
+                    "error": "notFound",
+                    "item": details,
+                    "details": format!("'{details}' does not exist."),
                 }),
             };
             JsonResponse::new(response).into_http_response()
         }
         DirectoryError::Unsupported => JsonResponse::new(json!({
-            "status": "unsupported",
+            "error": "unsupported",
             "details": "Requested action is unsupported",
         }))
         .into_http_response(),
@@ -297,6 +353,7 @@ impl From<Principal<String>> for PrincipalResponse {
             emails: principal.emails,
             member_of: principal.member_of,
             description: principal.description,
+            secrets: principal.secrets,
             used_quota: 0,
         }
     }

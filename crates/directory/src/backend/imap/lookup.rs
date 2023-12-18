@@ -24,13 +24,12 @@
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{Directory, DirectoryError, Principal, QueryBy};
+use crate::{DirectoryError, Principal, QueryBy};
 
 use super::{ImapDirectory, ImapError};
 
-#[async_trait::async_trait]
-impl Directory for ImapDirectory {
-    async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+impl ImapDirectory {
+    pub async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         if let QueryBy::Credentials(credentials) = query {
             let mut client = self.pool.get().await?;
             let mechanism = match credentials {
@@ -77,23 +76,23 @@ impl Directory for ImapDirectory {
         }
     }
 
-    async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
         Err(DirectoryError::unsupported("imap", "email_to_ids"))
     }
 
-    async fn rcpt(&self, _address: &str) -> crate::Result<bool> {
+    pub async fn rcpt(&self, _address: &str) -> crate::Result<bool> {
         Err(DirectoryError::unsupported("imap", "rcpt"))
     }
 
-    async fn vrfy(&self, _address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, _address: &str) -> crate::Result<Vec<String>> {
         Err(DirectoryError::unsupported("imap", "vrfy"))
     }
 
-    async fn expn(&self, _address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, _address: &str) -> crate::Result<Vec<String>> {
         Err(DirectoryError::unsupported("imap", "expn"))
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

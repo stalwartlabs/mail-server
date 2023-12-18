@@ -22,6 +22,7 @@
 */
 
 use clap::{Parser, Subcommand, ValueEnum};
+use jmap_client::client::Credentials;
 use mail_parser::DateTime;
 use serde::Deserialize;
 
@@ -37,10 +38,29 @@ pub struct Cli {
     /// Authentication credentials
     #[clap(short, long)]
     pub credentials: Option<String>,
+    /// Connection timeout in seconds
+    #[clap(short, long)]
+    pub timeout: Option<u64>,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Manage user accounts
+    #[clap(subcommand)]
+    Account(AccountCommands),
+
+    /// Manage domains
+    #[clap(subcommand)]
+    Domain(DomainCommands),
+
+    /// Manage mailing lists
+    #[clap(subcommand)]
+    List(ListCommands),
+
+    /// Manage groups
+    #[clap(subcommand)]
+    Group(GroupCommands),
+
     /// Import JMAP accounts and Maildir/mbox mailboxes
     #[clap(subcommand)]
     Import(ImportCommands),
@@ -60,6 +80,274 @@ pub enum Commands {
     /// Manage SMTP DMARC/TLS report queue
     #[clap(subcommand)]
     Report(ReportCommands),
+}
+
+pub struct Client {
+    pub url: String,
+    pub credentials: Credentials,
+    pub timeout: Option<u64>,
+}
+
+#[derive(Subcommand)]
+pub enum AccountCommands {
+    /// Create a new user account
+    Create {
+        /// Login Name
+        name: String,
+        /// Password
+        password: String,
+        /// Account description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Quota in bytes
+        #[clap(short, long)]
+        quota: Option<u32>,
+        /// Whether the account is an administrator
+        #[clap(short, long)]
+        is_admin: Option<bool>,
+        /// E-mail addresses
+        #[clap(short, long)]
+        addresses: Option<Vec<String>>,
+        /// Groups this account is a member of
+        #[clap(short, long)]
+        member_of: Option<Vec<String>>,
+    },
+
+    /// Update an existing user account
+    Update {
+        /// Account login
+        name: String,
+        /// Rename account login
+        #[clap(short, long)]
+        new_name: Option<String>,
+        /// Update password
+        #[clap(short, long)]
+        password: Option<String>,
+        /// Update account description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Update quota in bytes
+        #[clap(short, long)]
+        quota: Option<u32>,
+        /// Whether the account is an administrator
+        #[clap(short, long)]
+        is_admin: Option<bool>,
+        /// Update e-mail addresses
+        #[clap(short, long)]
+        addresses: Option<Vec<String>>,
+        /// Update groups this account is a member of
+        #[clap(short, long)]
+        member_of: Option<Vec<String>>,
+    },
+
+    /// Add e-mail aliases to a user account
+    AddEmail {
+        /// Account login
+        name: String,
+        /// E-mail aliases to add
+        #[clap(required = true)]
+        addresses: Vec<String>,
+    },
+
+    /// Remove e-mail aliases to a user account
+    RemoveEmail {
+        /// Account login
+        name: String,
+        /// E-mail aliases to remove
+        #[clap(required = true)]
+        addresses: Vec<String>,
+    },
+
+    /// Add a user account to groups
+    AddToGroup {
+        /// Account login
+        name: String,
+        /// Groups to add
+        #[clap(required = true)]
+        member_of: Vec<String>,
+    },
+
+    /// Remove a user account from groups
+    RemoveFromGroup {
+        /// Account login
+        name: String,
+        /// Groups to remove
+        #[clap(required = true)]
+        member_of: Vec<String>,
+    },
+
+    /// Delete an existing user account
+    Delete {
+        /// Account name to delete
+        name: String,
+    },
+
+    /// Display an existing user account
+    Display {
+        /// Account name to display
+        name: String,
+    },
+
+    /// List all user accounts
+    List {
+        /// Starting point for listing accounts
+        from: Option<String>,
+        /// Maximum number of accounts to list
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ListCommands {
+    /// Create a new mailing list
+    Create {
+        /// List Name
+        name: String,
+        /// List email address
+        email: String,
+        /// Description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Mailing list members
+        #[clap(short, long)]
+        members: Option<Vec<String>>,
+    },
+
+    /// Update an existing mailing list
+    Update {
+        /// List Name
+        name: String,
+        /// Rename list
+        new_name: Option<String>,
+        /// List email address
+        email: Option<String>,
+        /// Description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Mailing list members
+        #[clap(short, long)]
+        members: Option<Vec<String>>,
+    },
+
+    /// Add members to a mailing list
+    AddMembers {
+        /// List Name
+        name: String,
+        /// Members to add
+        #[clap(required = true)]
+        members: Vec<String>,
+    },
+
+    /// Remove members from a mailing list
+    RemoveMembers {
+        /// List Name
+        name: String,
+        /// Members to remove
+        #[clap(required = true)]
+        members: Vec<String>,
+    },
+
+    /// Display an existing mailing list
+    Display {
+        /// Mailing list to display
+        name: String,
+    },
+
+    /// List all mailing lists
+    List {
+        /// Starting point for listing mailing lists
+        from: Option<String>,
+        /// Maximum number of mailing lists to list
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GroupCommands {
+    /// Create a group
+    Create {
+        /// Group Name
+        name: String,
+        /// Group email address
+        email: Option<String>,
+        /// Description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Groups that this group is a member of
+        #[clap(short, long)]
+        member_of: Option<Vec<String>>,
+    },
+
+    /// Update an existing group
+    Update {
+        /// Group Name
+        name: String,
+        /// Rename group
+        new_name: Option<String>,
+        /// Group email address
+        email: Option<String>,
+        /// Description
+        #[clap(short, long)]
+        description: Option<String>,
+        /// Update groups that this group is a member of
+        #[clap(short, long)]
+        member_of: Option<Vec<String>>,
+    },
+
+    /// Add a group to other groups
+    AddToGroup {
+        /// Group name
+        name: String,
+        /// Groups to add
+        #[clap(required = true)]
+        member_of: Vec<String>,
+    },
+
+    /// Remove a group account from groups
+    RemoveFromGroup {
+        /// Group name
+        name: String,
+        /// Groups to remove
+        #[clap(required = true)]
+        member_of: Vec<String>,
+    },
+
+    /// Display an existing group
+    Display {
+        /// Group name to display
+        name: String,
+    },
+
+    /// List all groups
+    List {
+        /// Starting point for listing groups
+        from: Option<String>,
+        /// Maximum number of groups to list
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DomainCommands {
+    /// Create a new domain
+    Create {
+        /// Domain name to create
+        name: String,
+    },
+
+    /// Delete an existing domain
+    Delete {
+        /// Domain name to delete
+        name: String,
+    },
+
+    /// List all domains
+    List {
+        /// Starting point for listing domains
+        from: Option<String>,
+        /// Maximum number of domains to list
+        limit: Option<usize>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -112,22 +400,8 @@ pub enum ExportCommands {
 
 #[derive(Subcommand)]
 pub enum DatabaseCommands {
-    /// Delete a JMAP account
-    Delete {
-        /// Account name to delete
-        account: String,
-    },
-    /// Rename a JMAP account
-    Rename {
-        /// Account name to rename
-        account: String,
-
-        /// New account name
-        new_account: String,
-    },
-
-    /// Purge expired blobs
-    Purge {},
+    /// Perform database maintenance
+    Maintenance {},
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -241,12 +515,6 @@ pub enum ReportCommands {
         #[clap(required = true)]
         ids: Vec<String>,
     },
-}
-
-impl Commands {
-    pub fn is_jmap(&self) -> bool {
-        !matches!(self, Commands::Queue(_) | Commands::Report(_))
-    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Deserialize)]

@@ -40,7 +40,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use ::managesieve::core::ManageSieveSessionManager;
 use ::store::config::ConfigStore;
 use ahash::AHashSet;
-use directory::{backend::internal::manage::ManageDirectory, config::ConfigDirectory};
+use directory::{backend::internal::manage::ManageDirectory, core::config::ConfigDirectory};
 use imap::core::{ImapSessionManager, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
@@ -162,6 +162,8 @@ type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
+
+[store."elastic".tls]
 allow-invalid-certs = true
 
 [certificate.default]

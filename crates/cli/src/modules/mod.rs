@@ -30,15 +30,129 @@ use jmap_client::{
         Property,
     },
 };
+use serde::{Deserialize, Serialize};
 
+pub mod account;
 pub mod cli;
 pub mod database;
+pub mod domain;
 pub mod export;
+pub mod group;
 pub mod import;
+pub mod list;
 pub mod queue;
 pub mod report;
 
 const RETRY_ATTEMPTS: usize = 5;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Principal {
+    pub id: Option<u32>,
+    #[serde(rename = "type")]
+    pub typ: Option<Type>,
+    pub quota: Option<u32>,
+    #[serde(rename = "usedQuota")]
+    pub used_quota: Option<u32>,
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emails: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "memberOf")]
+    pub member_of: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Type {
+    #[serde(rename = "individual")]
+    #[default]
+    Individual = 0,
+    #[serde(rename = "group")]
+    Group = 1,
+    #[serde(rename = "resource")]
+    Resource = 2,
+    #[serde(rename = "location")]
+    Location = 3,
+    #[serde(rename = "superuser")]
+    Superuser = 4,
+    #[serde(rename = "list")]
+    List = 5,
+    #[serde(rename = "other")]
+    Other = 6,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PrincipalField {
+    #[serde(rename = "name")]
+    Name,
+    #[serde(rename = "type")]
+    Type,
+    #[serde(rename = "quota")]
+    Quota,
+    #[serde(rename = "description")]
+    Description,
+    #[serde(rename = "secrets")]
+    Secrets,
+    #[serde(rename = "emails")]
+    Emails,
+    #[serde(rename = "memberOf")]
+    MemberOf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PrincipalUpdate {
+    action: PrincipalAction,
+    field: PrincipalField,
+    value: PrincipalValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PrincipalAction {
+    #[serde(rename = "set")]
+    Set,
+    #[serde(rename = "addItem")]
+    AddItem,
+    #[serde(rename = "removeItem")]
+    RemoveItem,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum PrincipalValue {
+    String(String),
+    StringList(Vec<String>),
+    Integer(u32),
+    Type(Type),
+}
+
+impl PrincipalUpdate {
+    pub fn set(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::Set,
+            field,
+            value,
+        }
+    }
+
+    pub fn add_item(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::AddItem,
+            field,
+            value,
+        }
+    }
+
+    pub fn remove_item(field: PrincipalField, value: PrincipalValue) -> PrincipalUpdate {
+        PrincipalUpdate {
+            action: PrincipalAction::RemoveItem,
+            field,
+            value,
+        }
+    }
+}
 
 pub trait UnwrapResult<T> {
     fn unwrap_result(self, action: &str) -> T;
@@ -112,44 +226,6 @@ pub fn read_file(path: &str) -> Vec<u8> {
             std::process::exit(1);
         })
     }
-}
-
-pub async fn get(url: &str) -> HashMap<String, serde_json::Value> {
-    serde_json::from_slice(
-        &reqwest::Client::builder()
-            .danger_accept_invalid_certs(is_localhost(url))
-            .build()
-            .unwrap_or_default()
-            .get(url)
-            .send()
-            .await
-            .unwrap_result("send OAuth GET request")
-            .bytes()
-            .await
-            .unwrap_result("fetch bytes"),
-    )
-    .unwrap_result("deserialize OAuth GET response")
-}
-
-pub async fn post(
-    url: &str,
-    params: &HashMap<String, String>,
-) -> HashMap<String, serde_json::Value> {
-    serde_json::from_slice(
-        &reqwest::Client::builder()
-            .danger_accept_invalid_certs(is_localhost(url))
-            .build()
-            .unwrap_or_default()
-            .post(url)
-            .form(params)
-            .send()
-            .await
-            .unwrap_result("send OAuth POST request")
-            .bytes()
-            .await
-            .unwrap_result("fetch bytes"),
-    )
-    .unwrap_result("deserialize OAuth POST response")
 }
 
 pub async fn name_to_id(client: &Client, name: &str) -> String {

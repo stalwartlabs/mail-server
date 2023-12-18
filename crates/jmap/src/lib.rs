@@ -88,7 +88,7 @@ pub struct JMAP {
     pub blob_store: BlobStore,
     pub fts_store: FtsStore,
     pub config: Config,
-    pub directory: Arc<dyn Directory>,
+    pub directory: Arc<Directory>,
 
     pub sessions: TtlDashMap<String, u32>,
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
@@ -203,7 +203,7 @@ impl JMAP {
                 ))
                 .clone(),
             snowflake_id: config
-                .property::<u64>("global.node-id")?
+                .property::<u64>("jmap.cluster.node-id")?
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_else(SnowflakeIdGenerator::new),
             store: stores

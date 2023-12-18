@@ -21,12 +21,8 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use store::{Store, Stores};
 use utils::config::{utils::AsKey, Config};
-
-use crate::{cache::CachedDirectory, Directory, DirectoryOptions};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -36,7 +32,7 @@ impl SqlDirectory {
         prefix: impl AsKey,
         stores: &Stores,
         id_store: Option<Store>,
-    ) -> utils::config::Result<Arc<dyn Directory>> {
+    ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let store_id = config.value_require((&prefix, "store"))?;
         let store = stores
@@ -81,15 +77,10 @@ impl SqlDirectory {
             }
         }
 
-        CachedDirectory::try_from_config(
-            config,
-            &prefix,
-            SqlDirectory {
-                store,
-                mappings,
-                opt: DirectoryOptions::from_config(config, prefix.as_str())?,
-                id_store,
-            },
-        )
+        Ok(SqlDirectory {
+            store,
+            mappings,
+            id_store,
+        })
     }
 }

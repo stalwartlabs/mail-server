@@ -23,13 +23,12 @@
 
 use mail_send::Credentials;
 
-use crate::{Directory, Principal, QueryBy};
+use crate::{Principal, QueryBy};
 
 use super::{EmailType, MemoryDirectory};
 
-#[async_trait::async_trait]
-impl Directory for MemoryDirectory {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+impl MemoryDirectory {
+    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         match by {
             QueryBy::Name(name) => {
                 for principal in &self.principals {
@@ -66,16 +65,10 @@ impl Directory for MemoryDirectory {
         Ok(None)
     }
 
-    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
         Ok(self
             .emails_to_ids
-            .get(self.opt.subaddressing.to_subaddress(address).as_ref())
-            .or_else(|| {
-                self.opt
-                    .catch_all
-                    .to_catch_all(address)
-                    .and_then(|address| self.emails_to_ids.get(address.as_ref()))
-            })
+            .get(address)
             .map(|names| {
                 names
                     .iter()
@@ -89,37 +82,24 @@ impl Directory for MemoryDirectory {
             .unwrap_or_default())
     }
 
-    async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        Ok(self
-            .emails_to_ids
-            .contains_key(self.opt.subaddressing.to_subaddress(address).as_ref())
-            || self
-                .opt
-                .catch_all
-                .to_catch_all(address)
-                .map_or(false, |address| {
-                    self.emails_to_ids.contains_key(address.as_ref())
-                }))
+    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+        Ok(self.emails_to_ids.contains_key(address))
     }
 
-    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
-        let address = self.opt.subaddressing.to_subaddress(address);
         for (key, value) in &self.emails_to_ids {
-            if key.contains(address.as_ref())
-                && value.iter().any(|t| matches!(t, EmailType::Primary(_)))
-            {
+            if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
                 result.push(key.clone())
             }
         }
         Ok(result)
     }
 
-    async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         let mut result = Vec::new();
-        let address = self.opt.subaddressing.to_subaddress(address);
         for (key, value) in &self.emails_to_ids {
-            if key == address.as_ref() {
+            if key == address {
                 for item in value {
                     if let EmailType::List(uid) = item {
                         for principal in &self.principals {
@@ -137,7 +117,7 @@ impl Directory for MemoryDirectory {
         Ok(result)
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

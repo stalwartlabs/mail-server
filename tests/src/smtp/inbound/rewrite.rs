@@ -22,7 +22,7 @@
 */
 
 use crate::smtp::{inbound::sign::TextConfigContext, session::TestSession, TestConfig};
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use smtp::{
     config::{if_block::ConfigIf, scripts::ConfigSieve, ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},

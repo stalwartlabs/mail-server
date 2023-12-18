@@ -210,7 +210,7 @@ impl ConfigStore for Config {
             config.lookup_stores.insert(store_id, lookup_store.clone());
 
             // Run init queries on database
-            for (_, query) in self.values(("store", id, "init")) {
+            for (_, query) in self.values(("store", id, "init.execute")) {
                 if let Err(err) = lookup_store.query::<usize>(query, Vec::new()).await {
                     tracing::warn!("Failed to initialize store {id:?}: {err}");
                 }

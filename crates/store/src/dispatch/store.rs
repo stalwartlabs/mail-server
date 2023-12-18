@@ -306,7 +306,7 @@ impl Store {
     }
 
     #[cfg(feature = "test_mode")]
-    pub async fn blob_hash_expire_all(&self) {
+    pub async fn blob_expire_all(&self) {
         use crate::{
             write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, Operation, ValueOp},
             BlobHash, BLOB_HASH_LEN, U64_LEN,
@@ -367,7 +367,7 @@ impl Store {
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
         use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS};
 
-        self.blob_hash_expire_all().await;
+        self.blob_expire_all().await;
         self.purge_blobs(blob_store).await.unwrap();
         self.purge_bitmaps().await.unwrap();
 
@@ -420,7 +420,7 @@ impl Store {
                             );
                         }
                         SUBSPACE_VALUES
-                            if key[0] >= 6
+                            if key[0] >= 20
                                 || key.get(1..5).unwrap_or_default() == u32::MAX.to_be_bytes() =>
                         {
                             // Ignore lastId counter and ID mappings

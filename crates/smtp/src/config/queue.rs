@@ -23,7 +23,6 @@
 
 use std::time::Duration;
 
-use directory::backend::memory::MemoryDirectory;
 use mail_send::Credentials;
 
 use super::{
@@ -213,7 +212,7 @@ impl ConfigQueue for Config {
                     })?
                     .clone()
             } else {
-                Arc::new(MemoryDirectory::default())
+                Arc::new(Directory::default())
             },
         };
 

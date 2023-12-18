@@ -23,15 +23,12 @@
 
 use store::{LookupStore, Store};
 
-use crate::DirectoryOptions;
-
 pub mod config;
 pub mod lookup;
 
 pub struct SqlDirectory {
     store: LookupStore,
     mappings: SqlMappings,
-    opt: DirectoryOptions,
     id_store: Option<Store>,
 }
 

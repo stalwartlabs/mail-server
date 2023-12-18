@@ -45,7 +45,7 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap(),
     );
 
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Blob/set simple test
     let response = jmap_json_request(
@@ -195,7 +195,7 @@ pub async fn test(params: &mut JMAPTest) {
         );
     }
 
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Blob/upload Complex Example
     let response = jmap_json_request(
@@ -289,7 +289,7 @@ pub async fn test(params: &mut JMAPTest) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Blob/get Example with Range and Encoding Errors
     let response = jmap_json_request(
@@ -428,7 +428,7 @@ pub async fn test(params: &mut JMAPTest) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server.store.blob_hash_expire_all().await;
+    server.store.blob_expire_all().await;
 
     // Blob/lookup
     params.client.set_default_account_id(account_id.to_string());

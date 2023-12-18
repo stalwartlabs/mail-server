@@ -99,7 +99,7 @@ impl RocksDbStore {
                     config
                         .property::<usize>((&prefix, "pool.workers"))?
                         .filter(|v| *v > 0)
-                        .unwrap_or_else(num_cpus::get),
+                        .unwrap_or_else(|| num_cpus::get() * 4),
                 )
                 .build()
                 .map_err(|err| {

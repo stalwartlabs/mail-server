@@ -1,0 +1,11 @@
+#############################################
+# File System Blob Store configuration
+#############################################
+
+[store."fs"]
+type = "fs"
+path = "%{BASE_PATH}%/data/blobs"
+depth = 2
+
+[store."fs".purge]
+frequency = "0 3 *"

@@ -21,19 +21,33 @@
  * for more details.
 */
 
+use core::cache::CachedDirectory;
 use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
-use backend::{imap::ImapError, internal::PrincipalField};
+use backend::{
+    imap::{ImapDirectory, ImapError},
+    internal::PrincipalField,
+    ldap::LdapDirectory,
+    memory::MemoryDirectory,
+    smtp::SmtpDirectory,
+    sql::SqlDirectory,
+};
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
+use store::Store;
 use utils::config::DynValue;
 
 pub mod backend;
-pub mod cache;
-pub mod config;
-pub mod secret;
+pub mod core;
+
+pub struct Directory {
+    store: DirectoryInner,
+    catch_all: AddressMapping,
+    subaddressing: AddressMapping,
+    cache: Option<CachedDirectory>,
+}
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Principal<T> {
@@ -44,7 +58,7 @@ pub struct Principal<T> {
     #[serde(default)]
     pub quota: u32,
     pub name: String,
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub secrets: Vec<String>,
     #[serde(default)]
     pub emails: Vec<String>,
@@ -58,6 +72,7 @@ pub struct Principal<T> {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     #[serde(rename = "individual")]
+    #[default]
     Individual = 0,
     #[serde(rename = "group")]
     Group = 1,
@@ -69,7 +84,6 @@ pub enum Type {
     Superuser = 4,
     #[serde(rename = "list")]
     List = 5,
-    #[default]
     #[serde(rename = "other")]
     Other = 6,
 }
@@ -89,19 +103,20 @@ pub enum DirectoryError {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ManagementError {
     MissingField(PrincipalField),
-    NotUniqueField(PrincipalField),
+    AlreadyExists {
+        field: PrincipalField,
+        value: String,
+    },
     NotFound(String),
 }
 
-#[async_trait::async_trait]
-pub trait Directory: Sync + Send {
-    async fn query(&self, by: QueryBy<'_>) -> Result<Option<Principal<u32>>>;
-    async fn email_to_ids(&self, email: &str) -> Result<Vec<u32>>;
-
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
-    async fn rcpt(&self, address: &str) -> crate::Result<bool>;
-    async fn vrfy(&self, address: &str) -> Result<Vec<String>>;
-    async fn expn(&self, address: &str) -> Result<Vec<String>>;
+pub enum DirectoryInner {
+    Internal(Store),
+    Ldap(LdapDirectory),
+    Sql(SqlDirectory),
+    Imap(ImapDirectory),
+    Smtp(SmtpDirectory),
+    Memory(MemoryDirectory),
 }
 
 pub enum QueryBy<'x> {
@@ -124,7 +139,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     }
 }
 
-impl Debug for dyn Directory {
+impl Debug for Directory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Directory").finish()
     }
@@ -144,12 +159,6 @@ impl Type {
 }
 
 #[derive(Debug, Default)]
-struct DirectoryOptions {
-    catch_all: AddressMapping,
-    subaddressing: AddressMapping,
-}
-
-#[derive(Debug, Default)]
 pub enum AddressMapping {
     Enable,
     Custom {
@@ -162,7 +171,7 @@ pub enum AddressMapping {
 
 #[derive(Default, Clone, Debug)]
 pub struct Directories {
-    pub directories: AHashMap<String, Arc<dyn Directory>>,
+    pub directories: AHashMap<String, Arc<Directory>>,
 }
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;

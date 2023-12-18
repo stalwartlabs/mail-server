@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::time::Duration;
+
 use foundationdb::{options::DatabaseOption, Database};
 use utils::config::{utils::AsKey, Config};
 
@@ -32,14 +34,18 @@ impl FdbStore {
         let guard = unsafe { foundationdb::boot() };
 
         let db = Database::new(config.value((&prefix, "path")))?;
-        if let Some(value) = config.property((&prefix, "transaction.timeout"))? {
-            db.set_option(DatabaseOption::TransactionTimeout(value))?;
+        if let Some(value) = config.property::<Duration>((&prefix, "transaction.timeout"))? {
+            db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))?;
         }
         if let Some(value) = config.property((&prefix, "transaction.retry-limit"))? {
             db.set_option(DatabaseOption::TransactionRetryLimit(value))?;
         }
-        if let Some(value) = config.property((&prefix, "transaction.max-retry-delay"))? {
-            db.set_option(DatabaseOption::TransactionMaxRetryDelay(value))?;
+        if let Some(value) =
+            config.property::<Duration>((&prefix, "transaction.max-retry-delay"))?
+        {
+            db.set_option(DatabaseOption::TransactionMaxRetryDelay(
+                value.as_millis() as i32
+            ))?;
         }
         if let Some(value) = config.property((&prefix, "transaction.machine-id"))? {
             db.set_option(DatabaseOption::MachineId(value))?;

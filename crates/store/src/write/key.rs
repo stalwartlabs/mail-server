@@ -275,11 +275,11 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                     .write(self.document_id),
             },
             ValueClass::Directory(directory) => match directory {
-                DirectoryClass::NameToId(name) => serializer.write(8u8).write(name.as_slice()),
-                DirectoryClass::EmailToId(email) => serializer.write(9u8).write(email.as_slice()),
-                DirectoryClass::Principal(uid) => serializer.write(10u8).write_leb128(*uid),
-                DirectoryClass::Domain(name) => serializer.write(11u8).write(name.as_slice()),
-                DirectoryClass::UsedQuota(uid) => serializer.write(12u8).write_leb128(*uid),
+                DirectoryClass::NameToId(name) => serializer.write(20u8).write(name.as_slice()),
+                DirectoryClass::EmailToId(email) => serializer.write(21u8).write(email.as_slice()),
+                DirectoryClass::Principal(uid) => serializer.write(22u8).write_leb128(*uid),
+                DirectoryClass::Domain(name) => serializer.write(23u8).write(name.as_slice()),
+                DirectoryClass::UsedQuota(uid) => serializer.write(24u8).write_leb128(*uid),
             },
         }
         .finalize()

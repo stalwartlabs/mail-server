@@ -24,7 +24,7 @@
 use std::{sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose, Engine};
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use jmap::{
     api::JmapSessionManager,
     services::{housekeeper::Event, IPC_CHANNEL_BUFFER},

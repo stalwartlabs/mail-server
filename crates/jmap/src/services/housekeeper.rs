@@ -45,7 +45,7 @@ pub enum Event {
 
 pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
     let purge_cache = settings
-        .property_or_static::<SimpleCron>("jmap.purge.schedule.sessions", "15 * *")
+        .property_or_static::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
         .failed("Initialize housekeeper");
 
     tokio::spawn(async move {

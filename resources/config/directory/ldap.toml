@@ -2,46 +2,51 @@
 # LDAP Directory configuration
 #############################################
 
-[directory."default"]
+[directory."ldap"]
 type = "ldap"
 address = "ldap://localhost:389"
 base-dn = "dc=example,dc=org"
 
-[directory."default".bind]
+[directory."ldap".bind]
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"
 secret = "mysecret"
 
-[directory."default".cache]
+[directory."ldap".bind.auth]
+enable = false
+dn = "cn=?,ou=svcaccts,dc=example,dc=org"
+
+[directory."ldap".tls]
+enable = false
+allow-invalid-certs = false
+
+[directory."ldap".cache]
 entries = 500
 ttl = {positive = '1h', negative = '10m'}
 
-[directory."default".options]
+[directory."ldap".options]
 catch-all = true
 #catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
 subaddressing = true
 #subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
-superuser-group = "superusers"
 
-[directory."default".pool]
+[directory."ldap".pool]
 max-connections = 10
-min-connections = 0
-max-lifetime = "30m"
-idle-timeout = "10m"
-connect-timeout = "30s"
 
-[directory."default".filter]
+[directory."ldap".pool.timeout]
+create = "30s"
+wait = "30s"
+recycle = "30s"
+
+[directory."ldap".filter]
 name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
 email = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=?)(mailAlias=?)(mailList=?)))"
 verify = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*?*)(mailAlias=*?*)))"
 expand = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(mailList=?))"
 domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(mailAlias=*@?)))"
 
-[directory."default".object-classes]
-user = "posixAccount"
-group = "posixGroup"
-
-[directory."default".attributes]
+[directory."ldap".attributes]
 name = "uid"
+type = "objectClass"
 description = ["principalName", "description"]
 secret = "userPassword"
 groups = ["memberOf", "otherGroups"]

@@ -21,13 +21,11 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use ldap3::LdapConnSettings;
 use store::Store;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{cache::CachedDirectory, config::build_pool, Directory, DirectoryOptions};
+use crate::core::config::build_pool;
 
 use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
 
@@ -36,7 +34,7 @@ impl LdapDirectory {
         config: &Config,
         prefix: impl AsKey,
         id_store: Option<Store>,
-    ) -> utils::config::Result<Arc<dyn Directory>> {
+    ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
             Bind::new(
@@ -52,9 +50,9 @@ impl LdapDirectory {
             config.value_require((&prefix, "address"))?.to_string(),
             LdapConnSettings::new()
                 .set_conn_timeout(config.property_or_static((&prefix, "timeout"), "30s")?)
-                .set_starttls(config.property_or_static((&prefix, "tls"), "false")?)
+                .set_starttls(config.property_or_static((&prefix, "tls.enable"), "false")?)
                 .set_no_tls_verify(
-                    config.property_or_static((&prefix, "allow-invalid-certs"), "false")?,
+                    config.property_or_static((&prefix, "tls.allow-invalid-certs"), "false")?,
                 ),
             bind_dn,
         );
@@ -115,23 +113,18 @@ impl LdapDirectory {
         }
 
         let auth_bind =
-            if config.property_or_static::<bool>((&prefix, "auth-bind.enable"), "false")? {
-                LdapFilter::from_config(config, (&prefix, "auth-bind.dn"))?.into()
+            if config.property_or_static::<bool>((&prefix, "bind.auth.enable"), "false")? {
+                LdapFilter::from_config(config, (&prefix, "bind.auth.dn"))?.into()
             } else {
                 None
             };
 
-        CachedDirectory::try_from_config(
-            config,
-            &prefix,
-            LdapDirectory {
-                mappings,
-                pool: build_pool(config, &prefix, manager)?,
-                opt: DirectoryOptions::from_config(config, prefix.as_str())?,
-                auth_bind,
-                id_store,
-            },
-        )
+        Ok(LdapDirectory {
+            mappings,
+            pool: build_pool(config, &prefix, manager)?,
+            auth_bind,
+            id_store,
+        })
     }
 }
 

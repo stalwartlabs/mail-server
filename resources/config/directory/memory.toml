@@ -2,54 +2,55 @@
 # In-Memory Directory configuration
 #############################################
 
-[directory."default"]
+[directory."memory"]
 type = "memory"
 
-[directory."default".options]
+[directory."memory".options]
 catch-all = true
 #catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
 subaddressing = true
 #subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
-superuser-group = "superusers"
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "admin"
+type = "admin"
 description = "Superuser"
 secret = "changeme"
 email = ["postmaster@%{DEFAULT_DOMAIN}%"]
-member-of = ["superusers"]
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "john"
+type = "individual"
 description = "John Doe"
 secret = "12345"
 email = ["john@%{DEFAULT_DOMAIN}%", "jdoe@%{DEFAULT_DOMAIN}%", "john.doe@%{DEFAULT_DOMAIN}%"]
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 member-of = ["sales"]
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "jane"
+type = "individual"
 description = "Jane Doe"
 secret = "abcde"
 email = ["jane@%{DEFAULT_DOMAIN}%", "jane.doe@%{DEFAULT_DOMAIN}%"]
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 member-of = ["sales", "support"]
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "bill"
+type = "individual"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
 quota = 50000000
 email = ["bill@%{DEFAULT_DOMAIN}%", "bill.foobar@%{DEFAULT_DOMAIN}%"]
 email-list = ["info@%{DEFAULT_DOMAIN}%"]
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "sales"
+type = "group"
 description = "Sales Team"
 
-[[directory."default".principals]]
+[[directory."memory".principals]]
 name = "support"
+type = "group"
 description = "Support Team"
-
-[directory."default".lookup]
-domains = ["%{DEFAULT_DOMAIN}%"]

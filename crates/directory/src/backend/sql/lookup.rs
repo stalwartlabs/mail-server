@@ -24,13 +24,12 @@
 use mail_send::Credentials;
 use store::{NamedRows, Rows, Store, Value};
 
-use crate::{backend::internal::manage::ManageDirectory, Directory, Principal, QueryBy, Type};
+use crate::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 
 use super::{SqlDirectory, SqlMappings};
 
-#[async_trait::async_trait]
-impl Directory for SqlDirectory {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+impl SqlDirectory {
+    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
         let mut account_id = None;
         let account_name;
         let mut secret = None;
@@ -143,30 +142,11 @@ impl Directory for SqlDirectory {
         Ok(Some(principal))
     }
 
-    async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
-        let mut names = self
+    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+        let names = self
             .store
-            .query::<Rows>(
-                &self.mappings.query_recipients,
-                vec![self
-                    .opt
-                    .subaddressing
-                    .to_subaddress(address)
-                    .into_owned()
-                    .into()],
-            )
+            .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
             .await?;
-
-        if names.rows.is_empty() {
-            if let Some(address) = self.opt.catch_all.to_catch_all(address) {
-                names = self
-                    .store
-                    .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
-                    .await?;
-            } else {
-                return Ok(vec![]);
-            }
-        }
 
         let mut ids = Vec::with_capacity(names.rows.len());
 
@@ -183,67 +163,39 @@ impl Directory for SqlDirectory {
         Ok(ids)
     }
 
-    async fn rcpt(&self, address: &str) -> crate::Result<bool> {
-        if self
-            .store
+    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+        self.store
             .query::<bool>(
                 &self.mappings.query_recipients,
-                vec![self
-                    .opt
-                    .subaddressing
-                    .to_subaddress(address)
-                    .into_owned()
-                    .into()],
+                vec![address.to_string().into()],
             )
-            .await?
-        {
-            Ok(true)
-        } else if let Some(address) = self.opt.catch_all.to_catch_all(address) {
-            self.store
-                .query::<bool>(
-                    &self.mappings.query_recipients,
-                    vec![address.into_owned().into()],
-                )
-                .await
-                .map_err(Into::into)
-        } else {
-            Ok(false)
-        }
+            .await
+            .map_err(Into::into)
     }
 
-    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
         self.store
             .query::<Rows>(
                 &self.mappings.query_verify,
-                vec![self
-                    .opt
-                    .subaddressing
-                    .to_subaddress(address)
-                    .into_owned()
-                    .into()],
+                vec![address.to_string().into()],
             )
             .await
             .map(Into::into)
             .map_err(Into::into)
     }
 
-    async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
         self.store
             .query::<Rows>(
                 &self.mappings.query_expand,
-                vec![self
-                    .opt
-                    .subaddressing
-                    .to_subaddress(address)
-                    .into_owned()
-                    .into()],
+                vec![address.to_string().into()],
             )
             .await
             .map(Into::into)
             .map_err(Into::into)
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
         self.store
             .query::<bool>(&self.mappings.query_domains, vec![domain.into()])
             .await

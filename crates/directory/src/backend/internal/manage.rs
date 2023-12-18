@@ -24,12 +24,15 @@
 use jmap_proto::types::collection::Collection;
 use store::{
     write::{assert::HashedValue, BatchBuilder, DirectoryClass, ValueClass},
-    IterateParams, Serialize, Store, ValueKey,
+    Deserialize, IterateParams, Serialize, Store, ValueKey,
 };
 
-use crate::{Directory, DirectoryError, ManagementError, Principal, QueryBy, Type};
+use crate::{DirectoryError, ManagementError, Principal, QueryBy, Type};
 
-use super::{PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue};
+use super::{
+    lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalIdType, PrincipalUpdate,
+    PrincipalValue,
+};
 
 #[async_trait::async_trait]
 pub trait ManageDirectory {
@@ -43,11 +46,10 @@ pub trait ManageDirectory {
         changes: Vec<PrincipalUpdate>,
     ) -> crate::Result<()>;
     async fn delete_account(&self, by: QueryBy<'_>) -> crate::Result<()>;
-    async fn create_domain(&self, domain: &str) -> crate::Result<()>;
-    async fn delete_domain(&self, domain: &str) -> crate::Result<()>;
     async fn list_accounts(
         &self,
         start_from: Option<&str>,
+        typ: Option<Type>,
         limit: usize,
     ) -> crate::Result<Vec<String>>;
     async fn map_group_ids(&self, principal: Principal<u32>) -> crate::Result<Principal<String>>;
@@ -56,6 +58,13 @@ pub trait ManageDirectory {
         principal: Principal<String>,
         create_if_missing: bool,
     ) -> crate::Result<Principal<u32>>;
+    async fn create_domain(&self, domain: &str) -> crate::Result<()>;
+    async fn delete_domain(&self, domain: &str) -> crate::Result<()>;
+    async fn list_domains(
+        &self,
+        start_from: Option<&str>,
+        limit: usize,
+    ) -> crate::Result<Vec<String>>;
 }
 
 #[async_trait::async_trait]
@@ -83,10 +92,11 @@ impl ManageDirectory for Store {
     }
 
     async fn get_account_id(&self, name: &str) -> crate::Result<Option<u32>> {
-        self.get_value::<u32>(ValueKey::from(ValueClass::Directory(
+        self.get_value::<PrincipalIdType>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::NameToId(name.as_bytes().to_vec()),
         )))
         .await
+        .map(|v| v.map(|v| v.account_id))
         .map_err(Into::into)
     }
 
@@ -114,7 +124,10 @@ impl ManageDirectory for Store {
                 .with_collection(Collection::Principal)
                 .create_document(account_id)
                 .assert_value(name_key.clone(), ())
-                .set(name_key, account_id.serialize())
+                .set(
+                    name_key,
+                    PrincipalIdType::new(account_id, Type::Individual).serialize(),
+                )
                 .set(
                     ValueClass::Directory(DirectoryClass::Principal(account_id)),
                     Principal {
@@ -159,18 +172,20 @@ impl ManageDirectory for Store {
         // Make sure new name is not taken
         principal.name = principal.name.to_lowercase();
         if self.get_account_id(&principal.name).await?.is_some() {
-            return Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                PrincipalField::Name,
-            )));
+            return Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                field: PrincipalField::Name,
+                value: principal.name,
+            }));
         }
 
         // Make sure the e-mail is not taken and validate domain
         for email in principal.emails.iter_mut() {
             *email = email.to_lowercase();
             if self.rcpt(email).await? {
-                return Err(DirectoryError::Management(ManagementError::NotUniqueField(
-                    PrincipalField::Emails,
-                )));
+                return Err(DirectoryError::Management(ManagementError::AlreadyExists {
+                    field: PrincipalField::Emails,
+                    value: email.to_string(),
+                }));
             }
             if let Some(domain) = email.split('@').nth(1) {
                 if !self.is_local_domain(domain).await? {
@@ -201,7 +216,7 @@ impl ManageDirectory for Store {
             )
             .set(
                 ValueClass::Directory(DirectoryClass::NameToId(principal.name.into_bytes())),
-                account_id.serialize(),
+                PrincipalIdType::new(account_id, principal.typ.into_base_type()).serialize(),
             );
 
         // Write email to id mapping
@@ -306,7 +321,10 @@ impl ManageDirectory for Store {
                     if principal.inner.name != new_name {
                         if self.get_account_id(&new_name).await?.is_some() {
                             return Err(DirectoryError::Management(
-                                ManagementError::NotUniqueField(PrincipalField::Name),
+                                ManagementError::AlreadyExists {
+                                    field: PrincipalField::Name,
+                                    value: new_name,
+                                },
                             ));
                         }
 
@@ -318,12 +336,14 @@ impl ManageDirectory for Store {
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::NameToId(new_name.into_bytes())),
-                            account_id.serialize(),
+                            PrincipalIdType::new(account_id, principal.inner.typ.into_base_type())
+                                .serialize(),
                         );
                     }
                 }
                 (PrincipalAction::Set, PrincipalField::Type, PrincipalValue::Type(new_type))
-                    if principal.inner.typ != Type::List && new_type != Type::List =>
+                    if matches!(principal.inner.typ, Type::Individual | Type::Superuser)
+                        && matches!(new_type, Type::Individual | Type::Superuser) =>
                 {
                     principal.inner.typ = new_type;
                 }
@@ -362,7 +382,10 @@ impl ManageDirectory for Store {
                         if !principal.inner.emails.contains(email) {
                             if self.rcpt(email).await? {
                                 return Err(DirectoryError::Management(
-                                    ManagementError::NotUniqueField(PrincipalField::Emails),
+                                    ManagementError::AlreadyExists {
+                                        field: PrincipalField::Emails,
+                                        value: email.to_string(),
+                                    },
                                 ));
                             }
                             if let Some(domain) = email.split('@').nth(1) {
@@ -434,7 +457,10 @@ impl ManageDirectory for Store {
                     if !principal.inner.emails.contains(&email) {
                         if self.rcpt(&email).await? {
                             return Err(DirectoryError::Management(
-                                ManagementError::NotUniqueField(PrincipalField::Emails),
+                                ManagementError::AlreadyExists {
+                                    field: PrincipalField::Emails,
+                                    value: email,
+                                },
                             ));
                         }
                         if let Some(domain) = email.split('@').nth(1) {
@@ -595,12 +621,49 @@ impl ManageDirectory for Store {
     async fn list_accounts(
         &self,
         start_from: Option<&str>,
+        typ: Option<Type>,
         limit: usize,
     ) -> crate::Result<Vec<String>> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(
             start_from.unwrap_or("").as_bytes().to_vec(),
         )));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
+            u8::MAX;
+            10
+        ])));
+
+        let mut results = Vec::with_capacity(limit);
+        self.iterate(
+            IterateParams::new(from_key, to_key)
+                .set_values(typ.is_some())
+                .ascending(),
+            |key, value| {
+                if typ.map_or(true, |t| {
+                    PrincipalIdType::deserialize(value)
+                        .map(|v| v.typ == t)
+                        .unwrap_or(false)
+                }) {
+                    results.push(
+                        String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned(),
+                    );
+                }
+                Ok(limit == 0 || results.len() < limit)
+            },
+        )
+        .await?;
+
+        Ok(results)
+    }
+
+    async fn list_domains(
+        &self,
+        start_from: Option<&str>,
+        limit: usize,
+    ) -> crate::Result<Vec<String>> {
+        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(
+            start_from.unwrap_or("").as_bytes().to_vec(),
+        )));
+        let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![
             u8::MAX;
             10
         ])));

@@ -40,7 +40,11 @@ impl SqliteStore {
         let prefix = prefix.as_key();
         let db = Self {
             conn_pool: Pool::builder()
-                .max_size(config.property_or_static((&prefix, "pool.max-connections"), "10")?)
+                .max_size(
+                    config
+                        .property((&prefix, "pool.max-connections"))?
+                        .unwrap_or_else(|| (num_cpus::get() * 4) as u32),
+                )
                 .build(
                     SqliteConnectionManager::file(
                         config

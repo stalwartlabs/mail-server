@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use directory::config::ConfigDirectory;
+use directory::core::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use store::Stores;
 use utils::config::Config;

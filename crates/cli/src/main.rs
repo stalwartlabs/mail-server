@@ -29,17 +29,13 @@ use std::{
 
 use clap::Parser;
 use console::style;
-use jmap_client::client::{Client, Credentials};
+use jmap_client::client::Credentials;
 use modules::{
-    cli::{Cli, Commands},
-    database::cmd_database,
-    export::cmd_export,
-    get,
-    import::cmd_import,
-    is_localhost, post,
-    queue::cmd_queue,
-    report::cmd_report,
+    cli::{Cli, Client, Commands},
+    is_localhost, UnwrapResult,
 };
+use reqwest::{header::AUTHORIZATION, Method, StatusCode};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::modules::OAuthResponse;
 
@@ -48,54 +44,41 @@ pub mod modules;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = Cli::parse();
-    let is_jmap = args.command.is_jmap();
-    let credentials = if let Some(credentials) = args.credentials {
-        parse_credentials(&credentials)
-    } else {
-        let credentials = rpassword::prompt_password(
-            "\nEnter administrator credentials or press [ENTER] to use OAuth: ",
-        )
-        .unwrap();
-        if !credentials.is_empty() {
+    let client = Client {
+        credentials: if let Some(credentials) = args.credentials {
             parse_credentials(&credentials)
         } else {
-            oauth(&args.url).await
-        }
+            let credentials = rpassword::prompt_password(
+                "\nEnter administrator credentials or press [ENTER] to use OAuth: ",
+            )
+            .unwrap();
+            if !credentials.is_empty() {
+                parse_credentials(&credentials)
+            } else {
+                oauth(&args.url).await
+            }
+        },
+        timeout: args.timeout,
+        url: args.url,
     };
 
-    if is_jmap {
-        match args.command {
-            Commands::Import(command) => {
-                cmd_import(build_client(&args.url, credentials).await, command).await
-            }
-            Commands::Export(command) => {
-                cmd_export(build_client(&args.url, credentials).await, command).await
-            }
-            Commands::Database(command) => cmd_database(&args.url, credentials, command).await,
-            Commands::Queue(_) | Commands::Report(_) => unreachable!(),
+    match args.command {
+        Commands::Import(command) => {
+            command.exec(client).await;
         }
-    } else {
-        match args.command {
-            Commands::Queue(command) => cmd_queue(&args.url, credentials, command).await,
-            Commands::Report(command) => cmd_report(&args.url, credentials, command).await,
-            _ => unreachable!(),
+        Commands::Export(command) => {
+            command.exec(client).await;
         }
+        Commands::Database(command) => command.exec(client).await,
+        Commands::Account(_) => todo!(),
+        Commands::Domain(_) => todo!(),
+        Commands::List(_) => todo!(),
+        Commands::Group(_) => todo!(),
+        Commands::Queue(command) => command.exec(client).await,
+        Commands::Report(command) => command.exec(client).await,
     }
 
     Ok(())
-}
-
-async fn build_client(url: &str, credentials: Credentials) -> Client {
-    Client::new()
-        .credentials(credentials)
-        .accept_invalid_certs(is_localhost(url))
-        .timeout(Duration::from_secs(60))
-        .connect(url)
-        .await
-        .unwrap_or_else(|err| {
-            eprintln!("Failed to connect to JMAP server {}: {}.", url, err);
-            std::process::exit(1);
-        })
 }
 
 fn parse_credentials(credentials: &str) -> Credentials {
@@ -107,10 +90,39 @@ fn parse_credentials(credentials: &str) -> Credentials {
 }
 
 async fn oauth(url: &str) -> Credentials {
-    let metadata = get(&format!("{}/.well-known/oauth-authorization-server", url)).await;
+    let metadata: HashMap<String, serde_json::Value> = serde_json::from_slice(
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
+            .build()
+            .unwrap_or_default()
+            .get(&format!("{}/.well-known/oauth-authorization-server", url))
+            .send()
+            .await
+            .unwrap_result("send OAuth GET request")
+            .bytes()
+            .await
+            .unwrap_result("fetch bytes"),
+    )
+    .unwrap_result("deserialize OAuth GET response");
+
     let token_endpoint = metadata.property("token_endpoint");
-    let mut params = HashMap::from_iter([("client_id".to_string(), "Stalwart_CLI".to_string())]);
-    let response = post(metadata.property("device_authorization_endpoint"), &params).await;
+    let mut params: HashMap<String, String> =
+        HashMap::from_iter([("client_id".to_string(), "Stalwart_CLI".to_string())]);
+    let response: HashMap<String, serde_json::Value> = serde_json::from_slice(
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
+            .build()
+            .unwrap_or_default()
+            .post(metadata.property("device_authorization_endpoint"))
+            .form(&params)
+            .send()
+            .await
+            .unwrap_result("send OAuth POST request")
+            .bytes()
+            .await
+            .unwrap_result("fetch bytes"),
+    )
+    .unwrap_result("deserialize OAuth POST response");
 
     params.insert(
         "grant_type".to_string(),
@@ -130,7 +142,22 @@ async fn oauth(url: &str) -> Credentials {
     std::io::stdout().flush().unwrap();
     std::io::stdin().lock().lines().next();
 
-    let mut response = post(token_endpoint, &params).await;
+    let mut response: HashMap<String, serde_json::Value> = serde_json::from_slice(
+        &reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(url))
+            .build()
+            .unwrap_or_default()
+            .post(token_endpoint)
+            .form(&params)
+            .send()
+            .await
+            .unwrap_result("send OAuth POST request")
+            .bytes()
+            .await
+            .unwrap_result("fetch bytes"),
+    )
+    .unwrap_result("deserialize OAuth POST response");
+
     if let Some(serde_json::Value::String(access_token)) = response.remove("access_token") {
         Credentials::Bearer(access_token)
     } else {
@@ -142,5 +169,91 @@ async fn oauth(url: &str) -> Credentials {
                 .unwrap_or("<unknown>")
         );
         std::process::exit(1);
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum Response<T> {
+    Data { data: T },
+    Error { error: String, details: String },
+}
+
+impl Client {
+    pub async fn into_jmap_client(self) -> jmap_client::client::Client {
+        jmap_client::client::Client::new()
+            .credentials(self.credentials)
+            .accept_invalid_certs(is_localhost(&self.url))
+            .timeout(Duration::from_secs(self.timeout.unwrap_or(60)))
+            .connect(&self.url)
+            .await
+            .unwrap_or_else(|err| {
+                eprintln!("Failed to connect to JMAP server {}: {}.", &self.url, err);
+                std::process::exit(1);
+            })
+    }
+
+    pub async fn http_request<R: DeserializeOwned, B: Serialize>(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<B>,
+    ) -> R {
+        let url = format!(
+            "{}{}{}",
+            self.url,
+            if !self.url.ends_with('/') && !url.starts_with('/') {
+                "/"
+            } else {
+                ""
+            },
+            url
+        );
+        let mut request = reqwest::Client::builder()
+            .danger_accept_invalid_certs(is_localhost(&url))
+            .timeout(Duration::from_secs(self.timeout.unwrap_or(60)))
+            .build()
+            .unwrap_or_default()
+            .request(method, url)
+            .header(
+                AUTHORIZATION,
+                match &self.credentials {
+                    Credentials::Basic(s) => format!("Basic {s}"),
+                    Credentials::Bearer(s) => format!("Bearer {s}"),
+                },
+            );
+
+        if let Some(body) = body {
+            request = request.body(serde_json::to_string(&body).unwrap_result("serialize body"));
+        }
+
+        let response = request.send().await.unwrap_result("send HTTP request");
+
+        match response.status() {
+            StatusCode::OK => (),
+            StatusCode::UNAUTHORIZED => {
+                eprintln!("Authentication failed. Make sure the credentials are correct and that the account has administrator rights.");
+                std::process::exit(1);
+            }
+            _ => {
+                eprintln!(
+                    "Request failed: {}",
+                    response.text().await.unwrap_result("fetch text")
+                );
+                std::process::exit(1);
+            }
+        }
+
+        match serde_json::from_slice::<Response<R>>(
+            &response.bytes().await.unwrap_result("fetch bytes"),
+        )
+        .unwrap_result("deserialize response")
+        {
+            Response::Data { data } => data,
+            Response::Error { error, details } => {
+                eprintln!("Request failed: {details} ({error:?})");
+                std::process::exit(1);
+            }
+        }
     }
 }
