@@ -1,6 +1,5 @@
 [Unit]
 Description=Stalwart __TITLE__ Server
-Conflicts=postfix.service sendmail.service exim4.service
 ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
  
