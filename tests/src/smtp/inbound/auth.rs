@@ -63,6 +63,7 @@ async fn auth() {
     ctx.directory = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), None)
+        .await
         .unwrap();
 
     let config = &mut core.session.config.auth;

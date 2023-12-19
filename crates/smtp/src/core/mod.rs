@@ -120,6 +120,8 @@ pub struct SieveCore {
     pub directories: AHashMap<String, Arc<Directory>>,
     pub lookup_stores: AHashMap<String, LookupStore>,
     pub lookup: AHashMap<String, Lookup>,
+    pub default_lookup_store: Option<LookupStore>,
+    pub default_directory: Option<Arc<Directory>>,
 }
 
 pub struct Resolvers {
@@ -158,7 +160,10 @@ pub struct TlsConnectors {
 }
 
 #[derive(Clone)]
-pub struct Lookup(Arc<store::Lookup>);
+pub enum Lookup {
+    Store(Arc<store::Lookup>),
+    Directory(directory::Lookup),
+}
 
 pub enum State {
     Request(RequestReceiver),
@@ -279,49 +284,79 @@ impl SessionData {
 
 impl Lookup {
     pub async fn contains(&self, item: impl Into<Value<'_>>) -> Option<bool> {
-        self.0
-            .store
-            .query::<bool>(&self.0.query, vec![item.into()])
-            .await
-            .ok()
+        match self {
+            Lookup::Store(lookup) => lookup
+                .store
+                .query::<bool>(&lookup.query, vec![item.into()])
+                .await
+                .ok(),
+            Lookup::Directory(lookup) => match lookup {
+                directory::Lookup::DomainExists(directory) => directory
+                    .is_local_domain(item.into().to_str().as_ref())
+                    .await
+                    .ok(),
+                directory::Lookup::EmailExists(directory) => {
+                    directory.rcpt(item.into().to_str().as_ref()).await.ok()
+                }
+            },
+        }
     }
 
     pub async fn lookup(&self, items: Vec<Value<'_>>) -> Option<Variable> {
-        self.0
-            .store
-            .query::<Option<Row>>(&self.0.query, items)
-            .await
-            .ok()
-            .map(|row| {
-                let mut row = row.map(|row| row.values).unwrap_or_default();
-                match row.len().cmp(&1) {
-                    Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
-                        row.pop().map(into_sieve_value).unwrap()
+        match self {
+            Lookup::Store(lookup) => lookup
+                .store
+                .query::<Option<Row>>(&lookup.query, items)
+                .await
+                .ok()
+                .map(|row| {
+                    let mut row = row.map(|row| row.values).unwrap_or_default();
+                    match row.len().cmp(&1) {
+                        Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
+                            row.pop().map(into_sieve_value).unwrap()
+                        }
+                        Ordering::Less => Variable::default(),
+                        _ => Variable::Array(
+                            row.into_iter()
+                                .map(into_sieve_value)
+                                .collect::<Vec<_>>()
+                                .into(),
+                        ),
                     }
-                    Ordering::Less => Variable::default(),
-                    _ => Variable::Array(
-                        row.into_iter()
-                            .map(into_sieve_value)
-                            .collect::<Vec<_>>()
-                            .into(),
-                    ),
-                }
-            })
+                }),
+            Lookup::Directory(_) => None,
+        }
     }
 
     pub async fn query(&self, items: Vec<Value<'_>>) -> Option<Vec<Value<'static>>> {
-        self.0
-            .store
-            .query::<Option<Row>>(&self.0.query, items)
-            .await
-            .ok()
-            .map(|row| row.map(|row| row.values).unwrap_or_default())
+        match self {
+            Lookup::Store(lookup) => lookup
+                .store
+                .query::<Option<Row>>(&lookup.query, items)
+                .await
+                .ok()
+                .map(|row| row.map(|row| row.values).unwrap_or_default()),
+            Lookup::Directory(_) => None,
+        }
     }
 }
 
 impl PartialEq for Lookup {
     fn eq(&self, other: &Self) -> bool {
-        self.0.query == other.0.query
+        match (self, other) {
+            (Lookup::Store(a), Lookup::Store(b)) => a.query == b.query,
+            (Lookup::Directory(a), Lookup::Directory(b)) => matches!(
+                (a, b),
+                (
+                    directory::Lookup::DomainExists(_),
+                    directory::Lookup::DomainExists(_)
+                ) | (
+                    directory::Lookup::EmailExists(_),
+                    directory::Lookup::EmailExists(_)
+                )
+            ),
+            _ => false,
+        }
     }
 }
 
@@ -354,15 +389,15 @@ pub fn to_store_value(value: &Variable) -> Value<'static> {
     }
 }
 
-impl AsRef<LookupStore> for Lookup {
-    fn as_ref(&self) -> &LookupStore {
-        &self.0.store
+impl From<Arc<store::Lookup>> for Lookup {
+    fn from(lookup: Arc<store::Lookup>) -> Self {
+        Lookup::Store(lookup)
     }
 }
 
-impl From<Arc<store::Lookup>> for Lookup {
-    fn from(lookup: Arc<store::Lookup>) -> Self {
-        Self(lookup)
+impl From<directory::Lookup> for Lookup {
+    fn from(lookup: directory::Lookup) -> Self {
+        Lookup::Directory(lookup)
     }
 }
 

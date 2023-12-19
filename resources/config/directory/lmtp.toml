@@ -6,6 +6,7 @@
 type = "lmtp"
 address = "127.0.0.1"
 port = 11200
+disable = true
 
 [directory."lmtp".limits]
 auth-errors = 3

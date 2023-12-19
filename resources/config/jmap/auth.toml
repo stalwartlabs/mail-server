@@ -3,7 +3,7 @@
 #############################################
 
 [jmap]
-directory = "default"
+directory = "%{DEFAULT_DIRECTORY}%"
 
 [jmap.session.cache]
 ttl = "1h"

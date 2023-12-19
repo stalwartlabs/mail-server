@@ -294,7 +294,7 @@ impl DirectoryTest {
         let stores = config.parse_stores().await.unwrap();
 
         DirectoryTest {
-            directories: config.parse_directory(&stores, id_store).unwrap(),
+            directories: config.parse_directory(&stores, id_store).await.unwrap(),
             stores,
             temp_dir,
         }

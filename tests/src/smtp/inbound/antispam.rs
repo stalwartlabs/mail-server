@@ -42,6 +42,10 @@ cpu = 500000
 nested-includes = 5
 duplicate-expiry = "7d"
 
+[sieve.trusted.default]
+#directory = "%{DEFAULT_DIRECTORY}%"
+store = "spamdb"
+
 [store."spamdb"]
 type = "sqlite"
 path = "%PATH%/test_antispam.db"

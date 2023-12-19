@@ -73,7 +73,11 @@ impl ConfigStore for Config {
         let mut config = Stores::default();
 
         for id in self.sub_keys("store") {
-            // Parse directory
+            // Parse store
+            if self.property_or_static::<bool>(("store", id, "disable"), "false")? {
+                tracing::debug!("Skipping disabled store {id:?}.");
+                continue;
+            }
             let protocol = self
                 .value_require(("store", id, "type"))?
                 .to_ascii_lowercase();

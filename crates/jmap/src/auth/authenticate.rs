@@ -180,13 +180,7 @@ impl JMAP {
             }))
             .await
         {
-            Ok(Some(mut principal)) => {
-                if !principal.has_name() {
-                    principal.name = username.to_string();
-                }
-
-                AccessToken::new(principal).into()
-            }
+            Ok(Some(principal)) => AccessToken::new(principal).into(),
             Ok(None) => {
                 let _ = self.is_auth_allowed_hard(remote_addr);
                 None

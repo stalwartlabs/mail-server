@@ -6,6 +6,7 @@
 type = "ldap"
 address = "ldap://localhost:389"
 base-dn = "dc=example,dc=org"
+disable = true
 
 [directory."ldap".bind]
 dn = "cn=serviceuser,ou=svcaccts,dc=example,dc=org"

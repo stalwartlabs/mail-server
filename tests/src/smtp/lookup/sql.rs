@@ -87,7 +87,7 @@ async fn lookup_sql() {
     let mut ctx = ConfigContext::new(&[]);
     let config = Config::new(&config_file).unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config.parse_directory(&ctx.stores, None).unwrap();
+    ctx.directory = config.parse_directory(&ctx.stores, None).await.unwrap();
 
     // Obtain directory handle
     let handle = DirectoryStore {

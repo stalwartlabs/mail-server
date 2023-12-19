@@ -5,6 +5,7 @@
 [store."foundationdb"]
 type = "foundationdb"
 #path = "/etc/foundationdb/fdb.cluster"
+disable = true
 
 #[store."foundationdb".transaction]
 #timeout = "5s"

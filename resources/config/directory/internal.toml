@@ -4,7 +4,8 @@
 
 [directory."internal"]
 type = "internal"
-store = "sqlite"
+store = "%{DEFAULT_STORE}%"
+disable = true
 
 [directory."internal".options]
 catch-all = true

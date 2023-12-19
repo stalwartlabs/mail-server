@@ -3,9 +3,9 @@
 #############################################
 
 [jmap.store]
-data = "rocksdb"
-fts = "rocksdb"
-blob = "rocksdb"
+data = "%{DEFAULT_STORE}%"
+fts = "__FTS_STORE__"
+blob = "__BLOB_STORE__"
 
 [jmap.encryption]
 enable = true

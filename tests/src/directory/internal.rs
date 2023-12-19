@@ -165,6 +165,7 @@ async fn internal_directory() {
                 .await
                 .unwrap(),
             Some(Principal {
+                id: 1,
                 name: "jane".to_string(),
                 description: Some("Jane Doe".to_string()),
                 emails: vec!["jane@example.org".to_string()],
@@ -225,6 +226,7 @@ async fn internal_directory() {
                 .unwrap(),
             Principal {
                 name: "list".to_string(),
+                id: 2,
                 typ: Type::List,
                 emails: vec!["list@example.org".to_string()],
                 member_of: vec!["john".to_string(), "jane".to_string()],
@@ -420,6 +422,7 @@ async fn internal_directory() {
                 .unwrap(),
             Principal {
                 name: "list".to_string(),
+                id: 2,
                 typ: Type::List,
                 emails: vec!["list@example.org".to_string()],
                 member_of: vec!["jane".to_string()],
@@ -445,6 +448,7 @@ async fn internal_directory() {
                 .unwrap(),
             Principal {
                 name: "list".to_string(),
+                id: 2,
                 typ: Type::List,
                 emails: vec!["list@example.org".to_string()],
                 member_of: vec!["jane".to_string(), "john.doe".to_string()],

@@ -172,6 +172,13 @@ pub enum AddressMapping {
 #[derive(Default, Clone, Debug)]
 pub struct Directories {
     pub directories: AHashMap<String, Arc<Directory>>,
+    pub lookups: AHashMap<String, Lookup>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Lookup {
+    DomainExists(Arc<Directory>),
+    EmailExists(Arc<Directory>),
 }
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;

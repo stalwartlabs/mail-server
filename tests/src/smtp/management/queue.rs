@@ -51,11 +51,9 @@ const DIRECTORY: &str = r#"
 [directory."local"]
 type = "memory"
 
-[directory."local".options]
-superuser-group = "superusers"
-
 [[directory."local".principals]]
 name = "admin"
+type = "admin"
 description = "Superuser"
 secret = "secret"
 member-of = ["superusers"]
@@ -99,6 +97,7 @@ async fn manage_queue() {
     let directory = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), None)
+        .await
         .unwrap();
     core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
     core.session.config.rcpt.relay = IfBlock::new(true);

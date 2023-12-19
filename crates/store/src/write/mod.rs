@@ -48,8 +48,6 @@ pub mod log;
 pub mod purge;
 
 #[cfg(not(feature = "test_mode"))]
-pub(crate) const ID_ASSIGNMENT_EXPIRY: u64 = 60 * 60; // seconds
-#[cfg(not(feature = "test_mode"))]
 pub(crate) const MAX_COMMIT_ATTEMPTS: u32 = 10;
 #[cfg(not(feature = "test_mode"))]
 pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);

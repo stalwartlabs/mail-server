@@ -21,23 +21,22 @@
  * for more details.
 */
 
-use ahash::AHashMap;
 use store::Store;
 use utils::config::{utils::AsKey, Config};
 
 use crate::{Principal, Type};
 
-use super::{EmailType, MemoryDirectory, NameToId};
+use super::{EmailType, MemoryDirectory};
 
 impl MemoryDirectory {
-    pub fn from_config(
+    pub async fn from_config(
         config: &Config,
         prefix: impl AsKey,
-        _: Option<Store>,
+        id_store: Option<Store>,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let mut directory = MemoryDirectory {
-            names_to_ids: NameToId::Internal(AHashMap::new()),
+            names_to_ids: id_store.into(),
             ..Default::default()
         };
 
@@ -45,32 +44,37 @@ impl MemoryDirectory {
             let name = config
                 .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
-            let typ =
-                match config.value_require((prefix.as_str(), "principals", lookup_id, "type"))? {
-                    "individual" => Type::Individual,
-                    "admin" => Type::Superuser,
-                    "group" => Type::Group,
-                    _ => Type::Individual,
-                };
+            let typ = match config.value((prefix.as_str(), "principals", lookup_id, "type")) {
+                Some("individual") => Type::Individual,
+                Some("admin") => Type::Superuser,
+                Some("group") => Type::Group,
+                _ => Type::Individual,
+            };
 
             // Obtain id
-            let id = directory.names_to_ids.get_or_insert(&name).map_err(|err| {
-                format!(
-                    "Failed to obtain id for principal {} ({}): {:?}",
-                    name, lookup_id, err
-                )
-            })?;
+            let id = directory
+                .names_to_ids
+                .get_or_insert(&name)
+                .await
+                .map_err(|err| {
+                    format!(
+                        "Failed to obtain id for principal {} ({}): {:?}",
+                        name, lookup_id, err
+                    )
+                })?;
 
             // Obtain group ids
             let mut member_of = Vec::new();
             for (_, group) in config.values((prefix.as_str(), "principals", lookup_id, "member-of"))
             {
-                member_of.push(directory.names_to_ids.get_or_insert(group).map_err(|err| {
-                    format!(
-                        "Failed to obtain id for principal {} ({}): {:?}",
-                        name, lookup_id, err
-                    )
-                })?);
+                member_of.push(directory.names_to_ids.get_or_insert(group).await.map_err(
+                    |err| {
+                        format!(
+                            "Failed to obtain id for principal {} ({}): {:?}",
+                            name, lookup_id, err
+                        )
+                    },
+                )?);
             }
 
             // Parse email addresses

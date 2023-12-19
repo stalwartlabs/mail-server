@@ -87,4 +87,5 @@ spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
 track-replies = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
                  "file://%{BASE_PATH}%/etc/spamfilter/scripts/replies_out.sieve"]
 
-greylist = "file://%{BASE_PATH}%/etc/spamfilter/scripts/greylist.sieve"
+greylist = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
+            "file://%{BASE_PATH}%/etc/spamfilter/scripts/greylist.sieve"]

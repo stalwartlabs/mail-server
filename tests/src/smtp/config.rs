@@ -714,7 +714,7 @@ impl KeyLookup for TestEnvelope {
         match key {
             EnvelopeKey::Priority => self.priority as i32,
             EnvelopeKey::Listener => self.listener_id as i32,
-            _ => todo!(),
+            _ => unreachable!(),
         }
     }
 

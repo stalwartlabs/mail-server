@@ -13,3 +13,4 @@ timeout = "10s"
 #max-retry-wait = "1s"
 #min-retry-wait = "500ms"
 #read-from-replicas = false
+disable = true

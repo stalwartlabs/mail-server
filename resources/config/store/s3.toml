@@ -12,6 +12,7 @@ secret-key = "minioadmin"
 #security-token = ""
 #profile = ""
 timeout = "30s"
+disable = true
 
 [store."s3".purge]
 frequency = "0 3 *"

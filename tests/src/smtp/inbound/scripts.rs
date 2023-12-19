@@ -135,7 +135,7 @@ async fn sieve_scripts() {
     )
     .unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config.parse_directory(&ctx.stores, None).unwrap();
+    ctx.directory = config.parse_directory(&ctx.stores, None).await.unwrap();
     let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;

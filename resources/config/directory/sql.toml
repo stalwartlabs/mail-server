@@ -4,7 +4,8 @@
 
 [directory."sql"]
 type = "sql"
-store = "sqlite"
+store = "__SQL_STORE__"
+disable = true
 
 [directory."sql".options]
 catch-all = true

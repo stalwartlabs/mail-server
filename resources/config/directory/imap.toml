@@ -6,6 +6,7 @@
 type = "imap"
 address = "127.0.0.1"
 port = 993
+disable = true
 
 [directory."imap".pool]
 max-connections = 10

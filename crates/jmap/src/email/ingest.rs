@@ -308,8 +308,8 @@ impl JMAP {
                 params.keywords,
                 params
                     .mailbox_ids
-                    .into_iter()
-                    .map(UidMailbox::from)
+                    .iter()
+                    .map(|id| UidMailbox::from(*id))
                     .collect(),
                 params.received_at.unwrap_or_else(now),
             )
@@ -334,6 +334,17 @@ impl JMAP {
 
         // Request FTS index
         let _ = self.housekeeper_tx.send(Event::IndexStart).await;
+
+        tracing::debug!(
+            context = "email_ingest",
+            event = "success",
+            account_id = ?params.account_id,
+            document_id = ?document_id,
+            mailbox_ids = ?params.mailbox_ids,
+            change_id = ?change_id,
+            blob_id = ?blob_id.hash,
+            size = raw_message_len,
+            "Ingested e-mail.");
 
         Ok(IngestedEmail {
             id,

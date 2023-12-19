@@ -88,7 +88,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             None
         }
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.lookup_stores.values().next(),
+        _ => ctx.core.sieve.default_lookup_store.as_ref(),
     };
 
     if let Some(store) = store {
@@ -151,7 +151,7 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
             None
         }
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.lookup_stores.values().next(),
+        _ => ctx.core.sieve.default_lookup_store.as_ref(),
     };
 
     if let Some(store) = store {
@@ -180,7 +180,7 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
 pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.lookup_stores.values().next(),
+        _ => ctx.core.sieve.default_lookup_store.as_ref(),
     };
 
     if let Some(store) = store {
@@ -443,7 +443,7 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
     if !domain.is_empty() {
         let directory = match &ctx.arguments[0] {
             Variable::String(v) if !v.is_empty() => ctx.core.sieve.directories.get(v.as_ref()),
-            _ => ctx.core.sieve.directories.values().next(),
+            _ => ctx.core.sieve.default_directory.as_ref(),
         };
 
         if let Some(directory) = directory {

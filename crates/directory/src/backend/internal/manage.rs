@@ -35,7 +35,7 @@ use super::{
 };
 
 #[async_trait::async_trait]
-pub trait ManageDirectory {
+pub trait ManageDirectory: Sized {
     async fn get_account_id(&self, name: &str) -> crate::Result<Option<u32>>;
     async fn get_or_create_account_id(&self, name: &str) -> crate::Result<u32>;
     async fn get_account_name(&self, account_id: u32) -> crate::Result<Option<String>>;
@@ -65,6 +65,7 @@ pub trait ManageDirectory {
         start_from: Option<&str>,
         limit: usize,
     ) -> crate::Result<Vec<String>>;
+    async fn init(self) -> crate::Result<Self>;
 }
 
 #[async_trait::async_trait]
@@ -197,7 +198,7 @@ impl ManageDirectory for Store {
         }
 
         // Assign accountId
-        let account_id = self
+        principal.id = self
             .assign_document_id(u32::MAX, Collection::Principal)
             .await?;
 
@@ -211,19 +212,19 @@ impl ManageDirectory for Store {
                 (),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::Principal(account_id)),
+                ValueClass::Directory(DirectoryClass::Principal(principal.id)),
                 (&principal).serialize(),
             )
             .set(
                 ValueClass::Directory(DirectoryClass::NameToId(principal.name.into_bytes())),
-                PrincipalIdType::new(account_id, principal.typ.into_base_type()).serialize(),
+                PrincipalIdType::new(principal.id, principal.typ.into_base_type()).serialize(),
             );
 
         // Write email to id mapping
         let ids = if matches!(principal.typ, Type::List) {
             principal.member_of
         } else {
-            vec![account_id]
+            vec![principal.id]
         };
 
         for email in principal.emails {
@@ -235,7 +236,7 @@ impl ManageDirectory for Store {
 
         self.write(batch.build()).await?;
 
-        Ok(account_id)
+        Ok(principal.id)
     }
 
     async fn delete_account(&self, by: QueryBy<'_>) -> crate::Result<()> {
@@ -680,6 +681,41 @@ impl ManageDirectory for Store {
         .await?;
 
         Ok(results)
+    }
+
+    async fn init(self) -> crate::Result<Self> {
+        if let (Ok(admin_user), Ok(admin_pass)) = (
+            std::env::var("SET_ADMIN_USER"),
+            std::env::var("SET_ADMIN_PASS"),
+        ) {
+            if let Some(account_id) = self.get_account_id(&admin_user).await? {
+                self.update_account(
+                    QueryBy::Id(account_id),
+                    vec![PrincipalUpdate {
+                        action: PrincipalAction::Set,
+                        field: PrincipalField::Secrets,
+                        value: PrincipalValue::StringList(vec![admin_pass]),
+                    }],
+                )
+                .await?;
+                eprintln!("Successfully updated administrator password for {admin_user:?}.");
+            } else {
+                self.create_account(Principal {
+                    typ: Type::Superuser,
+                    quota: 0,
+                    name: admin_user.clone(),
+                    secrets: vec![admin_pass],
+                    emails: vec![],
+                    member_of: vec![],
+                    description: "Superuser".to_string().into(),
+                    ..Default::default()
+                })
+                .await?;
+                eprintln!("Successfully created administrator account {admin_user:?}.");
+            }
+            std::process::exit(0);
+        }
+        Ok(self)
     }
 }
 

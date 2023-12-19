@@ -8,6 +8,7 @@ url = "https://localhost:9200"
 user = "elastic"
 password = "myelasticpassword"
 #cloud-id = "my-cloud-id"
+disable = true
 
 [store."elastic".tls]
 allow-invalid-certs = true

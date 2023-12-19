@@ -28,7 +28,7 @@ use roaring::RoaringBitmap;
 use crate::{
     write::{key::KeySerializer, AnyKey, Batch, BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
 
 impl Store {
@@ -272,7 +272,7 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn destroy(&self) {
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS};
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_VALUES};
 
         for subspace in [
             SUBSPACE_VALUES,
@@ -365,7 +365,7 @@ impl Store {
     #[allow(unused_variables)]
 
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
-        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS};
+        use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_VALUES};
 
         self.blob_expire_all().await;
         self.purge_blobs(blob_store).await.unwrap();

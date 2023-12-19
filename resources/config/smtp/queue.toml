@@ -13,7 +13,7 @@ expire = "5d"
 
 [queue.outbound]
 #hostname = "%{HOST}%"
-next-hop = [ { if = "rcpt-domain", in-list = "default/domains", then = "local" }, 
+next-hop = [ { if = "rcpt-domain", in-list = "%{DEFAULT_DIRECTORY}%/domains", then = "local" }, 
              { else = false } ]
 ip-strategy = "ipv4-then-ipv6"
 

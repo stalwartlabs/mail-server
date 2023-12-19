@@ -47,6 +47,10 @@ return-path = ""
 no-capability-check = true
 sign = ["rsa"]
 
+[sieve.trusted.default]
+directory = "%{DEFAULT_DIRECTORY}%"
+store = "%{DEFAULT_STORE}%"
+
 [sieve.trusted.limits]
 redirects = 3
 out-messages = 5

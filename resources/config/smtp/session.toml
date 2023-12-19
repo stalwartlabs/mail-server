@@ -37,7 +37,7 @@ mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
 [session.auth]
 mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
                { else = [] } ]
-directory = [ { if = "listener", ne = "smtp", then = "default" }, 
+directory = [ { if = "listener", ne = "smtp", then = "%{DEFAULT_DIRECTORY}%" }, 
            { else = false } ]
 require = [ { if = "listener", ne = "smtp", then = true},
             { else = false } ]
@@ -58,12 +58,12 @@ wait = "5s"
 #script = "greylist"
 relay = [ { if = "authenticated-as", ne = "", then = true }, 
           { else = false } ]
-#rewrite = [ { all-of = [ { if = "rcpt-domain", in-list = "default/domains" },
+#rewrite = [ { all-of = [ { if = "rcpt-domain", in-list = "%{DEFAULT_DIRECTORY}%/domains" },
 #                         { if = "rcpt", matches = "^([^.]+)\.([^.]+)@(.+)$"}, 
 #                       ], then = "${1}+${2}@${3}" }, 
 #            { else = false } ]
 max-recipients = 25
-directory = "default"
+directory = "%{DEFAULT_DIRECTORY}%"
 
 [session.rcpt.errors]
 total = 5

@@ -5,6 +5,7 @@
 [store."sqlite"]
 type = "sqlite"
 path = "%{BASE_PATH}%/data/index.sqlite3"
+disable = true
 
 #[store."sqlite".pool]
 #max-connections = 10

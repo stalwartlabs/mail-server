@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::fmt::Display;
+
 use tokio::sync::watch;
 use utils::config::cron::SimpleCron;
 
@@ -40,14 +42,22 @@ pub struct PurgeSchedule {
 
 impl PurgeSchedule {
     pub fn spawn(self, mut shutdown_rx: watch::Receiver<bool>) {
-        tracing::debug!("Purge task started for store {:?}.", self.store_id);
+        tracing::debug!(
+            "Purge {} task started for store {:?}.",
+            self.store,
+            self.store_id
+        );
         tokio::spawn(async move {
             loop {
                 if tokio::time::timeout(self.cron.time_to_next(), shutdown_rx.changed())
                     .await
                     .is_ok()
                 {
-                    tracing::debug!("Purge task exiting for store {:?}.", self.store_id);
+                    tracing::debug!(
+                        "Purge {} task exiting for store {:?}.",
+                        self.store,
+                        self.store_id
+                    );
                     return;
                 }
 
@@ -62,16 +72,22 @@ impl PurgeSchedule {
                 if let Err(err) = result {
                     tracing::warn!(
                         "Purge {} task failed for store {:?}: {:?}",
-                        match &self.store {
-                            PurgeStore::Bitmaps(_) => "bitmaps",
-                            PurgeStore::Blobs { .. } => "blobs",
-                            PurgeStore::Lookup(_) => "expired keys",
-                        },
+                        self.store,
                         self.store_id,
                         err
                     );
                 }
             }
         });
+    }
+}
+
+impl Display for PurgeStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PurgeStore::Bitmaps(_) => write!(f, "bitmaps"),
+            PurgeStore::Blobs { .. } => write!(f, "blobs"),
+            PurgeStore::Lookup(_) => write!(f, "expired keys"),
+        }
     }
 }

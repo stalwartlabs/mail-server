@@ -9,6 +9,7 @@ port = 5432
 database = "stalwart"
 user = "postgres"
 password = "mysecretpassword"
+disable = true
 
 [store."postgresql".timeout]
 connect = "15s"

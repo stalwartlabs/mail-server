@@ -70,10 +70,10 @@ async fn main() -> std::io::Result<()> {
             command.exec(client).await;
         }
         Commands::Database(command) => command.exec(client).await,
-        Commands::Account(_) => todo!(),
-        Commands::Domain(_) => todo!(),
-        Commands::List(_) => todo!(),
-        Commands::Group(_) => todo!(),
+        Commands::Account(command) => command.exec(client).await,
+        Commands::Domain(command) => command.exec(client).await,
+        Commands::List(command) => command.exec(client).await,
+        Commands::Group(command) => command.exec(client).await,
         Commands::Queue(command) => command.exec(client).await,
         Commands::Report(command) => command.exec(client).await,
     }

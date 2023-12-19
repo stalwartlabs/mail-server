@@ -47,20 +47,32 @@ const RETRY_ATTEMPTS: usize = 5;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Principal {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<u32>,
+
     #[serde(rename = "type")]
     pub typ: Option<Type>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota: Option<u32>,
+
     #[serde(rename = "usedQuota")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub used_quota: Option<u32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emails: Vec<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "memberOf")]
     pub member_of: Vec<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }

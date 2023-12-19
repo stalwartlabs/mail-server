@@ -36,7 +36,7 @@ use store::backend::memory::MemoryStore;
 use tokio::runtime::Handle;
 
 use crate::{
-    core::SMTP,
+    core::{Lookup, SMTP},
     queue::{DomainPart, InstantFromTimestamp, Message},
 };
 
@@ -166,12 +166,17 @@ impl SMTP {
                             }
                             Recipient::List(list) => {
                                 if let Some(list) = self.sieve.lookup.get(&list) {
-                                    if let store::LookupStore::Memory(list) = list.as_ref() {
-                                        if let MemoryStore::List(list) = list.as_ref() {
-                                            for rcpt in &list.set {
-                                                handle.block_on(
-                                                    message.add_recipient(rcpt, &self.queue.config),
-                                                );
+                                    if let Lookup::Store(list) = list {
+                                        if let store::LookupStore::Memory(list) = &list.store {
+                                            if let MemoryStore::List(list) = list.as_ref() {
+                                                for rcpt in &list.set {
+                                                    handle.block_on(
+                                                        message.add_recipient(
+                                                            rcpt,
+                                                            &self.queue.config,
+                                                        ),
+                                                    );
+                                                }
                                             }
                                         }
                                     }

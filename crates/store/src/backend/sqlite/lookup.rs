@@ -150,10 +150,10 @@ impl IntoRows for Option<&Row<'_>> {
     }
 
     fn into_rows(self) -> crate::Rows {
-        todo!()
+        unreachable!()
     }
 
     fn into_named_rows(self) -> crate::NamedRows {
-        todo!()
+        unreachable!()
     }
 }

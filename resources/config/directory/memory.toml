@@ -4,6 +4,7 @@
 
 [directory."memory"]
 type = "memory"
+disable = true
 
 [directory."memory".options]
 catch-all = true

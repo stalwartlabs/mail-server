@@ -77,7 +77,7 @@ impl JMAP {
                     RequestError::blank(
                         StatusCode::BAD_REQUEST.as_u16(),
                         "Invalid parameters",
-                        "Failed to deserialize principal object",
+                        "Failed to deserialize create request",
                     )
                     .into_http_response()
                 }

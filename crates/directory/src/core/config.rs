@@ -37,35 +37,42 @@ use ahash::AHashMap;
 
 use crate::{
     backend::{
-        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-        sql::SqlDirectory,
+        imap::ImapDirectory, internal::manage::ManageDirectory, ldap::LdapDirectory,
+        memory::MemoryDirectory, smtp::SmtpDirectory, sql::SqlDirectory,
     },
-    AddressMapping, Directories, Directory, DirectoryInner,
+    AddressMapping, Directories, Directory, DirectoryInner, Lookup,
 };
 
 use super::cache::CachedDirectory;
 
+#[async_trait::async_trait]
 pub trait ConfigDirectory {
-    fn parse_directory(
+    async fn parse_directory(
         &self,
         stores: &Stores,
         id_store: Option<&str>,
     ) -> utils::config::Result<Directories>;
 }
 
+#[async_trait::async_trait]
 impl ConfigDirectory for Config {
-    fn parse_directory(
+    async fn parse_directory(
         &self,
         stores: &Stores,
         id_store: Option<&str>,
     ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
+            lookups: AHashMap::new(),
         };
         let id_store = id_store.and_then(|id| stores.stores.get(id).cloned());
 
         for id in self.sub_keys("directory") {
             // Parse directory
+            if self.property_or_static::<bool>(("directory", id, "disable"), "false")? {
+                tracing::debug!("Skipping disabled directory {id:?}.");
+                continue;
+            }
             let protocol = self.value_require(("directory", id, "type"))?;
             let prefix = ("directory", id);
             let store = match protocol {
@@ -79,6 +86,16 @@ impl ConfigDirectory for Config {
                                 "Failed to find store {:?} for directory {:?}.",
                                 self.value_require(("directory", id, "store")).unwrap(),
                                 id
+                            )
+                        })?
+                        .init()
+                        .await
+                        .map_err(|err| {
+                            format!(
+                                "Failed to initialize store {:?} for directory {:?}: {:?}.",
+                                self.value_require(("directory", id, "store")).unwrap(),
+                                id,
+                                err
                             )
                         })?,
                 ),
@@ -96,31 +113,40 @@ impl ConfigDirectory for Config {
                 "imap" => DirectoryInner::Imap(ImapDirectory::from_config(self, prefix)?),
                 "smtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, false)?),
                 "lmtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, true)?),
-                "memory" => DirectoryInner::Memory(MemoryDirectory::from_config(
-                    self,
-                    prefix,
-                    id_store.clone(),
-                )?),
+                "memory" => DirectoryInner::Memory(
+                    MemoryDirectory::from_config(self, prefix, id_store.clone()).await?,
+                ),
                 unknown => {
                     return Err(format!("Unknown directory type: {unknown:?}"));
                 }
             };
 
-            config.directories.insert(
-                id.to_string(),
-                Arc::new(Directory {
-                    store,
-                    catch_all: AddressMapping::from_config(
-                        self,
-                        ("directory", id, "options.catch-all"),
-                    )?,
-                    subaddressing: AddressMapping::from_config(
-                        self,
-                        ("directory", id, "options.subaddressing"),
-                    )?,
-                    cache: CachedDirectory::try_from_config(self, ("directory", id))?,
-                }),
+            // Build directory
+            let directory = Arc::new(Directory {
+                store,
+                catch_all: AddressMapping::from_config(
+                    self,
+                    ("directory", id, "options.catch-all"),
+                )?,
+                subaddressing: AddressMapping::from_config(
+                    self,
+                    ("directory", id, "options.subaddressing"),
+                )?,
+                cache: CachedDirectory::try_from_config(self, ("directory", id))?,
+            });
+
+            // Add lookups
+            config.lookups.insert(
+                format!("{id}/domains"),
+                Lookup::DomainExists(directory.clone()),
             );
+            config.lookups.insert(
+                format!("{id}/recipients"),
+                Lookup::EmailExists(directory.clone()),
+            );
+
+            // Add directory
+            config.directories.insert(id.to_string(), directory);
         }
 
         Ok(config)

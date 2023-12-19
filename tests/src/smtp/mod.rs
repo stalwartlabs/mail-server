@@ -440,6 +440,8 @@ impl TestConfig for SieveCore {
             sign: vec![],
             directories: Default::default(),
             lookup_stores: Default::default(),
+            default_lookup_store: None,
+            default_directory: None,
         }
     }
 }

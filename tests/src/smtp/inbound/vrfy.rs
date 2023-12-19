@@ -69,6 +69,7 @@ async fn vrfy_expn() {
     let directory = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), None)
+        .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new(Some(MaybeDynValue::Static(
