@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::vec;
+
 use reqwest::Method;
 use serde_json::Value;
 
@@ -41,19 +43,27 @@ impl ListCommands {
                 members,
             } => {
                 let principal = Principal {
-                    id: None,
                     typ: Some(Type::List),
-                    quota: None,
-                    used_quota: None,
                     name: name.clone().into(),
-                    secrets: vec![],
                     emails: vec![email],
-                    member_of: members.unwrap_or_default(),
                     description,
+                    ..Default::default()
                 };
                 let account_id = client
                     .http_request::<u32, _>(Method::POST, "/admin/principal", Some(principal))
                     .await;
+                if let Some(members) = members {
+                    client
+                        .http_request::<Value, _>(
+                            Method::PATCH,
+                            &format!("/admin/principal/{name}"),
+                            Some(vec![PrincipalUpdate::set(
+                                PrincipalField::Members,
+                                PrincipalValue::StringList(members),
+                            )]),
+                        )
+                        .await;
+                }
                 eprintln!("Successfully created mailing list {name:?} with id {account_id}.");
             }
             ListCommands::Update {
@@ -78,7 +88,7 @@ impl ListCommands {
                 }
                 if let Some(members) = members {
                     changes.push(PrincipalUpdate::set(
-                        PrincipalField::MemberOf,
+                        PrincipalField::Members,
                         PrincipalValue::StringList(members),
                     ));
                 }
@@ -112,7 +122,7 @@ impl ListCommands {
                                 .into_iter()
                                 .map(|group| {
                                     PrincipalUpdate::add_item(
-                                        PrincipalField::MemberOf,
+                                        PrincipalField::Members,
                                         PrincipalValue::String(group),
                                     )
                                 })
@@ -132,7 +142,7 @@ impl ListCommands {
                                 .into_iter()
                                 .map(|group| {
                                     PrincipalUpdate::remove_item(
-                                        PrincipalField::MemberOf,
+                                        PrincipalField::Members,
                                         PrincipalValue::String(group),
                                     )
                                 })

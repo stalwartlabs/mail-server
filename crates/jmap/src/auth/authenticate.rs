@@ -174,10 +174,13 @@ impl JMAP {
     ) -> Option<AccessToken> {
         match self
             .directory
-            .query(QueryBy::Credentials(&Credentials::Plain {
-                username: username.to_string(),
-                secret: secret.to_string(),
-            }))
+            .query(
+                QueryBy::Credentials(&Credentials::Plain {
+                    username: username.to_string(),
+                    secret: secret.to_string(),
+                }),
+                true,
+            )
             .await
         {
             Ok(Some(principal)) => AccessToken::new(principal).into(),
@@ -192,7 +195,10 @@ impl JMAP {
     pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
         // Create access token
         self.update_access_token(AccessToken::new(
-            self.directory.query(QueryBy::Id(account_id)).await.ok()??,
+            self.directory
+                .query(QueryBy::Id(account_id), true)
+                .await
+                .ok()??,
         ))
         .await
     }

@@ -69,7 +69,7 @@ impl JMAP {
                     .await
                 }
                 Ok(None) => {
-                    let account_quota = match self.directory.query(QueryBy::Id(*uid)).await {
+                    let account_quota = match self.directory.query(QueryBy::Id(*uid), false).await {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
                         Err(_) => {

@@ -25,10 +25,7 @@ use std::{collections::HashMap, fmt::Display, io::Read};
 
 use jmap_client::{
     client::Client,
-    principal::{
-        query::{self},
-        Property,
-    },
+    principal::query::{self},
 };
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +70,10 @@ pub struct Principal {
     #[serde(rename = "memberOf")]
     pub member_of: Vec<String>,
 
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "members")]
+    pub members: Vec<String>,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
@@ -112,6 +113,8 @@ pub enum PrincipalField {
     Emails,
     #[serde(rename = "memberOf")]
     MemberOf,
+    #[serde(rename = "members")]
+    Members,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -137,7 +140,6 @@ pub enum PrincipalValue {
     String(String),
     StringList(Vec<String>),
     Integer(u32),
-    Type(Type),
 }
 
 impl PrincipalUpdate {
@@ -196,27 +198,6 @@ impl<T, E: Display> UnwrapResult<T> for Result<T, E> {
 
 trait TableName {
     fn table_name(&self) -> &'static str;
-}
-
-impl TableName for Property {
-    fn table_name(&self) -> &'static str {
-        match self {
-            Property::Id => "Id",
-            Property::Type => "Type",
-            Property::Name => "Name",
-            Property::Description => "Description",
-            Property::Email => "E-mail",
-            Property::Timezone => "Timezone",
-            Property::Capabilities => "Capabilities",
-            Property::Aliases => "Aliases",
-            Property::Secret => "Secret",
-            Property::DKIM => "DKIM",
-            Property::Quota => "Quota",
-            Property::Picture => "Picture",
-            Property::Members => "Members",
-            Property::ACL => "ACL",
-        }
-    }
 }
 
 pub fn read_file(path: &str) -> Vec<u8> {

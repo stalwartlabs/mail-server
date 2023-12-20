@@ -97,7 +97,7 @@ async fn smtp_directory() {
         let result: LookupResult = match item {
             Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
             Item::Authenticate(v) => handle
-                .query(QueryBy::Credentials(v))
+                .query(QueryBy::Credentials(v), true)
                 .await
                 .unwrap()
                 .is_some()
@@ -129,7 +129,7 @@ async fn smtp_directory() {
                 let result: LookupResult = match &item {
                     Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
                     Item::Authenticate(v) => handle
-                        .query(QueryBy::Credentials(v))
+                        .query(QueryBy::Credentials(v), true)
                         .await
                         .unwrap()
                         .is_some()

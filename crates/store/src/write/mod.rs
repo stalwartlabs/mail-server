@@ -143,6 +143,8 @@ pub enum ValueClass {
 pub enum DirectoryClass {
     NameToId(Vec<u8>),
     EmailToId(Vec<u8>),
+    MemberOf { principal_id: u32, member_of: u32 },
+    Members { principal_id: u32, has_member: u32 },
     Domain(Vec<u8>),
     Principal(u32),
     UsedQuota(u32),

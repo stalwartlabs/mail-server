@@ -76,7 +76,7 @@ impl<T: AsyncRead> Session<T> {
                                         if let Some(account_name) = data
                                             .jmap
                                             .directory
-                                            .query(QueryBy::Id(id.document_id()))
+                                            .query(QueryBy::Id(id.document_id()), false)
                                             .await
                                             .unwrap_or_default()
                                             .map(|p| p.name)
@@ -248,7 +248,7 @@ impl<T: AsyncRead> Session<T> {
                     let (acl_account_id, id) = match data
                         .jmap
                         .directory
-                        .query(QueryBy::Name(arguments.identifier.as_ref().unwrap()))
+                        .query(QueryBy::Name(arguments.identifier.as_ref().unwrap()), false)
                         .await
                     {
                         Ok(Some(principal)) => (principal.id, Value::Id(Id::from(principal.id))),

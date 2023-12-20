@@ -158,10 +158,13 @@ async fn internal_directory() {
         assert_eq!(store.vrfy("jane").await.unwrap(), vec!["jane@example.org"]);
         assert_eq!(
             store
-                .query(QueryBy::Credentials(&Credentials::new(
-                    "jane".to_string(),
-                    "my_secret".to_string()
-                )))
+                .query(
+                    QueryBy::Credentials(&Credentials::new(
+                        "jane".to_string(),
+                        "my_secret".to_string()
+                    )),
+                    true
+                )
                 .await
                 .unwrap(),
             Some(Principal {
@@ -176,10 +179,13 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .query(QueryBy::Credentials(&Credentials::new(
-                    "jane".to_string(),
-                    "wrong_password".to_string()
-                )))
+                .query(
+                    QueryBy::Credentials(&Credentials::new(
+                        "jane".to_string(),
+                        "wrong_password".to_string()
+                    )),
+                    true
+                )
                 .await
                 .unwrap(),
             None
@@ -208,11 +214,22 @@ async fn internal_directory() {
                     name: "list".to_string(),
                     typ: Type::List,
                     emails: vec!["list@example.org".to_string()],
-                    member_of: vec!["john".to_string(), "jane".to_string()],
                     ..Default::default()
                 })
                 .await,
             Ok(2)
+        );
+        assert_eq!(
+            store
+                .update_account(
+                    QueryBy::Name("list"),
+                    vec![PrincipalUpdate::set(
+                        PrincipalField::Members,
+                        PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
+                    ),],
+                )
+                .await,
+            Ok(())
         );
         assert!(store.rcpt("list@example.org").await.unwrap());
         assert_eq!(
@@ -221,15 +238,15 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .map_group_ids(store.query(QueryBy::Name("list")).await.unwrap().unwrap())
+                .query(QueryBy::Name("list"), true)
                 .await
+                .unwrap()
                 .unwrap(),
             Principal {
                 name: "list".to_string(),
                 id: 2,
                 typ: Type::List,
                 emails: vec!["list@example.org".to_string()],
-                member_of: vec!["john".to_string(), "jane".to_string()],
                 ..Default::default()
             }
         );
@@ -283,7 +300,13 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .map_group_ids(store.query(QueryBy::Name("john")).await.unwrap().unwrap())
+                .map_group_ids(
+                    store
+                        .query(QueryBy::Name("john"), true)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                )
                 .await
                 .unwrap(),
             Principal {
@@ -291,7 +314,11 @@ async fn internal_directory() {
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
                 emails: vec!["john@example.org".to_string()],
-                member_of: vec!["sales".to_string(), "support".to_string()],
+                member_of: vec![
+                    "list".to_string(),
+                    "sales".to_string(),
+                    "support".to_string()
+                ],
                 ..Default::default()
             }
         );
@@ -327,7 +354,13 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .map_group_ids(store.query(QueryBy::Name("john")).await.unwrap().unwrap())
+                .map_group_ids(
+                    store
+                        .query(QueryBy::Name("john"), true)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                )
                 .await
                 .unwrap(),
             Principal {
@@ -335,7 +368,7 @@ async fn internal_directory() {
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
                 emails: vec!["john@example.org".to_string()],
-                member_of: vec!["sales".to_string()],
+                member_of: vec!["list".to_string(), "sales".to_string()],
                 ..Default::default()
             }
         );
@@ -380,7 +413,7 @@ async fn internal_directory() {
             store
                 .map_group_ids(
                     store
-                        .query(QueryBy::Name("john.doe"))
+                        .query(QueryBy::Name("john.doe"), true)
                         .await
                         .unwrap()
                         .unwrap()
@@ -394,7 +427,7 @@ async fn internal_directory() {
                 emails: vec!["john.doe@example.org".to_string()],
                 quota: 1024,
                 typ: Type::Superuser,
-                member_of: vec!["sales".to_string()],
+                member_of: vec!["list".to_string(), "sales".to_string()],
                 ..Default::default()
             }
         );
@@ -408,7 +441,7 @@ async fn internal_directory() {
                 .update_account(
                     QueryBy::Name("list"),
                     vec![PrincipalUpdate::remove_item(
-                        PrincipalField::MemberOf,
+                        PrincipalField::Members,
                         PrincipalValue::String("john.doe".to_string()),
                     )],
                 )
@@ -416,25 +449,15 @@ async fn internal_directory() {
             Ok(())
         );
         assert_eq!(
-            store
-                .map_group_ids(store.query(QueryBy::Name("list")).await.unwrap().unwrap())
-                .await
-                .unwrap(),
-            Principal {
-                name: "list".to_string(),
-                id: 2,
-                typ: Type::List,
-                emails: vec!["list@example.org".to_string()],
-                member_of: vec!["jane".to_string()],
-                ..Default::default()
-            }
+            store.email_to_ids("list@example.org").await.unwrap(),
+            vec![1]
         );
         assert_eq!(
             store
                 .update_account(
                     QueryBy::Name("list"),
                     vec![PrincipalUpdate::add_item(
-                        PrincipalField::MemberOf,
+                        PrincipalField::Members,
                         PrincipalValue::String("john.doe".to_string()),
                     )],
                 )
@@ -442,18 +465,8 @@ async fn internal_directory() {
             Ok(())
         );
         assert_eq!(
-            store
-                .map_group_ids(store.query(QueryBy::Name("list")).await.unwrap().unwrap())
-                .await
-                .unwrap(),
-            Principal {
-                name: "list".to_string(),
-                id: 2,
-                typ: Type::List,
-                emails: vec!["list@example.org".to_string()],
-                member_of: vec!["jane".to_string(), "john.doe".to_string()],
-                ..Default::default()
-            }
+            store.email_to_ids("list@example.org").await.unwrap(),
+            vec![0, 1]
         );
 
         // Field validation

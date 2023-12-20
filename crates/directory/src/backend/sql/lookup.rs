@@ -29,7 +29,11 @@ use crate::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type
 use super::{SqlDirectory, SqlMappings};
 
 impl SqlDirectory {
-    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(
+        &self,
+        by: QueryBy<'_>,
+        return_member_of: bool,
+    ) -> crate::Result<Option<Principal<u32>>> {
         let mut account_id = None;
         let account_name;
         let mut secret = None;
@@ -106,7 +110,7 @@ impl SqlDirectory {
 
         if self.has_id_store() {
             // Obtain members
-            if !self.mappings.query_members.is_empty() {
+            if return_member_of && !self.mappings.query_members.is_empty() {
                 for row in self
                     .store
                     .query::<Rows>(

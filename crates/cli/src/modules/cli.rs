@@ -273,9 +273,9 @@ pub enum GroupCommands {
         /// Description
         #[clap(short, long)]
         description: Option<String>,
-        /// Groups that this group is a member of
+        /// Group members
         #[clap(short, long)]
-        member_of: Option<Vec<String>>,
+        members: Option<Vec<String>>,
     },
 
     /// Update an existing group
@@ -291,25 +291,25 @@ pub enum GroupCommands {
         description: Option<String>,
         /// Update groups that this group is a member of
         #[clap(short, long)]
-        member_of: Option<Vec<String>>,
+        members: Option<Vec<String>>,
     },
 
-    /// Add a group to other groups
-    AddToGroup {
+    /// Add members to a group
+    AddMembers {
         /// Group name
         name: String,
         /// Groups to add
         #[clap(required = true)]
-        member_of: Vec<String>,
+        members: Vec<String>,
     },
 
-    /// Remove a group account from groups
-    RemoveFromGroup {
+    /// Remove members from a group
+    RemoveMembers {
         /// Group name
         name: String,
         /// Groups to remove
         #[clap(required = true)]
-        member_of: Vec<String>,
+        members: Vec<String>,
     },
 
     /// Display an existing group

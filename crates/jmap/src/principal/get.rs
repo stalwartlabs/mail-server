@@ -70,7 +70,7 @@ impl JMAP {
             // Obtain the principal
             let principal = if let Some(principal) = self
                 .directory
-                .query(QueryBy::Id(id.document_id()))
+                .query(QueryBy::Id(id.document_id()), false)
                 .await
                 .map_err(|_| MethodError::ServerPartialFail)?
             {

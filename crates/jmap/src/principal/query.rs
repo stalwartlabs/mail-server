@@ -49,7 +49,7 @@ impl JMAP {
                 Filter::Name(name) => {
                     if let Some(principal) = self
                         .directory
-                        .query(QueryBy::Name(name.as_str()))
+                        .query(QueryBy::Name(name.as_str()), false)
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {

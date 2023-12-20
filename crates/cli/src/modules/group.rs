@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::vec;
+
 use reqwest::Method;
 use serde_json::Value;
 
@@ -38,22 +40,30 @@ impl GroupCommands {
                 name,
                 email,
                 description,
-                member_of,
+                members,
             } => {
                 let principal = Principal {
-                    id: None,
                     typ: Some(Type::Group),
-                    quota: None,
-                    used_quota: None,
                     name: name.clone().into(),
-                    secrets: vec![],
                     emails: email.map(|e| vec![e]).unwrap_or_default(),
-                    member_of: member_of.unwrap_or_default(),
                     description,
+                    ..Default::default()
                 };
                 let account_id = client
                     .http_request::<u32, _>(Method::POST, "/admin/principal", Some(principal))
                     .await;
+                if let Some(members) = members {
+                    client
+                        .http_request::<Value, _>(
+                            Method::PATCH,
+                            &format!("/admin/principal/{name}"),
+                            Some(vec![PrincipalUpdate::set(
+                                PrincipalField::Members,
+                                PrincipalValue::StringList(members),
+                            )]),
+                        )
+                        .await;
+                }
                 eprintln!("Successfully created group {name:?} with id {account_id}.");
             }
             GroupCommands::Update {
@@ -61,7 +71,7 @@ impl GroupCommands {
                 new_name,
                 email,
                 description,
-                member_of,
+                members,
             } => {
                 let mut changes = Vec::new();
                 if let Some(new_name) = new_name {
@@ -76,10 +86,10 @@ impl GroupCommands {
                         PrincipalValue::StringList(vec![email]),
                     ));
                 }
-                if let Some(member_of) = member_of {
+                if let Some(members) = members {
                     changes.push(PrincipalUpdate::set(
-                        PrincipalField::MemberOf,
-                        PrincipalValue::StringList(member_of),
+                        PrincipalField::Members,
+                        PrincipalValue::StringList(members),
                     ));
                 }
                 if let Some(description) = description {
@@ -102,17 +112,17 @@ impl GroupCommands {
                     eprintln!("No changes to apply.");
                 }
             }
-            GroupCommands::AddToGroup { name, member_of } => {
+            GroupCommands::AddMembers { name, members } => {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
                         &format!("/admin/principal/{name}"),
                         Some(
-                            member_of
+                            members
                                 .into_iter()
                                 .map(|group| {
                                     PrincipalUpdate::add_item(
-                                        PrincipalField::MemberOf,
+                                        PrincipalField::Members,
                                         PrincipalValue::String(group),
                                     )
                                 })
@@ -122,17 +132,17 @@ impl GroupCommands {
                     .await;
                 eprintln!("Successfully updated group {name:?}.");
             }
-            GroupCommands::RemoveFromGroup { name, member_of } => {
+            GroupCommands::RemoveMembers { name, members } => {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
                         &format!("/admin/principal/{name}"),
                         Some(
-                            member_of
+                            members
                                 .into_iter()
                                 .map(|group| {
                                     PrincipalUpdate::remove_item(
-                                        PrincipalField::MemberOf,
+                                        PrincipalField::Members,
                                         PrincipalValue::String(group),
                                     )
                                 })

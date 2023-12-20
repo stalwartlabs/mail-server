@@ -27,13 +27,17 @@ use store::{
     IterateParams, Store, ValueKey,
 };
 
-use crate::{Principal, QueryBy};
+use crate::{Principal, QueryBy, Type};
 
-use super::manage::ManageDirectory;
+use super::{manage::ManageDirectory, PrincipalIdType};
 
 #[async_trait::async_trait]
 pub trait DirectoryStore: Sync + Send {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>>;
+    async fn query(
+        &self,
+        by: QueryBy<'_>,
+        return_member_of: bool,
+    ) -> crate::Result<Option<Principal<u32>>>;
     async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>>;
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
@@ -44,29 +48,28 @@ pub trait DirectoryStore: Sync + Send {
 
 #[async_trait::async_trait]
 impl DirectoryStore for Store {
-    async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
-        let (username, secret) = match by {
-            QueryBy::Name(name) => (name, None),
-            QueryBy::Id(account_id) => {
-                return self
-                    .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
-                        DirectoryClass::Principal(account_id),
-                    )))
-                    .await
-                    .map_err(Into::into);
-            }
+    async fn query(
+        &self,
+        by: QueryBy<'_>,
+        return_member_of: bool,
+    ) -> crate::Result<Option<Principal<u32>>> {
+        let (account_id, secret) = match by {
+            QueryBy::Name(name) => (self.get_account_id(name).await?, None),
+            QueryBy::Id(account_id) => (account_id.into(), None),
             QueryBy::Credentials(credentials) => match credentials {
                 Credentials::Plain { username, secret } => {
-                    (username.as_str(), secret.as_str().into())
+                    (self.get_account_id(username).await?, secret.as_str().into())
                 }
-                Credentials::OAuthBearer { token } => (token.as_str(), token.as_str().into()),
+                Credentials::OAuthBearer { token } => {
+                    (self.get_account_id(token).await?, token.as_str().into())
+                }
                 Credentials::XOauth2 { username, secret } => {
-                    (username.as_str(), secret.as_str().into())
+                    (self.get_account_id(username).await?, secret.as_str().into())
                 }
             },
         };
 
-        if let Some(account_id) = self.get_account_id(username).await? {
+        if let Some(account_id) = account_id {
             match (
                 self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
                     DirectoryClass::Principal(account_id),
@@ -74,10 +77,19 @@ impl DirectoryStore for Store {
                 .await?,
                 secret,
             ) {
-                (Some(principal), Some(secret)) if principal.verify_secret(secret).await => {
+                (Some(mut principal), Some(secret)) if principal.verify_secret(secret).await => {
+                    if return_member_of {
+                        principal.member_of = self.get_member_of(principal.id).await?;
+                    }
                     Ok(Some(principal))
                 }
-                (Some(principal), None) => Ok(Some(principal)),
+                (Some(mut principal), None) => {
+                    if return_member_of {
+                        principal.member_of = self.get_member_of(principal.id).await?;
+                    }
+
+                    Ok(Some(principal))
+                }
                 _ => Ok(None),
             }
         } else {
@@ -86,12 +98,20 @@ impl DirectoryStore for Store {
     }
 
     async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>> {
-        self.get_value::<Vec<u32>>(ValueKey::from(ValueClass::Directory(
-            DirectoryClass::EmailToId(email.as_bytes().to_vec()),
-        )))
-        .await
-        .map(|ids| ids.unwrap_or_default())
-        .map_err(Into::into)
+        if let Some(ptype) = self
+            .get_value::<PrincipalIdType>(ValueKey::from(ValueClass::Directory(
+                DirectoryClass::EmailToId(email.as_bytes().to_vec()),
+            )))
+            .await?
+        {
+            if ptype.typ != Type::List {
+                Ok(vec![ptype.account_id])
+            } else {
+                self.get_members(ptype.account_id).await.map_err(Into::into)
+            }
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {

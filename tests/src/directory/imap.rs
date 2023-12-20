@@ -79,7 +79,7 @@ async fn imap_directory() {
         assert_eq!(
             &LookupResult::from(
                 handle
-                    .query(QueryBy::Credentials(item.as_credentials()))
+                    .query(QueryBy::Credentials(item.as_credentials()), true)
                     .await
                     .unwrap()
                     .is_some()
@@ -99,7 +99,7 @@ async fn imap_directory() {
             tokio::spawn(async move {
                 LookupResult::from(
                     handle
-                        .query(QueryBy::Credentials(item.as_credentials()))
+                        .query(QueryBy::Credentials(item.as_credentials()), true)
                         .await
                         .unwrap()
                         .is_some(),

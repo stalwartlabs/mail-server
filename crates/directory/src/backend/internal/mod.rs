@@ -50,7 +50,6 @@ impl Serialize for &Principal<u32> {
                 + self.name.len()
                 + self.emails.iter().map(|s| s.len()).sum::<usize>()
                 + self.secrets.iter().map(|s| s.len()).sum::<usize>()
-                + self.member_of.len() * U32_LEN
                 + self.description.as_ref().map(|s| s.len()).unwrap_or(0),
         )
         .write(1u8)
@@ -67,11 +66,6 @@ impl Serialize for &Principal<u32> {
             for value in list {
                 serializer = serializer.write_leb128(value.len()).write(value.as_bytes());
             }
-        }
-
-        serializer = serializer.write_leb128(self.member_of.len());
-        for id in &self.member_of {
-            serializer = serializer.write_leb128(*id);
         }
 
         serializer.finalize()
@@ -134,7 +128,7 @@ fn deserialize(bytes: &[u8]) -> Option<Principal<u32>> {
         })?,
         secrets: deserialize_string_list(&mut bytes)?,
         emails: deserialize_string_list(&mut bytes)?,
-        member_of: deserialize_u32_list(&mut bytes)?,
+        member_of: Vec::new(),
     }
     .into()
 }
@@ -155,6 +149,8 @@ pub enum PrincipalField {
     Emails,
     #[serde(rename = "memberOf")]
     MemberOf,
+    #[serde(rename = "members")]
+    Members,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -180,7 +176,6 @@ pub enum PrincipalValue {
     String(String),
     StringList(Vec<String>),
     Integer(u32),
-    Type(Type),
 }
 
 impl PrincipalUpdate {
@@ -219,6 +214,7 @@ impl Display for PrincipalField {
             PrincipalField::Secrets => write!(f, "secrets"),
             PrincipalField::Emails => write!(f, "emails"),
             PrincipalField::MemberOf => write!(f, "memberOf"),
+            PrincipalField::Members => write!(f, "members"),
         }
     }
 }
@@ -241,19 +237,11 @@ fn deserialize_string_list(bytes: &mut Iter<'_, u8>) -> Option<Vec<String>> {
     Some(list)
 }
 
-fn deserialize_u32_list(bytes: &mut Iter<'_, u8>) -> Option<Vec<u32>> {
-    let len = bytes.next_leb128()?;
-    let mut list = Vec::with_capacity(len);
-    for _ in 0..len {
-        list.push(bytes.next_leb128()?);
-    }
-    Some(list)
-}
-
 impl Type {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
-            "individual" | "superuser" => Some(Type::Individual),
+            "individual" => Some(Type::Individual),
+            "superuser" => Some(Type::Superuser),
             "group" => Some(Type::Group),
             "resource" => Some(Type::Resource),
             "location" => Some(Type::Location),

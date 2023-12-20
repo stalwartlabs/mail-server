@@ -600,7 +600,7 @@ impl JMAP {
             access_token.quota as i64
         } else {
             self.directory
-                .query(QueryBy::Id(account_id))
+                .query(QueryBy::Id(account_id), false)
                 .await
                 .map_err(|err| {
                     tracing::error!(

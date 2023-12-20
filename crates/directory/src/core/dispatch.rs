@@ -26,11 +26,15 @@ use crate::{
 };
 
 impl Directory {
-    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(
+        &self,
+        by: QueryBy<'_>,
+        return_member_of: bool,
+    ) -> crate::Result<Option<Principal<u32>>> {
         match &self.store {
-            DirectoryInner::Internal(store) => store.query(by).await,
-            DirectoryInner::Ldap(store) => store.query(by).await,
-            DirectoryInner::Sql(store) => store.query(by).await,
+            DirectoryInner::Internal(store) => store.query(by, return_member_of).await,
+            DirectoryInner::Ldap(store) => store.query(by, return_member_of).await,
+            DirectoryInner::Sql(store) => store.query(by, return_member_of).await,
             DirectoryInner::Imap(store) => store.query(by).await,
             DirectoryInner::Smtp(store) => store.query(by).await,
             DirectoryInner::Memory(store) => store.query(by).await,

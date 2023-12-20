@@ -133,10 +133,13 @@ async fn sql_directory() {
         // Test authentication
         assert_eq!(
             handle
-                .query(QueryBy::Credentials(&Credentials::Plain {
-                    username: "john".to_string(),
-                    secret: "12345".to_string()
-                }))
+                .query(
+                    QueryBy::Credentials(&Credentials::Plain {
+                        username: "john".to_string(),
+                        secret: "12345".to_string()
+                    }),
+                    true
+                )
                 .await
                 .unwrap()
                 .unwrap(),
@@ -157,10 +160,13 @@ async fn sql_directory() {
         );
         assert_eq!(
             handle
-                .query(QueryBy::Credentials(&Credentials::Plain {
-                    username: "bill".to_string(),
-                    secret: "password".to_string()
-                }))
+                .query(
+                    QueryBy::Credentials(&Credentials::Plain {
+                        username: "bill".to_string(),
+                        secret: "password".to_string()
+                    }),
+                    true
+                )
                 .await
                 .unwrap()
                 .unwrap(),
@@ -178,17 +184,24 @@ async fn sql_directory() {
             }
         );
         assert!(handle
-            .query(QueryBy::Credentials(&Credentials::Plain {
-                username: "bill".to_string(),
-                secret: "invalid".to_string()
-            }))
+            .query(
+                QueryBy::Credentials(&Credentials::Plain {
+                    username: "bill".to_string(),
+                    secret: "invalid".to_string()
+                }),
+                true
+            )
             .await
             .unwrap()
             .is_none());
 
         // Get user by name
         assert_eq!(
-            handle.query(QueryBy::Name("jane")).await.unwrap().unwrap(),
+            handle
+                .query(QueryBy::Name("jane"), true)
+                .await
+                .unwrap()
+                .unwrap(),
             Principal {
                 id: base_store.get_account_id("jane").await.unwrap().unwrap(),
                 name: "jane".to_string(),
@@ -203,7 +216,11 @@ async fn sql_directory() {
 
         // Get group by name
         assert_eq!(
-            handle.query(QueryBy::Name("sales")).await.unwrap().unwrap(),
+            handle
+                .query(QueryBy::Name("sales"), true)
+                .await
+                .unwrap()
+                .unwrap(),
             Principal {
                 id: base_store.get_account_id("sales").await.unwrap().unwrap(),
                 name: "sales".to_string(),

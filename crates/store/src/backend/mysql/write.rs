@@ -131,7 +131,8 @@ impl MysqlStore {
                     let key = key.serialize(false);
 
                     if let ValueOp::Set(value) = op {
-                        let s = if let Some(exists) = asserted_values.get(&key) {
+                        let exists = asserted_values.get(&key);
+                        let s = if let Some(exists) = exists {
                             if *exists {
                                 trx.prep(&format!("UPDATE {} SET v = :v WHERE k = :k", table))
                                     .await?
@@ -149,7 +150,7 @@ impl MysqlStore {
 
                         match trx.exec_drop(&s, params! {"k" => key, "v" => value}).await {
                             Ok(_) => {
-                                if trx.affected_rows() == 0 {
+                                if exists.is_some() && trx.affected_rows() == 0 {
                                     trx.rollback().await?;
                                     return Ok(false);
                                 }

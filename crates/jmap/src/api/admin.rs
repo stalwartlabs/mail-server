@@ -47,6 +47,7 @@ pub struct PrincipalResponse {
     pub secrets: Vec<String>,
     #[serde(rename = "memberOf")]
     pub member_of: Vec<String>,
+    pub members: Vec<String>,
     pub description: Option<String>,
 }
 
@@ -136,7 +137,7 @@ impl JMAP {
 
                 match *method {
                     Method::GET => {
-                        let result = match self.store.query(QueryBy::Id(account_id)).await {
+                        let result = match self.store.query(QueryBy::Id(account_id), true).await {
                             Ok(Some(principal)) => self.store.map_group_ids(principal).await,
                             Ok(None) => {
                                 return RequestError::blank(
@@ -156,6 +157,17 @@ impl JMAP {
                                 principal.used_quota =
                                     self.get_used_quota(account_id).await.unwrap_or_default()
                                         as u32;
+
+                                // Obtain member names
+                                for member_id in
+                                    self.store.get_members(account_id).await.unwrap_or_default()
+                                {
+                                    if let Ok(Some(member_principal)) =
+                                        self.store.query(QueryBy::Id(member_id), false).await
+                                    {
+                                        principal.members.push(member_principal.name);
+                                    }
+                                }
 
                                 JsonResponse::new(json!({
                                         "data": principal,
@@ -355,6 +367,7 @@ impl From<Principal<String>> for PrincipalResponse {
             description: principal.description,
             secrets: principal.secrets,
             used_quota: 0,
+            members: Vec::new(),
         }
     }
 }

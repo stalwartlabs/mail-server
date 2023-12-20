@@ -30,7 +30,11 @@ use crate::{backend::internal::manage::ManageDirectory, DirectoryError, Principa
 use super::{LdapDirectory, LdapMappings};
 
 impl LdapDirectory {
-    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(
+        &self,
+        by: QueryBy<'_>,
+        return_member_of: bool,
+    ) -> crate::Result<Option<Principal<u32>>> {
         let mut conn = self.pool.get().await?;
         let mut account_id = None;
         let account_name;
@@ -132,7 +136,7 @@ impl LdapDirectory {
         principal.name = account_name;
 
         // Obtain groups
-        if !principal.member_of.is_empty() && self.has_id_store() {
+        if return_member_of && !principal.member_of.is_empty() && self.has_id_store() {
             for member_of in principal.member_of.iter_mut() {
                 if member_of.contains('=') {
                     let (rs, _res) = conn
@@ -165,6 +169,7 @@ impl LdapDirectory {
                 .await
                 .map(Some)
         } else {
+            principal.member_of.clear();
             Ok(Some(principal.into()))
         }
     }

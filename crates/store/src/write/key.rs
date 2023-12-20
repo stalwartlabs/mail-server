@@ -280,6 +280,20 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 DirectoryClass::Principal(uid) => serializer.write(22u8).write_leb128(*uid),
                 DirectoryClass::Domain(name) => serializer.write(23u8).write(name.as_slice()),
                 DirectoryClass::UsedQuota(uid) => serializer.write(24u8).write_leb128(*uid),
+                DirectoryClass::MemberOf {
+                    principal_id,
+                    member_of,
+                } => serializer
+                    .write(25u8)
+                    .write(*principal_id)
+                    .write(*member_of),
+                DirectoryClass::Members {
+                    principal_id,
+                    has_member,
+                } => serializer
+                    .write(26u8)
+                    .write(*principal_id)
+                    .write(*has_member),
             },
         }
         .finalize()
@@ -411,6 +425,7 @@ impl ValueClass {
                 | DirectoryClass::EmailToId(v)
                 | DirectoryClass::Domain(v) => v.len(),
                 DirectoryClass::Principal(_) | DirectoryClass::UsedQuota(_) => U32_LEN,
+                DirectoryClass::Members { .. } | DirectoryClass::MemberOf { .. } => U32_LEN * 2,
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,

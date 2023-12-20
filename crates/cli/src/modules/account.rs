@@ -46,7 +46,6 @@ impl AccountCommands {
                 member_of,
             } => {
                 let principal = Principal {
-                    id: None,
                     typ: if is_admin.unwrap_or_default() {
                         Type::Superuser
                     } else {
@@ -54,12 +53,12 @@ impl AccountCommands {
                     }
                     .into(),
                     quota,
-                    used_quota: None,
                     name: name.clone().into(),
                     secrets: vec![sha512_crypt::hash(password).unwrap()],
                     emails: addresses.unwrap_or_default(),
                     member_of: member_of.unwrap_or_default(),
                     description,
+                    ..Default::default()
                 };
                 let account_id = client
                     .http_request::<u32, _>(Method::POST, "/admin/principal", Some(principal))
@@ -104,11 +103,15 @@ impl AccountCommands {
                 if let Some(is_admin) = is_admin {
                     changes.push(PrincipalUpdate::set(
                         PrincipalField::Type,
-                        PrincipalValue::Type(if is_admin {
-                            Type::Superuser
-                        } else {
-                            Type::Individual
-                        }),
+                        PrincipalValue::String(
+                            if is_admin {
+                                Type::Superuser
+                            } else {
+                                Type::Individual
+                            }
+                            .to_string()
+                            .to_ascii_lowercase(),
+                        ),
                     ));
                 }
                 if let Some(addresses) = addresses {
@@ -255,37 +258,48 @@ impl Client {
                 Cell::new(&name),
             ]));
         }
-        let is_list = if let Some(typ) = principal.typ {
+        if let Some(typ) = principal.typ {
             table.add_row(Row::new(vec![
                 Cell::new("Type").with_style(Attr::Bold),
                 Cell::new(&typ.to_string()),
             ]));
-            matches!(typ, Type::List)
-        } else {
-            false
-        };
+        }
         if let Some(description) = principal.description {
             table.add_row(Row::new(vec![
                 Cell::new("Description").with_style(Attr::Bold),
                 Cell::new(&description),
             ]));
         }
-        if let Some(quota) = principal.quota {
-            table.add_row(Row::new(vec![
-                Cell::new("Quota").with_style(Attr::Bold),
-                Cell::new(&quota.to_string()),
-            ]));
+        if matches!(
+            principal.typ,
+            Some(Type::Individual | Type::Superuser | Type::Group)
+        ) {
+            if let Some(quota) = principal.quota {
+                table.add_row(Row::new(vec![
+                    Cell::new("Quota").with_style(Attr::Bold),
+                    if quota != 0 {
+                        Cell::new(&quota.to_string())
+                    } else {
+                        Cell::new("Unlimited")
+                    },
+                ]));
+            }
+            if let Some(used_quota) = principal.used_quota {
+                table.add_row(Row::new(vec![
+                    Cell::new("Used Quota").with_style(Attr::Bold),
+                    Cell::new(&used_quota.to_string()),
+                ]));
+            }
         }
-        if let Some(used_quota) = principal.used_quota {
+        if !principal.members.is_empty() {
             table.add_row(Row::new(vec![
-                Cell::new("Used Quota").with_style(Attr::Bold),
-                Cell::new(&used_quota.to_string()),
+                Cell::new("Members").with_style(Attr::Bold),
+                Cell::new(&principal.members.join(", ")),
             ]));
         }
         if !principal.member_of.is_empty() {
             table.add_row(Row::new(vec![
-                Cell::new(if is_list { "List members" } else { "Member of" })
-                    .with_style(Attr::Bold),
+                Cell::new("Member of").with_style(Attr::Bold),
                 Cell::new(&principal.member_of.join(", ")),
             ]));
         }

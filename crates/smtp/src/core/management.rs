@@ -255,10 +255,10 @@ impl SMTP {
                         .queue
                         .config
                         .management_lookup
-                        .query(QueryBy::Credentials(&Credentials::Plain {
-                            username,
-                            secret,
-                        }))
+                        .query(
+                            QueryBy::Credentials(&Credentials::Plain { username, secret }),
+                            false,
+                        )
                         .await
                     {
                         Ok(Some(principal)) if principal.typ == Type::Superuser => {

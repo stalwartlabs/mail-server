@@ -379,7 +379,7 @@ impl JMAP {
                 {
                     if let Some(principal) = self
                         .directory
-                        .query(QueryBy::Id(id.document_id()))
+                        .query(QueryBy::Id(id.document_id()), false)
                         .await
                         .unwrap_or_default()
                     {
@@ -452,7 +452,11 @@ impl JMAP {
     async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
         for item in &mut acl_set {
             if let Value::Text(account_name) = item {
-                match self.directory.query(QueryBy::Name(account_name)).await {
+                match self
+                    .directory
+                    .query(QueryBy::Name(account_name), false)
+                    .await
+                {
                     Ok(Some(principal)) => {
                         *item = Value::Id(principal.id.into());
                     }

@@ -75,7 +75,7 @@ impl JMAP {
             if let Value::Text(email) = identity.get(&Property::Email) {
                 if !self
                     .directory
-                    .query(QueryBy::Id(account_id))
+                    .query(QueryBy::Id(account_id), false)
                     .await
                     .unwrap_or_default()
                     .unwrap_or_default()

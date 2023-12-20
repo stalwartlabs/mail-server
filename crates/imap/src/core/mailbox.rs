@@ -52,7 +52,7 @@ impl SessionData {
                         session
                             .jmap
                             .directory
-                            .query(QueryBy::Id(account_id))
+                            .query(QueryBy::Id(account_id), false)
                             .await
                             .unwrap_or_default()
                             .map(|p| p.name)
@@ -320,7 +320,7 @@ impl SessionData {
                     self.imap.name_shared,
                     self.jmap
                         .directory
-                        .query(QueryBy::Id(account_id))
+                        .query(QueryBy::Id(account_id), false)
                         .await
                         .unwrap_or_default()
                         .map(|p| p.name)
@@ -407,7 +407,7 @@ impl SessionData {
                             self.imap.name_shared,
                             self.jmap
                                 .directory
-                                .query(QueryBy::Id(account_id))
+                                .query(QueryBy::Id(account_id), false)
                                 .await
                                 .unwrap_or_default()
                                 .map(|p| p.name)
