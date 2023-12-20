@@ -400,13 +400,6 @@ impl SessionData {
                 .await;
         }
 
-        // Resynchronize source mailbox on a successful move
-        if did_move {
-            self.write_mailbox_changes(&src_mailbox, is_qresync)
-                .await
-                .map_err(|r| r.with_tag(&arguments.tag))?;
-        }
-
         // Map copied JMAP Ids to IMAP UIDs in the destination folder.
         if copied_ids.is_empty() {
             return Err(if response.rtype != ResponseType::Ok {
@@ -437,8 +430,8 @@ impl SessionData {
         src_uids.sort_unstable();
         dest_uids.sort_unstable();
 
-        self.write_bytes(if is_move {
-            response.with_tag(arguments.tag).serialize(
+        let response = if is_move {
+            self.write_bytes(
                 StatusResponse::ok("Copied UIDs")
                     .with_code(ResponseCode::CopyUid {
                         uid_validity,
@@ -447,6 +440,16 @@ impl SessionData {
                     })
                     .into_bytes(),
             )
+            .await;
+
+            if did_move {
+                // Resynchronize source mailbox on a successful move
+                self.write_mailbox_changes(&src_mailbox, is_qresync)
+                    .await
+                    .map_err(|r| r.with_tag(&arguments.tag))?;
+            }
+
+            response.with_tag(arguments.tag).into_bytes()
         } else {
             response
                 .with_tag(arguments.tag)
@@ -456,8 +459,9 @@ impl SessionData {
                     dest_uids,
                 })
                 .into_bytes()
-        })
-        .await;
+        };
+
+        self.write_bytes(response).await;
 
         Ok(())
     }

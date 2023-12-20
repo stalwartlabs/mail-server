@@ -40,7 +40,7 @@ pub struct Pagination {
     anchor_offset: i32,
     has_anchor: bool,
     anchor_found: bool,
-    ids: Vec<u64>,
+    pub ids: Vec<u64>,
     prefix_key: Option<ValueKey<ValueClass>>,
     prefix_unique: bool,
 }

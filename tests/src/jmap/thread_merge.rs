@@ -21,14 +21,29 @@
  * for more details.
 */
 
-use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
+use std::{io::Cursor, time::Duration};
+
+use crate::{
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
+    store::deflate_test_resource,
+};
+use jmap::{email::ingest::IngestEmail, IngestError};
 use jmap_client::{email, mailbox::Role};
-use jmap_proto::types::id::Id;
-use store::ahash::{AHashMap, AHashSet};
+use jmap_proto::types::{collection::Collection, id::Id, property::Property};
+use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
+use store::{
+    ahash::{AHashMap, AHashSet},
+    rand::{self, Rng},
+};
 
 use super::JMAPTest;
 
 pub async fn test(params: &mut JMAPTest) {
+    test_single_thread(params).await;
+    test_multi_thread(params).await;
+}
+
+async fn test_single_thread(params: &mut JMAPTest) {
     println!("Running Email Merge Threads tests...");
     let server = params.server.clone();
     let client = &mut params.client;
@@ -207,6 +222,87 @@ pub async fn test(params: &mut JMAPTest) {
     }
 
     assert_is_empty(server).await;
+}
+
+#[allow(dead_code)]
+async fn test_multi_thread(params: &mut JMAPTest) {
+    println!("Running Email Merge Threads tests (multi-threaded)...");
+    //let semaphore = sync::Arc::Arc::new(tokio::sync::Semaphore::new(100));
+    let mut handles = vec![];
+    let mailbox_id_str = params
+        .client
+        .set_default_account_id(Id::new(0u64).to_string())
+        .mailbox_create("Multi-thread nightmare", None::<String>, Role::None)
+        .await
+        .unwrap()
+        .take_id();
+    let mailbox_id = Id::from_bytes(mailbox_id_str.as_bytes())
+        .unwrap()
+        .document_id();
+    for message in MessageIterator::new(Cursor::new(deflate_test_resource("mailbox.gz")))
+        .collect::<Vec<_>>()
+        .into_iter()
+    {
+        //let permit = Arc::clone(&semaphore);
+        let message = message.unwrap();
+        let server = params.server.clone();
+        handles.push(tokio::task::spawn(async move {
+            //let _permit = permit.acquire().await.expect("Failed to acquire permit");
+            let mut retry_count = 0;
+            loop {
+                match server
+                    .email_ingest(IngestEmail {
+                        raw_message: message.contents(),
+                        message: MessageParser::new().parse(message.contents()),
+                        account_id: 0,
+                        account_quota: 0,
+                        mailbox_ids: vec![mailbox_id],
+                        keywords: vec![],
+                        received_at: None,
+                        skip_duplicates: true,
+                        encrypt: false,
+                    })
+                    .await
+                {
+                    Ok(_) => break,
+                    Err(IngestError::Temporary) if retry_count < 10 => {
+                        //println!("Retrying ingest for {}...", message.from());
+                        let backoff = rand::thread_rng().gen_range(50..=300);
+                        tokio::time::sleep(Duration::from_millis(backoff)).await;
+                        retry_count += 1;
+                        continue;
+                    }
+                    Err(IngestError::Permanent { .. }) => {
+                        panic!(
+                            "Failed to ingest message: {:?} {}",
+                            message.from(),
+                            String::from_utf8_lossy(message.contents())
+                        );
+                    }
+                    Err(err) => panic!("Failed to ingest message: {:?}", err),
+                }
+            }
+        }));
+    }
+    // Wait for all tasks to complete
+    let messages = handles.len();
+    println!("Waiting for {} tasks to complete...", messages);
+    for handle in handles {
+        handle.await.expect("Task panicked");
+    }
+    assert_eq!(
+        messages as u64,
+        params
+            .server
+            .get_tag(0, Collection::Email, Property::MailboxIds, mailbox_id,)
+            .await
+            .unwrap()
+            .unwrap()
+            .len()
+    );
+    println!("Deleting all messages...");
+    destroy_all_mailboxes(params).await;
+    assert_is_empty(params.server.clone()).await;
 }
 
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {

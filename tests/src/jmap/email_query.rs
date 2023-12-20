@@ -25,7 +25,7 @@ use std::{collections::hash_map::Entry, time::Instant};
 
 use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
-    store::{deflate_artwork_data, query::FIELDS},
+    store::{deflate_test_resource, query::FIELDS},
 };
 use jmap_client::{
     client::Client,
@@ -682,7 +682,7 @@ pub async fn create(client: &mut Client) {
 
     'outer: for record in csv::ReaderBuilder::new()
         .has_headers(true)
-        .from_reader(&deflate_artwork_data()[..])
+        .from_reader(&deflate_test_resource("artwork_data.csv.gz")[..])
         .records()
     {
         let record = record.unwrap();

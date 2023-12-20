@@ -46,7 +46,11 @@ use jmap_proto::{
 use store::{
     query::Filter,
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
+    write::{
+        assert::{AssertValue, HashedValue},
+        log::ChangeLogBuilder,
+        BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
+    },
 };
 
 use crate::{
@@ -115,13 +119,45 @@ impl JMAP {
                         .await?;
                     batch
                         .with_account_id(account_id)
-                        .with_collection(Collection::Mailbox)
-                        .create_document(document_id)
-                        .custom(builder);
+                        .with_collection(Collection::Mailbox);
+
+                    if let Value::Id(parent_id) =
+                        builder.changes().unwrap().get(&Property::ParentId)
+                    {
+                        let parent_id = parent_id.document_id();
+                        if parent_id > 0 {
+                            batch
+                                .update_document(parent_id - 1)
+                                .assert_value(Property::Value, AssertValue::Some);
+                        }
+                    }
+
+                    batch.create_document(document_id).custom(builder);
                     changes.log_insert(Collection::Mailbox, document_id);
                     ctx.mailbox_ids.insert(document_id);
-                    self.write_batch(batch).await?;
-                    ctx.response.created(id, document_id);
+                    match self.store.write(batch.build()).await {
+                        Ok(_) => {
+                            ctx.response.created(id, document_id);
+                        }
+                        Err(store::Error::AssertValueFailed) => {
+                            ctx.response.not_created.append(
+                                id,
+                                SetError::forbidden().with_description(
+                                    "Another process deleted the parent mailbox, please try again.",
+                                ),
+                            );
+                            continue 'create;
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                event = "error",
+                                context = "mailbox_set",
+                                account_id = account_id,
+                                error = ?err,
+                                "Failed to update mailbox(es).");
+                            return Err(MethodError::ServerPartialFail);
+                        }
+                    }
                 }
                 Err(err) => {
                     ctx.response.not_created.append(id, err);
@@ -182,9 +218,21 @@ impl JMAP {
                         let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
-                            .with_collection(Collection::Mailbox)
-                            .update_document(document_id)
-                            .custom(builder);
+                            .with_collection(Collection::Mailbox);
+
+                        if let Value::Id(parent_id) =
+                            builder.changes().unwrap().get(&Property::ParentId)
+                        {
+                            let parent_id = parent_id.document_id();
+                            if parent_id > 0 {
+                                batch
+                                    .update_document(parent_id - 1)
+                                    .assert_value(Property::Value, AssertValue::Some);
+                            }
+                        }
+
+                        batch.update_document(document_id).custom(builder);
+
                         if !batch.is_empty() {
                             match self.store.write(batch.build()).await {
                                 Ok(_) => {

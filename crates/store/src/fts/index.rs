@@ -286,6 +286,14 @@ impl Store {
         {
             term_index
         } else {
+            tracing::debug!(
+                context = "fts_remove",
+                event = "not_found",
+                account_id = account_id,
+                collection = collection,
+                document_id = document_id,
+                "Term index not found"
+            );
             return Ok(false);
         };
 

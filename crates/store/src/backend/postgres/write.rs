@@ -154,10 +154,13 @@ impl PostgresStore {
                                 .await?
                             }
                         } else {
-                            trx
-                            .prepare_cached(
-                                &format!("INSERT INTO {} (k, v) VALUES ($1, $2) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v", table),
-                            )
+                            trx.prepare_cached(&format!(
+                                concat!(
+                                    "INSERT INTO {} (k, v) VALUES ($1, $2) ",
+                                    "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
+                                ),
+                                table
+                            ))
                             .await?
                         };
 
@@ -242,7 +245,10 @@ impl PostgresStore {
                     .serialize(false);
 
                     let s = trx
-                        .prepare_cached("INSERT INTO l (k, v) VALUES ($1, $2) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v")
+                        .prepare_cached(concat!(
+                            "INSERT INTO l (k, v) VALUES ($1, $2) ",
+                            "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
+                        ))
                         .await?;
                     trx.execute(&s, &[&key, set]).await?;
                 }

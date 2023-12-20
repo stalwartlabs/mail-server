@@ -232,9 +232,9 @@ impl From<store::Error> for DirectoryError {
         tracing::warn!(
             context = "directory",
             event = "error",
-            protocol = "sql",
+            protocol = "store",
             reason = %error,
-            "SQL directory error"
+            "Directory error"
         );
 
         DirectoryError::Store(error)

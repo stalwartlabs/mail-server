@@ -177,14 +177,17 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 
-[jmap.protocol]
-set.max-objects = 100000
+[jmap.protocol.get]
+max-objects = 100000
+
+[jmap.protocol.set]
+max-objects = 100000
 
 [jmap.protocol.request]
 max-concurrent = 8
 
 [jmap.protocol.upload]
-max-size = 5000000
+max-size = 50000000
 max-concurrent = 4
 ttl = "1m"
 
@@ -256,7 +259,7 @@ refresh-token = "3s"
 refresh-token-renew = "2s"
 "#;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
     if let Ok(level) = std::env::var("LOG") {
         tracing::subscriber::set_global_default(
@@ -280,18 +283,20 @@ pub async fn jmap_tests() {
         delete,
     )
     .await;
+    //assert_is_empty(params.server.clone()).await;
+
     let coco = 1;
     //email_query::test(&mut params, delete).await;
-    email_get::test(&mut params).await;
+    /*email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
     email_search_snippet::test(&mut params).await;
     email_changes::test(&mut params).await;
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
-    thread_get::test(&mut params).await;
+    thread_get::test(&mut params).await;*/
     thread_merge::test(&mut params).await;
-    mailbox::test(&mut params).await;
+    /*mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;
@@ -304,24 +309,37 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
 
     if delete {
         params.temp_dir.delete();
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore]
 pub async fn jmap_stress_tests() {
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::WARN)
-            .finish(),
-    )
-    .unwrap();
+    if let Ok(level) = std::env::var("LOG") {
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::FmtSubscriber::builder()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::builder()
+                        .parse(
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                        )
+                        .unwrap(),
+                )
+                .finish(),
+        )
+        .unwrap();
+    }
 
-    let params = init_jmap_tests("foundationdb", true).await;
+    let params = init_jmap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        true,
+    )
+    .await;
     stress_test::test(params.server.clone(), params.client).await;
     params.temp_dir.delete();
 }

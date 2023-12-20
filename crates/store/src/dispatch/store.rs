@@ -31,6 +31,12 @@ use crate::{
     SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
 
+#[cfg(feature = "test_mode")]
+lazy_static::lazy_static! {
+pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>> =
+                    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
+}
+
 impl Store {
     pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
     where
@@ -141,6 +147,86 @@ impl Store {
     }
 
     pub async fn write(&self, batch: Batch) -> crate::Result<()> {
+        #[cfg(feature = "test_mode")]
+        if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
+            use crate::write::Operation;
+            let mut account_id = u32::MAX;
+            let mut collection = u8::MAX;
+            let mut document_id = u32::MAX;
+
+            let mut bitmaps = Vec::new();
+
+            for op in &batch.ops {
+                match op {
+                    Operation::AccountId {
+                        account_id: account_id_,
+                    } => {
+                        account_id = *account_id_;
+                    }
+                    Operation::Collection {
+                        collection: collection_,
+                    } => {
+                        collection = *collection_;
+                    }
+                    Operation::DocumentId {
+                        document_id: document_id_,
+                    } => {
+                        document_id = *document_id_;
+                    }
+                    Operation::Bitmap { class, set } => {
+                        let key = BitmapKey {
+                            account_id,
+                            collection,
+                            block_num: 0,
+                            class,
+                        }
+                        .serialize(false);
+                        bitmaps.push((key, class.clone(), document_id, *set));
+                    }
+                    _ => {}
+                }
+            }
+
+            match self {
+                #[cfg(feature = "sqlite")]
+                Self::SQLite(store) => store.write(batch).await,
+                #[cfg(feature = "foundation")]
+                Self::FoundationDb(store) => store.write(batch).await,
+                #[cfg(feature = "postgres")]
+                Self::PostgreSQL(store) => store.write(batch).await,
+                #[cfg(feature = "mysql")]
+                Self::MySQL(store) => store.write(batch).await,
+                #[cfg(feature = "rocks")]
+                Self::RocksDb(store) => store.write(batch).await,
+            }?;
+
+            for (key, class, document_id, set) in bitmaps {
+                let mut bitmaps = BITMAPS.lock();
+                let map = bitmaps.entry(key).or_default();
+                if set {
+                    if !map.insert(document_id) {
+                        println!(
+                            concat!(
+                                "WARNING: key {:?} already contains document {} for account ",
+                                "{}, collection {}"
+                            ),
+                            class, document_id, account_id, collection
+                        );
+                    }
+                } else if !map.remove(&document_id) {
+                    println!(
+                        concat!(
+                            "WARNING: key {:?} does not contain document {} for account ",
+                            "{}, collection {}"
+                        ),
+                        class, document_id, account_id, collection
+                    );
+                }
+            }
+
+            return Ok(());
+        }
+
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.write(batch).await,
@@ -303,6 +389,8 @@ impl Store {
             .await
             .unwrap();
         }
+
+        BITMAPS.lock().clear();
     }
 
     #[cfg(feature = "test_mode")]
@@ -365,6 +453,8 @@ impl Store {
     #[allow(unused_variables)]
 
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
+        use utils::codec::leb128::Leb128Iterator;
+
         use crate::{SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_VALUES};
 
         self.blob_expire_all().await;
@@ -406,9 +496,46 @@ impl Store {
                                 return Ok(true);
                             }
 
+                            const BM_DOCUMENT_IDS: u8 = 0;
+                            const BM_TAG: u8 = 1 << 6;
+                            const BM_TEXT: u8 = 1 << 7;
+                            const TAG_TEXT: u8 = 1 << 0;
+                            const TAG_STATIC: u8 = 1 << 1;
+
+                            match key[5] {
+                                BM_DOCUMENT_IDS => {
+                                    eprint!("Found document ids bitmap");
+                                }
+                                BM_TAG => {
+                                    eprint!(
+                                        "Found tagged id {} bitmap",
+                                        key[7..].iter().next_leb128::<u32>().unwrap()
+                                    );
+                                }
+                                TAG_TEXT => {
+                                    eprint!(
+                                        "Found tagged text {:?} bitmap",
+                                        String::from_utf8_lossy(&key[7..])
+                                    );
+                                }
+                                TAG_STATIC => {
+                                    eprint!("Found tagged static {} bitmap", key[7]);
+                                }
+                                other => {
+                                    if other & BM_TEXT == BM_TEXT {
+                                        eprint!(
+                                            "Found text hash {:?} bitmap",
+                                            String::from_utf8_lossy(&key[7..])
+                                        );
+                                    } else {
+                                        eprint!("Found unknown bitmap");
+                                    }
+                                }
+                            }
+
                             eprintln!(
                                 concat!(
-                                    "Table bitmaps is not empty, account {}, collection {},",
+                                    ", account {}, collection {},",
                                     " family {}, field {}, key {:?}: {:?}"
                                 ),
                                 u32::from_be_bytes(key[0..4].try_into().unwrap()),
@@ -420,7 +547,8 @@ impl Store {
                             );
                         }
                         SUBSPACE_VALUES
-                            if key[0] >= 20
+                            if key[0] == 3
+                                || key[0] >= 20
                                 || key.get(1..5).unwrap_or_default() == u32::MAX.to_be_bytes() =>
                         {
                             // Ignore lastId counter and ID mappings
@@ -433,7 +561,7 @@ impl Store {
                         SUBSPACE_INDEXES => {
                             eprintln!(
                                 concat!(
-                                    "Table index is not empty, account {}, collection {}, ",
+                                    "Found index key, account {}, collection {}, ",
                                     "document {}, property {}, value {:?}: {:?}"
                                 ),
                                 u32::from_be_bytes(key[0..4].try_into().unwrap()),
@@ -446,7 +574,7 @@ impl Store {
                         }
                         _ => {
                             eprintln!(
-                                "Table {:?} is not empty: {:?} {:?}",
+                                "Found key in {:?}: {:?} {:?}",
                                 char::from(subspace),
                                 key,
                                 value

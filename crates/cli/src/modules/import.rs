@@ -29,6 +29,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 
 use console::style;
@@ -42,6 +43,7 @@ use mail_parser::mailbox::{
     maildir,
     mbox::{self, MessageIterator},
 };
+use rand::Rng;
 use serde::de::DeserializeOwned;
 use tokio::{fs::File, io::AsyncReadExt};
 
@@ -366,6 +368,10 @@ impl ImportCommands {
                                                 total_imported.fetch_add(1, Ordering::Relaxed);
                                             }
                                             Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                                let backoff =
+                                                    rand::thread_rng().gen_range(50..=300);
+                                                tokio::time::sleep(Duration::from_millis(backoff))
+                                                    .await;
                                                 retry_count += 1;
                                                 continue;
                                             }

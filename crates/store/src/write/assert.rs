@@ -29,11 +29,12 @@ pub struct HashedValue<T: Deserialize> {
     pub inner: T,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AssertValue {
     U32(u32),
     U64(u64),
     Hash(u64),
+    Some,
     None,
 }
 
@@ -45,6 +46,12 @@ impl<T: Deserialize + Default> HashedValue<T> {
 
 pub trait ToAssertValue {
     fn to_assert_value(&self) -> AssertValue;
+}
+
+impl ToAssertValue for AssertValue {
+    fn to_assert_value(&self) -> AssertValue {
+        *self
+    }
 }
 
 impl ToAssertValue for () {
@@ -84,6 +91,7 @@ impl AssertValue {
             AssertValue::U64(v) => bytes.len() == U64_LEN && u64::deserialize(bytes).unwrap() == *v,
             AssertValue::Hash(v) => xxhash_rust::xxh3::xxh3_64(bytes) == *v,
             AssertValue::None => false,
+            AssertValue::Some => true,
         }
     }
 

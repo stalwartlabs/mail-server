@@ -241,6 +241,7 @@ impl JMAP {
                         stack.push((children, it));
                     }
                 }
+                debug_assert_eq!(response.ids.len(), paginate.ids.len(), "{tree:#?}");
                 response.update_results(paginate.build())?;
             } else {
                 response = self

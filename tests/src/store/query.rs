@@ -43,7 +43,7 @@ use store::{
     Store, ValueKey,
 };
 
-use crate::store::deflate_artwork_data;
+use crate::store::deflate_test_resource;
 
 pub const FIELDS: [&str; 20] = [
     "id",
@@ -139,7 +139,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
         pool.scope_fifo(|s| {
             for (document_id, record) in csv::ReaderBuilder::new()
                 .has_headers(true)
-                .from_reader(&deflate_artwork_data()[..])
+                .from_reader(&deflate_test_resource("artwork_data.csv.gz")[..])
                 .records()
                 .enumerate()
             {

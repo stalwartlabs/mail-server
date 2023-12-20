@@ -82,32 +82,38 @@ url = "redis://127.0.0.1"
 
 "#;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 pub async fn store_tests() {
     let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
     let config = Config::new(&CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy())).unwrap();
     let stores = config.parse_stores().await.unwrap();
 
-    for (store_id, store) in stores.stores {
-        println!("Testing store {}...", store_id);
-        if insert {
-            store.destroy().await;
-        }
-        ops::test(store.clone()).await;
-        query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
-        assign_id::test(store).await;
+    let store_id = std::env::var("STORE")
+        .expect("Missing store type. Try running `STORE=<store_type> cargo test`");
+    let store = stores
+        .stores
+        .get(&store_id)
+        .expect("Store not found")
+        .clone();
+
+    println!("Testing store {}...", store_id);
+    if insert {
+        store.destroy().await;
     }
+    ops::test(store.clone()).await;
+    query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
+    assign_id::test(store).await;
 
     if insert {
         temp_dir.delete();
     }
 }
 
-pub fn deflate_artwork_data() -> Vec<u8> {
+pub fn deflate_test_resource(name: &str) -> Vec<u8> {
     let mut csv_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     csv_path.push("resources");
-    csv_path.push("artwork_data.csv.gz");
+    csv_path.push(name);
 
     let mut decoder = flate2::bufread::GzDecoder::new(std::io::BufReader::new(
         std::fs::File::open(csv_path).unwrap(),

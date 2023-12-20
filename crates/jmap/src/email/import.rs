@@ -140,7 +140,7 @@ impl JMAP {
                     mailbox_ids,
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
-                    skip_duplicates: false,
+                    skip_duplicates: true,
                     encrypt: self.config.encrypt && self.config.encrypt_append,
                 })
                 .await

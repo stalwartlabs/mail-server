@@ -171,6 +171,7 @@ pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
     pub inner: T,
 }
 
+#[derive(Debug)]
 pub enum IngestError {
     Temporary,
     OverQuota,

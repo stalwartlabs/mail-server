@@ -56,7 +56,7 @@ use utils::map::vec_map::VecMap;
 use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, JMAP};
 
 use super::{
-    index::{EmailIndexBuilder, TrimTextValue, MAX_SORT_FIELD_LENGTH},
+    index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
     ingest::IngestedEmail,
     metadata::MessageMetadata,
 };
@@ -322,30 +322,34 @@ impl JMAP {
         }
 
         // Obtain threadId
-        let mut references = vec![];
+        let mut references = Vec::with_capacity(5);
         let mut subject = "";
         for header in &metadata.contents.parts[0].headers {
-            match header.name {
+            match &header.name {
                 HeaderName::MessageId
                 | HeaderName::InReplyTo
                 | HeaderName::References
-                | HeaderName::ResentMessageId => match &header.value {
-                    HeaderValue::Text(text) => {
-                        references.push(text.as_ref());
-                    }
-                    HeaderValue::TextList(list) => {
-                        references.extend(list.iter().map(|v| v.as_ref()));
-                    }
-                    _ => (),
-                },
-                HeaderName::Subject => {
-                    if let HeaderValue::Text(value) = &header.value {
-                        subject = thread_name(value).trim_text(MAX_SORT_FIELD_LENGTH);
-                    }
+                | HeaderName::ResentMessageId => {
+                    header.value.visit_text(|id| {
+                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
+                            references.push(id);
+                        }
+                    });
+                }
+                HeaderName::Subject if subject.is_empty() => {
+                    subject = thread_name(match &header.value {
+                        HeaderValue::Text(text) => text.as_ref(),
+                        HeaderValue::TextList(list) if !list.is_empty() => {
+                            list.first().unwrap().as_ref()
+                        }
+                        _ => "",
+                    })
+                    .trim_text(MAX_SORT_FIELD_LENGTH);
                 }
                 _ => (),
             }
         }
+
         let thread_id = if !references.is_empty() {
             self.find_or_merge_thread(account_id, subject, &references)
                 .await

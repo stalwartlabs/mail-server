@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
 use jmap_proto::{
     object::Object,
@@ -34,6 +34,7 @@ use mail_parser::{
     parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType,
 };
 
+use rand::Rng;
 use store::{
     ahash::AHashSet,
     query::Filter,
@@ -46,7 +47,7 @@ use store::{
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    email::index::{IndexMessage, MAX_ID_LENGTH},
+    email::index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
     mailbox::UidMailbox,
     services::housekeeper::Event,
     IngestError, JMAP,
@@ -76,6 +77,8 @@ pub struct IngestEmail<'x> {
     pub skip_duplicates: bool,
     pub encrypt: bool,
 }
+
+const MAX_RETRIES: u32 = 10;
 
 impl JMAP {
     #[allow(clippy::blocks_in_if_conditions)]
@@ -107,24 +110,26 @@ impl JMAP {
         let thread_id = {
             let mut references = Vec::with_capacity(5);
             let mut subject = "";
+            let mut message_id = "";
             for header in message.root_part().headers().iter().rev() {
-                match header.name {
-                    HeaderName::MessageId
-                    | HeaderName::InReplyTo
-                    | HeaderName::References
-                    | HeaderName::ResentMessageId => match &header.value {
-                        HeaderValue::Text(id) if id.len() < MAX_ID_LENGTH => {
-                            references.push(id.as_ref());
-                        }
-                        HeaderValue::TextList(ids) => {
-                            for id in ids {
-                                if id.len() < MAX_ID_LENGTH {
-                                    references.push(id.as_ref());
-                                }
+                match &header.name {
+                    HeaderName::MessageId => header.value.visit_text(|id| {
+                        if !id.is_empty() && id.len() < MAX_ID_LENGTH {
+                            if message_id.is_empty() {
+                                message_id = id;
                             }
+                            references.push(id);
                         }
-                        _ => (),
-                    },
+                    }),
+                    HeaderName::InReplyTo
+                    | HeaderName::References
+                    | HeaderName::ResentMessageId => {
+                        header.value.visit_text(|id| {
+                            if !id.is_empty() && id.len() < MAX_ID_LENGTH {
+                                references.push(id);
+                            }
+                        });
+                    }
                     HeaderName::Subject if subject.is_empty() => {
                         subject = thread_name(match &header.value {
                             HeaderValue::Text(text) => text.as_ref(),
@@ -141,24 +146,21 @@ impl JMAP {
 
             // Check for duplicates
             if params.skip_duplicates
-                && !references.is_empty()
+                && !message_id.is_empty()
                 && !self
                     .store
                     .filter(
                         params.account_id,
                         Collection::Email,
-                        references
-                            .iter()
-                            .map(|id| Filter::eq(Property::MessageId, *id))
-                            .collect(),
+                        vec![Filter::eq(Property::MessageId, message_id)],
                     )
                     .await
                     .map_err(|err| {
                         tracing::error!(
-                        event = "error",
-                        context = "find_duplicates",
-                        error = ?err,
-                        "Duplicate message search failed.");
+                            event = "error",
+                            context = "find_duplicates",
+                            error = ?err,
+                            "Duplicate message search failed.");
                         IngestError::Temporary
                     })?
                     .results
@@ -383,7 +385,7 @@ impl JMAP {
             ));
             filters.push(Filter::Or);
             for reference in references {
-                filters.push(Filter::eq(Property::MessageId, *reference));
+                filters.push(Filter::eq(Property::References, *reference));
             }
             filters.push(Filter::End);
             let results = self
@@ -515,7 +517,9 @@ impl JMAP {
 
             match self.store.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
-                Err(store::Error::AssertValueFailed) if try_count < 3 => {
+                Err(store::Error::AssertValueFailed) if try_count < MAX_RETRIES => {
+                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
                     try_count += 1;
                 }
                 Err(err) => {

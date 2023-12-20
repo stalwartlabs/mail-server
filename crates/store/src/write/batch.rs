@@ -202,6 +202,21 @@ impl BatchBuilder {
     }
 }
 
+impl Batch {
+    pub fn is_atomic(&self) -> bool {
+        !self.ops.iter().any(|op| {
+            matches!(
+                op,
+                Operation::AssertValue { .. }
+                    | Operation::Value {
+                        class: ValueClass::ReservedId,
+                        op: ValueOp::Set(_)
+                    }
+            )
+        })
+    }
+}
+
 impl Default for BatchBuilder {
     fn default() -> Self {
         Self::new()

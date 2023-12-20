@@ -44,6 +44,7 @@ sed -i '' -e "s|__CERT_PATH__|$BASE_DIR/etc/tls_cert.pem|g" \
           -e "s|__PK_PATH__|$BASE_DIR/etc/tls_privatekey.pem|g" "$BASE_DIR/etc/common/tls.toml"
 sed -i '' -e 's/method = "log"/method = "stdout"/g' \
           -e 's/level = "info"/level = "trace"/g' "$BASE_DIR/etc/common/tracing.toml"
+sed -i '' -e 's/%{HOST}%/127.0.0.1/g' "$BASE_DIR/etc/jmap/listener.toml"
 sed -i '' -e 's/allow-plain-text = false/allow-plain-text = true/g' "$BASE_DIR/etc/imap/settings.toml"
 sed -i '' -e 's/user = "stalwart-mail"//g' \
           -e 's/group = "stalwart-mail"//g' "$BASE_DIR/etc/common/server.toml"
@@ -67,4 +68,5 @@ cargo run --manifest-path=crates/cli/Cargo.toml -- -u https://127.0.0.1:8080 -c 
 cargo run --manifest-path=crates/cli/Cargo.toml -- -u https://127.0.0.1:8080 -c admin:secret list create everyone everyone@example.org
 cargo run --manifest-path=crates/cli/Cargo.toml -- -u https://127.0.0.1:8080 -c admin:secret list add-members everyone jane john bill
 cargo run --manifest-path=crates/cli/Cargo.toml -- -u https://127.0.0.1:8080 -c admin:secret account list
+cargo run --manifest-path=crates/cli/Cargo.toml -- -u https://127.0.0.1:8080 -c admin:secret import messages --format mbox john _ignore/dovecot-crlf 
 '

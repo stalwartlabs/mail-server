@@ -184,14 +184,20 @@ impl IndexMessage for BatchBuilder {
             }
 
             match header.name {
-                HeaderName::MessageId
-                | HeaderName::InReplyTo
-                | HeaderName::References
-                | HeaderName::ResentMessageId => {
+                HeaderName::MessageId => {
                     header.value.visit_text(|id| {
                         // Add ids to inverted index
                         if id.len() < MAX_ID_LENGTH {
                             self.value(Property::MessageId, id, F_INDEX | options);
+                            self.value(Property::References, id, F_INDEX | options);
+                        }
+                    });
+                }
+                HeaderName::InReplyTo | HeaderName::References | HeaderName::ResentMessageId => {
+                    header.value.visit_text(|id| {
+                        // Add ids to inverted index
+                        if id.len() < MAX_ID_LENGTH {
+                            self.value(Property::References, id, F_INDEX | options);
                         }
                     });
                 }
@@ -523,21 +529,21 @@ impl GetContentLanguage for MessagePart<'_> {
     }
 }
 
-trait VisitValues {
-    fn visit_addresses(&self, visitor: impl FnMut(AddressElement, &str));
-    fn visit_text(&self, visitor: impl FnMut(&str));
+pub trait VisitValues<'x> {
+    fn visit_addresses<'y: 'x>(&'y self, visitor: impl FnMut(AddressElement, &'x str));
+    fn visit_text<'y: 'x>(&'y self, visitor: impl FnMut(&'x str));
     fn into_visit_text(self, visitor: impl FnMut(String));
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum AddressElement {
+pub enum AddressElement {
     Name,
     Address,
     GroupName,
 }
 
-impl VisitValues for HeaderValue<'_> {
-    fn visit_addresses(&self, mut visitor: impl FnMut(AddressElement, &str)) {
+impl<'x> VisitValues<'x> for HeaderValue<'x> {
+    fn visit_addresses<'y: 'x>(&'y self, mut visitor: impl FnMut(AddressElement, &'x str)) {
         match self {
             HeaderValue::Address(Address::List(addr_list)) => {
                 for addr in addr_list {
@@ -569,7 +575,7 @@ impl VisitValues for HeaderValue<'_> {
         }
     }
 
-    fn visit_text(&self, mut visitor: impl FnMut(&str)) {
+    fn visit_text<'y: 'x>(&'y self, mut visitor: impl FnMut(&'x str)) {
         match &self {
             HeaderValue::Text(text) => {
                 visitor(text.as_ref());

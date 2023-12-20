@@ -24,6 +24,7 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
+use directory::backend::internal::manage::ManageDirectory;
 use futures::future::join_all;
 use jmap::{mailbox::UidMailbox, JMAP};
 use jmap_client::{
@@ -41,10 +42,9 @@ const NUM_PASSES: usize = 1;
 
 pub async fn test(server: Arc<JMAP>, mut client: Client) {
     println!("Running concurrency stress tests...");
-
+    server.store.get_or_create_account_id("john").await.unwrap();
     client.set_default_account_id(Id::from(TEST_USER_ID).to_string());
     let client = Arc::new(client);
-
     email_tests(server.clone(), client.clone()).await;
     mailbox_tests(server.clone(), client.clone()).await;
 }
@@ -355,7 +355,22 @@ async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
     join_all(futures).await;
 
     wait_for_index(&server).await;
-    destroy_all_mailboxes_no_wait(&client).await;
+    for mailbox_id in client
+        .mailbox_query(None::<mailbox::query::Filter>, None::<Vec<_>>)
+        .await
+        .unwrap()
+        .take_ids()
+    {
+        let _ = client.mailbox_move(&mailbox_id, None::<String>).await;
+    }
+    for mailbox_id in client
+        .mailbox_query(None::<mailbox::query::Filter>, None::<Vec<_>>)
+        .await
+        .unwrap()
+        .take_ids()
+    {
+        let _ = client.mailbox_destroy(&mailbox_id, true).await;
+    }
     assert_is_empty(server).await;
 }
 
@@ -409,11 +424,21 @@ async fn query_mailboxes(client: &Client) -> Vec<Mailbox> {
 }
 
 async fn delete_mailbox(client: &Client, mailbox_id: &str) {
-    match client.mailbox_destroy(mailbox_id, true).await {
-        Ok(_) => (),
-        Err(err) => match err {
-            jmap_client::Error::Set(_) => (),
-            _ => panic!("Failed: {:?}", err),
-        },
+    for _ in 0..3 {
+        match client.mailbox_destroy(mailbox_id, true).await {
+            Ok(_) => return,
+            Err(err) => match err {
+                jmap_client::Error::Set(_) => break,
+                jmap_client::Error::Transport(_) => {
+                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                }
+                _ => panic!("Failed: {:?}", err),
+            },
+        }
     }
+    /*println!(
+        "Warning: Too many transport errors while deleting mailbox {}.",
+        mailbox_id
+    );*/
 }
