@@ -66,7 +66,9 @@ impl Resolvers {
         }
 
         let mut entries = Vec::new();
-        let tlsa_lookup = match self.dnssec.resolver.tlsa_lookup(key.as_ref()).await {
+
+        let name = self.dns.parse_name(key.as_ref())?;
+        let tlsa_lookup = match self.dnssec.resolver.tlsa_lookup(name).await {
             Ok(tlsa_lookup) => tlsa_lookup,
             Err(err) => {
                 return match &err.kind() {
