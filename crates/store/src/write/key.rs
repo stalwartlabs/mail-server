@@ -26,7 +26,8 @@ use utils::codec::leb128::Leb128_;
 
 use crate::{
     BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN, SUBSPACE_BITMAPS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN, WITHOUT_BLOCK_NUM,
+    WITH_SUBSPACE,
 };
 
 use super::{AnyKey, BitmapClass, BlobOp, DirectoryClass, TagValue, ValueClass};
@@ -168,9 +169,9 @@ impl<T: AsRef<ValueClass>> ValueKey<T> {
 }
 
 impl Key for IndexKeyPrefix {
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
         {
-            if include_subspace {
+            if (flags & WITH_SUBSPACE) != 0 {
                 KeySerializer::new(std::mem::size_of::<IndexKeyPrefix>() + 1)
                     .write(crate::SUBSPACE_INDEXES)
             } else {
@@ -199,9 +200,9 @@ impl Key for LogKey {
         SUBSPACE_LOGS
     }
 
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
         {
-            if include_subspace {
+            if (flags & WITH_SUBSPACE) != 0 {
                 KeySerializer::new(std::mem::size_of::<LogKey>() + 1).write(crate::SUBSPACE_LOGS)
             } else {
                 KeySerializer::new(std::mem::size_of::<LogKey>())
@@ -219,8 +220,8 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
         SUBSPACE_VALUES
     }
 
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
-        let serializer = if include_subspace {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
+        let serializer = if (flags & WITH_SUBSPACE) != 0 {
             KeySerializer::new(self.class.as_ref().serialized_size() + 2).write(self.subspace())
         } else {
             KeySerializer::new(self.class.as_ref().serialized_size() + 1)
@@ -305,10 +306,10 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
         SUBSPACE_INDEXES
     }
 
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
         let key = self.key.as_ref();
         {
-            if include_subspace {
+            if (flags & WITH_SUBSPACE) != 0 {
                 KeySerializer::new(std::mem::size_of::<IndexKey<T>>() + key.len() + 1)
                     .write(crate::SUBSPACE_INDEXES)
             } else {
@@ -329,7 +330,7 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
         SUBSPACE_BITMAPS
     }
 
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
         const BM_DOCUMENT_IDS: u8 = 0;
         const BM_TAG: u8 = 1 << 6;
         const BM_TEXT: u8 = 1 << 7;
@@ -338,8 +339,8 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
         const TAG_TEXT: u8 = 1 << 0;
         const TAG_STATIC: u8 = 1 << 1;
 
-        match self.class.as_ref() {
-            BitmapClass::DocumentIds => if include_subspace {
+        let serializer = match self.class.as_ref() {
+            BitmapClass::DocumentIds => if (flags & WITH_SUBSPACE) != 0 {
                 KeySerializer::new(U32_LEN + 3).write(SUBSPACE_BITMAPS)
             } else {
                 KeySerializer::new(U32_LEN + 2)
@@ -348,7 +349,7 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
             .write(self.collection)
             .write(BM_DOCUMENT_IDS),
             BitmapClass::Tag { field, value } => match value {
-                TagValue::Id(id) => if include_subspace {
+                TagValue::Id(id) => if (flags & WITH_SUBSPACE) != 0 {
                     KeySerializer::new((U32_LEN * 2) + 4).write(SUBSPACE_BITMAPS)
                 } else {
                     KeySerializer::new((U32_LEN * 2) + 3)
@@ -358,7 +359,7 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
                 .write(BM_TAG | TAG_ID)
                 .write(*field)
                 .write_leb128(*id),
-                TagValue::Text(text) => if include_subspace {
+                TagValue::Text(text) => if (flags & WITH_SUBSPACE) != 0 {
                     KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAPS)
                 } else {
                     KeySerializer::new(U32_LEN + 3 + text.len())
@@ -368,7 +369,7 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
                 .write(BM_TAG | TAG_TEXT)
                 .write(*field)
                 .write(text.as_slice()),
-                TagValue::Static(id) => if include_subspace {
+                TagValue::Static(id) => if (flags & WITH_SUBSPACE) != 0 {
                     KeySerializer::new(U32_LEN + 5).write(SUBSPACE_BITMAPS)
                 } else {
                     KeySerializer::new(U32_LEN + 4)
@@ -379,7 +380,7 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
                 .write(*field)
                 .write(*id),
             },
-            BitmapClass::Text { field, token } => if include_subspace {
+            BitmapClass::Text { field, token } => if (flags & WITH_SUBSPACE) != 0 {
                 KeySerializer::new(U32_LEN + 16 + 3 + 1).write(SUBSPACE_BITMAPS)
             } else {
                 KeySerializer::new(U32_LEN + 16 + 3)
@@ -389,16 +390,20 @@ impl<T: AsRef<BitmapClass> + Sync + Send> Key for BitmapKey<T> {
             .write(BM_TEXT | token.len)
             .write(*field)
             .write(token.hash.as_slice()),
+        };
+
+        if (flags & WITHOUT_BLOCK_NUM) != 0 {
+            serializer.finalize()
+        } else {
+            serializer.write(self.block_num).finalize()
         }
-        .write(self.block_num)
-        .finalize()
     }
 }
 
 impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
-    fn serialize(&self, include_subspace: bool) -> Vec<u8> {
+    fn serialize(&self, flags: u32) -> Vec<u8> {
         let key = self.key.as_ref();
-        if include_subspace {
+        if (flags & WITH_SUBSPACE) != 0 {
             KeySerializer::new(key.len() + 1).write(self.subspace)
         } else {
             KeySerializer::new(key.len())

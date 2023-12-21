@@ -71,8 +71,12 @@ pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
 }
 
+// Key serialization flags
+pub(crate) const WITH_SUBSPACE: u32 = 1;
+pub(crate) const WITHOUT_BLOCK_NUM: u32 = 1 << 1;
+
 pub trait Key: Sync + Send {
-    fn serialize(&self, include_subspace: bool) -> Vec<u8>;
+    fn serialize(&self, flags: u32) -> Vec<u8>;
     fn subspace(&self) -> u8;
 }
 

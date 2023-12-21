@@ -2,7 +2,7 @@
 # ElasticSearch FTS Store configuration
 #############################################
 
-[store."elastic"]
+[store."elasticsearch"]
 type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
@@ -10,9 +10,9 @@ password = "myelasticpassword"
 #cloud-id = "my-cloud-id"
 disable = true
 
-[store."elastic".tls]
+[store."elasticsearch".tls]
 allow-invalid-certs = true
 
-[store."elastic".index]
+[store."elasticsearch".index]
 shards = 3
 replicas = 0

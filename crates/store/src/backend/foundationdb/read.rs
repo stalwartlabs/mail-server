@@ -35,7 +35,7 @@ use crate::{
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
 use super::{FdbStore, MAX_VALUE_SIZE};
@@ -59,7 +59,7 @@ impl FdbStore {
     where
         U: Deserialize,
     {
-        let key = key.serialize(true);
+        let key = key.serialize(WITH_SUBSPACE);
         let trx = self.db.create_trx()?;
 
         match read_chunked_value(&key, &trx, true).await? {
@@ -75,7 +75,7 @@ impl FdbStore {
     ) -> crate::Result<Option<RoaringBitmap>> {
         #[cfg(feature = "fdb-chunked-bm")]
         {
-            read_chunked_bitmap(&key.serialize(true), &self.db.create_trx()?, true)
+            read_chunked_bitmap(&key.serialize(WITH_SUBSPACE), &self.db.create_trx()?, true)
                 .await
                 .map(Into::into)
         }
@@ -83,9 +83,9 @@ impl FdbStore {
         #[cfg(not(feature = "fdb-chunked-bm"))]
         {
             let mut bm = RoaringBitmap::new();
-            let begin = key.serialize(true);
+            let begin = key.serialize(WITH_SUBSPACE);
             key.block_num = u32::MAX;
-            let end = key.serialize(true);
+            let end = key.serialize(WITH_SUBSPACE);
             let key_len = begin.len();
             let trx = self.db.create_trx()?;
             let mut values = trx.get_ranges(
@@ -119,8 +119,8 @@ impl FdbStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
-        let begin = params.begin.serialize(true);
-        let end = params.end.serialize(true);
+        let begin = params.begin.serialize(WITH_SUBSPACE);
+        let end = params.end.serialize(WITH_SUBSPACE);
 
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(
@@ -156,7 +156,7 @@ impl FdbStore {
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(true);
+        let key = key.into().serialize(WITH_SUBSPACE);
         if let Some(bytes) = self.db.create_trx()?.get(&key, true).await? {
             Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
                 crate::Error::InternalError("Invalid counter value.".to_string())

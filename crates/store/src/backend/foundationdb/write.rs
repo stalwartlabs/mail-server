@@ -40,7 +40,7 @@ use crate::{
         key::KeySerializer,
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_VALUES,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_VALUES, WITH_SUBSPACE,
 };
 
 use super::{
@@ -112,7 +112,7 @@ impl FdbStore {
                             document_id,
                             class,
                         }
-                        .serialize(true);
+                        .serialize(WITH_SUBSPACE);
 
                         trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                     }
@@ -123,7 +123,7 @@ impl FdbStore {
                             document_id,
                             class,
                         }
-                        .serialize(true);
+                        .serialize(WITH_SUBSPACE);
                         let do_chunk = key[0] == SUBSPACE_VALUES;
 
                         if let ValueOp::Set(value) = op {
@@ -161,7 +161,7 @@ impl FdbStore {
                                             class: BitmapClass::DocumentIds,
                                             block_num,
                                         }
-                                        .serialize(true),
+                                        .serialize(WITH_SUBSPACE),
                                         true,
                                     )
                                     .await
@@ -192,7 +192,7 @@ impl FdbStore {
                             field: *field,
                             key,
                         }
-                        .serialize(true);
+                        .serialize(WITH_SUBSPACE);
 
                         if *set {
                             trx.set(&key, &[]);
@@ -215,7 +215,7 @@ impl FdbStore {
                                     class,
                                     block_num: DenseBitmap::block_num(document_id),
                                 }
-                                .serialize(true),
+                                .serialize(WITH_SUBSPACE),
                             )
                             .or_insert_with(DenseBitmap::empty)
                             .set(document_id);
@@ -229,7 +229,7 @@ impl FdbStore {
                                         class,
                                         block_num: 0,
                                     }
-                                    .serialize(true),
+                                    .serialize(WITH_SUBSPACE),
                                 )
                                 .or_insert(Vec::new())
                                 .push(BitmapOp::new(document_id, *set));
@@ -245,7 +245,7 @@ impl FdbStore {
                             collection: *collection,
                             change_id: *change_id,
                         }
-                        .serialize(true);
+                        .serialize(WITH_SUBSPACE);
                         trx.set(&key, set);
                     }
                     Operation::AssertValue {
@@ -258,7 +258,7 @@ impl FdbStore {
                             document_id,
                             class,
                         }
-                        .serialize(true);
+                        .serialize(WITH_SUBSPACE);
 
                         let matches = match read_chunked_value(&key, &trx, false).await {
                             Ok(ChunkedValue::Single(bytes)) => assert_value.matches(bytes.as_ref()),
@@ -395,7 +395,16 @@ impl FdbStore {
         let mut iter = trx.get_ranges(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(&[SUBSPACE_BITMAPS, 0u8][..]),
-                end: KeySelector::first_greater_or_equal(&[SUBSPACE_BITMAPS, u8::MAX][..]),
+                end: KeySelector::first_greater_or_equal(
+                    &[
+                        SUBSPACE_BITMAPS,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                    ][..],
+                ),
                 mode: options::StreamingMode::WantAll,
                 reverse: false,
                 ..Default::default()
@@ -444,8 +453,8 @@ impl FdbStore {
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
-        let from = from.serialize(true);
-        let to = to.serialize(true);
+        let from = from.serialize(WITH_SUBSPACE);
+        let to = to.serialize(WITH_SUBSPACE);
 
         let trx = self.db.create_trx()?;
         trx.clear_range(&from, &to);

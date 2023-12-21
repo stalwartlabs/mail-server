@@ -43,7 +43,7 @@ impl PostgresStore {
                 char::from(key.subspace())
             ))
             .await?;
-        let key = key.serialize(false);
+        let key = key.serialize(0);
         conn.query_opt(&s, &[&key])
             .await
             .map_err(Into::into)
@@ -60,10 +60,10 @@ impl PostgresStore {
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let begin = key.serialize(false);
+        let begin = key.serialize(0);
         key.block_num = u32::MAX;
         let key_len = begin.len();
-        let end = key.serialize(false);
+        let end = key.serialize(0);
         let conn = self.conn_pool.get().await?;
 
         let mut bm = RoaringBitmap::new();
@@ -90,8 +90,8 @@ impl PostgresStore {
     ) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
         let table = char::from(params.begin.subspace());
-        let begin = params.begin.serialize(false);
-        let end = params.end.serialize(false);
+        let begin = params.begin.serialize(0);
+        let end = params.end.serialize(0);
         let keys = if params.values { "k, v" } else { "k" };
 
         let s = conn
@@ -142,7 +142,7 @@ impl PostgresStore {
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(false);
+        let key = key.into().serialize(0);
         let conn = self.conn_pool.get().await?;
         let s = conn.prepare_cached("SELECT v FROM c WHERE k = $1").await?;
         match conn.query_opt(&s, &[&key]).await {

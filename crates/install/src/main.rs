@@ -22,6 +22,7 @@
 */
 
 use std::{
+    fmt::{Display, Formatter},
     fs,
     io::Cursor,
     path::{Path, PathBuf},
@@ -32,9 +33,7 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
 use openssl::rsa::Rsa;
-use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use rusqlite::{Connection, OpenFlags};
 
 const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
 
@@ -65,30 +64,47 @@ enum Component {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Backend {
-    SQLite,
+enum Store {
+    RocksDB,
     FoundationDB,
+    SQLite,
+    PostgreSQL,
+    MySQL,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Blob {
-    Local,
-    MinIO,
+    Internal,
+    Filesystem,
     S3,
-    Gcs,
-    Azure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fts {
+    Internal,
+    ElasticSearch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpamDb {
+    Internal,
+    Redis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Directory {
-    Sql,
+    Internal,
     Ldap,
-    None,
+    PostgreSQL,
+    MySQL,
+    SQLite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SmtpDirectory {
-    Sql,
+    PostgreSQL,
+    MySQL,
+    SQLite,
     Ldap,
     Lmtp,
     Imap,
@@ -173,17 +189,20 @@ fn main() -> std::io::Result<()> {
     let mut download_url = None;
 
     // Obtain database engine
-    let directory = if component != Component::Smtp {
-        if !skip_download {
-            let backend = select::<Backend>(
-                "Which database engine would you like to use?",
-                &[
-                    "SQLite (single node, replicated with Litestream)",
-                    "FoundationDB (distributed and fault-tolerant)",
-                ],
-                Backend::SQLite,
-            )?;
+    if component != Component::Smtp {
+        let backend = select::<Store>(
+            "Which database would you like to use?",
+            &[
+                "RocksDB (recommended for single-node setups)",
+                "FoundationDB (recommended for distributed environments)",
+                "SQLite",
+                "PostgreSQL",
+                "MySQL",
+            ],
+            Store::RocksDB,
+        )?;
 
+        if !skip_download {
             download_url = format!(
                 concat!(
                     "https://github.com/stalwartlabs/{}",
@@ -202,45 +221,69 @@ fn main() -> std::io::Result<()> {
                     Component::Smtp => unreachable!(),
                 },
                 match backend {
-                    Backend::SQLite => "sqlite",
-                    Backend::FoundationDB => "foundationdb",
+                    Store::FoundationDB => "distributed",
+                    _ => "local",
                 },
                 TARGET,
                 PKG_EXTENSION
             )
             .into();
         }
+        let store = backend.to_string();
         let blob = select::<Blob>(
-            "Where would you like to store e-mails and blobs?",
+            "Where would you like to store e-mails and other large binaries?",
             &[
-                "Local disk using Maildir",
-                "MinIO (or any S3-compatible object storage)",
-                "Amazon S3",
-                "Google Cloud Storage",
-                "Azure Blob Storage",
+                &store,
+                "Local file system",
+                "S3, MinIO or any S3-compatible object storage",
             ],
-            Blob::Local,
+            Blob::Internal,
         )?;
 
         let directory = select::<Directory>(
-            "Do you already have a directory or database containing your accounts?",
+            "Do you already have a directory or database containing your user accounts?",
             &[
-                "Yes, it's an SQL database",
-                "Yes, it's an LDAP directory",
-                "No, create a new directory for me",
+                &format!("No, I want Stalwart to manage my user accounts in {store}"),
+                "Yes, it's an LDAP server",
+                "Yes, it's an PostgreSQL database",
+                "Yes, it's an MySQL database",
+                "Yes, it's an SQLite database",
             ],
-            Directory::None,
+            Directory::Internal,
+        )?;
+
+        let fts = select::<Fts>(
+            "Where would you like to store the full-text index?",
+            &[&store, "ElasticSearch"],
+            Fts::Internal,
+        )?;
+
+        let spamdb = select::<SpamDb>(
+            "Where would you like to store the anti-spam database?",
+            &[&store, "Redis"],
+            SpamDb::Internal,
         )?;
 
         // Update settings
-        if blob != Blob::Local {
+        sed(
+            cfg_path.join("config.toml"),
+            &[
+                ("__STORE__", backend.id()),
+                ("__DIRECTORY__", directory.id()),
+            ],
+        );
+        sed(
+            cfg_path.join("jmap").join("store.toml"),
+            &[
+                ("__BLOB_STORE__", blob.id().unwrap_or("%{DEFAULT_STORE}%")),
+                ("__FTS_STORE__", fts.id().unwrap_or("%{DEFAULT_STORE}%")),
+            ],
+        );
+        if let Some(id) = spamdb.id() {
             sed(
-                cfg_path.join("jmap").join("store.toml"),
-                &[("\"local\"", "\"s3\"")],
+                cfg_path.join("common").join("sieve.toml"),
+                &[("%{DEFAULT_STORE}%", id)],
             );
-        }
-        if directory == Directory::Ldap {
-            sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
         }
         sed(
             cfg_path.join("jmap").join("oauth.toml"),
@@ -254,12 +297,47 @@ fn main() -> std::io::Result<()> {
             )],
         );
 
-        directory
+        // Enable stores
+        for store in [
+            backend.id().into(),
+            blob.id(),
+            fts.id(),
+            spamdb.id(),
+            directory.sql_store_id(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            sed(
+                cfg_path.join("store").join(format!("{store}.toml")),
+                &[("disable = true", "disable = false")],
+            );
+        }
+
+        // Enable directory
+        if let Some(sql_id) = directory.sql_store_id() {
+            sed(
+                cfg_path.join("directory").join("sql.toml"),
+                &[
+                    ("disable = true", "disable = false"),
+                    ("__SQL_STORE__", sql_id),
+                ],
+            );
+        } else {
+            sed(
+                cfg_path
+                    .join("directory")
+                    .join(format!("{}.toml", directory.id())),
+                &[("disable = true", "disable = false")],
+            );
+        }
     } else {
         let smtp_directory = select::<SmtpDirectory>(
             "How should your local accounts be validated?",
             &[
-                "SQL database",
+                "PostgreSQL database",
+                "MySQL database",
+                "SQLite database",
                 "LDAP directory",
                 "LMTP server",
                 "IMAP server",
@@ -267,34 +345,61 @@ fn main() -> std::io::Result<()> {
             SmtpDirectory::Lmtp,
         )?;
 
-        if smtp_directory == SmtpDirectory::Ldap {
-            sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
+        let spamdb = select::<SpamDb>(
+            "Where would you like to store the anti-spam database?",
+            &["Local database", "Redis"],
+            SpamDb::Internal,
+        )?;
+
+        // Update settings
+        sed(
+            cfg_path.join("config.toml"),
+            &[
+                ("__STORE__", "rocksdb"),
+                ("__DIRECTORY__", smtp_directory.id()),
+            ],
+        );
+        sed(
+            cfg_path.join("jmap").join("store.toml"),
+            &[
+                ("__BLOB_STORE__", "%{DEFAULT_STORE}%"),
+                ("__FTS_STORE__", "%{DEFAULT_STORE}%"),
+            ],
+        );
+        if let Some(id) = spamdb.id() {
+            sed(
+                cfg_path.join("common").join("sieve.toml"),
+                &[("%{DEFAULT_STORE}%", id)],
+            );
         }
 
-        match smtp_directory {
-            SmtpDirectory::Ldap => {
-                sed(cfg_path.join("config.toml"), &[("/sql.toml", "/ldap.toml")]);
-            }
-            SmtpDirectory::Lmtp | SmtpDirectory::Imap => {
-                let d_type = if smtp_directory == SmtpDirectory::Lmtp {
-                    "lmtp"
-                } else {
-                    "imap"
-                };
-                sed(
-                    cfg_path.join("smtp").join("queue.toml"),
-                    &[("default", d_type)],
-                );
-                sed(
-                    cfg_path.join("smtp").join("session.toml"),
-                    &[("default", d_type)],
-                );
-                sed(
-                    cfg_path.join("config.toml"),
-                    &[("\"%{BASE_PATH}%/etc/directory/", format!("\"%{{BASE_PATH}}%/etc/directory/{d_type}.toml\",\n\t\"%{{BASE_PATH}}%/etc/directory/"))],
-                );
-            }
-            SmtpDirectory::Sql => (),
+        // Enable directory
+        if let Some(sql_id) = smtp_directory.sql_store_id() {
+            sed(
+                cfg_path.join("directory").join("sql.toml"),
+                &[
+                    ("disable = true", "disable = false"),
+                    ("__SQL_STORE__", sql_id),
+                ],
+            );
+        } else {
+            sed(
+                cfg_path
+                    .join("directory")
+                    .join(format!("{}.toml", smtp_directory.id())),
+                &[("disable = true", "disable = false")],
+            );
+        }
+
+        // Enable stores
+        for store in [smtp_directory.sql_store_id(), spamdb.id(), "rocksdb".into()]
+            .into_iter()
+            .flatten()
+        {
+            sed(
+                cfg_path.join("store").join(format!("{store}.toml")),
+                &[("disable = true", "disable = false")],
+            );
         }
 
         if !skip_download {
@@ -307,12 +412,7 @@ fn main() -> std::io::Result<()> {
             )
             .into();
         }
-        match smtp_directory {
-            SmtpDirectory::Sql => Directory::Sql,
-            SmtpDirectory::Ldap => Directory::Ldap,
-            SmtpDirectory::Lmtp | SmtpDirectory::Imap => Directory::None,
-        }
-    };
+    }
 
     // Download binary
     if let Some(download_url) = download_url {
@@ -401,16 +501,6 @@ fn main() -> std::io::Result<()> {
     // Generate DKIM key and instructions
     let dkim_instructions = generate_dkim(&base_path, &domain, &hostname)?;
 
-    // Create authentication and spam filter SQLite databases
-    let admin_password = create_databases(
-        &base_path,
-        if matches!(directory, Directory::None) {
-            Some(&domain)
-        } else {
-            None
-        },
-    )?;
-
     // Update config file
     if args.docker {
         sed(
@@ -440,6 +530,7 @@ fn main() -> std::io::Result<()> {
     );
 
     // Write service file
+
     if !args.docker {
         // Change permissions
         #[cfg(not(target_env = "msvc"))]
@@ -541,10 +632,6 @@ fn main() -> std::io::Result<()> {
     }
 
     eprintln!("\n🎉 Installation completed!\n\n✅ {dkim_instructions}\n");
-
-    if let Some(admin_password) = admin_password {
-        eprintln!("🔑 The administrator account is 'admin' with password '{admin_password}'.\n",);
-    }
 
     Ok(())
 }
@@ -690,82 +777,6 @@ fn create_directories(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn create_databases(base_path: &Path, domain: Option<&str>) -> std::io::Result<Option<String>> {
-    // Create Spam database
-    let path = PathBuf::from(base_path)
-        .join("data")
-        .join("spamfilter.sqlite3");
-    let conn = Connection::open_with_flags(path, OpenFlags::default()).map_err(|err| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to open database: {}", err),
-        )
-    })?;
-    for query in [
-        concat!(
-            "CREATE TABLE IF NOT EXISTS bayes_tokens (h1 INTEGER NOT NULL, ",
-            "h2 INTEGER NOT NULL, ws INTEGER, wh INTEGER, PRIMARY KEY (h1, h2))",
-        ),
-        concat!(
-            "CREATE TABLE IF NOT EXISTS seen_ids (id STRING NOT NULL PRIMARY KEY",
-            ", ttl DATETIME NOT NULL)",
-        ),
-        concat!(
-            "CREATE TABLE IF NOT EXISTS reputation (token STRING NOT NULL PRIMARY KEY",
-            ", score FLOAT NOT NULL DEFAULT '0', count INT(11) NOT NULL ",
-            "DEFAULT '0', ttl DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-        ),
-    ] {
-        conn.execute(query, []).map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create database: {}", err),
-            )
-        })?;
-    }
-
-    if let Some(domain) = domain {
-        // Create accounts database
-        let mut path = PathBuf::from(base_path);
-        path.push("data");
-        if !path.exists() {
-            fs::create_dir_all(&path)?;
-        }
-        path.push("accounts.sqlite3");
-
-        let conn = Connection::open_with_flags(path, OpenFlags::default()).map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to open database: {}", err),
-            )
-        })?;
-        let secret = thread_rng()
-            .sample_iter(Alphanumeric)
-            .take(12)
-            .map(char::from)
-            .collect::<String>();
-        let hashed_secret = sha512_crypt::hash(&secret).unwrap();
-        for query in [
-        concat!("CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, ","type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)").to_string(),
-        concat!("CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of ","TEXT NOT NULL, PRIMARY KEY (name, member_of))").to_string(),
-        concat!("CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL",", type TEXT, PRIMARY KEY (name, address))").to_string(),
-        format!("INSERT OR REPLACE INTO accounts (name, secret, description, type) VALUES ('admin', '{hashed_secret}', 'Postmaster', 'admin')"), 
-        format!("INSERT OR REPLACE INTO emails (name, address, type) VALUES ('admin', 'postmaster@{domain}', 'primary')"),
-        "INSERT OR IGNORE INTO group_members (name, member_of) VALUES ('admin', 'superusers')".to_string()
-    ] {
-        conn.execute(&query, []).map_err(|err| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to create database: {}", err),
-            )
-        })?;
-    }
-        Ok(Some(secret))
-    } else {
-        Ok(None)
-    }
-}
-
 fn generate_dkim(path: &Path, domain: &str, hostname: &str) -> std::io::Result<String> {
     let mut path = PathBuf::from(path);
     path.push("etc");
@@ -857,19 +868,25 @@ impl SelectItem for Component {
     }
 }
 
-impl SelectItem for Backend {
+impl SelectItem for Store {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Self::SQLite,
+            0 => Self::RocksDB,
             1 => Self::FoundationDB,
+            2 => Self::SQLite,
+            3 => Self::PostgreSQL,
+            4 => Self::MySQL,
             _ => unreachable!(),
         }
     }
 
     fn to_index(&self) -> usize {
         match self {
-            Self::SQLite => 0,
-            Self::FoundationDB => 1,
+            Store::RocksDB => 0,
+            Store::FoundationDB => 1,
+            Store::SQLite => 2,
+            Store::PostgreSQL => 3,
+            Store::MySQL => 4,
         }
     }
 }
@@ -877,18 +894,22 @@ impl SelectItem for Backend {
 impl SelectItem for Directory {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Self::Sql,
+            0 => Self::Internal,
             1 => Self::Ldap,
-            2 => Self::None,
+            2 => Self::PostgreSQL,
+            3 => Self::MySQL,
+            4 => Self::SQLite,
             _ => unreachable!(),
         }
     }
 
     fn to_index(&self) -> usize {
         match self {
-            Self::Sql => 0,
-            Self::Ldap => 1,
-            Self::None => 2,
+            Directory::Internal => 0,
+            Directory::Ldap => 1,
+            Directory::PostgreSQL => 2,
+            Directory::MySQL => 3,
+            Directory::SQLite => 4,
         }
     }
 }
@@ -896,20 +917,24 @@ impl SelectItem for Directory {
 impl SelectItem for SmtpDirectory {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Self::Sql,
-            1 => Self::Ldap,
-            2 => Self::Lmtp,
-            3 => Self::Imap,
+            0 => Self::PostgreSQL,
+            1 => Self::MySQL,
+            2 => Self::SQLite,
+            3 => Self::Ldap,
+            4 => Self::Lmtp,
+            5 => Self::Imap,
             _ => unreachable!(),
         }
     }
 
     fn to_index(&self) -> usize {
         match self {
-            SmtpDirectory::Sql => 0,
-            SmtpDirectory::Ldap => 1,
-            SmtpDirectory::Lmtp => 2,
-            SmtpDirectory::Imap => 3,
+            SmtpDirectory::PostgreSQL => 0,
+            SmtpDirectory::MySQL => 1,
+            SmtpDirectory::SQLite => 2,
+            SmtpDirectory::Ldap => 3,
+            SmtpDirectory::Lmtp => 4,
+            SmtpDirectory::Imap => 5,
         }
     }
 }
@@ -917,22 +942,52 @@ impl SelectItem for SmtpDirectory {
 impl SelectItem for Blob {
     fn from_index(index: usize) -> Self {
         match index {
-            0 => Blob::Local,
-            1 => Blob::MinIO,
-            2 => Blob::S3,
-            3 => Blob::Gcs,
-            4 => Blob::Azure,
+            0 => Self::Internal,
+            1 => Self::Filesystem,
+            2 => Self::S3,
             _ => unreachable!(),
         }
     }
 
     fn to_index(&self) -> usize {
         match self {
-            Blob::Local => 0,
-            Blob::MinIO => 1,
+            Blob::Internal => 0,
+            Blob::Filesystem => 1,
             Blob::S3 => 2,
-            Blob::Gcs => 3,
-            Blob::Azure => 4,
+        }
+    }
+}
+
+impl SelectItem for SpamDb {
+    fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::Internal,
+            1 => Self::Redis,
+            _ => unreachable!(),
+        }
+    }
+
+    fn to_index(&self) -> usize {
+        match self {
+            SpamDb::Internal => 0,
+            SpamDb::Redis => 1,
+        }
+    }
+}
+
+impl SelectItem for Fts {
+    fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::Internal,
+            1 => Self::ElasticSearch,
+            _ => unreachable!(),
+        }
+    }
+
+    fn to_index(&self) -> usize {
+        match self {
+            Fts::Internal => 0,
+            Fts::ElasticSearch => 1,
         }
     }
 }
@@ -970,6 +1025,97 @@ impl Component {
             Self::Jmap => "JMAP",
             Self::Imap => "IMAP",
             Self::Smtp => "SMTP",
+        }
+    }
+}
+
+impl Display for Store {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RocksDB => write!(f, "RocksDB"),
+            Self::FoundationDB => write!(f, "FoundationDB"),
+            Self::SQLite => write!(f, "SQLite"),
+            Self::PostgreSQL => write!(f, "PostgreSQL"),
+            Self::MySQL => write!(f, "MySQL"),
+        }
+    }
+}
+
+impl Store {
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::RocksDB => "rocksdb",
+            Self::FoundationDB => "foundationdb",
+            Self::SQLite => "sqlite",
+            Self::PostgreSQL => "postgresql",
+            Self::MySQL => "mysql",
+        }
+    }
+}
+
+impl Directory {
+    pub fn id(&self) -> &'static str {
+        match self {
+            Directory::Internal => "internal",
+            Directory::Ldap => "ldap",
+            Directory::PostgreSQL | Directory::MySQL | Directory::SQLite => "sql",
+        }
+    }
+
+    pub fn sql_store_id(&self) -> Option<&'static str> {
+        match self {
+            Directory::PostgreSQL => Some("postgresql"),
+            Directory::MySQL => Some("mysql"),
+            Directory::SQLite => Some("sqlite"),
+            Directory::Internal | Directory::Ldap => None,
+        }
+    }
+}
+
+impl SmtpDirectory {
+    pub fn id(&self) -> &'static str {
+        match self {
+            SmtpDirectory::Ldap => "ldap",
+            SmtpDirectory::Lmtp => "lmtp",
+            SmtpDirectory::Imap => "imap",
+            SmtpDirectory::PostgreSQL | SmtpDirectory::MySQL | SmtpDirectory::SQLite => "sql",
+        }
+    }
+
+    pub fn sql_store_id(&self) -> Option<&'static str> {
+        match self {
+            SmtpDirectory::PostgreSQL => Some("postgresql"),
+            SmtpDirectory::MySQL => Some("mysql"),
+            SmtpDirectory::SQLite => Some("sqlite"),
+            SmtpDirectory::Ldap | SmtpDirectory::Lmtp | SmtpDirectory::Imap => None,
+        }
+    }
+}
+
+impl Blob {
+    pub fn id(&self) -> Option<&'static str> {
+        match self {
+            Self::Internal => None,
+            Self::Filesystem => "fs".into(),
+            Self::S3 => "s3".into(),
+        }
+    }
+}
+
+impl Fts {
+    pub fn id(&self) -> Option<&'static str> {
+        match self {
+            Self::Internal => None,
+            Self::ElasticSearch => "elasticsearch".into(),
+        }
+    }
+}
+
+impl SpamDb {
+    pub fn id(&self) -> Option<&'static str> {
+        match self {
+            Self::Internal => None,
+            Self::Redis => "redis".into(),
         }
     }
 }

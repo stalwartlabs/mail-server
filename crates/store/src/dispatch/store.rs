@@ -180,7 +180,7 @@ impl Store {
                             block_num: 0,
                             class,
                         }
-                        .serialize(false);
+                        .serialize(0);
                         bitmaps.push((key, class.clone(), document_id, *set));
                     }
                     _ => {}

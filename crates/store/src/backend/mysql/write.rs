@@ -105,7 +105,7 @@ impl MysqlStore {
                         document_id,
                         class,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     if *by >= 0 {
                         let s = trx
@@ -128,7 +128,7 @@ impl MysqlStore {
                         class,
                     };
                     let table = char::from(key.subspace());
-                    let key = key.serialize(false);
+                    let key = key.serialize(0);
 
                     if let ValueOp::Set(value) = op {
                         let exists = asserted_values.get(&key);
@@ -170,7 +170,7 @@ impl MysqlStore {
                                 class: BitmapClass::DocumentIds,
                                 block_num: document_id,
                             }
-                            .serialize(false);
+                            .serialize(0);
                             if trx.exec_first::<Row, _, _>(&s, (key,)).await?.is_some() {
                                 trx.rollback().await?;
                                 return Ok(false);
@@ -191,7 +191,7 @@ impl MysqlStore {
                         field: *field,
                         key,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = if *set {
                         trx.prep("INSERT IGNORE INTO i (k) VALUES (?)").await?
@@ -207,7 +207,7 @@ impl MysqlStore {
                         class,
                         block_num: document_id,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = if *set {
                         if matches!(class, BitmapClass::DocumentIds) {
@@ -230,7 +230,7 @@ impl MysqlStore {
                         collection: *collection,
                         change_id: *change_id,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = trx
                         .prep("INSERT INTO l (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)")
@@ -248,7 +248,7 @@ impl MysqlStore {
                         class,
                     };
                     let table = char::from(key.subspace());
-                    let key = key.serialize(false);
+                    let key = key.serialize(0);
 
                     let s = trx
                         .prep(&format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
@@ -284,7 +284,7 @@ impl MysqlStore {
                 char::from(from.subspace()),
             ))
             .await?;
-        conn.exec_drop(&s, (&from.serialize(false), &to.serialize(false)))
+        conn.exec_drop(&s, (&from.serialize(0), &to.serialize(0)))
             .await
             .map_err(Into::into)
     }

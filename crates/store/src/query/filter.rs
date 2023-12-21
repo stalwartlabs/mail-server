@@ -278,7 +278,7 @@ impl Store {
             collection,
             field,
         }
-        .serialize(false);
+        .serialize(0);
 
         self.iterate(
             IterateParams::new(begin, end).no_values().ascending(),

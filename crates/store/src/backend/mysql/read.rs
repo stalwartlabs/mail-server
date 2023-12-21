@@ -44,7 +44,7 @@ impl MysqlStore {
                 char::from(key.subspace())
             ))
             .await?;
-        let key = key.serialize(false);
+        let key = key.serialize(0);
         conn.exec_first::<Vec<u8>, _, _>(&s, (key,))
             .await
             .map_err(Into::into)
@@ -61,10 +61,10 @@ impl MysqlStore {
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let begin = key.serialize(false);
+        let begin = key.serialize(0);
         key.block_num = u32::MAX;
         let key_len = begin.len();
-        let end = key.serialize(false);
+        let end = key.serialize(0);
         let mut conn = self.conn_pool.get_conn().await?;
 
         let mut bm = RoaringBitmap::new();
@@ -86,8 +86,8 @@ impl MysqlStore {
     ) -> crate::Result<()> {
         let mut conn = self.conn_pool.get_conn().await?;
         let table = char::from(params.begin.subspace());
-        let begin = params.begin.serialize(false);
-        let end = params.end.serialize(false);
+        let begin = params.begin.serialize(0);
+        let end = params.end.serialize(0);
         let keys = if params.values { "k, v" } else { "k" };
 
         let s = conn
@@ -144,7 +144,7 @@ impl MysqlStore {
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(false);
+        let key = key.into().serialize(0);
         let mut conn = self.conn_pool.get_conn().await?;
         let s = conn.prep("SELECT v FROM c WHERE k = ?").await?;
         match conn.exec_first::<i64, _, _>(&s, (key,)).await {

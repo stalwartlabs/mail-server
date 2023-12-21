@@ -42,7 +42,7 @@ impl SqliteStore {
                 "SELECT v FROM {} WHERE k = ?",
                 char::from(key.subspace())
             ))?;
-            let key = key.serialize(false);
+            let key = key.serialize(0);
             result
                 .query_row([&key], |row| {
                     U::deserialize(row.get_ref(0)?.as_bytes()?)
@@ -58,10 +58,10 @@ impl SqliteStore {
         &self,
         mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        let begin = key.serialize(false);
+        let begin = key.serialize(0);
         key.block_num = u32::MAX;
         let key_len = begin.len();
-        let end = key.serialize(false);
+        let end = key.serialize(0);
         let conn = self.conn_pool.get()?;
 
         self.spawn_worker(move || {
@@ -89,8 +89,8 @@ impl SqliteStore {
 
         self.spawn_worker(move || {
             let table = char::from(params.begin.subspace());
-            let begin = params.begin.serialize(false);
-            let end = params.end.serialize(false);
+            let begin = params.begin.serialize(0);
+            let end = params.end.serialize(0);
             let keys = if params.values { "k, v" } else { "k" };
 
             let mut query = conn.prepare_cached(&match (params.first, params.ascending) {
@@ -139,7 +139,7 @@ impl SqliteStore {
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(false);
+        let key = key.into().serialize(0);
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             match conn

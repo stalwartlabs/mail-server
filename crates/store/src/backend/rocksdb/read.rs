@@ -26,7 +26,7 @@ use rocksdb::{Direction, IteratorMode};
 
 use crate::{
     write::{BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey,
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, WITHOUT_BLOCK_NUM,
 };
 
 use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS};
@@ -41,7 +41,7 @@ impl RocksDbStore {
             db.get_pinned_cf(
                 &db.cf_handle(std::str::from_utf8(&[key.subspace()]).unwrap())
                     .unwrap(),
-                &key.serialize(false),
+                &key.serialize(0),
             )
             .map_err(Into::into)
             .and_then(|value| {
@@ -61,21 +61,24 @@ impl RocksDbStore {
     ) -> crate::Result<Option<RoaringBitmap>> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.get_pinned_cf(&db.cf_handle(CF_BITMAPS).unwrap(), &key.serialize(false))
-                .map_err(Into::into)
-                .and_then(|value| {
-                    if let Some(value) = value {
-                        RoaringBitmap::deserialize(&value).map(|rb| {
-                            if !rb.is_empty() {
-                                Some(rb)
-                            } else {
-                                None
-                            }
-                        })
-                    } else {
-                        Ok(None)
-                    }
-                })
+            db.get_pinned_cf(
+                &db.cf_handle(CF_BITMAPS).unwrap(),
+                &key.serialize(WITHOUT_BLOCK_NUM),
+            )
+            .map_err(Into::into)
+            .and_then(|value| {
+                if let Some(value) = value {
+                    RoaringBitmap::deserialize(&value).map(|rb| {
+                        if !rb.is_empty() {
+                            Some(rb)
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    Ok(None)
+                }
+            })
         })
         .await
     }
@@ -91,8 +94,8 @@ impl RocksDbStore {
             let cf = db
                 .cf_handle(std::str::from_utf8(&[params.begin.subspace()]).unwrap())
                 .unwrap();
-            let begin = params.begin.serialize(false);
-            let end = params.end.serialize(false);
+            let begin = params.begin.serialize(0);
+            let end = params.end.serialize(0);
             let it_mode = if params.ascending {
                 IteratorMode::From(&begin, Direction::Forward)
             } else {
@@ -119,7 +122,7 @@ impl RocksDbStore {
         &self,
         key: impl Into<ValueKey<ValueClass>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(false);
+        let key = key.into().serialize(0);
         let db = self.db.clone();
         self.spawn_worker(move || {
             db.get_pinned_cf(&db.cf_handle(CF_COUNTERS).unwrap(), &key)

@@ -42,7 +42,7 @@ use crate::{
     write::{
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey, WITHOUT_BLOCK_NUM,
 };
 
 impl RocksDbStore {
@@ -101,8 +101,8 @@ impl RocksDbStore {
                 .unwrap();
 
             // TODO use delete_range when implemented (see https://github.com/rust-rocksdb/rust-rocksdb/issues/839)
-            let from = from.serialize(false);
-            let to = to.serialize(false);
+            let from = from.serialize(0);
+            let to = to.serialize(0);
             let mut delete_keys = Vec::new();
             let it_mode = IteratorMode::From(&from, Direction::Forward);
 
@@ -178,7 +178,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         txn.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..])?;
                     }
@@ -189,7 +189,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         };
-                        let key = key.serialize(false);
+                        let key = key.serialize(0);
 
                         if let ValueOp::Set(value) = op {
                             txn.put_cf(&self.cf_values, &key, value)?;
@@ -204,8 +204,7 @@ impl<'x> RocksDBTransaction<'x> {
                                             class: BitmapClass::DocumentIds,
                                             block_num: 0,
                                         }
-                                        .serialize(false),
-                                        //true,
+                                        .serialize(WITHOUT_BLOCK_NUM),
                                     )?
                                     .and_then(|bytes| RoaringBitmap::deserialize(&bytes).ok())
                                 {
@@ -227,7 +226,7 @@ impl<'x> RocksDBTransaction<'x> {
                             field: *field,
                             key,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         if *set {
                             txn.put_cf(&self.cf_indexes, &key, [])?;
@@ -242,7 +241,7 @@ impl<'x> RocksDBTransaction<'x> {
                             class,
                             block_num: 0,
                         }
-                        .serialize(false);
+                        .serialize(WITHOUT_BLOCK_NUM);
 
                         let value = if *set {
                             set_bit(document_id)
@@ -262,7 +261,7 @@ impl<'x> RocksDBTransaction<'x> {
                             collection: *collection,
                             change_id: *change_id,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         txn.put_cf(&self.cf_logs, &key, set)?;
                     }
@@ -276,7 +275,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         };
-                        let key = key.serialize(false);
+                        let key = key.serialize(0);
                         let matches = txn
                             .get_pinned_for_update_cf(&self.cf_values, &key, true)?
                             .map(|value| assert_value.matches(&value))
@@ -320,7 +319,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         wb.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..]);
                     }
@@ -331,7 +330,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         };
-                        let key = key.serialize(false);
+                        let key = key.serialize(0);
 
                         if let ValueOp::Set(value) = op {
                             wb.put_cf(&self.cf_values, &key, value);
@@ -347,7 +346,7 @@ impl<'x> RocksDBTransaction<'x> {
                             field: *field,
                             key,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         if *set {
                             wb.put_cf(&self.cf_indexes, &key, []);
@@ -362,7 +361,7 @@ impl<'x> RocksDBTransaction<'x> {
                             class,
                             block_num: 0,
                         }
-                        .serialize(false);
+                        .serialize(WITHOUT_BLOCK_NUM);
 
                         let value = if *set {
                             set_bit(document_id)
@@ -382,7 +381,7 @@ impl<'x> RocksDBTransaction<'x> {
                             collection: *collection,
                             change_id: *change_id,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         wb.put_cf(&self.cf_logs, &key, set);
                     }

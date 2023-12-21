@@ -111,7 +111,7 @@ impl PostgresStore {
                         document_id,
                         class,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     if *by >= 0 {
                         let s = trx
@@ -136,7 +136,7 @@ impl PostgresStore {
                         class,
                     };
                     let table = char::from(key.subspace());
-                    let key = key.serialize(false);
+                    let key = key.serialize(0);
 
                     if let ValueOp::Set(value) = op {
                         let s = if let Some(exists) = asserted_values.get(&key) {
@@ -177,7 +177,7 @@ impl PostgresStore {
                                 class: BitmapClass::DocumentIds,
                                 block_num: document_id,
                             }
-                            .serialize(false);
+                            .serialize(0);
                             if trx.query_opt(&s, &[&key]).await?.is_some() {
                                 return Ok(false);
                             }
@@ -197,7 +197,7 @@ impl PostgresStore {
                         field: *field,
                         key,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = if *set {
                         trx.prepare_cached(
@@ -216,7 +216,7 @@ impl PostgresStore {
                         class,
                         block_num: document_id,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = if *set {
                         if matches!(class, BitmapClass::DocumentIds) {
@@ -242,7 +242,7 @@ impl PostgresStore {
                         collection: *collection,
                         change_id: *change_id,
                     }
-                    .serialize(false);
+                    .serialize(0);
 
                     let s = trx
                         .prepare_cached(concat!(
@@ -263,7 +263,7 @@ impl PostgresStore {
                         class,
                     };
                     let table = char::from(key.subspace());
-                    let key = key.serialize(false);
+                    let key = key.serialize(0);
 
                     let s = trx
                         .prepare_cached(&format!("SELECT v FROM {} WHERE k = $1 FOR UPDATE", table))
@@ -301,7 +301,7 @@ impl PostgresStore {
                 char::from(from.subspace()),
             ))
             .await?;
-        conn.execute(&s, &[&from.serialize(false), &to.serialize(false)])
+        conn.execute(&s, &[&from.serialize(0), &to.serialize(0)])
             .await
             .map(|_| ())
             .map_err(Into::into)

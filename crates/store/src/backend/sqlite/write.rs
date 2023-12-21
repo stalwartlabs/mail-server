@@ -66,7 +66,7 @@ impl SqliteStore {
                             document_id,
                             class,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         if *by >= 0 {
                             trx.prepare_cached(concat!(
@@ -87,7 +87,7 @@ impl SqliteStore {
                             class,
                         };
                         let table = char::from(key.subspace());
-                        let key = key.serialize(false);
+                        let key = key.serialize(0);
 
                         if let ValueOp::Set(value) = op {
                             trx.prepare_cached(&format!(
@@ -108,7 +108,7 @@ impl SqliteStore {
                             field: *field,
                             key,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         if *set {
                             trx.prepare_cached("INSERT OR IGNORE INTO i (k) VALUES (?)")?
@@ -125,7 +125,7 @@ impl SqliteStore {
                             class,
                             block_num: document_id,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         if *set {
                             trx.prepare_cached("INSERT OR IGNORE INTO b (k) VALUES (?)")?
@@ -145,7 +145,7 @@ impl SqliteStore {
                             collection: *collection,
                             change_id: *change_id,
                         }
-                        .serialize(false);
+                        .serialize(0);
 
                         trx.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")?
                             .execute([&key, set])?;
@@ -161,7 +161,7 @@ impl SqliteStore {
                             class,
                         };
                         let table = char::from(key.subspace());
-                        let key = key.serialize(false);
+                        let key = key.serialize(0);
 
                         let matches = trx
                             .prepare_cached(&format!("SELECT v FROM {} WHERE k = ?", table))?
@@ -193,7 +193,7 @@ impl SqliteStore {
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
                 char::from(from.subspace()),
             ))?
-            .execute([from.serialize(false), to.serialize(false)])?;
+            .execute([from.serialize(0), to.serialize(0)])?;
 
             Ok(())
         })
