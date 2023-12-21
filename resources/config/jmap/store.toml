@@ -11,6 +11,9 @@ blob = "__BLOB_STORE__"
 enable = true
 append = false
 
+[jmap.spam]
+header = "X-Spam-Status: Yes"
+
 [jmap.fts]
 default-language = "en"
 

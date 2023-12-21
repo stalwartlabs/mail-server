@@ -141,6 +141,14 @@ impl crate::Config {
                 .unwrap_or(true),
             encrypt: settings.property_or_static("jmap.encryption.enable", "true")?,
             encrypt_append: settings.property_or_static("jmap.encryption.append", "false")?,
+            spam_header: settings.value("jmap.spam.header").and_then(|v| {
+                v.split_once(':').map(|(k, v)| {
+                    (
+                        mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),
+                        v.trim().to_string(),
+                    )
+                })
+            }),
             http_headers: settings
                 .values("jmap.http.headers")
                 .map(|(_, v)| {

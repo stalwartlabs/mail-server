@@ -48,7 +48,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     email::index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
-    mailbox::UidMailbox,
+    mailbox::{UidMailbox, INBOX_ID, JUNK_ID},
     services::housekeeper::Event,
     IngestError, JMAP,
 };
@@ -84,7 +84,7 @@ impl JMAP {
     #[allow(clippy::blocks_in_if_conditions)]
     pub async fn email_ingest(
         &self,
-        params: IngestEmail<'_>,
+        mut params: IngestEmail<'_>,
     ) -> Result<IngestedEmail, IngestError> {
         // Check quota
         let mut raw_message_len = params.raw_message.len() as i64;
@@ -105,6 +105,21 @@ impl JMAP {
             code: [5, 5, 0],
             reason: "Failed to parse e-mail message.".to_string(),
         })?;
+
+        // Check for Spam headers
+        if let Some((header_name, header_value)) = &self.config.spam_header {
+            if params.mailbox_ids == [INBOX_ID]
+                && message.root_part().headers().iter().any(|header| {
+                    &header.name == header_name
+                        && header
+                            .value()
+                            .as_text()
+                            .map_or(false, |value| value.contains(header_value))
+                })
+            {
+                params.mailbox_ids[0] = JUNK_ID;
+            }
+        }
 
         // Obtain message references and thread name
         let thread_id = {

@@ -40,6 +40,7 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
+use mail_parser::HeaderName;
 use nlp::language::Language;
 use services::{
     delivery::spawn_delivery_manager,
@@ -156,6 +157,8 @@ pub struct Config {
     pub oauth_expiry_refresh_token: u64,
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
+
+    pub spam_header: Option<(HeaderName<'static>, String)>,
 
     pub http_headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
 
