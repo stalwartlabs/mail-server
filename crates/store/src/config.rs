@@ -69,6 +69,8 @@ pub trait ConfigStore {
 
 #[async_trait]
 impl ConfigStore for Config {
+    #[allow(unused_variables)]
+    #[allow(unreachable_code)]
     async fn parse_stores(&self) -> utils::config::Result<Stores> {
         let mut config = Stores::default();
 
@@ -84,7 +86,7 @@ impl ConfigStore for Config {
             let prefix = ("store", id);
             let store_id = id.to_string();
 
-            let lookup_store = match protocol.as_str() {
+            let lookup_store: Store = match protocol.as_str() {
                 #[cfg(feature = "rocks")]
                 "rocksdb" => {
                     let db: Store = RocksDbStore::open(self, prefix).await?.into();

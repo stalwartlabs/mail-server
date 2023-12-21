@@ -21,6 +21,7 @@
  * for more details.
 */
 
+#[allow(unused_imports)]
 use crate::{
     write::{
         key::{DeserializeBigEndian, KeySerializer},
