@@ -128,7 +128,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert!(client.session().account(&account_id).unwrap().is_personal());
 
-    // Uploads up to 50000000 bytes should be allowed
+    // Uploads up to 5000000 bytes should be allowed
     assert_eq!(
         client
             .upload(None, vec![b'A'; 5000000], None)

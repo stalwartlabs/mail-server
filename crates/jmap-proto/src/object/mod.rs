@@ -32,15 +32,20 @@ use std::slice::Iter;
 
 use store::{
     write::{DeserializeFrom, SerializeInto, ToBitmaps},
-    Deserialize, Serialize,
+    Deserialize, Serialize, U64_LEN,
 };
 use utils::{
     codec::leb128::{Leb128Iterator, Leb128Vec},
-    map::vec_map::VecMap,
+    map::{bitmap::Bitmap, vec_map::VecMap},
 };
 
 use crate::types::{
-    blob::BlobId, date::UTCDate, id::Id, keyword::Keyword, property::Property, value::Value,
+    blob::BlobId,
+    date::UTCDate,
+    id::Id,
+    keyword::Keyword,
+    property::Property,
+    value::{AclGrant, Value},
 };
 
 #[derive(Debug, Clone, Default, serde::Serialize, PartialEq, Eq)]
@@ -122,7 +127,8 @@ const BLOB: u8 = 7;
 const KEYWORD: u8 = 8;
 const LIST: u8 = 9;
 const OBJECT: u8 = 10;
-const NULL: u8 = 11;
+const ACL: u8 = 11;
+const NULL: u8 = 12;
 
 impl Serialize for Value {
     fn serialize(self) -> Vec<u8> {
@@ -169,6 +175,29 @@ impl SerializeInto for Object<Value> {
         }
     }
 }
+
+impl SerializeInto for AclGrant {
+    fn serialize_into(&self, buf: &mut Vec<u8>) {
+        buf.push_leb128(self.account_id);
+        buf.extend_from_slice(self.grants.bitmap.to_be_bytes().as_slice());
+    }
+}
+
+impl DeserializeFrom for AclGrant {
+    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
+        let account_id = bytes.next_leb128()?;
+        let mut grants = [0u8; U64_LEN];
+        for byte in grants.iter_mut() {
+            *byte = *bytes.next()?;
+        }
+
+        Some(Self {
+            account_id,
+            grants: Bitmap::from(u64::from_be_bytes(grants)),
+        })
+    }
+}
+
 impl DeserializeFrom for Object<Value> {
     fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Object<Value>> {
         let len = bytes.next_leb128()?;
@@ -227,6 +256,13 @@ impl SerializeInto for Value {
                 buf.push(BLOB);
                 v.serialize_into(buf);
             }
+            Value::Acl(v) => {
+                buf.push(ACL);
+                buf.push_leb128(v.len());
+                for i in v {
+                    i.serialize_into(buf);
+                }
+            }
             Value::Null => {
                 buf.push(NULL);
             }
@@ -257,6 +293,14 @@ impl DeserializeFrom for Value {
             }
             OBJECT => Some(Value::Object(Object::deserialize_from(bytes)?)),
             BLOB => Some(Value::Blob(Vec::deserialize_from(bytes)?)),
+            ACL => {
+                let len = bytes.next_leb128()?;
+                let mut items = Vec::with_capacity(len);
+                for _ in 0..len {
+                    items.push(AclGrant::deserialize_from(bytes)?);
+                }
+                Some(Value::Acl(items))
+            }
             NULL => Some(Value::Null),
             _ => None,
         }

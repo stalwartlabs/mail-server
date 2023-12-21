@@ -40,8 +40,12 @@ use jmap_proto::{
     error::method::MethodError,
     object::{index::ObjectIndexBuilder, Object},
     types::{
-        acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::DataType, value::Value,
+        acl::Acl,
+        collection::Collection,
+        property::Property,
+        state::StateChange,
+        type_state::DataType,
+        value::{AclGrant, Value},
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
@@ -65,64 +69,58 @@ impl<T: AsyncRead> Session<T> {
                                 .inner
                                 .properties
                                 .get(&Property::Acl)
-                                .and_then(|v| v.as_list())
+                                .and_then(|v| v.as_acl())
                             {
-                                for item in acls.chunks_exact(2) {
-                                    if let (
-                                        Some(Value::Id(id)),
-                                        Some(Value::UnsignedInt(acl_bits)),
-                                    ) = (item.first(), item.last())
+                                for item in acls {
+                                    if let Some(account_name) = data
+                                        .jmap
+                                        .directory
+                                        .query(QueryBy::Id(item.account_id), false)
+                                        .await
+                                        .unwrap_or_default()
+                                        .map(|p| p.name)
                                     {
-                                        if let Some(account_name) = data
-                                            .jmap
-                                            .directory
-                                            .query(QueryBy::Id(id.document_id()), false)
-                                            .await
-                                            .unwrap_or_default()
-                                            .map(|p| p.name)
-                                        {
-                                            let mut rights = Vec::new();
+                                        let mut rights = Vec::new();
 
-                                            for acl in Bitmap::<Acl>::from(*acl_bits) {
-                                                match acl {
-                                                    Acl::Read => {
-                                                        rights.push(Rights::Lookup);
-                                                    }
-                                                    Acl::Modify => {
-                                                        rights.push(Rights::CreateMailbox);
-                                                    }
-                                                    Acl::Delete => {
-                                                        rights.push(Rights::DeleteMailbox);
-                                                    }
-                                                    Acl::ReadItems => {
-                                                        rights.push(Rights::Read);
-                                                    }
-                                                    Acl::AddItems => {
-                                                        rights.push(Rights::Insert);
-                                                    }
-                                                    Acl::ModifyItems => {
-                                                        rights.push(Rights::Write);
-                                                        rights.push(Rights::Seen);
-                                                    }
-                                                    Acl::RemoveItems => {
-                                                        rights.push(Rights::DeleteMessages);
-                                                        rights.push(Rights::Expunge);
-                                                    }
-                                                    Acl::CreateChild => {
-                                                        rights.push(Rights::CreateMailbox);
-                                                    }
-                                                    Acl::Administer => {
-                                                        rights.push(Rights::Administer);
-                                                    }
-                                                    Acl::Submit => {
-                                                        rights.push(Rights::Post);
-                                                    }
-                                                    Acl::None => (),
+                                        for acl in item.grants {
+                                            match acl {
+                                                Acl::Read => {
+                                                    rights.push(Rights::Lookup);
                                                 }
+                                                Acl::Modify => {
+                                                    rights.push(Rights::CreateMailbox);
+                                                }
+                                                Acl::Delete => {
+                                                    rights.push(Rights::DeleteMailbox);
+                                                }
+                                                Acl::ReadItems => {
+                                                    rights.push(Rights::Read);
+                                                }
+                                                Acl::AddItems => {
+                                                    rights.push(Rights::Insert);
+                                                }
+                                                Acl::ModifyItems => {
+                                                    rights.push(Rights::Write);
+                                                    rights.push(Rights::Seen);
+                                                }
+                                                Acl::RemoveItems => {
+                                                    rights.push(Rights::DeleteMessages);
+                                                    rights.push(Rights::Expunge);
+                                                }
+                                                Acl::CreateChild => {
+                                                    rights.push(Rights::CreateMailbox);
+                                                }
+                                                Acl::Administer => {
+                                                    rights.push(Rights::Administer);
+                                                }
+                                                Acl::Submit => {
+                                                    rights.push(Rights::Post);
+                                                }
+                                                Acl::None => (),
                                             }
-
-                                            permissions.push((account_name, rights));
                                         }
+
+                                        permissions.push((account_name, rights));
                                     }
                                 }
                             }
@@ -245,13 +243,13 @@ impl<T: AsyncRead> Session<T> {
                     };
 
                     // Obtain principal id
-                    let (acl_account_id, id) = match data
+                    let acl_account_id = match data
                         .jmap
                         .directory
                         .query(QueryBy::Name(arguments.identifier.as_ref().unwrap()), false)
                         .await
                     {
-                        Ok(Some(principal)) => (principal.id, Value::Id(Id::from(principal.id))),
+                        Ok(Some(principal)) => principal.id,
                         Ok(None) => {
                             data.write_bytes(
                                 StatusResponse::no("Account does not exist")
@@ -283,7 +281,7 @@ impl<T: AsyncRead> Session<T> {
                             )
                         })
                         .unwrap_or_else(|| (ModRightsOp::Replace, Bitmap::new()));
-                    let acl = if let Value::List(acl) =
+                    let acl = if let Value::Acl(acl) =
                         changes
                             .properties
                             .get_mut_or_insert_with(Property::Acl, || {
@@ -292,7 +290,7 @@ impl<T: AsyncRead> Session<T> {
                                     .properties
                                     .get(&Property::Acl)
                                     .cloned()
-                                    .unwrap_or_else(|| Value::List(Vec::new()))
+                                    .unwrap_or_else(|| Value::Acl(Vec::new()))
                             }) {
                         acl
                     } else {
@@ -305,48 +303,37 @@ impl<T: AsyncRead> Session<T> {
                         return;
                     };
 
-                    if let Some(idx) = acl.iter().position(|item| item == &id) {
+                    if let Some(item) = acl
+                        .iter_mut()
+                        .find(|item| item.account_id == acl_account_id)
+                    {
                         match op {
                             ModRightsOp::Replace => {
                                 if !rights.is_empty() {
-                                    acl[idx + 1] = Value::UnsignedInt(rights.into());
+                                    item.grants = rights;
                                 } else {
-                                    acl.remove(idx);
-                                    acl.remove(idx);
+                                    acl.retain(|item| item.account_id != acl_account_id);
                                 }
                             }
-                            ModRightsOp::Add | ModRightsOp::Remove => {
-                                if let Some(Value::UnsignedInt(current)) = acl.get_mut(idx + 1) {
-                                    let mut bitmap = Bitmap::from(*current);
-                                    if op == ModRightsOp::Add {
-                                        bitmap.union(&rights);
-                                    } else {
-                                        for right in rights {
-                                            bitmap.remove(right);
-                                        }
-                                    }
-                                    if !bitmap.is_empty() {
-                                        *current = bitmap.into();
-                                    } else {
-                                        acl.remove(idx);
-                                        acl.remove(idx);
-                                    }
-                                } else {
-                                    data.write_bytes(
-                                        StatusResponse::database_failure()
-                                            .with_tag(arguments.tag)
-                                            .into_bytes(),
-                                    )
-                                    .await;
-                                    return;
+                            ModRightsOp::Add => {
+                                item.grants.union(&rights);
+                            }
+                            ModRightsOp::Remove => {
+                                for right in rights {
+                                    item.grants.remove(right);
+                                }
+                                if item.grants.is_empty() {
+                                    acl.retain(|item| item.account_id != acl_account_id);
                                 }
                             }
                         }
                     } else if !rights.is_empty() {
                         match op {
                             ModRightsOp::Add | ModRightsOp::Replace => {
-                                acl.push(id);
-                                acl.push(Value::UnsignedInt(rights.into()));
+                                acl.push(AclGrant {
+                                    account_id: acl_account_id,
+                                    grants: rights,
+                                });
                             }
                             ModRightsOp::Remove => (),
                         }

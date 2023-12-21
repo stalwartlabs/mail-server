@@ -376,64 +376,51 @@ fn merge_batch(
                 }
                 IndexAs::Acl => {
                     match (current_value, &value) {
-                        (Value::List(current_value), Value::List(value)) => {
+                        (Value::Acl(current_value), Value::Acl(value)) => {
                             // Remove deleted ACLs
-                            for item in current_value.chunks_exact(2) {
-                                if let Some(Value::Id(id)) = item.first() {
-                                    if !value.contains(&Value::Id(*id)) {
-                                        batch.ops.push(Operation::acl(id.document_id(), None));
-                                    }
+                            for current_item in current_value {
+                                if !value
+                                    .iter()
+                                    .any(|item| item.account_id == current_item.account_id)
+                                {
+                                    batch
+                                        .ops
+                                        .push(Operation::acl(current_item.account_id, None));
                                 }
                             }
 
                             // Update ACLs
-                            for item in value.chunks_exact(2) {
-                                if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
-                                    (item.first(), item.last())
-                                {
-                                    let mut add_item = true;
-                                    for current_item in current_value.chunks_exact(2) {
-                                        if let (
-                                            Some(Value::Id(current_id)),
-                                            Some(Value::UnsignedInt(current_acl)),
-                                        ) = (current_item.first(), current_item.last())
-                                        {
-                                            if id == current_id {
-                                                if acl == current_acl {
-                                                    add_item = false;
-                                                }
-                                                break;
-                                            }
+                            for item in value {
+                                let mut add_item = true;
+                                for current_item in current_value {
+                                    if item.account_id == current_item.account_id {
+                                        if item.grants == current_item.grants {
+                                            add_item = false;
                                         }
-                                    }
-                                    if add_item {
-                                        batch.ops.push(Operation::acl(
-                                            id.document_id(),
-                                            acl.serialize().into(),
-                                        ));
+                                        break;
                                     }
                                 }
-                            }
-                        }
-                        (Value::Null, Value::List(values)) => {
-                            // Add all ACLs
-                            for item in values.chunks_exact(2) {
-                                if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
-                                    (item.first(), item.last())
-                                {
+                                if add_item {
                                     batch.ops.push(Operation::acl(
-                                        id.document_id(),
-                                        acl.serialize().into(),
+                                        item.account_id,
+                                        item.grants.bitmap.serialize().into(),
                                     ));
                                 }
                             }
                         }
-                        (Value::List(current_values), Value::Null) => {
+                        (Value::Null, Value::Acl(values)) => {
+                            // Add all ACLs
+                            for item in values {
+                                batch.ops.push(Operation::acl(
+                                    item.account_id,
+                                    item.grants.bitmap.serialize().into(),
+                                ));
+                            }
+                        }
+                        (Value::Acl(current_values), Value::Null) => {
                             // Remove all ACLs
-                            for item in current_values.chunks_exact(2) {
-                                if let Some(Value::Id(id)) = item.first() {
-                                    batch.ops.push(Operation::acl(id.document_id(), None));
-                                }
+                            for item in current_values {
+                                batch.ops.push(Operation::acl(item.account_id, None));
                             }
                         }
                         _ => {}
@@ -556,16 +543,16 @@ fn build_batch(
                     });
                 }
             }
-            (Value::List(values), IndexAs::Acl) => {
-                for item in values.chunks_exact(2) {
-                    if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl))) =
-                        (item.first(), item.last())
-                    {
-                        batch.ops.push(Operation::acl(
-                            id.document_id(),
-                            if set { acl.serialize().into() } else { None },
-                        ));
-                    }
+            (Value::Acl(values), IndexAs::Acl) => {
+                for item in values {
+                    batch.ops.push(Operation::acl(
+                        item.account_id,
+                        if set {
+                            item.grants.bitmap.serialize().into()
+                        } else {
+                            None
+                        },
+                    ));
                 }
             }
             (value, IndexAs::HasProperty) if value != &Value::Null => {

@@ -25,6 +25,7 @@ use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
+use utils::map::bitmap::Bitmap;
 
 use crate::{
     object::Object,
@@ -33,6 +34,7 @@ use crate::{
 };
 
 use super::{
+    acl::Acl,
     any_id::AnyId,
     blob::BlobId,
     date::UTCDate,
@@ -53,9 +55,16 @@ pub enum Value {
     Keyword(Keyword),
     List(Vec<Value>),
     Object(Object<Value>),
+    Acl(Vec<AclGrant>),
     Blob(Vec<u8>),
     #[default]
     Null,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct AclGrant {
+    pub account_id: u32,
+    pub grants: Bitmap<Acl>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,6 +287,13 @@ impl Value {
     pub fn as_list(&self) -> Option<&Vec<Value>> {
         match self {
             Value::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    pub fn as_acl(&self) -> Option<&Vec<AclGrant>> {
+        match self {
+            Value::Acl(l) => Some(l),
             _ => None,
         }
     }

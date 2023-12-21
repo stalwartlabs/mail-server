@@ -29,7 +29,7 @@ use crate::{
 };
 use jmap::{email::ingest::IngestEmail, IngestError};
 use jmap_client::{email, mailbox::Role};
-use jmap_proto::types::{collection::Collection, id::Id, property::Property};
+use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
 use store::{
     ahash::{AHashMap, AHashSet},
@@ -236,6 +236,12 @@ async fn test_multi_thread(params: &mut JMAPTest) {
         .await
         .unwrap()
         .take_id();
+    params
+        .client
+        .set_default_account_id(Id::new(0u64).to_string())
+        .mailbox_create("Other mailbox", None::<String>, Role::None)
+        .await
+        .unwrap();
     let mailbox_id = Id::from_bytes(mailbox_id_str.as_bytes())
         .unwrap()
         .document_id();
@@ -294,7 +300,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
         messages as u64,
         params
             .server
-            .get_tag(0, Collection::Email, Property::MailboxIds, mailbox_id,)
+            .get_document_ids(0, Collection::Email)
             .await
             .unwrap()
             .unwrap()

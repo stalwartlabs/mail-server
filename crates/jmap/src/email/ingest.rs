@@ -181,6 +181,14 @@ impl JMAP {
                     .results
                     .is_empty()
             {
+                tracing::debug!(
+                    context = "email_ingest",
+                    event = "skip",
+                    account_id = ?params.account_id,
+                    from = ?message.from(),
+                    message_id = message_id,
+                    "Duplicate message skipped.");
+
                 return Ok(IngestedEmail {
                     id: Id::default(),
                     change_id: u64::MAX,

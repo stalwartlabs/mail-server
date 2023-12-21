@@ -29,7 +29,7 @@ use jmap_proto::{
         acl::Acl,
         collection::Collection,
         property::Property,
-        value::{MaybePatchValue, Value},
+        value::{AclGrant, MaybePatchValue, Value},
     },
 };
 use store::{
@@ -272,14 +272,13 @@ impl JMAP {
     ) -> Result<(), SetError> {
         match acl_changes {
             MaybePatchValue::Value(Value::List(values)) => {
-                changes.properties.set(
-                    Property::Acl,
-                    Value::List(self.map_acl_accounts(values).await?),
-                );
+                changes
+                    .properties
+                    .set(Property::Acl, Value::Acl(self.map_acl_set(values).await?));
             }
             MaybePatchValue::Patch(patch) => {
-                let patch = self.map_acl_accounts(patch).await?;
-                let acl = if let Value::List(acl) =
+                let (mut patch, is_update) = self.map_acl_patch(patch).await?;
+                let acl = if let Value::Acl(acl) =
                     changes
                         .properties
                         .get_mut_or_insert_with(Property::Acl, || {
@@ -287,7 +286,7 @@ impl JMAP {
                                 .and_then(|current| {
                                     current.inner.properties.get(&Property::Acl).cloned()
                                 })
-                                .unwrap_or_else(|| Value::List(Vec::new()))
+                                .unwrap_or_else(|| Value::Acl(Vec::new()))
                         }) {
                     acl
                 } else {
@@ -295,56 +294,37 @@ impl JMAP {
                         .with_property(Property::Acl)
                         .with_description("Invalid ACL value found."));
                 };
-                let account_id = patch.first().unwrap().as_id().unwrap();
-                match patch.len() {
-                    2 => {
-                        let acl_update = patch.last().unwrap().as_uint().unwrap();
-                        if let Some(idx) =
-                            acl.iter().position(|item| item.as_id() == Some(account_id))
+
+                if let Some(is_set) = is_update {
+                    if !patch.grants.is_empty() {
+                        if let Some(acl_item) = acl
+                            .iter_mut()
+                            .find(|item| item.account_id == patch.account_id)
                         {
-                            if acl_update != 0 {
-                                acl[idx + 1] = Value::UnsignedInt(acl_update);
-                            } else if acl.len() > 2 {
-                                acl.remove(idx);
-                                acl.remove(idx);
+                            let item = patch.grants.pop().unwrap();
+                            if is_set {
+                                acl_item.grants.insert(item);
                             } else {
-                                acl.clear();
+                                acl_item.grants.remove(item);
+                                if acl_item.grants.is_empty() {
+                                    acl.retain(|item| item.account_id != patch.account_id);
+                                }
                             }
-                        } else if acl_update != 0 {
-                            acl.push(Value::Id(*account_id));
-                            acl.push(Value::UnsignedInt(acl_update));
+                        } else if is_set {
+                            acl.push(patch);
                         }
                     }
-                    3 => {
-                        let acl_item = Acl::from(patch[1].as_uint().unwrap());
-                        let set = patch[2].as_bool().unwrap_or(false);
-                        if let Some(idx) =
-                            acl.iter().position(|item| item.as_id() == Some(account_id))
-                        {
-                            if let Some(Value::UnsignedInt(current)) = acl.get_mut(idx + 1) {
-                                let mut bitmap = Bitmap::from(*current);
-                                if set {
-                                    bitmap.insert(acl_item);
-                                } else {
-                                    bitmap.remove(acl_item);
-                                }
-                                if !bitmap.is_empty() {
-                                    *current = bitmap.into();
-                                } else {
-                                    acl.remove(idx);
-                                    acl.remove(idx);
-                                }
-                            } else {
-                                return Err(SetError::invalid_properties()
-                                    .with_property(Property::Acl)
-                                    .with_description("Invalid ACL value found."));
-                            }
-                        } else if set {
-                            acl.push(Value::Id(*account_id));
-                            acl.push(Value::UnsignedInt(Bitmap::new().with_item(acl_item).into()));
-                        }
+                } else if !patch.grants.is_empty() {
+                    if let Some(acl_item) = acl
+                        .iter_mut()
+                        .find(|item| item.account_id == patch.account_id)
+                    {
+                        acl_item.grants = patch.grants;
+                    } else {
+                        acl.push(patch);
                     }
-                    _ => unreachable!(),
+                } else {
+                    acl.retain(|item| item.account_id != patch.account_id);
                 }
             }
             _ => {
@@ -358,38 +338,29 @@ impl JMAP {
 
     pub async fn acl_get(
         &self,
-        value: &[Value],
+        value: &[AclGrant],
         access_token: &AccessToken,
         account_id: u32,
     ) -> Value {
         if access_token.is_member(account_id)
-            || value.chunks_exact(2).any(|item| {
-                access_token.is_member(
-                    item.first()
-                        .and_then(|v| v.as_id().map(|id| id.document_id()))
-                        .unwrap_or(u32::MAX),
-                ) && Bitmap::from(item.last().and_then(|a| a.as_uint()).unwrap_or_default())
-                    .contains(Acl::Administer)
+            || value.iter().any(|item| {
+                access_token.is_member(item.account_id) && item.grants.contains(Acl::Administer)
             })
         {
             let mut acl_obj = Object::with_capacity(value.len() / 2);
-            for item in value.chunks_exact(2) {
-                if let (Some(Value::Id(id)), Some(Value::UnsignedInt(acl_bits))) =
-                    (item.first(), item.last())
+            for item in value {
+                if let Some(principal) = self
+                    .directory
+                    .query(QueryBy::Id(item.account_id), false)
+                    .await
+                    .unwrap_or_default()
                 {
-                    if let Some(principal) = self
-                        .directory
-                        .query(QueryBy::Id(id.document_id()), false)
-                        .await
-                        .unwrap_or_default()
-                    {
-                        acl_obj.append(
-                            Property::_T(principal.name),
-                            Bitmap::<Acl>::from(*acl_bits)
-                                .map(|acl_item| Value::Text(acl_item.to_string()))
-                                .collect::<Vec<_>>(),
-                        );
-                    }
+                    acl_obj.append(
+                        Property::_T(principal.name),
+                        item.grants
+                            .map(|acl_item| Value::Text(acl_item.to_string()))
+                            .collect::<Vec<_>>(),
+                    );
                 }
             }
 
@@ -404,61 +375,59 @@ impl JMAP {
         changes: &Object<Value>,
         current: &Option<HashedValue<Object<Value>>>,
     ) {
-        if let Value::List(acl_changes) = changes.get(&Property::Acl) {
+        if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
             let access_tokens = &self.access_tokens;
-            if let Some(Value::List(acl_current)) = current
+            if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))
             {
-                for current_item in acl_current.chunks_exact(2) {
+                for current_item in acl_current {
                     let mut invalidate = true;
-                    for change_item in acl_changes.chunks_exact(2) {
-                        if change_item.first() == current_item.first() {
-                            invalidate = change_item.last() != current_item.last();
+                    for change_item in acl_changes {
+                        if change_item.account_id == current_item.account_id {
+                            invalidate = change_item.grants != current_item.grants;
                             break;
                         }
                     }
                     if invalidate {
-                        if let Some(Value::Id(id)) = current_item.first() {
-                            access_tokens.remove(&id.document_id());
-                        }
+                        access_tokens.remove(&current_item.account_id);
                     }
                 }
 
-                for change_item in acl_changes.chunks_exact(2) {
+                for change_item in acl_changes {
                     let mut invalidate = true;
-                    for current_item in acl_current.chunks_exact(2) {
-                        if change_item.first() == current_item.first() {
-                            invalidate = change_item.last() != current_item.last();
+                    for current_item in acl_current {
+                        if change_item.account_id == current_item.account_id {
+                            invalidate = change_item.grants != current_item.grants;
                             break;
                         }
                     }
                     if invalidate {
-                        if let Some(Value::Id(id)) = change_item.first() {
-                            access_tokens.remove(&id.document_id());
-                        }
+                        access_tokens.remove(&change_item.account_id);
                     }
                 }
             } else {
                 for value in acl_changes {
-                    if let Value::Id(id) = value {
-                        access_tokens.remove(&id.document_id());
-                    }
+                    access_tokens.remove(&value.account_id);
                 }
             }
         }
     }
 
-    async fn map_acl_accounts(&self, mut acl_set: Vec<Value>) -> Result<Vec<Value>, SetError> {
-        for item in &mut acl_set {
-            if let Value::Text(account_name) = item {
+    async fn map_acl_set(&self, acl_set: Vec<Value>) -> Result<Vec<AclGrant>, SetError> {
+        let mut acls = Vec::with_capacity(acl_set.len() / 2);
+        for item in acl_set.chunks_exact(2) {
+            if let (Value::Text(account_name), Value::UnsignedInt(grants)) = (&item[0], &item[1]) {
                 match self
                     .directory
                     .query(QueryBy::Name(account_name), false)
                     .await
                 {
                     Ok(Some(principal)) => {
-                        *item = Value::Id(principal.id.into());
+                        acls.push(AclGrant {
+                            account_id: principal.id,
+                            grants: Bitmap::from(*grants),
+                        });
                     }
                     Ok(None) => {
                         return Err(SetError::invalid_properties()
@@ -471,10 +440,47 @@ impl JMAP {
                             .with_description("Temporary server failure during lookup"));
                     }
                 }
+            } else {
+                return Err(SetError::invalid_properties()
+                    .with_property(Property::Acl)
+                    .with_description("Invalid ACL value found."));
             }
         }
 
-        Ok(acl_set)
+        Ok(acls)
+    }
+
+    async fn map_acl_patch(
+        &self,
+        acl_patch: Vec<Value>,
+    ) -> Result<(AclGrant, Option<bool>), SetError> {
+        if let (Value::Text(account_name), Value::UnsignedInt(grants)) =
+            (&acl_patch[0], &acl_patch[1])
+        {
+            match self
+                .directory
+                .query(QueryBy::Name(account_name), false)
+                .await
+            {
+                Ok(Some(principal)) => Ok((
+                    AclGrant {
+                        account_id: principal.id,
+                        grants: Bitmap::from(*grants),
+                    },
+                    acl_patch.get(2).map(|v| v.as_bool().unwrap_or(false)),
+                )),
+                Ok(None) => Err(SetError::invalid_properties()
+                    .with_property(Property::Acl)
+                    .with_description(format!("Account {account_name} does not exist."))),
+                _ => Err(SetError::forbidden()
+                    .with_property(Property::Acl)
+                    .with_description("Temporary server failure during lookup")),
+            }
+        } else {
+            Err(SetError::invalid_properties()
+                .with_property(Property::Acl)
+                .with_description("Invalid ACL value found."))
+        }
     }
 }
 
@@ -485,14 +491,10 @@ pub trait EffectiveAcl {
 impl EffectiveAcl for Object<Value> {
     fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl> {
         let mut acl = Bitmap::<Acl>::new();
-        if let Some(Value::List(permissions)) = self.properties.get(&Property::Acl) {
-            for item in permissions.chunks(2) {
-                if let (Some(Value::Id(account_id)), Some(Value::UnsignedInt(acl_bits))) =
-                    (item.first(), item.last())
-                {
-                    if access_token.is_member(account_id.document_id()) {
-                        acl.union(&Bitmap::from(*acl_bits));
-                    }
+        if let Some(Value::Acl(permissions)) = self.properties.get(&Property::Acl) {
+            for item in permissions {
+                if access_token.is_member(item.account_id) {
+                    acl.union(&item.grants);
                 }
             }
         }

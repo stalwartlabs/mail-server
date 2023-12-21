@@ -233,7 +233,7 @@ impl JMAP {
                             values
                                 .properties
                                 .get(&Property::Acl)
-                                .and_then(|v| v.as_list())
+                                .and_then(|v| v.as_acl())
                                 .map(|v| &v[..])
                                 .unwrap_or_else(|| &[]),
                             access_token,
