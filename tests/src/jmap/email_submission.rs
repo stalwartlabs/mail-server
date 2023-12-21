@@ -97,6 +97,10 @@ pub async fn test(params: &mut JMAPTest) {
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
+    params
+        .directory
+        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
+        .await;
     let account_id = Id::from(
         server
             .store
@@ -105,6 +109,17 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap(),
     )
     .to_string();
+
+    // Test automatic identity creation
+    for (identity_id, email) in [(0u64, "jdoe@example.com"), (1u64, "john.doe@example.com")] {
+        let identity = client
+            .identity_get(&Id::from(identity_id).to_string(), None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(identity.email().unwrap(), email);
+        assert_eq!(identity.name().unwrap(), format!("John Doe <{email}>"));
+    }
 
     // Create an identity without using a valid address should fail
     match client
@@ -119,7 +134,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create an identity
     let identity_id = client
-        .identity_create("John Doe", "jdoe@example.com")
+        .identity_create("John Doe (manually created)", "jdoe@example.com")
         .await
         .unwrap()
         .take_id();
@@ -473,7 +488,13 @@ pub async fn test(params: &mut JMAPTest) {
     smtp_settings.lock().do_stop = true;
 
     // Destroy the created mailbox, identity and all submissions
-    client.identity_destroy(&identity_id).await.unwrap();
+    for identity_id in [
+        identity_id,
+        Id::from(0u64).to_string(),
+        Id::from(1u64).to_string(),
+    ] {
+        client.identity_destroy(&identity_id).await.unwrap();
+    }
     for id in client
         .email_submission_query(None::<Filter>, None::<Vec<_>>)
         .await

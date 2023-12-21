@@ -24,7 +24,8 @@
 use std::time::Duration;
 
 use directory::backend::internal::manage::ManageDirectory;
-use jmap_proto::types::{collection::Collection, id::Id};
+use jmap::mailbox::{INBOX_ID, TRASH_ID};
+use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
@@ -105,6 +106,7 @@ pub async fn test(params: &mut JMAPTest) {
             "From: bill@example.com\r\n",
             "To: jdoe@example.com\r\n",
             "Subject: TPS Report\r\n",
+            "X-Spam-Status: No\r\n",
             "\r\n",
             "I'm going to need those TPS reports ASAP. ",
             "So, if you could do that, that'd be great."
@@ -112,19 +114,34 @@ pub async fn test(params: &mut JMAPTest) {
     )
     .await;
 
+    let john_id = Id::from_bytes(account_id_1.as_bytes())
+        .unwrap()
+        .document_id();
     assert_eq!(
         server
-            .get_document_ids(
-                Id::from_bytes(account_id_1.as_bytes())
-                    .unwrap()
-                    .document_id(),
-                Collection::Email
-            )
+            .get_document_ids(john_id, Collection::Email)
             .await
             .unwrap()
             .unwrap()
             .len(),
         1
+    );
+    assert_eq!(
+        server
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, INBOX_ID)
+            .await
+            .unwrap()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        server
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, TRASH_ID)
+            .await
+            .unwrap()
+            .map_or(0, |bm| bm.len()),
+        0
     );
 
     // Delivering to individuals' aliases
@@ -135,6 +152,7 @@ pub async fn test(params: &mut JMAPTest) {
             "From: bill@example.com\r\n",
             "To: john.doe@example.com\r\n",
             "Subject: Fwd: TPS Report\r\n",
+            "X-Spam-Status: Yes, score=13.9\r\n",
             "\r\n",
             "--- Forwarded Message ---\r\n\r\n ",
             "I'm going to need those TPS reports ASAP. ",
@@ -145,17 +163,30 @@ pub async fn test(params: &mut JMAPTest) {
 
     assert_eq!(
         server
-            .get_document_ids(
-                Id::from_bytes(account_id_1.as_bytes())
-                    .unwrap()
-                    .document_id(),
-                Collection::Email
-            )
+            .get_document_ids(john_id, Collection::Email)
             .await
             .unwrap()
             .unwrap()
             .len(),
         2
+    );
+    assert_eq!(
+        server
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, INBOX_ID)
+            .await
+            .unwrap()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        server
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, TRASH_ID)
+            .await
+            .unwrap()
+            .unwrap()
+            .len(),
+        1
     );
 
     // EXPN and VRFY

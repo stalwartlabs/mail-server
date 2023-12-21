@@ -394,7 +394,7 @@ async fn internal_directory() {
                         PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
                         PrincipalUpdate::set(
                             PrincipalField::Type,
-                            PrincipalValue::Type(Type::Superuser)
+                            PrincipalValue::String("superuser".to_string())
                         ),
                         PrincipalUpdate::remove_item(
                             PrincipalField::Emails,

@@ -21,14 +21,21 @@
  * for more details.
 */
 
+use directory::QueryBy;
 use jmap_proto::{
     error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
+use store::{
+    roaring::RoaringBitmap,
+    write::{BatchBuilder, F_VALUE},
+};
 
 use crate::JMAP;
+
+use super::set::sanitize_email;
 
 impl JMAP {
     pub async fn identity_get(
@@ -47,10 +54,7 @@ impl JMAP {
             Property::MayDelete,
         ]);
         let account_id = request.account_id.document_id();
-        let identity_ids = self
-            .get_document_ids(account_id, Collection::Identity)
-            .await?
-            .unwrap_or_default();
+        let identity_ids = self.identity_get_or_create(account_id).await?;
         let ids = if let Some(ids) = ids {
             ids
         } else {
@@ -109,5 +113,83 @@ impl JMAP {
         }
 
         Ok(response)
+    }
+
+    pub async fn identity_get_or_create(
+        &self,
+        account_id: u32,
+    ) -> Result<RoaringBitmap, MethodError> {
+        let mut identity_ids = self
+            .get_document_ids(account_id, Collection::Identity)
+            .await?
+            .unwrap_or_default();
+        if !identity_ids.is_empty() {
+            return Ok(identity_ids);
+        }
+
+        // Obtain principal
+        let principal = self
+            .directory
+            .query(QueryBy::Id(account_id), false)
+            .await
+            .map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "identity_get_or_create",
+                    error = ?err,
+                    "Failed to query directory.");
+                MethodError::ServerPartialFail
+            })?
+            .unwrap_or_default();
+        if principal.emails.is_empty() {
+            return Ok(identity_ids);
+        }
+
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Identity);
+
+        // Create identities
+        let name = principal
+            .description
+            .unwrap_or(principal.name)
+            .trim()
+            .to_string();
+        let has_many = principal.emails.len() > 1;
+        for email in principal.emails {
+            let email = sanitize_email(&email).unwrap_or_default();
+            if email.is_empty() {
+                continue;
+            }
+            let identity_id = self
+                .assign_document_id(account_id, Collection::Identity)
+                .await?;
+            let name = if name.is_empty() {
+                email.clone()
+            } else if has_many {
+                format!("{} <{}>", name, email)
+            } else {
+                name.clone()
+            };
+            batch.create_document(identity_id).value(
+                Property::Value,
+                Object::with_capacity(4)
+                    .with_property(Property::Name, name)
+                    .with_property(Property::Email, email),
+                F_VALUE,
+            );
+            identity_ids.insert(identity_id);
+        }
+        self.store.write(batch.build()).await.map_err(|err| {
+            tracing::error!(
+                event = "error",
+                context = "identity_get_or_create",
+                error = ?err,
+                "Failed to create identities.");
+            MethodError::ServerPartialFail
+        })?;
+
+        Ok(identity_ids)
     }
 }
