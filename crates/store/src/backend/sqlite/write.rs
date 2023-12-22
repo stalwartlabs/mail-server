@@ -24,7 +24,7 @@
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
-    write::{Batch, Operation, ValueOp},
+    write::{Batch, BitmapClass, Operation, ValueClass, ValueOp},
     BitmapKey, IndexKey, Key, LogKey, ValueKey,
 };
 
@@ -95,6 +95,26 @@ impl SqliteStore {
                                 table
                             ))?
                             .execute([&key, value])?;
+
+                            if matches!(class, ValueClass::ReservedId) {
+                                // Make sure the reserved id is not already in use
+                                let key = BitmapKey {
+                                    account_id,
+                                    collection,
+                                    class: BitmapClass::DocumentIds,
+                                    block_num: document_id,
+                                }
+                                .serialize(0);
+                                if trx
+                                    .prepare_cached("SELECT 1 FROM b WHERE k = ?")?
+                                    .query_row([&key], |_| Ok(true))
+                                    .optional()?
+                                    .unwrap_or(false)
+                                {
+                                    trx.rollback()?;
+                                    return Err(crate::Error::AssertValueFailed);
+                                }
+                            }
                         } else {
                             trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))?
                                 .execute([&key])?;
@@ -171,6 +191,7 @@ impl SqliteStore {
                             .optional()?
                             .unwrap_or_else(|| assert_value.is_none());
                         if !matches {
+                            trx.rollback()?;
                             return Err(crate::Error::AssertValueFailed);
                         }
                     }

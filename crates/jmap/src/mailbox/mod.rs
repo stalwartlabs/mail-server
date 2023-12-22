@@ -35,7 +35,7 @@ pub mod set;
 
 pub const INBOX_ID: u32 = 0;
 pub const TRASH_ID: u32 = 1;
-pub const JUNK_ID: u32 = 1;
+pub const JUNK_ID: u32 = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct UidMailbox {

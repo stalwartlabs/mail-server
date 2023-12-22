@@ -39,15 +39,25 @@ pub async fn lookup_tests() {
             store.destroy().await;
         }
 
-        // Test value expiry
+        // Test key
         let key = "xyz".as_bytes().to_vec();
-        assert_eq!(
-            LookupValue::None,
-            store
-                .key_get::<String>(LookupKey::Key(key.clone()))
-                .await
-                .unwrap()
-        );
+        store
+            .key_set(
+                key.clone(),
+                LookupValue::Value {
+                    value: "world".to_string().into_bytes(),
+                    expires: 0,
+                },
+            )
+            .await
+            .unwrap();
+        store.purge_expired().await.unwrap();
+        assert!(matches!(store
+            .key_get::<String>(LookupKey::Key(key.clone()))
+            .await
+            .unwrap(), LookupValue::Value { value,.. } if value == "world"));
+
+        // Test value expiry
         store
             .key_set(
                 key.clone(),
@@ -75,23 +85,6 @@ pub async fn lookup_tests() {
         if let LookupStore::Store(store) = &store {
             store.assert_is_empty(store.clone().into()).await;
         }
-
-        // Test key
-        store
-            .key_set(
-                key.clone(),
-                LookupValue::Value {
-                    value: "world".to_string().into_bytes(),
-                    expires: 0,
-                },
-            )
-            .await
-            .unwrap();
-        store.purge_expired().await.unwrap();
-        assert!(matches!(store
-        .key_get::<String>(LookupKey::Key(key.clone()))
-        .await
-        .unwrap(), LookupValue::Value { value,.. } if value == "world"));
 
         // Test counter
         let key = "abc".as_bytes().to_vec();

@@ -164,6 +164,7 @@ url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
 allow-invalid-certs = true
+disable = true # Elastic is disabled by default
 
 [certificate.default]
 cert = "file://{CERT}"
@@ -286,10 +287,8 @@ pub async fn jmap_tests() {
         delete,
     )
     .await;
-    //assert_is_empty(params.server.clone()).await;
 
-    let coco = 1;
-    /*email_query::test(&mut params, delete).await;
+    email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -300,7 +299,7 @@ pub async fn jmap_tests() {
     thread_get::test(&mut params).await;
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
-    delivery::test(&mut params).await;*/
+    delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;

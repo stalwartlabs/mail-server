@@ -325,7 +325,7 @@ impl DirectoryStore {
             ),
             "INSERT INTO accounts (name, secret, type) VALUES ('admin', 'secret', 'admin')",
         ] {
-            let query = if matches!(self.store, LookupStore::Store(Store::MySQL(_))) {
+            let query = if self.is_mysql() {
                 query.replace("TEXT", "VARCHAR(255)")
             } else {
                 query.to_string()
@@ -346,12 +346,12 @@ impl DirectoryStore {
         };
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     concat!(
                         "INSERT INTO accounts (name, secret, description, ",
                         "type, active) VALUES ($1, $2, $3, $4, true) ON CONFLICT (name) DO NOTHING"
                     )
-                } else if matches!(self.store, LookupStore::Store(Store::MySQL(_))) {
+                } else if self.is_mysql() {
                     concat!(
                         "INSERT IGNORE INTO accounts (name, secret, description, ",
                         "type, active) VALUES (?, ?, ?, ?, true)"
@@ -381,12 +381,12 @@ impl DirectoryStore {
     pub async fn create_test_group(&self, login: &str, name: &str) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     concat!(
                         "INSERT INTO accounts (name, description, ",
                         "type, active) VALUES ($1, $2, $3, $4) ON CONFLICT (name) DO NOTHING"
                     )
-                } else if matches!(self.store, LookupStore::Store(Store::MySQL(_))) {
+                } else if self.is_mysql() {
                     concat!(
                         "INSERT IGNORE INTO accounts (name, description, ",
                         "type, active) VALUES (?, ?, ?, ?)"
@@ -411,9 +411,9 @@ impl DirectoryStore {
     pub async fn link_test_address(&self, login: &str, address: &str, typ: &str) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     "INSERT INTO emails (name, address, type) VALUES ($1, $2, $3) ON CONFLICT (name, address) DO NOTHING"
-                } else if matches!(self.store, LookupStore::Store(Store::MySQL(_))) {
+                } else if self.is_mysql() {
                     "INSERT IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)"
                 } else {
                     "INSERT OR IGNORE INTO emails (name, address, type) VALUES (?, ?, ?)"
@@ -427,7 +427,7 @@ impl DirectoryStore {
     pub async fn set_test_quota(&self, login: &str, quota: u32) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     "UPDATE accounts SET quota = $1 where name = $2"
                 } else {
                     "UPDATE accounts SET quota = ? where name = ?"
@@ -441,7 +441,7 @@ impl DirectoryStore {
     pub async fn add_to_group(&self, login: &str, group: &str) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     "INSERT INTO group_members (name, member_of) VALUES ($1, $2)"
                 } else {
                     "INSERT INTO group_members (name, member_of) VALUES (?, ?)"
@@ -455,7 +455,7 @@ impl DirectoryStore {
     pub async fn remove_from_group(&self, login: &str, group: &str) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     "DELETE FROM group_members WHERE name = $1 AND member_of = $2"
                 } else {
                     "DELETE FROM group_members WHERE name = ? AND member_of = ?"
@@ -469,7 +469,7 @@ impl DirectoryStore {
     pub async fn remove_test_alias(&self, login: &str, alias: &str) {
         self.store
             .query::<usize>(
-                if matches!(self.store, LookupStore::Store(Store::PostgreSQL(_))) {
+                if self.is_postgresql() {
                     "DELETE FROM emails WHERE name = $1 AND address = $2"
                 } else {
                     "DELETE FROM emails WHERE name = ? AND address = ?"
@@ -478,5 +478,39 @@ impl DirectoryStore {
             )
             .await
             .unwrap();
+    }
+
+    fn is_mysql(&self) -> bool {
+        #[cfg(feature = "mysql")]
+        {
+            matches!(self.store, LookupStore::Store(Store::MySQL(_)))
+        }
+        #[cfg(not(feature = "mysql"))]
+        {
+            false
+        }
+    }
+
+    fn is_postgresql(&self) -> bool {
+        #[cfg(feature = "postgres")]
+        {
+            matches!(self.store, LookupStore::Store(Store::PostgreSQL(_)))
+        }
+        #[cfg(not(feature = "postgres"))]
+        {
+            false
+        }
+    }
+
+    #[allow(dead_code)]
+    fn is_sqlite(&self) -> bool {
+        #[cfg(feature = "sqlite")]
+        {
+            matches!(self.store, LookupStore::Store(Store::SQLite(_)))
+        }
+        #[cfg(not(feature = "sqlite"))]
+        {
+            false
+        }
     }
 }

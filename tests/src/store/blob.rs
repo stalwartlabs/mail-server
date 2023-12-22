@@ -38,9 +38,9 @@ pub async fn blob_tests() {
         Config::new(&CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
     let stores = config.parse_stores().await.unwrap();
 
-    for (store_id, blob_store) in stores.blob_stores {
+    for (store_id, blob_store) in &stores.blob_stores {
         println!("Testing blob store {}...", store_id);
-        test_store(blob_store).await;
+        test_store(blob_store.clone()).await;
     }
 
     for (store_id, store) in stores.stores {

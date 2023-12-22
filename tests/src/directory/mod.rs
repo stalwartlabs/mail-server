@@ -43,6 +43,22 @@ use tokio_rustls::TlsAcceptor;
 use crate::store::TempDir;
 
 const CONFIG: &str = r#"
+[directory."rocksdb"]
+type = "internal"
+store = "rocksdb"
+
+[directory."rocksdb".options]
+catch-all = true
+subaddressing = true
+
+[directory."foundationdb"]
+type = "internal"
+store = "foundationdb"
+
+[directory."foundationdb".options]
+catch-all = true
+subaddressing = true
+
 [directory."sqlite"]
 type = "sql"
 store = "sqlite"
@@ -288,7 +304,9 @@ impl DirectoryTest {
         let mut config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
         if id_store.is_some() {
             // Disable foundationdb store for SQL tests (the fdb select api version can only be run once per process)
-            config_file = config_file.replace("foundationdb", "ignore");
+            config_file = config_file
+                .replace("type = \"foundationdb\"", "type = \"ignore\"")
+                .replace("store = \"foundationdb\"", "disable = true");
         }
         let config = utils::config::Config::new(&config_file).unwrap();
         let stores = config.parse_stores().await.unwrap();
