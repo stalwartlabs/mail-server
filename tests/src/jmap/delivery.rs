@@ -24,7 +24,7 @@
 use std::time::Duration;
 
 use directory::backend::internal::manage::ManageDirectory;
-use jmap::mailbox::{INBOX_ID, TRASH_ID};
+use jmap::mailbox::{INBOX_ID, JUNK_ID};
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 
 use tokio::{
@@ -137,7 +137,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_eq!(
         server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, TRASH_ID)
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, JUNK_ID)
             .await
             .unwrap()
             .map_or(0, |bm| bm.len()),
@@ -181,7 +181,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_eq!(
         server
-            .get_tag(john_id, Collection::Email, Property::MailboxIds, TRASH_ID)
+            .get_tag(john_id, Collection::Email, Property::MailboxIds, JUNK_ID)
             .await
             .unwrap()
             .unwrap()

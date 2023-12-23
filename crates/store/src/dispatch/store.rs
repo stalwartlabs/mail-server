@@ -533,7 +533,7 @@ impl Store {
                                 }
                             }
 
-                            eprintln!(
+                            println!(
                                 concat!(
                                     ", account {}, collection {},",
                                     " family {}, field {}, key {:?}: {:?}"
@@ -559,7 +559,7 @@ impl Store {
                             return Ok(true);
                         }
                         SUBSPACE_INDEXES => {
-                            eprintln!(
+                            println!(
                                 concat!(
                                     "Found index key, account {}, collection {}, ",
                                     "document {}, property {}, value {:?}: {:?}"
@@ -573,7 +573,7 @@ impl Store {
                             );
                         }
                         _ => {
-                            eprintln!(
+                            println!(
                                 "Found key in {:?}: {:?} {:?}",
                                 char::from(subspace),
                                 key,
