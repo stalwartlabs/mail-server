@@ -433,7 +433,6 @@ impl TestConfig for SieveCore {
         SieveCore {
             runtime: Runtime::new_with_context(SieveContext::default()),
             scripts: AHashMap::new(),
-            lookup: AHashMap::new(),
             from_addr: "MAILER-DAEMON@example.org".to_string(),
             from_name: "Mailer Daemon".to_string(),
             return_path: "".to_string(),

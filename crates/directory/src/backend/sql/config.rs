@@ -72,9 +72,10 @@ impl SqlDirectory {
             ("expand", &mut mappings.query_expand),
             ("domains", &mut mappings.query_domains),
         ] {
-            if let Some(query_) = stores.lookups.get(&format!("{}/{}", store_id, query_id)) {
-                *query = query_.query.to_string();
-            }
+            *query = config
+                .value(("store", store_id, "query", query_id))
+                .unwrap_or_default()
+                .to_string();
         }
 
         Ok(SqlDirectory {

@@ -194,13 +194,6 @@ pub struct Stores {
     pub blob_stores: AHashMap<String, BlobStore>,
     pub fts_stores: AHashMap<String, FtsStore>,
     pub lookup_stores: AHashMap<String, LookupStore>,
-    pub lookups: AHashMap<String, Arc<Lookup>>,
-}
-
-#[derive(Clone)]
-pub struct Lookup {
-    pub store: LookupStore,
-    pub query: String,
 }
 
 #[derive(Clone)]
@@ -235,9 +228,15 @@ pub enum FtsStore {
 #[derive(Clone)]
 pub enum LookupStore {
     Store(Store),
+    Query(Arc<QueryStore>),
     Memory(Arc<MemoryStore>),
     #[cfg(feature = "redis")]
     Redis(Arc<RedisStore>),
+}
+
+pub struct QueryStore {
+    pub store: LookupStore,
+    pub query: String,
 }
 
 #[cfg(feature = "sqlite")]
@@ -361,6 +360,16 @@ impl<'x> Value<'x> {
             Value::Blob(b) => String::from_utf8_lossy(b.as_ref()),
             Value::Null => Cow::Borrowed(""),
         }
+    }
+}
+
+impl From<LookupKey> for String {
+    fn from(value: LookupKey) -> Self {
+        let key = match value {
+            LookupKey::Key(key) | LookupKey::Counter(key) => key,
+        };
+        String::from_utf8(key)
+            .unwrap_or_else(|err| String::from_utf8_lossy(&err.into_bytes()).into_owned())
     }
 }
 

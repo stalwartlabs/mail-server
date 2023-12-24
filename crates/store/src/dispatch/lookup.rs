@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use crate::{backend::memory::MemoryStore, Row};
 #[allow(unused_imports)]
 use crate::{
     write::{
@@ -39,21 +40,14 @@ impl LookupStore {
         params: Vec<Value<'_>>,
     ) -> crate::Result<T> {
         let result = match self {
-            LookupStore::Store(store) => match store {
-                #[cfg(feature = "sqlite")]
-                Store::SQLite(store) => store.query(query, params).await,
-                #[cfg(feature = "postgres")]
-                Store::PostgreSQL(store) => store.query(query, params).await,
-                #[cfg(feature = "mysql")]
-                Store::MySQL(store) => store.query(query, params).await,
-                _ => Err(crate::Error::InternalError(
-                    "Store does not support queries".into(),
-                )),
-            },
-            LookupStore::Memory(store) => store.query(query, params),
-            #[cfg(feature = "redis")]
-            LookupStore::Redis(_) => Err(crate::Error::InternalError(
-                "Redis does not support queries".into(),
+            #[cfg(feature = "sqlite")]
+            LookupStore::Store(Store::SQLite(store)) => store.query(query, params).await,
+            #[cfg(feature = "postgres")]
+            LookupStore::Store(Store::PostgreSQL(store)) => store.query(query, params).await,
+            #[cfg(feature = "mysql")]
+            LookupStore::Store(Store::MySQL(store)) => store.query(query, params).await,
+            _ => Err(crate::Error::InternalError(
+                "Store does not support queries".into(),
             )),
         };
 
@@ -89,11 +83,21 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_set(key, value).await,
-            LookupStore::Memory(_) => unimplemented!(),
+            LookupStore::Query(lookup) => lookup
+                .store
+                .query::<usize>(
+                    &lookup.query,
+                    vec![String::from_utf8(key).unwrap_or_default().into()],
+                )
+                .await
+                .map(|_| ()),
+            LookupStore::Memory(_) => Err(crate::Error::InternalError(
+                "This store does not support key_set".into(),
+            )),
         }
     }
 
-    pub async fn key_get<T: Deserialize + std::fmt::Debug + 'static>(
+    pub async fn key_get<T: Deserialize + From<Value<'static>> + std::fmt::Debug + 'static>(
         &self,
         key: LookupKey,
     ) -> crate::Result<LookupValue<T>> {
@@ -120,7 +124,38 @@ impl LookupStore {
             },
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_get(key).await,
-            LookupStore::Memory(_) => unimplemented!(),
+            LookupStore::Memory(store) => {
+                let key = String::from(key);
+                match store.as_ref() {
+                    MemoryStore::List(list) => Ok(if list.contains(&key) {
+                        LookupValue::Value {
+                            value: T::from(Value::Bool(true)),
+                            expires: 0,
+                        }
+                    } else {
+                        LookupValue::None
+                    }),
+                    MemoryStore::Map(map) => Ok(map
+                        .get(&key)
+                        .map(|value| LookupValue::Value {
+                            value: T::from(value.to_owned()),
+                            expires: 0,
+                        })
+                        .unwrap_or(LookupValue::None)),
+                }
+            }
+            LookupStore::Query(lookup) => lookup
+                .store
+                .query::<Option<Row>>(&lookup.query, vec![String::from(key).into()])
+                .await
+                .map(|row| {
+                    row.and_then(|row| row.values.into_iter().next())
+                        .map(|value| LookupValue::Value {
+                            value: T::from(value),
+                            expires: 0,
+                        })
+                        .unwrap_or(LookupValue::None)
+                }),
         }
     }
 
@@ -169,7 +204,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(_) => {}
-            LookupStore::Memory(_) => {}
+            LookupStore::Memory(_) | LookupStore::Query(_) => {}
         }
 
         Ok(())
@@ -188,5 +223,18 @@ impl<T: Deserialize> Deserialize for LookupValue<T> {
                 LookupValue::None
             })
         })
+    }
+}
+
+impl From<Value<'static>> for String {
+    fn from(value: Value<'static>) -> Self {
+        match value {
+            Value::Text(string) => string.into_owned(),
+            Value::Blob(bytes) => String::from_utf8_lossy(bytes.as_ref()).into_owned(),
+            Value::Bool(boolean) => boolean.to_string(),
+            Value::Null => String::new(),
+            Value::Integer(num) => num.to_string(),
+            Value::Float(num) => num.to_string(),
+        }
     }
 }

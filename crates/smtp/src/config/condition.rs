@@ -217,7 +217,7 @@ impl ConfigCondition for Config {
                         MatchType::Lookup => {
                             if let Some(lookup) = ctx.directory.lookups.get(value_str) {
                                 ConditionMatch::Lookup(lookup.clone().into())
-                            } else if let Some(lookup) = ctx.stores.lookups.get(value_str) {
+                            } else if let Some(lookup) = ctx.stores.lookup_stores.get(value_str) {
                                 ConditionMatch::Lookup(lookup.clone().into())
                             } else {
                                 return Err(format!(

@@ -61,22 +61,19 @@ test = [
 ]
 expect = false
 
-[store."list_mx"]
+[store."list_mx/domains"]
 type = "memory"
-[store."list_mx".lookup."domains"]
-type = "list"
+format = "list"
 values = ["mx"]
 
-[store."list_foo"]
+[store."list_foo/domains"]
 type = "memory"
-[store."list_foo".lookup."domains"]
-type = "list"
+format = "list"
 values = ["foo"]
 
-[store."list_123"]
+[store."list_123/domains"]
 type = "memory"
-[store."list_123".lookup."domains"]
-type = "list"
+format = "list"
 values = ["123"]
 
 [maybe-eval."dyn_mx"]

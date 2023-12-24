@@ -233,15 +233,14 @@ email = "address"
 quota = "quota"
 type = "type"
 
-[store."local"]
+[store."local/domains"]
 type = "memory"
-
-[store."local".lookup."domains"]
-type = "list"
+format = "list"
 values = ["example.com"]
 
-[store."local".lookup."remote-domains"]
-type = "list"
+[store."local/remote-domains"]
+type = "memory"
+format = "list"
 values = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
 
 [oauth]

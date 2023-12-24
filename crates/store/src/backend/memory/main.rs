@@ -54,7 +54,7 @@ impl MemoryStore {
     pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         let prefix = prefix.as_key();
 
-        let lookup_type = config.property_require::<LookupType>((&prefix, "type"))?;
+        let lookup_type = config.property_require::<LookupType>((&prefix, "format"))?;
         let format = LookupFormat {
             lookup_type,
             comment: config.value((&prefix, "comment")).map(|s| s.to_string()),

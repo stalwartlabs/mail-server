@@ -24,12 +24,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use utils::config::{cron::SimpleCron, utils::AsKey, Config};
+use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
     backend::{fs::FsStore, memory::MemoryStore},
     write::purge::{PurgeSchedule, PurgeStore},
-    Lookup, LookupStore, Store, Stores,
+    LookupStore, QueryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -178,21 +178,9 @@ impl ConfigStore for Config {
                     continue;
                 }
                 "memory" => {
-                    let prefix = prefix.as_key();
-                    for lookup_id in self.sub_keys((&prefix, "lookup")) {
-                        config.lookups.insert(
-                            format!("{store_id}/{lookup_id}"),
-                            Arc::new(Lookup {
-                                store: MemoryStore::open(
-                                    self,
-                                    (prefix.as_str(), "lookup", lookup_id),
-                                )
-                                .await?
-                                .into(),
-                                query: String::new(),
-                            }),
-                        );
-                    }
+                    config
+                        .lookup_stores
+                        .insert(store_id, MemoryStore::open(self, prefix).await?.into());
                     continue;
                 }
 
@@ -202,15 +190,15 @@ impl ConfigStore for Config {
                 }
             };
 
-            // Add queries
+            // Add queries as lookup stores
             let lookup_store: LookupStore = lookup_store.into();
             for lookup_id in self.sub_keys(("store", id, "query")) {
-                config.lookups.insert(
+                config.lookup_stores.insert(
                     format!("{store_id}/{lookup_id}"),
-                    Arc::new(Lookup {
+                    LookupStore::Query(Arc::new(QueryStore {
                         store: lookup_store.clone(),
                         query: self.property_require(("store", id, "query", lookup_id))?,
-                    }),
+                    })),
                 );
             }
             config.lookup_stores.insert(store_id, lookup_store.clone());

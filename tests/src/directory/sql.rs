@@ -47,9 +47,9 @@ async fn sql_directory() {
         let mut config = DirectoryTest::new(directory_id.into()).await;
         let lookups = config
             .stores
-            .lookups
-            .into_iter()
-            .map(|(k, v)| (k, Lookup::from(v)))
+            .lookup_stores
+            .iter()
+            .map(|(k, v)| (k.clone(), Lookup::from(v.clone())))
             .collect::<AHashMap<_, _>>();
 
         println!("Testing SQL directory {:?}", directory_id);

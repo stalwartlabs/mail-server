@@ -21,57 +21,9 @@
  * for more details.
 */
 
-use crate::{IntoRows, QueryResult, QueryType, Row, Value};
+use crate::{IntoRows, Row};
 
-use super::{LookupList, MatchType, MemoryStore};
-
-impl MemoryStore {
-    pub(crate) fn query<T: QueryResult>(
-        &self,
-        _: &str,
-        params: Vec<Value<'_>>,
-    ) -> crate::Result<T> {
-        let exists = match T::query_type() {
-            QueryType::Exists => true,
-            QueryType::QueryOne => false,
-            QueryType::QueryAll | QueryType::Execute => {
-                return Err(crate::Error::InternalError(
-                    "Unsupported query type".to_string(),
-                ))
-            }
-        };
-
-        let needle = params.first().map(|v| v.to_str()).unwrap_or_default();
-
-        match self {
-            MemoryStore::List(list) => {
-                let found = list.contains(needle.as_ref());
-                if exists {
-                    Ok(T::from_exists(found))
-                } else {
-                    Ok(T::from_query_one(Some(Row {
-                        values: vec![Value::Bool(found)],
-                    })))
-                }
-            }
-            MemoryStore::Map(map) => {
-                if let Some(value) = map.get(needle.as_ref()) {
-                    if exists {
-                        Ok(T::from_exists(true))
-                    } else {
-                        Ok(T::from_query_one(Some(Row {
-                            values: vec![value.clone()],
-                        })))
-                    }
-                } else if exists {
-                    Ok(T::from_exists(false))
-                } else {
-                    Ok(T::from_query_one(None::<Row>))
-                }
-            }
-        }
-    }
-}
+use super::{LookupList, MatchType};
 
 impl IntoRows for Option<Row> {
     fn into_row(self) -> Option<Row> {

@@ -54,48 +54,50 @@ path = "%PATH%/test_antispam.db"
 #type = "redis"
 #url = "redis://127.0.0.1"
 
-[store."default"]
+[store."default/domains"]
 type = "memory"
-
-[store."default".lookup."domains"]
-type = "list"
+format = "list"
 values = ["local-domain.org"]
 
-[store."spam"]
+[store."spam/free-domains"]
 type = "memory"
-
-[store."spam".lookup."free-domains"]
-type = "glob"
+format = "glob"
 comment = '#'
 values = ["gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"]
 
-[store."spam".lookup."disposable-domains"]
-type = "glob"
+[store."spam/disposable-domains"]
+type = "memory"
+format = "glob"
 comment = '#'
 values = ["guerrillamail.com", "*.disposable.org"]
 
-[store."spam".lookup."redirectors"]
-type = "glob"
+[store."spam/redirectors"]
+type = "memory"
+format = "glob"
 comment = '#'
 values = ["bit.ly", "redirect.io", "redirect.me", "redirect.org",
  "redirect.com", "redirect.net", "t.ly", "tinyurl.com"]
 
-[store."spam".lookup."dmarc-allow"]
-type = "glob"
+[store."spam/dmarc-allow"]
+type = "memory"
+format = "glob"
 comment = '#'
 values = ["dmarc-allow.org"]
 
-[store."spam".lookup."spf-dkim-allow"]
-type = "glob"
+[store."spam/spf-dkim-allow"]
+type = "memory"
+format = "glob"
 comment = '#'
 values = ["spf-dkim-allow.org"]
 
-[store."spam".lookup."domains-allow"]
-type = "glob"
+[store."spam/domains-allow"]
+type = "memory"
+format = "glob"
 values = []
 
-[store."spam".lookup."mime-types"]
-type = "map"
+[store."spam/mime-types"]
+type = "memory"
+format = "map"
 comment = '#'
 values = ["html text/html|BAD", 
           "pdf application/pdf|NZ", 
@@ -104,13 +106,15 @@ values = ["html text/html|BAD",
           "js BAD|NZ", 
           "hta BAD|NZ"]
 
-[store."spam".lookup."trap-address"]
-type = "glob"
+[store."spam/trap-address"]
+type = "memory"
+format = "glob"
 comment = '#'
 values = ["spamtrap@*"]
 
-[store."spam".lookup."scores"]
-type = "map"
+[store."spam/scores"]
+type = "memory"
+format = "map"
 values = "file://%CFG_PATH%/maps/scores.map"
 
 [resolver]

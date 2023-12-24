@@ -33,6 +33,7 @@ use std::{
 use store::{
     backend::memory::{LookupList, MemoryStore},
     config::ConfigStore,
+    LookupStore,
 };
 use tokio::net::TcpSocket;
 
@@ -80,13 +81,13 @@ fn parse_conditions() {
         ..Default::default()
     }];
     let mut context = ConfigContext::new(&servers);
-    let list = Arc::new(store::Lookup {
+    let list = LookupStore::Query(Arc::new(store::QueryStore {
         store: MemoryStore::List(LookupList::default()).into(),
         query: "abc".into(),
-    });
+    }));
     context
         .stores
-        .lookups
+        .lookup_stores
         .insert("test-list".to_string(), list.clone());
 
     let mut conditions = config.parse_conditions(&context).unwrap();
@@ -648,6 +649,12 @@ async fn eval_dynvalue() {
             "failed for test {test_name:?}"
         );
     }
+    let wrapped_stores = context
+        .stores
+        .lookup_stores
+        .iter()
+        .map(|(k, v)| (k.clone(), Arc::new(v.clone())))
+        .collect::<AHashMap<_, _>>();
 
     for test_name in config.sub_keys("maybe-eval") {
         //println!("============= Testing {:?} ==================", key);
@@ -670,11 +677,7 @@ async fn eval_dynvalue() {
             )
             .unwrap()
             .unwrap()
-            .map_if_block(
-                &context.stores.lookups,
-                ("maybe-eval", test_name, "test"),
-                "test",
-            )
+            .map_if_block(&wrapped_stores, ("maybe-eval", test_name, "test"), "test")
             .unwrap();
         let expected = config
             .value_require(("maybe-eval", test_name, "expect"))
@@ -685,6 +688,8 @@ async fn eval_dynvalue() {
             .await
             .into_value(&envelope)
             .unwrap()
+            .as_ref()
+            .clone()
             .into();
 
         assert!(lookup.contains(expected).await.unwrap());

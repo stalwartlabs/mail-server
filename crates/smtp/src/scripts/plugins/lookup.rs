@@ -29,11 +29,11 @@ use std::{
 
 use mail_auth::flate2;
 use sieve::{runtime::Variable, FunctionMap};
-use store::{Deserialize, LookupKey, LookupValue};
+use store::{Deserialize, LookupKey, LookupValue, Value};
 
 use crate::{
     config::scripts::{RemoteList, SieveContext},
-    core::to_store_value,
+    core::into_sieve_value,
     USER_AGENT,
 };
 
@@ -61,32 +61,6 @@ pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveCont
 
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if v.contains('/') => {
-            if let Some(lookup) = ctx.core.sieve.lookup.get(v.as_ref()) {
-                return match &ctx.arguments[1] {
-                    Variable::Array(items) => {
-                        for item in items.iter() {
-                            if !item.is_empty()
-                                && ctx
-                                    .handle
-                                    .block_on(lookup.contains(to_store_value(item)))
-                                    .unwrap_or(false)
-                            {
-                                return true.into();
-                            }
-                        }
-                        false
-                    }
-                    v if !v.is_empty() => ctx
-                        .handle
-                        .block_on(lookup.contains(to_store_value(v)))
-                        .unwrap_or(false),
-                    _ => false,
-                }
-                .into();
-            }
-            None
-        }
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
         _ => ctx.core.sieve.default_lookup_store.as_ref(),
     };
@@ -133,23 +107,6 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
 
 pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if v.contains('/') => {
-            if let Some(lookup) = ctx.core.sieve.lookup.get(v.as_ref()) {
-                let items = match &ctx.arguments[1] {
-                    Variable::Array(l) => l.iter().map(to_store_value).collect(),
-                    v if !v.is_empty() => vec![to_store_value(v)],
-                    _ => vec![],
-                };
-                return if !items.is_empty() {
-                    ctx.handle
-                        .block_on(lookup.lookup(items))
-                        .unwrap_or_default()
-                } else {
-                    Variable::default()
-                };
-            }
-            None
-        }
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
         _ => ctx.core.sieve.default_lookup_store.as_ref(),
     };
@@ -467,10 +424,10 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct VariableWrapper(Variable);
+pub struct VariableWrapper(Variable);
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct VariableExists;
+pub struct VariableExists;
 
 impl Deserialize for VariableWrapper {
     fn deserialize(bytes: &[u8]) -> store::Result<Self> {
@@ -491,5 +448,17 @@ impl Deserialize for VariableExists {
 impl VariableWrapper {
     pub fn into_inner(self) -> Variable {
         self.0
+    }
+}
+
+impl From<Value<'static>> for VariableExists {
+    fn from(_: Value<'static>) -> Self {
+        VariableExists
+    }
+}
+
+impl From<Value<'static>> for VariableWrapper {
+    fn from(value: Value<'static>) -> Self {
+        VariableWrapper(into_sieve_value(value))
     }
 }

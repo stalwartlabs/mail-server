@@ -32,15 +32,18 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use store::backend::memory::MemoryStore;
+use store::{backend::memory::MemoryStore, LookupKey, LookupStore, LookupValue};
 use tokio::runtime::Handle;
 
 use crate::{
-    core::{Lookup, SMTP},
+    core::SMTP,
     queue::{DomainPart, InstantFromTimestamp, Message},
 };
 
-use super::{plugins::PluginContext, ScriptModification, ScriptParameters, ScriptResult};
+use super::{
+    plugins::{lookup::VariableExists, PluginContext},
+    ScriptModification, ScriptParameters, ScriptResult,
+};
 
 impl SMTP {
     pub fn run_script_blocking(
@@ -92,14 +95,18 @@ impl SMTP {
                     } => {
                         input = false.into();
                         'outer: for list in lists {
-                            if let Some(list) = self.sieve.lookup.get(&list) {
+                            if let Some(store) = self.sieve.lookup_stores.get(&list) {
                                 for value in &values {
-                                    let result = if !matches!(match_as, MatchAs::Lowercase) {
-                                        handle.block_on(list.contains(value))
-                                    } else {
-                                        handle.block_on(list.contains(&value.to_lowercase()))
-                                    };
-                                    if let Some(true) = result {
+                                    if let Ok(LookupValue::Value { .. }) = handle.block_on(
+                                        store.key_get::<VariableExists>(LookupKey::Key(
+                                            if !matches!(match_as, MatchAs::Lowercase) {
+                                                value.clone()
+                                            } else {
+                                                value.to_lowercase()
+                                            }
+                                            .into_bytes(),
+                                        )),
+                                    ) {
                                         input = true.into();
                                         break 'outer;
                                     }
@@ -165,18 +172,13 @@ impl SMTP {
                                 }
                             }
                             Recipient::List(list) => {
-                                if let Some(list) = self.sieve.lookup.get(&list) {
-                                    if let Lookup::Store(list) = list {
-                                        if let store::LookupStore::Memory(list) = &list.store {
-                                            if let MemoryStore::List(list) = list.as_ref() {
-                                                for rcpt in &list.set {
-                                                    handle.block_on(
-                                                        message.add_recipient(
-                                                            rcpt,
-                                                            &self.queue.config,
-                                                        ),
-                                                    );
-                                                }
+                                if let Some(list) = self.sieve.lookup_stores.get(&list) {
+                                    if let LookupStore::Memory(list) = list {
+                                        if let MemoryStore::List(list) = list.as_ref() {
+                                            for rcpt in &list.set {
+                                                handle.block_on(
+                                                    message.add_recipient(rcpt, &self.queue.config),
+                                                );
                                             }
                                         }
                                     }

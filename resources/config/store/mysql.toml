@@ -14,7 +14,7 @@ disable = true
 [store."mysql".timeout]
 wait = "15s"
 
-#[store."postgresql".pool]
+#[store."mysql".pool]
 #max-connections = 10
 #min-connections = 5
 

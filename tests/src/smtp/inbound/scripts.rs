@@ -49,11 +49,9 @@ max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[store."local"]
+[store."local/invalid-ehlos"]
 type = "memory"
-
-[store."local".lookup."invalid-ehlos"]
-type = "list"
+format = "list"
 values = ["spammer.org", "spammer.net"]
 
 [session.data.pipe."test"]

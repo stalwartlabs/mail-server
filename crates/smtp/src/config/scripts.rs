@@ -121,7 +121,7 @@ impl ConfigSieve for Config {
             .with_valid_notification_uri("mailto")
             .with_valid_ext_lists(
                 ctx.stores
-                    .lookups
+                    .lookup_stores
                     .keys()
                     .chain(ctx.directory.lookups.keys())
                     .map(|k| k.to_string()),
@@ -193,18 +193,6 @@ impl ConfigSieve for Config {
         Ok(SieveCore {
             runtime,
             scripts: ctx.scripts.clone(),
-            lookup: ctx
-                .stores
-                .lookups
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.clone().into()))
-                .chain(
-                    ctx.directory
-                        .lookups
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), v.clone().into())),
-                )
-                .collect(),
             lookup_stores: ctx.stores.lookup_stores.clone(),
             directories: ctx.directory.directories.clone(),
             default_directory: self

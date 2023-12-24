@@ -523,24 +523,25 @@ impl core::fmt::Debug for Item {
 #[ignore]
 async fn lookup_local() {
     const LOOKUP_CONFIG: &str = r#"
-    [store."local"]
+    [store."local/regex"]
     type = "memory"
-    
-    [store."local".lookup."regex"]
-    type = "regex"
+    format = "regex"
     values = ["^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
              "^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"]
     
-    [store."local".lookup."glob"]
-    type = "glob"
+    [store."local/glob"]
+    type = "memory"
+    format = "glob"
     values = ["*@example.org", "test@*", "localhost", "*+*@*.domain.net"]
     
-    [store."local".lookup."list"]
-    type = "list"
+    [store."local/list"]
+    type = "memory"
+    format = "list"
     values = ["abc", "xyz", "123"]
 
-    [store."local".lookup."suffix"]
-    type = "glob"
+    [store."local/suffix"]
+    type = "memory"
+    format = "glob"
     comment = "//"
     values = ["https://publicsuffix.org/list/public_suffix_list.dat", "fallback+file://%PATH%/public_suffix_list.dat.gz"]
     "#;
@@ -570,7 +571,7 @@ async fn lookup_local() {
     .parse_stores()
     .await
     .unwrap()
-    .lookups;
+    .lookup_stores;
 
     for (lookup, item, expect) in [
         ("glob", "user@example.org", true),

@@ -37,6 +37,18 @@ pub async fn lookup_tests() {
         println!("Testing lookup store {}...", store_id);
         if let LookupStore::Store(store) = &store {
             store.destroy().await;
+        } else {
+            // Reset redis counter
+            store
+                .key_set(
+                    "abc".as_bytes().to_vec(),
+                    LookupValue::Value {
+                        value: "0".as_bytes().to_vec(),
+                        expires: 0,
+                    },
+                )
+                .await
+                .unwrap();
         }
 
         // Test key
