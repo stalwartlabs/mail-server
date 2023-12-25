@@ -14,10 +14,11 @@ rcpt = 5
 
 [directory."lmtp".pool]
 max-connections = 10
-min-connections = 0
-max-lifetime = "30m"
-idle-timeout = "10m"
-connect-timeout = "30s"
+
+[directory."lmtp".pool.timeout]
+create = "30s"
+wait = "30s"
+recycle = "30s"
 
 [directory."lmtp".tls]
 implicit = false

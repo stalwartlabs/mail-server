@@ -6,6 +6,7 @@
 type = "ldap"
 address = "ldap://localhost:389"
 base-dn = "dc=example,dc=org"
+timeout = "30s"
 disable = true
 
 [directory."ldap".bind]

@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.5.0] - 2023-12-27
+
+## Added
+- Performance enhancements:
+  - Messages are parsed only once and their offsets stored in the database, which avoids having to parse them on every `FETCH` request.
+  - Background full-text indexing.
+  - Optimization of database access functions.
+- Storage layer improvements:
+  - In addition to `FoundationDB` and `SQLite`, now it is also possible to use `RocksDB`, `PostgreSQL` and `mySQL` as a storage backend.
+  - Blobs can now be stored in any of the supported data stores, it is no longer limited to the file system or S3/MinIO. 
+  - Full-text searching con now be done internally or delegated to `ElasticSearch`.
+  - Spam databases can now be stored in any of the supported data stores or `Redis`. It is no longer necessary to have an SQL server to use the spam filter.
+- Internal directory: 
+  - User account, groups and mailing lists can now be managed directly from Stalwart without the need of an external LDAP or SQL directory.
+  - HTTP API to manage users, groups, domains and mailing lists.
+- IMAP4rev1 `Recent` flag support, which improves compatibility with old IMAP clients.
+- LDAP bind authentication, to support some LDAP servers such as `lldap` which do not expose the userPassword attribute.
+- Messages marked a spam by the spam filter can now be automatically moved to the account's `Junk Mail` folder.
+
+### Changed
+
+### Fixed
+- Spamhaus DNSBL return codes.
+- CLI tool reports authentication errors rather than a parsing error.
+
 ## [0.4.2] - 2023-11-01
 
 ## Added

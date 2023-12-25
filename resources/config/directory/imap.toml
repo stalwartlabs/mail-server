@@ -10,10 +10,11 @@ disable = true
 
 [directory."imap".pool]
 max-connections = 10
-min-connections = 0
-max-lifetime = "30m"
-idle-timeout = "10m"
-connect-timeout = "30s"
+
+[directory."imap".pool.timeout]
+create = "30s"
+wait = "30s"
+recycle = "30s"
 
 [directory."imap".tls]
 implicit = true

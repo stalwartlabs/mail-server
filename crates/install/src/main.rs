@@ -33,6 +33,7 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
 use openssl::rsa::Rsa;
+use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
@@ -189,6 +190,7 @@ fn main() -> std::io::Result<()> {
     let mut download_url = None;
 
     // Obtain database engine
+    let mut is_internal = false;
     if component != Component::Smtp {
         let backend = select::<Store>(
             "Which database would you like to use?",
@@ -240,18 +242,6 @@ fn main() -> std::io::Result<()> {
             Blob::Internal,
         )?;
 
-        let directory = select::<Directory>(
-            "Do you already have a directory or database containing your user accounts?",
-            &[
-                &format!("No, I want Stalwart to manage my user accounts in {store}"),
-                "Yes, it's an LDAP server",
-                "Yes, it's an PostgreSQL database",
-                "Yes, it's an MySQL database",
-                "Yes, it's an SQLite database",
-            ],
-            Directory::Internal,
-        )?;
-
         let fts = select::<Fts>(
             "Where would you like to store the full-text index?",
             &[&store, "ElasticSearch"],
@@ -263,6 +253,19 @@ fn main() -> std::io::Result<()> {
             &[&store, "Redis"],
             SpamDb::Internal,
         )?;
+
+        let directory = select::<Directory>(
+            "Do you already have a directory or database containing your user accounts?",
+            &[
+                &format!("No, I want Stalwart to store my user accounts in {store}"),
+                "Yes, it's an LDAP server",
+                "Yes, it's an PostgreSQL database",
+                "Yes, it's an MySQL database",
+                "Yes, it's an SQLite database",
+            ],
+            Directory::Internal,
+        )?;
+        is_internal = matches!(directory, Directory::Internal);
 
         // Update settings
         sed(
@@ -629,6 +632,22 @@ fn main() -> std::io::Result<()> {
                 }
             }
         }
+    }
+
+    if is_internal {
+        let secret = thread_rng()
+            .sample_iter(Alphanumeric)
+            .take(12)
+            .map(char::from)
+            .collect::<String>();
+        let hashed_secret = sha512_crypt::hash(&secret).unwrap();
+        eprintln!(
+            "\n🔑 To create the administrator account 'admin' with password '{secret}', execute:\n🔑 ",
+        );
+        eprintln!(
+            "🔑 $ SET_ADMIN_USER=\"admin\" SET_ADMIN_PASS=\"{hashed_secret}\" {}/bin/stalwart-mail --config={}/etc/config.toml",
+            base_path.display(), base_path.display()
+        )
     }
 
     eprintln!("\n🎉 Installation completed!\n\n✅ {dkim_instructions}\n");
