@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.5.0] - 2023-12-27
 
+This version requires a database migration and introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.
+
 ## Added
 - Performance enhancements:
   - Messages are parsed only once and their offsets stored in the database, which avoids having to parse them on every `FETCH` request.
@@ -20,6 +22,7 @@ All notable changes to this project will be documented in this file. This projec
 - IMAP4rev1 `Recent` flag support, which improves compatibility with old IMAP clients.
 - LDAP bind authentication, to support some LDAP servers such as `lldap` which do not expose the userPassword attribute.
 - Messages marked a spam by the spam filter can now be automatically moved to the account's `Junk Mail` folder.
+- Automatic creation of JMAP identities.
 
 ### Changed
 

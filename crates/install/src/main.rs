@@ -33,7 +33,6 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
 use openssl::rsa::Rsa;
-use pwhash::sha512_crypt;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 
 const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
@@ -635,19 +634,9 @@ fn main() -> std::io::Result<()> {
     }
 
     if is_internal {
-        let secret = thread_rng()
-            .sample_iter(Alphanumeric)
-            .take(12)
-            .map(char::from)
-            .collect::<String>();
-        let hashed_secret = sha512_crypt::hash(&secret).unwrap();
         eprintln!(
-            "\n🔑 To create the administrator account 'admin' with password '{secret}', execute:\n🔑 ",
+            "\n🔑 The administrator account is 'admin' and the password can be found in the log files at {}/logs.", base_path.display()
         );
-        eprintln!(
-            "🔑 $ SET_ADMIN_USER=\"admin\" SET_ADMIN_PASS=\"{hashed_secret}\" {}/bin/stalwart-mail --config={}/etc/config.toml",
-            base_path.display(), base_path.display()
-        )
     }
 
     eprintln!("\n🎉 Installation completed!\n\n✅ {dkim_instructions}\n");

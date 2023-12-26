@@ -146,7 +146,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 Ok(len)
             }
             Err(err) => {
-                tracing::debug!(
+                tracing::trace!(
                     parent: &self.span,
                     event = "error",
                     "Failed to read from stream: {:?}", err

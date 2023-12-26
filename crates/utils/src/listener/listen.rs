@@ -164,7 +164,7 @@ impl Server {
                                     };
                                 }
                                 Err(err) => {
-                                    tracing::debug!(context = "io",
+                                    tracing::trace!(context = "io",
                                                     event = "error",
                                                     instance = instance.id,
                                                     protocol = ?instance.protocol,

@@ -22,11 +22,14 @@
 */
 
 use jmap_proto::types::collection::Collection;
+use pwhash::sha512_crypt;
 use store::{
+    rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{
-        assert::HashedValue, key::DeserializeBigEndian, BatchBuilder, DirectoryClass, ValueClass,
+        assert::HashedValue, key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass,
+        ValueClass,
     },
-    Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 
 use crate::{DirectoryError, ManagementError, Principal, QueryBy, Type};
@@ -210,6 +213,9 @@ impl ManageDirectory for Store {
         let mut batch = BatchBuilder::new();
         let ptype = PrincipalIdType::new(principal.id, principal.typ.into_base_type()).serialize();
         batch
+            .with_account_id(u32::MAX)
+            .with_collection(Collection::Principal)
+            .create_document(principal.id)
             .assert_value(
                 ValueClass::Directory(DirectoryClass::NameToId(
                     principal.name.clone().into_bytes(),
@@ -902,6 +908,7 @@ impl ManageDirectory for Store {
     }
 
     async fn init(self) -> crate::Result<Self> {
+        // Create admin account if requested
         if let (Ok(admin_user), Ok(admin_pass)) = (
             std::env::var("SET_ADMIN_USER"),
             std::env::var("SET_ADMIN_PASS"),
@@ -933,6 +940,43 @@ impl ManageDirectory for Store {
             }
             std::process::exit(0);
         }
+
+        // Create a default administrator account if none exists
+        if self
+            .get_bitmap(BitmapKey {
+                account_id: u32::MAX,
+                collection: Collection::Principal.into(),
+                class: BitmapClass::DocumentIds,
+                block_num: 0,
+            })
+            .await?
+            .unwrap_or_default()
+            .is_empty()
+        {
+            let secret = thread_rng()
+                .sample_iter(Alphanumeric)
+                .take(12)
+                .map(char::from)
+                .collect::<String>();
+            let hashed_secret = sha512_crypt::hash(&secret).unwrap();
+
+            self.create_account(Principal {
+                typ: Type::Superuser,
+                quota: 0,
+                name: "admin".to_string(),
+                secrets: vec![hashed_secret],
+                emails: vec![],
+                member_of: vec![],
+                description: "Superuser".to_string().into(),
+                ..Default::default()
+            })
+            .await?;
+
+            tracing::info!(
+                "Created default administrator account \"admin\" with password {secret:?}."
+            )
+        }
+
         Ok(self)
     }
 }

@@ -45,6 +45,17 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let config = Config::init();
+
+    // Enable tracing
+    let _tracer = enable_tracing(
+        &config,
+        &format!(
+            "Starting Stalwart Mail Server v{}...",
+            env!("CARGO_PKG_VERSION"),
+        ),
+    )
+    .failed("Failed to enable tracing");
+
     let servers = config.parse_servers().failed("Invalid configuration");
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
@@ -62,16 +73,6 @@ async fn main() -> std::io::Result<()> {
 
     // Bind ports and drop privileges
     servers.bind(&config);
-
-    // Enable tracing
-    let _tracer = enable_tracing(
-        &config,
-        &format!(
-            "Starting Stalwart Mail Server v{}...",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .failed("Failed to enable tracing");
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
