@@ -21,14 +21,18 @@
     <img src="https://img.shields.io/badge/read_the-docs-red?style=flat-square" alt="Documentation">
   </a>
   <br>
-  <a href="https://discord.gg/jtgtCNj66U">
-    <img src="https://img.shields.io/discord/923615863037390889?label=chat&style=flat-square" alt="Discord">
-  </a>
   <a href="https://mastodon.social/@stalwartlabs">
     <img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff" alt="Mastodon">
   </a>
   <a href="https://twitter.com/stalwartlabs">
     <img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=twitter" alt="Twitter">
+  </a>
+  <br>
+  <a href="https://discord.gg/jtgtCNj66U">
+    <img src="https://img.shields.io/discord/923615863037390889?label=discord&style=flat-square" alt="Discord">
+  </a>
+  <a href="https://matrix.to/#/#stalwart:matrix.org">
+    <img src="https://img.shields.io/matrix/stalwartmail%3Amatrix.org?label=matrix&style=flat-square" alt="Matrix">
   </a>
 </h4>
 
@@ -63,22 +67,20 @@ Key features:
   - Sender **reputation** monitoring by IP address, ASN, domain and email address.
   - **Greylisting** to temporarily defer unknown senders.
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
-- **Flexible**:
-  - **LDAP** directory and **SQL** database authentication.
+- **Flexible and scalable**:
+  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
+  - Built-in, **LDAP** or **SQL** authentication backend support.
   - Full-text search available in 17 languages.
   - Disk quotas.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
-- **Secure**:
+- **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Access Control Lists (ACLs).
   - Rate limiting.
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
-- **Robust and scalable**:
-  - **FoundationDB** or **SQLite** database backends.
-  - **S3-compatible** blob storage support.
   - Memory safe (thanks to Rust).
 
 ## Get Started
@@ -95,12 +97,12 @@ All documentation is available at [stalw.art/docs/get-started](https://stalw.art
 
 If you are having problems running Stalwart Mail Server, you found a bug or just have a question,
 do not hesitate to reach us on [Github Discussions](https://github.com/stalwartlabs/mail-server/discussions),
-[Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
+[Reddit](https://www.reddit.com/r/stalwartlabs), [Discord](https://discord.gg/aVQr3jF8jd) or [Matrix](https://matrix.to/#/#stalwart:matrix.org).
 Additionally you may become a sponsor to obtain priority support from Stalwart Labs Ltd.
 
 ## Roadmap
 
-- [ ] Performance enhancements
+- [x] Performance enhancements
 - [ ] Web-based admin panel
 - [ ] JMAP Calendar, Contacts and Tasks support
 - [ ] Brand Indicators for Message Identification (BIMI) support
@@ -125,4 +127,4 @@ a commercial license. Please contact licensing@stalw.art for more details.
   
 ## Copyright
 
-Copyright (C) 2023, Stalwart Labs Ltd.
+Copyright (C) 2024, Stalwart Labs Ltd.
