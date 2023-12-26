@@ -86,13 +86,11 @@ jobs:
       - name: Building binary (Unix version)
         if: ${{ !contains(matrix.host_os, 'windows') }}
         run: |
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --no-default-features --features foundationdb --release
+          cargo build -p mail-server --target=${{ matrix.target }} --no-default-features --features "foundationdb elastic s3 redis" --release
           cd target/${{ matrix.target }}/release && tar czvf ../../../stalwart-mail-foundationdb-${{ matrix.target }}.tar.gz stalwart-mail && cd -
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build -p mail-server -p stalwart-cli -p stalwart-install --target=${{ matrix.target }} --release
           cd target/${{ matrix.target }}/release
-          tar czvf ../../../stalwart-mail-sqlite-${{ matrix.target }}.tar.gz stalwart-mail
+          tar czvf ../../../stalwart-mail-${{ matrix.target }}.tar.gz stalwart-mail
           tar czvf ../../../stalwart-cli-${{ matrix.target }}.tar.gz stalwart-cli
           tar czvf ../../../stalwart-install-${{ matrix.target }}.tar.gz stalwart-install
           cd -
@@ -100,11 +98,9 @@ jobs:
       - name: Building binary (Windows version)
         if: ${{ contains(matrix.host_os, 'windows') }}
         run: |
-          cargo build --manifest-path=crates/main/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/cli/Cargo.toml --target=${{ matrix.target }} --release
-          cargo build --manifest-path=crates/install/Cargo.toml --target=${{ matrix.target }} --release
+          cargo build -p mail-server -p stalwart-cli -p stalwart-install --target=${{ matrix.target }} --release
           cd target/${{ matrix.target }}/release
-          7z a ../../../stalwart-mail-sqlite-${{ matrix.target }}.zip stalwart-mail.exe
+          7z a ../../../stalwart-mail-${{ matrix.target }}.zip stalwart-mail.exe
           7z a ../../../stalwart-cli-${{ matrix.target }}.zip stalwart-cli.exe
           7z a ../../../stalwart-install-${{ matrix.target }}.zip stalwart-install.exe
           cd -
@@ -162,8 +158,7 @@ jobs:
 
           run: |
             export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build --manifest-path=crates/cli/Cargo.toml --target=${target} --release
-            cargo build --manifest-path=crates/install/Cargo.toml --target=${target} --release
+            cargo build -p stalwart-cli -p stalwart-install --target=${target} --release
             cd target/${target}/release
             tar czvf /artifacts/stalwart-cli-${target}.tar.gz stalwart-cli
             tar czvf /artifacts/stalwart-install-${target}.tar.gz stalwart-install
@@ -226,9 +221,9 @@ jobs:
 
           run: |
             export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build --manifest-path=crates/main/Cargo.toml --target=${target} --release
+            cargo build -p mail-server --target=${target} --release
             cd target/${target}/release
-            tar czvf /artifacts/stalwart-mail-sqlite-${target}.tar.gz stalwart-mail
+            tar czvf /artifacts/stalwart-mail-${target}.tar.gz stalwart-mail
             cd -
 
       - name: Move packages

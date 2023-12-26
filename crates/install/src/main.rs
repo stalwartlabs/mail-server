@@ -207,7 +207,7 @@ fn main() -> std::io::Result<()> {
             download_url = format!(
                 concat!(
                     "https://github.com/stalwartlabs/{}",
-                    "/releases/latest/download/stalwart-{}-{}-{}.{}"
+                    "/releases/latest/download/stalwart-{}{}-{}.{}"
                 ),
                 match component {
                     Component::AllInOne => "mail-server",
@@ -222,8 +222,8 @@ fn main() -> std::io::Result<()> {
                     Component::Smtp => unreachable!(),
                 },
                 match backend {
-                    Store::FoundationDB => "distributed",
-                    _ => "local",
+                    Store::FoundationDB => "-foundationdb",
+                    _ => "",
                 },
                 TARGET,
                 PKG_EXTENSION
