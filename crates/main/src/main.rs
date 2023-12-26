@@ -56,7 +56,11 @@ async fn main() -> std::io::Result<()> {
     )
     .failed("Failed to enable tracing");
 
+    // Bind ports and drop privileges
     let servers = config.parse_servers().failed("Invalid configuration");
+    servers.bind(&config);
+
+    // Parse stores and directories
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
         .parse_directory(&stores, config.value("jmap.store.data"))
@@ -70,9 +74,6 @@ async fn main() -> std::io::Result<()> {
         )
         .await
         .failed("Invalid configuration");
-
-    // Bind ports and drop privileges
-    servers.bind(&config);
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
