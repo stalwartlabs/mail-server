@@ -216,7 +216,7 @@ jobs:
 
           install: |
             apt-get update -yq
-            apt-get install -yq build-essential cmake protobuf-compiler wget curl
+            apt-get install -yq build-essential cmake protobuf-compiler wget curl clang libclang-dev
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
 
           run: |
