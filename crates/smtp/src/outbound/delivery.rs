@@ -858,7 +858,11 @@ impl DeliveryAttempt {
                                     context = "tls",
                                     event = "disabled",
                                     mx = envelope.mx,
-                                    reason = if domain.disable_tls {"TLS is disabled for this host"} else {"TLS is unavailable for this host, falling back to plain-text."},
+                                    reason = if domain.disable_tls {
+                                        "TLS is disabled for this host"
+                                    } else {
+                                        "TLS is unavailable for this host, falling back to plain-text."
+                                    },
                                 );
 
                                 self.message
