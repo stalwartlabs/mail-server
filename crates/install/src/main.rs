@@ -43,7 +43,7 @@ const SERVICE: &str = include_str!("../../../resources/systemd/stalwart-mail.ser
 const SERVICE: &str = include_str!("../../../resources/systemd/stalwart.mail.plist");
 
 #[cfg(target_os = "linux")]
-const ACCOUNT_NAME: &str = "stalwart-mail";
+const ACCOUNT_NAME: &str = "stalwart"; // Some utilties truncate username at eight characters length
 #[cfg(target_os = "macos")]
 const ACCOUNT_NAME: &str = "_stalwart-mail";
 
