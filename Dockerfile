@@ -7,7 +7,7 @@ COPY resources/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN sed -i -e 's/__C__/all-in-one/g' /usr/local/bin/configure.sh && \
     sed -i -e 's/__R__/mail-server/g' /usr/local/bin/configure.sh && \
-    sed -i -e 's/__N__/mail-sqlite/g' /usr/local/bin/configure.sh && \
+    sed -i -e 's/__N__/mail/g' /usr/local/bin/configure.sh && \
     sed -i -e 's/__B__/stalwart-mail/g' /usr/local/bin/entrypoint.sh
 
 RUN chmod a+rx /usr/local/bin/*.sh
