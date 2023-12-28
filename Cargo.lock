@@ -2904,8 +2904,7 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 [[package]]
 name = "lber"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df7f9fd9f64cf8f59e1a4a0753fe7d575a5b38d3d7ac5758dcee9357d83ef0a"
+source = "git+https://github.com/33KK/ldap3.git#1cfe6a08148f11eefc7a96c5914fe240e422906a"
 dependencies = [
  "bytes",
  "nom",
@@ -2914,8 +2913,7 @@ dependencies = [
 [[package]]
 name = "ldap3"
 version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dceb52eac140c8679326f619b963577ccf5a4ab025fe5e6db424d2fd3e4f400"
+source = "git+https://github.com/33KK/ldap3.git#1cfe6a08148f11eefc7a96c5914fe240e422906a"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2926,7 +2924,7 @@ dependencies = [
  "log",
  "nom",
  "percent-encoding",
- "ring 0.16.20",
+ "ring 0.17.7",
  "rustls 0.21.10",
  "rustls-native-certs",
  "thiserror",
