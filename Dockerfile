@@ -14,7 +14,7 @@ RUN case "${TARGETPLATFORM}" in \
     esac
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -yq build-essential \
+    apt-get install -yq build-essential libclang-16-dev \
                         g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
 RUN rustup target add "$(cat /target.txt)"
 COPY --from=planner /recipe.json /recipe.json
