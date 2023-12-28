@@ -16,12 +16,12 @@ store = { path =  "../store" }
 utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
-mail-auth = { git = "https://github.com/stalwartlabs/mail-auth" }
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
-mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
-mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] } 
-smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
+mail-auth = { version = "0.3" }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
+mail-builder = { version = "0.3", features = ["ludicrous_mode"] } 
+smtp-proto = { version = "0.1" }
+sieve-rs = { version = "0.4" } 
 ahash = { version = "0.8" }
 rustls = "0.22"
 rustls-pemfile = "2.0"

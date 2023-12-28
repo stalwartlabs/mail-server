@@ -12,9 +12,9 @@ jmap_proto = { path = "../jmap-proto" }
 directory = { path = "../directory" }
 store = { path = "../store" }
 utils = { path = "../utils" }
-mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "ludicrous_mode"] } 
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
-sieve-rs = { git = "https://github.com/stalwartlabs/sieve" } 
+mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+sieve-rs = { version = "0.4" } 
 rustls = "0.22"
 rustls-pemfile = "2.0"
 tokio = { version = "1.23", features = ["full"] }

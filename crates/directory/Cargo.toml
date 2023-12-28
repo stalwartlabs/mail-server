@@ -8,10 +8,10 @@ resolver = "2"
 utils = { path =  "../utils" }
 store = { path =  "../store" }
 jmap_proto = { path =  "../jmap-proto" }
-smtp-proto = { git = "https://github.com/stalwartlabs/smtp-proto" }
-mail-parser = { git = "https://github.com/stalwartlabs/mail-parser", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
-mail-send = { git = "https://github.com/stalwartlabs/mail-send", default-features = false, features = ["cram-md5", "skip-ehlo"] }
-mail-builder = { git = "https://github.com/stalwartlabs/mail-builder", features = ["ludicrous_mode"] }
+smtp-proto = { version = "0.1" }
+mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
 tokio = { version = "1.23", features = ["net"] }
 tokio-rustls = { version = "0.25.0"}
 rustls = "0.22"

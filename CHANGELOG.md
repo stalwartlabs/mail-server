@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.5.1] - 2024-01-xx
+
+## Added
+
+### Changed
+
+### Fixed
+- Invalid DKIM signatures for empty message bodies.
+
 ## [0.5.0] - 2023-12-27
 
 This version requires a database migration and introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.
