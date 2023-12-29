@@ -50,33 +50,28 @@ impl RocksDbStore {
         let db = self.db.clone();
 
         self.spawn_worker(move || {
-            let start = Instant::now();
-            let mut retry_count = 0;
-
-            let mut txn_opts = OptimisticTransactionOptions::default();
-            txn_opts.set_snapshot(true);
-
-            let txn = RocksDBTransaction {
+            let mut txn = RocksDBTransaction {
                 db: &db,
                 cf_bitmaps: db.cf_handle(CF_BITMAPS).unwrap(),
                 cf_values: db.cf_handle(CF_VALUES).unwrap(),
                 cf_indexes: db.cf_handle(CF_INDEXES).unwrap(),
                 cf_logs: db.cf_handle(CF_LOGS).unwrap(),
                 cf_counters: db.cf_handle(CF_COUNTERS).unwrap(),
-                txn_opts,
+                txn_opts: OptimisticTransactionOptions::default(),
                 batch: &batch,
             };
+            txn.txn_opts.set_snapshot(true);
 
+            // Begin write
+            let mut retry_count = 0;
+            let start = Instant::now();
             loop {
                 match txn.commit() {
-                    Ok(success) => {
-                        return if success {
-                            Ok(())
-                        } else {
-                            Err(crate::Error::AssertValueFailed)
-                        };
+                    Ok(_) => {
+                        return Ok(());
                     }
-                    Err(err) => match err.kind() {
+                    Err(CommitError::Internal(err)) => return Err(err),
+                    Err(CommitError::RocksDB(err)) => match err.kind() {
                         ErrorKind::Busy | ErrorKind::MergeInProgress | ErrorKind::TryAgain
                             if retry_count < MAX_COMMIT_ATTEMPTS
                                 && start.elapsed() < MAX_COMMIT_TIME =>
@@ -140,8 +135,13 @@ struct RocksDBTransaction<'x> {
     batch: &'x Batch,
 }
 
+enum CommitError {
+    Internal(crate::Error),
+    RocksDB(rocksdb::Error),
+}
+
 impl<'x> RocksDBTransaction<'x> {
-    fn commit(&self) -> Result<bool, rocksdb::Error> {
+    fn commit(&self) -> Result<(), CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
@@ -188,15 +188,15 @@ impl<'x> RocksDBTransaction<'x> {
                             collection,
                             document_id,
                             class,
-                        };
-                        let key = key.serialize(0);
+                        }
+                        .serialize(0);
 
                         if let ValueOp::Set(value) = op {
                             txn.put_cf(&self.cf_values, &key, value)?;
 
                             if matches!(class, ValueClass::ReservedId) {
                                 if let Some(bitmap) = txn
-                                    .get_pinned_cf(
+                                    .get_pinned_for_update_cf(
                                         &self.cf_bitmaps,
                                         &BitmapKey {
                                             account_id,
@@ -205,12 +205,24 @@ impl<'x> RocksDBTransaction<'x> {
                                             block_num: 0,
                                         }
                                         .serialize(WITHOUT_BLOCK_NUM),
-                                    )?
-                                    .and_then(|bytes| RoaringBitmap::deserialize(&bytes).ok())
+                                        true,
+                                    )
+                                    .map_err(CommitError::from)
+                                    .and_then(|bytes| {
+                                        if let Some(bytes) = bytes {
+                                            RoaringBitmap::deserialize(&bytes)
+                                                .map(Some)
+                                                .map_err(CommitError::from)
+                                        } else {
+                                            Ok(None)
+                                        }
+                                    })?
                                 {
                                     if bitmap.contains(document_id) {
                                         txn.rollback()?;
-                                        return Ok(false);
+                                        return Err(CommitError::Internal(
+                                            crate::Error::AssertValueFailed,
+                                        ));
                                     }
                                 }
                             }
@@ -274,8 +286,8 @@ impl<'x> RocksDBTransaction<'x> {
                             collection,
                             document_id,
                             class,
-                        };
-                        let key = key.serialize(0);
+                        }
+                        .serialize(0);
                         let matches = txn
                             .get_pinned_for_update_cf(&self.cf_values, &key, true)?
                             .map(|value| assert_value.matches(&value))
@@ -283,13 +295,13 @@ impl<'x> RocksDBTransaction<'x> {
 
                         if !matches {
                             txn.rollback()?;
-                            return Ok(false);
+                            return Err(CommitError::Internal(crate::Error::AssertValueFailed));
                         }
                     }
                 }
             }
 
-            txn.commit().map(|_| true)
+            txn.commit().map_err(Into::into)
         } else {
             let mut wb = txn.get_writebatch();
             for op in &self.batch.ops {
@@ -389,7 +401,19 @@ impl<'x> RocksDBTransaction<'x> {
                 }
             }
 
-            self.db.write(wb).map(|_| true)
+            self.db.write(wb).map_err(Into::into)
         }
+    }
+}
+
+impl From<rocksdb::Error> for CommitError {
+    fn from(err: rocksdb::Error) -> Self {
+        CommitError::RocksDB(err)
+    }
+}
+
+impl From<crate::Error> for CommitError {
+    fn from(err: crate::Error) -> Self {
+        CommitError::Internal(err)
     }
 }

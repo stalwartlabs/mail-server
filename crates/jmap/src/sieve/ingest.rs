@@ -480,6 +480,7 @@ impl JMAP {
             Ok(ingested_message)
         } else {
             // There were problems during delivery
+            #[allow(clippy::unnecessary_unwrap)]
             Err(last_temp_error.unwrap())
         }
     }

@@ -117,10 +117,7 @@ impl SessionData {
             if let (Some(thread_id), Some((imap_id, _))) =
                 (thread_id, state.map_result_id(document_id, is_uid))
             {
-                threads
-                    .entry(thread_id)
-                    .or_insert_with(Vec::new)
-                    .push(imap_id);
+                threads.entry(thread_id).or_default().push(imap_id);
             }
         }
 

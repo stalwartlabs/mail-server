@@ -215,6 +215,13 @@ impl Batch {
             )
         })
     }
+
+    pub fn first_account_id(&self) -> Option<u32> {
+        self.ops.iter().find_map(|op| match op {
+            Operation::AccountId { account_id } => Some(*account_id),
+            _ => None,
+        })
+    }
 }
 
 impl Default for BatchBuilder {

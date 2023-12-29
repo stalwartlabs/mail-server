@@ -410,10 +410,7 @@ impl Ord for SessionAddress {
 
 impl PartialOrd for SessionAddress {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.domain.partial_cmp(&other.domain) {
-            Some(std::cmp::Ordering::Equal) => self.address_lcase.partial_cmp(&other.address_lcase),
-            order => order,
-        }
+        Some(self.cmp(other))
     }
 }
 

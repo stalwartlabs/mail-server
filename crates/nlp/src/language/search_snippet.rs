@@ -91,7 +91,7 @@ pub fn generate_snippet(
     }
 
     let mut snippet = String::with_capacity(text.len());
-    let start_offset = terms.get(0)?.offset;
+    let start_offset = terms.first()?.offset;
 
     if start_offset > 0 {
         let mut word_count = 0;

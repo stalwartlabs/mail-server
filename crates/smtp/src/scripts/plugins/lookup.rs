@@ -226,7 +226,7 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
 
     if let Some(arr) = ctx.arguments[2].as_array() {
         // Obtain expiration
-        match arr.get(0) {
+        match arr.first() {
             Some(Variable::Integer(v)) if *v > 0 => {
                 expires = Duration::from_secs(*v as u64);
             }

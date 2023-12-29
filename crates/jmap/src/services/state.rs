@@ -87,6 +87,7 @@ pub fn init_state_manager() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
     mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
 }
 
+#[allow(clippy::unwrap_or_default)]
 pub fn spawn_state_manager(
     core: Arc<JMAP>,
     settings: &Config,

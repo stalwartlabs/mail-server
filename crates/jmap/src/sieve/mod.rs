@@ -65,7 +65,7 @@ impl SeenIdHash {
 
 impl PartialOrd for SeenIdHash {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.expiry.partial_cmp(&other.expiry)
+        Some(self.cmp(other))
     }
 }
 

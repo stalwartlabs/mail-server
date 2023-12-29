@@ -68,7 +68,7 @@ pub async fn upgrade_websocket_connection(
             .get("Sec-WebSocket-Version")
             .and_then(|h| h.to_str().ok()),
     ) {
-        (Some(key), Some(version)) if version == "13" => derive_accept_key(key.as_bytes()),
+        (Some(key), Some("13")) => derive_accept_key(key.as_bytes()),
         _ => {
             return RequestError::blank(
                 StatusCode::BAD_REQUEST.as_u16(),

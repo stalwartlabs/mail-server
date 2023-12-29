@@ -37,7 +37,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, h
         .assert_response_code("TRYCREATE");
 
     // Import test messages
-    let mut entries = fs::read_dir(&resources_dir())
+    let mut entries = fs::read_dir(resources_dir())
         .unwrap()
         .map(|res| res.map(|e| e.path()))
         .collect::<Result<Vec<_>, io::Error>>()

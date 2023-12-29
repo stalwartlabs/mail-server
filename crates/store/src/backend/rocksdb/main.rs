@@ -86,6 +86,11 @@ impl RocksDbStore {
         db_opts.create_missing_column_families(true);
         db_opts.create_if_missing(true);
         db_opts.set_max_background_jobs(std::cmp::max(num_cpus::get() as i32, 3));
+        db_opts.increase_parallelism(std::cmp::max(num_cpus::get() as i32, 3));
+        db_opts.set_level_zero_file_num_compaction_trigger(1);
+        db_opts.set_level_compaction_dynamic_level_bytes(true);
+        //db_opts.set_keep_log_file_num(100);
+        //db_opts.set_max_successive_merges(100);
         db_opts.set_write_buffer_size(
             config.property_or_static((&prefix, "write-buffer-size"), "134217728")?,
         );

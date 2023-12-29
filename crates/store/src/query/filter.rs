@@ -177,7 +177,7 @@ impl Store {
         Ok(ResultSet {
             account_id,
             collection,
-            results: state.bm.unwrap_or_else(RoaringBitmap::new),
+            results: state.bm.unwrap_or_default(),
         })
     }
 

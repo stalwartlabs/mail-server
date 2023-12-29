@@ -185,7 +185,7 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     // Create classifier from defaults
     let mut classifier = BayesClassifier::default();
     if let Some(params) = ctx.arguments[2].as_array() {
-        if let Some(Variable::Integer(value)) = params.get(0) {
+        if let Some(Variable::Integer(value)) = params.first() {
             classifier.min_token_hits = *value as u32;
         }
         if let Some(Variable::Integer(value)) = params.get(1) {

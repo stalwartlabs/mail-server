@@ -193,7 +193,7 @@ impl<T> Ord for Schedule<T> {
 
 impl<T> PartialOrd for Schedule<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        other.due.partial_cmp(&self.due)
+        Some(self.cmp(other))
     }
 }
 

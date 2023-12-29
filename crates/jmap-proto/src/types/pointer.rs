@@ -154,7 +154,7 @@ impl JSONPointer {
             JSONPointer::String(property) => property.as_str().into(),
             JSONPointer::Path(path) if path.len() == 2 => {
                 if let (Some(JSONPointer::String(property)), Some(JSONPointer::Wildcard)) =
-                    (path.get(0), path.get(1))
+                    (path.first(), path.get(1))
                 {
                     property.as_str().into()
                 } else {
@@ -168,7 +168,7 @@ impl JSONPointer {
     pub fn item_subquery(&self) -> Option<(&str, &str)> {
         match self {
             JSONPointer::Path(path) if path.len() == 3 => {
-                match (path.get(0), path.get(1), path.get(2)) {
+                match (path.first(), path.get(1), path.get(2)) {
                     (
                         Some(JSONPointer::String(root)),
                         Some(JSONPointer::Wildcard),

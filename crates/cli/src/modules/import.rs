@@ -165,7 +165,7 @@ impl ImportCommands {
                     }
                     children
                         .entry(mailbox.parent_id())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(mailbox_id);
                     mailbox_ids.insert(mailbox_id, mailbox.name().unwrap_or("Untitled"));
                 }

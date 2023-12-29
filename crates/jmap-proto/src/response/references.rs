@@ -199,7 +199,7 @@ impl Response {
                 match &response.method {
                     ResponseMethod::Get(response) => {
                         return match rr.path.item_subquery() {
-                            Some((root, property)) if root == "list" => {
+                            Some(("list", property)) => {
                                 let property = Property::parse(property);
 
                                 EvalResult::Values(

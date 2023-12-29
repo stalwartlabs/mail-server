@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. This projec
 ## [0.5.1] - 2024-01-xx
 
 ## Added
+- SMTP smuggling protection: Sanitization of outgoing messages that do not use `CRLF` as line endings.
 
 ### Changed
 

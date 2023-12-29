@@ -31,9 +31,9 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.5.x
         - v0.4.x
-        - v0.3.x
-        - v0.2.x or lower
+        - v0.3.x or lower
     validations:
       required: true
   - type: dropdown
@@ -41,23 +41,30 @@ body:
     attributes:
       label: What database are you using?
       options:
-        - SQLite
+        - RocksDB
         - FoundationDB
+        - PostgreSQL
+        - mySQL
+        - SQLite
   - type: dropdown
     id: blob
     attributes:
       label: What blob storage are you using?
       options:
-        - Local
+        - RocksDB
+        - FoundationDB
+        - PostgreSQL
+        - mySQL
+        - SQLite
+        - Filesystem
         - S3-compatible
   - type: dropdown
     id: directory
     attributes:
       label: Where is your directory located?
       options:
-        - SQLite
-        - mySQL
-        - PostgreSQL
+        - Internal
+        - SQL
         - LDAP
   - type: dropdown
     id: os
