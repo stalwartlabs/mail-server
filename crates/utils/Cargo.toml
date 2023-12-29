@@ -14,7 +14,7 @@ serde = { version = "1.0", features = ["derive"]}
 tracing = "0.1"
 mail-auth = { version = "0.3" }
 smtp-proto = { version = "0.1" }
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.22.0"

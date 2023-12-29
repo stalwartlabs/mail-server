@@ -46,7 +46,7 @@ sed -i ''  -e "s/__STORE__/$STORE/g" \
 sed -i '' -e "s|__CERT_PATH__|$BASE_DIR/etc/tls_cert.pem|g" \
           -e "s|__PK_PATH__|$BASE_DIR/etc/tls_privatekey.pem|g" "$BASE_DIR/etc/common/tls.toml"
 sed -i '' -e 's/method = "log"/method = "stdout"/g' \
-          -e 's/level = "info"/level = "info"/g' "$BASE_DIR/etc/common/tracing.toml"
+          -e 's/level = "info"/level = "trace"/g' "$BASE_DIR/etc/common/tracing.toml"
 sed -i '' -e 's/%{HOST}%/127.0.0.1/g' "$BASE_DIR/etc/jmap/listener.toml"
 sed -i '' -e 's/allow-plain-text = false/allow-plain-text = true/g' \
           -e 's/2000\/1m/9999999\/100m/g' \

@@ -41,12 +41,33 @@ use smtp::{
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
 
+const SMUGGLER: &str = r#"From: Joe SixPack <john@foobar.net>
+To: Suzie Q <suzie@foobar.org>
+Subject: Is dinner ready?
+
+Hi.
+
+We lost the game. Are you hungry yet?
+.hey
+Joe.
+
+<SEP>.
+MAIL FROM:<admin@foobar.net>
+RCPT TO:<ok@foobar.org>
+DATA
+From: Joe SixPack <admin@foobar.net>
+To: Suzie Q <suzie@foobar.org>
+Subject: smuggled message
+
+This is a smuggled message
+"#;
+
 #[tokio::test]
 #[serial_test::serial]
 async fn smtp_delivery() {
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
@@ -55,53 +76,32 @@ async fn smtp_delivery() {
     let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.extensions.dsn = IfBlock::new(true);
+    core.session.config.extensions.chunking = IfBlock::new(false);
     let mut remote_qr = core.init_test_queue("smtp_delivery_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
-        "foobar.org",
-        vec![
-            MX {
-                exchanges: vec!["mx1.foobar.org".to_string()],
+    for domain in ["foobar.org", "foobar.net", "foobar.com"] {
+        core.resolvers.dns.mx_add(
+            domain,
+            vec![MX {
+                exchanges: vec![format!("mx1.{domain}"), format!("mx2.{domain}")],
                 preference: 10,
-            },
-            MX {
-                exchanges: vec!["mx2.foobar.org".to_string()],
-                preference: 20,
-            },
-        ],
-        Instant::now() + Duration::from_secs(10),
-    );
-    core.resolvers.dns.mx_add(
-        "foobar.net",
-        vec![MX {
-            exchanges: vec!["mx1.foobar.net".to_string(), "mx2.foobar.net".to_string()],
-            preference: 10,
-        }],
-        Instant::now() + Duration::from_secs(10),
-    );
-    core.resolvers.dns.ipv4_add(
-        "mx1.foobar.org",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(10),
-    );
-    core.resolvers.dns.ipv4_add(
-        "mx2.foobar.org",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(10),
-    );
-    core.resolvers.dns.ipv4_add(
-        "mx1.foobar.net",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(10),
-    );
-    core.resolvers.dns.ipv4_add(
-        "mx2.foobar.net",
-        vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(10),
-    );
+            }],
+            Instant::now() + Duration::from_secs(10),
+        );
+        core.resolvers.dns.ipv4_add(
+            format!("mx1.{domain}"),
+            vec!["127.0.0.1".parse().unwrap()],
+            Instant::now() + Duration::from_secs(30),
+        );
+        core.resolvers.dns.ipv4_add(
+            format!("mx2.{domain}"),
+            vec!["127.0.0.1".parse().unwrap()],
+            Instant::now() + Duration::from_secs(30),
+        );
+    }
 
     // Multiple delivery attempts
     let mut local_qr = core.init_test_queue("smtp_delivery_local");
@@ -111,6 +111,7 @@ async fn smtp_delivery() {
     let config = &mut core.queue.config;
     config.retry = IfBlock::new(vec![Duration::from_millis(100)]);
     config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
+    {if = 'rcpt-domain', eq = 'foobar.com', then = ['500ms', '600ms']},
     {else = ['100ms']}]"
         .parse_if(&ConfigContext::new(&[]));
     config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '650ms'},
@@ -245,4 +246,49 @@ async fn smtp_delivery() {
     );
 
     remote_qr.assert_empty_queue();
+    local_qr.assert_empty_queue();
+
+    // SMTP smuggling
+    for separator in ["\n", "\r"].iter() {
+        session.data.remote_ip = "10.0.0.2".parse().unwrap();
+        session.eval_session_params().await;
+        session.ehlo("mx.test.org").await;
+
+        let message = SMUGGLER
+            .replace('\r', "")
+            .replace('\n', "\r\n")
+            .replace("<SEP>", separator);
+
+        session
+            .send_message("john@doe.org", &["bill@foobar.com"], &message, "250")
+            .await;
+        DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
+            .try_deliver(core.clone(), &mut queue)
+            .await;
+        let event = local_qr.read_event().await;
+
+        assert!(
+            matches!(event, Event::Done(WorkerResult::Done)),
+            "event: {:?}",
+            event
+        );
+
+        let message = remote_qr.read_event().await.unwrap_message().read_message();
+
+        assert!(
+            message.contains("This is a smuggled message"),
+            "message: {:?}",
+            message
+        );
+        assert!(
+            message.contains("We lost the game."),
+            "message: {:?}",
+            message
+        );
+        assert!(
+            message.contains(&format!("{separator}..\r\nMAIL FROM:<",)),
+            "message: {:?}",
+            message
+        );
+    }
 }

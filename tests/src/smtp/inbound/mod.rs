@@ -67,6 +67,9 @@ impl QueueReceiver {
     pub fn assert_empty_queue(&mut self) {
         match self.queue_rx.try_recv() {
             Err(TryRecvError::Empty) => (),
+            Ok(queue::Event::Queue(message)) => {
+                panic!("Unexpected message: {}", message.inner.read_message());
+            }
             Ok(event) => panic!("Expected empty queue but got {event:?}"),
             Err(err) => panic!("Queue error: {err:?}"),
         }

@@ -33,7 +33,7 @@ impl managed::Manager for SmtpConnectionManager {
     type Error = Error;
 
     async fn create(&self) -> Result<SmtpClient, Error> {
-        let mut client = self.builder.connect().await?;
+        let mut client = self.builder.connect_opts(false).await?;
         let capabilities = client
             .capabilities(&self.builder.local_host, self.builder.is_lmtp)
             .await?;

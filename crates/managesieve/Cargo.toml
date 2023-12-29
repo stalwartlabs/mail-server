@@ -13,7 +13,7 @@ directory = { path = "../directory" }
 store = { path = "../store" }
 utils = { path = "../utils" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "skip-ehlo"] }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
 sieve-rs = { version = "0.4" } 
 rustls = "0.22"
 rustls-pemfile = "2.0"
