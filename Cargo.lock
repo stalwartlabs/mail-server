@@ -81,9 +81,9 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91429305e9f0a25f6205c5b8e0d2db09e0708a7a6df0f42212bb56c32c8ac97a"
+checksum = "77c3a9648d43b9cd48db467b3f87fdd6e146bcc88ab0180006cef2179fe11d01"
 dependencies = [
  "cfg-if",
  "getrandom",
@@ -1416,7 +1416,7 @@ dependencies = [
 name = "directory"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "argon2",
  "async-trait",
  "deadpool",
@@ -2188,7 +2188,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290f1a1d9242c78d09ce40a5e87e7554ee637af1351968159f4952f028f75604"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "allocator-api2",
 ]
 
@@ -2547,7 +2547,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 name = "imap"
 version = "0.5.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "dashmap",
  "directory",
  "imap_proto",
@@ -2572,7 +2572,7 @@ dependencies = [
 name = "imap_proto"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "chrono",
  "jmap_proto",
  "mail-parser",
@@ -2779,7 +2779,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12c697483ad894a8184d0fd61848e057f86b16642049993b3e6a80c959dbc90a"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "async-stream",
  "base64 0.13.1",
  "chrono",
@@ -2799,7 +2799,7 @@ dependencies = [
 name = "jmap_proto"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "fast-float",
  "mail-parser",
  "serde",
@@ -3079,7 +3079,7 @@ version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "224aa436a40caeef3bd3fa1b5b619b28b26d83fcc088c008536886f74ad27951"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "flate2",
  "hickory-resolver",
  "lru-cache",
@@ -3115,9 +3115,9 @@ dependencies = [
 
 [[package]]
 name = "mail-send"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0ae928c5d8b258cc56ee9d4efbfc7856a40d8bbd4e6ea2afea33cf4bb1e7b96"
+checksum = "5f5982137dccf24ca038daa022eb0ea97a31e9739477445a787a8ef77e015ebb"
 dependencies = [
  "base64 0.21.5",
  "gethostname",
@@ -3151,7 +3151,7 @@ dependencies = [
 name = "managesieve"
 version = "0.5.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "bincode",
  "directory",
  "imap",
@@ -3418,7 +3418,7 @@ dependencies = [
 name = "nlp"
 version = "0.5.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "bincode",
  "farmhash",
  "jieba-rs",
@@ -5294,7 +5294,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25494c13da6c336430906aa783e4bb2ae251c84158d6e5a4fdf0449a779c2521"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "bincode",
  "fancy-regex",
  "mail-builder",
@@ -5359,7 +5359,7 @@ checksum = "4dccd0940a2dcdf68d092b8cbab7dc0ad8fa938bf95787e1b916b0e3d0e8e970"
 name = "smtp"
 version = "0.5.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "bincode",
  "blake3",
  "dashmap",
@@ -5530,7 +5530,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "store"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "async-trait",
  "blake3",
  "bytes",
@@ -5744,7 +5744,7 @@ dependencies = [
 name = "tests"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "async-trait",
  "base64 0.21.5",
  "bytes",
@@ -6387,7 +6387,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 name = "utils"
 version = "0.5.0"
 dependencies = [
- "ahash 0.8.6",
+ "ahash 0.8.7",
  "chrono",
  "dashmap",
  "mail-auth",
