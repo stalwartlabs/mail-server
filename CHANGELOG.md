@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 - Invalid DKIM signatures for empty message bodies.
+- Parsing IMAP `SEARCH BEFORE` commands.
 
 ## [0.5.0] - 2023-12-27
 

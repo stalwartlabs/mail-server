@@ -128,7 +128,12 @@ pub fn parse_filters(
                 } else if value.eq_ignore_ascii_case(b"BCC") {
                     filters.push(Filter::Bcc(decode_argument(tokens, decoder)?));
                 } else if value.eq_ignore_ascii_case(b"BEFORE") {
-                    filters.push(Filter::All);
+                    filters.push(Filter::Before(parse_date(
+                        &tokens
+                            .next()
+                            .ok_or_else(|| Cow::from("Expected date"))?
+                            .unwrap_bytes(),
+                    )?));
                 } else if value.eq_ignore_ascii_case(b"BODY") {
                     filters.push(Filter::Body(decode_argument(tokens, decoder)?));
                 } else if value.eq_ignore_ascii_case(b"CC") {
@@ -738,6 +743,16 @@ mod tests {
                         Filter::Larger(50000),
                         Filter::End,
                     ],
+                    is_esearch: true,
+                    sort: None,
+                },
+            ),
+            (
+                b"5 UID SEARCH BEFORE 1-Dec-2023\r\n".to_vec(),
+                search::Arguments {
+                    tag: "5".to_string(),
+                    result_options: vec![],
+                    filter: vec![Filter::Before(1701388800)],
                     is_esearch: true,
                     sort: None,
                 },

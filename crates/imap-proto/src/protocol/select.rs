@@ -70,7 +70,7 @@ impl ImapResponse for Response {
         }
         buf.extend_from_slice(b"* ");
         buf.extend_from_slice(self.total_messages.to_string().as_bytes());
-        if self.recent_messages > 0 {
+        if !self.is_rev2 && self.recent_messages > 0 {
             buf.extend_from_slice(
                 b" EXISTS\r\n* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\Recent)\r\n",
             );
@@ -158,7 +158,7 @@ mod tests {
                 ),
                 concat!(
                     "* 172 EXISTS\r\n",
-                    "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n",
+                    "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\Recent)\r\n",
                     "* 5 RECENT\r\n",
                     "* OK [UNSEEN 3] Unseen messages\r\n",
                     "* OK [PERMANENTFLAGS (\\Deleted \\Seen \\Answered \\Flagged \\Draft \\*)] All allowed\r\n",
@@ -196,7 +196,7 @@ mod tests {
                 concat!(
                     "* OK [CLOSED] Closed previous mailbox\r\n",
                     "* 172 EXISTS\r\n",
-                    "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n",
+                    "* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\Recent)\r\n",
                     "* 5 RECENT\r\n",
                     "* OK [UNSEEN 3] Unseen messages\r\n",
                     "* OK [PERMANENTFLAGS (\\Deleted \\Seen \\Answered \\Flagged \\Draft \\*)] All allowed\r\n",
