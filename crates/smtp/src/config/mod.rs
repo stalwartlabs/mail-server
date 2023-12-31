@@ -227,6 +227,7 @@ pub struct Auth {
     pub mechanisms: IfBlock<u64>,
     pub require: IfBlock<bool>,
     pub allow_plain_text: IfBlock<bool>,
+    pub must_match_sender: IfBlock<bool>,
     pub errors_max: IfBlock<usize>,
     pub errors_wait: IfBlock<Duration>,
 }

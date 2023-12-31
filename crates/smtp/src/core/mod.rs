@@ -198,6 +198,7 @@ pub struct SessionData {
     pub message: Vec<u8>,
 
     pub authenticated_as: String,
+    pub authenticated_emails: Vec<String>,
     pub auth_errors: usize,
 
     pub priority: i16,
@@ -238,6 +239,7 @@ pub struct SessionParameters {
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,
     pub auth_plain_text: bool,
+    pub auth_match_sender: bool,
 
     // Rcpt parameters
     pub rcpt_errors_max: usize,
@@ -264,6 +266,7 @@ impl SessionData {
             mail_from: None,
             rcpt_to: Vec::new(),
             authenticated_as: String::new(),
+            authenticated_emails: Vec::new(),
             priority: 0,
             valid_until: Instant::now(),
             rcpt_errors: 0,
@@ -527,6 +530,7 @@ impl Session<NullIo> {
                 rcpt_max: Default::default(),
                 rcpt_dsn: Default::default(),
                 max_message_size: Default::default(),
+                auth_match_sender: false,
                 iprev: crate::config::VerifyStrategy::Disable,
                 spf_ehlo: crate::config::VerifyStrategy::Disable,
                 spf_mail_from: crate::config::VerifyStrategy::Disable,
@@ -582,6 +586,7 @@ impl SessionData {
             rcpt_errors: 0,
             message,
             authenticated_as: "local".into(),
+            authenticated_emails: vec![],
             auth_errors: 0,
             priority: 0,
             delivery_by: 0,

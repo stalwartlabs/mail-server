@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ## Added
 - SMTP smuggling protection: Sanitization of outgoing messages that do not use `CRLF` as line endings.
+- SMTP sender validation for authenticated users: Added the `session.auth.must-match-sender` configuration option to enforce that the sender address used in the `MAIL FROM` command matches the authenticated user or any of their associated e-mail addresses.
 
 ### Changed
 

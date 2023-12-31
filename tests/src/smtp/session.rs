@@ -311,7 +311,7 @@ pub trait VerifyResponse {
     fn assert_code(self, expected_code: &str) -> Self;
     fn assert_contains(self, expected_text: &str) -> Self;
     fn assert_not_contains(self, expected_text: &str) -> Self;
-    fn assert_count(self, text: &str, occurences: usize) -> Self;
+    fn assert_count(self, text: &str, occurrences: usize) -> Self;
 }
 
 impl VerifyResponse for Vec<String> {
@@ -343,12 +343,12 @@ impl VerifyResponse for Vec<String> {
         }
     }
 
-    fn assert_count(self, text: &str, occurences: usize) -> Self {
+    fn assert_count(self, text: &str, occurrences: usize) -> Self {
         assert_eq!(
             self.iter().filter(|l| l.contains(text)).count(),
-            occurences,
+            occurrences,
             "Expected {} occurrences of {:?}, found {}.",
-            occurences,
+            occurrences,
             text,
             self.iter().filter(|l| l.contains(text)).count()
         );

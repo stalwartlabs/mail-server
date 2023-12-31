@@ -287,6 +287,9 @@ impl ConfigSession for Config {
             allow_plain_text: self
                 .parse_if_block("session.auth.allow-plain-text", ctx, &available_keys)?
                 .unwrap_or_else(|| IfBlock::new(false)),
+            must_match_sender: self
+                .parse_if_block("session.auth.must-match-sender", ctx, &available_keys)?
+                .unwrap_or_else(|| IfBlock::new(true)),
         })
     }
 

@@ -31,7 +31,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::{ConfigContext, EnvelopeKey},
+    config::{ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, State, SMTP},
 };
 
@@ -87,12 +87,13 @@ async fn auth() {
     )
     .as_str()
     .parse_if(&ctx);
+    config.must_match_sender = IfBlock::new(true);
     core.session.config.extensions.future_release =
         r"[{if = 'authenticated-as', ne = '', then = '1d'},
     {else = false}]"
             .parse_if(&ConfigContext::new(&[]));
 
-    // EHLO should not avertise plain text auth without TLS
+    // EHLO should not advertise plain text auth without TLS
     let mut session = Session::test(core);
     session.data.remote_ip = "10.0.0.1".parse().unwrap();
     session.eval_session_params().await;
@@ -134,7 +135,10 @@ async fn auth() {
     session
         .cmd("AUTH PLAIN AGpvaG4Ac2VjcmV0", "235 2.7.0")
         .await;
-    session.mail_from("bill@foobar.org", "250").await;
+
+    // Users should be able to send emails only from their own email addresses
+    session.mail_from("bill@foobar.org", "501 5.5.4").await;
+    session.mail_from("john@example.org", "250").await;
     session.data.mail_from.take();
 
     // Should not be able to authenticate twice

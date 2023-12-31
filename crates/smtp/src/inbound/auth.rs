@@ -181,19 +181,23 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            if let Ok(is_authenticated) = lookup
+            if let Ok(principal) = lookup
                 .query(QueryBy::Credentials(&credentials), false)
                 .await
-                .map(|r| r.is_some())
             {
                 tracing::debug!(
                     parent: &self.span,
                     context = "auth",
                     event = "authenticate",
-                    result = if is_authenticated {"success"} else {"failed"}
+                    result = if principal.is_some() {"success"} else {"failed"}
                 );
-                return if is_authenticated {
-                    self.data.authenticated_as = authenticated_as;
+                return if let Some(principal) = principal {
+                    self.data.authenticated_as = authenticated_as.to_lowercase();
+                    self.data.authenticated_emails = principal
+                        .emails
+                        .into_iter()
+                        .map(|e| e.trim().to_lowercase())
+                        .collect();
                     self.eval_post_auth_params().await;
                     self.write(b"235 2.7.0 Authentication succeeded.\r\n")
                         .await?;

@@ -104,6 +104,17 @@ impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
             (String::new(), String::new(), String::new())
         };
 
+        // Make sure that the authenticated user is allowed to send from this address
+        if !self.data.authenticated_as.is_empty()
+            && self.params.auth_match_sender
+            && (self.data.authenticated_as != address_lcase
+                && !self.data.authenticated_emails.contains(&address_lcase))
+        {
+            return self
+                .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
+                .await;
+        }
+
         let has_dsn = from.env_id.is_some();
         self.data.mail_from = SessionAddress {
             address,
