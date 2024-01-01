@@ -74,7 +74,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
             "\"quoted-printable\" 228 3 \"3a942a99cdd8a099ae107d3867ec20fb\" NIL NIL NIL)",
             "(\"image\" \"gif\" (\"name\" \"Book about ☕ tables.gif\") ",
             "NIL NIL \"Base64\" 56 \"d40fa7f401e9dc2df56cbb740d65ff52\" ",
-            "(\"attachment\" ()) NIL NIL) \"mixed\" (\"boundary\" \"giddyup\") NIL NIL NIL)",
+            "(\"attachment\" NIL) NIL NIL) \"mixed\" (\"boundary\" \"giddyup\") NIL NIL NIL)",
             " 0 \"cdb0382a03a15601fb1b3c7422521620\" NIL NIL NIL) ",
             "\"mixed\" (\"boundary\" \"festivus\") NIL NIL NIL)"
         ));

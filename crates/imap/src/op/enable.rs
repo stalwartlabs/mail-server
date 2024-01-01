@@ -22,7 +22,7 @@
 */
 
 use imap_proto::{
-    protocol::{capability::Capability, ProtocolVersion},
+    protocol::{capability::Capability, enable, ImapResponse, ProtocolVersion},
     receiver::Request,
     Command, StatusResponse,
 };
@@ -35,6 +35,9 @@ impl<T: AsyncRead> Session<T> {
     pub async fn handle_enable(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_enable() {
             Ok(arguments) => {
+                let mut response = enable::Response {
+                    enabled: Vec::with_capacity(arguments.capabilities.len()),
+                };
                 for capability in arguments.capabilities {
                     match capability {
                         Capability::IMAP4rev2 => {
@@ -48,29 +51,20 @@ impl<T: AsyncRead> Session<T> {
                         }
                         Capability::QResync => {
                             self.is_qresync = true;
+                            self.is_condstore = true;
                         }
                         Capability::Utf8Accept => {}
                         _ => {
-                            let mut buf = Vec::with_capacity(10);
-                            capability.serialize(&mut buf);
-                            self.write_bytes(
-                                StatusResponse::ok(format!(
-                                    "{} cannot be enabled.",
-                                    String::from_utf8(buf).unwrap()
-                                ))
-                                .with_tag(arguments.tag)
-                                .into_bytes(),
-                            )
-                            .await?;
-                            return Ok(());
+                            continue;
                         }
                     }
+                    response.enabled.push(capability);
                 }
 
                 self.write_bytes(
                     StatusResponse::ok("ENABLE successful.")
                         .with_tag(arguments.tag)
-                        .into_bytes(),
+                        .serialize(response.serialize()),
                 )
                 .await
             }

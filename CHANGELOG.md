@@ -12,7 +12,10 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 - Invalid DKIM signatures for empty message bodies.
-- Parsing IMAP `SEARCH BEFORE` commands.
+- IMAP command `SEARCH BEFORE` is not properly parsed.
+- IMAP response to `ENABLE` command misses enabled capabilities list.
+- IMAP command `ENABLE QRESYNC` should also enable `CONDSTORE` extension.
+- IMAP response to `FETCH ENVELOPE` should not return `NIL` when the `From` header is missing.
 
 ## [0.5.0] - 2023-12-27
 

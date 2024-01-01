@@ -179,6 +179,27 @@ pub fn quoted_string(buf: &mut Vec<u8>, text: &str) {
     buf.push(b'"');
 }
 
+pub fn quoted_or_literal_string(buf: &mut Vec<u8>, text: &str) {
+    if text
+        .as_bytes()
+        .iter()
+        .any(|ch| [b'\\', b'"', b'\r', b'\n'].contains(ch))
+    {
+        literal_string(buf, text.as_bytes())
+    } else {
+        buf.push(b'"');
+        buf.extend_from_slice(text.as_bytes());
+        buf.push(b'"');
+    }
+}
+pub fn quoted_or_literal_string_or_nil(buf: &mut Vec<u8>, text: Option<&str>) {
+    if let Some(text) = text {
+        quoted_or_literal_string(buf, text);
+    } else {
+        buf.extend_from_slice(b"NIL");
+    }
+}
+
 pub fn quoted_string_or_nil(buf: &mut Vec<u8>, text: Option<&str>) {
     if let Some(text) = text {
         quoted_string(buf, text);

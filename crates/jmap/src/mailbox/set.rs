@@ -58,6 +58,7 @@ use crate::{
     JMAP,
 };
 
+#[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
 
 struct SetContext<'x> {
@@ -317,6 +318,14 @@ impl JMAP {
         remove_emails: bool,
     ) -> Result<Result<bool, SetError>, MethodError> {
         // Internal folders cannot be deleted
+        #[cfg(feature = "test_mode")]
+        if [INBOX_ID, TRASH_ID].contains(&document_id) && !access_token.is_super_user() {
+            return Ok(Err(SetError::forbidden().with_description(
+                "You are not allowed to delete Inbox, Junk or Trash folders.",
+            )));
+        }
+
+        #[cfg(not(feature = "test_mode"))]
         if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id) && !access_token.is_super_user() {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",

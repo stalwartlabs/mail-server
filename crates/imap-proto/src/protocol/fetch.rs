@@ -26,8 +26,8 @@ use std::borrow::Cow;
 use mail_parser::DateTime;
 
 use super::{
-    literal_string, quoted_rfc2822_or_nil, quoted_string, quoted_string_or_nil, quoted_timestamp,
-    Flag, ImapResponse, Sequence,
+    literal_string, quoted_or_literal_string, quoted_or_literal_string_or_nil,
+    quoted_rfc2822_or_nil, quoted_timestamp, Flag, ImapResponse, Sequence,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,14 +263,14 @@ impl<'x> EmailAddress<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
         buf.push(b'(');
         if let Some(name) = &self.name {
-            quoted_string(buf, name);
+            quoted_or_literal_string(buf, name);
         } else {
             buf.extend_from_slice(b"NIL");
         }
 
         let addr = if let Some((route, addr)) = self.address.split_once(':') {
             buf.push(b' ');
-            quoted_string(buf, route);
+            quoted_or_literal_string(buf, route);
             buf.push(b' ');
             addr
         } else {
@@ -279,11 +279,11 @@ impl<'x> EmailAddress<'x> {
         };
 
         if let Some((local, host)) = addr.split_once('@') {
-            quoted_string(buf, local);
+            quoted_or_literal_string(buf, local);
             buf.push(b' ');
-            quoted_string(buf, host);
+            quoted_or_literal_string(buf, host);
         } else {
-            quoted_string(buf, &self.address);
+            quoted_or_literal_string(buf, &self.address);
             buf.extend_from_slice(b" \"\"");
         }
         buf.push(b')');
@@ -301,7 +301,7 @@ impl<'x> AddressGroup<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
         buf.extend_from_slice(b"(NIL NIL ");
         if let Some(name) = &self.name {
-            quoted_string(buf, name);
+            quoted_or_literal_string(buf, name);
         } else {
             buf.extend_from_slice(b"\"\"");
         }
@@ -338,7 +338,7 @@ impl<'x> BodyPart<'x> {
                     part.serialize(buf, is_extended);
                 }
                 buf.push(b' ');
-                quoted_string(buf, body_subtype);
+                quoted_or_literal_string(buf, body_subtype);
                 if is_extended {
                     if let Some(body_parameters) = body_parameters {
                         buf.extend_from_slice(b" (");
@@ -346,9 +346,9 @@ impl<'x> BodyPart<'x> {
                             if pos > 0 {
                                 buf.push(b' ');
                             }
-                            quoted_string(buf, key);
+                            quoted_or_literal_string(buf, key);
                             buf.push(b' ');
-                            quoted_string(buf, value);
+                            quoted_or_literal_string(buf, value);
                         }
                         buf.push(b')');
                     } else {
@@ -364,12 +364,12 @@ impl<'x> BodyPart<'x> {
                 body_md5,
                 extension,
             } => {
-                quoted_string_or_nil(buf, body_type.as_deref());
+                quoted_or_literal_string_or_nil(buf, body_type.as_deref());
                 buf.push(b' ');
                 fields.serialize(buf);
                 if is_extended {
                     buf.push(b' ');
-                    quoted_string_or_nil(buf, body_md5.as_deref());
+                    quoted_or_literal_string_or_nil(buf, body_md5.as_deref());
                     buf.push(b' ');
                     extension.serialize(buf);
                 }
@@ -386,7 +386,7 @@ impl<'x> BodyPart<'x> {
                 buf.extend_from_slice(body_size_lines.to_string().as_bytes());
                 if is_extended {
                     buf.push(b' ');
-                    quoted_string_or_nil(buf, body_md5.as_deref());
+                    quoted_or_literal_string_or_nil(buf, body_md5.as_deref());
                     buf.push(b' ');
                     extension.serialize(buf);
                 }
@@ -417,7 +417,7 @@ impl<'x> BodyPart<'x> {
                 buf.extend_from_slice(body_size_lines.to_string().as_bytes());
                 if is_extended {
                     buf.push(b' ');
-                    quoted_string_or_nil(buf, body_md5.as_deref());
+                    quoted_or_literal_string_or_nil(buf, body_md5.as_deref());
                     buf.push(b' ');
                     extension.serialize(buf);
                 }
@@ -501,16 +501,16 @@ impl<'x> BodyPart<'x> {
 
 impl<'x> BodyPartFields<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
-        quoted_string_or_nil(buf, self.body_subtype.as_deref());
+        quoted_or_literal_string_or_nil(buf, self.body_subtype.as_deref());
         if let Some(body_parameters) = &self.body_parameters {
             buf.extend_from_slice(b" (");
             for (pos, (key, value)) in body_parameters.iter().enumerate() {
                 if pos > 0 {
                     buf.push(b' ');
                 }
-                quoted_string(buf, key);
+                quoted_or_literal_string(buf, key);
                 buf.push(b' ');
-                quoted_string(buf, value);
+                quoted_or_literal_string(buf, value);
             }
             buf.push(b')');
         } else {
@@ -518,7 +518,7 @@ impl<'x> BodyPartFields<'x> {
         }
         for item in [&self.body_id, &self.body_description, &self.body_encoding] {
             buf.push(b' ');
-            quoted_string_or_nil(buf, item.as_deref());
+            quoted_or_literal_string_or_nil(buf, item.as_deref());
         }
         buf.push(b' ');
         buf.extend_from_slice(self.body_size_octets.to_string().as_bytes());
@@ -544,17 +544,21 @@ impl<'x> BodyPartExtension<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
         if let Some((disposition, parameters)) = &self.body_disposition {
             buf.push(b'(');
-            quoted_string(buf, disposition);
-            buf.extend_from_slice(b" (");
-            for (pos, (key, value)) in parameters.iter().enumerate() {
-                if pos > 0 {
+            quoted_or_literal_string(buf, disposition);
+            if !parameters.is_empty() {
+                buf.extend_from_slice(b" (");
+                for (pos, (key, value)) in parameters.iter().enumerate() {
+                    if pos > 0 {
+                        buf.push(b' ');
+                    }
+                    quoted_or_literal_string(buf, key);
                     buf.push(b' ');
+                    quoted_or_literal_string(buf, value);
                 }
-                quoted_string(buf, key);
-                buf.push(b' ');
-                quoted_string(buf, value);
+                buf.extend_from_slice(b"))");
+            } else {
+                buf.extend_from_slice(b" NIL)");
             }
-            buf.extend_from_slice(b"))");
         } else {
             buf.extend_from_slice(b"NIL");
         }
@@ -563,7 +567,7 @@ impl<'x> BodyPartExtension<'x> {
                 0 => buf.extend_from_slice(b" NIL"),
                 1 => {
                     buf.push(b' ');
-                    quoted_string(buf, body_language.last().unwrap());
+                    quoted_or_literal_string(buf, body_language.last().unwrap());
                 }
                 _ => {
                     buf.extend_from_slice(b" (");
@@ -571,7 +575,7 @@ impl<'x> BodyPartExtension<'x> {
                         if pos > 0 {
                             buf.push(b' ');
                         }
-                        quoted_string(buf, lang);
+                        quoted_or_literal_string(buf, lang);
                     }
                     buf.push(b')');
                 }
@@ -580,7 +584,7 @@ impl<'x> BodyPartExtension<'x> {
             buf.extend_from_slice(b" NIL");
         }
         buf.push(b' ');
-        quoted_string_or_nil(buf, self.body_location.as_deref());
+        quoted_or_literal_string_or_nil(buf, self.body_location.as_deref());
     }
 
     pub fn into_owned<'y>(self) -> BodyPartExtension<'y> {
@@ -644,19 +648,35 @@ impl Section {
     }
 }
 
+static DUMMY_ADDRESS: [Address; 1] = [Address::Single(EmailAddress {
+    name: None,
+    address: Cow::Borrowed("unknown@localhost"),
+})];
+
 impl<'x> Envelope<'x> {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
         buf.push(b'(');
         quoted_rfc2822_or_nil(buf, &self.date);
         buf.push(b' ');
-        quoted_string_or_nil(buf, self.subject.as_deref());
-        self.serialize_addresses(buf, &self.from);
+        quoted_or_literal_string_or_nil(buf, self.subject.as_deref());
+
+        // Note: [RFC-2822] requires that all messages have a valid
+        // From header.  Therefore, the from, sender, and reply-to
+        // members in the envelope can not be NIL.
+
+        let from = if !self.from.is_empty() {
+            &self.from[..]
+        } else {
+            &DUMMY_ADDRESS[..]
+        };
+
+        self.serialize_addresses(buf, from);
         self.serialize_addresses(
             buf,
             if !self.sender.is_empty() {
                 &self.sender
             } else {
-                &self.from
+                from
             },
         );
         self.serialize_addresses(
@@ -664,7 +684,7 @@ impl<'x> Envelope<'x> {
             if !self.reply_to.is_empty() {
                 &self.reply_to
             } else {
-                &self.from
+                from
             },
         );
         self.serialize_addresses(buf, &self.to);
@@ -672,7 +692,7 @@ impl<'x> Envelope<'x> {
         self.serialize_addresses(buf, &self.bcc);
         for item in [&self.in_reply_to, &self.message_id] {
             buf.push(b' ');
-            quoted_string_or_nil(buf, item.as_deref());
+            quoted_or_literal_string_or_nil(buf, item.as_deref());
         }
         buf.push(b')');
     }

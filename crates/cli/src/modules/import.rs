@@ -336,9 +336,21 @@ impl ImportCommands {
 
                                     let mut retry_count = 0;
                                     loop {
+                                        // Sanitize message
+                                        let mut contents =
+                                            Vec::with_capacity(message.contents.len());
+                                        let mut last_ch = 0;
+                                        for &ch in message.contents.iter() {
+                                            if ch == b'\n' && last_ch != b'\r' {
+                                                contents.push(b'\r');
+                                            }
+                                            contents.push(ch);
+                                            last_ch = ch;
+                                        }
+
                                         match client
                                             .email_import(
-                                                message.contents.clone(),
+                                                contents,
                                                 [mailbox_id.as_ref()],
                                                 if !message.flags.is_empty() {
                                                     message

@@ -162,6 +162,7 @@ type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
+disable = true
 
 [store."elastic".tls]
 allow-invalid-certs = true
@@ -169,6 +170,9 @@ allow-invalid-certs = true
 [certificate.default]
 cert = "file://{CERT}"
 private-key = "file://{PK}"
+
+[imap.protocol]
+uidplus = true
 
 [jmap]
 directory = "auth"
@@ -319,7 +323,6 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     lookup
         .create_test_user("admin", "secret", "Superuser")
         .await;
-    lookup.add_to_group("admin", "superuser").await;
     lookup
         .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
         .await;

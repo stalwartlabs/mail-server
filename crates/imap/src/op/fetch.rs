@@ -269,16 +269,22 @@ impl SessionData {
         }
 
         if is_uid {
-            arguments.attributes.push_unique(Attribute::Uid);
+            if arguments.attributes.is_empty() {
+                arguments.attributes.push(Attribute::Flags);
+            } else if !arguments.attributes.contains(&Attribute::Uid) {
+                arguments.attributes.insert(0, Attribute::Uid);
+            }
         }
 
         let mut set_seen_ids = Vec::new();
 
         // Process each message
-        for (id, imap_id) in ids {
-            let uid = imap_id.uid;
-            let seqnum = imap_id.seqnum;
-
+        let mut ids = ids
+            .into_iter()
+            .map(|(id, imap_id)| (imap_id.seqnum, imap_id.uid, id))
+            .collect::<Vec<_>>();
+        ids.sort_unstable_by_key(|(seqnum, _, _)| *seqnum);
+        for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
             let (email, keywords) = if let (Ok(Some(email)), Ok(Some(keywords))) = (
                 self.jmap
