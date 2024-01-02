@@ -13,4 +13,4 @@ cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret account c
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret list add-members everyone jane john bill
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret account list
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret import messages --format mbox john _ignore/dovecot-crlf 
-
+#cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret import messages --format maildir john /var/mail/john

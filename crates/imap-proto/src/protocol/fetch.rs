@@ -1300,7 +1300,7 @@ mod tests {
                 concat!(
                     "BODYSTRUCTURE (((\"text\" \"PLAIN\" (\"CHARSET\" \"UTF-8\") ",
                     "\"<111@domain.com>\" \"Text part\" \"7BIT\" 1152 23 \"8o3456\" ",
-                    "(\"inline\" ()) \"en-US\" \"right here\")",
+                    "(\"inline\" NIL) \"en-US\" \"right here\")",
                     "(\"text\" \"HTML\" (\"CHARSET\" \"UTF-8\") ",
                     "\"<54535@domain.com>\" \"HTML part\" \"8BIT\" 45345 994 \"53454\" ",
                     "(\"attachment\" (\"filename\" \"myfile.txt\")) ",

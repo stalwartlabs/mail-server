@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.5.1] - 2024-01-xx
+## [0.5.1] - 2024-01-02
 
 ## Added
 - SMTP smuggling protection: Sanitization of outgoing messages that do not use `CRLF` as line endings.
@@ -13,8 +13,9 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 - Invalid DKIM signatures for empty message bodies.
 - IMAP command `SEARCH BEFORE` is not properly parsed.
-- IMAP response to `ENABLE` command misses enabled capabilities list.
+- IMAP command `FETCH` fails to parse single arguments without parentheses.
 - IMAP command `ENABLE QRESYNC` should also enable `CONDSTORE` extension.
+- IMAP response to `ENABLE` command does not include enabled capabilities list.
 - IMAP response to `FETCH ENVELOPE` should not return `NIL` when the `From` header is missing.
 
 ## [0.5.0] - 2023-12-27

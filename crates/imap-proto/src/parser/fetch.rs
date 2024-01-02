@@ -343,6 +343,10 @@ impl Request<Command> {
                         )
                             .into());
                     }
+
+                    if !in_parentheses {
+                        break;
+                    }
                 }
                 Token::ParenthesisOpen => {
                     if !in_parentheses {
@@ -775,6 +779,16 @@ mod tests {
                     sequence_set: Sequence::range(1.into(), None),
                     attributes: vec![Attribute::Flags, Attribute::ModSeq],
                     changed_since: 12345.into(),
+                    include_vanished: true,
+                },
+            ),
+            (
+                "9 UID FETCH 1:* UID (VANISHED CHANGEDSINCE 1)\r\n",
+                fetch::Arguments {
+                    tag: "9".to_string(),
+                    sequence_set: Sequence::range(1.into(), None),
+                    attributes: vec![Attribute::Uid],
+                    changed_since: 1.into(),
                     include_vanished: true,
                 },
             ),
