@@ -1,3 +1,9 @@
+Upgrading from `v0.5.0` to `v0.5.x`
+-----------------------------------
+
+- Replace the binary with the new version.
+- Restart the service.
+
 Upgrading from `v0.4.x` to `v0.5.0`
 -----------------------------------
 
@@ -32,7 +38,7 @@ Rather than manually updating the configuration file, it is recommended to start
 
 Once again, we apologize for the lack of an automated migration tool for this upgrade. However, we are planning on introducing an automated migration tool once the web-admin is released in Q1 2024. Thank you for your understanding and patience.
 
-Upgrading from `v0.4.0` to `v0.4.2`
+Upgrading from `v0.4.0` to `v0.4.x`
 -----------------------------------
 
 - Replace the binary with the new version.
