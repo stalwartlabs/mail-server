@@ -43,6 +43,8 @@ use tokio::io::AsyncRead;
 
 use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
 
+use super::ToModSeq;
+
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_expunge(
         &mut self,
@@ -108,13 +110,17 @@ impl<T: AsyncRead> Session<T> {
 
         // Synchronize messages
         match data.write_mailbox_changes(&mailbox, self.is_qresync).await {
-            Ok(_) => {
-                self.write_bytes(
-                    StatusResponse::completed(Command::Expunge(is_uid))
-                        .with_tag(request.tag)
-                        .into_bytes(),
-                )
-                .await
+            Ok(modseq) => {
+                let mut response =
+                    StatusResponse::completed(Command::Expunge(is_uid)).with_tag(request.tag);
+
+                if self.is_condstore {
+                    response = response.with_code(ResponseCode::HighestModseq {
+                        modseq: modseq.to_modseq(),
+                    });
+                }
+
+                self.write_bytes(response.into_bytes()).await
             }
             Err(response) => {
                 self.write_bytes(response.with_tag(request.tag).into_bytes())

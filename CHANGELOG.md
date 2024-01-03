@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 - IMAP command `SEARCH <seqnum>` is using UIDs rather than sequence numbers.
+- IMAP responses to `APPEND` and `EXPUNGE` should include `HIGHESTMODSEQ` when `CONDSTORE` is enabled.
 
 ## [0.5.1] - 2024-01-02
 

@@ -24,7 +24,12 @@
 use std::sync::Arc;
 
 use imap_proto::{
-    protocol::{fetch, list::ListItem, select::Response, ImapResponse, Sequence},
+    protocol::{
+        fetch,
+        list::ListItem,
+        select::{HighestModSeq, Response},
+        ImapResponse, Sequence,
+    },
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
@@ -64,7 +69,7 @@ impl<T: AsyncRead> Session<T> {
                             let uid_next = state.uid_next;
                             let total_messages = state.total_messages;
                             let highest_modseq = if is_condstore {
-                                state.modseq.to_modseq().into()
+                                HighestModSeq::new(state.modseq.to_modseq()).into()
                             } else {
                                 None
                             };

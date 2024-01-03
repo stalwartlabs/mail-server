@@ -24,7 +24,9 @@
 use std::sync::Arc;
 
 use imap_proto::{
-    protocol::append::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
+    protocol::{append::Arguments, select::HighestModSeq},
+    receiver::Request,
+    Command, ResponseCode, StatusResponse,
 };
 
 use jmap::email::ingest::IngestEmail;
@@ -33,6 +35,8 @@ use mail_parser::MessageParser;
 use tokio::io::AsyncRead;
 
 use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
+
+use super::ToModSeq;
 
 impl<T: AsyncRead> Session<T> {
     pub async fn handle_append(&mut self, request: Request<Command>) -> crate::OpResult {
@@ -167,12 +171,20 @@ impl SessionData {
                 .await;
         }
 
-        if !created_ids.is_empty() && self.imap.enable_uidplus {
+        if !created_ids.is_empty() {
             let (uids, uid_validity) = match selected_mailbox {
                 Some(selected_mailbox) if selected_mailbox.id == mailbox => {
-                    self.write_mailbox_changes(&selected_mailbox, is_qresync)
+                    let modseq = self
+                        .write_mailbox_changes(&selected_mailbox, is_qresync)
                         .await
                         .map_err(|r| r.with_tag(&arguments.tag))?;
+
+                    // Write updated modseq
+                    if is_qresync {
+                        self.write_bytes(HighestModSeq::new(modseq.to_modseq()).into_bytes())
+                            .await;
+                    }
+
                     let mailbox = selected_mailbox.state.lock();
                     (
                         created_ids
@@ -184,7 +196,7 @@ impl SessionData {
                     )
                 }
 
-                _ => {
+                _ if self.imap.enable_uidplus => {
                     let mailbox = self
                         .fetch_messages(&mailbox)
                         .await
@@ -198,6 +210,7 @@ impl SessionData {
                         mailbox.uid_validity,
                     )
                 }
+                _ => (vec![], 0),
             };
             if !uids.is_empty() {
                 response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });

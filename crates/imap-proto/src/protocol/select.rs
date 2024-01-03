@@ -41,6 +41,9 @@ pub struct QResync {
     pub seq_match: Option<(Sequence, Sequence)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HighestModSeq(u64);
+
 #[derive(Debug, Clone)]
 pub struct Response {
     pub mailbox: ListItem,
@@ -51,7 +54,7 @@ pub struct Response {
     pub uid_next: u32,
     pub is_rev2: bool,
     pub closed_previous: bool,
-    pub highest_modseq: Option<u64>,
+    pub highest_modseq: Option<HighestModSeq>,
     pub mailbox_id: String,
 }
 
@@ -100,13 +103,29 @@ impl ImapResponse for Response {
         buf.extend_from_slice(self.uid_next.to_string().as_bytes());
         buf.extend_from_slice(b"] Next predicted UID\r\n");
         if let Some(highest_modseq) = self.highest_modseq {
-            buf.extend_from_slice(b"* OK [HIGHESTMODSEQ ");
-            buf.extend_from_slice(highest_modseq.to_string().as_bytes());
-            buf.extend_from_slice(b"] Highest Modseq\r\n");
+            highest_modseq.serialize(&mut buf);
         }
         buf.extend_from_slice(b"* OK [MAILBOXID (");
         buf.extend_from_slice(self.mailbox_id.as_bytes());
         buf.extend_from_slice(b")] Unique Mailbox ID\r\n");
+        buf
+    }
+}
+
+impl HighestModSeq {
+    pub fn new(modseq: u64) -> Self {
+        Self(modseq)
+    }
+
+    pub fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(b"* OK [HIGHESTMODSEQ ");
+        buf.extend_from_slice(self.0.to_string().as_bytes());
+        buf.extend_from_slice(b"] Highest Modseq\r\n");
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(40);
+        self.serialize(&mut buf);
         buf
     }
 }
@@ -129,6 +148,8 @@ impl Exists {
 mod tests {
     use crate::protocol::{list::ListItem, ImapResponse};
 
+    use super::HighestModSeq;
+
     #[test]
     fn serialize_select() {
         for (mut response, _tag, expected_v2, expected_v1) in [
@@ -142,7 +163,7 @@ mod tests {
                     uid_next: 4392,
                     closed_previous: false,
                     is_rev2: true,
-                    highest_modseq: 100.into(),
+                    highest_modseq: HighestModSeq::new(100).into(),
                     mailbox_id: "abc".into(),
                 },
                 "A142",
