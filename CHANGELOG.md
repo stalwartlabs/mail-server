@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.5.2] - 2024-01-xx
+
+## Added
+
+### Changed
+
+### Fixed
+- IMAP command `SEARCH <seqnum>` is using UIDs rather than sequence numbers.
+
 ## [0.5.1] - 2024-01-02
 
 ## Added

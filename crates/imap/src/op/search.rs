@@ -125,7 +125,7 @@ impl SessionData {
     ) -> Result<search::Response, StatusResponse> {
         // Run query
         let (result_set, include_highest_modseq) = self
-            .query(arguments.filter, &mailbox, &prev_saved_search, is_uid)
+            .query(arguments.filter, &mailbox, &prev_saved_search)
             .await?;
 
         // Obtain modseq
@@ -250,7 +250,6 @@ impl SessionData {
         imap_filter: Vec<Filter>,
         mailbox: &SelectedMailbox,
         prev_saved_search: &Option<Option<Arc<Vec<ImapId>>>>,
-        is_uid: bool,
     ) -> Result<(ResultSet, bool), StatusResponse> {
         // Obtain message ids
         let mut filters = Vec::with_capacity(imap_filter.len() + 1);
@@ -431,11 +430,7 @@ impl SessionData {
                                 return Err(StatusResponse::no("No saved search found."));
                             }
                         } else {
-                            for id in mailbox
-                                .sequence_to_ids(&sequence, is_uid || uid_filter)
-                                .await?
-                                .keys()
-                            {
+                            for id in mailbox.sequence_to_ids(&sequence, uid_filter).await?.keys() {
                                 set.insert(*id);
                             }
                         }

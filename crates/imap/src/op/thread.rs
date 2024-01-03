@@ -75,9 +75,7 @@ impl SessionData {
         is_uid: bool,
     ) -> Result<Response, StatusResponse> {
         // Run query
-        let (result_set, _) = self
-            .query(arguments.filter, &mailbox, &None, is_uid)
-            .await?;
+        let (result_set, _) = self.query(arguments.filter, &mailbox, &None).await?;
 
         // Synchronize mailbox
         if !result_set.results.is_empty() {
