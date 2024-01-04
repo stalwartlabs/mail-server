@@ -39,6 +39,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, range).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, range).await,
+                _ => unreachable!()
             },
             Self::Fs(store) => store.get_blob(key, range).await,
             #[cfg(feature = "s3")]
@@ -59,6 +60,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, data).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, data).await,
+                _ => unreachable!()
             },
             Self::Fs(store) => store.put_blob(key, data).await,
             #[cfg(feature = "s3")]
@@ -79,6 +81,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
+                _ => unreachable!()
             },
             Self::Fs(store) => store.delete_blob(key).await,
             #[cfg(feature = "s3")]
