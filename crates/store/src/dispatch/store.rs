@@ -53,6 +53,7 @@ impl Store {
             Self::MySQL(store) => store.get_value(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_value(key).await,
+            _ => unreachable!()
         }
     }
 
@@ -84,6 +85,7 @@ impl Store {
             Self::MySQL(store) => store.get_bitmap(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_bitmap(key).await,
+            _ => unreachable!()
         }
     }
 
@@ -125,6 +127,7 @@ impl Store {
             Self::MySQL(store) => store.iterate(params, cb).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.iterate(params, cb).await,
+            _ => unreachable!()
         }
     }
 
@@ -143,6 +146,7 @@ impl Store {
             Self::MySQL(store) => store.get_counter(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_counter(key).await,
+            _ => unreachable!()
         }
     }
 
@@ -198,6 +202,7 @@ impl Store {
                 Self::MySQL(store) => store.write(batch).await,
                 #[cfg(feature = "rocks")]
                 Self::RocksDb(store) => store.write(batch).await,
+                _ => unreachable!()
             }?;
 
             for (key, class, document_id, set) in bitmaps {
@@ -238,6 +243,7 @@ impl Store {
             Self::MySQL(store) => store.write(batch).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
+            _ => unreachable!()
         }
     }
 
@@ -253,6 +259,7 @@ impl Store {
             Self::MySQL(store) => store.purge_bitmaps().await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_bitmaps().await,
+            _ => unreachable!()
         }
     }
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
@@ -267,6 +274,7 @@ impl Store {
             Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
+            _ => unreachable!()
         }
     }
 
@@ -323,6 +331,7 @@ impl Store {
             Self::MySQL(store) => store.get_blob(key, range).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_blob(key, range).await,
+            _ => unreachable!()
         }
     }
 
@@ -338,6 +347,7 @@ impl Store {
             Self::MySQL(store) => store.put_blob(key, data).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
+            _ =< unreachable!()
         }
     }
 
@@ -353,6 +363,7 @@ impl Store {
             Self::MySQL(store) => store.delete_blob(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_blob(key).await,
+            _ => unreachable!()
         }
     }
 
