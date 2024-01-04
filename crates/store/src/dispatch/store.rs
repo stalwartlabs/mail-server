@@ -347,7 +347,7 @@ impl Store {
             Self::MySQL(store) => store.put_blob(key, data).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
-            _ =< unreachable!()
+            _ => unreachable!()
         }
     }
 
