@@ -69,7 +69,7 @@ async fn main() -> std::io::Result<()> {
         Commands::Export(command) => {
             command.exec(client).await;
         }
-        Commands::Database(command) => command.exec(client).await,
+        Commands::Server(command) => command.exec(client).await,
         Commands::Account(command) => command.exec(client).await,
         Commands::Domain(command) => command.exec(client).await,
         Commands::List(command) => command.exec(client).await,

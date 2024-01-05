@@ -57,7 +57,7 @@ async fn main() -> std::io::Result<()> {
     .failed("Failed to enable tracing");
 
     // Bind ports and drop privileges
-    let servers = config.parse_servers().failed("Invalid configuration");
+    let mut servers = config.parse_servers().failed("Invalid configuration");
     servers.bind(&config);
 
     // Parse stores and directories
@@ -80,9 +80,16 @@ async fn main() -> std::io::Result<()> {
     let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, &stores, &directory, delivery_rx, smtp.clone())
-        .await
-        .failed("Invalid configuration file");
+    let jmap = JMAP::init(
+        &config,
+        &stores,
+        &directory,
+        std::mem::take(&mut servers.certificates),
+        delivery_rx,
+        smtp.clone(),
+    )
+    .await
+    .failed("Invalid configuration file");
     let imap = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");

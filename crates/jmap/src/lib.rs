@@ -60,6 +60,7 @@ use tokio::sync::mpsc;
 use utils::{
     config::Rate,
     ipc::DeliveryEvent,
+    listener::tls::Certificate,
     map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
     UnwrapFailure,
@@ -186,6 +187,7 @@ impl JMAP {
         config: &utils::config::Config,
         stores: &Stores,
         directories: &Directories,
+        certificates: Vec<Arc<Certificate>>,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
         smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
@@ -420,7 +422,7 @@ impl JMAP {
         spawn_state_manager(jmap_server.clone(), config, state_rx);
 
         // Spawn housekeeper
-        spawn_housekeeper(jmap_server.clone(), config, housekeeper_rx);
+        spawn_housekeeper(jmap_server.clone(), config, certificates, housekeeper_rx);
 
         Ok(jmap_server)
     }

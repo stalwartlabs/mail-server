@@ -296,10 +296,10 @@ impl utils::listener::SessionManager for SessionManager {
                     TokioIo::new(
                         session
                             .instance
-                            .tls_acceptor
-                            .as_ref()
-                            .unwrap()
+                            .acceptor
                             .accept(session.stream)
+                            .await
+                            .unwrap_tls()
                             .await
                             .unwrap(),
                     ),

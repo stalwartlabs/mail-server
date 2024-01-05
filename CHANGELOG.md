@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. This projec
 ## [0.5.2] - 2024-01-xx
 
 ## Added
+- ACME support for automatic TLS certificate generation and renewal.
 
 ### Changed
 

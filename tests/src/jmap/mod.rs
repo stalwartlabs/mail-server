@@ -390,7 +390,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    let servers = config.parse_servers().unwrap();
+    let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
         .parse_directory(&stores, store_id.into())
@@ -403,9 +403,16 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
         .await
         .failed("Invalid configuration file");
-    let jmap = JMAP::init(&config, &stores, &directory, delivery_rx, smtp.clone())
-        .await
-        .failed("Invalid configuration file");
+    let jmap = JMAP::init(
+        &config,
+        &stores,
+        &directory,
+        std::mem::take(&mut servers.certificates),
+        delivery_rx,
+        smtp.clone(),
+    )
+    .await
+    .failed("Invalid configuration file");
     let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {

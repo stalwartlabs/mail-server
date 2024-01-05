@@ -1,0 +1,28 @@
+FROM golang:1.18-alpine as builder
+
+ENV CGO_ENABLED=0
+
+WORKDIR /pebble-src
+
+RUN apk update && apk add --no-cache git
+RUN git clone https://github.com/letsencrypt/pebble/ /pebble-src
+RUN go build -o /go/bin/pebble ./cmd/pebble
+
+## main
+FROM alpine:3.15.4
+
+COPY --from=builder /go/bin/pebble /usr/bin/pebble
+COPY --from=builder /pebble-src/test/ /test/
+
+CMD [ "/usr/bin/pebble" ]
+
+EXPOSE 14000
+EXPOSE 15000
+
+# Build:
+# docker build -f Docker.pebble -t pebble
+
+# Run:
+# docker run -d -p 14000:14000 -p 15000:15000 pebble
+# docker run -d --name pebble -p 14000:14000 -p 15000:15000 pebble pebble -config /test/config/pebble-config.json -strict
+

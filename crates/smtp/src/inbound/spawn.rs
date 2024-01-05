@@ -96,7 +96,7 @@ impl Session<TcpStream> {
     }
 
     pub async fn handle_conn(mut self) {
-        if self.handle_conn_().await && self.instance.tls_acceptor.is_some() {
+        if self.handle_conn_().await && self.instance.acceptor.is_tls() {
             if let Ok(session) = self.into_tls().await {
                 session.handle_conn().await;
             }

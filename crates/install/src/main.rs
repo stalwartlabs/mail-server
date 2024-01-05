@@ -31,9 +31,10 @@ use std::{
 
 use base64::{engine::general_purpose, Engine};
 use clap::{Parser, ValueEnum};
-use dialoguer::{console::Term, theme::ColorfulTheme, Input, Select};
+use dialoguer::{console::Term, theme::ColorfulTheme, Confirm, Input, Select};
 use openssl::rsa::Rsa;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rcgen::generate_simple_self_signed;
 
 const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
 
@@ -468,35 +469,34 @@ fn main() -> std::io::Result<()> {
     .trim()
     .to_lowercase();
 
-    // Obtain TLS certificate path
-    let (cert_path, pk_path) = if !args.docker {
-        #[cfg(not(target_env = "msvc"))]
-        let cert_base_path = format!("/etc/letsencrypt/live/{}/", hostname);
-        #[cfg(target_env = "msvc")]
-        let cert_base_path = format!("C:\\Program Files\\Letsencrypt\\live\\{}\\", hostname);
+    // Obtain TLS configuration
+    let is_acme = Confirm::new()
+        .with_prompt(&format!("Do you want the TLS certificates for {hostname} to be obtained automatically from Let's Encrypt using ACME?"))
+        .interact()
+        .unwrap();
+
+    let (cert_path, pk_path) = {
+        let base_path = base_path.join("etc").join("certs").join(&hostname);
+
+        // Create directories
+        fs::create_dir_all(&base_path)?;
+        let cert_path = base_path.join("fullchain.pem");
+        let pk_path = base_path.join("privkey.pem");
+
+        // Build self-signed cert
+        let cert = generate_simple_self_signed(vec![hostname.to_string()]).unwrap_or_else(|err| {
+            panic!("Failed to generate self-signed certificate for {hostname}: {err}",)
+        });
+        std::fs::write(
+            &cert_path,
+            cert.serialize_pem()
+                .unwrap_or_else(|err| panic!("Failed to write certificate for {hostname}: {err}",)),
+        )?;
+        std::fs::write(&pk_path, cert.serialize_private_key_pem())?;
 
         (
-            input(
-                &format!("Where is the TLS certificate for '{hostname}' located?"),
-                &format!("{cert_base_path}fullchain.pem"),
-                file_exists,
-            )?,
-            input(
-                &format!("Where is the TLS private key for '{hostname}' located?"),
-                &format!("{cert_base_path}privkey.pem"),
-                file_exists,
-            )?,
-        )
-    } else {
-        // Create directories
-        fs::create_dir_all(base_path.join("etc").join("certs").join(&hostname))?;
-        (
-            format!(
-                "{}/etc/certs/{}/fullchain.pem",
-                base_path.display(),
-                hostname
-            ),
-            format!("{}/etc/certs/{}/privkey.pem", base_path.display(), hostname),
+            cert_path.to_str().unwrap().to_string(),
+            pk_path.to_str().unwrap().to_string(),
         )
     };
 
@@ -526,13 +526,24 @@ fn main() -> std::io::Result<()> {
             ("__HOST__", &hostname),
         ],
     );
-    sed(
-        cfg_path.join("common").join("tls.toml"),
-        &[("__CERT_PATH__", &cert_path), ("__PK_PATH__", &pk_path)],
-    );
+    if is_acme {
+        sed(
+            cfg_path.join("common").join("tls.toml"),
+            &[
+                ("certificate = \"default\"", "#certificate = \"default\""),
+                ("#acme =", "acme ="),
+                ("__CERT_PATH__", &cert_path),
+                ("__PK_PATH__", &pk_path),
+            ],
+        );
+    } else {
+        sed(
+            cfg_path.join("common").join("tls.toml"),
+            &[("__CERT_PATH__", &cert_path), ("__PK_PATH__", &pk_path)],
+        );
+    }
 
     // Write service file
-
     if !args.docker {
         // Change permissions
         #[cfg(not(target_env = "msvc"))]
@@ -633,13 +644,22 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    if is_acme {
+        eprintln!(
+            "\n🛡️ Ensure that port 443 (HTTPS) on {hostname} is open and accessible from the internet to successfully obtain your ACME TLS certificate.",
+        );
+    } else {
+        eprintln!(
+            "\n🛡️ Self-signed certificates have been generated under {}, you'll need to replace them with your own certificates to enable TLS.", base_path.join("etc").join("certs").join(&hostname).display()
+        );
+    }
     if is_internal {
         eprintln!(
             "\n🔑 The administrator account is 'admin' and the password can be found in the log files at {}/logs.", base_path.display()
         );
     }
 
-    eprintln!("\n🎉 Installation completed!\n\n✅ {dkim_instructions}\n");
+    eprintln!("\n✅ {dkim_instructions}\n🎉 Installation completed!\n");
 
     Ok(())
 }
@@ -746,15 +766,6 @@ fn dir_create_if_missing(path: &String) -> Result<(), String> {
         ))
     } else {
         Ok(())
-    }
-}
-
-fn file_exists(path: &String) -> Result<(), String> {
-    let path = Path::new(path);
-    if path.is_file() {
-        Ok(())
-    } else {
-        Err(format!("File {} does not exist", path.display()))
     }
 }
 

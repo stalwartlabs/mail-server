@@ -37,7 +37,10 @@ use store::{
 };
 use tokio::net::TcpSocket;
 
-use utils::config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol};
+use utils::{
+    config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol},
+    listener::TcpAcceptor,
+};
 
 use ahash::AHashMap;
 
@@ -449,7 +452,7 @@ fn parse_servers() {
                 linger: None,
                 nodelay: true,
             }],
-            tls: None,
+            acceptor: TcpAcceptor::Plain,
             tls_implicit: false,
             max_connections: 8192,
         },
@@ -477,7 +480,7 @@ fn parse_servers() {
                     nodelay: true,
                 },
             ],
-            tls: None,
+            acceptor: TcpAcceptor::Plain,
             tls_implicit: true,
             max_connections: 1024,
         },
@@ -495,7 +498,7 @@ fn parse_servers() {
                 linger: None,
                 nodelay: true,
             }],
-            tls: None,
+            acceptor: TcpAcceptor::Plain,
             tls_implicit: true,
             max_connections: 8192,
         },

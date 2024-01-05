@@ -30,7 +30,7 @@ use hyper::{body::Bytes, Method, StatusCode};
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
 
-use crate::JMAP;
+use crate::{services::housekeeper, JMAP};
 
 use super::{http::ToHttpResponse, HttpRequest, JsonResponse};
 
@@ -298,6 +298,17 @@ impl JMAP {
                     )
                     .into_http_response(),
                 }
+            }
+            ("certificates", Some("reload"), &Method::GET) => {
+                let _ = self
+                    .housekeeper_tx
+                    .send(housekeeper::Event::ReloadCertificates)
+                    .await;
+
+                JsonResponse::new(json!({
+                    "data": [],
+                }))
+                .into_http_response()
             }
             (path_1 @ ("queue" | "report"), Some(path_2), &Method::GET) => {
                 self.smtp

@@ -7,6 +7,7 @@ enable = true
 implicit = false
 timeout = "1m"
 certificate = "default"
+#acme = "letsencrypt"
 #sni = [{subject = "", certificate = ""}]
 #protocols = ["TLSv1.2", "TLSv1.3"]
 #ciphers = [ "TLS13_AES_256_GCM_SHA384", "TLS13_AES_128_GCM_SHA256",
@@ -15,6 +16,14 @@ certificate = "default"
 #            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
 #            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"]
 ignore-client-order = true
+
+[acme."letsencrypt"]
+directory = "https://acme-v02.api.letsencrypt.org/directory"
+#directory = "https://acme-staging-v02.api.letsencrypt.org/directory"
+contact = ["postmaster@%{DEFAULT_DOMAIN}%"]
+cache = "%{BASE_PATH}%/etc/acme"
+port = 443
+renew-before = "30d"
 
 [certificate."default"]
 cert = "file://__CERT_PATH__"

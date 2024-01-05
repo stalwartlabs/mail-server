@@ -23,6 +23,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
+use ahash::AHashMap;
 use rustls::{
     crypto::ring::{
         cipher_suite::{
@@ -32,173 +33,87 @@ use rustls::{
             TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
         },
         default_provider,
-        sign::any_supported_type,
     },
-    server::ResolvesServerCertUsingSni,
-    sign::CertifiedKey,
+    server::ResolvesServerCert,
     ServerConfig, SupportedCipherSuite, ALL_VERSIONS,
 };
 use tokio::net::TcpSocket;
+use tokio_rustls::TlsAcceptor;
 
-use crate::UnwrapFailure;
+use crate::{
+    acme::{directory::ACME_TLS_ALPN_NAME, AcmeManager},
+    listener::{
+        tls::{Certificate, CertificateResolver},
+        TcpAcceptor,
+    },
+    UnwrapFailure,
+};
 
 use super::{
-    certificate::{CertificateResolver, TLS12_VERSION, TLS13_VERSION},
+    tls::{TLS12_VERSION, TLS13_VERSION},
     utils::{AsKey, ParseKey, ParseValue},
     Config, Listener, Server, ServerProtocol, Servers,
 };
 
 impl Config {
     pub fn parse_servers(&self) -> super::Result<Servers> {
-        let mut servers: Vec<Server> = Vec::new();
+        // Parse certificates and ACME managers
+        let certificates = self.parse_certificates()?;
+        let acmes = self.parse_acmes()?;
+
+        // Parse servers
+        let mut servers = Servers::default();
         for (internal_id, id) in self.sub_keys("server.listener").enumerate() {
-            let mut server = self.parse_server(id)?;
-            if !servers.iter().any(|s| s.id == server.id) {
+            let mut server = self.parse_server(id, &certificates, &acmes)?;
+            if !servers.inner.iter().any(|s| s.id == server.id) {
                 server.internal_id = internal_id as u16;
-                servers.push(server);
+                servers.inner.push(server);
             } else {
                 return Err(format!("Duplicate listener id {:?}.", server.id));
             }
         }
 
-        if !servers.is_empty() {
-            Ok(Servers { inner: servers })
+        // Add certificates with valid paths
+        for (id, cert) in certificates {
+            if cert.path.len() == 2 {
+                servers.certificates.push(cert);
+            } else {
+                tracing::debug!(
+                    context = "config",
+                    event = "acme",
+                    id = id,
+                    "Certificate reloading disabled for id {id:?}",
+                );
+            }
+        }
+
+        // Add ACME managers with configured domains
+        for (id, acme) in acmes {
+            if !acme.domains.is_empty() {
+                servers.acme_managers.push(acme);
+            } else {
+                tracing::debug!(
+                    context = "config",
+                    event = "acme",
+                    id = id,
+                    "ACME certificate manager disabled for id {id:?}",
+                );
+            }
+        }
+
+        if !servers.inner.is_empty() {
+            Ok(servers)
         } else {
             Err("No server directives found in config file.".to_string())
         }
     }
 
-    fn parse_server(&self, id: &str) -> super::Result<Server> {
-        // Build TLS config
-        let (tls, tls_implicit) = if self
-            .property_or_default(("server.listener", id, "tls.enable"), "server.tls.enable")?
-            .unwrap_or(false)
-        {
-            // Parse protocol versions
-            let mut tls_v2 = false;
-            let mut tls_v3 = false;
-            for (key, protocol) in self.values_or_default(
-                ("server.listener", id, "tls.protocols"),
-                "server.tls.protocols",
-            ) {
-                match protocol {
-                    "TLSv1.2" | "0x0303" => tls_v2 = true,
-                    "TLSv1.3" | "0x0304" => tls_v3 = true,
-                    protocol => {
-                        return Err(format!(
-                            "Unsupported TLS protocol {protocol:?} found in key {key:?}",
-                        ))
-                    }
-                }
-            }
-
-            // Parse cipher suites
-            let mut ciphers: Vec<SupportedCipherSuite> = Vec::new();
-            for (key, protocol) in
-                self.values_or_default(("server.listener", id, "tls.ciphers"), "server.tls.ciphers")
-            {
-                ciphers.push(protocol.parse_key(key)?);
-            }
-
-            // Obtain default certificate
-            let cert_id = self
-                .value_or_default(
-                    ("server.listener", id, "tls.certificate"),
-                    "server.tls.certificate",
-                )
-                .ok_or_else(|| format!("Undefined certificate id for listener {id:?}."))?;
-            let cert = self.rustls_certificate(cert_id)?;
-            let pki = self.rustls_private_key(cert_id)?;
-
-            // Add SNI certificates
-            let mut resolver = ResolvesServerCertUsingSni::new();
-            let mut has_sni = false;
-            for (key, value) in
-                self.values_or_default(("server.listener", id, "tls.sni"), "server.tls.sni")
-            {
-                if let Some(prefix) = key.strip_suffix(".subject") {
-                    has_sni = true;
-                    resolver
-                        .add(
-                            value,
-                            match self.value((prefix, "certificate")) {
-                                Some(sni_cert_id) if sni_cert_id != cert_id => CertifiedKey {
-                                    cert: self.rustls_certificate(sni_cert_id)?,
-                                    key: any_supported_type(&self.rustls_private_key(sni_cert_id)?)
-                                        .map_err(|err| {
-                                            format!(
-                                                "Failed to sign SNI certificate for {key:?}: {err}",
-                                            )
-                                        })?,
-                                    ocsp: None,
-                                },
-                                _ => CertifiedKey {
-                                    cert: cert.clone(),
-                                    key:
-                                        any_supported_type(&pki).map_err(|err| {
-                                            format!(
-                                                "Failed to sign SNI certificate for {key:?}: {err}",
-                                            )
-                                        })?,
-                                    ocsp: None,
-                                },
-                            },
-                        )
-                        .map_err(|err| {
-                            format!("Failed to add SNI certificate for {key:?}: {err}")
-                        })?;
-                }
-            }
-
-            // Add default certificate
-            let default_cert = Some(Arc::new(CertifiedKey {
-                cert,
-                key: any_supported_type(&pki)
-                    .map_err(|err| format!("Failed to sign certificate id {cert_id:?}: {err}"))?,
-                ocsp: None,
-            }));
-
-            // Build cert provider
-            let mut provider = default_provider();
-            if !ciphers.is_empty() {
-                provider.cipher_suites = ciphers;
-            }
-
-            // Build server config
-            let mut config = ServerConfig::builder_with_provider(provider.into())
-                .with_protocol_versions(if tls_v3 == tls_v2 {
-                    ALL_VERSIONS
-                } else if tls_v3 {
-                    TLS13_VERSION
-                } else {
-                    TLS12_VERSION
-                })
-                .map_err(|err| format!("Failed to build TLS config: {err}"))?
-                .with_no_client_auth()
-                .with_cert_resolver(Arc::new(CertificateResolver {
-                    resolver: if has_sni { resolver.into() } else { None },
-                    default_cert,
-                }));
-
-            //config.key_log = Arc::new(KeyLogger::default());
-            config.ignore_client_order = self
-                .property_or_default(
-                    ("server.listener", id, "tls.ignore-client-order"),
-                    "server.tls.ignore-client-order",
-                )?
-                .unwrap_or(true);
-            (
-                config.into(),
-                self.property_or_default(
-                    ("server.listener", id, "tls.implicit"),
-                    "server.tls.implicit",
-                )?
-                .unwrap_or(true),
-            )
-        } else {
-            (None, false)
-        };
-
+    fn parse_server(
+        &self,
+        id: &str,
+        certificates: &AHashMap<String, Arc<Certificate>>,
+        acmes: &AHashMap<String, Arc<AcmeManager>>,
+    ) -> super::Result<Server> {
         // Build listeners
         let mut listeners = Vec::new();
         for result in self.properties::<SocketAddr>(("server.listener", id, "bind")) {
@@ -267,6 +182,150 @@ impl Config {
             return Err(format!("No 'bind' directive found for listener id {id:?}"));
         }
 
+        // Build TLS config
+        let (acceptor, tls_implicit) = if self
+            .property_or_default(("server.listener", id, "tls.enable"), "server.tls.enable")?
+            .unwrap_or(false)
+        {
+            // Parse protocol versions
+            let mut tls_v2 = false;
+            let mut tls_v3 = false;
+            for (key, protocol) in self.values_or_default(
+                ("server.listener", id, "tls.protocols"),
+                "server.tls.protocols",
+            ) {
+                match protocol {
+                    "TLSv1.2" | "0x0303" => tls_v2 = true,
+                    "TLSv1.3" | "0x0304" => tls_v3 = true,
+                    protocol => {
+                        return Err(format!(
+                            "Unsupported TLS protocol {protocol:?} found in key {key:?}",
+                        ))
+                    }
+                }
+            }
+
+            // Parse cipher suites
+            let mut ciphers: Vec<SupportedCipherSuite> = Vec::new();
+            for (key, protocol) in
+                self.values_or_default(("server.listener", id, "tls.ciphers"), "server.tls.ciphers")
+            {
+                ciphers.push(protocol.parse_key(key)?);
+            }
+
+            // Build resolver
+            let mut acme_acceptor = None;
+            let resolver: Arc<dyn ResolvesServerCert> = if let Some(acme_id) =
+                self.value_or_default(("server.listener", id, "tls.acme"), "server.tls.acme")
+            {
+                let acme = acmes.get(acme_id).ok_or_else(|| {
+                    format!("Undefined ACME id {acme_id:?} for listener {id:?}.",)
+                })?;
+
+                // Check if this port is used to receive ACME challenges
+                let acme_port = self.property_or_static::<u16>(("acme", acme_id, "port"), "443")?;
+                if listeners.iter().any(|l| l.addr.port() == acme_port) {
+                    acme_acceptor = Some(acme.clone());
+                }
+
+                acme.clone()
+            } else {
+                let cert_id = self
+                    .value_or_default(
+                        ("server.listener", id, "tls.certificate"),
+                        "server.tls.certificate",
+                    )
+                    .ok_or_else(|| format!("Undefined certificate id for listener {id:?}."))?;
+                let mut resolver = CertificateResolver {
+                    sni: Default::default(),
+                    cert: certificates
+                        .get(cert_id)
+                        .ok_or_else(|| {
+                            format!("Undefined certificate id {cert_id:?} for listener {id:?}.",)
+                        })?
+                        .clone(),
+                };
+
+                // Add SNI certificates
+                for (key, value) in
+                    self.values_or_default(("server.listener", id, "tls.sni"), "server.tls.sni")
+                {
+                    if let Some(prefix) = key.strip_suffix(".subject") {
+                        resolver
+                            .add(
+                                value,
+                                match self.value((prefix, "certificate")) {
+                                    Some(sni_cert_id) if sni_cert_id != cert_id => {
+                                        certificates.get(sni_cert_id).ok_or_else(|| {
+                                            format!(
+                                                "Undefined certificate id {sni_cert_id:?} for SNI {value:?} in listener {id:?}.",
+                                            )
+                                        })?.clone()
+                                    }
+                                    _ => resolver.cert.clone(),
+                                },
+                            )
+                            .map_err(|err| {
+                                format!("Failed to add SNI certificate for {key:?}: {err}")
+                            })?;
+                    }
+                }
+
+                Arc::new(resolver)
+            };
+
+            // Build cert provider
+            let mut provider = default_provider();
+            if !ciphers.is_empty() {
+                provider.cipher_suites = ciphers;
+            }
+
+            // Build server config
+            let mut config = ServerConfig::builder_with_provider(provider.into())
+                .with_protocol_versions(if tls_v3 == tls_v2 {
+                    ALL_VERSIONS
+                } else if tls_v3 {
+                    TLS13_VERSION
+                } else {
+                    TLS12_VERSION
+                })
+                .map_err(|err| format!("Failed to build TLS config: {err}"))?
+                .with_no_client_auth()
+                .with_cert_resolver(resolver.clone());
+            config.ignore_client_order = self
+                .property_or_default(
+                    ("server.listener", id, "tls.ignore-client-order"),
+                    "server.tls.ignore-client-order",
+                )?
+                .unwrap_or(true);
+
+            // Build acceptor
+            let acceptor = if let Some(manager) = acme_acceptor {
+                let mut challenge = ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_cert_resolver(resolver);
+                challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
+                TcpAcceptor::Acme {
+                    challenge: Arc::new(challenge),
+                    default: Arc::new(config),
+                    manager,
+                }
+            } else {
+                TcpAcceptor::Tls(TlsAcceptor::from(Arc::new(config)))
+            };
+
+            (
+                acceptor,
+                self.property_or_default(
+                    ("server.listener", id, "tls.implicit"),
+                    "server.tls.implicit",
+                )?
+                .unwrap_or(true),
+            )
+        } else {
+            (TcpAcceptor::Plain, false)
+        };
+
         let protocol = self.property_require(("server.listener", id, "protocol"))?;
 
         Ok(Server {
@@ -303,7 +362,7 @@ impl Config {
                 .unwrap_or(8192),
             protocol,
             listeners,
-            tls,
+            acceptor,
             tls_implicit,
         })
     }

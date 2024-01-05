@@ -24,14 +24,20 @@
 use reqwest::Method;
 use serde_json::Value;
 
-use super::cli::{Client, DatabaseCommands};
+use super::cli::{Client, ServerCommands};
 
-impl DatabaseCommands {
+impl ServerCommands {
     pub async fn exec(self, client: Client) {
         match self {
-            DatabaseCommands::Maintenance {} => {
+            ServerCommands::DatabaseMaintenance {} => {
                 client
                     .http_request::<Value, String>(Method::GET, "/admin/store/maintenance", None)
+                    .await;
+                eprintln!("Success.");
+            }
+            ServerCommands::ReloadCertificates {} => {
+                client
+                    .http_request::<Value, String>(Method::GET, "/admin/certificates/reload", None)
                     .await;
                 eprintln!("Success.");
             }

@@ -26,6 +26,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use utils::{
     config::{cron::SimpleCron, Config},
+    listener::tls::Certificate,
     map::ttl_dashmap::TtlMap,
     UnwrapFailure,
 };
@@ -36,6 +37,7 @@ use super::IPC_CHANNEL_BUFFER;
 
 pub enum Event {
     PurgeSessions,
+    ReloadCertificates,
     IndexStart,
     IndexDone,
     #[cfg(feature = "test_mode")]
@@ -43,7 +45,12 @@ pub enum Event {
     Exit,
 }
 
-pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Receiver<Event>) {
+pub fn spawn_housekeeper(
+    core: Arc<JMAP>,
+    settings: &Config,
+    certificates: Vec<Arc<Certificate>>,
+    mut rx: mpsc::Receiver<Event>,
+) {
     let purge_cache = settings
         .property_or_static::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
         .failed("Initialize housekeeper");
@@ -68,6 +75,32 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                 Ok(Some(event)) => match event {
                     Event::PurgeSessions => {
                         do_purge = true;
+                    }
+                    Event::ReloadCertificates => {
+                        let certificates = certificates.clone();
+                        tokio::spawn(async move {
+                            for cert in certificates {
+                                match cert.reload().await {
+                                    Ok(_) => {
+                                        tracing::info!(
+                                            context = "tls",
+                                            event = "reload",
+                                            path = cert.path[0].to_string_lossy().as_ref(),
+                                            "Reloaded certificate."
+                                        );
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(
+                                            context = "tls",
+                                            event = "error",
+                                            path = cert.path[0].to_string_lossy().as_ref(),
+                                            error = ?err,
+                                            "Failed to reload certificate."
+                                        );
+                                    }
+                                }
+                            }
+                        });
                     }
                     Event::IndexStart => {
                         if !index_busy {
@@ -104,7 +137,9 @@ pub fn spawn_housekeeper(core: Arc<JMAP>, settings: &Config, mut rx: mpsc::Recei
                     tracing::debug!("Housekeeper task exiting.");
                     return;
                 }
-                Err(_) => (),
+                Err(_) => {
+                    do_purge = true;
+                }
             }
 
             if do_purge {

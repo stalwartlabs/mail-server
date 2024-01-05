@@ -34,7 +34,7 @@ use smtp::{
 };
 use utils::{
     config::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, ServerInstance},
+    listener::{limiter::ConcurrencyLimiter, ServerInstance, TcpAcceptor},
 };
 
 use super::TestConfig;
@@ -368,7 +368,7 @@ impl TestServerInstance for ServerInstance {
             hostname: "mx.example.org".to_string(),
             protocol: ServerProtocol::Smtp,
             data: "220 mx.example.org at your service.\r\n".to_string(),
-            tls_acceptor: None,
+            acceptor: TcpAcceptor::Plain,
             is_tls_implicit: false,
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,

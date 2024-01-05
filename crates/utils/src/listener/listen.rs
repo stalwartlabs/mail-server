@@ -28,17 +28,18 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
-use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use tokio_rustls::server::TlsStream;
 use tracing::Span;
 
 use crate::{
+    acme::SpawnAcme,
     config::{Config, Listener, Server, ServerProtocol, Servers},
     failed,
     listener::SessionData,
     UnwrapFailure,
 };
 
-use super::{limiter::ConcurrencyLimiter, ServerInstance, SessionManager};
+use super::{limiter::ConcurrencyLimiter, ServerInstance, SessionManager, TcpAcceptorResult};
 
 impl Server {
     pub fn spawn(self, manager: impl SessionManager, shutdown_rx: watch::Receiver<bool>) {
@@ -53,7 +54,7 @@ impl Server {
             listener_id: self.internal_id,
             protocol: self.protocol,
             hostname: self.hostname,
-            tls_acceptor: self.tls.map(|config| TlsAcceptor::from(Arc::new(config))),
+            acceptor: self.acceptor,
             is_tls_implicit: self.tls_implicit,
             limiter: ConcurrencyLimiter::new(self.max_connections),
             shutdown_rx,
@@ -223,6 +224,11 @@ impl Servers {
             spawn(server, shutdown_rx.clone());
         }
 
+        // Spawn ACME managers
+        for acme_manager in self.acme_managers {
+            acme_manager.spawn(shutdown_rx.clone());
+        }
+
         (shutdown_tx, shutdown_rx)
     }
 }
@@ -241,24 +247,36 @@ impl ServerInstance {
         stream: TcpStream,
         span: &Span,
     ) -> Result<TlsStream<TcpStream>, ()> {
-        match self.tls_acceptor.as_ref().unwrap().accept(stream).await {
-            Ok(stream) => {
-                tracing::info!(
-                    parent: span,
-                    context = "tls",
-                    event = "handshake",
-                    version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
-                    cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(TLS13_AES_128_GCM_SHA256),
-                );
-                Ok(stream)
-            }
-            Err(err) => {
+        match self.acceptor.accept(stream).await {
+            TcpAcceptorResult::Tls(accept) => match accept.await {
+                Ok(stream) => {
+                    tracing::info!(
+                        parent: span,
+                        context = "tls",
+                        event = "handshake",
+                        version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
+                        cipher = ?stream.get_ref().1.negotiated_cipher_suite().unwrap_or(TLS13_AES_128_GCM_SHA256),
+                    );
+                    Ok(stream)
+                }
+                Err(err) => {
+                    tracing::debug!(
+                        parent: span,
+                        context = "tls",
+                        event = "error",
+                        "Failed to accept TLS connection: {}",
+                        err
+                    );
+                    Err(())
+                }
+            },
+            TcpAcceptorResult::Plain(_) | TcpAcceptorResult::Close => {
                 tracing::debug!(
                     parent: span,
                     context = "tls",
                     event = "error",
                     "Failed to accept TLS connection: {}",
-                    err
+                    "TLS is not configured for this server."
                 );
                 Err(())
             }

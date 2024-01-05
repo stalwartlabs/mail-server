@@ -25,6 +25,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use config::Config;
 
+pub mod acme;
 pub mod codec;
 pub mod config;
 pub mod ipc;

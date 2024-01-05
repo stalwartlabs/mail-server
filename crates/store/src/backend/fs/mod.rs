@@ -40,7 +40,7 @@ pub struct FsStore {
 impl FsStore {
     pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         let prefix = prefix.as_key();
-        let path = config.property_require::<PathBuf>((&prefix, "path"))?;
+        let path = PathBuf::from(config.value_require((&prefix, "path"))?);
         if !path.exists() {
             fs::create_dir_all(&path).await.map_err(|e| {
                 crate::Error::InternalError(format!(

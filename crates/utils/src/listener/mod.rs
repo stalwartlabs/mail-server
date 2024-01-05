@@ -23,19 +23,21 @@
 
 use std::{net::IpAddr, sync::Arc};
 
+use crate::{acme::AcmeManager, config::ServerProtocol};
+use rustls::ServerConfig;
+use std::fmt::Debug;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
     sync::watch,
 };
-use tokio_rustls::TlsAcceptor;
-
-use crate::config::ServerProtocol;
+use tokio_rustls::{Accept, TlsAcceptor};
 
 use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod limiter;
 pub mod listen;
+pub mod tls;
 
 pub struct ServerInstance {
     pub id: String,
@@ -43,10 +45,32 @@ pub struct ServerInstance {
     pub protocol: ServerProtocol,
     pub hostname: String,
     pub data: String,
-    pub tls_acceptor: Option<TlsAcceptor>,
+    pub acceptor: TcpAcceptor,
     pub is_tls_implicit: bool,
     pub limiter: ConcurrencyLimiter,
     pub shutdown_rx: watch::Receiver<bool>,
+}
+
+#[derive(Default)]
+pub enum TcpAcceptor {
+    Tls(TlsAcceptor),
+    Acme {
+        challenge: Arc<ServerConfig>,
+        default: Arc<ServerConfig>,
+        manager: Arc<AcmeManager>,
+    },
+    #[default]
+    Plain,
+}
+
+#[allow(clippy::large_enum_variant)]
+pub enum TcpAcceptorResult<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
+    Tls(Accept<IO>),
+    Plain(IO),
+    Close,
 }
 
 pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
@@ -62,4 +86,23 @@ pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
 pub trait SessionManager: Sync + Send + 'static + Clone {
     fn spawn(&self, session: SessionData<TcpStream>);
     fn shutdown(&self);
+}
+
+impl Debug for TcpAcceptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tls(_) => f.debug_tuple("Tls").finish(),
+            Self::Acme {
+                challenge,
+                default,
+                manager,
+            } => f
+                .debug_struct("Acme")
+                .field("challenge", challenge)
+                .field("default", default)
+                .field("manager", manager)
+                .finish(),
+            Self::Plain => write!(f, "Plain"),
+        }
+    }
 }

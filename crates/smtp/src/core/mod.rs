@@ -49,7 +49,7 @@ use tokio_rustls::TlsConnector;
 use tracing::Span;
 use utils::{
     ipc::DeliveryEvent,
-    listener::{limiter::InFlight, ServerInstance},
+    listener::{limiter::InFlight, ServerInstance, TcpAcceptor},
 };
 
 use crate::{
@@ -481,7 +481,7 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance
     protocol: utils::config::ServerProtocol::Lmtp,
     hostname: "localhost".to_string(),
     data: "localhost".to_string(),
-    tls_acceptor: None,
+    acceptor: TcpAcceptor::Plain,
     is_tls_implicit: true,
     limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,

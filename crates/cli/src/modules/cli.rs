@@ -71,7 +71,7 @@ pub enum Commands {
 
     /// Manage JMAP database
     #[clap(subcommand)]
-    Database(DatabaseCommands),
+    Server(ServerCommands),
 
     /// Manage SMTP message queue
     #[clap(subcommand)]
@@ -399,9 +399,11 @@ pub enum ExportCommands {
 }
 
 #[derive(Subcommand)]
-pub enum DatabaseCommands {
+pub enum ServerCommands {
     /// Perform database maintenance
-    Maintenance {},
+    DatabaseMaintenance {},
+    /// Reload TLS certificates
+    ReloadCertificates {},
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

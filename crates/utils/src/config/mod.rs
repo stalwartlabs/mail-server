@@ -21,11 +21,11 @@
  * for more details.
 */
 
-pub mod certificate;
 pub mod cron;
 pub mod dynvalue;
 pub mod listener;
 pub mod parser;
+pub mod tls;
 pub mod utils;
 
 use std::{
@@ -33,14 +33,19 @@ use std::{
     collections::BTreeMap,
     fmt::Display,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
     time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
-use rustls::ServerConfig;
 use tokio::net::TcpSocket;
 
-use crate::{failed, UnwrapFailure};
+use crate::{
+    acme::AcmeManager,
+    failed,
+    listener::{tls::Certificate, TcpAcceptor},
+    UnwrapFailure,
+};
 
 use self::utils::ParseValue;
 
@@ -57,13 +62,16 @@ pub struct Server {
     pub data: String,
     pub protocol: ServerProtocol,
     pub listeners: Vec<Listener>,
-    pub tls: Option<ServerConfig>,
+    pub acceptor: TcpAcceptor,
     pub tls_implicit: bool,
     pub max_connections: u64,
 }
 
+#[derive(Default)]
 pub struct Servers {
     pub inner: Vec<Server>,
+    pub certificates: Vec<Arc<Certificate>>,
+    pub acme_managers: Vec<Arc<AcmeManager>>,
 }
 
 #[derive(Debug)]

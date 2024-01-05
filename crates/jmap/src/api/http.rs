@@ -42,7 +42,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use utils::listener::{ServerInstance, SessionData, SessionManager};
+use utils::listener::{ServerInstance, SessionData, SessionManager, TcpAcceptorResult};
 
 use crate::{
     auth::{oauth::OAuthMetadata, AccessToken},
@@ -291,40 +291,45 @@ pub async fn parse_jmap_request(
 }
 
 impl SessionManager for JmapSessionManager {
-    fn spawn(&self, session: SessionData<TcpStream>) {
+    fn spawn(&self, mut session: SessionData<TcpStream>) {
         let jmap = self.inner.clone();
 
         tokio::spawn(async move {
-            if let Some(tls_acceptor) = &session.instance.tls_acceptor {
-                let span = session.span;
-                match tls_acceptor.accept(session.stream).await {
-                    Ok(stream) => {
-                        handle_request(
-                            jmap,
-                            SessionData {
-                                stream,
-                                local_ip: session.local_ip,
-                                remote_ip: session.remote_ip,
-                                remote_port: session.remote_port,
-                                span,
-                                in_flight: session.in_flight,
-                                instance: session.instance,
-                            },
-                        )
-                        .await;
-                    }
-                    Err(err) => {
-                        tracing::debug!(
-                            parent: &span,
-                            context = "tls",
-                            event = "error",
-                            "Failed to accept TLS connection: {}",
-                            err
-                        );
+            match session.instance.acceptor.accept(session.stream).await {
+                TcpAcceptorResult::Tls(accept) => {
+                    let span = session.span;
+                    match accept.await {
+                        Ok(stream) => {
+                            handle_request(
+                                jmap,
+                                SessionData {
+                                    stream,
+                                    local_ip: session.local_ip,
+                                    remote_ip: session.remote_ip,
+                                    remote_port: session.remote_port,
+                                    span,
+                                    in_flight: session.in_flight,
+                                    instance: session.instance,
+                                },
+                            )
+                            .await;
+                        }
+                        Err(err) => {
+                            tracing::debug!(
+                                parent: &span,
+                                context = "tls",
+                                event = "error",
+                                "Failed to accept TLS connection: {}",
+                                err
+                            );
+                        }
                     }
                 }
-            } else {
-                handle_request(jmap, session).await;
+                TcpAcceptorResult::Plain(stream) => {
+                    session.stream = stream;
+                    handle_request(jmap, session).await;
+                }
+                TcpAcceptorResult::Close => (),
             }
         });
     }

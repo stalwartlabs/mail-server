@@ -41,7 +41,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use utils::listener::{limiter::InFlight, SessionManager};
+use utils::listener::{limiter::InFlight, SessionManager, TcpAcceptorResult};
 
 use crate::{
     queue::{self, instant_to_timestamp, InstantFromTimestamp, QueueId, Status},
@@ -160,8 +160,8 @@ impl SessionManager for SmtpAdminSessionManager {
     fn spawn(&self, session: utils::listener::SessionData<tokio::net::TcpStream>) {
         let core = self.inner.clone();
         tokio::spawn(async move {
-            if let Some(tls_acceptor) = &session.instance.tls_acceptor {
-                match tls_acceptor.accept(session.stream).await {
+            match session.instance.acceptor.accept(session.stream).await {
+                TcpAcceptorResult::Tls(accept) => match accept.await {
                     Ok(stream) => {
                         handle_request(stream, core, session.remote_ip, session.in_flight).await;
                     }
@@ -174,9 +174,11 @@ impl SessionManager for SmtpAdminSessionManager {
                             err
                         );
                     }
+                },
+                TcpAcceptorResult::Plain(stream) => {
+                    handle_request(stream, core, session.remote_ip, session.in_flight).await;
                 }
-            } else {
-                handle_request(session.stream, core, session.remote_ip, session.in_flight).await;
+                TcpAcceptorResult::Close => (),
             }
         });
     }
