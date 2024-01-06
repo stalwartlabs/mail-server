@@ -26,11 +26,9 @@ use std::time::SystemTime;
 use crate::{core::Session, scripts::ScriptResult};
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
-use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
-use super::IsTls;
-
-impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_ehlo(&mut self, domain: String) -> Result<(), ()> {
         // Set EHLO domain
 

@@ -32,11 +32,7 @@ use jmap::{
     auth::{rate_limit::RemoteAddress, AccessToken},
     JMAP,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
-use tokio_rustls::server::TlsStream;
+use tokio::io::{AsyncRead, AsyncWrite};
 use utils::listener::{limiter::InFlight, ServerInstance};
 
 pub struct Session<T: AsyncRead + AsyncWrite> {
@@ -99,22 +95,6 @@ pub enum Command {
     #[default]
     Noop,
     Unauthenticate,
-}
-
-pub trait IsTls {
-    fn is_tls(&self) -> bool;
-}
-
-impl IsTls for TcpStream {
-    fn is_tls(&self) -> bool {
-        false
-    }
-}
-
-impl IsTls for TlsStream<TcpStream> {
-    fn is_tls(&self) -> bool {
-        true
-    }
 }
 
 impl CommandParser for Command {

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret domain create example.org
-cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret account create john 12345 -d "John Doe" -a john@example.org -a john.doe@example.org
+cargo run -p stalwart-cli -- -u https://127.0.0.1:443 -c admin:secret domain create example.org
+cargo run -p stalwart-cli -- -u https://127.0.0.1:443 -c admin:secret account create john 12345 -d "John Doe" -a john@example.org -a john.doe@example.org
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret account create jane abcde -d "Jane Doe" -a jane@example.org
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret account create bill xyz12 -d "Bill Foobar" -a bill@example.org
 #cargo run -p stalwart-cli -- -u https://127.0.0.1:8080 -c admin:secret group create sales -d "Sales Department"

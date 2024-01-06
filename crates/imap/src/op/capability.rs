@@ -30,11 +30,11 @@ use imap_proto::{
     Command, StatusResponse,
 };
 
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::Session;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&mut self, request: Request<Command>) -> crate::OpResult {
         self.write_bytes(
             StatusResponse::completed(Command::Capability)

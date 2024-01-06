@@ -32,7 +32,19 @@ BODY (
          "application" "x-excel" NIL NIL NIL NIL 1
       )(
          "message" "rfc822" NIL NIL NIL NIL 13 (
-            NIL "J" NIL NIL NIL NIL NIL NIL NIL NIL
+            NIL "J" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -51,9 +63,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 1 0 "7fc56270e7a70fa81a5935b72eacbe29" (
-         "inline" (
-            
-         )
+         "inline" NIL
       ) NIL NIL
    )(
       (
@@ -62,23 +72,17 @@ BODYSTRUCTURE (
                "text" "plain" (
                   "charset" "us-ascii"
                ) NIL NIL "7bit" 1 0 "9d5ed678fe57bcca610140957afab571" (
-                  "inline" (
-                     
-                  )
+                  "inline" NIL
                ) NIL NIL
             )(
                "image" "jpeg" NIL NIL NIL NIL 1 "0d61f8370cad1d412f80b84d143e1257" (
-                  "inline" (
-                     
-                  )
+                  "inline" NIL
                ) NIL NIL
             )(
                "text" "plain" (
                   "charset" "us-ascii"
                ) NIL NIL "7bit" 1 0 "f623e75af30e62bbd73d6df5b50bb7b5" (
-                  "inline" (
-                     
-                  )
+                  "inline" NIL
                ) NIL NIL
             ) "mixed" (
                "boundary" "4"
@@ -98,15 +102,25 @@ BODYSTRUCTURE (
          ) NIL NIL NIL
       )(
          "image" "jpeg" NIL NIL NIL NIL 1 "dfcf28d0734569a6a693bc8194de62bf" (
-            "attachment" (
-               
-            )
+            "attachment" NIL
          ) NIL NIL
       )(
          "application" "x-excel" NIL NIL NIL NIL 1 "c1d9f50f86825a1a2302ec2449c17196" NIL NIL NIL
       )(
          "message" "rfc822" NIL NIL NIL NIL 13 (
-            NIL "J" NIL NIL NIL NIL NIL NIL NIL NIL
+            NIL "J" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -119,9 +133,7 @@ BODYSTRUCTURE (
       "text" "plain" (
          "charset" "us-ascii"
       ) NIL NIL "7bit" 1 0 "a5f3c6a11b03839d46af9fb43c97c188" (
-         "inline" (
-            
-         )
+         "inline" NIL
       ) NIL NIL
    ) "mixed" (
       "boundary" "1"

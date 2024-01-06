@@ -6,7 +6,19 @@ BODY (
    )(
       (
          "message" NIL NIL NIL NIL NIL 100 (
-            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -14,7 +26,19 @@ BODY (
          ) 0
       )(
          "message" NIL NIL NIL NIL NIL 125 (
-            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -32,7 +56,19 @@ BODYSTRUCTURE (
    )(
       (
          "message" NIL NIL NIL NIL NIL 100 (
-            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 11:13:32 +0200" "my opinion" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"
@@ -40,7 +76,19 @@ BODYSTRUCTURE (
          ) 0 "ef1527984c599523c90fb184a8fdfd61" NIL NIL NIL
       )(
          "message" NIL NIL NIL NIL NIL 125 (
-            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" NIL NIL NIL NIL NIL NIL NIL NIL
+            "Fri, 26 Mar 1993 10:07:13 -0500" "my different opinion" (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) (
+               (
+                  NIL NIL "unknown" "localhost"
+               )
+            ) NIL NIL NIL NIL NIL
          ) (
             "text" "plain" (
                "charset" "us-ascii"

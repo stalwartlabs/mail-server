@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file. This projec
 
 ## Added
 - ACME support for automatic TLS certificate generation and renewal.
+- TLS certificate hot-reloading.
+- HAProxy protocol support.
 
 ### Changed
 

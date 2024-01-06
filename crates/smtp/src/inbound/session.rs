@@ -31,16 +31,19 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use utils::config::{KeyLookup, ServerProtocol};
+use utils::{
+    config::{KeyLookup, ServerProtocol},
+    listener::SessionStream,
+};
 
 use crate::{
     config::EnvelopeKey,
     core::{Session, State},
 };
 
-use super::{auth::SaslToken, IsTls};
+use super::auth::SaslToken;
 
-impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> Result<bool, ()> {
         let mut iter = bytes.iter();
         let mut state = std::mem::replace(&mut self.state, State::None);
@@ -137,13 +140,17 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
                             }
                             Request::StartTls => {
                                 if !self.stream.is_tls() {
-                                    self.write(b"220 2.0.0 Ready to start TLS.\r\n").await?;
-                                    #[cfg(any(test, feature = "test_mode"))]
-                                    if self.data.helo_domain.contains("badtls") {
-                                        return Err(());
+                                    if self.instance.acceptor.is_tls() {
+                                        self.write(b"220 2.0.0 Ready to start TLS.\r\n").await?;
+                                        #[cfg(any(test, feature = "test_mode"))]
+                                        if self.data.helo_domain.contains("badtls") {
+                                            return Err(());
+                                        }
+                                        self.state = State::default();
+                                        return Ok(false);
+                                    } else {
+                                        self.write(b"502 5.7.0 TLS not available.\r\n").await?;
                                     }
-                                    self.state = State::default();
-                                    return Ok(false);
                                 } else {
                                     self.write(b"504 5.7.4 Already in TLS mode.\r\n").await?;
                                 }

@@ -45,13 +45,13 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
 };
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
 
 use super::FromModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_store(
         &mut self,
         request: Request<Command>,
@@ -76,7 +76,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn store(
         &self,
         arguments: Arguments,

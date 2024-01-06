@@ -26,10 +26,11 @@ use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use utils::listener::SessionStream;
 
-use super::{Command, IsTls, ResponseCode, ResponseType, Session, State, StatusResponse};
+use super::{Command, ResponseCode, ResponseType, Session, State, StatusResponse};
 
-impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> Result<bool, ()> {
         /*let tmp = "dd";
         for line in String::from_utf8_lossy(bytes).split("\r\n") {

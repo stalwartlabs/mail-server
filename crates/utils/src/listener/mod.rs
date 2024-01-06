@@ -21,14 +21,16 @@
  * for more details.
 */
 
-use std::{net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use crate::{acme::AcmeManager, config::ServerProtocol};
+use crate::{
+    acme::AcmeManager,
+    config::{ipmask::IpAddrMask, ServerProtocol},
+};
 use rustls::ServerConfig;
 use std::fmt::Debug;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
     sync::watch,
 };
 use tokio_rustls::{Accept, TlsAcceptor};
@@ -37,6 +39,7 @@ use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod limiter;
 pub mod listen;
+pub mod stream;
 pub mod tls;
 
 pub struct ServerInstance {
@@ -46,8 +49,8 @@ pub struct ServerInstance {
     pub hostname: String,
     pub data: String,
     pub acceptor: TcpAcceptor,
-    pub is_tls_implicit: bool,
     pub limiter: ConcurrencyLimiter,
+    pub proxy_networks: Vec<IpAddrMask>,
     pub shutdown_rx: watch::Receiver<bool>,
 }
 
@@ -73,7 +76,7 @@ where
     Close,
 }
 
-pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
+pub struct SessionData<T: SessionStream> {
     pub stream: T,
     pub local_ip: IpAddr,
     pub remote_ip: IpAddr,
@@ -83,9 +86,59 @@ pub struct SessionData<T: AsyncRead + AsyncWrite + Unpin + 'static> {
     pub instance: Arc<ServerInstance>,
 }
 
+pub trait SessionStream: AsyncRead + AsyncWrite + Unpin + 'static + Sync + Send {
+    fn is_tls(&self) -> bool;
+    fn tls_version_and_cipher(&self) -> (Cow<'static, str>, Cow<'static, str>);
+}
+
 pub trait SessionManager: Sync + Send + 'static + Clone {
-    fn spawn(&self, session: SessionData<TcpStream>);
-    fn shutdown(&self);
+    fn spawn<T: SessionStream>(&self, mut session: SessionData<T>, is_tls: bool) {
+        let manager = self.clone();
+
+        tokio::spawn(async move {
+            if is_tls {
+                match session.instance.acceptor.accept(session.stream).await {
+                    TcpAcceptorResult::Tls(accept) => match accept.await {
+                        Ok(stream) => {
+                            let session = SessionData {
+                                stream,
+                                local_ip: session.local_ip,
+                                remote_ip: session.remote_ip,
+                                remote_port: session.remote_port,
+                                span: session.span,
+                                in_flight: session.in_flight,
+                                instance: session.instance,
+                            };
+                            manager.handle(session).await;
+                        }
+                        Err(err) => {
+                            tracing::debug!(
+                                context = "tls",
+                                event = "error",
+                                remote.ip = session.remote_ip.to_string(),
+                                "Failed to accept TLS connection: {}",
+                                err
+                            );
+                        }
+                    },
+                    TcpAcceptorResult::Plain(stream) => {
+                        session.stream = stream;
+                        manager.handle(session).await;
+                    }
+                    TcpAcceptorResult::Close => (),
+                }
+            } else {
+                manager.handle(session).await;
+            }
+        });
+    }
+
+    fn handle<T: SessionStream>(
+        self,
+        session: SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send;
+
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send;
 }
 
 impl Debug for TcpAcceptor {

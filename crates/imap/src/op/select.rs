@@ -35,13 +35,13 @@ use imap_proto::{
 };
 
 use jmap_proto::types::id::Id;
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};
 
 use super::ToModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_select(&mut self, request: Request<Command>) -> crate::OpResult {
         let is_select = request.command == Command::Select;
         let command = request.command;

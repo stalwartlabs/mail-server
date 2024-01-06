@@ -41,13 +41,14 @@ use store::{
     roaring::RoaringBitmap,
     write::now,
 };
-use tokio::{io::AsyncRead, sync::watch};
+use tokio::sync::watch;
+use utils::listener::SessionStream;
 
 use crate::core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData};
 
 use super::{FromModSeq, ToModSeq};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_search(
         &mut self,
         request: Request<Command>,
@@ -114,7 +115,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn search(
         &self,
         arguments: Arguments,

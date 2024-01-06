@@ -61,9 +61,7 @@ BODYSTRUCTURE (
             "image" "gif" (
                "name" "Book about ☕ tables.gif"
             ) NIL NIL "Base64" 56 "d40fa7f401e9dc2df56cbb740d65ff52" (
-               "attachment" (
-                  
-               )
+               "attachment" NIL
             ) NIL NIL
          ) "mixed" (
             "boundary" "giddyup"

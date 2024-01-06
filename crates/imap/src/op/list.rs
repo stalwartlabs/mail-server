@@ -32,11 +32,11 @@ use imap_proto::{
     Command, StatusResponse,
 };
 
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_list(&mut self, request: Request<Command>) -> crate::OpResult {
         let command = request.command;
         let is_lsub = command == Command::Lsub;
@@ -79,7 +79,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn list(&self, arguments: Arguments, is_lsub: bool, version: ProtocolVersion) {
         let (tag, reference_name, mut patterns, selection_options, return_options) = match arguments
         {

@@ -36,11 +36,11 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_rename(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_rename(self.version) {
             Ok(arguments) => {
@@ -56,7 +56,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn rename_folder(&self, arguments: Arguments) -> StatusResponse {
         // Refresh mailboxes
         if let Err(err) = self.synchronize_mailboxes(false).await {

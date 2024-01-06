@@ -24,7 +24,7 @@
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
 use crate::{
     core::{Session, SessionAddress},
@@ -32,9 +32,7 @@ use crate::{
     scripts::{ScriptModification, ScriptResult},
 };
 
-use super::IsTls;
-
-impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_rcpt_to(&mut self, to: RcptTo<String>) -> Result<(), ()> {
         #[cfg(feature = "test_mode")]
         if self.instance.id.ends_with("-debug") {

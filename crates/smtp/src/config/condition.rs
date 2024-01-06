@@ -21,15 +21,13 @@
  * for more details.
 */
 
-use std::net::IpAddr;
-
 use regex::Regex;
 
 use crate::config::StringMatch;
 
-use super::{Condition, ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IpAddrMask};
+use super::{Condition, ConditionMatch, Conditions, ConfigContext, EnvelopeKey};
 use utils::config::{
-    utils::{AsKey, ParseKey, ParseValue},
+    utils::{AsKey, ParseKey},
     Config,
 };
 
@@ -311,53 +309,5 @@ impl ConfigCondition for Config {
         }
 
         Ok(conditions)
-    }
-}
-
-impl ParseValue for IpAddrMask {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        if let Some((addr, mask)) = value.rsplit_once('/') {
-            if let (Ok(addr), Ok(mask)) =
-                (addr.trim().parse::<IpAddr>(), mask.trim().parse::<u32>())
-            {
-                match addr {
-                    IpAddr::V4(addr) if (8..=32).contains(&mask) => {
-                        return Ok(IpAddrMask::V4 {
-                            addr,
-                            mask: u32::MAX << (32 - mask),
-                        })
-                    }
-                    IpAddr::V6(addr) if (8..=128).contains(&mask) => {
-                        return Ok(IpAddrMask::V6 {
-                            addr,
-                            mask: u128::MAX << (128 - mask),
-                        })
-                    }
-                    _ => (),
-                }
-            }
-        } else {
-            match value.trim().parse::<IpAddr>() {
-                Ok(IpAddr::V4(addr)) => {
-                    return Ok(IpAddrMask::V4 {
-                        addr,
-                        mask: u32::MAX,
-                    })
-                }
-                Ok(IpAddr::V6(addr)) => {
-                    return Ok(IpAddrMask::V6 {
-                        addr,
-                        mask: u128::MAX,
-                    })
-                }
-                _ => (),
-            }
-        }
-
-        Err(format!(
-            "Invalid IP address {:?} for property {:?}.",
-            value,
-            key.as_key()
-        ))
     }
 }

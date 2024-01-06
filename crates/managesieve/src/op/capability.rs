@@ -22,11 +22,11 @@
 */
 
 use jmap::api::session::Capabilities;
-use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
-use crate::core::{IsTls, Session, StatusResponse};
+use crate::core::{Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&self, message: &'static str) -> super::OpResult {
         let mut response = Vec::with_capacity(128);
         response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve v");

@@ -41,22 +41,20 @@ use jmap::{
     },
     JMAP,
 };
-use parking_lot::Mutex;
 use store::roaring::RoaringBitmap;
 use tokio::{
-    io::{AsyncRead, ReadHalf},
-    sync::{mpsc, watch},
+    io::{ReadHalf, WriteHalf},
+    sync::watch,
 };
 use utils::{
     config::Rate,
-    listener::{limiter::InFlight, ServerInstance},
+    listener::{limiter::InFlight, ServerInstance, SessionStream},
 };
 
 pub mod client;
 pub mod mailbox;
 pub mod message;
 pub mod session;
-pub mod writer;
 
 #[derive(Clone)]
 pub struct ImapSessionManager {
@@ -84,35 +82,35 @@ pub struct IMAP {
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,
 
-    pub rate_limiter: DashMap<u32, Arc<Mutex<AuthenticatedLimiter>>>,
+    pub rate_limiter: DashMap<u32, Arc<parking_lot::Mutex<AuthenticatedLimiter>>>,
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
 }
 
-pub struct Session<T: AsyncRead> {
+pub struct Session<T: SessionStream> {
     pub jmap: Arc<JMAP>,
     pub imap: Arc<IMAP>,
     pub instance: Arc<ServerInstance>,
     pub receiver: Receiver<Command>,
     pub version: ProtocolVersion,
-    pub state: State,
+    pub state: State<T>,
     pub is_tls: bool,
     pub is_condstore: bool,
     pub is_qresync: bool,
-    pub writer: mpsc::Sender<writer::Event>,
     pub stream_rx: ReadHalf<T>,
+    pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub in_flight: InFlight,
     pub remote_addr: RemoteAddress,
     pub span: tracing::Span,
 }
 
-pub struct SessionData {
+pub struct SessionData<T: SessionStream> {
     pub account_id: u32,
     pub jmap: Arc<JMAP>,
     pub imap: Arc<IMAP>,
     pub span: tracing::Span,
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
-    pub writer: mpsc::Sender<writer::Event>,
+    pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub state: AtomicU32,
     pub in_flight: InFlight,
 }
@@ -196,20 +194,44 @@ pub struct ImapId {
     pub seqnum: u32,
 }
 
-pub enum State {
+pub enum State<T: SessionStream> {
     NotAuthenticated {
         auth_failures: u32,
     },
     Authenticated {
-        data: Arc<SessionData>,
+        data: Arc<SessionData<T>>,
     },
     Selected {
-        data: Arc<SessionData>,
+        data: Arc<SessionData<T>>,
         mailbox: Arc<SelectedMailbox>,
     },
 }
 
-impl SessionData {
+impl<T: SessionStream> State<T> {
+    pub fn try_replace_stream_tx<U: SessionStream>(
+        self,
+        new_stream: Arc<tokio::sync::Mutex<WriteHalf<U>>>,
+    ) -> Option<State<U>> {
+        match self {
+            State::NotAuthenticated { auth_failures } => {
+                State::NotAuthenticated { auth_failures }.into()
+            }
+            State::Authenticated { data } => {
+                Arc::try_unwrap(data).ok().map(|data| State::Authenticated {
+                    data: Arc::new(data.replace_stream_tx(new_stream)),
+                })
+            }
+            State::Selected { data, mailbox } => {
+                Arc::try_unwrap(data).ok().map(|data| State::Selected {
+                    data: Arc::new(data.replace_stream_tx(new_stream)),
+                    mailbox,
+                })
+            }
+        }
+    }
+}
+
+impl<T: SessionStream> SessionData<T> {
     pub async fn get_access_token(&self) -> crate::op::Result<Arc<AccessToken>> {
         self.jmap
             .get_cached_access_token(self.account_id)
@@ -218,5 +240,21 @@ impl SessionData {
                 StatusResponse::no("Failed to obtain access token")
                     .with_code(ResponseCode::ContactAdmin)
             })
+    }
+
+    pub fn replace_stream_tx<U: SessionStream>(
+        self,
+        new_stream: Arc<tokio::sync::Mutex<WriteHalf<U>>>,
+    ) -> SessionData<U> {
+        SessionData {
+            account_id: self.account_id,
+            jmap: self.jmap,
+            imap: self.imap,
+            span: self.span,
+            mailboxes: self.mailboxes,
+            stream_tx: new_stream,
+            state: self.state,
+            in_flight: self.in_flight,
+        }
     }
 }

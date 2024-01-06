@@ -51,7 +51,7 @@ use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
 use store::Stores;
-use utils::config::{DynValue, Rate, Server, ServerProtocol};
+use utils::config::{ipmask::IpAddrMask, DynValue, Rate, Server, ServerProtocol};
 
 use crate::{core::Lookup, inbound::milter};
 
@@ -192,12 +192,6 @@ pub const THROTTLE_MX: u16 = 1 << 6;
 pub const THROTTLE_REMOTE_IP: u16 = 1 << 7;
 pub const THROTTLE_LOCAL_IP: u16 = 1 << 8;
 pub const THROTTLE_HELO_DOMAIN: u16 = 1 << 9;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IpAddrMask {
-    V4 { addr: Ipv4Addr, mask: u32 },
-    V6 { addr: Ipv6Addr, mask: u128 },
-}
 
 pub struct Connect {
     pub script: IfBlock<Option<Arc<Sieve>>>,

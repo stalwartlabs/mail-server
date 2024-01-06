@@ -42,7 +42,7 @@ use tokio_rustls::{Accept, LazyConfigAcceptor, TlsAcceptor};
 
 use crate::{acme::resolver::IsTlsAlpnChallenge, config::tls::build_certified_key};
 
-use super::{TcpAcceptor, TcpAcceptorResult};
+use super::{SessionStream, TcpAcceptor, TcpAcceptorResult};
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
@@ -93,7 +93,7 @@ impl ResolvesServerCert for CertificateResolver {
 impl TcpAcceptor {
     pub async fn accept<IO>(&self, stream: IO) -> TcpAcceptorResult<IO>
     where
-        IO: AsyncRead + AsyncWrite + Unpin,
+        IO: SessionStream,
     {
         match self {
             TcpAcceptor::Tls(acceptor) => TcpAcceptorResult::Tls(acceptor.accept(stream)),

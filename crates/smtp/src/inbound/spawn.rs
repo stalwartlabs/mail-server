@@ -23,12 +23,8 @@
 
 use std::time::Instant;
 
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
 use tokio_rustls::server::TlsStream;
-use utils::listener::SessionManager;
+use utils::listener::{SessionManager, SessionStream};
 
 use crate::{
     core::{Session, SessionData, SessionParameters, SmtpSessionManager, State},
@@ -36,13 +32,14 @@ use crate::{
     scripts::ScriptResult,
 };
 
-use super::IsTls;
-
 impl SessionManager for SmtpSessionManager {
-    fn spawn(&self, session: utils::listener::SessionData<TcpStream>) {
+    fn handle<T: SessionStream>(
+        self,
+        session: utils::listener::SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
         // Create session
         let mut session = Session {
-            core: self.inner.clone(),
+            core: self.inner,
             instance: session.instance,
             state: State::default(),
             span: session.span,
@@ -52,65 +49,36 @@ impl SessionManager for SmtpSessionManager {
             params: SessionParameters::default(),
         };
 
-        tokio::spawn(async move {
-            // Enforce throttle
-            if session.is_allowed().await {
-                if session.instance.is_tls_implicit {
-                    if let Ok(mut session) = session.into_tls().await {
-                        if session.init_conn().await {
-                            session.handle_conn().await;
-                        }
-                    }
-                } else if session.init_conn().await {
+        // Enforce throttle
+        async {
+            if session.is_allowed().await
+                && session.init_conn().await
+                && session.handle_conn().await
+                && session.instance.acceptor.is_tls()
+            {
+                if let Ok(mut session) = session.into_tls().await {
                     session.handle_conn().await;
                 }
             }
-        });
+        }
     }
 
-    fn shutdown(&self) {
-        // We spawn to avoid using async_trait
-        let core = self.inner.clone();
-        tokio::spawn(async move {
-            let _ = core.queue.tx.send(queue::Event::Stop).await;
-            let _ = core.report.tx.send(reporting::Event::Stop).await;
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {
+            let _ = self.inner.queue.tx.send(queue::Event::Stop).await;
+            let _ = self.inner.report.tx.send(reporting::Event::Stop).await;
             #[cfg(feature = "local_delivery")]
-            let _ = core.delivery_tx.send(utils::ipc::DeliveryEvent::Stop).await;
-        });
-    }
-}
-
-impl Session<TcpStream> {
-    pub async fn into_tls(self) -> Result<Session<TlsStream<TcpStream>>, ()> {
-        let span = self.span;
-        Ok(Session {
-            stream: self.instance.tls_accept(self.stream, &span).await?,
-            state: self.state,
-            data: self.data,
-            instance: self.instance,
-            core: self.core,
-            in_flight: self.in_flight,
-            params: self.params,
-            span,
-        })
-    }
-
-    pub async fn handle_conn(mut self) {
-        if self.handle_conn_().await && self.instance.acceptor.is_tls() {
-            if let Ok(session) = self.into_tls().await {
-                session.handle_conn().await;
-            }
+            let _ = self
+                .inner
+                .delivery_tx
+                .send(utils::ipc::DeliveryEvent::Stop)
+                .await;
         }
     }
 }
 
-impl Session<TlsStream<TcpStream>> {
-    pub async fn handle_conn(mut self) {
-        self.handle_conn_().await;
-    }
-}
-
-impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn init_conn(&mut self) -> bool {
         self.eval_session_params().await;
 
@@ -138,7 +106,7 @@ impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
         true
     }
 
-    pub async fn handle_conn_(&mut self) -> bool {
+    pub async fn handle_conn(&mut self) -> bool {
         let mut buf = vec![0; 8192];
         let mut shutdown_rx = self.instance.shutdown_rx.clone();
 
@@ -228,5 +196,19 @@ impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
         }
 
         false
+    }
+
+    pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
+        let span = self.span;
+        Ok(Session {
+            stream: self.instance.tls_accept(self.stream, &span).await?,
+            state: self.state,
+            data: self.data,
+            instance: self.instance,
+            core: self.core,
+            in_flight: self.in_flight,
+            params: self.params,
+            span,
+        })
     }
 }

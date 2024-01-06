@@ -37,13 +37,13 @@ use store::{
     roaring::RoaringBitmap, write::key::DeserializeBigEndian, IndexKeyPrefix, IterateParams,
 };
 use store::{Deserialize, U32_LEN};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Mailbox, Session, SessionData};
 
 use super::ToModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_status(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_status(self.version) {
             Ok(arguments) => {
@@ -82,7 +82,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn status(
         &self,
         mailbox_name: String,

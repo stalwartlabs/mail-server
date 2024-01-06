@@ -35,11 +35,11 @@ use jmap_proto::{
     },
 };
 use store::{query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Account, Mailbox, Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
         let mut arguments = Vec::with_capacity(requests.len());
 
@@ -65,7 +65,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn create_folder(&self, arguments: Arguments) -> StatusResponse {
         // Refresh mailboxes
         if let Err(err) = self.synchronize_mailboxes(false).await {

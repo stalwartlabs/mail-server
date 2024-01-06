@@ -46,7 +46,7 @@ use jmap_client::{mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
 use store::ahash::AHashSet;
 
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::sync::mpsc;
 use utils::listener::SessionData;
 
 use crate::{
@@ -286,10 +286,13 @@ struct PushVerification {
 }
 
 impl utils::listener::SessionManager for SessionManager {
-    fn spawn(&self, session: SessionData<TcpStream>) {
-        let push = self.inner.clone();
-
-        tokio::spawn(async move {
+    #[allow(clippy::manual_async_fn)]
+    fn handle<T: utils::listener::SessionStream>(
+        self,
+        session: SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        async move {
+            let push = self.inner;
             let _ = http1::Builder::new()
                 .keep_alive(false)
                 .serve_connection(
@@ -346,10 +349,13 @@ impl utils::listener::SessionManager for SessionManager {
                     }),
                 )
                 .await;
-        });
+        }
     }
 
-    fn shutdown(&self) {}
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {}
+    }
 }
 
 async fn expect_push(event_rx: &mut mpsc::Receiver<PushMessage>) -> PushMessage {

@@ -39,13 +39,13 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
 
 use super::ToModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_expunge(
         &mut self,
         request: Request<Command>,
@@ -130,7 +130,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn expunge(
         &self,
         mailbox: Arc<SelectedMailbox>,

@@ -13,19 +13,18 @@ use jmap_proto::{
 };
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
-use tokio::io::AsyncRead;
-use utils::listener::limiter::InFlight;
+use utils::listener::{limiter::InFlight, SessionStream};
 
 use super::{Account, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
-impl SessionData {
-    pub async fn new<T: AsyncRead>(
+impl<T: SessionStream> SessionData<T> {
+    pub async fn new(
         session: &Session<T>,
         access_token: &AccessToken,
         in_flight: InFlight,
     ) -> crate::Result<Self> {
         let mut session = SessionData {
-            writer: session.writer.clone(),
+            stream_tx: session.stream_tx.clone(),
             jmap: session.jmap.clone(),
             imap: session.imap.clone(),
             account_id: access_token.primary_id(),

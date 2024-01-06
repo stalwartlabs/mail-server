@@ -25,8 +25,6 @@ use mail_auth::{
     arc::ArcSet, dkim::Signature, dmarc::Policy, ArcOutput, AuthenticatedMessage,
     AuthenticationResults, DkimResult, DmarcResult, IprevResult, SpfResult,
 };
-use tokio::net::TcpStream;
-use tokio_rustls::server::TlsStream;
 
 use crate::config::{ArcSealer, DkimSigner};
 
@@ -39,70 +37,6 @@ pub mod rcpt;
 pub mod session;
 pub mod spawn;
 pub mod vrfy;
-
-pub trait IsTls {
-    fn is_tls(&self) -> bool;
-    fn write_tls_header(&self, headers: &mut Vec<u8>);
-    fn tls_version_and_cipher(&self) -> (&'static str, &'static str);
-}
-
-impl IsTls for TcpStream {
-    fn is_tls(&self) -> bool {
-        false
-    }
-
-    fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
-
-    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
-        ("", "")
-    }
-}
-
-impl IsTls for TlsStream<TcpStream> {
-    fn is_tls(&self) -> bool {
-        true
-    }
-
-    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
-        let (_, conn) = self.get_ref();
-
-        (
-            match conn
-                .protocol_version()
-                .unwrap_or(rustls::ProtocolVersion::Unknown(0))
-            {
-                rustls::ProtocolVersion::SSLv2 => "SSLv2",
-                rustls::ProtocolVersion::SSLv3 => "SSLv3",
-                rustls::ProtocolVersion::TLSv1_0 => "TLSv1.0",
-                rustls::ProtocolVersion::TLSv1_1 => "TLSv1.1",
-                rustls::ProtocolVersion::TLSv1_2 => "TLSv1.2",
-                rustls::ProtocolVersion::TLSv1_3 => "TLSv1.3",
-                rustls::ProtocolVersion::DTLSv1_0 => "DTLSv1.0",
-                rustls::ProtocolVersion::DTLSv1_2 => "DTLSv1.2",
-                rustls::ProtocolVersion::DTLSv1_3 => "DTLSv1.3",
-                _ => "unknown",
-            },
-            match conn.negotiated_cipher_suite() {
-                Some(rustls::SupportedCipherSuite::Tls13(cs)) => {
-                    cs.common.suite.as_str().unwrap_or("unknown")
-                }
-                Some(rustls::SupportedCipherSuite::Tls12(cs)) => {
-                    cs.common.suite.as_str().unwrap_or("unknown")
-                }
-                None => "unknown",
-            },
-        )
-    }
-
-    fn write_tls_header(&self, headers: &mut Vec<u8>) {
-        let (version, cipher) = self.tls_version_and_cipher();
-        headers.extend_from_slice(b"(using ");
-        headers.extend_from_slice(version.as_bytes());
-        headers.extend_from_slice(b" with cipher ");
-        headers.extend_from_slice(cipher.as_bytes());
-        headers.extend_from_slice(b")\r\n\t");
-    }
-}
 
 impl ArcSealer {
     pub fn seal<'x>(

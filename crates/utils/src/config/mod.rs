@@ -23,6 +23,7 @@
 
 pub mod cron;
 pub mod dynvalue;
+pub mod ipmask;
 pub mod listener;
 pub mod parser;
 pub mod tls;
@@ -47,7 +48,7 @@ use crate::{
     UnwrapFailure,
 };
 
-use self::utils::ParseValue;
+use self::{ipmask::IpAddrMask, utils::ParseValue};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -62,6 +63,7 @@ pub struct Server {
     pub data: String,
     pub protocol: ServerProtocol,
     pub listeners: Vec<Listener>,
+    pub proxy_networks: Vec<IpAddrMask>,
     pub acceptor: TcpAcceptor,
     pub tls_implicit: bool,
     pub max_connections: u64,

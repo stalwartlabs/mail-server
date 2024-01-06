@@ -77,9 +77,7 @@ BODYSTRUCTURE (
             "boundary" "DC8------------DC8638F443D87A7F0726DEF7"
          ) NIL NIL NIL
       ) 0 "1522079b4114146b37ea1af171484a1a" (
-         "inline" (
-            
-         )
+         "inline" NIL
       ) NIL NIL
    ) "mixed" (
       "boundary" "D7F------------D7FD5A0B8AB9C65CCDBFA872"

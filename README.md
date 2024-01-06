@@ -77,6 +77,7 @@ Key features:
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
+  - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555).
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Access Control Lists (ACLs).
   - Rate limiting.

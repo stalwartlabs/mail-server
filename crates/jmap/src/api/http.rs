@@ -38,11 +38,8 @@ use jmap_proto::{
     response::Response,
     types::{blob::BlobId, id::Id},
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
-use utils::listener::{ServerInstance, SessionData, SessionManager, TcpAcceptorResult};
+
+use utils::listener::{ServerInstance, SessionData, SessionManager, SessionStream};
 
 use crate::{
     auth::{oauth::OAuthMetadata, AccessToken},
@@ -291,61 +288,22 @@ pub async fn parse_jmap_request(
 }
 
 impl SessionManager for JmapSessionManager {
-    fn spawn(&self, mut session: SessionData<TcpStream>) {
-        let jmap = self.inner.clone();
-
-        tokio::spawn(async move {
-            match session.instance.acceptor.accept(session.stream).await {
-                TcpAcceptorResult::Tls(accept) => {
-                    let span = session.span;
-                    match accept.await {
-                        Ok(stream) => {
-                            handle_request(
-                                jmap,
-                                SessionData {
-                                    stream,
-                                    local_ip: session.local_ip,
-                                    remote_ip: session.remote_ip,
-                                    remote_port: session.remote_port,
-                                    span,
-                                    in_flight: session.in_flight,
-                                    instance: session.instance,
-                                },
-                            )
-                            .await;
-                        }
-                        Err(err) => {
-                            tracing::debug!(
-                                parent: &span,
-                                context = "tls",
-                                event = "error",
-                                "Failed to accept TLS connection: {}",
-                                err
-                            );
-                        }
-                    }
-                }
-                TcpAcceptorResult::Plain(stream) => {
-                    session.stream = stream;
-                    handle_request(jmap, session).await;
-                }
-                TcpAcceptorResult::Close => (),
-            }
-        });
+    fn handle<T: utils::listener::SessionStream>(
+        self,
+        session: SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        handle_request(self.inner, session)
     }
 
-    fn shutdown(&self) {
-        let jmap = self.inner.clone();
-        tokio::spawn(async move {
-            let _ = jmap.state_tx.send(state::Event::Stop).await;
-        });
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {
+            let _ = self.inner.state_tx.send(state::Event::Stop).await;
+        }
     }
 }
 
-async fn handle_request<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
-    jmap: Arc<JMAP>,
-    session: SessionData<T>,
-) {
+async fn handle_request<T: SessionStream>(jmap: Arc<JMAP>, session: SessionData<T>) {
     let span = session.span;
     let _in_flight = session.in_flight;
 

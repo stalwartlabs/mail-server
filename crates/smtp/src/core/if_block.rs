@@ -21,13 +21,12 @@
  * for more details.
 */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use utils::config::{DynValue, KeyLookup};
 
 use crate::config::{
-    Condition, ConditionMatch, Conditions, EnvelopeKey, IfBlock, IpAddrMask, MaybeDynValue,
-    StringMatch,
+    Condition, ConditionMatch, Conditions, EnvelopeKey, IfBlock, MaybeDynValue, StringMatch,
 };
 
 pub struct Captures<'x, T> {
@@ -194,57 +193,6 @@ impl Conditions {
             Some(last_capture)
         } else {
             None
-        }
-    }
-}
-
-impl IpAddrMask {
-    pub fn matches(&self, remote: &IpAddr) -> bool {
-        match self {
-            IpAddrMask::V4 { addr, mask } => match *mask {
-                u32::MAX => match remote {
-                    IpAddr::V4(remote) => addr == remote,
-                    IpAddr::V6(remote) => {
-                        if let Some(remote) = remote.to_ipv4_mapped() {
-                            addr == &remote
-                        } else {
-                            false
-                        }
-                    }
-                },
-                0 => {
-                    matches!(remote, IpAddr::V4(_))
-                }
-                _ => {
-                    u32::from_be_bytes(match remote {
-                        IpAddr::V4(ip) => ip.octets(),
-                        IpAddr::V6(ip) => {
-                            if let Some(ip) = ip.to_ipv4() {
-                                ip.octets()
-                            } else {
-                                return false;
-                            }
-                        }
-                    }) & mask
-                        == u32::from_be_bytes(addr.octets()) & mask
-                }
-            },
-            IpAddrMask::V6 { addr, mask } => match *mask {
-                u128::MAX => match remote {
-                    IpAddr::V6(remote) => remote == addr,
-                    IpAddr::V4(remote) => &remote.to_ipv6_mapped() == addr,
-                },
-                0 => {
-                    matches!(remote, IpAddr::V6(_))
-                }
-                _ => {
-                    u128::from_be_bytes(match remote {
-                        IpAddr::V6(ip) => ip.octets(),
-                        IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
-                    }) & mask
-                        == u128::from_be_bytes(addr.octets()) & mask
-                }
-            },
         }
     }
 }

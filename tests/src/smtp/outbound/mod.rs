@@ -56,6 +56,7 @@ tls.implicit = true
 [server.listener.management-debug]
 bind = ['127.0.0.1:9980']
 protocol = 'http'
+tls.implicit = true
 
 [server.socket]
 reuse-addr = true

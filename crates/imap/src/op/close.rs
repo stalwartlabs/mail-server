@@ -23,11 +23,11 @@
 
 use imap_proto::{receiver::Request, Command, StatusResponse};
 
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, State};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_close(&mut self, request: Request<Command>) -> crate::OpResult {
         let (data, mailbox) = self.state.select_data();
         if mailbox.is_select {

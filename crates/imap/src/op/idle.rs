@@ -37,12 +37,13 @@ use imap_proto::{
 
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::query::log::Query;
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::AsyncReadExt;
+use utils::listener::SessionStream;
 use utils::map::bitmap::Bitmap;
 
 use crate::core::{SelectedMailbox, Session, SessionData, State};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> crate::OpResult {
         let (data, mailbox, types) = match &self.state {
             State::Authenticated { data, .. } => {
@@ -140,7 +141,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn write_changes(
         &self,
         mailbox: &Option<Arc<SelectedMailbox>>,

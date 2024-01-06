@@ -146,7 +146,7 @@ impl Config {
                         "send-buffer-size" => socket.set_send_buffer_size(value.parse_key(key)?),
                         "recv-buffer-size" => socket.set_recv_buffer_size(value.parse_key(key)?),
                         "tos" => socket.set_tos(value.parse_key(key)?),
-                        _ => unreachable!(),
+                        _ => continue,
                     }
                     .map_err(|err| {
                         format!("Failed to set socket option '{option}' for listener '{id}': {err}")
@@ -328,6 +328,15 @@ impl Config {
 
         let protocol = self.property_require(("server.listener", id, "protocol"))?;
 
+        // Parse proxy networks
+        let mut proxy_networks = Vec::new();
+        for (key, protocol) in self.values_or_default(
+            ("server.listener", id, "proxy-trusted-networks"),
+            "server.proxy-trusted-networks",
+        ) {
+            proxy_networks.push(protocol.parse_key(key)?);
+        }
+
         Ok(Server {
             id: id.to_string(),
             internal_id: 0,
@@ -364,6 +373,7 @@ impl Config {
             listeners,
             acceptor,
             tls_implicit,
+            proxy_networks,
         })
     }
 }

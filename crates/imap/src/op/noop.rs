@@ -23,11 +23,11 @@
 
 use imap_proto::{receiver::Request, Command, StatusResponse};
 
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, State};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_noop(&mut self, request: Request<Command>) -> crate::OpResult {
         match &self.state {
             State::Authenticated { data, .. } => {

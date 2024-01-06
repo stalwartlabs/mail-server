@@ -49,13 +49,16 @@ use jmap_proto::{
 };
 use mail_parser::{HeaderName, HeaderValue};
 use smtp::{
-    core::{management::QueueRequest, NullIo, Session, SessionData, State},
+    core::{management::QueueRequest, Session, SessionData, State},
     queue,
 };
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder};
 use tokio::sync::oneshot;
-use utils::{listener::ServerInstance, map::vec_map::VecMap};
+use utils::{
+    listener::{stream::NullIo, ServerInstance},
+    map::vec_map::VecMap,
+};
 
 use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, Bincode, JMAP};
 

@@ -50,13 +50,13 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, BatchBuilder, F_BITMAP, F_VALUE},
 };
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{SelectedMailbox, Session, SessionData};
 
 use super::FromModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_fetch(
         &mut self,
         request: Request<Command>,
@@ -99,7 +99,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn fetch(
         &self,
         mut arguments: Arguments,

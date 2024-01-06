@@ -23,7 +23,19 @@ BODY (
       ) NIL NIL "7bit" 140 5
    )(
       "message" "rfc822" NIL NIL NIL NIL 223 (
-         NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
+         NIL "(subject in US-ASCII)" (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) NIL NIL NIL NIL NIL
       ) (
          "text" "plain" (
             "charset" "ISO-8859-1"
@@ -59,7 +71,19 @@ BODYSTRUCTURE (
       ) NIL NIL "7bit" 140 5 "4a5cd280a875e791bd6d767dcf60c43d" NIL NIL NIL
    )(
       "message" "rfc822" NIL NIL NIL NIL 223 (
-         NIL "(subject in US-ASCII)" NIL NIL NIL NIL NIL NIL NIL NIL
+         NIL "(subject in US-ASCII)" (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) (
+            (
+               NIL NIL "unknown" "localhost"
+            )
+         ) NIL NIL NIL NIL NIL
       ) (
          "text" "plain" (
             "charset" "ISO-8859-1"

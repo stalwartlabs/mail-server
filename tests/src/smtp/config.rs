@@ -38,7 +38,9 @@ use store::{
 use tokio::net::TcpSocket;
 
 use utils::{
-    config::{Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol},
+    config::{
+        ipmask::IpAddrMask, Config, DynValue, KeyLookup, Listener, Rate, Server, ServerProtocol,
+    },
     listener::TcpAcceptor,
 };
 
@@ -47,8 +49,8 @@ use ahash::AHashMap;
 use smtp::{
     config::{
         condition::ConfigCondition, if_block::ConfigIf, throttle::ConfigThrottle, Condition,
-        ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, IpAddrMask,
-        StringMatch, Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
+        ConditionMatch, Conditions, ConfigContext, EnvelopeKey, IfBlock, IfThen, StringMatch,
+        Throttle, THROTTLE_AUTH_AS, THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
     },
     core::Lookup,
 };
@@ -455,6 +457,7 @@ fn parse_servers() {
             acceptor: TcpAcceptor::Plain,
             tls_implicit: false,
             max_connections: 8192,
+            proxy_networks: vec![],
         },
         Server {
             id: "smtps".to_string(),
@@ -483,6 +486,7 @@ fn parse_servers() {
             acceptor: TcpAcceptor::Plain,
             tls_implicit: true,
             max_connections: 1024,
+            proxy_networks: vec![],
         },
         Server {
             id: "submission".to_string(),
@@ -501,6 +505,7 @@ fn parse_servers() {
             acceptor: TcpAcceptor::Plain,
             tls_implicit: true,
             max_connections: 8192,
+            proxy_networks: vec![],
         },
     ];
 

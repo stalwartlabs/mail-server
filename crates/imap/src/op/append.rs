@@ -32,13 +32,13 @@ use imap_proto::{
 use jmap::email::ingest::IngestEmail;
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
 
 use super::ToModSeq;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_append(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_append(self.version) {
             Ok(arguments) => {
@@ -87,7 +87,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     async fn append_messages(
         &self,
         arguments: Arguments,

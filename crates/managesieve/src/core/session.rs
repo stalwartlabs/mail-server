@@ -23,61 +23,56 @@
 
 use imap_proto::receiver::{self, Receiver};
 use jmap::auth::rate_limit::RemoteAddress;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
 use tokio_rustls::server::TlsStream;
-use utils::listener::SessionManager;
+use utils::listener::{SessionManager, SessionStream};
 
 use crate::SERVER_GREETING;
 
-use super::{IsTls, ManageSieveSessionManager, Session, State};
+use super::{ManageSieveSessionManager, Session, State};
 
 impl SessionManager for ManageSieveSessionManager {
-    fn spawn(&self, session: utils::listener::SessionData<TcpStream>) {
-        // Create session
-        let mut session = Session {
-            jmap: self.jmap.clone(),
-            imap: self.imap.clone(),
-            instance: session.instance,
-            state: State::NotAuthenticated { auth_failures: 0 },
-            span: session.span,
-            stream: session.stream,
-            in_flight: session.in_flight,
-            remote_addr: RemoteAddress::IpAddress(session.remote_ip),
-            receiver: Receiver::with_max_request_size(self.imap.max_request_size)
-                .with_start_state(receiver::State::Command { is_uid: false }),
-        };
+    #[allow(clippy::manual_async_fn)]
+    fn handle<T: SessionStream>(
+        self,
+        session: utils::listener::SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        async move {
+            // Create session
+            let mut session = Session {
+                receiver: Receiver::with_max_request_size(self.imap.max_request_size)
+                    .with_start_state(receiver::State::Command { is_uid: false }),
+                jmap: self.jmap,
+                imap: self.imap,
+                instance: session.instance,
+                state: State::NotAuthenticated { auth_failures: 0 },
+                span: session.span,
+                stream: session.stream,
+                in_flight: session.in_flight,
+                remote_addr: RemoteAddress::IpAddress(session.remote_ip),
+            };
 
-        tokio::spawn(async move {
-            if session.instance.is_tls_implicit {
-                if let Ok(mut session) = session.into_tls().await {
-                    if session
-                        .write(&session.handle_capability(SERVER_GREETING).await.unwrap())
-                        .await
-                        .is_ok()
-                    {
-                        session.handle_conn().await;
-                    }
-                }
-            } else if session
+            if session
                 .write(&session.handle_capability(SERVER_GREETING).await.unwrap())
                 .await
                 .is_ok()
+                && session.handle_conn().await
+                && session.instance.acceptor.is_tls()
             {
-                session.handle_conn().await;
+                if let Ok(mut session) = session.into_tls().await {
+                    session.handle_conn().await;
+                }
             }
-        });
+        }
     }
 
-    fn shutdown(&self) {
-        // No-op
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {}
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
-    pub async fn handle_conn_(&mut self) -> bool {
+impl<T: SessionStream> Session<T> {
+    pub async fn handle_conn(&mut self) -> bool {
         let mut buf = vec![0; 8192];
         let mut shutdown_rx = self.instance.shutdown_rx.clone();
 
@@ -145,10 +140,8 @@ impl<T: AsyncRead + AsyncWrite + IsTls + Unpin> Session<T> {
 
         false
     }
-}
 
-impl Session<TcpStream> {
-    pub async fn into_tls(self) -> Result<Session<TlsStream<TcpStream>>, ()> {
+    pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
         let span = self.span;
         Ok(Session {
             stream: self.instance.tls_accept(self.stream, &span).await?,
@@ -161,19 +154,5 @@ impl Session<TcpStream> {
             receiver: self.receiver,
             remote_addr: self.remote_addr,
         })
-    }
-
-    pub async fn handle_conn(mut self) {
-        if self.handle_conn_().await && self.instance.acceptor.is_tls() {
-            if let Ok(session) = self.into_tls().await {
-                session.handle_conn().await;
-            }
-        }
-    }
-}
-
-impl Session<TlsStream<TcpStream>> {
-    pub async fn handle_conn(mut self) {
-        self.handle_conn_().await;
     }
 }

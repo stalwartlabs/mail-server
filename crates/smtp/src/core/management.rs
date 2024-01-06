@@ -36,12 +36,9 @@ use hyper_util::rt::TokioIo;
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::oneshot,
-};
+use tokio::sync::oneshot;
 
-use utils::listener::{limiter::InFlight, SessionManager, TcpAcceptorResult};
+use utils::listener::{limiter::InFlight, SessionData, SessionManager, SessionStream};
 
 use crate::{
     queue::{self, instant_to_timestamp, InstantFromTimestamp, QueueId, Status},
@@ -157,39 +154,26 @@ pub struct Report {
 }
 
 impl SessionManager for SmtpAdminSessionManager {
-    fn spawn(&self, session: utils::listener::SessionData<tokio::net::TcpStream>) {
-        let core = self.inner.clone();
-        tokio::spawn(async move {
-            match session.instance.acceptor.accept(session.stream).await {
-                TcpAcceptorResult::Tls(accept) => match accept.await {
-                    Ok(stream) => {
-                        handle_request(stream, core, session.remote_ip, session.in_flight).await;
-                    }
-                    Err(err) => {
-                        tracing::debug!(
-                            context = "tls",
-                            event = "error",
-                            remote.ip = session.remote_ip.to_string(),
-                            "Failed to accept TLS management connection: {}",
-                            err
-                        );
-                    }
-                },
-                TcpAcceptorResult::Plain(stream) => {
-                    handle_request(stream, core, session.remote_ip, session.in_flight).await;
-                }
-                TcpAcceptorResult::Close => (),
-            }
-        });
+    fn handle<T: SessionStream>(
+        self,
+        session: SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        handle_request(
+            session.stream,
+            self.inner,
+            session.remote_ip,
+            session.in_flight,
+        )
     }
 
-    fn shutdown(&self) {
-        // No-op
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {}
     }
 }
 
 async fn handle_request(
-    stream: impl AsyncRead + AsyncWrite + Unpin + 'static,
+    stream: impl SessionStream,
     core: Arc<SMTP>,
     remote_addr: IpAddr,
     _in_flight: InFlight,

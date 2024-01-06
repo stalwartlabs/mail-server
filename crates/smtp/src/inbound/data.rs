@@ -38,10 +38,8 @@ use sieve::runtime::Variable;
 use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    process::Command,
-};
+use tokio::{io::AsyncWriteExt, process::Command};
+use utils::listener::SessionStream;
 
 use crate::{
     core::{Session, SessionAddress, State},
@@ -50,9 +48,9 @@ use crate::{
     scripts::{ScriptModification, ScriptResult},
 };
 
-use super::{AuthResult, IsTls};
+use super::AuthResult;
 
-impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn queue_message(&mut self) -> Cow<'static, [u8]> {
         // Authenticate message
         let raw_message = Arc::new(std::mem::take(&mut self.data.message));
@@ -759,7 +757,14 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
         headers.extend_from_slice(b" [");
         headers.extend_from_slice(self.data.remote_ip.to_string().as_bytes());
         headers.extend_from_slice(b"])\r\n\t");
-        self.stream.write_tls_header(headers);
+        if self.stream.is_tls() {
+            let (version, cipher) = self.stream.tls_version_and_cipher();
+            headers.extend_from_slice(b"(using ");
+            headers.extend_from_slice(version.as_bytes());
+            headers.extend_from_slice(b" with cipher ");
+            headers.extend_from_slice(cipher.as_bytes());
+            headers.extend_from_slice(b")\r\n\t");
+        }
         headers.extend_from_slice(b"by ");
         headers.extend_from_slice(self.instance.hostname.as_bytes());
         headers.extend_from_slice(b" (Stalwart SMTP) with ");

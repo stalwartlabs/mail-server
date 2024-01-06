@@ -49,7 +49,7 @@ use tokio_rustls::TlsConnector;
 use tracing::Span;
 use utils::{
     ipc::DeliveryEvent,
-    listener::{limiter::InFlight, ServerInstance, TcpAcceptor},
+    listener::{limiter::InFlight, stream::NullIo, ServerInstance, TcpAcceptor},
 };
 
 use crate::{
@@ -418,62 +418,6 @@ impl PartialOrd for SessionAddress {
 }
 
 #[cfg(feature = "local_delivery")]
-#[derive(Default)]
-pub struct NullIo {
-    pub tx_buf: Vec<u8>,
-}
-
-#[cfg(feature = "local_delivery")]
-impl AsyncWrite for NullIo {
-    fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        self.tx_buf.extend_from_slice(buf);
-        std::task::Poll::Ready(Ok(buf.len()))
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-}
-
-#[cfg(feature = "local_delivery")]
-impl AsyncRead for NullIo {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        _buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        unreachable!()
-    }
-}
-
-#[cfg(feature = "local_delivery")]
-impl crate::inbound::IsTls for NullIo {
-    fn is_tls(&self) -> bool {
-        true
-    }
-
-    fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
-
-    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
-        ("", "")
-    }
-}
-
-#[cfg(feature = "local_delivery")]
 lazy_static::lazy_static! {
 static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance {
     id: "sieve".to_string(),
@@ -482,9 +426,9 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance
     hostname: "localhost".to_string(),
     data: "localhost".to_string(),
     acceptor: TcpAcceptor::Plain,
-    is_tls_implicit: true,
     limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
+    proxy_networks: vec![]
 });
 }
 

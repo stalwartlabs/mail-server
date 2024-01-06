@@ -35,11 +35,11 @@ use imap_proto::{
 
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{write::ValueClass, ValueKey};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{SelectedMailbox, Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_thread(
         &mut self,
         request: Request<Command>,
@@ -67,7 +67,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn thread(
         &self,
         arguments: Arguments,

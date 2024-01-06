@@ -25,7 +25,7 @@ use std::time::SystemTime;
 
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
 use smtp_proto::{MailFrom, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
-use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
 use crate::{
     core::{Session, SessionAddress},
@@ -33,9 +33,7 @@ use crate::{
     scripts::{ScriptModification, ScriptResult},
 };
 
-use super::IsTls;
-
-impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_mail_from(&mut self, from: MailFrom<String>) -> Result<(), ()> {
         if self.data.helo_domain.is_empty()
             && (self.params.ehlo_require

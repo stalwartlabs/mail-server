@@ -26,19 +26,14 @@ use std::{sync::Arc, time::SystemTime};
 use mail_auth::common::resolver::ToReverseName;
 use sieve::{runtime::Variable, Envelope, Sieve};
 use smtp_proto::*;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    runtime::Handle,
-};
+use tokio::runtime::Handle;
+use utils::listener::SessionStream;
 
-use crate::{
-    core::Session,
-    inbound::{AuthResult, IsTls},
-};
+use crate::{core::Session, inbound::AuthResult};
 
 use super::{ScriptParameters, ScriptResult};
 
-impl<T: AsyncWrite + AsyncRead + Unpin + IsTls> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters {
         let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         let mut params = ScriptParameters::new()

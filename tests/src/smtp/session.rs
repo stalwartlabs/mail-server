@@ -21,20 +21,19 @@
  * for more details.
 */
 
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
+use rustls::{server::ResolvesServerCert, ServerConfig};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::watch,
 };
 
-use smtp::{
-    core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP},
-    inbound::IsTls,
-};
+use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
+use tokio_rustls::TlsAcceptor;
 use utils::{
     config::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, ServerInstance, TcpAcceptor},
+    listener::{limiter::ConcurrencyLimiter, ServerInstance, SessionStream, TcpAcceptor},
 };
 
 use super::TestConfig;
@@ -86,15 +85,13 @@ impl AsyncWrite for DummyIo {
     }
 }
 
-impl IsTls for DummyIo {
+impl SessionStream for DummyIo {
     fn is_tls(&self) -> bool {
         self.tls
     }
 
-    fn write_tls_header(&self, _headers: &mut Vec<u8>) {}
-
-    fn tls_version_and_cipher(&self) -> (&'static str, &'static str) {
-        ("", "")
+    fn tls_version_and_cipher(&self) -> (Cow<'static, str>, Cow<'static, str>) {
+        ("".into(), "".into())
     }
 }
 
@@ -368,11 +365,24 @@ impl TestServerInstance for ServerInstance {
             hostname: "mx.example.org".to_string(),
             protocol: ServerProtocol::Smtp,
             data: "220 mx.example.org at your service.\r\n".to_string(),
-            acceptor: TcpAcceptor::Plain,
-            is_tls_implicit: false,
+            acceptor: TcpAcceptor::Tls(TlsAcceptor::from(Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_cert_resolver(Arc::new(DummyCertResolver)),
+            ))),
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
+            proxy_networks: vec![],
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct DummyCertResolver;
+
+impl ResolvesServerCert for DummyCertResolver {
+    fn resolve(&self, _: rustls::server::ClientHello) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        None
     }
 }
 

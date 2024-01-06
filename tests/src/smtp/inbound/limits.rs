@@ -65,7 +65,7 @@ async fn limits() {
     // Exceed transfer quota
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
-    session.handle_conn_().await;
+    session.handle_conn().await;
     session.response().assert_code("451 4.7.28");
 
     // Loitering
@@ -74,7 +74,7 @@ async fn limits() {
     session.eval_session_params().await;
     tokio::time::sleep(Duration::from_millis(600)).await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
-    session.handle_conn_().await;
+    session.handle_conn().await;
     session.response().assert_code("453 4.3.2");
 
     // Timeout
@@ -82,6 +82,6 @@ async fn limits() {
     session.data.valid_until = Instant::now();
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
-    session.handle_conn_().await;
+    session.handle_conn().await;
     session.response().assert_code("221 2.0.0");
 }

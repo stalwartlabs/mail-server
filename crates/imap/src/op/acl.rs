@@ -49,12 +49,11 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
-use tokio::io::AsyncRead;
-use utils::map::bitmap::Bitmap;
+use utils::{listener::SessionStream, map::bitmap::Bitmap};
 
 use crate::core::{MailboxId, Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_get_acl(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_acl(self.version) {
             Ok(arguments) => {
@@ -447,7 +446,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     async fn get_acl_mailbox(
         &self,
         arguments: &Arguments,

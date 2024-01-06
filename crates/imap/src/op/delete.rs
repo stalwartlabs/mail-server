@@ -24,11 +24,11 @@
 use imap_proto::{protocol::delete::Arguments, receiver::Request, Command, StatusResponse};
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
         let mut arguments = Vec::with_capacity(requests.len());
 
@@ -54,7 +54,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn delete_folder(&self, arguments: Arguments) -> StatusResponse {
         // Refresh mailboxes
         if let Err(err) = self.synchronize_mailboxes(false).await {

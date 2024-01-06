@@ -21,8 +21,13 @@
  * for more details.
 */
 
-use std::{net::IpAddr, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
+use proxy_header::io::ProxiedStream;
 use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -39,7 +44,9 @@ use crate::{
     UnwrapFailure,
 };
 
-use super::{limiter::ConcurrencyLimiter, ServerInstance, SessionManager, TcpAcceptorResult};
+use super::{
+    limiter::ConcurrencyLimiter, ServerInstance, SessionManager, SessionStream, TcpAcceptorResult,
+};
 
 impl Server {
     pub fn spawn(self, manager: impl SessionManager, shutdown_rx: watch::Receiver<bool>) {
@@ -55,10 +62,12 @@ impl Server {
             protocol: self.protocol,
             hostname: self.hostname,
             acceptor: self.acceptor,
-            is_tls_implicit: self.tls_implicit,
+            proxy_networks: self.proxy_networks,
             limiter: ConcurrencyLimiter::new(self.max_connections),
             shutdown_rx,
         });
+        let is_tls = self.tls_implicit;
+        let has_proxies = !instance.proxy_networks.is_empty();
 
         // Spawn listeners
         for listener in self.listeners {
@@ -67,15 +76,17 @@ impl Server {
                 protocol = ?instance.protocol,
                 bind.ip = listener.addr.ip().to_string(),
                 bind.port = listener.addr.port(),
-                tls = instance.is_tls_implicit,
+                tls = is_tls,
                 "Starting listener"
             );
             let local_ip = listener.addr.ip();
 
             // Obtain TCP options
-            let nodelay = listener.nodelay;
-            let ttl = listener.ttl;
-            let linger = listener.linger;
+            let opts = SocketOpts {
+                nodelay: listener.nodelay,
+                ttl: listener.ttl,
+                linger: listener.linger,
+            };
 
             // Bind socket
             let listener = listener.listen();
@@ -90,79 +101,42 @@ impl Server {
                         stream = listener.accept() => {
                             match stream {
                                 Ok((stream, remote_addr)) => {
-                                    // Convert mapped IPv6 addresses to IPv4
-                                    let remote_ip = match remote_addr.ip() {
-                                        IpAddr::V6(ip) => {
-                                            ip.to_ipv4_mapped()
-                                            .map(IpAddr::V4)
-                                            .unwrap_or(IpAddr::V6(ip))
-                                        }
-                                        remote_ip => remote_ip,
-                                    };
-                                    let remote_port = remote_addr.port();
+                                    if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
+                                        let instance = instance.clone();
+                                        let manager = manager.clone();
 
-                                    // Enforce concurrency
-                                    if let Some(in_flight) = instance.limiter.is_allowed() {
-                                        let span = tracing::info_span!(
-                                            "session",
-                                            instance = instance.id,
-                                            protocol = ?instance.protocol,
-                                            remote.ip = remote_ip.to_string(),
-                                            remote.port = remote_port,
-                                        );
+                                        // Set socket options
+                                        opts.apply(&stream);
 
-                                        // Set TCP options
-                                        if let Err(err) = stream.set_nodelay(nodelay) {
-                                            tracing::warn!(
-                                                context = "tcp",
-                                                event = "error",
-                                                instance = instance.id,
-                                                protocol = ?instance.protocol,
-                                                "Failed to set no-delay: {}", err);
-                                        }
-                                        if let Some(ttl) = ttl {
-                                            if let Err(err) = stream.set_ttl(ttl) {
-                                                tracing::warn!(
-                                                    context = "tcp",
-                                                    event = "error",
-                                                    instance = instance.id,
-                                                    protocol = ?instance.protocol,
-                                                    "Failed to set TTL: {}", err);
+                                        tokio::spawn(async move {
+                                            match ProxiedStream::create_from_tokio(stream, Default::default()).await {
+                                                Ok(stream) =>{
+                                                    let remote_addr = stream.proxy_header()
+                                                                            .proxied_address()
+                                                                            .map(|addr| addr.source)
+                                                                            .unwrap_or(remote_addr);
+                                                    if let Some(session) = instance.build_session(stream, local_ip, remote_addr) {
+                                                        // Spawn session
+                                                        manager.spawn(session, is_tls);
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    tracing::trace!(context = "io",
+                                                                    event = "error",
+                                                                    instance = instance.id,
+                                                                    protocol = ?instance.protocol,
+                                                                    reason = %err,
+                                                                    "Failed to accept proxied TCP connection");
+                                                }
                                             }
-                                        }
-                                        if linger.is_some() {
-                                            if let Err(err) = stream.set_linger(linger) {
-                                                tracing::warn!(
-                                                    context = "tcp",
-                                                    event = "error",
-                                                    instance = instance.id,
-                                                    protocol = ?instance.protocol,
-                                                    "Failed to set linger: {}", err);
-                                            }
-                                        }
-
-                                        // Spawn connection
-                                        manager.spawn(SessionData {
-                                            stream,
-                                            local_ip,
-                                            remote_ip,
-                                            remote_port,
-                                            span,
-                                            in_flight,
-                                            instance: instance.clone(),
                                         });
-                                    } else {
-                                        tracing::info!(
-                                            context = "throttle",
-                                            event = "too-many-requests",
-                                            instance = instance.id,
-                                            protocol = ?instance.protocol,
-                                            remote.ip = remote_ip.to_string(),
-                                            remote.port = remote_port,
-                                            max_concurrent = instance.limiter.max_concurrent,
-                                            "Too many concurrent connections."
-                                        );
-                                    };
+                                    } else if let Some(session) = instance.build_session(stream, local_ip, remote_addr) {
+                                        // Set socket options
+                                        opts.apply(&session.stream);
+
+                                        // Spawn session
+                                        manager.spawn(session, is_tls);
+                                    }
                                 }
                                 Err(err) => {
                                     tracing::trace!(context = "io",
@@ -185,6 +159,106 @@ impl Server {
                     };
                 }
             });
+        }
+    }
+}
+
+trait BuildSession {
+    fn build_session<T: SessionStream>(
+        &self,
+        stream: T,
+        local_ip: IpAddr,
+        remote_addr: SocketAddr,
+    ) -> Option<SessionData<T>>;
+}
+
+impl BuildSession for Arc<ServerInstance> {
+    fn build_session<T: SessionStream>(
+        &self,
+        stream: T,
+        local_ip: IpAddr,
+        remote_addr: SocketAddr,
+    ) -> Option<SessionData<T>> {
+        // Convert mapped IPv6 addresses to IPv4
+        let remote_ip = match remote_addr.ip() {
+            IpAddr::V6(ip) => ip
+                .to_ipv4_mapped()
+                .map(IpAddr::V4)
+                .unwrap_or(IpAddr::V6(ip)),
+            remote_ip => remote_ip,
+        };
+        let remote_port = remote_addr.port();
+
+        // Enforce concurrency
+        if let Some(in_flight) = self.limiter.is_allowed() {
+            SessionData {
+                stream,
+                in_flight,
+                span: tracing::info_span!(
+                    "session",
+                    instance = self.id,
+                    protocol = ?self.protocol,
+                    remote.ip = remote_ip.to_string(),
+                    remote.port = remote_port,
+                ),
+                local_ip,
+                remote_ip,
+                remote_port,
+                instance: self.clone(),
+            }
+            .into()
+        } else {
+            tracing::info!(
+                context = "throttle",
+                event = "too-many-requests",
+                instance = self.id,
+                protocol = ?self.protocol,
+                remote.ip = remote_ip.to_string(),
+                remote.port = remote_port,
+                max_concurrent = self.limiter.max_concurrent,
+                "Too many concurrent connections."
+            );
+            None
+        }
+    }
+}
+
+pub struct SocketOpts {
+    pub nodelay: bool,
+    pub ttl: Option<u32>,
+    pub linger: Option<Duration>,
+}
+
+impl SocketOpts {
+    pub fn apply(&self, stream: &TcpStream) {
+        // Set TCP options
+        if let Err(err) = stream.set_nodelay(self.nodelay) {
+            tracing::warn!(
+                context = "tcp",
+                event = "error",
+                "Failed to set no-delay: {}",
+                err
+            );
+        }
+        if let Some(ttl) = self.ttl {
+            if let Err(err) = stream.set_ttl(ttl) {
+                tracing::warn!(
+                    context = "tcp",
+                    event = "error",
+                    "Failed to set TTL: {}",
+                    err
+                );
+            }
+        }
+        if self.linger.is_some() {
+            if let Err(err) = stream.set_linger(self.linger) {
+                tracing::warn!(
+                    context = "tcp",
+                    event = "error",
+                    "Failed to set linger: {}",
+                    err
+                );
+            }
         }
     }
 }
@@ -242,11 +316,11 @@ impl Listener {
 }
 
 impl ServerInstance {
-    pub async fn tls_accept(
+    pub async fn tls_accept<T: SessionStream>(
         &self,
-        stream: TcpStream,
+        stream: T,
         span: &Span,
-    ) -> Result<TlsStream<TcpStream>, ()> {
+    ) -> Result<TlsStream<T>, ()> {
         match self.acceptor.accept(stream).await {
             TcpAcceptorResult::Tls(accept) => match accept.await {
                 Ok(stream) => {

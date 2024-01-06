@@ -24,11 +24,11 @@
 use imap_proto::{receiver::Request, Command};
 
 use mail_send::Credentials;
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::Session;
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_login(&mut self, request: Request<Command>) -> crate::OpResult {
         match request.parse_login() {
             Ok(args) => {

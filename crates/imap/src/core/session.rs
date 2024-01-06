@@ -21,40 +21,41 @@
  * for more details.
 */
 
+use std::{borrow::Cow, sync::Arc};
+
 use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
 use jmap::auth::rate_limit::RemoteAddress;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    sync::oneshot,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
-use utils::listener::{SessionData, SessionManager};
+use utils::listener::{stream::NullIo, SessionManager, SessionStream};
 
-use super::{writer, ImapSessionManager, Session, State};
+use super::{ImapSessionManager, Session, State};
 
 impl SessionManager for ImapSessionManager {
-    fn spawn(&self, session: SessionData<TcpStream>) {
-        let manager = self.clone();
-
-        tokio::spawn(async move {
-            if session.instance.is_tls_implicit {
-                if let Ok(session) = Session::<TlsStream<TcpStream>>::new(session, manager).await {
-                    session.handle_conn().await;
+    #[allow(clippy::manual_async_fn)]
+    fn handle<T: utils::listener::SessionStream>(
+        self,
+        session: utils::listener::SessionData<T>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        async move {
+            if let Ok(mut session) = Session::new(session, self).await {
+                if session.handle_conn().await && session.instance.acceptor.is_tls() {
+                    if let Ok(mut session) = session.into_tls().await {
+                        session.handle_conn().await;
+                    }
                 }
-            } else if let Ok(session) = Session::<TcpStream>::new(session, manager).await {
-                session.handle_conn().await;
             }
-        });
+        }
     }
 
-    fn shutdown(&self) {
-        // No-op
+    #[allow(clippy::manual_async_fn)]
+    fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
+        async {}
     }
 }
 
-impl<T: AsyncRead> Session<T> {
-    pub async fn handle_conn_(&mut self) -> bool {
+impl<T: SessionStream> Session<T> {
+    pub async fn handle_conn(&mut self) -> bool {
         let mut buf = vec![0; 8192];
         let mut shutdown_rx = self.instance.shutdown_rx.clone();
 
@@ -106,15 +107,18 @@ impl<T: AsyncRead> Session<T> {
 
         false
     }
-}
 
-impl Session<TcpStream> {
     pub async fn new(
-        mut session: SessionData<TcpStream>,
+        mut session: utils::listener::SessionData<T>,
         manager: ImapSessionManager,
-    ) -> Result<Session<TcpStream>, ()> {
-        // Write plain text greeting
-        if let Err(err) = session.stream.write_all(&manager.imap.greeting_plain).await {
+    ) -> Result<Session<T>, ()> {
+        // Write greeting
+        let (is_tls, greeting) = if session.stream.is_tls() {
+            (true, &manager.imap.greeting_tls)
+        } else {
+            (false, &manager.imap.greeting_plain)
+        };
+        if let Err(err) = session.stream.write_all(greeting).await {
             tracing::debug!(parent: &session.span, event = "error", reason = %err, "Failed to write greeting.");
             return Err(());
         }
@@ -127,8 +131,7 @@ impl Session<TcpStream> {
             receiver: Receiver::with_max_request_size(manager.imap.max_request_size),
             version: ProtocolVersion::Rev1,
             state: State::NotAuthenticated { auth_failures: 0 },
-            writer: writer::spawn_writer(writer::Event::Stream(stream_tx), session.span.clone()),
-            is_tls: false,
+            is_tls,
             is_condstore: false,
             is_qresync: false,
             imap: manager.imap,
@@ -138,38 +141,37 @@ impl Session<TcpStream> {
             in_flight: session.in_flight,
             remote_addr: RemoteAddress::IpAddress(session.remote_ip),
             stream_rx,
+            stream_tx: Arc::new(tokio::sync::Mutex::new(stream_tx)),
         })
     }
 
-    pub async fn handle_conn(mut self) {
-        if self.handle_conn_().await && self.instance.acceptor.is_tls() {
-            if let Ok(session) = self.into_tls().await {
-                session.handle_conn().await;
-            }
-        }
-    }
-
-    pub async fn into_tls(self) -> Result<Session<TlsStream<TcpStream>>, ()> {
-        // Recover WriteHalf from writer
-        let (tx, rx) = oneshot::channel();
-        if let Err(err) = self.writer.send(writer::Event::Upgrade(tx)).await {
-            tracing::debug!("Failed to write to channel: {}", err);
+    pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
+        // Drop references to write half from state
+        let state = if let Some(state) =
+            self.state
+                .try_replace_stream_tx(Arc::new(tokio::sync::Mutex::new(
+                    tokio::io::split(NullIo::default()).1,
+                ))) {
+            state
+        } else {
+            tracing::debug!("Failed to obtain write half state.");
             return Err(());
-        }
-        let stream = if let Ok(stream_tx) = rx.await {
+        };
+
+        // Take ownership of WriteHalf and unsplit it from ReadHalf
+        let stream = if let Ok(stream_tx) =
+            Arc::try_unwrap(self.stream_tx).map(|mutex| mutex.into_inner())
+        {
             self.stream_rx.unsplit(stream_tx)
         } else {
-            tracing::debug!("Failed to read from channel");
+            tracing::debug!("Failed to take ownership of write half.");
             return Err(());
         };
 
         // Upgrade to TLS
         let (stream_rx, stream_tx) =
             tokio::io::split(self.instance.tls_accept(stream, &self.span).await?);
-        if let Err(err) = self.writer.send(writer::Event::StreamTls(stream_tx)).await {
-            tracing::debug!("Failed to send stream: {}", err);
-            return Err(());
-        }
+        let stream_tx = Arc::new(tokio::sync::Mutex::new(stream_tx));
 
         Ok(Session {
             jmap: self.jmap,
@@ -177,60 +179,63 @@ impl Session<TcpStream> {
             instance: self.instance,
             receiver: self.receiver,
             version: self.version,
-            state: self.state,
+            state: state.try_replace_stream_tx(stream_tx.clone()).unwrap(),
             is_tls: true,
             is_condstore: self.is_condstore,
             is_qresync: self.is_qresync,
-            writer: self.writer,
             span: self.span,
             in_flight: self.in_flight,
             remote_addr: self.remote_addr,
             stream_rx,
+            stream_tx,
         })
     }
 }
 
-impl Session<TlsStream<TcpStream>> {
-    pub async fn new(
-        session: utils::listener::SessionData<TcpStream>,
-        manager: ImapSessionManager,
-    ) -> Result<Session<TlsStream<TcpStream>>, ()> {
-        // Upgrade to TLS
-        let mut stream = session
-            .instance
-            .tls_accept(session.stream, &session.span)
-            .await?;
+impl<T: SessionStream> Session<T> {
+    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> crate::OpResult {
+        let bytes = bytes.into();
+        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
+            let c = println!("{}", line);
+        }*/
+        tracing::trace!(
+            parent: &self.span,
+            event = "write",
+            data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+            size = bytes.len()
+        );
 
-        // Write TLS greeting
-        let span = session.span;
-        if let Err(err) = stream.write_all(&manager.imap.greeting_tls).await {
-            tracing::debug!(parent: &span, event = "error", reason = %err, "Failed to write greeting.");
-            return Err(());
+        let mut stream = self.stream_tx.lock().await;
+        if let Err(err) = stream.write_all(bytes.as_ref()).await {
+            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
+            Err(())
+        } else {
+            let _ = stream.flush().await;
+            Ok(())
         }
-        let _ = stream.flush().await;
-
-        // Spit stream into read and write halves
-        let (stream_rx, stream_tx) = tokio::io::split(stream);
-
-        Ok(Session {
-            receiver: Receiver::with_max_request_size(manager.imap.max_request_size),
-            version: ProtocolVersion::Rev1,
-            state: State::NotAuthenticated { auth_failures: 0 },
-            writer: writer::spawn_writer(writer::Event::StreamTls(stream_tx), span.clone()),
-            is_tls: true,
-            is_condstore: false,
-            is_qresync: false,
-            imap: manager.imap,
-            jmap: manager.jmap,
-            instance: session.instance,
-            span,
-            in_flight: session.in_flight,
-            remote_addr: RemoteAddress::IpAddress(session.remote_ip),
-            stream_rx,
-        })
     }
+}
 
-    pub async fn handle_conn(mut self) {
-        self.handle_conn_().await;
+impl<T: SessionStream> super::SessionData<T> {
+    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> bool {
+        let bytes = bytes.into();
+        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
+            let c = println!("{}", line);
+        }*/
+        tracing::trace!(
+            parent: &self.span,
+            event = "write",
+            data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+            size = bytes.len()
+        );
+
+        let mut stream = self.stream_tx.lock().await;
+        if let Err(err) = stream.write_all(bytes.as_ref()).await {
+            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
+            false
+        } else {
+            let _ = stream.flush().await;
+            true
+        }
     }
 }

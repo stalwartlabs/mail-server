@@ -26,11 +26,12 @@ use std::borrow::Cow;
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::request::parser::Rfc5321Parser;
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
 use crate::{
     config::Milter,
     core::{Session, SessionAddress, SessionData},
-    inbound::{milter::MilterClient, IsTls},
+    inbound::milter::MilterClient,
     queue::DomainPart,
     DAEMON_NAME,
 };
@@ -42,7 +43,7 @@ enum Rejection {
     Error(Error),
 }
 
-impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn run_milters(
         &self,
         message: &AuthenticatedMessage<'_>,
@@ -186,8 +187,8 @@ impl<T: AsyncWrite + AsyncRead + IsTls + Unpin> Session<T> {
             .helo(
                 &self.data.helo_domain,
                 Macros::new()
-                    .with_cipher(tls_ciper)
-                    .with_tls_version(tls_version),
+                    .with_cipher(tls_ciper.as_ref())
+                    .with_tls_version(tls_version.as_ref()),
             )
             .await?
             .assert_continue()?;

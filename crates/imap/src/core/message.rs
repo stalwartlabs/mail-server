@@ -37,6 +37,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{assert::HashedValue, BatchBuilder, F_VALUE},
 };
+use utils::listener::SessionStream;
 
 use crate::core::ImapId;
 
@@ -44,7 +45,7 @@ use super::{Mailbox, MailboxId, MailboxState, NextMailboxState, SelectedMailbox,
 
 pub(crate) const MAX_RETRIES: usize = 10;
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn fetch_messages(&self, mailbox: &MailboxId) -> crate::op::Result<MailboxState> {
         // Obtain message ids
         let message_ids = self

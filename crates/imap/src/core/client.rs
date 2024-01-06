@@ -29,12 +29,14 @@ use imap_proto::{
 };
 use jmap::auth::rate_limit::AuthenticatedLimiter;
 use parking_lot::Mutex;
-use tokio::io::AsyncRead;
-use utils::listener::limiter::{ConcurrencyLimiter, RateLimiter};
+use utils::listener::{
+    limiter::{ConcurrencyLimiter, RateLimiter},
+    SessionStream,
+};
 
 use super::{SelectedMailbox, Session, SessionData, State, IMAP};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
         /*for line in String::from_utf8_lossy(bytes).split("\r\n") {
             let c = println!("{}", line);
@@ -221,7 +223,7 @@ pub fn group_requests(
     grouped_requests
 }
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     fn is_allowed(&self, request: Request<Command>) -> Result<Request<Command>, StatusResponse> {
         let state = &self.state;
         // Rate limit request
@@ -243,7 +245,11 @@ impl<T: AsyncRead> Session<T> {
             Command::Capability | Command::Noop | Command::Logout | Command::Id => Ok(request),
             Command::StartTls => {
                 if !self.is_tls {
-                    Ok(request)
+                    if self.instance.acceptor.is_tls() {
+                        Ok(request)
+                    } else {
+                        Err(StatusResponse::no("TLS is not available.").with_tag(request.tag))
+                    }
                 } else {
                     Err(StatusResponse::no("Already in TLS mode.").with_tag(request.tag))
                 }
@@ -330,7 +336,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl State {
+impl<T: SessionStream> State<T> {
     pub fn auth_failures(&self) -> u32 {
         match self {
             State::NotAuthenticated { auth_failures, .. } => *auth_failures,
@@ -338,7 +344,7 @@ impl State {
         }
     }
 
-    pub fn session_data(&self) -> Arc<SessionData> {
+    pub fn session_data(&self) -> Arc<SessionData<T>> {
         match self {
             State::Authenticated { data } => data.clone(),
             State::Selected { data, .. } => data.clone(),
@@ -346,14 +352,14 @@ impl State {
         }
     }
 
-    pub fn mailbox_state(&self) -> (Arc<SessionData>, Arc<SelectedMailbox>) {
+    pub fn mailbox_state(&self) -> (Arc<SessionData<T>>, Arc<SelectedMailbox>) {
         match self {
             State::Selected { data, mailbox, .. } => (data.clone(), mailbox.clone()),
             _ => unreachable!(),
         }
     }
 
-    pub fn session_mailbox_state(&self) -> (Arc<SessionData>, Option<Arc<SelectedMailbox>>) {
+    pub fn session_mailbox_state(&self) -> (Arc<SessionData<T>>, Option<Arc<SelectedMailbox>>) {
         match self {
             State::Authenticated { data } => (data.clone(), None),
             State::Selected { data, mailbox, .. } => (data.clone(), mailbox.clone().into()),
@@ -361,7 +367,7 @@ impl State {
         }
     }
 
-    pub fn select_data(&self) -> (Arc<SessionData>, Arc<SelectedMailbox>) {
+    pub fn select_data(&self) -> (Arc<SessionData<T>>, Arc<SelectedMailbox>) {
         match self {
             State::Selected { data, mailbox } => (data.clone(), mailbox.clone()),
             _ => unreachable!(),

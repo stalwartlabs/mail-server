@@ -32,11 +32,11 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
-use tokio::io::AsyncRead;
+use utils::listener::SessionStream;
 
 use crate::core::{Session, SessionData};
 
-impl<T: AsyncRead> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_subscribe(
         &mut self,
         request: Request<Command>,
@@ -60,7 +60,7 @@ impl<T: AsyncRead> Session<T> {
     }
 }
 
-impl SessionData {
+impl<T: SessionStream> SessionData<T> {
     pub async fn subscribe_folder(
         &self,
         tag: String,

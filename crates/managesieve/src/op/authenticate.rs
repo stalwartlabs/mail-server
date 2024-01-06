@@ -30,11 +30,11 @@ use imap_proto::{
 };
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use tokio::io::{AsyncRead, AsyncWrite};
+use utils::listener::SessionStream;
 
-use crate::core::{Command, IsTls, Session, State, StatusResponse};
+use crate::core::{Command, Session, State, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite + IsTls> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_authenticate(&mut self, request: Request<Command>) -> crate::op::OpResult {
         if request.tokens.is_empty() {
             return Err(StatusResponse::no("Authentication mechanism missing."));

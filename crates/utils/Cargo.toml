@@ -1,6 +1,6 @@
 [package]
 name = "utils"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 resolver = "2"
 
@@ -37,6 +37,7 @@ pem = "3.0"
 parking_lot = "0.12"
 arc-swap = "1.6.0"
 futures = "0.3"
+proxy-header = { version = "0.1.0", features = ["tokio"] }
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

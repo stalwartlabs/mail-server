@@ -27,11 +27,12 @@ use directory::QueryBy;
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
-use smtp::core::{NullIo, Session, SessionAddress};
+use smtp::core::{Session, SessionAddress};
 use store::{
     ahash::AHashSet,
     write::{now, BatchBuilder, F_VALUE},
 };
+use utils::listener::stream::NullIo;
 
 use crate::{
     email::ingest::{IngestEmail, IngestedEmail},

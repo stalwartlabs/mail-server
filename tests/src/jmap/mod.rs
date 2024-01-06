@@ -75,6 +75,7 @@ bind = ["127.0.0.1:8899"]
 url = "https://127.0.0.1:8899"
 protocol = "jmap"
 max-connections = 81920
+tls.implicit = true
 
 [server.listener.lmtp-debug]
 bind = ['127.0.0.1:11200']
