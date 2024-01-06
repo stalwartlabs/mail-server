@@ -111,7 +111,7 @@ impl JMAP {
         // Build response
         JsonResponse::new(DeviceAuthResponse {
             verification_uri: format!("{}/auth", instance.data),
-            verification_uri_complete: format!("{}/auth/code?={}", instance.data, user_code),
+            verification_uri_complete: format!("{}/auth/?code={}", instance.data, user_code),
             device_code,
             user_code,
             expires_in: self.config.oauth_expiry_user_code,
