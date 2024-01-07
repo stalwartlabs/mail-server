@@ -2,12 +2,14 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
-## [0.5.2] - 2024-01-xx
+## [0.5.2] - 2024-01-07
+
+Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
 ## Added
-- ACME support for automatic TLS certificate generation and renewal.
-- TLS certificate hot-reloading.
-- HAProxy protocol support.
+- [ACME](https://stalw.art/docs/server/tls/acme) support for automatic TLS certificate generation and renewal (#160).
+- TLS certificate [hot-reloading](https://stalw.art/docs/management/database/maintenance#tls-certificate-reloading).
+- [HAProxy protocol](https://stalw.art/docs/server/proxy) support (#36).
 
 ### Changed
 

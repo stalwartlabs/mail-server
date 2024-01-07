@@ -5,7 +5,7 @@
 [server]
 hostname = "%{HOST}%"
 max-connections = 8192
-#proxy-trusted-networks = ["10.0.0.0/8", "127.0.0.0/8"]
+#proxy-trusted-networks = ["127.0.0.0/8", "::1", "10.0.0.0/8"]
 
 [server.run-as]
 user = "stalwart-mail"

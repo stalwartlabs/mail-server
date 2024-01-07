@@ -1,4 +1,16 @@
-Upgrading from `v0.5.0` to `v0.5.x`
+Upgrading from `v0.5.1` to `v0.5.2`
+-----------------------------------
+
+- Make sure that implicit TLS is enabled for the JMAP [listener](https://stalw.art/docs/server/listener) configured under `ets/jmap/listener.toml`:
+  ```toml
+  [server.listener."jmap".tls]
+  implicit = true
+  ```
+- Optional: Enable automatic TLS with [ACME](https://stalw.art/docs/server/tls/acme).
+- Replace the binary with the new version.
+- Restart the service.
+
+Upgrading from `v0.5.0` to `v0.5.1`
 -----------------------------------
 
 - Replace the binary with the new version.

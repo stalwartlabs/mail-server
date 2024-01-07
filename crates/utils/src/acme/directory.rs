@@ -274,6 +274,7 @@ pub enum DirectoryError {
     NoTlsAlpn01Challenge,
 }
 
+#[allow(unused_mut)]
 async fn https(
     url: impl AsRef<str>,
     method: Method,

@@ -93,12 +93,6 @@ impl Config {
                 })
                 .collect::<Vec<_>>();
             let cache = PathBuf::from(self.value_require(("acme", acme_id, "cache"))?);
-            if !cache.exists() {
-                std::fs::create_dir_all(&cache).map_err(|err| {
-                    format!("Failed to create ACME cache directory {:?}: {}", cache, err)
-                })?;
-            }
-
             let renew_before: Duration =
                 self.property_or_static(("acme", acme_id, "renew-before"), "30d")?;
 

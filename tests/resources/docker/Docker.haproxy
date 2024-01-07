@@ -1,0 +1,6 @@
+# docker build -t test-haproxy -f Docker.haproxy .
+# docker run -it --rm --name haproxy-syntax-check test-haproxy haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+# docker run -d -p 1111:1111 --name some-haproxy --sysctl net.ipv4.ip_unprivileged_port_start=0 test-haproxy
+
+FROM haproxy:2.3
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg

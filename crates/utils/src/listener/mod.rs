@@ -115,6 +115,8 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                             tracing::debug!(
                                 context = "tls",
                                 event = "error",
+                                instance = session.instance.id,
+                                protocol = ?session.instance.protocol,
                                 remote.ip = session.remote_ip.to_string(),
                                 "Failed to accept TLS connection: {}",
                                 err

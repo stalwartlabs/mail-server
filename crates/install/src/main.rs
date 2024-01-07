@@ -111,9 +111,10 @@ enum SmtpDirectory {
     Imap,
 }
 
-const DIRECTORIES: [[&str; 2]; 6] = [
+const DIRECTORIES: [[&str; 2]; 7] = [
     ["bin", ""],
     ["etc", "dkim"],
+    ["etc", "acme"],
     ["data", "blobs"],
     ["logs", ""],
     ["queue", ""],
