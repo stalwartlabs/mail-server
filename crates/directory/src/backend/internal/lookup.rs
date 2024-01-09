@@ -31,7 +31,7 @@ use crate::{Principal, QueryBy, Type};
 
 use super::{manage::ManageDirectory, PrincipalIdType};
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait DirectoryStore: Sync + Send {
     async fn query(
         &self,
@@ -46,7 +46,6 @@ pub trait DirectoryStore: Sync + Send {
     async fn expn(&self, address: &str) -> crate::Result<Vec<String>>;
 }
 
-#[async_trait::async_trait]
 impl DirectoryStore for Store {
     async fn query(
         &self,

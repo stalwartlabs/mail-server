@@ -45,7 +45,7 @@ use crate::{
 
 use super::cache::CachedDirectory;
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait ConfigDirectory {
     async fn parse_directory(
         &self,
@@ -54,7 +54,6 @@ pub trait ConfigDirectory {
     ) -> utils::config::Result<Directories>;
 }
 
-#[async_trait::async_trait]
 impl ConfigDirectory for Config {
     async fn parse_directory(
         &self,

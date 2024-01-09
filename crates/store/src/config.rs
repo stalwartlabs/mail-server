@@ -23,7 +23,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
@@ -56,7 +55,7 @@ use crate::backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
 
-#[async_trait]
+#[allow(async_fn_in_trait)]
 pub trait ConfigStore {
     async fn parse_stores(&self) -> utils::config::Result<Stores>;
     async fn parse_purge_schedules(
@@ -67,7 +66,6 @@ pub trait ConfigStore {
     ) -> utils::config::Result<Vec<PurgeSchedule>>;
 }
 
-#[async_trait]
 impl ConfigStore for Config {
     #[allow(unused_variables)]
     #[allow(unreachable_code)]

@@ -97,7 +97,7 @@ impl SessionStream for DummyIo {
 
 impl Unpin for DummyIo {}
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait TestSession {
     fn test(core: impl Into<Arc<SMTP>>) -> Self;
     fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self;
@@ -113,7 +113,6 @@ pub trait TestSession {
     async fn test_builder(&self);
 }
 
-#[async_trait::async_trait]
 impl TestSession for Session<DummyIo> {
     fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {

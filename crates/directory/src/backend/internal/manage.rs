@@ -39,7 +39,7 @@ use super::{
     PrincipalValue,
 };
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait ManageDirectory: Sized {
     async fn get_account_id(&self, name: &str) -> crate::Result<Option<u32>>;
     async fn get_or_create_account_id(&self, name: &str) -> crate::Result<u32>;
@@ -75,7 +75,6 @@ pub trait ManageDirectory: Sized {
     async fn init(self) -> crate::Result<Self>;
 }
 
-#[async_trait::async_trait]
 impl ManageDirectory for Store {
     async fn get_account_name(&self, account_id: u32) -> crate::Result<Option<String>> {
         self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
