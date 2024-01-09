@@ -31,7 +31,7 @@ use jmap_proto::{
     },
 };
 use mail_parser::{
-    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, PartType,
+    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, MessageParser, PartType,
 };
 
 use rand::Rng;
@@ -221,6 +221,12 @@ impl JMAP {
                     Ok(new_raw_message) => {
                         raw_message = Cow::from(new_raw_message);
                         raw_message_len = raw_message.len() as i64;
+                        message = MessageParser::default()
+                            .parse(raw_message.as_ref())
+                            .ok_or_else(|| IngestError::Permanent {
+                                code: [5, 5, 0],
+                                reason: "Failed to parse encrypted e-mail message.".to_string(),
+                            })?;
 
                         // Remove contents from parsed message
                         for part in &mut message.parts {

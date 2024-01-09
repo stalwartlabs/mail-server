@@ -87,13 +87,12 @@ pub struct EncryptionParams {
     pub certs: Vec<Vec<u8>>,
 }
 
-#[async_trait::async_trait]
+#[allow(async_fn_in_trait)]
 pub trait EncryptMessage {
     async fn encrypt(&self, params: &EncryptionParams) -> Result<Vec<u8>, EncryptMessageError>;
     fn is_encrypted(&self) -> bool;
 }
 
-#[async_trait::async_trait]
 impl EncryptMessage for Message<'_> {
     async fn encrypt(&self, params: &EncryptionParams) -> Result<Vec<u8>, EncryptMessageError> {
         let root = self.root_part();

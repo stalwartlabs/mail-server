@@ -10,9 +10,10 @@ database = "stalwart"
 user = "root"
 password = "password"
 disable = true
+#max-allowed-packet = 1073741824
 
-[store."mysql".timeout]
-wait = "15s"
+#[store."mysql".timeout]
+#wait = "15s"
 
 #[store."mysql".pool]
 #max-connections = 10
