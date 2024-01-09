@@ -27,6 +27,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
     process::exit,
+    time::Duration,
 };
 
 use base64::{engine::general_purpose, Engine};
@@ -693,13 +694,20 @@ fn sed(path: impl AsRef<Path>, replacements: &[(&str, impl AsRef<str>)]) {
 }
 
 fn download(url: &str) -> Vec<u8> {
-    match reqwest::blocking::get(url).and_then(|r| {
-        if r.status().is_success() {
-            r.bytes().map(Ok)
-        } else {
-            Ok(Err(r))
-        }
-    }) {
+    match reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .unwrap_or_default()
+        .get(url)
+        .send()
+        .and_then(|r| {
+            if r.status().is_success() {
+                r.bytes().map(Ok)
+            } else {
+                Ok(Err(r))
+            }
+        }) {
         Ok(Ok(bytes)) => bytes.to_vec(),
         Ok(Err(response)) => {
             eprintln!(
