@@ -58,6 +58,7 @@ impl<T> UnwrapFailure<T> for Option<T> {
         match self {
             Some(result) => result,
             None => {
+                tracing::error!("{message}");
                 eprintln!("{message}");
                 std::process::exit(1);
             }
@@ -70,6 +71,8 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
         match self {
             Ok(result) => result,
             Err(err) => {
+                tracing::error!("{message}: {err}");
+
                 #[cfg(feature = "test_mode")]
                 panic!("{message}: {err}");
 
@@ -84,6 +87,7 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
 }
 
 pub fn failed(message: &str) -> ! {
+    tracing::error!("{message}");
     eprintln!("{message}");
     std::process::exit(1);
 }

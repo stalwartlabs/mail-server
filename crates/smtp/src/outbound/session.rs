@@ -63,7 +63,7 @@ impl Message {
         params: SessionParams<'_>,
     ) -> Status<(), Error> {
         // Obtain capabilities
-        let mut capabilities = match say_helo(&mut smtp_client, &params).await {
+        let capabilities = match say_helo(&mut smtp_client, &params).await {
             Ok(capabilities) => capabilities,
             Err(status) => {
                 tracing::info!(
@@ -93,7 +93,8 @@ impl Message {
             }
 
             // Refresh capabilities
-            capabilities = match say_helo(&mut smtp_client, &params).await {
+            // Disabled as some SMTP servers deauthenticate after EHLO
+            /*capabilities = match say_helo(&mut smtp_client, &params).await {
                 Ok(capabilities) => capabilities,
                 Err(status) => {
                     tracing::info!(
@@ -106,7 +107,7 @@ impl Message {
                     quit(smtp_client).await;
                     return status;
                 }
-            };
+            };*/
         }
 
         // MAIL FROM
