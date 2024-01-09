@@ -34,7 +34,7 @@ pub struct Cli {
     pub command: Commands,
     /// Server base URL
     #[clap(short, long)]
-    pub url: String,
+    pub url: Option<String>,
     /// Authentication credentials
     #[clap(short, long)]
     pub credentials: Option<String>,

@@ -44,8 +44,17 @@ pub mod modules;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = Cli::parse();
+    let url = args
+        .url
+        .or_else(|| std::env::var("URL").ok())
+        .unwrap_or_else(|| {
+            eprintln!("No URL specified. Use --url or set the URL environment variable.");
+            std::process::exit(1);
+        });
     let client = Client {
         credentials: if let Some(credentials) = args.credentials {
+            parse_credentials(&credentials)
+        } else if let Ok(credentials) = std::env::var("CREDENTIALS") {
             parse_credentials(&credentials)
         } else {
             let credentials = rpassword::prompt_password(
@@ -55,11 +64,11 @@ async fn main() -> std::io::Result<()> {
             if !credentials.is_empty() {
                 parse_credentials(&credentials)
             } else {
-                oauth(&args.url).await
+                oauth(&url).await
             }
         },
         timeout: args.timeout,
-        url: args.url,
+        url,
     };
 
     match args.command {
