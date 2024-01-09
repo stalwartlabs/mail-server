@@ -46,6 +46,7 @@ impl MysqlStore {
                     .to_string()
                     .into(),
             )
+            .max_allowed_packet(config.property((&prefix, "max-allowed-packet"))?)
             .wait_timeout(
                 config
                     .property::<Duration>((&prefix, "timeout.wait"))?
