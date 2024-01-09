@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::time::Duration;
+
 use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts};
 use utils::config::utils::AsKey;
 
@@ -44,7 +46,11 @@ impl MysqlStore {
                     .to_string()
                     .into(),
             )
-            .wait_timeout(config.property((&prefix, "timeout.wait"))?);
+            .wait_timeout(
+                config
+                    .property::<Duration>((&prefix, "timeout.wait"))?
+                    .map(|t| t.as_secs() as usize),
+            );
         if let Some(port) = config.property((&prefix, "port"))? {
             opts = opts.tcp_port(port);
         }
