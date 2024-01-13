@@ -159,6 +159,7 @@ impl JMAP {
         } else if let Some(forwarded_for) = req
             .headers()
             .get(header::FORWARDED)
+            .or_else(|| req.headers().get("X-Forwarded-For"))
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.parse::<IpAddr>().ok())
         {
