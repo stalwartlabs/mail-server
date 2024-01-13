@@ -29,7 +29,6 @@ use utils::config::{KeyLookup, Rate};
 use std::{
     hash::{BuildHasher, Hash, Hasher},
     net::IpAddr,
-    time::Duration,
 };
 
 use crate::config::*;
@@ -253,14 +252,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                                 return false;
                             }
                         }
-                        if let Some(limiter) = &mut limiter.rate {
-                            if !limiter.is_allowed() {
+                        if let (Some(limiter), Some(rate)) = (&mut limiter.rate, &t.rate) {
+                            if !limiter.is_allowed(rate) {
                                 tracing::debug!(
                                     parent: &self.span,
                                     context = "throttle",
                                     event = "rate-limit-exceeded",
-                                    max_requests = limiter.max_requests,
-                                    max_interval = limiter.max_interval.as_secs(),
+                                    max_requests = rate.requests,
+                                    max_interval = rate.period.as_secs(),
                                     "Rate limit exceeded."
                                 );
                                 return false;
@@ -276,11 +275,8 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                             limiter
                         });
                         let rate = t.rate.as_ref().map(|rate| {
-                            let mut r = RateLimiter::new(
-                                rate.requests,
-                                std::cmp::min(rate.period, Duration::from_secs(1)),
-                            );
-                            r.is_allowed();
+                            let r = RateLimiter::new(rate);
+                            r.is_allowed(rate);
                             r
                         });
 
@@ -306,14 +302,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         match self.core.session.throttle.entry(key) {
             Entry::Occupied(mut e) => {
                 if let Some(limiter) = &mut e.get_mut().rate {
-                    limiter.is_allowed()
+                    limiter.is_allowed(rate)
                 } else {
                     false
                 }
             }
             Entry::Vacant(e) => {
-                let mut limiter = RateLimiter::new(rate.requests, rate.period);
-                limiter.is_allowed();
+                let limiter = RateLimiter::new(rate);
+                limiter.is_allowed(rate);
                 e.insert(Limiter {
                     rate: limiter.into(),
                     concurrency: None,

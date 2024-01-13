@@ -27,10 +27,10 @@ use deadpool::{
 };
 use regex::Regex;
 use std::{sync::Arc, time::Duration};
-use store::Stores;
+use store::{Store, Stores};
 use utils::config::{
     utils::{AsKey, ParseValue},
-    Config,
+    Config, Servers,
 };
 
 use ahash::AHashMap;
@@ -50,7 +50,8 @@ pub trait ConfigDirectory {
     async fn parse_directory(
         &self,
         stores: &Stores,
-        id_store: Option<&str>,
+        servers: &Servers,
+        data_store: Store,
     ) -> utils::config::Result<Directories>;
 }
 
@@ -58,15 +59,19 @@ impl ConfigDirectory for Config {
     async fn parse_directory(
         &self,
         stores: &Stores,
-        id_store: Option<&str>,
+        servers: &Servers,
+        data_store: Store,
     ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
             lookups: AHashMap::new(),
         };
-        let id_store = id_store.and_then(|id| stores.stores.get(id).cloned());
 
-        for id in self.sub_keys("directory") {
+        for id in self.sub_keys("directory", ".type") {
+            if id.ends_with(".columns") || id.ends_with(".attributes") || id.contains(".principals")
+            {
+                continue;
+            }
             // Parse directory
             if self.property_or_static::<bool>(("directory", id, "disable"), "false")? {
                 tracing::debug!("Skipping disabled directory {id:?}.");
@@ -101,19 +106,33 @@ impl ConfigDirectory for Config {
                 "ldap" => DirectoryInner::Ldap(LdapDirectory::from_config(
                     self,
                     prefix,
-                    id_store.clone(),
+                    data_store.clone(),
                 )?),
                 "sql" => DirectoryInner::Sql(SqlDirectory::from_config(
                     self,
                     prefix,
                     stores,
-                    id_store.clone(),
+                    data_store.clone(),
                 )?),
-                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(self, prefix)?),
-                "smtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, false)?),
-                "lmtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, true)?),
+                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(
+                    self,
+                    prefix,
+                    data_store.clone(),
+                )?),
+                "smtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(
+                    self,
+                    prefix,
+                    false,
+                    data_store.clone(),
+                )?),
+                "lmtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(
+                    self,
+                    prefix,
+                    true,
+                    data_store.clone(),
+                )?),
                 "memory" => DirectoryInner::Memory(
-                    MemoryDirectory::from_config(self, prefix, id_store.clone()).await?,
+                    MemoryDirectory::from_config(self, prefix, data_store.clone()).await?,
                 ),
                 unknown => {
                     return Err(format!("Unknown directory type: {unknown:?}"));
@@ -132,6 +151,7 @@ impl ConfigDirectory for Config {
                     ("directory", id, "options.subaddressing"),
                 )?,
                 cache: CachedDirectory::try_from_config(self, ("directory", id))?,
+                blocked_ips: servers.blocked_ips.clone(),
             });
 
             // Add lookups

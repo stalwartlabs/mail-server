@@ -277,13 +277,18 @@ fn main() -> std::io::Result<()> {
                 ("__DIRECTORY__", directory.id()),
             ],
         );
-        sed(
-            cfg_path.join("jmap").join("store.toml"),
-            &[
-                ("__BLOB_STORE__", blob.id().unwrap_or("%{DEFAULT_STORE}%")),
-                ("__FTS_STORE__", fts.id().unwrap_or("%{DEFAULT_STORE}%")),
-            ],
-        );
+        if let Some(blob) = blob.id() {
+            sed(
+                cfg_path.join("common").join("store.toml"),
+                &[("blob = \"%{DEFAULT_STORE}%", &format!("blob = \"{blob}"))],
+            );
+        }
+        if let Some(fts) = fts.id() {
+            sed(
+                cfg_path.join("common").join("store.toml"),
+                &[("fts = \"%{DEFAULT_STORE}%", &format!("fts = \"{fts}"))],
+            );
+        }
         if let Some(id) = spamdb.id() {
             sed(
                 cfg_path.join("common").join("sieve.toml"),
@@ -362,13 +367,6 @@ fn main() -> std::io::Result<()> {
             &[
                 ("__STORE__", "rocksdb"),
                 ("__DIRECTORY__", smtp_directory.id()),
-            ],
-        );
-        sed(
-            cfg_path.join("jmap").join("store.toml"),
-            &[
-                ("__BLOB_STORE__", "%{DEFAULT_STORE}%"),
-                ("__FTS_STORE__", "%{DEFAULT_STORE}%"),
             ],
         );
         if let Some(id) = spamdb.id() {

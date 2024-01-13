@@ -72,7 +72,7 @@ impl ConfigStore for Config {
     async fn parse_stores(&self) -> utils::config::Result<Stores> {
         let mut config = Stores::default();
 
-        for id in self.sub_keys("store") {
+        for id in self.sub_keys("store", ".type") {
             // Parse store
             if self.property_or_static::<bool>(("store", id, "disable"), "false")? {
                 tracing::debug!("Skipping disabled store {id:?}.");
@@ -190,7 +190,7 @@ impl ConfigStore for Config {
 
             // Add queries as lookup stores
             let lookup_store: LookupStore = lookup_store.into();
-            for lookup_id in self.sub_keys(("store", id, "query")) {
+            for lookup_id in self.sub_keys(("store", id, "query"), "") {
                 config.lookup_stores.insert(
                     format!("{store_id}/{lookup_id}"),
                     LookupStore::Query(Arc::new(QueryStore {

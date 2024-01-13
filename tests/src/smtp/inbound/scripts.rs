@@ -35,9 +35,9 @@ use smtp::{
     core::{Session, SMTP},
     scripts::ScriptResult,
 };
-use store::config::ConfigStore;
+use store::{config::ConfigStore, Store};
 use tokio::runtime::Handle;
-use utils::config::Config;
+use utils::config::{Config, Servers};
 
 const CONFIG: &str = r#"
 [store."sql"]
@@ -133,7 +133,10 @@ async fn sieve_scripts() {
     )
     .unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config.parse_directory(&ctx.stores, None).await.unwrap();
+    ctx.directory = config
+        .parse_directory(&ctx.stores, &Servers::default(), Store::default())
+        .await
+        .unwrap();
     let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;

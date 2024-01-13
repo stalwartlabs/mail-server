@@ -22,10 +22,12 @@
 */
 
 use std::{
+    net::IpAddr,
     sync::{atomic, Arc},
     time::{Duration, Instant},
 };
 
+use directory::AuthResult;
 use hyper::StatusCode;
 use store::rand::{
     distributions::{Alphanumeric, Standard},
@@ -35,12 +37,9 @@ use utils::{listener::ServerInstance, map::ttl_dashmap::TtlMap};
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::{
-        oauth::{
-            MAX_POST_LEN, OAUTH_HTML_ERROR, OAUTH_HTML_LOGIN_HEADER_FAILED,
-            OAUTH_HTML_LOGIN_SUCCESS, STATUS_AUTHORIZED,
-        },
-        rate_limit::RemoteAddress,
+    auth::oauth::{
+        MAX_POST_LEN, OAUTH_HTML_ERROR, OAUTH_HTML_LOGIN_HEADER_FAILED, OAUTH_HTML_LOGIN_SUCCESS,
+        STATUS_AUTHORIZED,
     },
     JMAP,
 };
@@ -154,7 +153,7 @@ impl JMAP {
     pub async fn handle_user_device_auth_post(
         &self,
         req: &mut HttpRequest,
-        remote_addr: &RemoteAddress,
+        remote_addr: IpAddr,
     ) -> HttpResponse {
         // Parse form
         let fields = match FormData::from_request(req, MAX_POST_LEN).await {
@@ -177,7 +176,9 @@ impl JMAP {
             {
                 if let (Some(email), Some(password)) = (fields.get("email"), fields.get("password"))
                 {
-                    if let Some(id) = self.authenticate_plain(email, password, remote_addr).await {
+                    if let AuthResult::Success(id) =
+                        self.authenticate_plain(email, password, remote_addr).await
+                    {
                         oauth
                             .account_id
                             .store(id.primary_id(), atomic::Ordering::Relaxed);

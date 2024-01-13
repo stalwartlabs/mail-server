@@ -23,8 +23,8 @@
 
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::Stores;
-use utils::config::{Config, DynValue};
+use store::{Store, Stores};
+use utils::config::{Config, DynValue, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -62,7 +62,7 @@ async fn auth() {
     let mut ctx = ConfigContext::new(&[]);
     ctx.directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
 

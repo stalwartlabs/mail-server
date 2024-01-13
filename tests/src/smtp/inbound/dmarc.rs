@@ -34,8 +34,8 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
-use store::Stores;
-use utils::config::{Config, DynValue, Rate};
+use store::{Store, Stores};
+use utils::config::{Config, DynValue, Rate, Servers};
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent, TestReportingEvent},
@@ -135,7 +135,7 @@ async fn dmarc() {
     let mut rr = core.init_test_report();
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;

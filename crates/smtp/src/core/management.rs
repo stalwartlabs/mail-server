@@ -23,7 +23,7 @@
 
 use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Instant};
 
-use directory::{QueryBy, Type};
+use directory::{AuthResult, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
@@ -186,7 +186,7 @@ async fn handle_request(
                 let core = core.clone();
 
                 async move {
-                    let response = core.parse_request(&req).await;
+                    let response = core.parse_request(&req, remote_addr).await;
 
                     tracing::debug!(
                         context = "management",
@@ -218,6 +218,7 @@ impl SMTP {
     async fn parse_request(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
+        remote_addr: IpAddr,
     ) -> Result<hyper::Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
         // Authenticate request
         let mut is_authenticated = false;
@@ -240,24 +241,21 @@ impl SMTP {
                     match self
                         .queue
                         .config
-                        .management_lookup
-                        .query(
-                            QueryBy::Credentials(&Credentials::Plain { username, secret }),
-                            false,
-                        )
+                        .directory
+                        .authenticate(&Credentials::Plain { username, secret }, remote_addr, false)
                         .await
                     {
-                        Ok(Some(principal)) if principal.typ == Type::Superuser => {
+                        Ok(AuthResult::Success(principal)) if principal.typ == Type::Superuser => {
                             is_authenticated = true;
                         }
-                        Ok(Some(_)) => {
+                        Ok(AuthResult::Success(_)) => {
                             tracing::debug!(
                                 context = "management",
                                 event = "auth-error",
                                 "Insufficient privileges."
                             );
                         }
-                        Ok(None) => {
+                        Ok(AuthResult::Failure | AuthResult::Banned) => {
                             tracing::debug!(
                                 context = "management",
                                 event = "auth-error",

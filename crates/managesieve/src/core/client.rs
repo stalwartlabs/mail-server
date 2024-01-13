@@ -227,9 +227,8 @@ impl ValidateRequest for Request<Command> {
                 if let State::Authenticated { access_token, .. } = state {
                     if imap
                         .get_authenticated_limiter(access_token.primary_id())
-                        .lock()
                         .request_limiter
-                        .is_allowed()
+                        .is_allowed(&imap.rate_requests)
                     {
                         Ok(self)
                     } else {

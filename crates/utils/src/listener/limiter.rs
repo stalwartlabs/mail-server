@@ -26,15 +26,15 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::SystemTime,
 };
+
+use crate::config::Rate;
 
 #[derive(Debug)]
 pub struct RateLimiter {
-    pub max_requests: u64,
-    pub max_interval: Duration,
-    last_refill: Instant,
-    tokens: u64,
+    next_refill: AtomicU64,
+    used_tokens: AtomicU64,
 }
 
 #[derive(Debug, Clone)]
@@ -55,53 +55,43 @@ impl Drop for InFlight {
 }
 
 impl RateLimiter {
-    pub fn new(max_requests: u64, max_interval: Duration) -> Self {
+    pub fn new(rate: &Rate) -> Self {
         RateLimiter {
-            max_requests,
-            max_interval,
-            last_refill: Instant::now(),
-            tokens: max_requests,
+            next_refill: (now() + rate.period.as_secs()).into(),
+            used_tokens: 0.into(),
         }
     }
 
-    pub fn is_allowed(&mut self) -> bool {
+    pub fn is_allowed(&self, rate: &Rate) -> bool {
         // Check rate limit
-        if self.last_refill.elapsed() >= self.max_interval {
-            self.last_refill = Instant::now();
-            self.tokens = self.max_requests;
-        }
-
-        if self.tokens >= 1 {
-            self.tokens -= 1;
+        if self.used_tokens.fetch_add(1, Ordering::Relaxed) < rate.requests {
             true
         } else {
-            false
+            let now = now();
+            if self.next_refill.load(Ordering::Relaxed) <= now {
+                self.next_refill
+                    .store(now + rate.period.as_secs(), Ordering::Relaxed);
+                self.used_tokens.store(1, Ordering::Relaxed);
+                true
+            } else {
+                false
+            }
         }
     }
 
-    pub fn is_allowed_soft(&self) -> bool {
-        self.tokens >= 1 || self.last_refill.elapsed() >= self.max_interval
+    pub fn is_allowed_soft(&self, rate: &Rate) -> bool {
+        self.used_tokens.load(Ordering::Relaxed) < rate.requests
+            || self.next_refill.load(Ordering::Relaxed) <= now()
     }
 
-    pub fn retry_at(&self) -> Instant {
-        Instant::now()
-            + (self
-                .max_interval
-                .checked_sub(self.last_refill.elapsed())
-                .unwrap_or_default())
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.last_refill.elapsed()
-    }
-
-    pub fn reset(&mut self) {
-        self.last_refill = Instant::now();
-        self.tokens = self.max_requests;
+    pub fn secs_to_refill(&self) -> u64 {
+        self.next_refill
+            .load(Ordering::Relaxed)
+            .saturating_sub(now())
     }
 
     pub fn is_active(&self) -> bool {
-        self.tokens < self.max_requests || self.last_refill.elapsed() < self.max_interval
+        self.next_refill.load(Ordering::Relaxed) > now()
     }
 }
 
@@ -138,4 +128,11 @@ impl InFlight {
     pub fn num_concurrent(&self) -> u64 {
         self.concurrent.load(Ordering::Relaxed)
     }
+}
+
+fn now() -> u64 {
+    SystemTime::UNIX_EPOCH
+        .elapsed()
+        .unwrap_or_default()
+        .as_secs()
 }

@@ -44,7 +44,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    let config = Config::init();
+    let mut config = Config::init();
 
     // Enable tracing
     let _tracer = enable_tracing(
@@ -60,17 +60,31 @@ async fn main() -> std::io::Result<()> {
     let mut servers = config.parse_servers().failed("Invalid configuration");
     servers.bind(&config);
 
-    // Parse stores and directories
+    // Parse stores
     let stores = config.parse_stores().await.failed("Invalid configuration");
+    let data_store = stores
+        .get_store(&config, "storage.data")
+        .failed("Invalid configuration");
+
+    // Update configuration
+    config.update(data_store.config_list("").await.failed("Storage error"));
+    servers
+        .blocked_ips
+        .reload(&config)
+        .failed("Invalid configuration");
+
+    let todo = "Update config.zip";
+
+    // Parse directories
     let directory = config
-        .parse_directory(&stores, config.value("jmap.store.data"))
+        .parse_directory(&stores, &servers, data_store)
         .await
         .failed("Invalid configuration");
     let schedulers = config
         .parse_purge_schedules(
             &stores,
-            config.value("jmap.store.data"),
-            config.value("jmap.store.blob"),
+            config.value("storage.data"),
+            config.value("storage.blob"),
         )
         .await
         .failed("Invalid configuration");
@@ -84,7 +98,7 @@ async fn main() -> std::io::Result<()> {
         &config,
         &stores,
         &directory,
-        std::mem::take(&mut servers.certificates),
+        &mut servers,
         delivery_rx,
         smtp.clone(),
     )

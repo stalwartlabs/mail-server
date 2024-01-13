@@ -24,7 +24,6 @@
 use std::{borrow::Cow, sync::Arc};
 
 use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
-use jmap::auth::rate_limit::RemoteAddress;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
 use utils::listener::{stream::NullIo, SessionManager, SessionStream};
@@ -139,7 +138,7 @@ impl<T: SessionStream> Session<T> {
             instance: session.instance,
             span: session.span,
             in_flight: session.in_flight,
-            remote_addr: RemoteAddress::IpAddress(session.remote_ip),
+            remote_addr: session.remote_ip,
             stream_rx,
             stream_tx: Arc::new(tokio::sync::Mutex::new(stream_tx)),
         })

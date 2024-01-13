@@ -58,9 +58,7 @@ impl SMTP {
                 v.concurrency
                     .as_ref()
                     .map_or(false, |c| c.concurrent.load(Ordering::Relaxed) > 0)
-                    || v.rate
-                        .as_ref()
-                        .map_or(false, |r| r.elapsed() < r.max_interval)
+                    || v.rate.as_ref().map_or(false, |r| r.is_active())
             });
         }
         self.queue.quota.retain(|_, v| {

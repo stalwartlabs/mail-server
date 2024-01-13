@@ -34,7 +34,7 @@ pub trait ConfigHost {
 
 impl ConfigHost for Config {
     fn parse_remote_hosts(&self, ctx: &mut ConfigContext) -> super::Result<()> {
-        for id in self.sub_keys("remote") {
+        for id in self.sub_keys("remote", ".address") {
             ctx.hosts.insert(id.to_string(), self.parse_host(id)?);
         }
 

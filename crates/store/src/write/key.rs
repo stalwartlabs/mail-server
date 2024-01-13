@@ -275,6 +275,7 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                     .write(self.collection)
                     .write(self.document_id),
             },
+            ValueClass::Config(key) => serializer.write(8u8).write(key.as_slice()),
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::NameToId(name) => serializer.write(20u8).write(name.as_slice()),
                 DirectoryClass::EmailToId(email) => serializer.write(21u8).write(email.as_slice()),
@@ -424,7 +425,7 @@ impl ValueClass {
                 U32_LEN * 2 + 3
             }
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
-            ValueClass::Key(v) => v.len(),
+            ValueClass::Key(v) | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
                 DirectoryClass::NameToId(v)
                 | DirectoryClass::EmailToId(v)

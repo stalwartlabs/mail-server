@@ -174,13 +174,11 @@ private-key = "file://{PK}"
 [imap.protocol]
 uidplus = true
 
-[jmap]
-directory = "auth"
-
-[jmap.store]
+[storage]
 data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
+directory = "auth"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -279,7 +277,11 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(&stores, store_id.into())
+        .parse_directory(
+            &stores,
+            &servers,
+            stores.stores.get(store_id).unwrap().clone(),
+        )
         .await
         .unwrap();
 
@@ -293,7 +295,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         &config,
         &stores,
         &directory,
-        std::mem::take(&mut servers.certificates),
+        &mut servers,
         delivery_rx,
         smtp.clone(),
     )
@@ -483,6 +485,19 @@ impl ImapConnection {
             lines
         } else {
             panic!("Expected {:?}/{:?} from server but got: {:?}", t, rt, lines);
+        }
+    }
+
+    pub async fn assert_disconnect(&mut self) {
+        match tokio::time::timeout(Duration::from_millis(1500), self.reader.next_line()).await {
+            Ok(Ok(None)) => {}
+            Ok(Ok(Some(line))) => {
+                panic!("Expected connection to be closed, but got {:?}", line);
+            }
+            Ok(Err(err)) => {
+                panic!("Connection broken: {:?}", err);
+            }
+            Err(_) => panic!("Timeout while waiting for server response."),
         }
     }
 

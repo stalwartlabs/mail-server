@@ -37,16 +37,17 @@ use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 use store::Store;
-use utils::config::DynValue;
+use utils::{config::DynValue, listener::blocked::BlockedIps};
 
 pub mod backend;
 pub mod core;
 
 pub struct Directory {
-    store: DirectoryInner,
-    catch_all: AddressMapping,
-    subaddressing: AddressMapping,
-    cache: Option<CachedDirectory>,
+    pub store: DirectoryInner,
+    pub catch_all: AddressMapping,
+    pub subaddressing: AddressMapping,
+    pub cache: Option<CachedDirectory>,
+    pub blocked_ips: Arc<BlockedIps>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -123,6 +124,12 @@ pub enum QueryBy<'x> {
     Name(&'x str),
     Id(u32),
     Credentials(&'x Credentials<String>),
+}
+
+pub enum AuthResult<T> {
+    Success(T),
+    Failure,
+    Banned,
 }
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {

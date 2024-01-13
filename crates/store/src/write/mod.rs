@@ -137,6 +137,7 @@ pub enum ValueClass {
     Directory(DirectoryClass),
     Blob(BlobOp),
     IndexEmail(u64),
+    Config(Vec<u8>),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

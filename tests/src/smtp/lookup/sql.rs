@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::config::ConfigStore;
-use utils::config::{Config, DynValue};
+use store::{config::ConfigStore, Store};
+use utils::config::{Config, DynValue, Servers};
 
 use crate::{
     directory::DirectoryStore,
@@ -87,7 +87,10 @@ async fn lookup_sql() {
     let mut ctx = ConfigContext::new(&[]);
     let config = Config::new(&config_file).unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config.parse_directory(&ctx.stores, None).await.unwrap();
+    ctx.directory = config
+        .parse_directory(&ctx.stores, &Servers::default(), Store::default())
+        .await
+        .unwrap();
 
     // Obtain directory handle
     let handle = DirectoryStore {

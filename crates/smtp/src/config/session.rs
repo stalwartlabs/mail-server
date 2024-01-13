@@ -440,7 +440,7 @@ impl ConfigSession for Config {
         available_keys: &[EnvelopeKey],
     ) -> super::Result<Vec<Pipe>> {
         let mut pipes = Vec::new();
-        for id in self.sub_keys("session.data.pipe") {
+        for id in self.sub_keys("session.data.pipe", "") {
             pipes.push(Pipe {
                 command: self
                     .parse_if_block(("session.data.pipe", id, "command"), ctx, available_keys)?
@@ -462,7 +462,7 @@ impl ConfigSession for Config {
         available_keys: &[EnvelopeKey],
     ) -> super::Result<Vec<Milter>> {
         let mut milters = Vec::new();
-        for id in self.sub_keys("session.data.milter") {
+        for id in self.sub_keys("session.data.milter", "") {
             let hostname = self
                 .value_require(("session.data.milter", id, "hostname"))?
                 .to_string();

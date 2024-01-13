@@ -44,7 +44,7 @@ use tokio::net::TcpSocket;
 use crate::{
     acme::AcmeManager,
     failed,
-    listener::{tls::Certificate, TcpAcceptor},
+    listener::{blocked::BlockedIps, tls::Certificate, TcpAcceptor},
     UnwrapFailure,
 };
 
@@ -53,6 +53,12 @@ use self::{ipmask::IpAddrMask, utils::ParseValue};
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
     pub keys: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ConfigKey {
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Default)]
@@ -64,6 +70,7 @@ pub struct Server {
     pub protocol: ServerProtocol,
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
+    pub blocked_ips: Arc<BlockedIps>,
     pub acceptor: TcpAcceptor,
     pub tls_implicit: bool,
     pub max_connections: u64,
@@ -74,6 +81,7 @@ pub struct Servers {
     pub inner: Vec<Server>,
     pub certificates: Vec<Arc<Certificate>>,
     pub acme_managers: Vec<Arc<AcmeManager>>,
+    pub blocked_ips: Arc<BlockedIps>,
 }
 
 #[derive(Debug)]
@@ -218,6 +226,10 @@ impl Config {
         }
 
         config
+    }
+
+    pub fn update(&mut self, config: Self) {
+        self.keys.extend(config.keys);
     }
 }
 

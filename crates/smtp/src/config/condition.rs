@@ -63,7 +63,7 @@ impl ConfigCondition for Config {
         'outer: loop {
             let mut op_str = "";
 
-            for key in self.sub_keys(prefix.as_str()) {
+            for key in self.sub_keys(prefix.as_str(), "") {
                 if !["if", "then"].contains(&key) {
                     if op_str.is_empty() {
                         op_str = key;
@@ -81,7 +81,9 @@ impl ConfigCondition for Config {
                 stack.push((
                     std::mem::replace(
                         &mut iter,
-                        self.sub_keys((&prefix, op_str).as_key()).peekable().into(),
+                        self.sub_keys((&prefix, op_str).as_key(), "")
+                            .peekable()
+                            .into(),
                     ),
                     (&prefix, op_str).as_key(),
                     std::mem::take(&mut jmp_pos),
@@ -301,7 +303,7 @@ impl ConfigCondition for Config {
             EnvelopeKey::Mx,
         ];
 
-        for rule_name in self.sub_keys("rule") {
+        for rule_name in self.sub_keys("rule", "") {
             conditions.insert(
                 rule_name.to_string(),
                 self.parse_condition(("rule", rule_name), ctx, &available_keys)?,

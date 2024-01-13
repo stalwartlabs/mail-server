@@ -129,3 +129,30 @@ impl ParseValue for IpAddrMask {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ipaddrmask() {
+        for (mask, ip) in [
+            ("10.0.0.0/8", "10.30.20.11"),
+            ("10.0.0.0/8", "10.0.13.73"),
+            ("192.168.1.1", "192.168.1.1"),
+        ] {
+            let mask = IpAddrMask::parse_value("test", mask).unwrap();
+            let ip = ip.parse::<IpAddr>().unwrap();
+            assert!(mask.matches(&ip));
+        }
+
+        for (mask, ip) in [
+            ("10.0.0.0/8", "11.30.20.11"),
+            ("192.168.1.1", "193.168.1.1"),
+        ] {
+            let mask = IpAddrMask::parse_value("test", mask).unwrap();
+            let ip = ip.parse::<IpAddr>().unwrap();
+            assert!(!mask.matches(&ip));
+        }
+    }
+}

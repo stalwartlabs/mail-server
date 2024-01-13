@@ -24,7 +24,7 @@
 use store::Store;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{Principal, Type};
+use crate::{backend::internal::manage::ManageDirectory, Principal, Type};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -32,15 +32,17 @@ impl MemoryDirectory {
     pub async fn from_config(
         config: &Config,
         prefix: impl AsKey,
-        id_store: Option<Store>,
+        data_store: Store,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let mut directory = MemoryDirectory {
-            names_to_ids: id_store.into(),
-            ..Default::default()
+            data_store,
+            principals: Default::default(),
+            emails_to_ids: Default::default(),
+            domains: Default::default(),
         };
 
-        for lookup_id in config.sub_keys((prefix.as_str(), "principals")) {
+        for lookup_id in config.sub_keys((prefix.as_str(), "principals"), ".name") {
             let name = config
                 .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
@@ -53,8 +55,8 @@ impl MemoryDirectory {
 
             // Obtain id
             let id = directory
-                .names_to_ids
-                .get_or_insert(&name)
+                .data_store
+                .get_or_create_account_id(&name)
                 .await
                 .map_err(|err| {
                     format!(
@@ -67,14 +69,18 @@ impl MemoryDirectory {
             let mut member_of = Vec::new();
             for (_, group) in config.values((prefix.as_str(), "principals", lookup_id, "member-of"))
             {
-                member_of.push(directory.names_to_ids.get_or_insert(group).await.map_err(
-                    |err| {
-                        format!(
-                            "Failed to obtain id for principal {} ({}): {:?}",
-                            name, lookup_id, err
-                        )
-                    },
-                )?);
+                member_of.push(
+                    directory
+                        .data_store
+                        .get_or_create_account_id(group)
+                        .await
+                        .map_err(|err| {
+                            format!(
+                                "Failed to obtain id for principal {} ({}): {:?}",
+                                name, lookup_id, err
+                            )
+                        })?,
+                );
             }
 
             // Parse email addresses

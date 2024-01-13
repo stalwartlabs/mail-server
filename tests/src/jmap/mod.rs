@@ -25,6 +25,7 @@ use std::{sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose, Engine};
 use directory::core::config::ConfigDirectory;
+use imap::core::{ImapSessionManager, IMAP};
 use jmap::{
     api::JmapSessionManager,
     services::{housekeeper::Event, IPC_CHANNEL_BUFFER},
@@ -77,6 +78,11 @@ protocol = "jmap"
 max-connections = 81920
 tls.implicit = true
 
+[server.listener.imap]
+bind = ["127.0.0.1:9991"]
+protocol = "imap"
+max-connections = 81920
+
 [server.listener.lmtp-debug]
 bind = ['127.0.0.1:11200']
 greeting = 'Test LMTP instance'
@@ -90,6 +96,10 @@ reuse-addr = true
 enable = true
 implicit = false
 certificate = "default"
+
+[server.security]
+blocked-networks = {}
+fail2ban = "101/5s"
 
 [session.ehlo]
 reject-non-fqdn = false
@@ -171,15 +181,13 @@ disable = true # Elastic is disabled by default
 cert = "file://{CERT}"
 private-key = "file://{PK}"
 
-[jmap]
-directory = "auth"
-
-[jmap.store]
+[storage]
 data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
+directory = "auth"
 
-[jmap.spam]
+[storage.spam]
 header = "X-Spam-Status: Yes"
 
 [jmap.protocol.get]
@@ -394,9 +402,14 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(&stores, store_id.into())
+        .parse_directory(
+            &stores,
+            &servers,
+            stores.stores.get(store_id).unwrap().clone(),
+        )
         .await
         .unwrap();
+    servers.blocked_ips.reload(&config).unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);
@@ -408,12 +421,16 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         &config,
         &stores,
         &directory,
-        std::mem::take(&mut servers.certificates),
+        &mut servers,
         delivery_rx,
         smtp.clone(),
     )
     .await
     .failed("Invalid configuration file");
+    let imap: Arc<IMAP> = IMAP::init(&config)
+        .await
+        .failed("Invalid configuration file");
+
     let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => {
@@ -422,6 +439,10 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             ServerProtocol::Jmap => {
                 server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
             }
+            ServerProtocol::Imap => server.spawn(
+                ImapSessionManager::new(jmap.clone(), imap.clone()),
+                shutdown_rx,
+            ),
             _ => unreachable!(),
         };
     });

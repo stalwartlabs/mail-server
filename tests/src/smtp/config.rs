@@ -458,6 +458,7 @@ fn parse_servers() {
             tls_implicit: false,
             max_connections: 8192,
             proxy_networks: vec![],
+            blocked_ips: Arc::new(Default::default()),
         },
         Server {
             id: "smtps".to_string(),
@@ -487,6 +488,7 @@ fn parse_servers() {
             tls_implicit: true,
             max_connections: 1024,
             proxy_networks: vec![],
+            blocked_ips: Arc::new(Default::default()),
         },
         Server {
             id: "submission".to_string(),
@@ -506,6 +508,7 @@ fn parse_servers() {
             tls_implicit: true,
             max_connections: 8192,
             proxy_networks: vec![],
+            blocked_ips: Arc::new(Default::default()),
         },
     ];
 
@@ -622,7 +625,7 @@ async fn eval_dynvalue() {
 
     let envelope = TestEnvelope::from_config(&config);
 
-    for test_name in config.sub_keys("eval") {
+    for test_name in config.sub_keys("eval", "") {
         //println!("============= Testing {:?} ==================", key);
         let if_block = config
             .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
@@ -664,7 +667,7 @@ async fn eval_dynvalue() {
         .map(|(k, v)| (k.clone(), Arc::new(v.clone())))
         .collect::<AHashMap<_, _>>();
 
-    for test_name in config.sub_keys("maybe-eval") {
+    for test_name in config.sub_keys("maybe-eval", "") {
         //println!("============= Testing {:?} ==================", key);
         let if_block = config
             .parse_if_block::<Option<DynValue<EnvelopeKey>>>(

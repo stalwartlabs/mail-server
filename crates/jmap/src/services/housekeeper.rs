@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use utils::{
-    config::{cron::SimpleCron, Config},
-    listener::tls::Certificate,
+    config::{cron::SimpleCron, Config, Servers},
+    listener::blocked::BLOCKED_IP_KEY,
     map::ttl_dashmap::TtlMap,
     UnwrapFailure,
 };
@@ -38,6 +38,7 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     PurgeSessions,
     ReloadCertificates,
+    ReloadConfig,
     IndexStart,
     IndexDone,
     #[cfg(feature = "test_mode")]
@@ -48,12 +49,15 @@ pub enum Event {
 pub fn spawn_housekeeper(
     core: Arc<JMAP>,
     settings: &Config,
-    certificates: Vec<Arc<Certificate>>,
+    servers: &mut Servers,
     mut rx: mpsc::Receiver<Event>,
 ) {
     let purge_cache = settings
         .property_or_static::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
         .failed("Initialize housekeeper");
+
+    let certificates = std::mem::take(&mut servers.certificates);
+    let blocked_ips = servers.blocked_ips.clone();
 
     tokio::spawn(async move {
         tracing::debug!("Housekeeper task started.");
@@ -102,6 +106,34 @@ pub fn spawn_housekeeper(
                             }
                         });
                     }
+                    Event::ReloadConfig => {
+                        // Future releases will support reloading the configuration
+                        // for now, we just reload the blocked IP addresses
+                        let core = core.clone();
+                        let blocked_ips = blocked_ips.clone();
+                        tokio::spawn(async move {
+                            match core.store.config_list(BLOCKED_IP_KEY).await {
+                                Ok(config) => {
+                                    if let Err(err) = blocked_ips.reload_blocked_ips(&config) {
+                                        tracing::error!(
+                                            context = "store",
+                                            event = "error",
+                                            error = ?err,
+                                            "Failed to reload configuration."
+                                        );
+                                    }
+                                }
+                                Err(err) => {
+                                    tracing::error!(
+                                        context = "store",
+                                        event = "error",
+                                        error = ?err,
+                                        "Failed to reload configuration."
+                                    );
+                                }
+                            }
+                        });
+                    }
                     Event::IndexStart => {
                         if !index_busy {
                             index_busy = true;
@@ -144,15 +176,17 @@ pub fn spawn_housekeeper(
 
             if do_purge {
                 let core = core.clone();
+                let blocked_ips = blocked_ips.clone();
                 tokio::spawn(async move {
                     tracing::info!("Purging session cache.");
+                    blocked_ips.cleanup();
                     core.sessions.cleanup();
                     core.access_tokens.cleanup();
                     core.oauth_codes.cleanup();
                     core.rate_limit_auth
-                        .retain(|_, limiter| limiter.lock().is_active());
+                        .retain(|_, limiter| limiter.is_active());
                     core.rate_limit_unauth
-                        .retain(|_, limiter| limiter.lock().is_active());
+                        .retain(|_, limiter| limiter.is_active());
                 });
             }
         }

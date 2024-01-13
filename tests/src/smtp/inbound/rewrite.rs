@@ -27,8 +27,8 @@ use smtp::{
     config::{if_block::ConfigIf, scripts::ConfigSieve, ConfigContext, EnvelopeKey, IfBlock},
     core::{Session, SMTP},
 };
-use store::Stores;
-use utils::config::{Config, DynValue};
+use store::{Store, Stores};
+use utils::config::{Config, DynValue, Servers};
 
 const CONFIG: &str = r#"
 [session.mail]
@@ -105,7 +105,7 @@ async fn address_rewrite() {
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let settings = Config::new(CONFIG).unwrap();
     ctx.directory = settings
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();

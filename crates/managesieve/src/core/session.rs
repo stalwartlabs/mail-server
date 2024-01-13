@@ -22,7 +22,6 @@
 */
 
 use imap_proto::receiver::{self, Receiver};
-use jmap::auth::rate_limit::RemoteAddress;
 use tokio_rustls::server::TlsStream;
 use utils::listener::{SessionManager, SessionStream};
 
@@ -48,7 +47,7 @@ impl SessionManager for ManageSieveSessionManager {
                 span: session.span,
                 stream: session.stream,
                 in_flight: session.in_flight,
-                remote_addr: RemoteAddress::IpAddress(session.remote_ip),
+                remote_addr: session.remote_ip,
             };
 
             if session

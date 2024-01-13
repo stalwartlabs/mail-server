@@ -21,14 +21,15 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor};
+use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor, net::IpAddr};
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
-    auth::{oauth::FormData, rate_limit::RemoteAddress},
+    auth::oauth::FormData,
     JMAP,
 };
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+use directory::AuthResult;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
 use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};
@@ -619,7 +620,7 @@ impl JMAP {
     pub async fn handle_crypto_update(
         &self,
         req: &mut HttpRequest,
-        remote_addr: &RemoteAddress,
+        remote_addr: IpAddr,
     ) -> HttpResponse {
         let mut response = String::with_capacity(
             CRYPT_HTML_HEADER.len() + CRYPT_HTML_FOOTER.len() + CRYPT_HTML_FORM.len(),
@@ -668,7 +669,7 @@ impl JMAP {
     async fn validate_form(
         &self,
         mut form: FormData,
-        remote_addr: &RemoteAddress,
+        remote_addr: IpAddr,
     ) -> Result<Option<EncryptionParams>, Cow<str>> {
         let certificate = form.remove_bytes("certificate");
         if let (Some(email), Some(password), Some(encryption)) = (
@@ -685,10 +686,14 @@ impl JMAP {
             }
 
             // Authenticate
-            let token = self
-                .authenticate_plain(email, password, remote_addr)
-                .await
-                .ok_or_else(|| Cow::from("Invalid login or password"))?;
+            let token = if let AuthResult::Success(token) =
+                self.authenticate_plain(email, password, remote_addr).await
+            {
+                token
+            } else {
+                return Err(Cow::from("Invalid login or password"));
+            };
+
             if encryption != "disable" {
                 let (method, certs) =
                     try_parse_certs(certificate.unwrap_or_default()).map_err(Cow::from)?;

@@ -24,18 +24,11 @@
 use std::{net::IpAddr, sync::Arc};
 
 use jmap_proto::error::request::{RequestError, RequestLimitError};
-use store::parking_lot::Mutex;
 use utils::listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter};
 
 use crate::JMAP;
 
 use super::AccessToken;
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum RemoteAddress {
-    IpAddress(IpAddr),
-    IpAddressFwd(String),
-}
 
 pub struct AuthenticatedLimiter {
     pub request_limiter: RateLimiter,
@@ -50,53 +43,44 @@ pub struct AnonymousLimiter {
 }
 
 impl JMAP {
-    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<Mutex<AuthenticatedLimiter>> {
+    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<AuthenticatedLimiter> {
         self.rate_limit_auth
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
-                let limiter = Arc::new(Mutex::new(AuthenticatedLimiter {
-                    request_limiter: RateLimiter::new(
-                        self.config.rate_authenticated.requests,
-                        self.config.rate_authenticated.period,
-                    ),
+                let limiter = Arc::new(AuthenticatedLimiter {
+                    request_limiter: RateLimiter::new(&self.config.rate_authenticated),
                     concurrent_requests: ConcurrencyLimiter::new(
                         self.config.request_max_concurrent,
                     ),
-                    concurrent_uploads: ConcurrencyLimiter::new(
-                        self.config.upload_max_concurrent as u64,
-                    ),
-                }));
+                    concurrent_uploads: ConcurrencyLimiter::new(self.config.upload_max_concurrent),
+                });
                 self.rate_limit_auth.insert(account_id, limiter.clone());
                 limiter
             })
     }
 
-    pub fn get_anonymous_limiter(&self, addr: &RemoteAddress) -> Arc<Mutex<AnonymousLimiter>> {
+    pub fn get_anonymous_limiter(&self, addr: &IpAddr) -> Arc<AnonymousLimiter> {
         self.rate_limit_unauth
             .get(addr)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
-                let limiter = Arc::new(Mutex::new(AnonymousLimiter {
-                    request_limiter: RateLimiter::new(
-                        self.config.rate_anonymous.requests,
-                        self.config.rate_anonymous.period,
-                    ),
-                    auth_limiter: RateLimiter::new(
-                        self.config.rate_authenticate_req.requests,
-                        self.config.rate_authenticate_req.period,
-                    ),
-                }));
-                self.rate_limit_unauth.insert(addr.clone(), limiter.clone());
+                let limiter = Arc::new(AnonymousLimiter {
+                    request_limiter: RateLimiter::new(&self.config.rate_anonymous),
+                    auth_limiter: RateLimiter::new(&self.config.rate_authenticate_req),
+                });
+                self.rate_limit_unauth.insert(*addr, limiter.clone());
                 limiter
             })
     }
 
     pub fn is_account_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
-        let limiter_ = self.get_authenticated_limiter(access_token.primary_id());
-        let mut limiter = limiter_.lock();
+        let limiter = self.get_authenticated_limiter(access_token.primary_id());
 
-        if limiter.request_limiter.is_allowed() {
+        if limiter
+            .request_limiter
+            .is_allowed(&self.config.rate_authenticated)
+        {
             if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
                 Ok(in_flight_request)
             } else if access_token.is_super_user() {
@@ -111,12 +95,11 @@ impl JMAP {
         }
     }
 
-    pub fn is_anonymous_allowed(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
+    pub fn is_anonymous_allowed(&self, addr: &IpAddr) -> Result<(), RequestError> {
         if self
             .get_anonymous_limiter(addr)
-            .lock()
             .request_limiter
-            .is_allowed()
+            .is_allowed(&self.config.rate_anonymous)
         {
             Ok(())
         } else {
@@ -127,7 +110,6 @@ impl JMAP {
     pub fn is_upload_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
         if let Some(in_flight_request) = self
             .get_authenticated_limiter(access_token.primary_id())
-            .lock()
             .concurrent_uploads
             .is_allowed()
         {
@@ -139,21 +121,24 @@ impl JMAP {
         }
     }
 
-    pub fn is_auth_allowed_soft(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
+    pub fn is_auth_allowed_soft(&self, addr: &IpAddr) -> Result<(), RequestError> {
         match self.rate_limit_unauth.get(addr) {
-            Some(limiter) if !limiter.lock().auth_limiter.is_allowed_soft() => {
+            Some(limiter)
+                if !limiter
+                    .auth_limiter
+                    .is_allowed_soft(&self.config.rate_authenticate_req) =>
+            {
                 Err(RequestError::too_many_auth_attempts())
             }
             _ => Ok(()),
         }
     }
 
-    pub fn is_auth_allowed_hard(&self, addr: &RemoteAddress) -> Result<(), RequestError> {
+    pub fn is_auth_allowed_hard(&self, addr: &IpAddr) -> Result<(), RequestError> {
         if self
             .get_anonymous_limiter(addr)
-            .lock()
             .auth_limiter
-            .is_allowed()
+            .is_allowed(&self.config.rate_authenticate_req)
         {
             Ok(())
         } else {

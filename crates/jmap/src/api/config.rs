@@ -32,7 +32,9 @@ impl crate::Config {
     pub fn new(settings: &utils::config::Config) -> Result<Self, String> {
         let mut config = Self {
             default_language: Language::from_iso_639(
-                settings.value("jmap.fts.default-language").unwrap_or("en"),
+                settings
+                    .value("storage.fts.default-language")
+                    .unwrap_or("en"),
             )
             .unwrap_or(Language::English),
             query_max_results: settings
@@ -139,9 +141,9 @@ impl crate::Config {
             principal_allow_lookups: settings
                 .property("jmap.principal.allow-lookups")?
                 .unwrap_or(true),
-            encrypt: settings.property_or_static("jmap.encryption.enable", "true")?,
-            encrypt_append: settings.property_or_static("jmap.encryption.append", "false")?,
-            spam_header: settings.value("jmap.spam.header").and_then(|v| {
+            encrypt: settings.property_or_static("storage.encryption.enable", "true")?,
+            encrypt_append: settings.property_or_static("storage.encryption.append", "false")?,
+            spam_header: settings.value("storage.spam.header").and_then(|v| {
                 v.split_once(':').map(|(k, v)| {
                     (
                         mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),

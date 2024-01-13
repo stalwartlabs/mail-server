@@ -50,7 +50,7 @@ use mail_send::Credentials;
 use regex::Regex;
 use sieve::Sieve;
 use smtp_proto::MtPriority;
-use store::Stores;
+use store::{LookupStore, Store, Stores};
 use utils::config::{ipmask::IpAddrMask, DynValue, Rate, Server, ServerProtocol};
 
 use crate::{core::Lookup, inbound::milter};
@@ -342,7 +342,11 @@ pub struct QueueConfig {
     // Throttle and Quotas
     pub throttle: QueueThrottle,
     pub quota: QueueQuotas,
-    pub management_lookup: Arc<Directory>,
+
+    // Default store and directory
+    pub directory: Arc<Directory>,
+    pub data_store: Store,
+    pub lookup_store: LookupStore,
 }
 
 pub struct QueueOutboundSourceIp {

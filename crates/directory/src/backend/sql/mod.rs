@@ -29,7 +29,7 @@ pub mod lookup;
 pub struct SqlDirectory {
     store: LookupStore,
     mappings: SqlMappings,
-    id_store: Option<Store>,
+    pub(crate) data_store: Store,
 }
 
 #[derive(Debug, Default)]

@@ -23,10 +23,12 @@
 
 use std::{
     collections::HashMap,
+    net::IpAddr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
+use directory::AuthResult;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, header, StatusCode};
 use mail_builder::encoders::base64::base64_encode;
@@ -37,7 +39,6 @@ use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
-    auth::rate_limit::RemoteAddress,
     JMAP,
 };
 
@@ -111,7 +112,7 @@ impl JMAP {
     pub async fn handle_user_code_auth_post(
         &self,
         req: &mut HttpRequest,
-        remote_addr: &RemoteAddress,
+        remote_addr: IpAddr,
     ) -> HttpResponse {
         // Parse form
         let params = match FormData::from_request(req, MAX_POST_LEN).await {
@@ -137,7 +138,8 @@ impl JMAP {
 
         // Authenticate user
         if let (Some(email), Some(password)) = (params.get("email"), params.get("password")) {
-            if let Some(access_token) = self.authenticate_plain(email, password, remote_addr).await
+            if let AuthResult::Success(access_token) =
+                self.authenticate_plain(email, password, remote_addr).await
             {
                 // Generate client code
                 let client_code = thread_rng()

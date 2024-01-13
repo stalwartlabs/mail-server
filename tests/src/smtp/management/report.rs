@@ -34,9 +34,9 @@ use mail_auth::{
         ActionDisposition, DmarcResult, Record,
     },
 };
-use store::Stores;
+use store::{Store, Stores};
 use tokio::sync::mpsc;
-use utils::config::{Config, ServerProtocol};
+use utils::config::{Config, ServerProtocol, Servers};
 
 use crate::smtp::{
     make_temp_dir, management::send_manage_request, outbound::start_test_server, TestConfig,
@@ -83,10 +83,10 @@ async fn manage_reports() {
     config.tls.max_size = IfBlock::new(1024);
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
-    core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
+    core.queue.config.directory = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;
     let core = Arc::new(core);

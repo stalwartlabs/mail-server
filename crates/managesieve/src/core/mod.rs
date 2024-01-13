@@ -24,14 +24,11 @@
 pub mod client;
 pub mod session;
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use imap::core::IMAP;
 use imap_proto::receiver::{CommandParser, Receiver};
-use jmap::{
-    auth::{rate_limit::RemoteAddress, AccessToken},
-    JMAP,
-};
+use jmap::{auth::AccessToken, JMAP};
 use tokio::io::{AsyncRead, AsyncWrite};
 use utils::listener::{limiter::InFlight, ServerInstance};
 
@@ -41,7 +38,7 @@ pub struct Session<T: AsyncRead + AsyncWrite> {
     pub instance: Arc<ServerInstance>,
     pub receiver: Receiver<Command>,
     pub state: State,
-    pub remote_addr: RemoteAddress,
+    pub remote_addr: IpAddr,
     pub stream: T,
     pub span: tracing::Span,
     pub in_flight: InFlight,

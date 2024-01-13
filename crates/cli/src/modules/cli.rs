@@ -402,8 +402,32 @@ pub enum ExportCommands {
 pub enum ServerCommands {
     /// Perform database maintenance
     DatabaseMaintenance {},
+
     /// Reload TLS certificates
     ReloadCertificates {},
+
+    /// Reload configuration
+    ReloadConfig {},
+
+    /// Create a new configuration key
+    AddConfig {
+        /// Key to add
+        key: String,
+        /// Value to set
+        value: Option<String>,
+    },
+
+    /// Delete a configuration key or prefix
+    DeleteConfig {
+        /// Configuration key or prefix to delete
+        key: String,
+    },
+
+    /// List all configuration entries
+    ListConfig {
+        /// Prefix to filter configuration entries by
+        prefix: Option<String>,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

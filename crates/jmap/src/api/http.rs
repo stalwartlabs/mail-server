@@ -215,7 +215,7 @@ pub async fn parse_jmap_request(
                 ("", &Method::POST) => {
                     return match jmap.is_auth_allowed_soft(&remote_addr) {
                         Ok(_) => {
-                            jmap.handle_user_device_auth_post(&mut req, &remote_addr)
+                            jmap.handle_user_device_auth_post(&mut req, remote_addr)
                                 .await
                         }
                         Err(err) => err.into_http_response(),
@@ -229,10 +229,7 @@ pub async fn parse_jmap_request(
                 }
                 ("code", &Method::POST) => {
                     return match jmap.is_auth_allowed_soft(&remote_addr) {
-                        Ok(_) => {
-                            jmap.handle_user_code_auth_post(&mut req, &remote_addr)
-                                .await
-                        }
+                        Ok(_) => jmap.handle_user_code_auth_post(&mut req, remote_addr).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
@@ -259,11 +256,11 @@ pub async fn parse_jmap_request(
 
             match *req.method() {
                 Method::GET => {
-                    return jmap.handle_crypto_update(&mut req, &remote_addr).await;
+                    return jmap.handle_crypto_update(&mut req, remote_addr).await;
                 }
                 Method::POST => {
                     return match jmap.is_auth_allowed_soft(&remote_addr) {
-                        Ok(_) => jmap.handle_crypto_update(&mut req, &remote_addr).await,
+                        Ok(_) => jmap.handle_crypto_update(&mut req, remote_addr).await,
                         Err(err) => err.into_http_response(),
                     }
                 }

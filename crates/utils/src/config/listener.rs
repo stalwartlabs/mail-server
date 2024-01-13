@@ -43,6 +43,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::{
     acme::{directory::ACME_TLS_ALPN_NAME, AcmeManager},
     listener::{
+        blocked::BlockedIps,
         tls::{Certificate, CertificateResolver},
         TcpAcceptor,
     },
@@ -57,14 +58,16 @@ use super::{
 
 impl Config {
     pub fn parse_servers(&self) -> super::Result<Servers> {
+        let mut servers = Servers::default();
+
         // Parse certificates and ACME managers
         let certificates = self.parse_certificates()?;
         let acmes = self.parse_acmes()?;
 
         // Parse servers
-        let mut servers = Servers::default();
-        for (internal_id, id) in self.sub_keys("server.listener").enumerate() {
-            let mut server = self.parse_server(id, &certificates, &acmes)?;
+        for (internal_id, id) in self.sub_keys("server.listener", ".protocol").enumerate() {
+            let mut server =
+                self.parse_server(id, &certificates, &acmes, servers.blocked_ips.clone())?;
             if !servers.inner.iter().any(|s| s.id == server.id) {
                 server.internal_id = internal_id as u16;
                 servers.inner.push(server);
@@ -113,6 +116,7 @@ impl Config {
         id: &str,
         certificates: &AHashMap<String, Arc<Certificate>>,
         acmes: &AHashMap<String, Arc<AcmeManager>>,
+        blocked_ips: Arc<BlockedIps>,
     ) -> super::Result<Server> {
         // Build listeners
         let mut listeners = Vec::new();
@@ -330,11 +334,11 @@ impl Config {
 
         // Parse proxy networks
         let mut proxy_networks = Vec::new();
-        for (key, protocol) in self.values_or_default(
-            ("server.listener", id, "proxy-trusted-networks"),
-            "server.proxy-trusted-networks",
+        for network in self.set_values_or_default(
+            ("server.listener", id, "proxy.trusted-networks"),
+            "server.proxy.trusted-networks",
         ) {
-            proxy_networks.push(protocol.parse_key(key)?);
+            proxy_networks.push(network.parse_key("server.proxy.trusted-networks")?);
         }
 
         Ok(Server {
@@ -374,6 +378,7 @@ impl Config {
             acceptor,
             tls_implicit,
             proxy_networks,
+            blocked_ips,
         })
     }
 }

@@ -63,6 +63,7 @@ impl Server {
             hostname: self.hostname,
             acceptor: self.acceptor,
             proxy_networks: self.proxy_networks,
+            blocked_ips: self.blocked_ips,
             limiter: ConcurrencyLimiter::new(self.max_connections),
             shutdown_rx,
         });
@@ -189,8 +190,20 @@ impl BuildSession for Arc<ServerInstance> {
         };
         let remote_port = remote_addr.port();
 
-        // Enforce concurrency
-        if let Some(in_flight) = self.limiter.is_allowed() {
+        // Check if blocked
+        if self.blocked_ips.is_blocked(&remote_ip) {
+            tracing::debug!(
+                context = "listener",
+                event = "blocked",
+                instance = self.id,
+                protocol = ?self.protocol,
+                remote.ip = remote_ip.to_string(),
+                remote.port = remote_port,
+                "Dropping connection from blocked IP."
+            );
+            None
+        } else if let Some(in_flight) = self.limiter.is_allowed() {
+            // Enforce concurrency
             SessionData {
                 stream,
                 in_flight,

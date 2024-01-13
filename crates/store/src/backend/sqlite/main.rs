@@ -76,6 +76,23 @@ impl SqliteStore {
         Ok(db)
     }
 
+    #[cfg(feature = "test_mode")]
+    pub fn open_memory() -> crate::Result<Self> {
+        let db = Self {
+            conn_pool: Pool::builder()
+                .max_size(1)
+                .build(SqliteConnectionManager::memory())?,
+            worker_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(num_cpus::get())
+                .build()
+                .map_err(|err| {
+                    crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
+                })?,
+        };
+        db.create_tables()?;
+        Ok(db)
+    }
+
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 

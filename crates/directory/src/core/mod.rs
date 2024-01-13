@@ -21,20 +21,7 @@
  * for more details.
 */
 
-use crate::{backend::memory::MemoryDirectory, AddressMapping, Directory, DirectoryInner};
-
 pub mod cache;
 pub mod config;
 pub mod dispatch;
 pub mod secret;
-
-impl Default for Directory {
-    fn default() -> Self {
-        Directory {
-            store: DirectoryInner::Memory(MemoryDirectory::default()),
-            catch_all: AddressMapping::Disable,
-            subaddressing: AddressMapping::Disable,
-            cache: None,
-        }
-    }
-}

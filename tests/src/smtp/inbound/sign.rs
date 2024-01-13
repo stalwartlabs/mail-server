@@ -28,8 +28,8 @@ use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
-use store::Stores;
-use utils::config::{Config, DynValue};
+use store::{Store, Stores};
+use utils::config::{Config, DynValue, Servers};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -154,7 +154,7 @@ async fn sign_and_seal() {
 
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;

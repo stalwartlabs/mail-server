@@ -22,6 +22,7 @@
 */
 
 use mail_send::smtp::tls::build_tls_connector;
+use store::Store;
 use utils::config::{utils::AsKey, Config};
 
 use crate::core::config::build_pool;
@@ -29,7 +30,11 @@ use crate::core::config::build_pool;
 use super::{ImapConnectionManager, ImapDirectory};
 
 impl ImapDirectory {
-    pub fn from_config(config: &Config, prefix: impl AsKey) -> utils::config::Result<Self> {
+    pub fn from_config(
+        config: &Config,
+        prefix: impl AsKey,
+        data_store: Store,
+    ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
         let tls_implicit: bool = config.property_or_static((&prefix, "tls.implicit"), "false")?;
@@ -53,6 +58,7 @@ impl ImapDirectory {
                 .values((&prefix, "lookup.domains"))
                 .map(|(_, v)| v.to_lowercase())
                 .collect(),
+            data_store,
         })
     }
 }

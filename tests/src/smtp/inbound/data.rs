@@ -22,8 +22,8 @@
 */
 
 use directory::core::config::ConfigDirectory;
-use store::Stores;
-use utils::config::Config;
+use store::{Store, Stores};
+use utils::config::{Config, Servers};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -80,7 +80,7 @@ async fn data() {
     let mut qr = core.init_test_queue("smtp_data_test");
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;

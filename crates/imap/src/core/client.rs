@@ -28,7 +28,6 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap::auth::rate_limit::AuthenticatedLimiter;
-use parking_lot::Mutex;
 use utils::listener::{
     limiter::{ConcurrencyLimiter, RateLimiter},
     SessionStream,
@@ -231,9 +230,8 @@ impl<T: SessionStream> Session<T> {
             if !data
                 .imap
                 .get_authenticated_limiter(data.account_id)
-                .lock()
                 .request_limiter
-                .is_allowed()
+                .is_allowed(&self.imap.rate_requests)
             {
                 return Err(StatusResponse::no("Too many requests")
                     .with_tag(request.tag)
@@ -392,19 +390,16 @@ impl<T: SessionStream> State<T> {
 }
 
 impl IMAP {
-    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<Mutex<AuthenticatedLimiter>> {
+    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<AuthenticatedLimiter> {
         self.rate_limiter
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
-                let limiter = Arc::new(Mutex::new(AuthenticatedLimiter {
-                    request_limiter: RateLimiter::new(
-                        self.rate_requests.requests,
-                        self.rate_requests.period,
-                    ),
+                let limiter = Arc::new(AuthenticatedLimiter {
+                    request_limiter: RateLimiter::new(&self.rate_requests),
                     concurrent_requests: ConcurrencyLimiter::new(self.rate_concurrent),
                     concurrent_uploads: ConcurrencyLimiter::new(self.rate_concurrent),
-                }));
+                });
                 self.rate_limiter.insert(account_id, limiter.clone());
                 limiter
             })

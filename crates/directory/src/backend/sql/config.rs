@@ -31,7 +31,7 @@ impl SqlDirectory {
         config: &Config,
         prefix: impl AsKey,
         stores: &Stores,
-        id_store: Option<Store>,
+        data_store: Store,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let store_id = config.value_require((&prefix, "store"))?;
@@ -81,7 +81,7 @@ impl SqlDirectory {
         Ok(SqlDirectory {
             store,
             mappings,
-            id_store,
+            data_store,
         })
     }
 }

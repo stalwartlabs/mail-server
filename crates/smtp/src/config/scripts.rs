@@ -154,12 +154,12 @@ impl ConfigSieve for Config {
         runtime.set_local_hostname(hostname.to_string());
 
         // Parse scripts
-        for id in self.sub_keys("sieve.trusted.scripts") {
+        for id in self.sub_keys("sieve.trusted.scripts", "") {
             let key = ("sieve.trusted.scripts", id);
 
             let script = if !self.contains_key(key) {
                 let mut script = Vec::new();
-                for sub_key in self.sub_keys(key) {
+                for sub_key in self.sub_keys(key, "") {
                     script.extend(self.file_contents(("sieve.trusted.scripts", id, sub_key))?);
                 }
                 script
@@ -195,14 +195,6 @@ impl ConfigSieve for Config {
             scripts: ctx.scripts.clone(),
             lookup_stores: ctx.stores.lookup_stores.clone(),
             directories: ctx.directory.directories.clone(),
-            default_directory: self
-                .value("sieve.trusted.default.directory")
-                .and_then(|id| ctx.directory.directories.get(id))
-                .cloned(),
-            default_lookup_store: self
-                .value("sieve.trusted.default.store")
-                .and_then(|id| ctx.stores.lookup_stores.get(id))
-                .cloned(),
             from_addr: self
                 .value("sieve.trusted.from-addr")
                 .map(|a| a.to_string())

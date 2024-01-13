@@ -23,6 +23,7 @@
 
 use std::{
     collections::BTreeMap,
+    net::IpAddr,
     sync::{atomic::AtomicU32, Arc},
     time::Duration,
 };
@@ -35,10 +36,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap::{
-    auth::{
-        rate_limit::{AuthenticatedLimiter, RemoteAddress},
-        AccessToken,
-    },
+    auth::{rate_limit::AuthenticatedLimiter, AccessToken},
     JMAP,
 };
 use store::roaring::RoaringBitmap;
@@ -82,7 +80,7 @@ pub struct IMAP {
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,
 
-    pub rate_limiter: DashMap<u32, Arc<parking_lot::Mutex<AuthenticatedLimiter>>>,
+    pub rate_limiter: DashMap<u32, Arc<AuthenticatedLimiter>>,
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
 }
@@ -100,7 +98,7 @@ pub struct Session<T: SessionStream> {
     pub stream_rx: ReadHalf<T>,
     pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub in_flight: InFlight,
-    pub remote_addr: RemoteAddress,
+    pub remote_addr: IpAddr,
     pub span: tracing::Span,
 }
 

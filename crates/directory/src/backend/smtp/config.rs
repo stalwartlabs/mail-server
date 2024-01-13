@@ -22,6 +22,7 @@
 */
 
 use mail_send::{smtp::tls::build_tls_connector, SmtpClientBuilder};
+use store::Store;
 use utils::config::{utils::AsKey, Config};
 
 use crate::core::config::build_pool;
@@ -33,6 +34,7 @@ impl SmtpDirectory {
         config: &Config,
         prefix: impl AsKey,
         is_lmtp: bool,
+        data_store: Store,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let address = config.value_require((&prefix, "address"))?;
@@ -67,6 +69,7 @@ impl SmtpDirectory {
                 .values((&prefix, "lookup.domains"))
                 .map(|(_, v)| v.to_lowercase())
                 .collect(),
+            data_store,
         })
     }
 }

@@ -22,7 +22,7 @@
 */
 
 use mail_send::Credentials;
-use store::{NamedRows, Rows, Store, Value};
+use store::{NamedRows, Rows, Value};
 
 use crate::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 
@@ -47,7 +47,7 @@ impl SqlDirectory {
                     .await?
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.unwrap_id_store().get_account_name(uid).await? {
+                if let Some(username) = self.data_store.get_account_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -100,47 +100,43 @@ impl SqlDirectory {
         // Obtain account ID if not available
         if let Some(account_id) = account_id {
             principal.id = account_id;
-        } else if self.has_id_store() {
+        } else {
             principal.id = self
-                .unwrap_id_store()
+                .data_store
                 .get_or_create_account_id(&account_name)
                 .await?;
         }
         principal.name = account_name;
 
-        if self.has_id_store() {
-            // Obtain members
-            if return_member_of && !self.mappings.query_members.is_empty() {
-                for row in self
-                    .store
-                    .query::<Rows>(
-                        &self.mappings.query_members,
-                        vec![principal.name.clone().into()],
-                    )
-                    .await?
-                    .rows
-                {
-                    if let Some(Value::Text(account_id)) = row.values.first() {
-                        principal.member_of.push(
-                            self.unwrap_id_store()
-                                .get_or_create_account_id(account_id)
-                                .await?,
-                        );
-                    }
+        // Obtain members
+        if return_member_of && !self.mappings.query_members.is_empty() {
+            for row in self
+                .store
+                .query::<Rows>(
+                    &self.mappings.query_members,
+                    vec![principal.name.clone().into()],
+                )
+                .await?
+                .rows
+            {
+                if let Some(Value::Text(account_id)) = row.values.first() {
+                    principal
+                        .member_of
+                        .push(self.data_store.get_or_create_account_id(account_id).await?);
                 }
             }
+        }
 
-            // Obtain emails
-            if !self.mappings.query_emails.is_empty() {
-                principal.emails = self
-                    .store
-                    .query::<Rows>(
-                        &self.mappings.query_emails,
-                        vec![principal.name.clone().into()],
-                    )
-                    .await?
-                    .into();
-            }
+        // Obtain emails
+        if !self.mappings.query_emails.is_empty() {
+            principal.emails = self
+                .store
+                .query::<Rows>(
+                    &self.mappings.query_emails,
+                    vec![principal.name.clone().into()],
+                )
+                .await?
+                .into();
         }
 
         Ok(Some(principal))
@@ -156,11 +152,7 @@ impl SqlDirectory {
 
         for row in names.rows {
             if let Some(Value::Text(name)) = row.values.first() {
-                ids.push(
-                    self.unwrap_id_store()
-                        .get_or_create_account_id(name)
-                        .await?,
-                );
+                ids.push(self.data_store.get_or_create_account_id(name).await?);
             }
         }
 
@@ -204,16 +196,6 @@ impl SqlDirectory {
             .query::<bool>(&self.mappings.query_domains, vec![domain.into()])
             .await
             .map_err(Into::into)
-    }
-}
-
-impl SqlDirectory {
-    pub fn has_id_store(&self) -> bool {
-        self.id_store.is_some()
-    }
-
-    pub fn unwrap_id_store(&self) -> &Store {
-        self.id_store.as_ref().unwrap()
     }
 }
 

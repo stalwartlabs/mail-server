@@ -35,8 +35,12 @@ use tokio::{
 };
 use tokio_rustls::{Accept, TlsAcceptor};
 
-use self::limiter::{ConcurrencyLimiter, InFlight};
+use self::{
+    blocked::BlockedIps,
+    limiter::{ConcurrencyLimiter, InFlight},
+};
 
+pub mod blocked;
 pub mod limiter;
 pub mod listen;
 pub mod stream;
@@ -51,6 +55,7 @@ pub struct ServerInstance {
     pub acceptor: TcpAcceptor,
     pub limiter: ConcurrencyLimiter,
     pub proxy_networks: Vec<IpAddrMask>,
+    pub blocked_ips: Arc<BlockedIps>,
     pub shutdown_rx: watch::Receiver<bool>,
 }
 

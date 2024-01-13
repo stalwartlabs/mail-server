@@ -23,7 +23,6 @@
 
 use ldap3::{Ldap, LdapConnAsync, LdapError, Scope, SearchEntry};
 use mail_send::Credentials;
-use store::Store;
 
 use crate::{backend::internal::manage::ManageDirectory, DirectoryError, Principal, QueryBy, Type};
 
@@ -53,7 +52,7 @@ impl LdapDirectory {
                 }
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.unwrap_id_store().get_account_name(uid).await? {
+                if let Some(username) = self.data_store.get_account_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -127,16 +126,16 @@ impl LdapDirectory {
         // Obtain account ID if not available
         if let Some(account_id) = account_id {
             principal.id = account_id;
-        } else if self.has_id_store() {
+        } else {
             principal.id = self
-                .unwrap_id_store()
+                .data_store
                 .get_or_create_account_id(&account_name)
                 .await?;
         }
         principal.name = account_name;
 
         // Obtain groups
-        if return_member_of && !principal.member_of.is_empty() && self.has_id_store() {
+        if return_member_of && !principal.member_of.is_empty() {
             for member_of in principal.member_of.iter_mut() {
                 if member_of.contains('=') {
                     let (rs, _res) = conn
@@ -164,7 +163,7 @@ impl LdapDirectory {
             }
 
             // Map ids
-            self.unwrap_id_store()
+            self.data_store
                 .map_group_names(principal, true)
                 .await
                 .map(Some)
@@ -195,11 +194,7 @@ impl LdapDirectory {
             'outer: for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(
-                            self.unwrap_id_store()
-                                .get_or_create_account_id(name)
-                                .await?,
-                        );
+                        ids.push(self.data_store.get_or_create_account_id(name).await?);
                         break 'outer;
                     }
                 }
@@ -325,14 +320,6 @@ impl LdapDirectory {
             })
         })
         .map_err(Into::into)
-    }
-
-    pub fn has_id_store(&self) -> bool {
-        self.id_store.is_some()
-    }
-
-    pub fn unwrap_id_store(&self) -> &Store {
-        self.id_store.as_ref().unwrap()
     }
 }
 

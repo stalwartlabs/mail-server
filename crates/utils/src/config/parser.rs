@@ -108,11 +108,14 @@ impl Config {
                     parser.skip_line();
                 }
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '\"' => {
-                    let key = parser.key(if !table_name.is_empty() {
-                        format!("{table_name}.")
-                    } else {
-                        String::with_capacity(10)
-                    })?;
+                    let (key, _) = parser.key(
+                        if !table_name.is_empty() {
+                            format!("{table_name}.")
+                        } else {
+                            String::with_capacity(10)
+                        },
+                        false,
+                    )?;
                     parser.value(key, &['\n'], 0)?;
                 }
                 '#' => {
@@ -204,12 +207,19 @@ impl<'x, 'y> TomlParser<'x, 'y> {
     }
 
     #[allow(clippy::while_let_on_iterator)]
-    fn key(&mut self, mut key: String) -> Result<String> {
+    fn key(&mut self, mut key: String, in_curly: bool) -> Result<(String, char)> {
         while let Some(ch) = self.iter.next() {
             match ch {
                 '=' => {
                     if !key.is_empty() {
-                        return Ok(key);
+                        return Ok((key, ch));
+                    } else {
+                        return Err(format!("Empty key at line: {}", self.line));
+                    }
+                }
+                ',' | '}' if in_curly => {
+                    if !key.is_empty() {
+                        return Ok((key, ch));
                     } else {
                         return Err(format!("Empty key at line: {}", self.line));
                     }
@@ -281,23 +291,47 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                     }
                 }
             }
-            '{' => loop {
-                let sub_key = self.key(format!("{key}."))?;
-                self.seek_next_char();
+            '{' => {
+                let base_key = format!("{key}.");
+                let base_key_len = base_key.len();
 
-                match self.value(sub_key, &[',', '}'], nest_level + 1)? {
-                    ',' => {
-                        self.seek_next_char();
-                    }
-                    '}' => break,
-                    ch => {
-                        return Err(format!(
-                                "Unexpected character {:?} found in inline table for property {:?} at line {}.",
-                                ch, key, self.line
-                            ));
+                loop {
+                    let (sub_key, stop_char) = self.key(base_key.clone(), true)?;
+                    match stop_char {
+                        '=' => {
+                            // Key value
+                            self.seek_next_char();
+
+                            match self.value(sub_key, &[',', '}'], nest_level + 1)? {
+                                ',' => {
+                                    self.seek_next_char();
+                                }
+                                '}' => break,
+                                ch => {
+                                    return Err(format!(
+                                    "Unexpected character {:?} found in inline table for property {:?} at line {}.",
+                                    ch, key, self.line
+                                ));
+                                }
+                            }
+                        }
+                        ',' => {
+                            // Set
+                            if sub_key.len() > base_key_len {
+                                self.insert_key(sub_key, String::new())?;
+                            }
+                        }
+                        '}' => {
+                            // Set
+                            if sub_key.len() > base_key_len {
+                                self.insert_key(sub_key, String::new())?;
+                            }
+                            break;
+                        }
+                        _ => unreachable!(),
                     }
                 }
-            },
+            }
             qch @ ('\'' | '\"') => {
                 let mut value = String::new();
                 if matches!(self.iter.peek(), Some(ch) if ch == &qch) {
@@ -455,136 +489,86 @@ mod tests {
 
         let mut config = Config::default();
         config.parse(&fs::read_to_string(file).unwrap()).unwrap();
-        let expected = BTreeMap::from_iter([
-            ("arrays.colors.0000".to_string(), "red".to_string()),
-            ("arrays.colors.0001".to_string(), "yellow".to_string()),
-            ("arrays.colors.0002".to_string(), "green".to_string()),
-            (
-                "arrays.contributors.0000".to_string(),
-                "Foo Bar <foo@example.com>".to_string(),
-            ),
-            (
-                "arrays.contributors.0001.email".to_string(),
-                "bazqux@example.com".to_string(),
-            ),
-            (
-                "arrays.contributors.0001.name".to_string(),
-                "Baz Qux".to_string(),
-            ),
-            (
-                "arrays.contributors.0001.url".to_string(),
-                "https://example.com/bazqux".to_string(),
-            ),
-            ("arrays.integers.0000".to_string(), "1".to_string()),
-            ("arrays.integers.0001".to_string(), "2".to_string()),
-            ("arrays.integers.0002".to_string(), "3".to_string()),
-            ("arrays.integers2.0000".to_string(), "1".to_string()),
-            ("arrays.integers2.0001".to_string(), "2".to_string()),
-            ("arrays.integers2.0002".to_string(), "3".to_string()),
-            ("arrays.integers3.0000".to_string(), "4".to_string()),
-            ("arrays.integers3.0001".to_string(), "5".to_string()),
-            (
-                "arrays.nested_arrays_of_ints.0000.0000".to_string(),
-                "1".to_string(),
-            ),
-            (
-                "arrays.nested_arrays_of_ints.0000.0001".to_string(),
-                "2".to_string(),
-            ),
-            (
-                "arrays.nested_arrays_of_ints.0001.0000".to_string(),
-                "3".to_string(),
-            ),
-            (
-                "arrays.nested_arrays_of_ints.0001.0001".to_string(),
-                "4".to_string(),
-            ),
-            (
-                "arrays.nested_arrays_of_ints.0001.0002".to_string(),
-                "5".to_string(),
-            ),
-            (
-                "arrays.nested_mixed_array.0000.0000".to_string(),
-                "1".to_string(),
-            ),
-            (
-                "arrays.nested_mixed_array.0000.0001".to_string(),
-                "2".to_string(),
-            ),
-            (
-                "arrays.nested_mixed_array.0001.0000".to_string(),
-                "a".to_string(),
-            ),
-            (
-                "arrays.nested_mixed_array.0001.0001".to_string(),
-                "b".to_string(),
-            ),
-            (
-                "arrays.nested_mixed_array.0001.0002".to_string(),
-                "c".to_string(),
-            ),
-            ("arrays.numbers.0000".to_string(), "0.1".to_string()),
-            ("arrays.numbers.0001".to_string(), "0.2".to_string()),
-            ("arrays.numbers.0002".to_string(), "0.5".to_string()),
-            ("arrays.numbers.0003".to_string(), "1".to_string()),
-            ("arrays.numbers.0004".to_string(), "2".to_string()),
-            ("arrays.numbers.0005".to_string(), "5".to_string()),
-            ("arrays.string_array.0000".to_string(), "all".to_string()),
-            (
-                "arrays.string_array.0001".to_string(),
-                "strings".to_string(),
-            ),
-            (
-                "arrays.string_array.0002".to_string(),
-                "are the same".to_string(),
-            ),
-            ("arrays.string_array.0003".to_string(), "type".to_string()),
-            ("database.data.0000.0000".to_string(), "delta".to_string()),
-            ("database.data.0000.0001".to_string(), "phi".to_string()),
-            ("database.data.0001.0000".to_string(), "3.14".to_string()),
-            ("database.enabled".to_string(), "true".to_string()),
-            ("database.ports.0000".to_string(), "8000".to_string()),
-            ("database.ports.0001".to_string(), "8001".to_string()),
-            ("database.ports.0002".to_string(), "8002".to_string()),
-            ("database.temp_targets.case".to_string(), "72.0".to_string()),
-            ("database.temp_targets.cpu".to_string(), "79.5".to_string()),
-            ("products.0000.name".to_string(), "Hammer".to_string()),
-            ("products.0000.sku".to_string(), "738594937".to_string()),
-            ("products.0002.color".to_string(), "gray".to_string()),
-            ("products.0002.name".to_string(), "Nail".to_string()),
-            ("products.0002.sku".to_string(), "284758393".to_string()),
-            ("servers.127.0.0.1".to_string(), "value".to_string()),
-            ("servers.alpha.ip".to_string(), "10.0.0.1".to_string()),
-            ("servers.alpha.role".to_string(), "frontend".to_string()),
-            ("servers.beta.ip".to_string(), "10.0.0.2".to_string()),
-            ("servers.beta.role".to_string(), "backend".to_string()),
-            (
-                "servers.character encoding".to_string(),
-                "value".to_string(),
-            ),
-            (
-                "strings.my \"string\" test.lines".to_string(),
-                concat!(
-                    "The first newline is\ntrimmed in raw strings.\n",
-                    "All other whitespace\nis preserved.\n"
-                )
-                .to_string(),
-            ),
-            (
-                "strings.my \"string\" test.str1".to_string(),
-                "I'm a string.".to_string(),
-            ),
-            (
-                "strings.my \"string\" test.str2".to_string(),
-                "You can \"quote\" me.".to_string(),
-            ),
-            (
-                "strings.my \"string\" test.str3".to_string(),
-                "Name\tTabs\nNew Line.".to_string(),
-            ),
-            ("env.var1".to_string(), "utils".to_string()),
-            ("env.var2".to_string(), "utils".to_string()),
-        ]);
+        let expected = BTreeMap::from_iter(
+            [
+                ("arrays.colors.0000", "red"),
+                ("arrays.colors.0001", "yellow"),
+                ("arrays.colors.0002", "green"),
+                ("arrays.contributors.0000", "Foo Bar <foo@example.com>"),
+                ("arrays.contributors.0001.email", "bazqux@example.com"),
+                ("arrays.contributors.0001.name", "Baz Qux"),
+                ("arrays.contributors.0001.url", "https://example.com/bazqux"),
+                ("arrays.integers.0000", "1"),
+                ("arrays.integers.0001", "2"),
+                ("arrays.integers.0002", "3"),
+                ("arrays.integers2.0000", "1"),
+                ("arrays.integers2.0001", "2"),
+                ("arrays.integers2.0002", "3"),
+                ("arrays.integers3.0000", "4"),
+                ("arrays.integers3.0001", "5"),
+                ("arrays.nested_arrays_of_ints.0000.0000", "1"),
+                ("arrays.nested_arrays_of_ints.0000.0001", "2"),
+                ("arrays.nested_arrays_of_ints.0001.0000", "3"),
+                ("arrays.nested_arrays_of_ints.0001.0001", "4"),
+                ("arrays.nested_arrays_of_ints.0001.0002", "5"),
+                ("arrays.nested_mixed_array.0000.0000", "1"),
+                ("arrays.nested_mixed_array.0000.0001", "2"),
+                ("arrays.nested_mixed_array.0001.0000", "a"),
+                ("arrays.nested_mixed_array.0001.0001", "b"),
+                ("arrays.nested_mixed_array.0001.0002", "c"),
+                ("arrays.numbers.0000", "0.1"),
+                ("arrays.numbers.0001", "0.2"),
+                ("arrays.numbers.0002", "0.5"),
+                ("arrays.numbers.0003", "1"),
+                ("arrays.numbers.0004", "2"),
+                ("arrays.numbers.0005", "5"),
+                ("arrays.string_array.0000", "all"),
+                ("arrays.string_array.0001", "strings"),
+                ("arrays.string_array.0002", "are the same"),
+                ("arrays.string_array.0003", "type"),
+                ("database.data.0000.0000", "delta"),
+                ("database.data.0000.0001", "phi"),
+                ("database.data.0001.0000", "3.14"),
+                ("database.enabled", "true"),
+                ("database.ports.0000", "8000"),
+                ("database.ports.0001", "8001"),
+                ("database.ports.0002", "8002"),
+                ("database.temp_targets.case", "72.0"),
+                ("database.temp_targets.cpu", "79.5"),
+                ("products.0000.name", "Hammer"),
+                ("products.0000.sku", "738594937"),
+                ("products.0002.color", "gray"),
+                ("products.0002.name", "Nail"),
+                ("products.0002.sku", "284758393"),
+                ("servers.127.0.0.1", "value"),
+                ("servers.alpha.ip", "10.0.0.1"),
+                ("servers.alpha.role", "frontend"),
+                ("servers.beta.ip", "10.0.0.2"),
+                ("servers.beta.role", "backend"),
+                ("servers.character encoding", "value"),
+                (
+                    "strings.my \"string\" test.lines",
+                    concat!(
+                        "The first newline is\ntrimmed in raw strings.\n",
+                        "All other whitespace\nis preserved.\n"
+                    ),
+                ),
+                ("strings.my \"string\" test.str1", "I'm a string."),
+                ("strings.my \"string\" test.str2", "You can \"quote\" me."),
+                ("strings.my \"string\" test.str3", "Name\tTabs\nNew Line."),
+                ("env.var1", "utils"),
+                ("env.var2", "utils"),
+                ("sets.integer.1", ""),
+                ("sets.integers.1", ""),
+                ("sets.integers.2", ""),
+                ("sets.integers.3", ""),
+                ("sets.string.red", ""),
+                ("sets.strings.red", ""),
+                ("sets.strings.yellow", ""),
+                ("sets.strings.green", ""),
+            ]
+            .map(|(k, v)| (k.to_string(), v.to_string())),
+        );
 
         if config.keys != expected {
             for (key, value) in &config.keys {
@@ -619,5 +603,20 @@ mod tests {
                 }
             }
         }
+
+        assert_eq!(
+            config.set_values("sets.strings").collect::<Vec<_>>(),
+            vec!["green", "red", "yellow"]
+        );
+
+        assert_eq!(
+            config.sub_keys("sets.strings", "").collect::<Vec<_>>(),
+            vec!["green", "red", "yellow"]
+        );
+
+        assert_eq!(
+            config.sub_keys("sets", ".red").collect::<Vec<_>>(),
+            vec!["string", "strings"]
+        );
     }
 }

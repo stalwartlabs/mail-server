@@ -31,8 +31,8 @@ use directory::core::config::ConfigDirectory;
 use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, StatusCode};
-use store::Stores;
-use utils::config::{Config, ServerProtocol};
+use store::{Store, Stores};
+use utils::config::{Config, ServerProtocol, Servers};
 
 use crate::smtp::{
     inbound::TestQueueEvent, management::send_manage_request, outbound::start_test_server,
@@ -96,10 +96,10 @@ async fn manage_queue() {
     // Start local management interface
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
-    core.queue.config.management_lookup = directory.directories.get("local").unwrap().clone();
+    core.queue.config.directory = directory.directories.get("local").unwrap().clone();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.future_release = IfBlock::new(Some(Duration::from_secs(86400)));

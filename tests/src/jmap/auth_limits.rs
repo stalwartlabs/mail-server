@@ -24,14 +24,20 @@
 use std::{sync::Arc, time::Duration};
 
 use directory::backend::internal::manage::ManageDirectory;
+use imap_proto::ResponseType;
+use jmap::services::housekeeper::Event;
 use jmap_client::{
     client::{Client, Credentials},
     core::set::{SetError, SetErrorType},
     mailbox::{self},
 };
 use jmap_proto::types::id::Id;
+use utils::listener::blocked::BLOCKED_IP_KEY;
 
-use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
+use crate::{
+    imap::{ImapConnection, Type},
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
+};
 
 use super::JMAPTest;
 
@@ -103,6 +109,52 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Limit should be restored after 1 second
     tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    // Test fail2ban
+    assert_eq!(
+        server
+            .store
+            .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+            .await
+            .unwrap(),
+        None
+    );
+    let mut imap = ImapConnection::connect(b"_x ").await;
+    imap.send("AUTHENTICATE PLAIN AGpvaG4AY2hpbWljaGFuZ2Fz")
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::No).await;
+
+    // There are already 100 failed login attempts for this IP address
+    // so the next one should be rejected, even if done over IMAP
+    imap.send("AUTHENTICATE PLAIN AGpvaG4AY2hpbWljaGFuZ2Fz")
+        .await;
+    imap.assert_disconnect().await;
+
+    // Make sure the IP address is blocked
+    assert_eq!(
+        server
+            .store
+            .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+            .await
+            .unwrap(),
+        Some(String::new())
+    );
+    ImapConnection::connect(b"_y ")
+        .await
+        .assert_disconnect()
+        .await;
+
+    // Lift ban
+    server
+        .store
+        .config_clear(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+        .await
+        .unwrap();
+    server
+        .housekeeper_tx
+        .send(Event::ReloadConfig)
+        .await
+        .unwrap();
 
     // Valid authentication requests should not be rate limited
     for _ in 0..110 {

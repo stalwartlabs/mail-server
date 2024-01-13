@@ -33,7 +33,7 @@ pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
     auth_bind: Option<LdapFilter>,
-    id_store: Option<Store>,
+    pub(crate) data_store: Store,
 }
 
 #[derive(Debug, Default)]

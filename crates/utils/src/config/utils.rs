@@ -75,13 +75,19 @@ impl Config {
         }
     }
 
-    pub fn sub_keys<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+    pub fn sub_keys<'x, 'y: 'x>(
+        &'y self,
+        prefix: impl AsKey,
+        suffix: &'y str,
+    ) -> impl Iterator<Item = &str> + 'x {
         let mut last_key = "";
         let prefix = prefix.as_prefix();
 
         self.keys.keys().filter_map(move |key| {
             let key = key.strip_prefix(&prefix)?;
-            let key = if let Some((key, _)) = key.split_once('.') {
+            let key = if !suffix.is_empty() {
+                key.strip_suffix(suffix)?
+            } else if let Some((key, _)) = key.split_once('.') {
                 key
             } else {
                 key
@@ -92,6 +98,29 @@ impl Config {
             } else {
                 None
             }
+        })
+    }
+
+    pub fn set_values<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+        let prefix = prefix.as_prefix();
+
+        self.keys
+            .keys()
+            .filter_map(move |key| key.strip_prefix(&prefix))
+    }
+
+    pub fn set_values_or_default(
+        &self,
+        prefix: impl AsKey,
+        default: impl AsKey,
+    ) -> impl Iterator<Item = &str> {
+        let mut prefix = prefix.as_prefix();
+
+        self.set_values(if self.keys.keys().any(|k| k.starts_with(&prefix)) {
+            prefix.truncate(prefix.len() - 1);
+            prefix
+        } else {
+            default.as_key()
         })
     }
 
@@ -555,7 +584,7 @@ impl ParseValue for Rate {
                             key.as_key()
                         )
                     })?,
-                period: period.parse_key(key)?,
+                period: std::cmp::max(period.parse_key(key)?, Duration::from_secs(1)),
             })
         } else if ["false", "none", "unlimited"].contains(&value) {
             Ok(Rate::default())
@@ -672,15 +701,15 @@ ip = "a:b::1:1"
         config.parse(toml).unwrap();
 
         assert_eq!(
-            config.sub_keys("queues").collect::<Vec<_>>(),
+            config.sub_keys("queues", "").collect::<Vec<_>>(),
             ["a", "x", "z"]
         );
         assert_eq!(
-            config.sub_keys("servers").collect::<Vec<_>>(),
+            config.sub_keys("servers", "").collect::<Vec<_>>(),
             ["my relay", "submissions"]
         );
         assert_eq!(
-            config.sub_keys("queues.z.retry").collect::<Vec<_>>(),
+            config.sub_keys("queues.z.retry", "").collect::<Vec<_>>(),
             ["0000", "0001", "0002", "0003", "0004"]
         );
         assert_eq!(

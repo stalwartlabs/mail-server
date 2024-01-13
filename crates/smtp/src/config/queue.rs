@@ -203,17 +203,29 @@ impl ConfigQueue for Config {
                     .unwrap_or_default()
                     .map_if_block(&ctx.signers, "report.dsn.sign", "signature")?,
             },
-            management_lookup: if let Some(id) = self.value("management.directory") {
-                ctx.directory
-                    .directories
-                    .get(id)
-                    .ok_or_else(|| {
-                        format!("Directory {id:?} not found for key \"management.directory\".")
-                    })?
-                    .clone()
-            } else {
-                Arc::new(Directory::default())
-            },
+            directory: ctx
+                .directory
+                .directories
+                .get(self.value_require("storage.directory")?)
+                .ok_or_else(|| {
+                    format!(
+                        "Directory {:?} not found for key \"storage.directory\".",
+                        self.value_require("storage.directory").unwrap()
+                    )
+                })?
+                .clone(),
+            data_store: ctx.stores.get_store(self, "storage.data")?,
+            lookup_store: self
+                .value_or_default("storage.lookup", "storage.data")
+                .and_then(|id| ctx.stores.lookup_stores.get(id))
+                .ok_or_else(|| {
+                    format!(
+                        "Lookup store {:?} not found for key \"storage.lookup\".",
+                        self.value_or_default("storage.lookup", "storage.data")
+                            .unwrap()
+                    )
+                })?
+                .clone(),
         };
 
         if config.retry.has_empty_list() {
@@ -292,7 +304,7 @@ impl ConfigQueue for Config {
             rcpt_domain: Vec::new(),
         };
 
-        for array_pos in self.sub_keys("queue.quota") {
+        for array_pos in self.sub_keys("queue.quota", "") {
             let quota = self.parse_queue_quota_item(("queue.quota", array_pos), ctx)?;
 
             if (quota.keys & THROTTLE_RCPT) != 0

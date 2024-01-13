@@ -55,7 +55,7 @@ impl ConfigThrottle for Config {
     ) -> super::Result<Vec<Throttle>> {
         let prefix_ = prefix.as_key();
         let mut throttles = Vec::new();
-        for array_pos in self.sub_keys(prefix) {
+        for array_pos in self.sub_keys(prefix, "") {
             throttles.push(self.parse_throttle_item(
                 (&prefix_, array_pos),
                 ctx,

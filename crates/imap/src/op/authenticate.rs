@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use directory::AuthResult;
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -116,9 +117,15 @@ impl<T: SessionStream> Session<T> {
         // Authenticate
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                self.jmap
-                    .authenticate_plain(&username, &secret, &self.remote_addr)
+                match self
+                    .jmap
+                    .authenticate_plain(&username, &secret, self.remote_addr)
                     .await
+                {
+                    AuthResult::Success(token) => Some(token),
+                    AuthResult::Failure => None,
+                    AuthResult::Banned => return Err(()),
+                }
             }
             Credentials::OAuthBearer { token } => {
                 match self
@@ -145,7 +152,6 @@ impl<T: SessionStream> Session<T> {
             let in_flight = self
                 .imap
                 .get_authenticated_limiter(access_token.primary_id())
-                .lock()
                 .concurrent_requests
                 .is_allowed();
             if let Some(in_flight) = in_flight {

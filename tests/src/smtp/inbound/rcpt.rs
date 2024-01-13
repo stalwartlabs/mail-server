@@ -25,8 +25,8 @@ use std::time::Duration;
 
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
-use store::Stores;
-use utils::config::Config;
+use store::{Store, Stores};
+use utils::config::{Config, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -74,7 +74,7 @@ async fn rcpt() {
     let config_ext = &mut core.session.config.extensions;
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;

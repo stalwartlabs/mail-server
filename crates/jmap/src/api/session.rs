@@ -425,7 +425,7 @@ impl CoreCapabilities {
     pub fn new(config: &crate::Config) -> Self {
         CoreCapabilities {
             max_size_upload: config.upload_max_size,
-            max_concurrent_upload: config.upload_max_concurrent,
+            max_concurrent_upload: config.upload_max_concurrent as usize,
             max_size_request: config.request_max_size,
             max_concurrent_requests: config.request_max_concurrent as usize,
             max_calls_in_request: config.request_max_calls,

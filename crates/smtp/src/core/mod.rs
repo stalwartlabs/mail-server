@@ -119,8 +119,6 @@ pub struct SieveCore {
     pub sign: Vec<Arc<DkimSigner>>,
     pub directories: AHashMap<String, Arc<Directory>>,
     pub lookup_stores: AHashMap<String, LookupStore>,
-    pub default_lookup_store: Option<LookupStore>,
-    pub default_directory: Option<Arc<Directory>>,
 }
 
 pub struct Resolvers {
@@ -428,7 +426,8 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance
     acceptor: TcpAcceptor::Plain,
     limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
-    proxy_networks: vec![]
+    proxy_networks: vec![],
+    blocked_ips: Arc::new(Default::default()),
 });
 }
 

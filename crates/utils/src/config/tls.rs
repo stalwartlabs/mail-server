@@ -48,7 +48,7 @@ pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 impl Config {
     pub fn parse_certificates(&self) -> super::Result<AHashMap<String, Arc<Certificate>>> {
         let mut certs = AHashMap::new();
-        for cert_id in self.sub_keys("certificate") {
+        for cert_id in self.sub_keys("certificate", ".cert") {
             let key_cert = ("certificate", cert_id, "cert");
             let key_pk = ("certificate", cert_id, "private-key");
 
@@ -75,7 +75,7 @@ impl Config {
 
     pub fn parse_acmes(&self) -> super::Result<AHashMap<String, Arc<AcmeManager>>> {
         let mut acmes = AHashMap::new();
-        for acme_id in self.sub_keys("acme") {
+        for acme_id in self.sub_keys("acme", ".cache") {
             let directory = self
                 .value(("acme", acme_id, "directory"))
                 .unwrap_or(LETS_ENCRYPT_PRODUCTION_DIRECTORY)
@@ -106,7 +106,7 @@ impl Config {
 
             // Find which domains are covered by this ACME manager
             let mut domains = Vec::new();
-            for id in self.sub_keys("server.listener") {
+            for id in self.sub_keys("server.listener", ".protocol") {
                 match (
                     self.value_or_default(("server.listener", id, "tls.acme"), "server.tls.acme"),
                     self.value_or_default(("server.listener", id, "hostname"), "server.hostname"),

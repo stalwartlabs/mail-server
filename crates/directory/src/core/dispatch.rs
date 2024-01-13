@@ -21,11 +21,58 @@
  * for more details.
 */
 
+use std::net::IpAddr;
+
+use mail_send::Credentials;
+use store::Store;
+
 use crate::{
-    backend::internal::lookup::DirectoryStore, Directory, DirectoryInner, Principal, QueryBy,
+    backend::internal::lookup::DirectoryStore, AuthResult, Directory, DirectoryInner, Principal,
+    QueryBy,
 };
 
 impl Directory {
+    pub async fn authenticate(
+        &self,
+        credentials: &Credentials<String>,
+        remote_ip: IpAddr,
+        return_member_of: bool,
+    ) -> crate::Result<AuthResult<Principal<u32>>> {
+        if let Some(principal) = self
+            .query(QueryBy::Credentials(credentials), return_member_of)
+            .await?
+        {
+            Ok(AuthResult::Success(principal))
+        } else if self.blocked_ips.has_fail2ban() {
+            let login = match credentials {
+                Credentials::Plain { username, .. }
+                | Credentials::XOauth2 { username, .. }
+                | Credentials::OAuthBearer { token: username } => username,
+            };
+            if let Some(banned) = self
+                .blocked_ips
+                .is_fail2banned(remote_ip, login.to_string())
+            {
+                tracing::info!(
+                    context = "directory",
+                    event = "fail2ban",
+                    remote_ip = ?remote_ip,
+                    login = ?login,
+                    "IP address blocked after too many failed login attempts",
+                );
+
+                // Write blocked address to config
+                self.store().config_set(vec![banned].into_iter()).await?;
+
+                Ok(AuthResult::Banned)
+            } else {
+                Ok(AuthResult::Failure)
+            }
+        } else {
+            Ok(AuthResult::Failure)
+        }
+    }
+
     pub async fn query(
         &self,
         by: QueryBy<'_>,
@@ -159,6 +206,17 @@ impl Directory {
             DirectoryInner::Imap(store) => store.expn(address.as_ref()).await,
             DirectoryInner::Smtp(store) => store.expn(address.as_ref()).await,
             DirectoryInner::Memory(store) => store.expn(address.as_ref()).await,
+        }
+    }
+
+    fn store(&self) -> &Store {
+        match &self.store {
+            DirectoryInner::Internal(store) => store,
+            DirectoryInner::Ldap(store) => &store.data_store,
+            DirectoryInner::Sql(store) => &store.data_store,
+            DirectoryInner::Imap(store) => &store.data_store,
+            DirectoryInner::Smtp(store) => &store.data_store,
+            DirectoryInner::Memory(store) => &store.data_store,
         }
     }
 }

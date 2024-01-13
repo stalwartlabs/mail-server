@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use directory::QueryBy;
+use directory::AuthResult;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -181,17 +181,19 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            if let Ok(principal) = lookup
-                .query(QueryBy::Credentials(&credentials), false)
+
+            match lookup
+                .authenticate(&credentials, self.data.remote_ip, false)
                 .await
             {
-                tracing::debug!(
-                    parent: &self.span,
-                    context = "auth",
-                    event = "authenticate",
-                    result = if principal.is_some() {"success"} else {"failed"}
-                );
-                return if let Some(principal) = principal {
+                Ok(AuthResult::Success(principal)) => {
+                    tracing::debug!(
+                        parent: &self.span,
+                        context = "auth",
+                        event = "authenticate",
+                        result = "success"
+                    );
+
                     self.data.authenticated_as = authenticated_as.to_lowercase();
                     self.data.authenticated_emails = principal
                         .emails
@@ -201,11 +203,31 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     self.eval_post_auth_params().await;
                     self.write(b"235 2.7.0 Authentication succeeded.\r\n")
                         .await?;
-                    Ok(false)
-                } else {
-                    self.auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
-                        .await
-                };
+                    return Ok(false);
+                }
+                Ok(AuthResult::Failure) => {
+                    tracing::debug!(
+                        parent: &self.span,
+                        context = "auth",
+                        event = "authenticate",
+                        result = "failed"
+                    );
+
+                    return self
+                        .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
+                        .await;
+                }
+                Ok(AuthResult::Banned) => {
+                    tracing::debug!(
+                        parent: &self.span,
+                        context = "auth",
+                        event = "authenticate",
+                        result = "banned"
+                    );
+
+                    return Err(());
+                }
+                _ => (),
             }
         } else {
             tracing::warn!(

@@ -1,0 +1,23 @@
+#############################################
+# Storage configuration
+#############################################
+
+[storage]
+data = "%{DEFAULT_STORE}%"
+fts = "%{DEFAULT_STORE}%"
+blob = "%{DEFAULT_STORE}%"
+lookup = "%{DEFAULT_STORE}%"
+directory = "%{DEFAULT_DIRECTORY}%"
+
+[storage.encryption]
+enable = true
+append = false
+
+[storage.spam]
+header = "X-Spam-Status: Yes"
+
+[storage.fts]
+default-language = "en"
+
+[storage.cluster]
+node-id = 1

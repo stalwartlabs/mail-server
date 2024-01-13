@@ -21,13 +21,15 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
+use std::{
+    collections::hash_map::RandomState, fmt::Display, net::IpAddr, sync::Arc, time::Duration,
+};
 
 use ::sieve::{Compiler, Runtime};
 use api::session::BaseCapabilities;
 use auth::{
     oauth::OAuthCode,
-    rate_limit::{AnonymousLimiter, AuthenticatedLimiter, RemoteAddress},
+    rate_limit::{AnonymousLimiter, AuthenticatedLimiter},
     AccessToken,
 };
 use dashmap::DashMap;
@@ -50,7 +52,6 @@ use services::{
 use smtp::core::SMTP;
 use store::{
     fts::FtsFilter,
-    parking_lot::Mutex,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ToBitmaps, ValueClass},
@@ -58,9 +59,8 @@ use store::{
 };
 use tokio::sync::mpsc;
 use utils::{
-    config::Rate,
+    config::{Rate, Servers},
     ipc::DeliveryEvent,
-    listener::tls::Certificate,
     map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
     UnwrapFailure,
@@ -96,8 +96,8 @@ pub struct JMAP {
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
 
-    pub rate_limit_auth: DashMap<u32, Arc<Mutex<AuthenticatedLimiter>>>,
-    pub rate_limit_unauth: DashMap<RemoteAddress, Arc<Mutex<AnonymousLimiter>>>,
+    pub rate_limit_auth: DashMap<u32, Arc<AuthenticatedLimiter>>,
+    pub rate_limit_unauth: DashMap<IpAddr, Arc<AnonymousLimiter>>,
 
     pub oauth_codes: TtlDashMap<String, Arc<OAuthCode>>,
 
@@ -123,7 +123,7 @@ pub struct Config {
     pub set_max_objects: usize,
 
     pub upload_max_size: usize,
-    pub upload_max_concurrent: usize,
+    pub upload_max_concurrent: u64,
 
     pub upload_tmp_quota_size: usize,
     pub upload_tmp_quota_amount: usize,
@@ -187,7 +187,7 @@ impl JMAP {
         config: &utils::config::Config,
         stores: &Stores,
         directories: &Directories,
-        certificates: Vec<Arc<Certificate>>,
+        servers: &mut Servers,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
         smtp: Arc<SMTP>,
     ) -> Result<Arc<Self>, String> {
@@ -202,40 +202,19 @@ impl JMAP {
         let jmap_server = Arc::new(JMAP {
             directory: directories
                 .directories
-                .get(config.value_require("jmap.directory")?)
+                .get(config.value_require("storage.directory")?)
                 .failed(&format!(
                     "Unable to find directory '{}'",
-                    config.value_require("jmap.directory")?
+                    config.value_require("storage.directory")?
                 ))
                 .clone(),
             snowflake_id: config
-                .property::<u64>("jmap.cluster.node-id")?
+                .property::<u64>("storage.cluster.node-id")?
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_else(SnowflakeIdGenerator::new),
-            store: stores
-                .stores
-                .get(config.value_require("jmap.store.data")?)
-                .failed(&format!(
-                    "Unable to find data store '{}'",
-                    config.value_require("jmap.store.data")?
-                ))
-                .clone(),
-            fts_store: stores
-                .fts_stores
-                .get(config.value_require("jmap.store.fts")?)
-                .failed(&format!(
-                    "Unable to find full text store '{}'",
-                    config.value_require("jmap.store.fts")?
-                ))
-                .clone(),
-            blob_store: stores
-                .blob_stores
-                .get(config.value_require("jmap.store.blob")?)
-                .failed(&format!(
-                    "Unable to find blob store '{}'",
-                    config.value_require("jmap.store.blob")?
-                ))
-                .clone(),
+            store: stores.get_store(config, "storage.data")?,
+            fts_store: stores.get_fts_store(config, "storage.fts")?,
+            blob_store: stores.get_blob_store(config, "storage.blob")?,
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
@@ -422,7 +401,7 @@ impl JMAP {
         spawn_state_manager(jmap_server.clone(), config, state_rx);
 
         // Spawn housekeeper
-        spawn_housekeeper(jmap_server.clone(), config, certificates, housekeeper_rx);
+        spawn_housekeeper(jmap_server.clone(), config, servers, housekeeper_rx);
 
         Ok(jmap_server)
     }

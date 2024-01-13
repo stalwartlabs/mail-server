@@ -38,6 +38,12 @@ All other whitespace
 is preserved.
 '''
 
+[sets]
+integer = { 1 }
+integers = { 1, 2, 3 }
+string = { "red" }
+strings = { "red", "yellow", "green" }
+
 [arrays]
 integers = [ 1, 2, 3 ]
 colors = [ "red", "yellow", "green" ]

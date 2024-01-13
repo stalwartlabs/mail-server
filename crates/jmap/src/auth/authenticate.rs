@@ -21,13 +21,9 @@
  * for more details.
 */
 
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    sync::Arc,
-    time::Instant,
-};
+use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use directory::QueryBy;
+use directory::{AuthResult, QueryBy};
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
@@ -36,7 +32,7 @@ use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
 
 use crate::JMAP;
 
-use super::{rate_limit::RemoteAddress, AccessToken};
+use super::AccessToken;
 
 impl JMAP {
     pub async fn authenticate_headers(
@@ -67,7 +63,13 @@ impl JMAP {
                             })
                         })
                     {
-                        self.authenticate_plain(&account, &secret, &addr).await
+                        if let AuthResult::Success(access_token) =
+                            self.authenticate_plain(&account, &secret, addr).await
+                        {
+                            Some(access_token)
+                        } else {
+                            None
+                        }
                     } else {
                         tracing::debug!(
                             context = "authenticate_headers",
@@ -151,18 +153,19 @@ impl JMAP {
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
-    ) -> RemoteAddress {
+    ) -> IpAddr {
         if !self.config.rate_use_forwarded {
-            RemoteAddress::IpAddress(remote_ip)
+            remote_ip
         } else if let Some(forwarded_for) = req
             .headers()
             .get(header::FORWARDED)
             .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.parse::<IpAddr>().ok())
         {
-            RemoteAddress::IpAddressFwd(forwarded_for.trim().to_string())
+            forwarded_for
         } else {
-            tracing::debug!("Warning: No remote address found in request, using loopback.");
-            RemoteAddress::IpAddress(Ipv4Addr::new(127, 0, 0, 1).into())
+            tracing::warn!("Warning: No remote address found in request, using remote ip.");
+            remote_ip
         }
     }
 
@@ -170,25 +173,27 @@ impl JMAP {
         &self,
         username: &str,
         secret: &str,
-        remote_addr: &RemoteAddress,
-    ) -> Option<AccessToken> {
+        remote_ip: IpAddr,
+    ) -> AuthResult<AccessToken> {
         match self
             .directory
-            .query(
-                QueryBy::Credentials(&Credentials::Plain {
+            .authenticate(
+                &Credentials::Plain {
                     username: username.to_string(),
                     secret: secret.to_string(),
-                }),
+                },
+                remote_ip,
                 true,
             )
             .await
         {
-            Ok(Some(principal)) => AccessToken::new(principal).into(),
-            Ok(None) => {
-                let _ = self.is_auth_allowed_hard(remote_addr);
-                None
+            Ok(AuthResult::Success(principal)) => AuthResult::Success(AccessToken::new(principal)),
+            Ok(AuthResult::Failure) => {
+                let _ = self.is_auth_allowed_hard(&remote_ip);
+                AuthResult::Failure
             }
-            Err(_) => None,
+            Ok(AuthResult::Banned) => AuthResult::Banned,
+            Err(_) => AuthResult::Failure,
         }
     }
 

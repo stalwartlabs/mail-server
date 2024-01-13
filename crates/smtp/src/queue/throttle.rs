@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dashmap::mapref::entry::Entry;
 use utils::{
@@ -70,18 +70,19 @@ impl QueueCore {
                             });
                         }
                     }
-                    if let Some(limiter) = &mut limiter.rate {
-                        if !limiter.is_allowed() {
+                    if let (Some(limiter), Some(rate)) = (&mut limiter.rate, &throttle.rate) {
+                        if !limiter.is_allowed(rate) {
                             tracing::info!(
                                 parent: span,
                                 context = "throttle",
                                 event = "rate-limit-exceeded",
-                                max_requests = limiter.max_requests,
-                                max_interval = limiter.max_interval.as_secs(),
+                                max_requests = rate.requests,
+                                max_interval = rate.period.as_secs(),
                                 "Queue rate limit exceeded."
                             );
                             return Err(Error::Rate {
-                                retry_at: limiter.retry_at(),
+                                retry_at: Instant::now()
+                                    + Duration::from_secs(limiter.secs_to_refill()),
                             });
                         }
                     }
@@ -95,8 +96,8 @@ impl QueueCore {
                         limiter
                     });
                     let rate = throttle.rate.as_ref().map(|rate| {
-                        let mut r = RateLimiter::new(rate.requests, rate.period);
-                        r.is_allowed();
+                        let r = RateLimiter::new(rate);
+                        r.is_allowed(rate);
                         r
                     });
 

@@ -111,7 +111,7 @@ impl ConfigAuth for Config {
 
     #[allow(clippy::type_complexity)]
     fn parse_signatures(&self, ctx: &mut ConfigContext) -> super::Result<()> {
-        for id in self.sub_keys("signature") {
+        for id in self.sub_keys("signature", ".algorithm") {
             let (signer, sealer) =
                 match self.property_require::<Algorithm>(("signature", id, "algorithm"))? {
                     Algorithm::RsaSha256 => {

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use prettytable::{Attr, Cell, Row, Table};
 use reqwest::Method;
 use serde_json::Value;
 
@@ -37,9 +38,66 @@ impl ServerCommands {
             }
             ServerCommands::ReloadCertificates {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/admin/certificates/reload", None)
+                    .http_request::<Value, String>(Method::GET, "/admin/reload/certificates", None)
                     .await;
                 eprintln!("Success.");
+            }
+            ServerCommands::ReloadConfig {} => {
+                client
+                    .http_request::<Value, String>(Method::GET, "/admin/reload/config", None)
+                    .await;
+                eprintln!("Success.");
+            }
+            ServerCommands::AddConfig { key, value } => {
+                client
+                    .http_request::<Value, _>(
+                        Method::POST,
+                        "/admin/config",
+                        Some(vec![(key.clone(), value.unwrap_or_default())]),
+                    )
+                    .await;
+                eprintln!("Successfully added key {key}.");
+            }
+            ServerCommands::DeleteConfig { key } => {
+                client
+                    .http_request::<Value, String>(
+                        Method::DELETE,
+                        &format!("/admin/config/{key}"),
+                        None,
+                    )
+                    .await;
+                eprintln!("Successfully deleted key {key}.");
+            }
+            ServerCommands::ListConfig { prefix } => {
+                let results = client
+                    .http_request::<Vec<(String, String)>, String>(
+                        Method::GET,
+                        &format!("/admin/config/{}", prefix.unwrap_or_default()),
+                        None,
+                    )
+                    .await;
+
+                if !results.is_empty() {
+                    let mut table = Table::new();
+                    table.add_row(Row::new(vec![
+                        Cell::new("Key").with_style(Attr::Bold),
+                        Cell::new("Value").with_style(Attr::Bold),
+                    ]));
+
+                    for (key, value) in &results {
+                        table.add_row(Row::new(vec![Cell::new(key), Cell::new(value)]));
+                    }
+
+                    eprintln!();
+                    table.printstd();
+                    eprintln!();
+                }
+
+                eprintln!(
+                    "\n\n{} key{} found.\n",
+                    results.len(),
+                    if results.len() == 1 { "" } else { "s" }
+                );
             }
         }
     }

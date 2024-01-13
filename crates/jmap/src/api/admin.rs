@@ -29,6 +29,7 @@ use http_body_util::combinators::BoxBody;
 use hyper::{body::Bytes, Method, StatusCode};
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
+use utils::config::ConfigKey;
 
 use crate::{services::housekeeper, JMAP};
 
@@ -299,7 +300,18 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("certificates", Some("reload"), &Method::GET) => {
+            ("reload", Some("config"), &Method::GET) => {
+                let _ = self
+                    .housekeeper_tx
+                    .send(housekeeper::Event::ReloadConfig)
+                    .await;
+
+                JsonResponse::new(json!({
+                    "data": [],
+                }))
+                .into_http_response()
+            }
+            ("reload", Some("certificates"), &Method::GET) => {
                 let _ = self
                     .housekeeper_tx
                     .send(housekeeper::Event::ReloadCertificates)
@@ -309,6 +321,73 @@ impl JMAP {
                     "data": [],
                 }))
                 .into_http_response()
+            }
+            ("config", key, &Method::GET) => {
+                match self.store.config_list(key.unwrap_or_default()).await {
+                    Ok(config) => JsonResponse::new(json!({
+                        "data": config.keys.into_iter().collect::<Vec<_>>(),
+                    }))
+                    .into_http_response(),
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Config fetch failed",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
+            }
+            ("config", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
+                let result = match prefix.strip_suffix('.') {
+                    Some(prefix) if !prefix.is_empty() => {
+                        self.store.config_clear_prefix(prefix).await
+                    }
+                    _ => self.store.config_clear(prefix).await,
+                };
+                match result {
+                    Ok(_) => JsonResponse::new(json!({
+                        "data": [],
+                    }))
+                    .into_http_response(),
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Config fetch failed",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
+            }
+            ("config", None, &Method::POST) => {
+                if let Some(changes) = body
+                    .and_then(|body| serde_json::from_slice::<Vec<(String, String)>>(&body).ok())
+                {
+                    match self
+                        .store
+                        .config_set(
+                            changes
+                                .into_iter()
+                                .map(|(key, value)| ConfigKey { key, value }),
+                        )
+                        .await
+                    {
+                        Ok(_) => JsonResponse::new(json!({
+                            "data": [],
+                        }))
+                        .into_http_response(),
+                        Err(err) => RequestError::blank(
+                            StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                            "Config update failed",
+                            err.to_string(),
+                        )
+                        .into_http_response(),
+                    }
+                } else {
+                    RequestError::blank(
+                        StatusCode::BAD_REQUEST.as_u16(),
+                        "Invalid parameters",
+                        "Failed to deserialize config update request",
+                    )
+                    .into_http_response()
+                }
             }
             (path_1 @ ("queue" | "report"), Some(path_2), &Method::GET) => {
                 self.smtp

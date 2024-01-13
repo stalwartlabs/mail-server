@@ -22,8 +22,8 @@
 */
 
 use directory::core::config::ConfigDirectory;
-use store::Stores;
-use utils::config::Config;
+use store::{Store, Stores};
+use utils::config::{Config, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
@@ -68,7 +68,7 @@ async fn vrfy_expn() {
 
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), None)
+        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;

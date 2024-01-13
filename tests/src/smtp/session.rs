@@ -372,6 +372,7 @@ impl TestServerInstance for ServerInstance {
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
             proxy_networks: vec![],
+            blocked_ips: Arc::new(Default::default()),
         }
     }
 }

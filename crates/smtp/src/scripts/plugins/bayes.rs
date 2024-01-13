@@ -64,7 +64,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     let span: &tracing::Span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.default_lookup_store.as_ref(),
+        _ => Some(&ctx.core.queue.config.lookup_store),
     };
 
     let store = if let Some(store) = store {
@@ -163,7 +163,7 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.default_lookup_store.as_ref(),
+        _ => Some(&ctx.core.queue.config.lookup_store),
     };
     let store = if let Some(store) = store {
         store
@@ -262,7 +262,7 @@ pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => ctx.core.sieve.default_lookup_store.as_ref(),
+        _ => Some(&ctx.core.queue.config.lookup_store),
     };
     let store = if let Some(store) = store {
         store

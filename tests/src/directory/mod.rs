@@ -39,6 +39,7 @@ use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
 use store::{config::ConfigStore, LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
+use utils::config::Servers;
 
 use crate::store::TempDir;
 
@@ -312,7 +313,16 @@ impl DirectoryTest {
         let stores = config.parse_stores().await.unwrap();
 
         DirectoryTest {
-            directories: config.parse_directory(&stores, id_store).await.unwrap(),
+            directories: config
+                .parse_directory(
+                    &stores,
+                    &Servers::default(),
+                    id_store
+                        .map(|id| stores.stores.get(id).unwrap().clone())
+                        .unwrap_or_default(),
+                )
+                .await
+                .unwrap(),
             stores,
             temp_dir,
         }

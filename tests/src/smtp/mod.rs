@@ -25,7 +25,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use directory::Directory;
+use directory::{AddressMapping, Directory, DirectoryInner};
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     hickory_resolver::config::{ResolverConfig, ResolverOpts},
@@ -34,6 +34,7 @@ use mail_auth::{
 use mail_send::smtp::tls::build_tls_connector;
 use sieve::Runtime;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
+use store::{LookupStore, Store};
 use tokio::sync::mpsc;
 
 use smtp::{
@@ -297,6 +298,7 @@ impl TestConfig for QueueCore {
 
 impl TestConfig for QueueConfig {
     fn test() -> Self {
+        let store = Store::default();
         Self {
             path: Default::default(),
             hash: IfBlock::new(10),
@@ -343,7 +345,15 @@ impl TestConfig for QueueConfig {
                 rcpt: vec![],
                 rcpt_domain: vec![],
             },
-            management_lookup: Arc::new(Directory::default()),
+            directory: Arc::new(Directory {
+                store: DirectoryInner::Internal(store.clone()),
+                catch_all: AddressMapping::Disable,
+                subaddressing: AddressMapping::Disable,
+                cache: None,
+                blocked_ips: Arc::new(Default::default()),
+            }),
+            lookup_store: LookupStore::Store(store.clone()),
+            data_store: store,
         }
     }
 }
@@ -440,8 +450,6 @@ impl TestConfig for SieveCore {
             sign: vec![],
             directories: Default::default(),
             lookup_stores: Default::default(),
-            default_lookup_store: None,
-            default_directory: None,
         }
     }
 }

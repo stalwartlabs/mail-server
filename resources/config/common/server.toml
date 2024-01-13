@@ -5,7 +5,13 @@
 [server]
 hostname = "%{HOST}%"
 max-connections = 8192
-#proxy-trusted-networks = ["127.0.0.0/8", "::1", "10.0.0.0/8"]
+
+#[server.proxy]
+#trusted-networks = {"127.0.0.0/8", "::1", "10.0.0.0/8"}
+
+[server.security]
+blocked-networks = {}
+fail2ban = "100/1d"
 
 [server.run-as]
 user = "stalwart-mail"
@@ -25,5 +31,3 @@ backlog = 1024
 [global]
 shared-map = {shard = 32, capacity = 10}
 #thread-pool = 8
-
-

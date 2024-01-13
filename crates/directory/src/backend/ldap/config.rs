@@ -33,7 +33,7 @@ impl LdapDirectory {
     pub fn from_config(
         config: &Config,
         prefix: impl AsKey,
-        id_store: Option<Store>,
+        data_store: Store,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
@@ -123,7 +123,7 @@ impl LdapDirectory {
             mappings,
             pool: build_pool(config, &prefix, manager)?,
             auth_bind,
-            id_store,
+            data_store,
         })
     }
 }

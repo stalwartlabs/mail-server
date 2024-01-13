@@ -650,3 +650,87 @@ impl From<Rows> for Vec<u32> {
             .collect()
     }
 }
+
+impl std::fmt::Debug for Store {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SQLite(_) => f.debug_tuple("SQLite").finish(),
+            #[cfg(feature = "foundation")]
+            Self::FoundationDb(_) => f.debug_tuple("FoundationDb").finish(),
+            #[cfg(feature = "postgres")]
+            Self::PostgreSQL(_) => f.debug_tuple("PostgreSQL").finish(),
+            #[cfg(feature = "mysql")]
+            Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
+        }
+    }
+}
+
+#[cfg(feature = "test_mode")]
+impl Default for Store {
+    fn default() -> Self {
+        #[cfg(feature = "sqlite")]
+        {
+            Self::SQLite(Arc::new(SqliteStore::open_memory().unwrap()))
+        }
+        #[cfg(not(feature = "sqlite"))]
+        {
+            unreachable!("No default store available")
+        }
+    }
+}
+
+impl Stores {
+    pub fn get_store(
+        &self,
+        config: &utils::config::Config,
+        key: &str,
+    ) -> utils::config::Result<Store> {
+        self.stores
+            .get(config.value_require(key)?)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Unable to find data store '{}' defined in key '{}'",
+                    config.value_require(key).unwrap(),
+                    key
+                )
+            })
+    }
+
+    pub fn get_blob_store(
+        &self,
+        config: &utils::config::Config,
+        key: &str,
+    ) -> utils::config::Result<BlobStore> {
+        self.blob_stores
+            .get(config.value_require(key)?)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Unable to find blob store '{}' defined in key '{}'",
+                    config.value_require(key).unwrap(),
+                    key
+                )
+            })
+    }
+
+    pub fn get_fts_store(
+        &self,
+        config: &utils::config::Config,
+        key: &str,
+    ) -> utils::config::Result<FtsStore> {
+        self.fts_stores
+            .get(config.value_require(key)?)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Unable to find FTS store '{}' defined in key '{}'",
+                    config.value_require(key).unwrap(),
+                    key
+                )
+            })
+    }
+}
