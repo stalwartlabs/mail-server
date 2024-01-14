@@ -73,8 +73,6 @@ async fn main() -> std::io::Result<()> {
         .reload(&config)
         .failed("Invalid configuration");
 
-    let todo = "Update config.zip";
-
     // Parse directories
     let directory = config
         .parse_directory(&stores, &servers, data_store)

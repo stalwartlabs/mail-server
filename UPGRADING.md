@@ -1,3 +1,19 @@
+Upgrading from `v0.5.2` to `v0.5.3`
+-----------------------------------
+
+- The following configuration attributes have been renamed, see [store.toml](https://github.com/stalwartlabs/mail-server/blob/main/resources/config/common/store.toml) for an example:
+  - `jmap.store.data` -> `storage.data`
+  - `jmap.store.fts` -> `storage.fts`
+  - `jmap.store.blob` -> `storage.blob`
+  - `jmap.encryption.*` -> `storage.encryption.*`
+  - `jmap.spam.header` -> `storage.spam.header`
+  - `jmap.fts.default-language` -> `storage.fts.default-language`
+  - `jmap.cluster.node-id` -> `storage.cluster.node-id`
+  - `management.directory` and `sieve.trusted.default.directory` -> `storage.directory`
+  - `sieve.trusted.default.store` -> `storage.lookup`
+- Proxy networks are now configured under `server.proxy.trusted-networks` rather than `server.proxy-trusted-networks`. IP addresses/masks have to be defined within a set (`{}`) rather than a list (`[]`), see [server.toml](https://github.com/stalwartlabs/mail-server/blob/main/resources/config/common/server.toml) for an example.
+
+
 Upgrading from `v0.5.1` to `v0.5.2`
 -----------------------------------
 

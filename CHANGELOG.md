@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.5.3] - 2024-01-14
+
+Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Built-in [fail2ban](https://stalw.art/docs/server/fail2ban) and IP address/mask blocking (#164).
+- CLI: Read URL and credentials from environment variables (#88).
+- mySQL driver: Add `max-allowed-packet` setting (#201).
+
+### Changed
+- Unified storage settings for all services (read the [UPGRADING.md](UPGRADING.md) for details)
+
+### Fixed
+- IMAP retrieval of auto-encrypted emails (#203).
+- mySQL driver: Parse `timeout.wait` property as duration (#202).
+- `X-Forwarded-For` header on JMAP Rate-Limit does not work (#208).
+- Use timeouts in install script (#138).
+
 ## [0.5.2] - 2024-01-07
 
 Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
