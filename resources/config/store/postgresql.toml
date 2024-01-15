@@ -23,7 +23,7 @@ allow-invalid-certs = false
 
 #[store."postgresql".init]
 #execute = [
-#    "CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT 1)",
+#    "CREATE TABLE IF NOT EXISTS accounts (name TEXT PRIMARY KEY, secret TEXT, description TEXT, type TEXT NOT NULL, quota INTEGER DEFAULT 0, active BOOLEAN DEFAULT TRUE)",
 #    "CREATE TABLE IF NOT EXISTS group_members (name TEXT NOT NULL, member_of TEXT NOT NULL, PRIMARY KEY (name, member_of))",
 #    "CREATE TABLE IF NOT EXISTS emails (name TEXT NOT NULL, address TEXT NOT NULL, type TEXT, PRIMARY KEY (name, address))"
 #]
