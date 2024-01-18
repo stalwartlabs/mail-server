@@ -55,7 +55,12 @@ impl<T: SessionStream> Session<T> {
 
         let mut modifications = Vec::new();
         for milter in milters {
-            if !*milter.enable.eval(self).await {
+            if !self
+                .core
+                .eval_if(&milter.enable, self)
+                .await
+                .unwrap_or(false)
+            {
                 continue;
             }
 

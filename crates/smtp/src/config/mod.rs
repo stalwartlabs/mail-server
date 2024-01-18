@@ -22,67 +22,39 @@
 */
 
 pub mod auth;
-pub mod condition;
-pub mod if_block;
 pub mod queue;
-pub mod remote;
 pub mod report;
 pub mod resolver;
 pub mod scripts;
 pub mod session;
+pub mod shared;
 pub mod throttle;
 
 use std::{
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::SocketAddr,
     path::PathBuf,
     sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
 
 use ahash::AHashMap;
-use directory::{Directories, Directory};
+use directory::Directories;
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
     dkim::{Canonicalization, Done},
-    IpLookupStrategy,
 };
 use mail_send::Credentials;
-use regex::Regex;
 use sieve::Sieve;
-use smtp_proto::MtPriority;
-use store::{LookupStore, Store, Stores};
-use utils::config::{ipmask::IpAddrMask, DynValue, Rate, Server, ServerProtocol};
+use store::Stores;
+use utils::{
+    config::{if_block::IfBlock, utils::ConstantValue, Rate, Server, ServerProtocol},
+    expr::{Expression, Token},
+};
 
-use crate::{core::Lookup, inbound::milter};
-
-#[derive(Debug)]
-pub struct Host {
-    pub address: String,
-    pub port: u16,
-    pub protocol: ServerProtocol,
-    pub concurrency: usize,
-    pub timeout: Duration,
-    pub tls_implicit: bool,
-    pub tls_allow_invalid_certs: bool,
-    pub username: Option<String>,
-    pub secret: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
-pub enum Condition {
-    Match {
-        key: EnvelopeKey,
-        value: ConditionMatch,
-        not: bool,
-    },
-    JumpIfTrue {
-        positions: usize,
-    },
-    JumpIfFalse {
-        positions: usize,
-    },
-}
+use crate::{
+    core::eval::{FUNCTIONS_MAP, VARIABLES_MAP},
+    inbound::milter,
+};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum StringMatch {
@@ -91,92 +63,10 @@ pub enum StringMatch {
     EndsWith(String),
 }
 
-#[derive(Clone)]
-pub enum ConditionMatch {
-    String(StringMatch),
-    UInt(u16),
-    Int(i16),
-    IpAddrMask(IpAddrMask),
-    Lookup(Lookup),
-    Regex(Regex),
-}
-
-#[cfg(feature = "test_mode")]
-impl PartialEq for ConditionMatch {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::String(l0), Self::String(r0)) => l0 == r0,
-            (Self::UInt(l0), Self::UInt(r0)) => l0 == r0,
-            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
-            (Self::IpAddrMask(l0), Self::IpAddrMask(r0)) => l0 == r0,
-            (Self::Lookup(l0), Self::Lookup(r0)) => l0 == r0,
-            (Self::Regex(_), Self::Regex(_)) => false,
-            _ => false,
-        }
-    }
-}
-
-impl core::fmt::Debug for ConditionMatch {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::String(arg0) => f.debug_tuple("String").field(arg0).finish(),
-            Self::UInt(arg0) => f.debug_tuple("UInt").field(arg0).finish(),
-            Self::Int(arg0) => f.debug_tuple("Int").field(arg0).finish(),
-            Self::IpAddrMask(arg0) => f.debug_tuple("IpAddrMask").field(arg0).finish(),
-            Self::Lookup(_) => f.debug_tuple("Lookup").finish(),
-            Self::Regex(arg0) => f.debug_tuple("Regex").field(arg0).finish(),
-        }
-    }
-}
-
-#[cfg(feature = "test_mode")]
-impl Eq for ConditionMatch {}
-
-impl Default for Condition {
-    fn default() -> Self {
-        Condition::JumpIfFalse { positions: 0 }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum EnvelopeKey {
-    Recipient,
-    RecipientDomain,
-    Sender,
-    SenderDomain,
-    Mx,
-    HeloDomain,
-    AuthenticatedAs,
-    Listener,
-    RemoteIp,
-    LocalIp,
-    Priority,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
-pub struct IfThen<T: Default> {
-    pub conditions: Conditions,
-    pub then: T,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
-pub struct Conditions {
-    pub conditions: Vec<Condition>,
-}
-
-#[derive(Debug, Clone, Default)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
-pub struct IfBlock<T: Default> {
-    pub if_then: Vec<IfThen<T>>,
-    pub default: T,
-}
-
 #[derive(Debug, Default)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
 pub struct Throttle {
-    pub conditions: Conditions,
+    pub expr: Expression,
     pub keys: u16,
     pub concurrency: Option<u64>,
     pub rate: Option<Rate>,
@@ -194,84 +84,84 @@ pub const THROTTLE_LOCAL_IP: u16 = 1 << 8;
 pub const THROTTLE_HELO_DOMAIN: u16 = 1 << 9;
 
 pub struct Connect {
-    pub script: IfBlock<Option<Arc<Sieve>>>,
+    pub script: IfBlock,
 }
 
 pub struct Ehlo {
-    pub script: IfBlock<Option<Arc<Sieve>>>,
-    pub require: IfBlock<bool>,
-    pub reject_non_fqdn: IfBlock<bool>,
+    pub script: IfBlock,
+    pub require: IfBlock,
+    pub reject_non_fqdn: IfBlock,
 }
 
 pub struct Extensions {
-    pub pipelining: IfBlock<bool>,
-    pub chunking: IfBlock<bool>,
-    pub requiretls: IfBlock<bool>,
-    pub dsn: IfBlock<bool>,
-    pub vrfy: IfBlock<bool>,
-    pub expn: IfBlock<bool>,
-    pub no_soliciting: IfBlock<Option<String>>,
-    pub future_release: IfBlock<Option<Duration>>,
-    pub deliver_by: IfBlock<Option<Duration>>,
-    pub mt_priority: IfBlock<Option<MtPriority>>,
+    pub pipelining: IfBlock,
+    pub chunking: IfBlock,
+    pub requiretls: IfBlock,
+    pub dsn: IfBlock,
+    pub vrfy: IfBlock,
+    pub expn: IfBlock,
+    pub no_soliciting: IfBlock,
+    pub future_release: IfBlock,
+    pub deliver_by: IfBlock,
+    pub mt_priority: IfBlock,
 }
 
 pub struct Auth {
-    pub directory: IfBlock<Option<MaybeDynValue<Directory>>>,
-    pub mechanisms: IfBlock<u64>,
-    pub require: IfBlock<bool>,
-    pub allow_plain_text: IfBlock<bool>,
-    pub must_match_sender: IfBlock<bool>,
-    pub errors_max: IfBlock<usize>,
-    pub errors_wait: IfBlock<Duration>,
+    pub directory: IfBlock,
+    pub mechanisms: IfBlock,
+    pub require: IfBlock,
+    pub allow_plain_text: IfBlock,
+    pub must_match_sender: IfBlock,
+    pub errors_max: IfBlock,
+    pub errors_wait: IfBlock,
 }
 
 pub struct Mail {
-    pub script: IfBlock<Option<Arc<Sieve>>>,
-    pub rewrite: IfBlock<Option<DynValue<EnvelopeKey>>>,
+    pub script: IfBlock,
+    pub rewrite: IfBlock,
 }
 
 pub struct Rcpt {
-    pub script: IfBlock<Option<Arc<Sieve>>>,
-    pub relay: IfBlock<bool>,
-    pub directory: IfBlock<Option<MaybeDynValue<Directory>>>,
-    pub rewrite: IfBlock<Option<DynValue<EnvelopeKey>>>,
+    pub script: IfBlock,
+    pub relay: IfBlock,
+    pub directory: IfBlock,
+    pub rewrite: IfBlock,
 
     // Errors
-    pub errors_max: IfBlock<usize>,
-    pub errors_wait: IfBlock<Duration>,
+    pub errors_max: IfBlock,
+    pub errors_wait: IfBlock,
 
     // Limits
-    pub max_recipients: IfBlock<usize>,
+    pub max_recipients: IfBlock,
 }
 
 pub struct Data {
-    pub script: IfBlock<Option<Arc<Sieve>>>,
+    pub script: IfBlock,
     pub pipe_commands: Vec<Pipe>,
     pub milters: Vec<Milter>,
 
     // Limits
-    pub max_messages: IfBlock<usize>,
-    pub max_message_size: IfBlock<usize>,
-    pub max_received_headers: IfBlock<usize>,
+    pub max_messages: IfBlock,
+    pub max_message_size: IfBlock,
+    pub max_received_headers: IfBlock,
 
     // Headers
-    pub add_received: IfBlock<bool>,
-    pub add_received_spf: IfBlock<bool>,
-    pub add_return_path: IfBlock<bool>,
-    pub add_auth_results: IfBlock<bool>,
-    pub add_message_id: IfBlock<bool>,
-    pub add_date: IfBlock<bool>,
+    pub add_received: IfBlock,
+    pub add_received_spf: IfBlock,
+    pub add_return_path: IfBlock,
+    pub add_auth_results: IfBlock,
+    pub add_message_id: IfBlock,
+    pub add_date: IfBlock,
 }
 
 pub struct Pipe {
-    pub command: IfBlock<Option<String>>,
-    pub arguments: IfBlock<Vec<String>>,
-    pub timeout: IfBlock<Duration>,
+    pub command: IfBlock,
+    pub arguments: IfBlock,
+    pub timeout: IfBlock,
 }
 
 pub struct Milter {
-    pub enable: IfBlock<bool>,
+    pub enable: IfBlock,
     pub addrs: Vec<SocketAddr>,
     pub hostname: String,
     pub port: u16,
@@ -288,9 +178,9 @@ pub struct Milter {
 }
 
 pub struct SessionConfig {
-    pub timeout: IfBlock<Duration>,
-    pub duration: IfBlock<Duration>,
-    pub transfer_limit: IfBlock<usize>,
+    pub timeout: IfBlock,
+    pub duration: IfBlock,
+    pub transfer_limit: IfBlock,
     pub throttle: SessionThrottle,
 
     pub connect: Connect,
@@ -318,20 +208,20 @@ pub struct RelayHost {
 }
 
 pub struct QueueConfig {
-    pub path: IfBlock<PathBuf>,
-    pub hash: IfBlock<u64>,
+    pub path: PathBuf,
+    pub hash: IfBlock,
 
     // Schedule
-    pub retry: IfBlock<Vec<Duration>>,
-    pub notify: IfBlock<Vec<Duration>>,
-    pub expire: IfBlock<Duration>,
+    pub retry: IfBlock,
+    pub notify: IfBlock,
+    pub expire: IfBlock,
 
     // Outbound
-    pub hostname: IfBlock<String>,
-    pub next_hop: IfBlock<Option<RelayHost>>,
-    pub max_mx: IfBlock<usize>,
-    pub max_multihomed: IfBlock<usize>,
-    pub ip_strategy: IfBlock<IpLookupStrategy>,
+    pub hostname: IfBlock,
+    pub next_hop: IfBlock,
+    pub max_mx: IfBlock,
+    pub max_multihomed: IfBlock,
+    pub ip_strategy: IfBlock,
     pub source_ip: QueueOutboundSourceIp,
     pub tls: QueueOutboundTls,
     pub dsn: Dsn,
@@ -342,22 +232,17 @@ pub struct QueueConfig {
     // Throttle and Quotas
     pub throttle: QueueThrottle,
     pub quota: QueueQuotas,
-
-    // Default store and directory
-    pub directory: Arc<Directory>,
-    pub data_store: Store,
-    pub lookup_store: LookupStore,
 }
 
 pub struct QueueOutboundSourceIp {
-    pub ipv4: IfBlock<Vec<Ipv4Addr>>,
-    pub ipv6: IfBlock<Vec<Ipv6Addr>>,
+    pub ipv4: IfBlock,
+    pub ipv6: IfBlock,
 }
 
 pub struct ReportConfig {
-    pub path: IfBlock<PathBuf>,
-    pub hash: IfBlock<u64>,
-    pub submitter: IfBlock<String>,
+    pub path: PathBuf,
+    pub hash: IfBlock,
+    pub submitter: IfBlock,
     pub analysis: ReportAnalysis,
 
     pub dkim: Report,
@@ -380,55 +265,46 @@ pub enum AddressMatch {
     Equals(String),
 }
 
-#[derive(Clone)]
-pub enum MaybeDynValue<T: ?Sized> {
-    Dynamic {
-        eval: DynValue<EnvelopeKey>,
-        items: AHashMap<String, Arc<T>>,
-    },
-    Static(Arc<T>),
-}
-
 pub struct Dsn {
-    pub name: IfBlock<String>,
-    pub address: IfBlock<String>,
-    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
+    pub name: IfBlock,
+    pub address: IfBlock,
+    pub sign: IfBlock,
 }
 
 pub struct AggregateReport {
-    pub name: IfBlock<String>,
-    pub address: IfBlock<String>,
-    pub org_name: IfBlock<Option<String>>,
-    pub contact_info: IfBlock<Option<String>>,
-    pub send: IfBlock<AggregateFrequency>,
-    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
-    pub max_size: IfBlock<usize>,
+    pub name: IfBlock,
+    pub address: IfBlock,
+    pub org_name: IfBlock,
+    pub contact_info: IfBlock,
+    pub send: IfBlock,
+    pub sign: IfBlock,
+    pub max_size: IfBlock,
 }
 
 pub struct Report {
-    pub name: IfBlock<String>,
-    pub address: IfBlock<String>,
-    pub subject: IfBlock<String>,
-    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
-    pub send: IfBlock<Option<Rate>>,
+    pub name: IfBlock,
+    pub address: IfBlock,
+    pub subject: IfBlock,
+    pub sign: IfBlock,
+    pub send: IfBlock,
 }
 
 pub struct QueueOutboundTls {
-    pub dane: IfBlock<RequireOptional>,
-    pub mta_sts: IfBlock<RequireOptional>,
-    pub start: IfBlock<RequireOptional>,
-    pub invalid_certs: IfBlock<bool>,
+    pub dane: IfBlock,
+    pub mta_sts: IfBlock,
+    pub start: IfBlock,
+    pub invalid_certs: IfBlock,
 }
 
 pub struct QueueOutboundTimeout {
-    pub connect: IfBlock<Duration>,
-    pub greeting: IfBlock<Duration>,
-    pub tls: IfBlock<Duration>,
-    pub ehlo: IfBlock<Duration>,
-    pub mail: IfBlock<Duration>,
-    pub rcpt: IfBlock<Duration>,
-    pub data: IfBlock<Duration>,
-    pub mta_sts: IfBlock<Duration>,
+    pub connect: IfBlock,
+    pub greeting: IfBlock,
+    pub tls: IfBlock,
+    pub ehlo: IfBlock,
+    pub mail: IfBlock,
+    pub rcpt: IfBlock,
+    pub data: IfBlock,
+    pub mta_sts: IfBlock,
 }
 
 #[derive(Debug)]
@@ -445,7 +321,7 @@ pub struct QueueQuotas {
 }
 
 pub struct QueueQuota {
-    pub conditions: Conditions,
+    pub expr: Expression,
     pub keys: u16,
     pub size: Option<usize>,
     pub messages: Option<usize>,
@@ -494,25 +370,25 @@ pub enum ArcSealer {
 }
 
 pub struct DkimAuthConfig {
-    pub verify: IfBlock<VerifyStrategy>,
-    pub sign: IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
+    pub verify: IfBlock,
+    pub sign: IfBlock,
 }
 
 pub struct ArcAuthConfig {
-    pub verify: IfBlock<VerifyStrategy>,
-    pub seal: IfBlock<Option<MaybeDynValue<ArcSealer>>>,
+    pub verify: IfBlock,
+    pub seal: IfBlock,
 }
 
 pub struct SpfAuthConfig {
-    pub verify_ehlo: IfBlock<VerifyStrategy>,
-    pub verify_mail_from: IfBlock<VerifyStrategy>,
+    pub verify_ehlo: IfBlock,
+    pub verify_mail_from: IfBlock,
 }
 pub struct DmarcAuthConfig {
-    pub verify: IfBlock<VerifyStrategy>,
+    pub verify: IfBlock,
 }
 
 pub struct IpRevAuthConfig {
-    pub verify: IfBlock<VerifyStrategy>,
+    pub verify: IfBlock,
 }
 
 #[derive(Debug, Clone)]
@@ -532,10 +408,9 @@ pub enum VerifyStrategy {
 #[derive(Default)]
 pub struct ConfigContext<'x> {
     pub servers: &'x [Server],
-    pub hosts: AHashMap<String, Host>,
-    pub scripts: AHashMap<String, Arc<Sieve>>,
     pub directory: Directories,
     pub stores: Stores,
+    pub scripts: AHashMap<String, Arc<Sieve>>,
     pub signers: AHashMap<String, Arc<DkimSigner>>,
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
 }
@@ -547,6 +422,35 @@ impl<'x> ConfigContext<'x> {
             ..Default::default()
         }
     }
+}
+
+pub fn map_expr_token<F: ConstantValue>(name: &str, allowed_vars: &[u32]) -> Result<Token> {
+    VARIABLES_MAP
+        .iter()
+        .find(|(n, _)| n == &name)
+        .and_then(|(_, id)| {
+            if allowed_vars.contains(id) {
+                Some(Token::Variable(*id))
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            FUNCTIONS_MAP
+                .iter()
+                .find(|(n, _, _)| n == &name)
+                .map(|(name, id, num_args)| Token::Function {
+                    name: (*name).into(),
+                    id: *id,
+                    num_args: *num_args,
+                })
+        })
+        .or_else(|| {
+            F::parse_value("", name)
+                .map(|v| Token::Constant(v.into()))
+                .ok()
+        })
+        .ok_or_else(|| format!("Invalid variable: {name:?}"))
 }
 
 impl std::fmt::Debug for RelayHost {

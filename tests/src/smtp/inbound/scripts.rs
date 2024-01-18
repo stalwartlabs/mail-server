@@ -31,13 +31,13 @@ use crate::smtp::{
 };
 use directory::core::config::ConfigDirectory;
 use smtp::{
-    config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext, EnvelopeKey, IfBlock},
-    core::{Session, SMTP},
+    config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext},
+    core::{eval::V_REMOTE_IP, Session, SMTP},
     scripts::ScriptResult,
 };
 use store::{config::ConfigStore, Store};
 use tokio::runtime::Handle;
-use utils::config::{Config, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 const CONFIG: &str = r#"
 [store."sql"]
@@ -137,14 +137,14 @@ async fn sieve_scripts() {
         .parse_directory(&ctx.stores, &Servers::default(), Store::default())
         .await
         .unwrap();
-    let pipes = config.parse_pipes(&ctx, &[EnvelopeKey::RemoteIp]).unwrap();
+    let pipes = config.parse_pipes(&[V_REMOTE_IP]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
-    config.connect.script = IfBlock::new(ctx.scripts.get("stage_connect").cloned());
-    config.ehlo.script = IfBlock::new(ctx.scripts.get("stage_ehlo").cloned());
-    config.mail.script = IfBlock::new(ctx.scripts.get("stage_mail").cloned());
-    config.rcpt.script = IfBlock::new(ctx.scripts.get("stage_rcpt").cloned());
-    config.data.script = IfBlock::new(ctx.scripts.get("stage_data").cloned());
+    config.connect.script = IfBlock::new("stage_connect".to_string());
+    config.ehlo.script = IfBlock::new("stage_ehlo".to_string());
+    config.mail.script = IfBlock::new("stage_mail".to_string());
+    config.rcpt.script = IfBlock::new("stage_rcpt".to_string());
+    config.data.script = IfBlock::new("stage_data".to_string());
     config.rcpt.relay = IfBlock::new(true);
     config.data.pipe_commands = pipes;
     let core = Arc::new(core);

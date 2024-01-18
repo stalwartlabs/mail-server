@@ -23,17 +23,14 @@
 
 use directory::core::config::ConfigDirectory;
 use store::{Store, Stores};
-use utils::config::{Config, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{load_test_message, TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
-use smtp::{
-    config::{ConfigContext, IfBlock, MaybeDynValue},
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 const DIRECTORY: &str = r#"
 [directory."local"]
@@ -84,14 +81,12 @@ async fn data() {
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
-        directory.directories.get("local").unwrap().clone(),
-    )));
+    config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config;
     config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},
     {else = false}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.data.add_date = config.data.add_auth_results.clone();
     config.data.add_message_id = config.data.add_auth_results.clone();
     config.data.add_received = config.data.add_auth_results.clone();
@@ -100,7 +95,7 @@ async fn data() {
     config.data.max_received_headers = IfBlock::new(3);
     config.data.max_messages = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1},
     {else = 100}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
 
     core.queue.config.quota = r"[[queue.quota]]
     match = {if = 'sender', eq = 'john@doe.org'}
@@ -117,7 +112,7 @@ async fn data() {
     key = ['rcpt']
     size = 450
     "
-    .parse_quota(&ConfigContext::new(&[]));
+    .parse_quota();
 
     // Test queue message builder
     let mut session = Session::test(core);

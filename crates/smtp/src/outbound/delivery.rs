@@ -36,7 +36,7 @@ use smtp_proto::MAIL_REQUIRETLS;
 use utils::config::ServerProtocol;
 
 use crate::{
-    config::{AggregateFrequency, TlsStrategy},
+    config::{AggregateFrequency, RequireOptional, TlsStrategy},
     core::SMTP,
     queue::ErrorDetails,
     reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
@@ -59,7 +59,7 @@ impl DeliveryAttempt {
         let has_pending_delivery = self.has_pending_delivery();
 
         // Send any due Delivery Status Notifications
-        core.queue.send_dsn(&mut self).await;
+        core.send_dsn(&mut self).await;
 
         if has_pending_delivery {
             // Re-queue the message if its not yet due for delivery
@@ -83,7 +83,6 @@ impl DeliveryAttempt {
         // Throttle sender
         for throttle in &core.queue.config.throttle.sender {
             if let Err(err) = core
-                .queue
                 .is_allowed(
                     throttle,
                     self.message.as_ref(),
@@ -150,7 +149,6 @@ impl DeliveryAttempt {
                 let mut in_flight = Vec::new();
                 for throttle in &queue_config.throttle.rcpt {
                     if let Err(err) = core
-                        .queue
                         .is_allowed(throttle, &envelope, &mut in_flight, &span)
                         .await
                     {
@@ -160,7 +158,10 @@ impl DeliveryAttempt {
                 }
 
                 // Obtain next hop
-                let (mut remote_hosts, is_smtp) = match queue_config.next_hop.eval(&envelope).await
+                let (mut remote_hosts, is_smtp) = match core
+                    .eval_if::<String, _>(&queue_config.next_hop, &envelope)
+                    .await
+                    .and_then(|name| core.get_relay_host(&name))
                 {
                     #[cfg(feature = "local_delivery")]
                     Some(next_hop) if next_hop.protocol == ServerProtocol::Jmap => {
@@ -175,8 +176,13 @@ impl DeliveryAttempt {
                             .await;
 
                         // Update status for the current domain and continue with the next one
-                        domain
-                            .set_status(delivery_result, queue_config.retry.eval(&envelope).await);
+                        domain.set_status(
+                            delivery_result,
+                            &core
+                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                .await
+                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                        );
                         continue 'next_domain;
                     }
                     Some(next_hop) => (
@@ -189,13 +195,23 @@ impl DeliveryAttempt {
                 // Prepare TLS strategy
                 let mut disable_tls = false;
                 let mut tls_strategy = TlsStrategy {
-                    mta_sts: *queue_config.tls.mta_sts.eval(&envelope).await,
+                    mta_sts: core
+                        .eval_if(&queue_config.tls.mta_sts, &envelope)
+                        .await
+                        .unwrap_or(RequireOptional::Optional),
                     ..Default::default()
                 };
-                let allow_invalid_certs = *queue_config.tls.invalid_certs.eval(&envelope).await;
+                let allow_invalid_certs = core
+                    .eval_if(&queue_config.tls.invalid_certs, &envelope)
+                    .await
+                    .unwrap_or(false);
 
                 // Obtain TLS reporting
-                let tls_report = match core.report.config.tls.send.eval(&envelope).await {
+                let tls_report = match core
+                    .eval_if(&core.report.config.tls.send, &envelope)
+                    .await
+                    .unwrap_or(AggregateFrequency::Never)
+                {
                     interval @ (AggregateFrequency::Hourly
                     | AggregateFrequency::Daily
                     | AggregateFrequency::Weekly)
@@ -213,11 +229,7 @@ impl DeliveryAttempt {
                             event = "record-fetched",
                             record = ?record);
 
-                                TlsRptOptions {
-                                    record,
-                                    interval: *interval,
-                                }
-                                .into()
+                                TlsRptOptions { record, interval }.into()
                             }
                             Err(err) => {
                                 tracing::debug!(
@@ -238,7 +250,9 @@ impl DeliveryAttempt {
                     match core
                         .lookup_mta_sts_policy(
                             envelope.domain,
-                            *queue_config.timeout.mta_sts.eval(&envelope).await,
+                            core.eval_if(&queue_config.timeout.mta_sts, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(10 * 60)),
                         )
                         .await
                     {
@@ -294,7 +308,13 @@ impl DeliveryAttempt {
                                     "Failed to retrieve MTA-STS policy: {}",
                                     err
                                 );
-                                domain.set_status(err, queue_config.retry.eval(&envelope).await);
+                                domain.set_status(
+                                    err,
+                                    &core
+                                        .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                        .await
+                                        .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                                );
                                 continue 'next_domain;
                             } else {
                                 tracing::debug!(
@@ -326,14 +346,23 @@ impl DeliveryAttempt {
                                 event = "mx-lookup-failed",
                                 reason = %err,
                             );
-                            domain.set_status(err, queue_config.retry.eval(&envelope).await);
+                            domain.set_status(
+                                err,
+                                &core
+                                    .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                    .await
+                                    .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                            );
                             continue 'next_domain;
                         }
                     };
 
-                    if let Some(remote_hosts_) = mx_list
-                        .to_remote_hosts(&domain.domain, *queue_config.max_mx.eval(&envelope).await)
-                    {
+                    if let Some(remote_hosts_) = mx_list.to_remote_hosts(
+                        &domain.domain,
+                        core.eval_if(&queue_config.max_mx, &envelope)
+                            .await
+                            .unwrap_or(5),
+                    ) {
                         remote_hosts = remote_hosts_;
                     } else {
                         tracing::info!(
@@ -346,14 +375,20 @@ impl DeliveryAttempt {
                             Status::PermanentFailure(Error::DnsError(
                                 "Domain does not accept messages (null MX)".to_string(),
                             )),
-                            queue_config.retry.eval(&envelope).await,
+                            &core
+                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                .await
+                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
                         );
                         continue 'next_domain;
                     }
                 }
 
                 // Try delivering message
-                let max_multihomed = *queue_config.max_multihomed.eval(&envelope).await;
+                let max_multihomed = core
+                    .eval_if(&queue_config.max_multihomed, &envelope)
+                    .await
+                    .unwrap_or(2);
                 let mut last_status = Status::Scheduled;
                 'next_host: for remote_host in &remote_hosts {
                     // Validate MTA-STS
@@ -413,8 +448,14 @@ impl DeliveryAttempt {
                     };
 
                     // Update TLS strategy
-                    tls_strategy.dane = *queue_config.tls.dane.eval(&envelope).await;
-                    tls_strategy.tls = *queue_config.tls.start.eval(&envelope).await;
+                    tls_strategy.dane = core
+                        .eval_if(&queue_config.tls.dane, &envelope)
+                        .await
+                        .unwrap_or(RequireOptional::Optional);
+                    tls_strategy.tls = core
+                        .eval_if(&queue_config.tls.start, &envelope)
+                        .await
+                        .unwrap_or(RequireOptional::Optional);
 
                     // Lookup DANE policy
                     let dane_policy = if tls_strategy.try_dane() && is_smtp {
@@ -571,7 +612,6 @@ impl DeliveryAttempt {
                         envelope.remote_ip = remote_ip;
                         for throttle in &queue_config.throttle.host {
                             if let Err(err) = core
-                                .queue
                                 .is_allowed(throttle, &envelope, &mut in_flight_host, &span)
                                 .await
                             {
@@ -581,17 +621,21 @@ impl DeliveryAttempt {
                         }
 
                         // Connect
+                        let conn_timeout = core
+                            .eval_if(&queue_config.timeout.connect, &envelope)
+                            .await
+                            .unwrap_or_else(|| Duration::from_secs(5 * 60));
                         let mut smtp_client = match if let Some(ip_addr) = source_ip {
                             SmtpClient::connect_using(
                                 ip_addr,
                                 SocketAddr::new(remote_ip, remote_host.port()),
-                                *queue_config.timeout.connect.eval(&envelope).await,
+                                conn_timeout,
                             )
                             .await
                         } else {
                             SmtpClient::connect(
                                 SocketAddr::new(remote_ip, remote_host.port()),
-                                *queue_config.timeout.connect.eval(&envelope).await,
+                                conn_timeout,
                             )
                             .await
                         } {
@@ -621,17 +665,33 @@ impl DeliveryAttempt {
                             }
                         };
 
-                        // Obtail session parameters
+                        // Obtain session parameters
+                        let local_hostname = core
+                            .eval_if::<String, _>(&queue_config.hostname, &envelope)
+                            .await
+                            .unwrap_or_else(|| "localhost".to_string());
                         let params = SessionParams {
                             span: &span,
                             credentials: remote_host.credentials(),
                             is_smtp: remote_host.is_smtp(),
                             hostname: envelope.mx,
-                            local_hostname: queue_config.hostname.eval(&envelope).await,
-                            timeout_ehlo: *queue_config.timeout.ehlo.eval(&envelope).await,
-                            timeout_mail: *queue_config.timeout.mail.eval(&envelope).await,
-                            timeout_rcpt: *queue_config.timeout.rcpt.eval(&envelope).await,
-                            timeout_data: *queue_config.timeout.data.eval(&envelope).await,
+                            local_hostname: &local_hostname,
+                            timeout_ehlo: core
+                                .eval_if(&queue_config.timeout.ehlo, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60)),
+                            timeout_mail: core
+                                .eval_if(&queue_config.timeout.mail, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60)),
+                            timeout_rcpt: core
+                                .eval_if(&queue_config.timeout.rcpt, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60)),
+                            timeout_data: core
+                                .eval_if(&queue_config.timeout.data, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60)),
                         };
 
                         // Prepare TLS connector
@@ -648,8 +708,10 @@ impl DeliveryAttempt {
 
                         let delivery_result = if !remote_host.implicit_tls() {
                             // Read greeting
-                            smtp_client.timeout =
-                                *queue_config.timeout.greeting.eval(&envelope).await;
+                            smtp_client.timeout = core
+                                .eval_if(&queue_config.timeout.greeting, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60));
                             if let Err(status) = read_greeting(&mut smtp_client, envelope.mx).await
                             {
                                 tracing::info!(
@@ -683,8 +745,10 @@ impl DeliveryAttempt {
 
                             // Try starting TLS
                             if tls_strategy.try_start_tls() && !domain.disable_tls {
-                                smtp_client.timeout =
-                                    *queue_config.timeout.tls.eval(&envelope).await;
+                                smtp_client.timeout = core
+                                    .eval_if(&queue_config.timeout.tls, &envelope)
+                                    .await
+                                    .unwrap_or_else(|| Duration::from_secs(3 * 60));
                                 match try_start_tls(
                                     smtp_client,
                                     tls_connector,
@@ -873,7 +937,10 @@ impl DeliveryAttempt {
                             }
                         } else {
                             // Start TLS
-                            smtp_client.timeout = *queue_config.timeout.tls.eval(&envelope).await;
+                            smtp_client.timeout = core
+                                .eval_if(&queue_config.timeout.tls, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(3 * 60));
                             let mut smtp_client =
                                 match smtp_client.into_tls(tls_connector, envelope.mx).await {
                                     Ok(smtp_client) => smtp_client,
@@ -892,8 +959,10 @@ impl DeliveryAttempt {
                                 };
 
                             // Read greeting
-                            smtp_client.timeout =
-                                *queue_config.timeout.greeting.eval(&envelope).await;
+                            smtp_client.timeout = core
+                                .eval_if(&queue_config.timeout.greeting, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 60));
                             if let Err(status) = read_greeting(&mut smtp_client, envelope.mx).await
                             {
                                 tracing::info!(
@@ -919,21 +988,32 @@ impl DeliveryAttempt {
                         };
 
                         // Update status for the current domain and continue with the next one
-                        domain
-                            .set_status(delivery_result, queue_config.retry.eval(&envelope).await);
+                        domain.set_status(
+                            delivery_result,
+                            &core
+                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                .await
+                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                        );
                         continue 'next_domain;
                     }
                 }
 
                 // Update status
                 domain.disable_tls = disable_tls;
-                domain.set_status(last_status, queue_config.retry.eval(&envelope).await);
+                domain.set_status(
+                    last_status,
+                    &core
+                        .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                        .await
+                        .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                );
             }
             self.message.domains = domains;
             self.message.recipients = recipients;
 
             // Send Delivery Status Notifications
-            core.queue.send_dsn(&mut self).await;
+            core.send_dsn(&mut self).await;
 
             // Notify queue manager
             let span = self.span;

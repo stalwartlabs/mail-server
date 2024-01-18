@@ -29,7 +29,7 @@ use mail_auth::{
     spf::Spf,
 };
 use store::{Store, Stores};
-use utils::config::{Config, DynValue, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -37,9 +37,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{
-        auth::ConfigAuth, ConfigContext, EnvelopeKey, IfBlock, MaybeDynValue, VerifyStrategy,
-    },
+    config::{auth::ConfigAuth, ConfigContext, VerifyStrategy},
     core::{Session, SMTP},
 };
 
@@ -158,9 +156,7 @@ async fn sign_and_seal() {
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
-        directory.directories.get("local").unwrap().clone(),
-    )));
+    config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
@@ -177,14 +173,8 @@ async fn sign_and_seal() {
     config.dkim.verify = config.spf.verify_ehlo.clone();
     config.arc.verify = config.spf.verify_ehlo.clone();
     config.dmarc.verify = config.spf.verify_ehlo.clone();
-    config.dkim.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
-    config.arc.seal = "'ed'"
-        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.sealers, "", "")
-        .unwrap();
+    config.dkim.sign = "['rsa']".parse_if();
+    config.arc.seal = "'ed'".parse_if();
 
     // Test DKIM signing
     let mut session = Session::test(core);

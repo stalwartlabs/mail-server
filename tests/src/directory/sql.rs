@@ -21,10 +21,8 @@
  * for more details.
 */
 
-use ahash::AHashMap;
 use directory::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 use mail_send::Credentials;
-use smtp::core::Lookup;
 use store::{LookupStore, Store};
 
 use crate::directory::{map_account_ids, DirectoryTest};
@@ -45,12 +43,6 @@ async fn sql_directory() {
     for directory_id in ["sqlite", "postgresql", "mysql"] {
         // Parse config
         let mut config = DirectoryTest::new(directory_id.into()).await;
-        let lookups = config
-            .stores
-            .lookup_stores
-            .iter()
-            .map(|(k, v)| (k.clone(), Lookup::from(v.clone())))
-            .collect::<AHashMap<_, _>>();
 
         println!("Testing SQL directory {:?}", directory_id);
         let handle = config.directories.directories.remove(directory_id).unwrap();
@@ -121,14 +113,6 @@ async fn sql_directory() {
         store
             .link_test_address("robert", "@catchall.org", "alias")
             .await;
-
-        // Text lookup
-        assert!(lookups
-            .get(&format!("{}/domains", directory_id))
-            .unwrap()
-            .contains("example.org")
-            .await
-            .unwrap());
 
         // Test authentication
         assert_eq!(
@@ -239,6 +223,7 @@ async fn sql_directory() {
             handle.email_to_ids("info@example.org").await.unwrap(),
             map_account_ids(base_store, vec!["bill", "jane", "john"]).await
         );
+        let todo = "test regex subaddressing";
         assert_eq!(
             handle.email_to_ids("jane+alias@example.org").await.unwrap(),
             map_account_ids(base_store, vec!["jane"]).await

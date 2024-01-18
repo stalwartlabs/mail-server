@@ -21,9 +21,9 @@
  * for more details.
 */
 
-use super::{condition::ConfigCondition, *};
+use super::*;
 use utils::config::{
-    utils::{AsKey, ParseValue},
+    utils::{AsKey, NoConstants},
     Config,
 };
 
@@ -31,16 +31,14 @@ pub trait ConfigThrottle {
     fn parse_throttle(
         &self,
         prefix: impl AsKey,
-        ctx: &ConfigContext,
-        available_envelope_keys: &[EnvelopeKey],
+        available_envelope_keys: &[u32],
         available_throttle_keys: u16,
     ) -> super::Result<Vec<Throttle>>;
 
     fn parse_throttle_item(
         &self,
         prefix: impl AsKey,
-        ctx: &ConfigContext,
-        available_envelope_keys: &[EnvelopeKey],
+        available_envelope_keys: &[u32],
         available_throttle_keys: u16,
     ) -> super::Result<Throttle>;
 }
@@ -49,8 +47,7 @@ impl ConfigThrottle for Config {
     fn parse_throttle(
         &self,
         prefix: impl AsKey,
-        ctx: &ConfigContext,
-        available_envelope_keys: &[EnvelopeKey],
+        available_envelope_keys: &[u32],
         available_throttle_keys: u16,
     ) -> super::Result<Vec<Throttle>> {
         let prefix_ = prefix.as_key();
@@ -58,7 +55,6 @@ impl ConfigThrottle for Config {
         for array_pos in self.sub_keys(prefix, "") {
             throttles.push(self.parse_throttle_item(
                 (&prefix_, array_pos),
-                ctx,
                 available_envelope_keys,
                 available_throttle_keys,
             )?);
@@ -70,8 +66,7 @@ impl ConfigThrottle for Config {
     fn parse_throttle_item(
         &self,
         prefix: impl AsKey,
-        ctx: &ConfigContext,
-        available_envelope_keys: &[EnvelopeKey],
+        available_envelope_keys: &[u32],
         available_throttle_keys: u16,
     ) -> super::Result<Throttle> {
         let prefix = prefix.as_key();
@@ -88,12 +83,12 @@ impl ConfigThrottle for Config {
         }
 
         let throttle = Throttle {
-            conditions: if self.values((&prefix, "match")).next().is_some() {
-                self.parse_condition((&prefix, "match"), ctx, available_envelope_keys)?
+            expr: if let Some(expr) = self.value((&prefix, "match")) {
+                Expression::parse((&prefix, "match"), expr, |name| {
+                    map_expr_token::<NoConstants>(name, available_envelope_keys)
+                })?
             } else {
-                Conditions {
-                    conditions: Vec::with_capacity(0),
-                }
+                Expression::default()
             },
             keys,
             concurrency: self
@@ -116,30 +111,6 @@ impl ConfigThrottle for Config {
         } else {
             Ok(throttle)
         }
-    }
-}
-
-impl ParseValue for EnvelopeKey {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        Ok(match value {
-            "rcpt" => EnvelopeKey::Recipient,
-            "rcpt-domain" => EnvelopeKey::RecipientDomain,
-            "sender" => EnvelopeKey::Sender,
-            "sender-domain" => EnvelopeKey::SenderDomain,
-            "listener" => EnvelopeKey::Listener,
-            "remote-ip" => EnvelopeKey::RemoteIp,
-            "local-ip" => EnvelopeKey::LocalIp,
-            "priority" => EnvelopeKey::Priority,
-            "authenticated-as" => EnvelopeKey::AuthenticatedAs,
-            "mx" => EnvelopeKey::Mx,
-            _ => {
-                return Err(format!(
-                    "Invalid context key {:?} for property {:?}.",
-                    value,
-                    key.as_key()
-                ))
-            }
-        })
     }
 }
 

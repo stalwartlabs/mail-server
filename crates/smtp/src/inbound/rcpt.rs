@@ -79,13 +79,11 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting and Sieve filtering
         let rcpt_script = self
             .core
-            .session
-            .config
-            .rcpt
-            .script
-            .eval(self)
+            .eval_if::<String, _>(&self.core.session.config.rcpt.script, self)
             .await
-            .clone();
+            .and_then(|name| self.core.get_sieve_script(&name))
+            .cloned();
+
         if rcpt_script.is_some() || !self.core.session.config.rcpt.rewrite.is_empty() {
             // Sieve filtering
             if let Some(script) = rcpt_script {
@@ -125,14 +123,8 @@ impl<T: SessionStream> Session<T> {
             // Address rewriting
             if let Some(new_address) = self
                 .core
-                .session
-                .config
-                .rcpt
-                .rewrite
-                .eval_and_capture(self)
+                .eval_if::<String, _>(&self.core.session.config.rcpt.rewrite, self)
                 .await
-                .into_value(self)
-                .map(|s| s.into_owned())
             {
                 let rcpt = self.data.rcpt_to.last_mut().unwrap();
                 if new_address.contains('@') {
@@ -154,13 +146,9 @@ impl<T: SessionStream> Session<T> {
         let rcpt = self.data.rcpt_to.last().unwrap();
         if let Some(directory) = self
             .core
-            .session
-            .config
-            .rcpt
-            .directory
-            .eval_and_capture(self)
+            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
             .await
-            .into_value(self)
+            .and_then(|name| self.core.get_directory(&name))
         {
             if let Ok(is_local_domain) = directory.is_local_domain(&rcpt.domain).await {
                 if is_local_domain {
@@ -189,7 +177,12 @@ impl<T: SessionStream> Session<T> {
                             .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                             .await;
                     }
-                } else if !*self.core.session.config.rcpt.relay.eval(self).await {
+                } else if !self
+                    .core
+                    .eval_if(&self.core.session.config.rcpt.relay, self)
+                    .await
+                    .unwrap_or(false)
+                {
                     tracing::debug!(parent: &self.span,
                         context = "rcpt", 
                         event = "error",
@@ -211,7 +204,12 @@ impl<T: SessionStream> Session<T> {
                     .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
                     .await;
             }
-        } else if !*self.core.session.config.rcpt.relay.eval(self).await {
+        } else if !self
+            .core
+            .eval_if(&self.core.session.config.rcpt.relay, self)
+            .await
+            .unwrap_or(false)
+        {
             tracing::debug!(parent: &self.span,
                 context = "rcpt", 
                 event = "error",

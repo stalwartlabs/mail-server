@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use mail_auth::{IpLookupStrategy, MX};
 
-use ::smtp::{config::IfBlock, core::SMTP, outbound::NextHop};
+use ::smtp::{core::SMTP, outbound::NextHop};
 use mail_parser::DateTime;
 use smtp::{
     config::AggregateFrequency,
@@ -35,8 +35,9 @@ use smtp::{
     },
     queue::RecipientDomain,
 };
+use utils::config::if_block::IfBlock;
 
-use crate::smtp::TestConfig;
+use crate::smtp::{ParseTestConfig, TestConfig};
 
 #[tokio::test]
 async fn lookup_ip() {
@@ -53,8 +54,24 @@ async fn lookup_ip() {
         "10.0.0.4".parse().unwrap(),
     ];
     let mut core = SMTP::test();
-    core.queue.config.source_ip.ipv4 = IfBlock::new(ipv4.clone());
-    core.queue.config.source_ip.ipv6 = IfBlock::new(ipv6.clone());
+    core.queue.config.source_ip.ipv4 = format!(
+        "[{}]",
+        ipv4.iter()
+            .map(|ip| format!("\"{}\"", ip))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+    .as_str()
+    .parse_if();
+    core.queue.config.source_ip.ipv6 = format!(
+        "[{}]",
+        ipv6.iter()
+            .map(|ip| format!("\"{}\"", ip))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+    .as_str()
+    .parse_if();
     core.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec![

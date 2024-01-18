@@ -436,71 +436,68 @@ impl QueueCore {
         let mut queue = Queue::default();
         let mut messages = Vec::new();
 
-        for path in self
-            .config
-            .path
-            .if_then
-            .iter()
-            .map(|t| &t.then)
-            .chain([&self.config.path.default])
-        {
-            let mut dir = match tokio::fs::read_dir(path).await {
-                Ok(dir) => dir,
-                Err(_) => continue,
-            };
-            loop {
-                match dir.next_entry().await {
-                    Ok(Some(file)) => {
-                        let file = file.path();
-                        if file.is_dir() {
-                            match tokio::fs::read_dir(&file).await {
-                                Ok(mut dir) => {
-                                    let file_ = file;
-                                    loop {
-                                        match dir.next_entry().await {
-                                            Ok(Some(file)) => {
-                                                let file = file.path();
-                                                if file.extension().map_or(false, |e| e == "msg") {
-                                                    messages.push(tokio::spawn(
-                                                        Message::from_path(file),
-                                                    ));
-                                                }
+        let mut dir = match tokio::fs::read_dir(&self.config.path).await {
+            Ok(dir) => dir,
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to read queue directory {}: {}",
+                    self.config.path.display(),
+                    err
+                );
+                return queue;
+            }
+        };
+        loop {
+            match dir.next_entry().await {
+                Ok(Some(file)) => {
+                    let file = file.path();
+                    if file.is_dir() {
+                        match tokio::fs::read_dir(&file).await {
+                            Ok(mut dir) => {
+                                let file_ = file;
+                                loop {
+                                    match dir.next_entry().await {
+                                        Ok(Some(file)) => {
+                                            let file = file.path();
+                                            if file.extension().map_or(false, |e| e == "msg") {
+                                                messages
+                                                    .push(tokio::spawn(Message::from_path(file)));
                                             }
-                                            Ok(None) => break,
-                                            Err(err) => {
-                                                tracing::warn!(
-                                                    "Failed to read queue directory {}: {}",
-                                                    file_.display(),
-                                                    err
-                                                );
-                                                break;
-                                            }
+                                        }
+                                        Ok(None) => break,
+                                        Err(err) => {
+                                            tracing::warn!(
+                                                "Failed to read queue directory {}: {}",
+                                                file_.display(),
+                                                err
+                                            );
+                                            break;
                                         }
                                     }
                                 }
-                                Err(err) => {
-                                    tracing::warn!(
-                                        "Failed to read queue directory {}: {}",
-                                        file.display(),
-                                        err
-                                    )
-                                }
-                            };
-                        } else if file.extension().map_or(false, |e| e == "msg") {
-                            messages.push(tokio::spawn(Message::from_path(file)));
-                        }
+                            }
+                            Err(err) => {
+                                tracing::warn!(
+                                    "Failed to read queue directory {}: {}",
+                                    file.display(),
+                                    err
+                                )
+                            }
+                        };
+                    } else if file.extension().map_or(false, |e| e == "msg") {
+                        messages.push(tokio::spawn(Message::from_path(file)));
                     }
-                    Ok(None) => {
-                        break;
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "Failed to read queue directory {}: {}",
-                            path.display(),
-                            err
-                        );
-                        break;
-                    }
+                }
+                Ok(None) => {
+                    break;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to read queue directory {}: {}",
+                        self.config.path.display(),
+                        err
+                    );
+                    break;
                 }
             }
         }
@@ -510,7 +507,8 @@ impl QueueCore {
             match message.await {
                 Ok(Ok(mut message)) => {
                     // Reserve quota
-                    self.has_quota(&mut message).await;
+                    let todo = true;
+                    //self.has_quota(&mut message).await;
 
                     // Schedule message
                     queue.schedule(Schedule {

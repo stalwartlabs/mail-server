@@ -28,13 +28,14 @@ use std::{
 
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock, VerifyStrategy},
+    config::VerifyStrategy,
     core::{Session, SMTP},
 };
 
@@ -72,32 +73,32 @@ async fn mail() {
     core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     core.mail_auth.spf.verify_mail_from = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     {else = 'relaxed'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     core.mail_auth.iprev.verify = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     {else = 'relaxed'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.extensions.future_release = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
     {else = false}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.extensions.deliver_by = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
     {else = false}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.extensions.requiretls = r"[{if = 'remote-ip', eq = '10.0.0.2', then = true},
     {else = false}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.extensions.mt_priority = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'nsep'},
     {else = false}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 2048},
     {else = 1024}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
 
     config.throttle.mail_from = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
     key = 'sender'
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::new(&[]));
+    .parse_throttle();
 
     // Be rude and do not say EHLO
     let core = Arc::new(core);

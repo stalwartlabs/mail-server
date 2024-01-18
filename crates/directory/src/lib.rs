@@ -37,7 +37,7 @@ use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 use store::Store;
-use utils::{config::DynValue, listener::blocked::BlockedIps};
+use utils::{config::if_block::IfBlock, expr::Variable, listener::blocked::BlockedIps};
 
 pub mod backend;
 pub mod core;
@@ -168,10 +168,7 @@ impl Type {
 #[derive(Debug, Default)]
 pub enum AddressMapping {
     Enable,
-    Custom {
-        regex: regex::Regex,
-        mapping: DynValue<String>,
-    },
+    Custom(IfBlock),
     #[default]
     Disable,
 }
@@ -179,13 +176,6 @@ pub enum AddressMapping {
 #[derive(Default, Clone, Debug)]
 pub struct Directories {
     pub directories: AHashMap<String, Arc<Directory>>,
-    pub lookups: AHashMap<String, Lookup>,
-}
-
-#[derive(Clone, Debug)]
-pub enum Lookup {
-    DomainExists(Arc<Directory>),
-    EmailExists(Arc<Directory>),
 }
 
 pub type Result<T> = std::result::Result<T, DirectoryError>;
@@ -300,7 +290,7 @@ impl DirectoryError {
 }
 
 impl AddressMapping {
-    pub fn to_subaddress<'x, 'y: 'x>(&'x self, address: &'y str) -> Cow<'x, str> {
+    pub async fn to_subaddress<'x, 'y: 'x>(&'x self, address: &'y str) -> Cow<'x, str> {
         match self {
             AddressMapping::Enable => {
                 if let Some((local_part, domain_part)) = address.rsplit_once('@') {
@@ -309,16 +299,16 @@ impl AddressMapping {
                     }
                 }
             }
-            AddressMapping::Custom { regex, mapping } => {
-                let mut regex_capture = Vec::new();
-                for captures in regex.captures_iter(address) {
-                    for capture in captures.iter() {
-                        regex_capture.push(capture.map_or("", |m| m.as_str()).to_string());
-                    }
-                }
-
-                if !regex_capture.is_empty() {
-                    return mapping.apply(regex_capture, &());
+            AddressMapping::Custom(if_block) => {
+                let result = if_block
+                    .eval(
+                        |_| Variable::default(),
+                        |_, _| async { Variable::default() },
+                    )
+                    .await
+                    .into_string();
+                if !result.is_empty() {
+                    return result.into_owned().into();
                 }
             }
             AddressMapping::Disable => (),
@@ -327,21 +317,22 @@ impl AddressMapping {
         address.into()
     }
 
-    pub fn to_catch_all<'x, 'y: 'x>(&'x self, address: &'y str) -> Option<Cow<'x, str>> {
+    pub async fn to_catch_all<'x, 'y: 'x>(&'x self, address: &'y str) -> Option<Cow<'x, str>> {
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
-            AddressMapping::Custom { regex, mapping } => {
-                let mut regex_capture = Vec::new();
-                for captures in regex.captures_iter(address) {
-                    for capture in captures.iter() {
-                        regex_capture.push(capture.map_or("", |m| m.as_str()).to_string());
-                    }
-                }
-                if !regex_capture.is_empty() {
-                    Some(mapping.apply(regex_capture, &()))
+            AddressMapping::Custom(if_block) => {
+                let result = if_block
+                    .eval(
+                        |_| Variable::default(),
+                        |_, _| async { Variable::default() },
+                    )
+                    .await
+                    .into_string();
+                if !result.is_empty() {
+                    Some(result.into_owned().into())
                 } else {
                     None
                 }

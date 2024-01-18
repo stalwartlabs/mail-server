@@ -24,14 +24,11 @@
 use std::time::{Duration, Instant};
 
 use dashmap::mapref::entry::Entry;
-use utils::{
-    config::KeyLookup,
-    listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter},
-};
+use utils::listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter};
 
 use crate::{
-    config::{EnvelopeKey, Throttle},
-    core::{throttle::Limiter, QueueCore},
+    config::Throttle,
+    core::{throttle::Limiter, ResolveVariable, SMTP},
 };
 
 use super::{Domain, Status};
@@ -42,16 +39,21 @@ pub enum Error {
     Rate { retry_at: Instant },
 }
 
-impl QueueCore {
+impl SMTP {
     pub async fn is_allowed(
         &self,
         throttle: &Throttle,
-        envelope: &impl KeyLookup<Key = EnvelopeKey>,
+        envelope: &impl ResolveVariable,
         in_flight: &mut Vec<InFlight>,
         span: &tracing::Span,
     ) -> Result<(), Error> {
-        if throttle.conditions.conditions.is_empty() || throttle.conditions.eval(envelope).await {
-            match self.throttle.entry(throttle.new_key(envelope)) {
+        if throttle.expr.is_empty()
+            || self
+                .eval_expr(&throttle.expr, envelope, "throttle")
+                .await
+                .unwrap_or(false)
+        {
+            match self.queue.throttle.entry(throttle.new_key(envelope)) {
                 Entry::Occupied(mut e) => {
                     let limiter = e.get_mut();
                     if let Some(limiter) = &limiter.concurrency {

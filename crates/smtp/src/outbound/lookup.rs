@@ -21,15 +21,16 @@
  * for more details.
 */
 
-use std::{net::IpAddr, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+};
 
 use mail_auth::{IpLookupStrategy, MX};
 use rand::{seq::SliceRandom, Rng};
-use utils::config::KeyLookup;
 
 use crate::{
-    config::EnvelopeKey,
-    core::SMTP,
+    core::{eval::V_MX, ResolveVariable, SMTP},
     queue::{Error, ErrorDetails, Status},
 };
 
@@ -100,13 +101,15 @@ impl SMTP {
     pub async fn resolve_host(
         &self,
         remote_host: &NextHop<'_>,
-        envelope: &impl KeyLookup<Key = EnvelopeKey>,
+        envelope: &impl ResolveVariable,
         max_multihomed: usize,
     ) -> Result<IpLookupResult, Status<(), Error>> {
         let remote_ips = self
             .ip_lookup(
                 remote_host.fqdn_hostname().as_ref(),
-                *self.queue.config.ip_strategy.eval(envelope).await,
+                self.eval_if(&self.queue.config.ip_strategy, envelope)
+                    .await
+                    .unwrap_or(IpLookupStrategy::Ipv4thenIpv6),
                 max_multihomed,
             )
             .await
@@ -132,7 +135,10 @@ impl SMTP {
             };
 
             // Obtain source IPv4 address
-            let source_ips = self.queue.config.source_ip.ipv4.eval(envelope).await;
+            let source_ips = self
+                .eval_if::<Vec<Ipv4Addr>, _>(&self.queue.config.source_ip.ipv4, envelope)
+                .await
+                .unwrap_or_default();
             match source_ips.len().cmp(&1) {
                 std::cmp::Ordering::Equal => {
                     result.source_ipv4 = IpAddr::from(*source_ips.first().unwrap()).into();
@@ -146,7 +152,10 @@ impl SMTP {
             }
 
             // Obtain source IPv6 address
-            let source_ips = self.queue.config.source_ip.ipv6.eval(envelope).await;
+            let source_ips = self
+                .eval_if::<Vec<Ipv6Addr>, _>(&self.queue.config.source_ip.ipv6, envelope)
+                .await
+                .unwrap_or_default();
             match source_ips.len().cmp(&1) {
                 std::cmp::Ordering::Equal => {
                     result.source_ipv6 = IpAddr::from(*source_ips.first().unwrap()).into();
@@ -163,7 +172,7 @@ impl SMTP {
         } else {
             Err(Status::TemporaryFailure(Error::DnsError(format!(
                 "No IP addresses found for {:?}.",
-                envelope.key(&EnvelopeKey::Mx)
+                envelope.resolve_variable(V_MX).to_string()
             ))))
         }
     }

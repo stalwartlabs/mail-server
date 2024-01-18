@@ -36,13 +36,13 @@ use mail_auth::{
 };
 use store::{Store, Stores};
 use tokio::sync::mpsc;
-use utils::config::{Config, ServerProtocol, Servers};
+use utils::config::{if_block::IfBlock, Config, ServerProtocol, Servers};
 
 use crate::smtp::{
     make_temp_dir, management::send_manage_request, outbound::start_test_server, TestConfig,
 };
 use smtp::{
-    config::{AggregateFrequency, IfBlock},
+    config::AggregateFrequency,
     core::{management::Report, SMTP},
     reporting::{
         scheduler::{Scheduler, SpawnReport},
@@ -77,7 +77,7 @@ async fn manage_reports() {
     let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_management_test", true);
     let config = &mut core.report.config;
-    config.path = IfBlock::new(temp_dir.temp_dir.clone());
+    config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
@@ -86,7 +86,7 @@ async fn manage_reports() {
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
-    core.queue.config.directory = directory.directories.get("local").unwrap().clone();
+    core.shared.default_directory = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;
     let core = Arc::new(core);

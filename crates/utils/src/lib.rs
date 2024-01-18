@@ -28,6 +28,7 @@ use config::Config;
 pub mod acme;
 pub mod codec;
 pub mod config;
+pub mod expr;
 pub mod ipc;
 pub mod listener;
 pub mod map;

@@ -23,7 +23,6 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use ahash::AHashMap;
 use dashmap::DashMap;
 use directory::{AddressMapping, Directory, DirectoryInner};
 use mail_auth::{
@@ -39,21 +38,24 @@ use tokio::sync::mpsc;
 
 use smtp::{
     config::{
-        if_block::ConfigIf, queue::ConfigQueue, scripts::SieveContext, session::ConfigSession,
-        throttle::ConfigThrottle, AggregateReport, ArcAuthConfig, Auth, ConfigContext, Connect,
-        Data, DkimAuthConfig, DmarcAuthConfig, Dsn, Ehlo, EnvelopeKey, Extensions, IfBlock,
-        IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig, QueueOutboundSourceIp,
-        QueueOutboundTimeout, QueueOutboundTls, QueueQuotas, QueueThrottle, Rcpt, Report,
-        ReportAnalysis, ReportConfig, SessionConfig, SessionThrottle, SpfAuthConfig, Throttle,
-        VerifyStrategy,
+        map_expr_token,
+        queue::ConfigQueue,
+        scripts::SieveContext,
+        session::{ConfigSession, Mechanism},
+        throttle::ConfigThrottle,
+        AggregateReport, ArcAuthConfig, Auth, Connect, Data, DkimAuthConfig, DmarcAuthConfig, Dsn,
+        Ehlo, Extensions, IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig,
+        QueueOutboundSourceIp, QueueOutboundTimeout, QueueOutboundTls, QueueQuotas, QueueThrottle,
+        Rcpt, Report, ReportAnalysis, ReportConfig, SessionConfig, SessionThrottle, SpfAuthConfig,
+        Throttle, VerifyStrategy,
     },
     core::{
-        throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
-        SieveCore, TlsConnectors, SMTP,
+        eval::*, throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
+        Shared, SieveCore, TlsConnectors, SMTP,
     },
     outbound::dane::DnssecResolver,
 };
-use utils::config::{utils::ParseValues, Config};
+use utils::config::{if_block::IfBlock, Config};
 
 pub mod config;
 pub mod inbound;
@@ -65,92 +67,86 @@ pub mod reporting;
 pub mod session;
 
 pub trait ParseTestConfig {
-    fn parse_if<T: Default + ParseValues>(&self, ctx: &ConfigContext) -> IfBlock<T>;
-    fn parse_throttle(&self, ctx: &ConfigContext) -> Vec<Throttle>;
-    fn parse_quota(&self, ctx: &ConfigContext) -> QueueQuotas;
-    fn parse_queue_throttle(&self, ctx: &ConfigContext) -> QueueThrottle;
-    fn parse_milters(&self, ctx: &ConfigContext) -> Vec<Milter>;
+    fn parse_if(&self) -> IfBlock;
+    fn parse_throttle(&self) -> Vec<Throttle>;
+    fn parse_quota(&self) -> QueueQuotas;
+    fn parse_queue_throttle(&self) -> QueueThrottle;
+    fn parse_milters(&self) -> Vec<Milter>;
 }
 
 impl ParseTestConfig for &str {
-    fn parse_if<T: Default + ParseValues>(&self, ctx: &ConfigContext) -> IfBlock<T> {
+    fn parse_if(&self) -> IfBlock {
         Config::new(&format!("test = {self}\n"))
             .unwrap()
-            .parse_if_block(
-                "test",
-                ctx,
-                &[
-                    EnvelopeKey::Recipient,
-                    EnvelopeKey::RecipientDomain,
-                    EnvelopeKey::Sender,
-                    EnvelopeKey::SenderDomain,
-                    EnvelopeKey::Mx,
-                    EnvelopeKey::HeloDomain,
-                    EnvelopeKey::AuthenticatedAs,
-                    EnvelopeKey::Listener,
-                    EnvelopeKey::RemoteIp,
-                    EnvelopeKey::LocalIp,
-                    EnvelopeKey::Priority,
-                ],
-            )
+            .parse_if_block("test", |name| {
+                map_expr_token::<Duration>(
+                    name,
+                    &[
+                        V_RECIPIENT,
+                        V_RECIPIENT_DOMAIN,
+                        V_SENDER,
+                        V_SENDER_DOMAIN,
+                        V_MX,
+                        V_HELO_DOMAIN,
+                        V_AUTHENTICATED_AS,
+                        V_LISTENER,
+                        V_REMOTE_IP,
+                        V_LOCAL_IP,
+                        V_PRIORITY,
+                    ],
+                )
+            })
             .unwrap()
             .unwrap()
     }
 
-    fn parse_throttle(&self, ctx: &ConfigContext) -> Vec<Throttle> {
+    fn parse_throttle(&self) -> Vec<Throttle> {
         Config::new(self)
             .unwrap()
             .parse_throttle(
                 "throttle",
-                ctx,
                 &[
-                    EnvelopeKey::Recipient,
-                    EnvelopeKey::RecipientDomain,
-                    EnvelopeKey::Sender,
-                    EnvelopeKey::SenderDomain,
-                    EnvelopeKey::Mx,
-                    EnvelopeKey::HeloDomain,
-                    EnvelopeKey::AuthenticatedAs,
-                    EnvelopeKey::Listener,
-                    EnvelopeKey::RemoteIp,
-                    EnvelopeKey::LocalIp,
-                    EnvelopeKey::Priority,
+                    V_RECIPIENT,
+                    V_RECIPIENT_DOMAIN,
+                    V_SENDER,
+                    V_SENDER_DOMAIN,
+                    V_MX,
+                    V_HELO_DOMAIN,
+                    V_AUTHENTICATED_AS,
+                    V_LISTENER,
+                    V_REMOTE_IP,
+                    V_LOCAL_IP,
+                    V_PRIORITY,
                 ],
                 u16::MAX,
             )
             .unwrap()
     }
 
-    fn parse_quota(&self, ctx: &ConfigContext) -> QueueQuotas {
-        Config::new(self).unwrap().parse_queue_quota(ctx).unwrap()
+    fn parse_quota(&self) -> QueueQuotas {
+        Config::new(self).unwrap().parse_queue_quota().unwrap()
     }
 
-    fn parse_queue_throttle(&self, ctx: &ConfigContext) -> QueueThrottle {
-        Config::new(self)
-            .unwrap()
-            .parse_queue_throttle(ctx)
-            .unwrap()
+    fn parse_queue_throttle(&self) -> QueueThrottle {
+        Config::new(self).unwrap().parse_queue_throttle().unwrap()
     }
 
-    fn parse_milters(&self, ctx: &ConfigContext) -> Vec<Milter> {
+    fn parse_milters(&self) -> Vec<Milter> {
         Config::new(self)
             .unwrap()
-            .parse_milters(
-                ctx,
-                &[
-                    EnvelopeKey::Recipient,
-                    EnvelopeKey::RecipientDomain,
-                    EnvelopeKey::Sender,
-                    EnvelopeKey::SenderDomain,
-                    EnvelopeKey::Mx,
-                    EnvelopeKey::HeloDomain,
-                    EnvelopeKey::AuthenticatedAs,
-                    EnvelopeKey::Listener,
-                    EnvelopeKey::RemoteIp,
-                    EnvelopeKey::LocalIp,
-                    EnvelopeKey::Priority,
-                ],
-            )
+            .parse_milters(&[
+                V_RECIPIENT,
+                V_RECIPIENT_DOMAIN,
+                V_SENDER,
+                V_SENDER_DOMAIN,
+                V_MX,
+                V_HELO_DOMAIN,
+                V_AUTHENTICATED_AS,
+                V_LISTENER,
+                V_REMOTE_IP,
+                V_LOCAL_IP,
+                V_PRIORITY,
+            ])
             .unwrap()
     }
 }
@@ -161,6 +157,7 @@ pub trait TestConfig {
 
 impl TestConfig for SMTP {
     fn test() -> Self {
+        let store = Store::default();
         SMTP {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(num_cpus::get())
@@ -184,6 +181,23 @@ impl TestConfig for SMTP {
             report: ReportCore::test(),
             sieve: SieveCore::test(),
             delivery_tx: mpsc::channel(1).0,
+            shared: Shared {
+                scripts: Default::default(),
+                signers: Default::default(),
+                sealers: Default::default(),
+                directories: Default::default(),
+                lookup_stores: Default::default(),
+                relay_hosts: Default::default(),
+                default_directory: Arc::new(Directory {
+                    store: DirectoryInner::Internal(store.clone()),
+                    catch_all: AddressMapping::Disable,
+                    subaddressing: AddressMapping::Disable,
+                    cache: None,
+                    blocked_ips: Arc::new(Default::default()),
+                }),
+                default_lookup_store: LookupStore::Store(store.clone()),
+                default_data_store: store,
+            },
         }
     }
 }
@@ -213,10 +227,10 @@ impl TestConfig for SessionConfig {
                 rcpt_to: vec![],
             },
             connect: Connect {
-                script: IfBlock::new(None),
+                script: IfBlock::default(),
             },
             ehlo: Ehlo {
-                script: IfBlock::new(None),
+                script: IfBlock::default(),
                 require: IfBlock::new(true),
                 reject_non_fqdn: IfBlock::new(false),
             },
@@ -224,17 +238,17 @@ impl TestConfig for SessionConfig {
                 pipelining: IfBlock::new(true),
                 chunking: IfBlock::new(true),
                 requiretls: IfBlock::new(true),
-                no_soliciting: IfBlock::new("domain.org".to_string().into()),
-                future_release: IfBlock::new(None),
-                deliver_by: IfBlock::new(None),
-                mt_priority: IfBlock::new(None),
+                no_soliciting: IfBlock::new("domain.org".to_string()),
+                future_release: IfBlock::default(),
+                deliver_by: IfBlock::default(),
+                mt_priority: IfBlock::default(),
                 dsn: IfBlock::new(true),
                 expn: IfBlock::new(true),
                 vrfy: IfBlock::new(true),
             },
             auth: Auth {
-                directory: IfBlock::new(None),
-                mechanisms: IfBlock::new(AUTH_PLAIN | AUTH_LOGIN),
+                directory: IfBlock::default(),
+                mechanisms: IfBlock::new(Mechanism::from(AUTH_PLAIN | AUTH_LOGIN)),
                 require: IfBlock::new(false),
                 errors_max: IfBlock::new(10),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),
@@ -242,20 +256,20 @@ impl TestConfig for SessionConfig {
                 must_match_sender: IfBlock::new(false),
             },
             mail: Mail {
-                script: IfBlock::new(None),
-                rewrite: IfBlock::new(None),
+                script: IfBlock::default(),
+                rewrite: IfBlock::default(),
             },
             rcpt: Rcpt {
-                script: IfBlock::new(None),
+                script: IfBlock::default(),
                 relay: IfBlock::new(false),
-                directory: IfBlock::new(None),
+                directory: IfBlock::default(),
                 errors_max: IfBlock::new(3),
                 errors_wait: IfBlock::new(Duration::from_secs(1)),
                 max_recipients: IfBlock::new(3),
-                rewrite: IfBlock::new(None),
+                rewrite: IfBlock::default(),
             },
             data: Data {
-                script: IfBlock::new(None),
+                script: IfBlock::default(),
                 max_messages: IfBlock::new(10),
                 max_message_size: IfBlock::new(1024 * 1024),
                 max_received_headers: IfBlock::new(10),
@@ -298,20 +312,19 @@ impl TestConfig for QueueCore {
 
 impl TestConfig for QueueConfig {
     fn test() -> Self {
-        let store = Store::default();
         Self {
             path: Default::default(),
             hash: IfBlock::new(10),
-            retry: IfBlock::new(vec![Duration::from_secs(10)]),
-            notify: IfBlock::new(vec![Duration::from_secs(20)]),
+            retry: IfBlock::new(Duration::from_secs(10)),
+            notify: IfBlock::new(Duration::from_secs(20)),
             expire: IfBlock::new(Duration::from_secs(10)),
             hostname: IfBlock::new("mx.example.org".to_string()),
             next_hop: Default::default(),
             max_mx: IfBlock::new(5),
             max_multihomed: IfBlock::new(5),
             source_ip: QueueOutboundSourceIp {
-                ipv4: IfBlock::new(vec![]),
-                ipv6: IfBlock::new(vec![]),
+                ipv4: IfBlock::default(),
+                ipv6: IfBlock::default(),
             },
             ip_strategy: IfBlock::new(IpLookupStrategy::Ipv4thenIpv6),
             tls: QueueOutboundTls {
@@ -345,15 +358,6 @@ impl TestConfig for QueueConfig {
                 rcpt: vec![],
                 rcpt_domain: vec![],
             },
-            directory: Arc::new(Directory {
-                store: DirectoryInner::Internal(store.clone()),
-                catch_all: AddressMapping::Disable,
-                subaddressing: AddressMapping::Disable,
-                cache: None,
-                blocked_ips: Arc::new(Default::default()),
-            }),
-            lookup_store: LookupStore::Store(store.clone()),
-            data_store: store,
         }
     }
 }
@@ -443,13 +447,10 @@ impl TestConfig for SieveCore {
     fn test() -> Self {
         SieveCore {
             runtime: Runtime::new_with_context(SieveContext::default()),
-            scripts: AHashMap::new(),
             from_addr: "MAILER-DAEMON@example.org".to_string(),
             from_name: "Mailer Daemon".to_string(),
             return_path: "".to_string(),
             sign: vec![],
-            directories: Default::default(),
-            lookup_stores: Default::default(),
         }
     }
 }
@@ -511,7 +512,7 @@ pub trait TestSMTP {
 impl TestSMTP for SMTP {
     fn init_test_queue(&mut self, test_name: &str) -> QueueReceiver {
         let _temp_dir = make_temp_dir(test_name, true);
-        self.queue.config.path = IfBlock::new(_temp_dir.temp_dir.clone());
+        self.queue.config.path = _temp_dir.temp_dir.clone();
 
         let (queue_tx, queue_rx) = mpsc::channel(128);
         self.queue.tx = queue_tx;

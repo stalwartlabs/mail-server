@@ -29,10 +29,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::ConfigContext,
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 async fn limits() {
@@ -40,13 +37,13 @@ async fn limits() {
     let config = &mut core.session.config;
     config.transfer_limit = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 10},
     {else = 1024}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.timeout = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '500ms'},
     {else = '30m'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.duration = r"[{if = 'remote-ip', eq = '10.0.0.3', then = '500ms'},
     {else = '60m'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     let (_tx, rx) = watch::channel(true);
 
     // Exceed max line length

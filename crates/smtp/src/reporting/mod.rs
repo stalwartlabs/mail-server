@@ -34,9 +34,10 @@ use mail_auth::{
 use mail_parser::DateTime;
 
 use tokio::io::{AsyncRead, AsyncWrite};
+use utils::config::if_block::IfBlock;
 
 use crate::{
-    config::{AddressMatch, AggregateFrequency, DkimSigner, IfBlock, MaybeDynValue},
+    config::{AddressMatch, AggregateFrequency, DkimSigner},
     core::{management, Session, SMTP},
     outbound::{dane::Tlsa, mta_sts::Policy},
     queue::{DomainPart, Message},
@@ -129,7 +130,7 @@ impl SMTP {
         from_addr: &str,
         rcpts: impl Iterator<Item = impl AsRef<str>>,
         report: Vec<u8>,
-        sign_config: &IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
+        sign_config: &IfBlock,
         span: &tracing::Span,
         deliver_now: bool,
     ) {
@@ -138,13 +139,13 @@ impl SMTP {
         let from_addr_domain = from_addr_lcase.domain_part().to_string();
         let mut message = Message::new_boxed(from_addr, from_addr_lcase, from_addr_domain);
         for rcpt_ in rcpts {
-            message
-                .add_recipient(rcpt_.as_ref(), &self.queue.config)
-                .await;
+            message.add_recipient(rcpt_.as_ref(), &self).await;
         }
 
         // Sign message
-        let signature = message.sign(sign_config, &report, span).await;
+        let signature = self
+            .sign_message(&mut message, sign_config, &report, span)
+            .await;
 
         // Schedule delivery at a random time between now and the next 3 hours
         if !deliver_now {
@@ -173,28 +174,32 @@ impl SMTP {
             tracing::warn!(contex = "report", "Channel send failed.");
         }
     }
-}
 
-impl Message {
-    pub async fn sign(
-        &mut self,
-        config: &IfBlock<Vec<MaybeDynValue<DkimSigner>>>,
+    pub async fn sign_message(
+        &self,
+        message: &mut Message,
+        config: &IfBlock,
         bytes: &[u8],
         span: &tracing::Span,
     ) -> Option<Vec<u8>> {
-        let signers = config.eval_and_capture(self).await.into_value(self);
+        let signers = self
+            .eval_if::<Vec<String>, _>(config, message)
+            .await
+            .unwrap_or_default();
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {
-                match signer.sign(bytes) {
-                    Ok(signature) => {
-                        signature.write_header(&mut headers);
-                    }
-                    Err(err) => {
-                        tracing::warn!(parent: span,
+                if let Some(signer) = self.get_dkim_signer(signer) {
+                    match signer.sign(bytes) {
+                        Ok(signature) => {
+                            signature.write_header(&mut headers);
+                        }
+                        Err(err) => {
+                            tracing::warn!(parent: span,
                         context = "dkim",
                         event = "sign-failed",
                         reason = %err);
+                        }
                     }
                 }
             }

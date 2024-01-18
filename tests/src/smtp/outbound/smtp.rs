@@ -27,7 +27,7 @@ use std::{
 };
 
 use mail_auth::MX;
-use utils::config::ServerProtocol;
+use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -36,7 +36,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
+    config::ConfigContext,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
@@ -109,14 +109,14 @@ async fn smtp_delivery() {
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
-    config.retry = IfBlock::new(vec![Duration::from_millis(100)]);
+    config.retry = IfBlock::new(Duration::from_millis(100));
     config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
     {if = 'rcpt-domain', eq = 'foobar.com', then = ['500ms', '600ms']},
     {else = ['100ms']}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '650ms'},
     {else = '750ms'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
 
     let core = Arc::new(core);
     let mut queue = Queue::default();

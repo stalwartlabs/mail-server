@@ -49,7 +49,11 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
 
         // Generate report
         let config = &self.core.report.config.spf;
-        let from_addr = config.address.eval(self).await;
+        let from_addr = self
+            .core
+            .eval_if(&config.address, self)
+            .await
+            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
         let mut report = Vec::with_capacity(128);
         self.new_auth_failure(AuthFailureType::Spf, rejected)
             .with_authentication_results(
@@ -71,9 +75,20 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             )
             .with_spf_dns(format!("txt : {} : v=SPF1", output.domain())) // TODO use DNS record
             .write_rfc5322(
-                (config.name.eval(self).await.as_str(), from_addr.as_str()),
+                (
+                    self.core
+                        .eval_if(&config.name, self)
+                        .await
+                        .unwrap_or_else(|| "Mailer Daemon".to_string())
+                        .as_str(),
+                    from_addr.as_str(),
+                ),
                 rcpt,
-                config.subject.eval(self).await,
+                &self
+                    .core
+                    .eval_if(&config.subject, self)
+                    .await
+                    .unwrap_or_else(|| "SPF Report".to_string()),
                 &mut report,
             )
             .ok();
@@ -90,7 +105,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         // Send report
         self.core
             .send_report(
-                from_addr,
+                &from_addr,
                 [rcpt].into_iter(),
                 report,
                 &config.sign,

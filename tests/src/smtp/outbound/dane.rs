@@ -45,7 +45,7 @@ use mail_auth::{
     Resolver, MX,
 };
 use rustls_pki_types::CertificateDer;
-use utils::config::ServerProtocol;
+use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
@@ -54,7 +54,7 @@ use crate::smtp::{
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, IfBlock, RequireOptional},
+    config::{AggregateFrequency, RequireOptional},
     core::{Resolvers, Session, SMTP},
     outbound::dane::{DnssecResolver, Tlsa, TlsaEntry},
     queue::{manager::Queue, DeliveryAttempt, Error, ErrorDetails, Status},

@@ -31,8 +31,7 @@ use std::time::{Duration, SystemTime};
 use tokio::fs::OpenOptions;
 use tokio::{fs, io::AsyncWriteExt};
 
-use crate::config::QueueConfig;
-use crate::core::QueueCore;
+use crate::core::{QueueCore, SMTP};
 
 use super::{Domain, Event, Message, Recipient, Schedule, SimpleEnvelope, Status};
 
@@ -53,8 +52,9 @@ impl QueueCore {
         }
 
         // Build path
-        message.path = self.config.path.eval(message.as_ref()).await.clone();
-        let hash = *self.config.hash.eval(message.as_ref()).await;
+        let todo = 1;
+        message.path = self.config.path.clone();
+        let hash = 1;
         if hash > 0 {
             message.path.push((message.id % hash).to_string());
         }
@@ -197,7 +197,7 @@ impl Message {
         rcpt: impl Into<String>,
         rcpt_lcase: impl Into<String>,
         rcpt_domain: impl Into<String>,
-        config: &QueueConfig,
+        core: &SMTP,
     ) {
         let rcpt_domain = rcpt_domain.into();
         let domain_idx =
@@ -205,10 +205,13 @@ impl Message {
                 idx
             } else {
                 let idx = self.domains.len();
-                let expires = *config
-                    .expire
-                    .eval(&SimpleEnvelope::new(self, &rcpt_domain))
-                    .await;
+                let expires = core
+                    .eval_if(
+                        &core.queue.config.expire,
+                        &SimpleEnvelope::new(self, &rcpt_domain),
+                    )
+                    .await
+                    .unwrap_or_else(|| Duration::from_secs(5 * 86400));
                 self.domains.push(Domain {
                     domain: rcpt_domain,
                     retry: Schedule::now(),
@@ -230,11 +233,11 @@ impl Message {
         });
     }
 
-    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, config: &QueueConfig) {
+    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, core: &SMTP) {
         let rcpt = rcpt.into();
         let rcpt_lcase = rcpt.to_lowercase();
         let rcpt_domain = rcpt_lcase.domain_part().to_string();
-        self.add_recipient_parts(rcpt, rcpt_lcase, rcpt_domain, config)
+        self.add_recipient_parts(rcpt, rcpt_lcase, rcpt_domain, core)
             .await;
     }
 

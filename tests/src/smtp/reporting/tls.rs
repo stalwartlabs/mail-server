@@ -29,7 +29,7 @@ use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, PolicyType, ResultType, TlsReport},
 };
-use utils::config::DynValue;
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
@@ -38,7 +38,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, EnvelopeKey, IfBlock},
+    config::{AggregateFrequency, ConfigContext},
     core::SMTP,
     reporting::{
         scheduler::{ReportType, Scheduler},
@@ -61,17 +61,14 @@ async fn report_tls() {
     let ctx = ConfigContext::new(&[]).parse_signatures();
     let temp_dir = make_temp_dir("smtp_report_tls_test", true);
     let config = &mut core.report.config;
-    config.path = IfBlock::new(temp_dir.temp_dir.clone());
+    config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
-    config.tls.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
+    config.tls.sign = "['rsa']".parse_if();
     config.tls.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
     config.tls.address = IfBlock::new("reports@example.org".to_string());
-    config.tls.org_name = IfBlock::new("Foobar, Inc.".to_string().into());
-    config.tls.contact_info = IfBlock::new("https://foobar.org/contact".to_string().into());
+    config.tls.org_name = IfBlock::new("Foobar, Inc.".to_string());
+    config.tls.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
     let mut scheduler = Scheduler::default();
 
     // Create temp dir for queue

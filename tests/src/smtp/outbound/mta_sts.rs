@@ -32,7 +32,7 @@ use mail_auth::{
     report::tlsrpt::ResultType,
     MX,
 };
-use utils::config::ServerProtocol;
+use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
@@ -41,7 +41,7 @@ use crate::smtp::{
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, IfBlock, RequireOptional},
+    config::{AggregateFrequency, RequireOptional},
     core::{Session, SMTP},
     outbound::mta_sts::{lookup::STS_TEST_POLICY, Policy},
     queue::{manager::Queue, DeliveryAttempt},

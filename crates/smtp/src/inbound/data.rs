@@ -39,9 +39,10 @@ use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
 use tokio::{io::AsyncWriteExt, process::Command};
-use utils::listener::SessionStream;
+use utils::{config::Rate, listener::SessionStream};
 
 use crate::{
+    config::VerifyStrategy,
     core::{Session, SessionAddress, State},
     queue::{self, Message, SimpleEnvelope},
     reporting::analysis::AnalyzeReport,
@@ -69,7 +70,13 @@ impl<T: SessionStream> Session<T> {
         let dc = &self.core.session.config.data;
         let ac = &self.core.mail_auth;
         let rc = &self.core.report.config;
-        if auth_message.received_headers_count() > *dc.max_received_headers.eval(self).await {
+        if auth_message.received_headers_count()
+            > self
+                .core
+                .eval_if(&dc.max_received_headers, self)
+                .await
+                .unwrap_or(50)
+        {
             tracing::info!(parent: &self.span,
                 context = "data",
                 event = "loop-detected",
@@ -81,8 +88,16 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Verify DKIM
-        let dkim = *ac.dkim.verify.eval(self).await;
-        let dmarc = *ac.dmarc.verify.eval(self).await;
+        let dkim = self
+            .core
+            .eval_if(&ac.dkim.verify, self)
+            .await
+            .unwrap_or(VerifyStrategy::Relaxed);
+        let dmarc = self
+            .core
+            .eval_if(&ac.dmarc.verify, self)
+            .await
+            .unwrap_or(VerifyStrategy::Relaxed);
         let dkim_output = if dkim.verify() || dmarc.verify() {
             let dkim_output = self.core.resolvers.dns.verify_dkim(&auth_message).await;
             let rejected = dkim.is_strict()
@@ -91,10 +106,10 @@ impl<T: SessionStream> Session<T> {
                     .any(|d| matches!(d.result(), DkimResult::Pass));
 
             // Send reports for failed signatures
-            if let Some(rate) = rc.dkim.send.eval(self).await {
+            if let Some(rate) = self.core.eval_if::<Rate, _>(&rc.dkim.send, self).await {
                 for output in &dkim_output {
                     if let Some(rcpt) = output.failure_report_addr() {
-                        self.send_dkim_report(rcpt, &auth_message, rate, rejected, output)
+                        self.send_dkim_report(rcpt, &auth_message, &rate, rejected, output)
                             .await;
                     }
                 }
@@ -132,8 +147,16 @@ impl<T: SessionStream> Session<T> {
         };
 
         // Verify ARC
-        let arc = *ac.arc.verify.eval(self).await;
-        let arc_sealer = ac.arc.seal.eval_and_capture(self).await.into_value(self);
+        let arc = self
+            .core
+            .eval_if(&ac.arc.verify, self)
+            .await
+            .unwrap_or(VerifyStrategy::Relaxed);
+        let arc_sealer = self
+            .core
+            .eval_if::<String, _>(&ac.arc.seal, self)
+            .await
+            .and_then(|name| self.core.get_arc_sealer(&name));
         let arc_output = if arc.verify() || arc_sealer.is_some() {
             let arc_output = self.core.resolvers.dns.verify_arc(&auth_message).await;
 
@@ -316,12 +339,21 @@ impl<T: SessionStream> Session<T> {
 
         // Pipe message
         for pipe in &dc.pipe_commands {
-            if let Some(command_) = pipe.command.eval(self).await {
+            if let Some(command_) = self.core.eval_if::<String, _>(&pipe.command, self).await {
                 let piped_message = edited_message.as_ref().unwrap_or(&raw_message).clone();
-                let timeout = *pipe.timeout.eval(self).await;
+                let timeout = self
+                    .core
+                    .eval_if(&pipe.timeout, self)
+                    .await
+                    .unwrap_or_else(|| Duration::from_secs(30));
 
-                let mut command = Command::new(command_);
-                for argument in pipe.arguments.eval(self).await {
+                let mut command = Command::new(&command_);
+                for argument in self
+                    .core
+                    .eval_if::<Vec<String>, _>(&pipe.arguments, self)
+                    .await
+                    .unwrap_or_default()
+                {
                     command.arg(argument);
                 }
                 match command
@@ -403,7 +435,12 @@ impl<T: SessionStream> Session<T> {
 
         // Sieve filtering
         let mut headers = Vec::with_capacity(64);
-        if let Some(script) = dc.script.eval(self).await {
+        if let Some(script) = self
+            .core
+            .eval_if::<String, _>(&dc.script, self)
+            .await
+            .and_then(|name| self.core.get_sieve_script(&name))
+        {
             let params = self
                 .build_script_parameters("data")
                 .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
@@ -498,18 +535,33 @@ impl<T: SessionStream> Session<T> {
         let mut message = self.build_message(mail_from, rcpt_to).await;
 
         // Add Received header
-        if *dc.add_received.eval(self).await {
+        if self
+            .core
+            .eval_if(&dc.add_received, self)
+            .await
+            .unwrap_or(true)
+        {
             self.write_received(&mut headers, message.id)
         }
 
         // Add authentication results header
-        if *dc.add_auth_results.eval(self).await {
+        if self
+            .core
+            .eval_if(&dc.add_auth_results, self)
+            .await
+            .unwrap_or(true)
+        {
             auth_results.write_header(&mut headers);
         }
 
         // Add Received-SPF header
         if let Some(spf_output) = &self.data.spf_mail_from {
-            if *dc.add_received_spf.eval(self).await {
+            if self
+                .core
+                .eval_if(&dc.add_received_spf, self)
+                .await
+                .unwrap_or(true)
+            {
                 ReceivedSpf::new(
                     spf_output,
                     self.data.remote_ip,
@@ -541,19 +593,32 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Add any missing headers
-        if !auth_message.has_date_header() && *dc.add_date.eval(self).await {
+        if !auth_message.has_date_header()
+            && self.core.eval_if(&dc.add_date, self).await.unwrap_or(true)
+        {
             headers.extend_from_slice(b"Date: ");
             headers.extend_from_slice(Date::now().to_rfc822().as_bytes());
             headers.extend_from_slice(b"\r\n");
         }
-        if !auth_message.has_message_id_header() && *dc.add_message_id.eval(self).await {
+        if !auth_message.has_message_id_header()
+            && self
+                .core
+                .eval_if(&dc.add_message_id, self)
+                .await
+                .unwrap_or(true)
+        {
             headers.extend_from_slice(b"Message-ID: ");
             let _ = generate_message_id_header(&mut headers, &self.instance.hostname);
             headers.extend_from_slice(b"\r\n");
         }
 
         // Add Return-Path
-        if *dc.add_return_path.eval(self).await {
+        if self
+            .core
+            .eval_if(&dc.add_return_path, self)
+            .await
+            .unwrap_or(true)
+        {
             headers.extend_from_slice(b"Return-Path: <");
             headers.extend_from_slice(message.return_path.as_bytes());
             headers.extend_from_slice(b">\r\n");
@@ -561,17 +626,24 @@ impl<T: SessionStream> Session<T> {
 
         // DKIM sign
         let raw_message = edited_message.unwrap_or(raw_message);
-        for signer in ac.dkim.sign.eval_and_capture(self).await.into_value(self) {
-            match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
-                Ok(signature) => {
-                    signature.write_header(&mut headers);
-                }
-                Err(err) => {
-                    tracing::info!(parent: &self.span,
+        for signer in self
+            .core
+            .eval_if::<Vec<String>, _>(&ac.dkim.sign, self)
+            .await
+            .unwrap_or_default()
+        {
+            if let Some(signer) = self.core.get_dkim_signer(&signer) {
+                match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
+                    Ok(signature) => {
+                        signature.write_header(&mut headers);
+                    }
+                    Err(err) => {
+                        tracing::info!(parent: &self.span,
                         context = "dkim",
                         event = "sign-failed",
                         return_path = message.return_path,
                         "Failed to sign message: {}", err);
+                    }
                 }
             }
         }
@@ -580,7 +652,7 @@ impl<T: SessionStream> Session<T> {
         message.size = raw_message.len() + headers.len();
 
         // Verify queue quota
-        if self.core.queue.has_quota(&mut message).await {
+        if self.core.has_quota(&mut message).await {
             let queue_id = message.id;
             if self
                 .core
@@ -650,37 +722,52 @@ impl<T: SessionStream> Session<T> {
 
                 // Set expiration and notification times
                 let config = &self.core.queue.config;
-                let notify_intervals = config.notify.eval(&envelope).await;
+                let (num_intervals, next_notify) = self
+                    .core
+                    .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
+                    .await
+                    .and_then(|v| (v.len(), v.into_iter().next()?).into())
+                    .unwrap_or_else(|| (1, Duration::from_secs(86400)));
                 let (notify, expires) = if self.data.delivery_by == 0 {
                     (
-                        queue::Schedule::later(future_release + *notify_intervals.first().unwrap()),
-                        Instant::now() + future_release + *config.expire.eval(&envelope).await,
+                        queue::Schedule::later(future_release + next_notify),
+                        Instant::now()
+                            + future_release
+                            + self
+                                .core
+                                .eval_if(&config.expire, &envelope)
+                                .await
+                                .unwrap_or_else(|| Duration::from_secs(5 * 86400)),
                     )
                 } else if (message.flags & MAIL_BY_RETURN) != 0 {
                     (
-                        queue::Schedule::later(future_release + *notify_intervals.first().unwrap()),
+                        queue::Schedule::later(future_release + next_notify),
                         Instant::now() + Duration::from_secs(self.data.delivery_by as u64),
                     )
                 } else {
-                    let expire = *config.expire.eval(&envelope).await;
+                    let expire = self
+                        .core
+                        .eval_if(&config.expire, &envelope)
+                        .await
+                        .unwrap_or_else(|| Duration::from_secs(5 * 86400));
                     let expire_secs = expire.as_secs();
                     let notify = if self.data.delivery_by.is_positive() {
                         let notify_at = self.data.delivery_by as u64;
                         if expire_secs > notify_at {
                             Duration::from_secs(notify_at)
                         } else {
-                            *notify_intervals.first().unwrap()
+                            next_notify
                         }
                     } else {
                         let notify_at = -self.data.delivery_by as u64;
                         if expire_secs > notify_at {
                             Duration::from_secs(expire_secs - notify_at)
                         } else {
-                            *notify_intervals.first().unwrap()
+                            next_notify
                         }
                     };
                     let mut notify = queue::Schedule::later(future_release + notify);
-                    notify.inner = (notify_intervals.len() - 1) as u32; // Disable further notification attempts
+                    notify.inner = (num_intervals - 1) as u32; // Disable further notification attempts
 
                     (notify, Instant::now() + expire)
                 };
@@ -721,7 +808,11 @@ impl<T: SessionStream> Session<T> {
     pub async fn can_send_data(&mut self) -> Result<bool, ()> {
         if !self.data.rcpt_to.is_empty() {
             if self.data.messages_sent
-                < *self.core.session.config.data.max_messages.eval(self).await
+                < self
+                    .core
+                    .eval_if(&self.core.session.config.data.max_messages, self)
+                    .await
+                    .unwrap_or(10)
             {
                 Ok(true)
             } else {

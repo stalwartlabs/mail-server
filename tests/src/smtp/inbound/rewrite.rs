@@ -24,11 +24,11 @@
 use crate::smtp::{inbound::sign::TextConfigContext, session::TestSession, TestConfig};
 use directory::core::config::ConfigDirectory;
 use smtp::{
-    config::{if_block::ConfigIf, scripts::ConfigSieve, ConfigContext, EnvelopeKey, IfBlock},
-    core::{Session, SMTP},
+    config::{map_expr_token, scripts::ConfigSieve, ConfigContext},
+    core::{eval::*, Session, SMTP},
 };
 use store::{Store, Stores};
-use utils::config::{Config, DynValue, Servers};
+use utils::config::{if_block::IfBlock, utils::NoConstants, Config, Servers};
 
 const CONFIG: &str = r#"
 [session.mail]
@@ -95,12 +95,7 @@ async fn address_rewrite() {
     .unwrap();*/
 
     // Prepare config
-    let available_keys = [
-        EnvelopeKey::Sender,
-        EnvelopeKey::SenderDomain,
-        EnvelopeKey::Recipient,
-        EnvelopeKey::RecipientDomain,
-    ];
+    let available_keys = &[V_SENDER, V_SENDER_DOMAIN, V_RECIPIENT, V_RECIPIENT_DOMAIN];
     let mut core = SMTP::test();
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let settings = Config::new(CONFIG).unwrap();
@@ -111,31 +106,27 @@ async fn address_rewrite() {
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();
     let config = &mut core.session.config;
     config.mail.script = settings
-        .parse_if_block::<Option<String>>("session.mail.script", &ctx, &available_keys)
+        .parse_if_block("session.mail.script", |name| {
+            map_expr_token::<NoConstants>(name, available_keys)
+        })
         .unwrap()
-        .unwrap_or_default()
-        .map_if_block(&ctx.scripts, "session.mail.script", "script")
-        .unwrap();
+        .unwrap_or_default();
     config.mail.rewrite = settings
-        .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-            "session.mail.rewrite",
-            &ctx,
-            &available_keys,
-        )
+        .parse_if_block("session.mail.rewrite", |name| {
+            map_expr_token::<NoConstants>(name, available_keys)
+        })
         .unwrap()
         .unwrap_or_default();
     config.rcpt.script = settings
-        .parse_if_block::<Option<String>>("session.rcpt.script", &ctx, &available_keys)
+        .parse_if_block("session.rcpt.script", |name| {
+            map_expr_token::<NoConstants>(name, available_keys)
+        })
         .unwrap()
-        .unwrap_or_default()
-        .map_if_block(&ctx.scripts, "session.rcpt.script", "script")
-        .unwrap();
+        .unwrap_or_default();
     config.rcpt.rewrite = settings
-        .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-            "session.rcpt.rewrite",
-            &ctx,
-            &available_keys,
-        )
+        .parse_if_block("session.rcpt.rewrite", |name| {
+            map_expr_token::<NoConstants>(name, available_keys)
+        })
         .unwrap()
         .unwrap_or_default();
     config.rcpt.relay = IfBlock::new(true);

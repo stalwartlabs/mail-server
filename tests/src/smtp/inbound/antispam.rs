@@ -12,7 +12,7 @@ use ahash::AHashMap;
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
-    config::{scripts::ConfigSieve, ConfigContext, IfBlock},
+    config::{scripts::ConfigSieve, ConfigContext},
     core::{Session, SessionAddress, SMTP},
     inbound::AuthResult,
     scripts::{
@@ -22,7 +22,7 @@ use smtp::{
 };
 use store::config::ConfigStore;
 use tokio::runtime::Handle;
-use utils::config::Config;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{TestConfig, TestSMTP};
 

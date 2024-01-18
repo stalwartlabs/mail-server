@@ -21,8 +21,6 @@
  * for more details.
 */
 
-use std::net::{IpAddr, Ipv4Addr};
-
 use smtp_proto::{
     request::receiver::{
         BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver,
@@ -31,14 +29,11 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use utils::{
-    config::{KeyLookup, ServerProtocol},
-    listener::SessionStream,
-};
+use utils::{config::ServerProtocol, listener::SessionStream};
 
 use crate::{
-    config::EnvelopeKey,
-    core::{Session, State},
+    config::session::Mechanism,
+    core::{eval::*, ResolveVariable, Session, State},
 };
 
 use super::auth::SaslToken;
@@ -98,8 +93,15 @@ impl<T: SessionStream> Session<T> {
                                 mechanism,
                                 initial_response,
                             } => {
-                                let auth =
-                                    *self.core.session.config.auth.mechanisms.eval(self).await;
+                                let auth: u64 = self
+                                    .core
+                                    .eval_if::<Mechanism, _>(
+                                        &self.core.session.config.auth.mechanisms,
+                                        self,
+                                    )
+                                    .await
+                                    .unwrap_or_default()
+                                    .into();
                                 if auth == 0 || self.params.auth_directory.is_none() {
                                     self.write(b"503 5.5.1 AUTH not allowed.\r\n").await?;
                                 } else if !self.data.authenticated_as.is_empty() {
@@ -407,62 +409,44 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite> KeyLookup for Session<T> {
-    type Key = EnvelopeKey;
-
-    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            EnvelopeKey::Recipient => self
+impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
+    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+        match variable {
+            V_RECIPIENT => self
                 .data
                 .rcpt_to
                 .last()
                 .map(|r| r.address_lcase.as_str())
                 .unwrap_or_default()
                 .into(),
-            EnvelopeKey::RecipientDomain => self
+            V_RECIPIENT_DOMAIN => self
                 .data
                 .rcpt_to
                 .last()
                 .map(|r| r.domain.as_str())
                 .unwrap_or_default()
                 .into(),
-            EnvelopeKey::Sender => self
+            V_SENDER => self
                 .data
                 .mail_from
                 .as_ref()
                 .map(|m| m.address_lcase.as_str())
                 .unwrap_or_default()
                 .into(),
-            EnvelopeKey::SenderDomain => self
+            V_SENDER_DOMAIN => self
                 .data
                 .mail_from
                 .as_ref()
                 .map(|m| m.domain.as_str())
                 .unwrap_or_default()
                 .into(),
-            EnvelopeKey::HeloDomain => self.data.helo_domain.as_str().into(),
-            EnvelopeKey::AuthenticatedAs => self.data.authenticated_as.as_str().into(),
-            EnvelopeKey::Listener => self.instance.id.as_str().into(),
-            EnvelopeKey::RemoteIp => self.data.remote_ip.to_string().into(),
-            EnvelopeKey::LocalIp => self.data.local_ip.to_string().into(),
-            EnvelopeKey::Priority => self.data.priority.to_string().into(),
-            EnvelopeKey::Mx => "".into(),
-        }
-    }
-
-    fn key_as_int(&self, key: &Self::Key) -> i32 {
-        match key {
-            EnvelopeKey::Listener => self.instance.listener_id as i32,
-            EnvelopeKey::Priority => self.data.priority as i32,
-            _ => 0,
-        }
-    }
-
-    fn key_as_ip(&self, key: &Self::Key) -> IpAddr {
-        match key {
-            EnvelopeKey::RemoteIp => self.data.remote_ip,
-            EnvelopeKey::LocalIp => self.data.local_ip,
-            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            V_HELO_DOMAIN => self.data.helo_domain.as_str().into(),
+            V_AUTHENTICATED_AS => self.data.authenticated_as.as_str().into(),
+            V_LISTENER => self.instance.id.as_str().into(),
+            V_REMOTE_IP => self.data.remote_ip_str.as_str().into(),
+            V_LOCAL_IP => self.data.local_ip_str.as_str().into(),
+            V_PRIORITY => self.data.priority.to_string().into(),
+            _ => utils::expr::Variable::default(),
         }
     }
 }

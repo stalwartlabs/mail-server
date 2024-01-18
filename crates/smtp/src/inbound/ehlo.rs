@@ -21,9 +21,9 @@
  * for more details.
 */
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-use crate::{core::Session, scripts::ScriptResult};
+use crate::{config::session::Mechanism, core::Session, scripts::ScriptResult};
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
 use utils::listener::SessionStream;
@@ -80,7 +80,12 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Sieve filtering
-            if let Some(script) = self.core.session.config.ehlo.script.eval(self).await {
+            if let Some(script) = self
+                .core
+                .eval_if::<String, _>(&self.core.session.config.ehlo.script, self)
+                .await
+                .and_then(|name| self.core.get_sieve_script(&name))
+            {
                 if let ScriptResult::Reject(message) = self
                     .run_script(script.clone(), self.build_script_parameters("ehlo"))
                     .await
@@ -121,38 +126,53 @@ impl<T: SessionStream> Session<T> {
         let dc = &self.core.session.config.data;
 
         // Pipelining
-        if *ec.pipelining.eval(self).await {
+        if self
+            .core
+            .eval_if(&ec.pipelining, self)
+            .await
+            .unwrap_or(true)
+        {
             response.capabilities |= EXT_PIPELINING;
         }
 
         // Chunking
-        if *ec.chunking.eval(self).await {
+        if self.core.eval_if(&ec.chunking, self).await.unwrap_or(true) {
             response.capabilities |= EXT_CHUNKING;
         }
 
         // Address Expansion
-        if *ec.expn.eval(self).await {
+        if self.core.eval_if(&ec.expn, self).await.unwrap_or(false) {
             response.capabilities |= EXT_EXPN;
         }
 
         // Recipient Verification
-        if *ec.vrfy.eval(self).await {
+        if self.core.eval_if(&ec.vrfy, self).await.unwrap_or(false) {
             response.capabilities |= EXT_VRFY;
         }
 
         // Require TLS
-        if *ec.requiretls.eval(self).await {
+        if self
+            .core
+            .eval_if(&ec.requiretls, self)
+            .await
+            .unwrap_or(true)
+        {
             response.capabilities |= EXT_REQUIRE_TLS;
         }
 
         // DSN
-        if *ec.dsn.eval(self).await {
+        if self.core.eval_if(&ec.dsn, self).await.unwrap_or(false) {
             response.capabilities |= EXT_DSN;
         }
 
         // Authentication
         if self.data.authenticated_as.is_empty() {
-            response.auth_mechanisms = *ac.mechanisms.eval(self).await;
+            response.auth_mechanisms = self
+                .core
+                .eval_if::<Mechanism, _>(&ac.mechanisms, self)
+                .await
+                .unwrap_or_default()
+                .into();
             if response.auth_mechanisms != 0 {
                 if !self.stream.is_tls() && !self.params.auth_plain_text {
                     response.auth_mechanisms &= !(AUTH_PLAIN | AUTH_LOGIN);
@@ -164,7 +184,11 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Future release
-        if let Some(value) = ec.future_release.eval(self).await {
+        if let Some(value) = self
+            .core
+            .eval_if::<Duration, _>(&ec.future_release, self)
+            .await
+        {
             response.capabilities |= EXT_FUTURE_RELEASE;
             response.future_release_interval = value.as_secs();
             response.future_release_datetime = SystemTime::now()
@@ -175,25 +199,37 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Deliver By
-        if let Some(value) = ec.deliver_by.eval(self).await {
+        if let Some(value) = self.core.eval_if::<Duration, _>(&ec.deliver_by, self).await {
             response.capabilities |= EXT_DELIVER_BY;
             response.deliver_by = value.as_secs();
         }
 
         // Priority
-        if let Some(value) = ec.mt_priority.eval(self).await {
+        if let Some(value) = self
+            .core
+            .eval_if::<MtPriority, _>(&ec.mt_priority, self)
+            .await
+        {
             response.capabilities |= EXT_MT_PRIORITY;
-            response.mt_priority = *value;
+            response.mt_priority = value;
         }
 
         // Size
-        response.size = *dc.max_message_size.eval(self).await;
+        response.size = self
+            .core
+            .eval_if(&dc.max_message_size, self)
+            .await
+            .unwrap_or(25 * 1024 * 1024);
         if response.size > 0 {
             response.capabilities |= EXT_SIZE;
         }
 
         // No soliciting
-        if let Some(value) = ec.no_soliciting.eval(self).await {
+        if let Some(value) = self
+            .core
+            .eval_if::<String, _>(&ec.no_soliciting, self)
+            .await
+        {
             response.capabilities |= EXT_NO_SOLICITING;
             response.no_soliciting = if !value.is_empty() {
                 value.to_string().into()

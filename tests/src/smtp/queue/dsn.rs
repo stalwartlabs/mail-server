@@ -29,14 +29,13 @@ use std::{
 
 use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use tokio::{fs::File, io::AsyncReadExt};
-use utils::config::DynValue;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestQueueEvent},
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{ConfigContext, EnvelopeKey},
+    config::ConfigContext,
     core::SMTP,
     queue::{
         DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule,
@@ -110,21 +109,18 @@ async fn generate_dsn() {
     let mut core = SMTP::test();
     let ctx = ConfigContext::new(&[]).parse_signatures();
     let config = &mut core.queue.config.dsn;
-    config.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
+    config.sign = "['rsa']".parse_if();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dsn_test");
 
     // Disabled DSN
-    core.queue.send_dsn(&mut attempt).await;
+    core.send_dsn(&mut attempt).await;
     qr.assert_empty_queue();
 
     // Failure DSN
     attempt.message.recipients[0].flags = flags;
-    core.queue.send_dsn(&mut attempt).await;
+    core.send_dsn(&mut attempt).await;
     compare_dsn(qr.read_event().await.unwrap_message(), "failure.eml").await;
 
     // Success DSN
@@ -143,7 +139,7 @@ async fn generate_dsn() {
         flags,
         orcpt: None,
     });
-    core.queue.send_dsn(&mut attempt).await;
+    core.send_dsn(&mut attempt).await;
     compare_dsn(qr.read_event().await.unwrap_message(), "success.eml").await;
 
     // Delay DSN
@@ -155,7 +151,7 @@ async fn generate_dsn() {
         flags,
         orcpt: "jdoe@example.org".to_string().into(),
     });
-    core.queue.send_dsn(&mut attempt).await;
+    core.send_dsn(&mut attempt).await;
     compare_dsn(qr.read_event().await.unwrap_message(), "delay.eml").await;
 
     // Mixed DSN
@@ -163,7 +159,7 @@ async fn generate_dsn() {
         rcpt.flags = flags;
     }
     attempt.message.domains[0].notify.due = Instant::now();
-    core.queue.send_dsn(&mut attempt).await;
+    core.send_dsn(&mut attempt).await;
     compare_dsn(qr.read_event().await.unwrap_message(), "mixed.eml").await;
 
     // Load queue

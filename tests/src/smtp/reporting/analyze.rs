@@ -27,9 +27,10 @@ use crate::smtp::{
     inbound::TestQueueEvent, make_temp_dir, session::TestSession, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AddressMatch, IfBlock},
+    config::AddressMatch,
     core::{Session, SMTP},
 };
+use utils::config::if_block::IfBlock;
 
 #[tokio::test]
 async fn report_analyze() {

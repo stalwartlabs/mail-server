@@ -23,7 +23,7 @@
 
 use std::{
     fmt::Display,
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     path::PathBuf,
     sync::{atomic::AtomicUsize, Arc},
     time::{Duration, Instant, SystemTime},
@@ -31,12 +31,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
-use utils::{
-    config::KeyLookup,
-    listener::limiter::{ConcurrencyLimiter, InFlight},
-};
+use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
-use crate::{config::EnvelopeKey, core::management};
+use crate::core::{eval::*, management, ResolveVariable};
 
 pub mod dsn;
 pub mod manager;
@@ -245,30 +242,16 @@ impl<'x> SimpleEnvelope<'x> {
     }
 }
 
-impl<'x> KeyLookup for SimpleEnvelope<'x> {
-    type Key = EnvelopeKey;
-
-    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            EnvelopeKey::Sender => self.message.return_path_lcase.as_str().into(),
-            EnvelopeKey::SenderDomain => self.message.return_path_domain.as_str().into(),
-            EnvelopeKey::Priority => self.message.priority.to_string().into(),
-            EnvelopeKey::Recipient => self.recipient.into(),
-            EnvelopeKey::RecipientDomain => self.domain.into(),
+impl<'x> ResolveVariable for SimpleEnvelope<'x> {
+    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+        match variable {
+            V_SENDER => self.message.return_path_lcase.as_str().into(),
+            V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
+            V_PRIORITY => self.message.priority.to_string().into(),
+            V_RECIPIENT => self.recipient.into(),
+            V_RECIPIENT_DOMAIN => self.domain.into(),
             _ => "".into(),
         }
-    }
-
-    fn key_as_int(&self, key: &Self::Key) -> i32 {
-        if matches!(key, EnvelopeKey::Priority) {
-            self.message.priority as i32
-        } else {
-            0
-        }
-    }
-
-    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
     }
 }
 
@@ -280,59 +263,29 @@ pub struct QueueEnvelope<'x> {
     pub local_ip: IpAddr,
 }
 
-impl<'x> KeyLookup for QueueEnvelope<'x> {
-    type Key = EnvelopeKey;
-
-    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            EnvelopeKey::Sender => self.message.return_path_lcase.as_str().into(),
-            EnvelopeKey::SenderDomain => self.message.return_path_domain.as_str().into(),
-            EnvelopeKey::RecipientDomain => self.domain.into(),
-            EnvelopeKey::Mx => self.mx.into(),
-            EnvelopeKey::Priority => self.message.priority.to_string().into(),
+impl<'x> ResolveVariable for QueueEnvelope<'x> {
+    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'x> {
+        match variable {
+            V_SENDER => self.message.return_path_lcase.as_str().into(),
+            V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
+            V_RECIPIENT_DOMAIN => self.domain.into(),
+            V_MX => self.mx.into(),
+            V_PRIORITY => self.message.priority.into(),
+            V_REMOTE_IP => self.remote_ip.to_string().into(),
+            V_LOCAL_IP => self.local_ip.to_string().into(),
             _ => "".into(),
-        }
-    }
-
-    fn key_as_int(&self, key: &Self::Key) -> i32 {
-        if matches!(key, EnvelopeKey::Priority) {
-            self.message.priority as i32
-        } else {
-            0
-        }
-    }
-
-    fn key_as_ip(&self, key: &Self::Key) -> IpAddr {
-        match key {
-            EnvelopeKey::RemoteIp => self.remote_ip,
-            EnvelopeKey::LocalIp => self.local_ip,
-            _ => IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         }
     }
 }
 
-impl KeyLookup for Message {
-    type Key = EnvelopeKey;
-
-    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            EnvelopeKey::Sender => self.return_path_lcase.as_str().into(),
-            EnvelopeKey::SenderDomain => self.return_path_domain.as_str().into(),
-            EnvelopeKey::Priority => self.priority.to_string().into(),
+impl ResolveVariable for Message {
+    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+        match variable {
+            V_SENDER => self.return_path_lcase.as_str().into(),
+            V_SENDER_DOMAIN => self.return_path_domain.as_str().into(),
+            V_PRIORITY => self.priority.into(),
             _ => "".into(),
         }
-    }
-
-    fn key_as_int(&self, key: &Self::Key) -> i32 {
-        if matches!(key, EnvelopeKey::Priority) {
-            self.priority as i32
-        } else {
-            0
-        }
-    }
-
-    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
     }
 }
 
@@ -344,22 +297,12 @@ impl<'x> RecipientDomain<'x> {
     }
 }
 
-impl<'x> KeyLookup for RecipientDomain<'x> {
-    type Key = EnvelopeKey;
-
-    fn key(&self, key: &Self::Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            EnvelopeKey::RecipientDomain => self.0.into(),
+impl<'x> ResolveVariable for RecipientDomain<'x> {
+    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+        match variable {
+            V_RECIPIENT_DOMAIN => self.0.into(),
             _ => "".into(),
         }
-    }
-
-    fn key_as_int(&self, _: &Self::Key) -> i32 {
-        0
-    }
-
-    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
     }
 }
 

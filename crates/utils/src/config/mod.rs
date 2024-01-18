@@ -22,21 +22,14 @@
 */
 
 pub mod cron;
-pub mod dynvalue;
+pub mod if_block;
 pub mod ipmask;
 pub mod listener;
 pub mod parser;
 pub mod tls;
 pub mod utils;
 
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    fmt::Display,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::BTreeMap, fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use tokio::net::TcpSocket;
@@ -48,7 +41,7 @@ use crate::{
     UnwrapFailure,
 };
 
-use self::{ipmask::IpAddrMask, utils::ParseValue};
+use self::ipmask::IpAddrMask;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
@@ -105,38 +98,6 @@ pub enum ServerProtocol {
     Imap,
     Http,
     ManageSieve,
-}
-
-#[derive(Debug, Clone)]
-pub enum DynValue<T: ParseValue> {
-    String(String),
-    Position(usize),
-    Key(T),
-    List(Vec<DynValue<T>>),
-}
-
-pub trait KeyLookup {
-    type Key: ParseValue;
-
-    fn key(&self, key: &Self::Key) -> Cow<'_, str>;
-    fn key_as_int(&self, key: &Self::Key) -> i32;
-    fn key_as_ip(&self, key: &Self::Key) -> IpAddr;
-}
-
-impl KeyLookup for () {
-    type Key = String;
-
-    fn key(&self, _: &Self::Key) -> Cow<'_, str> {
-        "".into()
-    }
-
-    fn key_as_int(&self, _: &Self::Key) -> i32 {
-        0
-    }
-
-    fn key_as_ip(&self, _: &Self::Key) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]

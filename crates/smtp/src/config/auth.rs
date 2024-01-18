@@ -28,82 +28,80 @@ use mail_auth::{
     dkim::{Canonicalization, Done},
 };
 use mail_parser::decoders::base64::base64_decode;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config, DynValue,
+use utils::{
+    config::{
+        if_block::IfBlock,
+        utils::{AsKey, ConstantValue, ParseValue},
+        Config,
+    },
+    expr::{self, Constant, Token},
 };
 
+use crate::core::eval::*;
+
 use super::{
-    if_block::ConfigIf, ArcAuthConfig, ArcSealer, ConfigContext, DkimAuthConfig,
-    DkimCanonicalization, DkimSigner, DmarcAuthConfig, EnvelopeKey, IfBlock, IpRevAuthConfig,
-    MailAuthConfig, SpfAuthConfig, VerifyStrategy,
+    map_expr_token, ArcAuthConfig, ArcSealer, ConfigContext, DkimAuthConfig, DkimCanonicalization,
+    DkimSigner, DmarcAuthConfig, IpRevAuthConfig, MailAuthConfig, SpfAuthConfig, VerifyStrategy,
 };
 
 pub trait ConfigAuth {
-    fn parse_mail_auth(&self, ctx: &ConfigContext) -> super::Result<MailAuthConfig>;
+    fn parse_mail_auth(&self) -> super::Result<MailAuthConfig>;
     fn parse_signatures(&self, ctx: &mut ConfigContext) -> super::Result<()>;
 }
 
 impl ConfigAuth for Config {
-    fn parse_mail_auth(&self, ctx: &ConfigContext) -> super::Result<MailAuthConfig> {
-        let envelope_sender_keys = [
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-        ];
-        let envelope_conn_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-        ];
+    fn parse_mail_auth(&self) -> super::Result<MailAuthConfig> {
+        let fn_sender_keys = |name: &str| -> super::Result<Token> {
+            map_expr_token::<VerifyStrategy>(
+                name,
+                &[
+                    V_SENDER,
+                    V_SENDER_DOMAIN,
+                    V_PRIORITY,
+                    V_AUTHENTICATED_AS,
+                    V_LISTENER,
+                    V_REMOTE_IP,
+                    V_LOCAL_IP,
+                ],
+            )
+        };
+        let fn_conn_keys = |name: &str| -> super::Result<Token> {
+            map_expr_token::<VerifyStrategy>(name, &[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP])
+        };
 
         Ok(MailAuthConfig {
             dkim: DkimAuthConfig {
                 verify: self
-                    .parse_if_block("auth.dkim.verify", ctx, &envelope_sender_keys)?
+                    .parse_if_block("auth.dkim.verify", fn_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 sign: self
-                    .parse_if_block::<Vec<DynValue<EnvelopeKey>>>(
-                        "auth.dkim.sign",
-                        ctx,
-                        &envelope_sender_keys,
-                    )?
-                    .unwrap_or_default()
-                    .map_if_block(&ctx.signers, "auth.dkim.sign", "signature")?,
+                    .parse_if_block("auth.dkim.sign", fn_sender_keys)?
+                    .unwrap_or_default(),
             },
             arc: ArcAuthConfig {
                 verify: self
-                    .parse_if_block("auth.arc.verify", ctx, &envelope_sender_keys)?
+                    .parse_if_block("auth.arc.verify", fn_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 seal: self
-                    .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-                        "auth.arc.seal",
-                        ctx,
-                        &envelope_sender_keys,
-                    )?
-                    .unwrap_or_default()
-                    .map_if_block(&ctx.sealers, "auth.arc.seal", "signature")?,
+                    .parse_if_block("auth.arc.seal", fn_sender_keys)?
+                    .unwrap_or_default(),
             },
             spf: SpfAuthConfig {
                 verify_ehlo: self
-                    .parse_if_block("auth.spf.verify.ehlo", ctx, &envelope_conn_keys)?
+                    .parse_if_block("auth.spf.verify.ehlo", fn_conn_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
                 verify_mail_from: self
-                    .parse_if_block("auth.spf.verify.mail-from", ctx, &envelope_conn_keys)?
+                    .parse_if_block("auth.spf.verify.mail-from", fn_conn_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
             },
             dmarc: DmarcAuthConfig {
                 verify: self
-                    .parse_if_block("auth.dmarc.verify", ctx, &envelope_sender_keys)?
+                    .parse_if_block("auth.dmarc.verify", fn_sender_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
             },
             iprev: IpRevAuthConfig {
                 verify: self
-                    .parse_if_block("auth.iprev.verify", ctx, &envelope_conn_keys)?
+                    .parse_if_block("auth.iprev.verify", fn_conn_keys)?
                     .unwrap_or_else(|| IfBlock::new(VerifyStrategy::Relaxed)),
             },
         })
@@ -301,6 +299,32 @@ fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(
     Ok((signer, sealer))
 }
 
+impl<'x> TryFrom<expr::Variable<'x>> for VerifyStrategy {
+    type Error = ();
+
+    fn try_from(value: expr::Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            expr::Variable::Integer(c) => match c {
+                0 => Ok(VerifyStrategy::Relaxed),
+                1 => Ok(VerifyStrategy::Strict),
+                2 => Ok(VerifyStrategy::Disable),
+                _ => Err(()),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<VerifyStrategy> for Constant {
+    fn from(value: VerifyStrategy) -> Self {
+        Constant::Integer(match value {
+            VerifyStrategy::Relaxed => 0,
+            VerifyStrategy::Strict => 1,
+            VerifyStrategy::Disable => 2,
+        })
+    }
+}
+
 impl ParseValue for VerifyStrategy {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         match value {
@@ -315,6 +339,8 @@ impl ParseValue for VerifyStrategy {
         }
     }
 }
+
+impl ConstantValue for VerifyStrategy {}
 
 impl ParseValue for DkimCanonicalization {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {

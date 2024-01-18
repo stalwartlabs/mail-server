@@ -40,7 +40,7 @@ use smtp_proto::{
     },
     IntoString,
 };
-use store::{LookupKey, LookupStore, LookupValue, Value};
+use store::{LookupStore, Store, Value};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::mpsc,
@@ -48,14 +48,15 @@ use tokio::{
 use tokio_rustls::TlsConnector;
 use tracing::Span;
 use utils::{
+    expr,
     ipc::DeliveryEvent,
     listener::{limiter::InFlight, stream::NullIo, ServerInstance, TcpAcceptor},
 };
 
 use crate::{
     config::{
-        scripts::SieveContext, DkimSigner, MailAuthConfig, QueueConfig, ReportConfig,
-        SessionConfig, VerifyStrategy,
+        scripts::SieveContext, ArcSealer, DkimSigner, MailAuthConfig, QueueConfig, RelayHost,
+        ReportConfig, SessionConfig, VerifyStrategy,
     },
     inbound::auth::SaslToken,
     outbound::{
@@ -64,12 +65,11 @@ use crate::{
     },
     queue::{self, DomainPart, QueueId, QuotaLimiter},
     reporting,
-    scripts::plugins::lookup::VariableExists,
 };
 
 use self::throttle::{Limiter, ThrottleKey, ThrottleKeyHasherBuilder};
 
-pub mod if_block;
+pub mod eval;
 pub mod management;
 pub mod params;
 pub mod throttle;
@@ -105,20 +105,31 @@ pub struct SMTP {
     pub mail_auth: MailAuthConfig,
     pub report: ReportCore,
     pub sieve: SieveCore,
+    pub shared: Shared,
     #[cfg(feature = "local_delivery")]
     pub delivery_tx: mpsc::Sender<DeliveryEvent>,
 }
 
+pub struct Shared {
+    pub scripts: AHashMap<String, Arc<Sieve>>,
+    pub signers: AHashMap<String, Arc<DkimSigner>>,
+    pub sealers: AHashMap<String, Arc<ArcSealer>>,
+    pub directories: AHashMap<String, Arc<Directory>>,
+    pub lookup_stores: AHashMap<String, LookupStore>,
+    pub relay_hosts: AHashMap<String, RelayHost>,
+
+    // Default store and directory
+    pub default_directory: Arc<Directory>,
+    pub default_data_store: Store,
+    pub default_lookup_store: LookupStore,
+}
+
 pub struct SieveCore {
     pub runtime: Runtime<SieveContext>,
-    pub scripts: AHashMap<String, Arc<Sieve>>,
-
     pub from_addr: String,
     pub from_name: String,
     pub return_path: String,
     pub sign: Vec<Arc<DkimSigner>>,
-    pub directories: AHashMap<String, Arc<Directory>>,
-    pub lookup_stores: AHashMap<String, LookupStore>,
 }
 
 pub struct Resolvers {
@@ -156,12 +167,6 @@ pub struct TlsConnectors {
     pub dummy_verify: TlsConnector,
 }
 
-#[derive(Clone)]
-pub enum Lookup {
-    Store(LookupStore),
-    Directory(directory::Lookup),
-}
-
 pub enum State {
     Request(RequestReceiver),
     Bdat(BdatReceiver),
@@ -186,7 +191,9 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 
 pub struct SessionData {
     pub local_ip: IpAddr,
+    pub local_ip_str: String,
     pub remote_ip: IpAddr,
+    pub remote_ip_str: String,
     pub remote_port: u16,
     pub helo_domain: String,
 
@@ -259,6 +266,8 @@ impl SessionData {
         SessionData {
             local_ip,
             remote_ip,
+            local_ip_str: local_ip.to_string(),
+            remote_ip_str: remote_ip.to_string(),
             remote_port,
             helo_domain: String::new(),
             mail_from: None,
@@ -282,49 +291,8 @@ impl SessionData {
     }
 }
 
-impl Lookup {
-    pub async fn contains(&self, item: &str) -> Option<bool> {
-        match self {
-            Lookup::Store(LookupStore::Query(lookup)) => lookup
-                .store
-                .query::<bool>(&lookup.query, vec![item.into()])
-                .await
-                .ok(),
-            Lookup::Store(store) => store
-                .key_get::<VariableExists>(LookupKey::Key(item.to_string().into_bytes()))
-                .await
-                .ok()
-                .map(|v| !matches!(v, LookupValue::None)),
-            Lookup::Directory(lookup) => match lookup {
-                directory::Lookup::DomainExists(directory) => {
-                    directory.is_local_domain(item).await.ok()
-                }
-                directory::Lookup::EmailExists(directory) => directory.rcpt(item).await.ok(),
-            },
-        }
-    }
-}
-
-impl PartialEq for Lookup {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Lookup::Store(LookupStore::Query(a)), Lookup::Store(LookupStore::Query(b))) => {
-                a.query == b.query
-            }
-            (Lookup::Store(LookupStore::Store(_)), Lookup::Store(LookupStore::Store(_))) => true,
-            (Lookup::Directory(a), Lookup::Directory(b)) => matches!(
-                (a, b),
-                (
-                    directory::Lookup::DomainExists(_),
-                    directory::Lookup::DomainExists(_)
-                ) | (
-                    directory::Lookup::EmailExists(_),
-                    directory::Lookup::EmailExists(_)
-                )
-            ),
-            _ => false,
-        }
-    }
+pub trait ResolveVariable {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'_>;
 }
 
 pub fn into_sieve_value(value: Value) -> Variable {
@@ -353,18 +321,6 @@ pub fn to_store_value(value: &Variable) -> Value<'static> {
         Variable::Integer(v) => Value::Integer(*v),
         Variable::Float(v) => Value::Float(*v),
         v => Value::Text(v.to_string().into_owned().into()),
-    }
-}
-
-impl From<LookupStore> for Lookup {
-    fn from(lookup: LookupStore) -> Self {
-        Lookup::Store(lookup)
-    }
-}
-
-impl From<directory::Lookup> for Lookup {
-    fn from(lookup: directory::Lookup) -> Self {
-        Lookup::Directory(lookup)
     }
 }
 
@@ -522,6 +478,8 @@ impl SessionData {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
             remote_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+            local_ip_str: "127.0.0.1".to_string(),
+            remote_ip_str: "127.0.0.1".to_string(),
             remote_port: 0,
             helo_domain: "localhost".into(),
             mail_from,

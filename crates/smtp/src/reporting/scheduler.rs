@@ -47,7 +47,7 @@ use tokio::{
 use crate::{
     config::AggregateFrequency,
     core::{management::ReportRequest, worker::SpawnCleanup, ReportCore, SMTP},
-    queue::{InstantFromTimestamp, RecipientDomain, Schedule},
+    queue::{InstantFromTimestamp, Schedule},
 };
 
 use super::{dmarc::GenerateDmarcReport, tls::GenerateTlsReport, Event};
@@ -198,19 +198,9 @@ impl SMTP {
         };
 
         // Build base path
-        let mut path = self
-            .report
-            .config
-            .path
-            .eval(&RecipientDomain::new(domain))
-            .await
-            .clone();
-        let hash = *self
-            .report
-            .config
-            .hash
-            .eval(&RecipientDomain::new(domain))
-            .await;
+        let mut path = self.report.config.path.clone();
+        let todo = "fix";
+        let hash = 1;
         if hash > 0 {
             path.push((policy % hash).to_string());
         }
@@ -242,77 +232,69 @@ impl ReportCore {
     pub async fn read_reports(&self) -> Scheduler {
         let mut scheduler = Scheduler::default();
 
-        for path in self
-            .config
-            .path
-            .if_then
-            .iter()
-            .map(|t| &t.then)
-            .chain([&self.config.path.default])
-        {
-            let mut dir = match tokio::fs::read_dir(path).await {
-                Ok(dir) => dir,
-                Err(_) => continue,
-            };
-            loop {
-                match dir.next_entry().await {
-                    Ok(Some(file)) => {
-                        let file = file.path();
-                        if file.is_dir() {
-                            match tokio::fs::read_dir(&file).await {
-                                Ok(mut dir) => {
-                                    let file_ = file;
-                                    loop {
-                                        match dir.next_entry().await {
-                                            Ok(Some(file)) => {
-                                                let file = file.path();
-                                                if file
-                                                    .extension()
-                                                    .map_or(false, |e| e == "t" || e == "d")
-                                                {
-                                                    if let Err(err) = scheduler.add_path(file).await
-                                                    {
-                                                        tracing::warn!("{}", err);
-                                                    }
+        let mut dir = match tokio::fs::read_dir(&self.config.path).await {
+            Ok(dir) => dir,
+            Err(_) => {
+                return scheduler;
+            }
+        };
+        loop {
+            match dir.next_entry().await {
+                Ok(Some(file)) => {
+                    let file = file.path();
+                    if file.is_dir() {
+                        match tokio::fs::read_dir(&file).await {
+                            Ok(mut dir) => {
+                                let file_ = file;
+                                loop {
+                                    match dir.next_entry().await {
+                                        Ok(Some(file)) => {
+                                            let file = file.path();
+                                            if file
+                                                .extension()
+                                                .map_or(false, |e| e == "t" || e == "d")
+                                            {
+                                                if let Err(err) = scheduler.add_path(file).await {
+                                                    tracing::warn!("{}", err);
                                                 }
                                             }
-                                            Ok(None) => break,
-                                            Err(err) => {
-                                                tracing::warn!(
-                                                    "Failed to read report directory {}: {}",
-                                                    file_.display(),
-                                                    err
-                                                );
-                                                break;
-                                            }
+                                        }
+                                        Ok(None) => break,
+                                        Err(err) => {
+                                            tracing::warn!(
+                                                "Failed to read report directory {}: {}",
+                                                file_.display(),
+                                                err
+                                            );
+                                            break;
                                         }
                                     }
                                 }
-                                Err(err) => {
-                                    tracing::warn!(
-                                        "Failed to read report directory {}: {}",
-                                        file.display(),
-                                        err
-                                    )
-                                }
-                            };
-                        } else if file.extension().map_or(false, |e| e == "t" || e == "d") {
-                            if let Err(err) = scheduler.add_path(file).await {
-                                tracing::warn!("{}", err);
                             }
+                            Err(err) => {
+                                tracing::warn!(
+                                    "Failed to read report directory {}: {}",
+                                    file.display(),
+                                    err
+                                )
+                            }
+                        };
+                    } else if file.extension().map_or(false, |e| e == "t" || e == "d") {
+                        if let Err(err) = scheduler.add_path(file).await {
+                            tracing::warn!("{}", err);
                         }
                     }
-                    Ok(None) => {
-                        break;
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "Failed to read report directory {}: {}",
-                            path.display(),
-                            err
-                        );
-                        break;
-                    }
+                }
+                Ok(None) => {
+                    break;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to read report directory {}: {}",
+                        self.config.path.display(),
+                        err
+                    );
+                    break;
                 }
             }
         }

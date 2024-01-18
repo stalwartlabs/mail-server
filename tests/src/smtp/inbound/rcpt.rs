@@ -26,16 +26,13 @@ use std::time::Duration;
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use store::{Store, Stores};
-use utils::config::{Config, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::{ConfigContext, IfBlock, MaybeDynValue},
-    core::{Session, State, SMTP},
-};
+use smtp::core::{Session, State, SMTP};
 
 const DIRECTORY: &str = r#"
 [directory."local"]
@@ -78,30 +75,28 @@ async fn rcpt() {
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
-        directory.directories.get("local").unwrap().clone(),
-    )));
+    config.directory = IfBlock::new("local".to_string());
     config.max_recipients = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 5}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.relay = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
     {else = true}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config_ext.dsn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
     {else = true}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
     {else = 100}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.errors_wait = r"[{if = 'remote-ip', eq = '10.0.0.1', then = '5ms'},
     {else = '1s'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     core.session.config.throttle.rcpt_to = r"[[throttle]]
     match = {if = 'remote-ip', eq = '10.0.0.1'}
     key = 'sender'
     rate = '2/1s'
     "
-    .parse_throttle(&ConfigContext::new(&[]));
+    .parse_throttle();
 
     // RCPT without MAIL FROM
     let mut session = Session::test(core);

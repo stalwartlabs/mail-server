@@ -31,13 +31,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
         match self
             .core
-            .session
-            .config
-            .rcpt
-            .directory
-            .eval_and_capture(self)
+            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
             .await
-            .into_value(self)
+            .and_then(|name| self.core.get_directory(&name))
         {
             Some(address_lookup) if self.params.can_vrfy => {
                 match address_lookup.vrfy(&address.to_lowercase()).await {
@@ -92,13 +88,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
         match self
             .core
-            .session
-            .config
-            .rcpt
-            .directory
-            .eval_and_capture(self)
+            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
             .await
-            .into_value(self)
+            .and_then(|name| self.core.get_directory(&name))
         {
             Some(address_lookup) if self.params.can_expn => {
                 match address_lookup.expn(&address.to_lowercase()).await {

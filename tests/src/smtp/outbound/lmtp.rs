@@ -33,11 +33,11 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{remote::ConfigHost, ConfigContext, IfBlock},
+    config::ConfigContext,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
-use utils::config::{Config, ServerProtocol};
+use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
 const REMOTE: &str = "
 [remote.lmtp]
@@ -81,23 +81,20 @@ async fn lmtp_delivery() {
 
     let mut ctx = ConfigContext::new(&[]);
     let config = Config::new(REMOTE).unwrap();
-    config.parse_remote_hosts(&mut ctx).unwrap();
     core.queue.config.next_hop = "[{if = 'rcpt-domain', eq = 'foobar.org', then = 'lmtp'},
     {else = false}]"
-        .parse_if::<Option<String>>(&ctx)
-        .into_relay_host(&ctx)
-        .unwrap();
+        .parse_if();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
-    config.retry = IfBlock::new(vec![Duration::from_millis(100)]);
+    config.retry = IfBlock::new(Duration::from_millis(100));
     config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
     {else = ['100ms']}]"
-        .parse_if(&ctx);
+        .parse_if();
     config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '400ms'},
     {else = '500ms'}]"
-        .parse_if(&ctx);
+        .parse_if();
     config.timeout.data = IfBlock::new(Duration::from_millis(50));
 
     let core = Arc::new(core);

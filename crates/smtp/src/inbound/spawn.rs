@@ -83,7 +83,12 @@ impl<T: SessionStream> Session<T> {
         self.eval_session_params().await;
 
         // Sieve filtering
-        if let Some(script) = self.core.session.config.connect.script.eval(self).await {
+        if let Some(script) = self
+            .core
+            .eval_if::<String, _>(&self.core.session.config.connect.script, self)
+            .await
+            .and_then(|name| self.core.get_sieve_script(&name))
+        {
             if let ScriptResult::Reject(message) = self
                 .run_script(script.clone(), self.build_script_parameters("connect"))
                 .await

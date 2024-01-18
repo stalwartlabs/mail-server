@@ -27,7 +27,6 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use ::smtp::core::Lookup;
 use directory::{
     backend::internal::manage::ManageDirectory, core::config::ConfigDirectory, AddressMapping,
     Directories, Principal,
@@ -37,7 +36,7 @@ use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
-use store::{config::ConfigStore, LookupStore, Store, Stores};
+use store::{config::ConfigStore, LookupKey, LookupStore, LookupValue, Store, Stores};
 use tokio_rustls::TlsAcceptor;
 use utils::config::Servers;
 
@@ -600,18 +599,23 @@ async fn lookup_local() {
         ("suffix", "coco", false),
     ] {
         assert_eq!(
-            Lookup::from(lookups.get(&format!("local/{lookup}")).unwrap().clone())
-                .contains(item)
-                .await
-                .unwrap(),
+            matches!(
+                lookups
+                    .get(&format!("local/{lookup}"))
+                    .unwrap()
+                    .key_get::<String>(LookupKey::Key(item.as_bytes().to_vec()))
+                    .await
+                    .unwrap(),
+                LookupValue::Value { .. }
+            ),
             expect,
             "failed for {lookup}, item {item}"
         );
     }
 }
 
-#[test]
-fn address_mappings() {
+#[tokio::test]
+async fn address_mappings() {
     const MAPPINGS: &str = r#"
     [enable]
     catch-all = true
@@ -640,13 +644,13 @@ fn address_mappings() {
         let subaddressing = AddressMapping::from_config(&config, (test, "subaddressing")).unwrap();
 
         assert_eq!(
-            subaddressing.to_subaddress(ADDR),
+            subaddressing.to_subaddress(ADDR).await,
             config.value_require((test, "expected-sub")).unwrap(),
             "failed subaddress for {test:?}"
         );
 
         assert_eq!(
-            catch_all.to_catch_all(ADDR),
+            catch_all.to_catch_all(ADDR).await,
             config
                 .property_require::<Option<String>>((test, "expected-catch"))
                 .unwrap()

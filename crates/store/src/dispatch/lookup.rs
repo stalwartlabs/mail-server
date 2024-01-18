@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use utils::expr;
+
 use crate::{backend::memory::MemoryStore, Row};
 #[allow(unused_imports)]
 use crate::{
@@ -236,6 +238,22 @@ impl From<Value<'static>> for String {
             Value::Null => String::new(),
             Value::Integer(num) => num.to_string(),
             Value::Float(num) => num.to_string(),
+        }
+    }
+}
+
+impl<'x> From<Value<'x>> for expr::Variable<'x> {
+    fn from(value: Value<'x>) -> Self {
+        match value {
+            Value::Integer(v) => expr::Variable::Integer(v),
+            Value::Bool(v) => expr::Variable::Integer(v as i64),
+            Value::Float(v) => expr::Variable::Float(v),
+            Value::Text(v) => expr::Variable::String(v),
+            Value::Blob(v) => expr::Variable::String(match v {
+                std::borrow::Cow::Borrowed(v) => String::from_utf8_lossy(v),
+                std::borrow::Cow::Owned(v) => String::from_utf8_lossy(&v).into_owned().into(),
+            }),
+            Value::Null => expr::Variable::String("".into()),
         }
     }
 }

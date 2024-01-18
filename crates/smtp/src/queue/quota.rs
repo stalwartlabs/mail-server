@@ -24,21 +24,20 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use dashmap::mapref::entry::Entry;
-use utils::config::KeyLookup;
 
 use crate::{
-    config::{EnvelopeKey, QueueQuota},
-    core::QueueCore,
+    config::QueueQuota,
+    core::{ResolveVariable, SMTP},
 };
 
 use super::{Message, QuotaLimiter, SimpleEnvelope, Status, UsedQuota};
 
-impl QueueCore {
+impl SMTP {
     pub async fn has_quota(&self, message: &mut Message) -> bool {
         let mut queue_refs = Vec::new();
 
-        if !self.config.quota.sender.is_empty() {
-            for quota in &self.config.quota.sender {
+        if !self.queue.config.quota.sender.is_empty() {
+            for quota in &self.queue.config.quota.sender {
                 if !self
                     .reserve_quota(quota, message, message.size, 0, &mut queue_refs)
                     .await
@@ -48,7 +47,7 @@ impl QueueCore {
             }
         }
 
-        for quota in &self.config.quota.rcpt_domain {
+        for quota in &self.queue.config.quota.rcpt_domain {
             for (pos, domain) in message.domains.iter().enumerate() {
                 if !self
                     .reserve_quota(
@@ -65,7 +64,7 @@ impl QueueCore {
             }
         }
 
-        for quota in &self.config.quota.rcpt {
+        for quota in &self.queue.config.quota.rcpt {
             for (pos, rcpt) in message.recipients.iter().enumerate() {
                 if !self
                     .reserve_quota(
@@ -94,13 +93,18 @@ impl QueueCore {
     async fn reserve_quota(
         &self,
         quota: &QueueQuota,
-        envelope: &impl KeyLookup<Key = EnvelopeKey>,
+        envelope: &impl ResolveVariable,
         size: usize,
         id: u64,
         refs: &mut Vec<UsedQuota>,
     ) -> bool {
-        if !quota.conditions.conditions.is_empty() && quota.conditions.eval(envelope).await {
-            match self.quota.entry(quota.new_key(envelope)) {
+        if !quota.expr.is_empty()
+            && self
+                .eval_expr(&quota.expr, envelope, "reserve_quota")
+                .await
+                .unwrap_or(false)
+        {
+            match self.queue.quota.entry(quota.new_key(envelope)) {
                 Entry::Occupied(e) => {
                     if let Some(qref) = e.get().is_allowed(id, size) {
                         refs.push(qref);

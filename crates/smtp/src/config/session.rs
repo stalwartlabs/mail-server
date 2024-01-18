@@ -25,66 +25,71 @@ use std::{net::ToSocketAddrs, time::Duration};
 
 use smtp_proto::*;
 
-use super::{if_block::ConfigIf, throttle::ConfigThrottle, *};
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config, DynValue,
+use crate::inbound::milter;
+
+use crate::core::eval::*;
+
+use super::{
+    map_expr_token, throttle::ConfigThrottle, Auth, Connect, Data, Ehlo, Extensions, Mail, Milter,
+    Pipe, Rcpt, SessionConfig, SessionThrottle, THROTTLE_AUTH_AS, THROTTLE_HELO_DOMAIN,
+    THROTTLE_LISTENER, THROTTLE_LOCAL_IP, THROTTLE_RCPT, THROTTLE_RCPT_DOMAIN, THROTTLE_REMOTE_IP,
+    THROTTLE_SENDER, THROTTLE_SENDER_DOMAIN,
+};
+use utils::{
+    config::{
+        if_block::IfBlock,
+        utils::{AsKey, ConstantValue, NoConstants, ParseValue},
+        Config,
+    },
+    expr::{Constant, ExpressionItem, Variable},
 };
 
 pub trait ConfigSession {
-    fn parse_session_config(&self, ctx: &ConfigContext) -> super::Result<SessionConfig>;
-    fn parse_session_throttle(&self, ctx: &ConfigContext) -> super::Result<SessionThrottle>;
-    fn parse_session_connect(&self, ctx: &ConfigContext) -> super::Result<Connect>;
-    fn parse_extensions(&self, ctx: &ConfigContext) -> super::Result<Extensions>;
-    fn parse_session_ehlo(&self, ctx: &ConfigContext) -> super::Result<Ehlo>;
-    fn parse_session_auth(&self, ctx: &ConfigContext) -> super::Result<Auth>;
-    fn parse_session_mail(&self, ctx: &ConfigContext) -> super::Result<Mail>;
-    fn parse_session_rcpt(&self, ctx: &ConfigContext) -> super::Result<Rcpt>;
-    fn parse_session_data(&self, ctx: &ConfigContext) -> super::Result<Data>;
-    fn parse_pipes(
-        &self,
-        ctx: &ConfigContext,
-        available_keys: &[EnvelopeKey],
-    ) -> super::Result<Vec<Pipe>>;
-    fn parse_milters(
-        &self,
-        ctx: &ConfigContext,
-        available_keys: &[EnvelopeKey],
-    ) -> super::Result<Vec<Milter>>;
+    fn parse_session_config(&self) -> super::Result<SessionConfig>;
+    fn parse_session_throttle(&self) -> super::Result<SessionThrottle>;
+    fn parse_session_connect(&self) -> super::Result<Connect>;
+    fn parse_extensions(&self) -> super::Result<Extensions>;
+    fn parse_session_ehlo(&self) -> super::Result<Ehlo>;
+    fn parse_session_auth(&self) -> super::Result<Auth>;
+    fn parse_session_mail(&self) -> super::Result<Mail>;
+    fn parse_session_rcpt(&self) -> super::Result<Rcpt>;
+    fn parse_session_data(&self) -> super::Result<Data>;
+    fn parse_pipes(&self, available_keys: &[u32]) -> super::Result<Vec<Pipe>>;
+    fn parse_milters(&self, available_keys: &[u32]) -> super::Result<Vec<Milter>>;
 }
 
 impl ConfigSession for Config {
-    fn parse_session_config(&self, ctx: &ConfigContext) -> super::Result<SessionConfig> {
-        let available_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-        ];
+    fn parse_session_config(&self) -> super::Result<SessionConfig> {
+        let available_keys = &[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP];
 
         Ok(SessionConfig {
             duration: self
-                .parse_if_block("session.duration", ctx, &available_keys)?
+                .parse_if_block("session.duration", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(Duration::from_secs(15 * 60))),
             transfer_limit: self
-                .parse_if_block("session.transfer-limit", ctx, &available_keys)?
+                .parse_if_block("session.transfer-limit", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(250 * 1024 * 1024)),
             timeout: self
-                .parse_if_block::<Option<Duration>>("session.timeout", ctx, &available_keys)?
-                .unwrap_or_else(|| IfBlock::new(Some(Duration::from_secs(5 * 60))))
-                .try_unwrap("session.timeout")
-                .unwrap_or_else(|_| IfBlock::new(Duration::from_secs(5 * 60))),
-            throttle: self.parse_session_throttle(ctx)?,
-            connect: self.parse_session_connect(ctx)?,
-            ehlo: self.parse_session_ehlo(ctx)?,
-            auth: self.parse_session_auth(ctx)?,
-            mail: self.parse_session_mail(ctx)?,
-            rcpt: self.parse_session_rcpt(ctx)?,
-            data: self.parse_session_data(ctx)?,
-            extensions: self.parse_extensions(ctx)?,
+                .parse_if_block("session.timeout", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
+                .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
+            throttle: self.parse_session_throttle()?,
+            connect: self.parse_session_connect()?,
+            ehlo: self.parse_session_ehlo()?,
+            auth: self.parse_session_auth()?,
+            mail: self.parse_session_mail()?,
+            rcpt: self.parse_session_rcpt()?,
+            data: self.parse_session_data()?,
+            extensions: self.parse_extensions()?,
         })
     }
 
-    fn parse_session_throttle(&self, ctx: &ConfigContext) -> super::Result<SessionThrottle> {
+    fn parse_session_throttle(&self) -> super::Result<SessionThrottle> {
         // Parse throttle
         let mut throttle = SessionThrottle {
             connect: Vec::new(),
@@ -93,18 +98,17 @@ impl ConfigSession for Config {
         };
         let all_throttles = self.parse_throttle(
             "session.throttle",
-            ctx,
             &[
-                EnvelopeKey::Sender,
-                EnvelopeKey::SenderDomain,
-                EnvelopeKey::Recipient,
-                EnvelopeKey::RecipientDomain,
-                EnvelopeKey::AuthenticatedAs,
-                EnvelopeKey::Listener,
-                EnvelopeKey::RemoteIp,
-                EnvelopeKey::LocalIp,
-                EnvelopeKey::Priority,
-                EnvelopeKey::HeloDomain,
+                V_SENDER,
+                V_SENDER_DOMAIN,
+                V_RECIPIENT,
+                V_RECIPIENT_DOMAIN,
+                V_AUTHENTICATED_AS,
+                V_LISTENER,
+                V_REMOTE_IP,
+                V_LOCAL_IP,
+                V_PRIORITY,
+                V_HELO_DOMAIN,
             ],
             THROTTLE_LISTENER
                 | THROTTLE_REMOTE_IP
@@ -118,13 +122,10 @@ impl ConfigSession for Config {
         )?;
         for t in all_throttles {
             if (t.keys & (THROTTLE_RCPT | THROTTLE_RCPT_DOMAIN)) != 0
-                || t.conditions.conditions.iter().any(|c| {
+                || t.expr.items().iter().any(|c| {
                     matches!(
                         c,
-                        Condition::Match {
-                            key: EnvelopeKey::Recipient | EnvelopeKey::RecipientDomain,
-                            ..
-                        }
+                        ExpressionItem::Variable(V_RECIPIENT | V_RECIPIENT_DOMAIN)
                     )
                 })
             {
@@ -135,16 +136,12 @@ impl ConfigSession for Config {
                     | THROTTLE_HELO_DOMAIN
                     | THROTTLE_AUTH_AS))
                 != 0
-                || t.conditions.conditions.iter().any(|c| {
+                || t.expr.items().iter().any(|c| {
                     matches!(
                         c,
-                        Condition::Match {
-                            key: EnvelopeKey::Sender
-                                | EnvelopeKey::SenderDomain
-                                | EnvelopeKey::HeloDomain
-                                | EnvelopeKey::AuthenticatedAs,
-                            ..
-                        }
+                        ExpressionItem::Variable(
+                            V_SENDER | V_SENDER_DOMAIN | V_HELO_DOMAIN | V_AUTHENTICATED_AS
+                        )
                     )
                 })
             {
@@ -157,310 +154,321 @@ impl ConfigSession for Config {
         Ok(throttle)
     }
 
-    fn parse_session_connect(&self, ctx: &ConfigContext) -> super::Result<Connect> {
-        let available_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-        ];
+    fn parse_session_connect(&self) -> super::Result<Connect> {
+        let available_keys = &[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP];
         Ok(Connect {
             script: self
-                .parse_if_block::<Option<String>>("session.connect.script", ctx, &available_keys)?
-                .unwrap_or_default()
-                .map_if_block(&ctx.scripts, "session.connect.script", "script")?,
+                .parse_if_block("session.connect.script", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_default(),
         })
     }
 
-    fn parse_extensions(&self, ctx: &ConfigContext) -> super::Result<Extensions> {
-        let available_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::AuthenticatedAs,
+    fn parse_extensions(&self) -> super::Result<Extensions> {
+        let available_keys = &[
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_AUTHENTICATED_AS,
         ];
 
         Ok(Extensions {
             pipelining: self
-                .parse_if_block("session.extensions.pipelining", ctx, &available_keys)?
+                .parse_if_block("session.extensions.pipelining", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             dsn: self
-                .parse_if_block("session.extensions.dsn", ctx, &available_keys)?
+                .parse_if_block("session.extensions.dsn", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             vrfy: self
-                .parse_if_block("session.extensions.vrfy", ctx, &available_keys)?
+                .parse_if_block("session.extensions.vrfy", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             expn: self
-                .parse_if_block("session.extensions.expn", ctx, &available_keys)?
+                .parse_if_block("session.extensions.expn", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             chunking: self
-                .parse_if_block("session.extensions.chunking", ctx, &available_keys)?
+                .parse_if_block("session.extensions.chunking", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             requiretls: self
-                .parse_if_block("session.extensions.requiretls", ctx, &available_keys)?
-                .unwrap_or_default(),
+                .parse_if_block("session.extensions.requiretls", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_else(|| IfBlock::new(true)),
             no_soliciting: self
-                .parse_if_block("session.extensions.no-soliciting", ctx, &available_keys)?
-                .unwrap_or_default(),
+                .parse_if_block("session.extensions.no-soliciting", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_else(|| IfBlock::new(false)),
             future_release: self
-                .parse_if_block("session.extensions.future-release", ctx, &available_keys)?
+                .parse_if_block("session.extensions.future-release", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
                 .unwrap_or_default(),
             deliver_by: self
-                .parse_if_block("session.extensions.deliver-by", ctx, &available_keys)?
+                .parse_if_block("session.extensions.deliver-by", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
                 .unwrap_or_default(),
             mt_priority: self
-                .parse_if_block("session.extensions.mt-priority", ctx, &available_keys)?
+                .parse_if_block("session.extensions.mt-priority", |name| {
+                    map_expr_token::<MtPriority>(name, available_keys)
+                })?
                 .unwrap_or_default(),
         })
     }
 
-    fn parse_session_ehlo(&self, ctx: &ConfigContext) -> super::Result<Ehlo> {
-        let available_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-        ];
+    fn parse_session_ehlo(&self) -> super::Result<Ehlo> {
+        let available_keys = &[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP];
 
         Ok(Ehlo {
             script: self
-                .parse_if_block::<Option<String>>("session.ehlo.script", ctx, &available_keys)?
-                .unwrap_or_default()
-                .map_if_block(&ctx.scripts, "session.ehlo.script", "script")?,
+                .parse_if_block("session.ehlo.script", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_default(),
             require: self
-                .parse_if_block("session.ehlo.require", ctx, &available_keys)?
+                .parse_if_block("session.ehlo.require", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             reject_non_fqdn: self
-                .parse_if_block("session.ehlo.reject-non-fqdn", ctx, &available_keys)?
+                .parse_if_block("session.ehlo.reject-non-fqdn", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
         })
     }
 
-    fn parse_session_auth(&self, ctx: &ConfigContext) -> super::Result<Auth> {
-        let available_keys = [
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::HeloDomain,
-        ];
-
-        let mechanisms = self
-            .parse_if_block::<Vec<Mechanism>>("session.auth.mechanisms", ctx, &available_keys)?
-            .unwrap_or_default();
+    fn parse_session_auth(&self) -> super::Result<Auth> {
+        let available_keys = &[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP, V_HELO_DOMAIN];
 
         Ok(Auth {
             directory: self
-                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-                    "session.auth.directory",
-                    ctx,
-                    &available_keys,
-                )?
-                .unwrap_or_default()
-                .map_if_block(
-                    &ctx.directory.directories,
-                    "session.auth.directory",
-                    "lookup list",
-                )?,
-            mechanisms: IfBlock {
-                if_then: mechanisms
-                    .if_then
-                    .into_iter()
-                    .map(|i| IfThen {
-                        conditions: i.conditions,
-                        then: i.then.into_iter().fold(0, |acc, m| acc | m.mechanism),
-                    })
-                    .collect(),
-                default: mechanisms
-                    .default
-                    .into_iter()
-                    .fold(0, |acc, m| acc | m.mechanism),
-            },
+                .parse_if_block("session.auth.directory", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_default(),
+            mechanisms: self
+                .parse_if_block("session.auth.mechanisms", |name| {
+                    map_expr_token::<Mechanism>(name, available_keys)
+                })?
+                .unwrap_or_default(),
             require: self
-                .parse_if_block("session.auth.require", ctx, &available_keys)?
+                .parse_if_block("session.auth.require", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(false)),
             errors_max: self
-                .parse_if_block("session.auth.errors.max", ctx, &available_keys)?
+                .parse_if_block("session.auth.errors.max", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(3)),
             errors_wait: self
-                .parse_if_block("session.auth.errors.wait", ctx, &available_keys)?
+                .parse_if_block("session.auth.errors.wait", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(Duration::from_secs(30))),
             allow_plain_text: self
-                .parse_if_block("session.auth.allow-plain-text", ctx, &available_keys)?
+                .parse_if_block("session.auth.allow-plain-text", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(false)),
             must_match_sender: self
-                .parse_if_block("session.auth.must-match-sender", ctx, &available_keys)?
+                .parse_if_block("session.auth.must-match-sender", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
         })
     }
 
-    fn parse_session_mail(&self, ctx: &ConfigContext) -> super::Result<Mail> {
-        let available_keys = [
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::HeloDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
+    fn parse_session_mail(&self) -> super::Result<Mail> {
+        let available_keys = &[
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_HELO_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
         ];
         Ok(Mail {
             script: self
-                .parse_if_block::<Option<String>>("session.mail.script", ctx, &available_keys)?
-                .unwrap_or_default()
-                .map_if_block(&ctx.scripts, "session.mail.script", "script")?,
+                .parse_if_block("session.mail.script", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_default(),
             rewrite: self
-                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-                    "session.mail.rewrite",
-                    ctx,
-                    &available_keys,
-                )?
+                .parse_if_block("session.mail.rewrite", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_default(),
         })
     }
 
-    fn parse_session_rcpt(&self, ctx: &ConfigContext) -> super::Result<Rcpt> {
-        let available_keys = [
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::HeloDomain,
+    fn parse_session_rcpt(&self) -> super::Result<Rcpt> {
+        let available_keys = &[
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_HELO_DOMAIN,
         ];
-        let available_keys_full = [
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Recipient,
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::HeloDomain,
+        let available_keys_full = &[
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_RECIPIENT,
+            V_RECIPIENT_DOMAIN,
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_HELO_DOMAIN,
         ];
         Ok(Rcpt {
             script: self
-                .parse_if_block::<Option<String>>("session.rcpt.script", ctx, &available_keys_full)?
-                .unwrap_or_default()
-                .map_if_block(&ctx.scripts, "session.rcpt.script", "script")?,
+                .parse_if_block("session.rcpt.script", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys_full)
+                })?
+                .unwrap_or_default(),
             relay: self
-                .parse_if_block("session.rcpt.relay", ctx, &available_keys_full)?
+                .parse_if_block("session.rcpt.relay", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys_full)
+                })?
                 .unwrap_or_else(|| IfBlock::new(false)),
             directory: self
-                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-                    "session.rcpt.directory",
-                    ctx,
-                    &available_keys_full,
-                )?
-                .unwrap_or_default()
-                .map_if_block(
-                    &ctx.directory.directories,
-                    "session.rcpt.directory",
-                    "lookup list",
-                )?,
+                .parse_if_block("session.rcpt.directory", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys_full)
+                })?
+                .unwrap_or_default(),
             errors_max: self
-                .parse_if_block("session.rcpt.errors.max", ctx, &available_keys)?
+                .parse_if_block("session.rcpt.errors.max", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(10)),
             errors_wait: self
-                .parse_if_block("session.rcpt.errors.wait", ctx, &available_keys)?
+                .parse_if_block("session.rcpt.errors.wait", |name| {
+                    map_expr_token::<Duration>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(Duration::from_secs(30))),
             max_recipients: self
-                .parse_if_block("session.rcpt.max-recipients", ctx, &available_keys)?
+                .parse_if_block("session.rcpt.max-recipients", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(100)),
             rewrite: self
-                .parse_if_block::<Option<DynValue<EnvelopeKey>>>(
-                    "session.rcpt.rewrite",
-                    ctx,
-                    &available_keys_full,
-                )?
+                .parse_if_block("session.rcpt.rewrite", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys_full)
+                })?
                 .unwrap_or_default(),
         })
     }
 
-    fn parse_session_data(&self, ctx: &ConfigContext) -> super::Result<Data> {
-        let available_keys = [
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::AuthenticatedAs,
-            EnvelopeKey::Listener,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::Priority,
-            EnvelopeKey::HeloDomain,
+    fn parse_session_data(&self) -> super::Result<Data> {
+        let available_keys = &[
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_PRIORITY,
+            V_HELO_DOMAIN,
         ];
         Ok(Data {
             script: self
-                .parse_if_block::<Option<String>>("session.data.script", ctx, &available_keys)?
-                .unwrap_or_default()
-                .map_if_block(&ctx.scripts, "session.data.script", "script")?,
+                .parse_if_block("session.data.script", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
+                .unwrap_or_default(),
             max_messages: self
-                .parse_if_block("session.data.limits.messages", ctx, &available_keys)?
+                .parse_if_block("session.data.limits.messages", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(10)),
             max_message_size: self
-                .parse_if_block("session.data.limits.size", ctx, &available_keys)?
+                .parse_if_block("session.data.limits.size", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(25 * 1024 * 1024)),
             max_received_headers: self
-                .parse_if_block("session.data.limits.received-headers", ctx, &available_keys)?
+                .parse_if_block("session.data.limits.received-headers", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(50)),
             add_received: self
-                .parse_if_block("session.data.add-headers.received", ctx, &available_keys)?
+                .parse_if_block("session.data.add-headers.received", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             add_received_spf: self
-                .parse_if_block(
-                    "session.data.add-headers.received-spf",
-                    ctx,
-                    &available_keys,
-                )?
+                .parse_if_block("session.data.add-headers.received-spf", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             add_return_path: self
-                .parse_if_block("session.data.add-headers.return-path", ctx, &available_keys)?
+                .parse_if_block("session.data.add-headers.return-path", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             add_auth_results: self
-                .parse_if_block(
-                    "session.data.add-headers.auth-results",
-                    ctx,
-                    &available_keys,
-                )?
+                .parse_if_block("session.data.add-headers.auth-results", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             add_message_id: self
-                .parse_if_block("session.data.add-headers.message-id", ctx, &available_keys)?
+                .parse_if_block("session.data.add-headers.message-id", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
             add_date: self
-                .parse_if_block("session.data.add-headers.date", ctx, &available_keys)?
+                .parse_if_block("session.data.add-headers.date", |name| {
+                    map_expr_token::<NoConstants>(name, available_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(true)),
-            pipe_commands: self.parse_pipes(ctx, &available_keys)?,
-            milters: self.parse_milters(ctx, &available_keys)?,
+            pipe_commands: self.parse_pipes(available_keys)?,
+            milters: self.parse_milters(available_keys)?,
         })
     }
 
-    fn parse_pipes(
-        &self,
-        ctx: &ConfigContext,
-        available_keys: &[EnvelopeKey],
-    ) -> super::Result<Vec<Pipe>> {
+    fn parse_pipes(&self, available_keys: &[u32]) -> super::Result<Vec<Pipe>> {
         let mut pipes = Vec::new();
         for id in self.sub_keys("session.data.pipe", "") {
             pipes.push(Pipe {
                 command: self
-                    .parse_if_block(("session.data.pipe", id, "command"), ctx, available_keys)?
+                    .parse_if_block(("session.data.pipe", id, "command"), |name| {
+                        map_expr_token::<NoConstants>(name, available_keys)
+                    })?
                     .unwrap_or_default(),
                 arguments: self
-                    .parse_if_block(("session.data.pipe", id, "arguments"), ctx, available_keys)?
+                    .parse_if_block(("session.data.pipe", id, "arguments"), |name| {
+                        map_expr_token::<NoConstants>(name, available_keys)
+                    })?
                     .unwrap_or_default(),
                 timeout: self
-                    .parse_if_block(("session.data.pipe", id, "timeout"), ctx, available_keys)?
+                    .parse_if_block(("session.data.pipe", id, "timeout"), |name| {
+                        map_expr_token::<Duration>(name, available_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(30))),
             })
         }
         Ok(pipes)
     }
 
-    fn parse_milters(
-        &self,
-        ctx: &ConfigContext,
-        available_keys: &[EnvelopeKey],
-    ) -> super::Result<Vec<Milter>> {
+    fn parse_milters(&self, available_keys: &[u32]) -> super::Result<Vec<Milter>> {
         let mut milters = Vec::new();
         for id in self.sub_keys("session.data.milter", "") {
             let hostname = self
@@ -469,7 +477,9 @@ impl ConfigSession for Config {
             let port = self.property_require(("session.data.milter", id, "port"))?;
             milters.push(Milter {
                 enable: self
-                    .parse_if_block(("session.data.milter", id, "enable"), ctx, available_keys)?
+                    .parse_if_block(("session.data.milter", id, "enable"), |name| {
+                        map_expr_token::<NoConstants>(name, available_keys)
+                    })?
                     .unwrap_or_default(),
                 addrs: format!("{}:{}", hostname, port)
                     .to_socket_addrs()
@@ -520,64 +530,104 @@ impl ConfigSession for Config {
     }
 }
 
-struct Mechanism {
-    mechanism: u64,
-}
+#[derive(Default)]
+pub struct Mechanism(u64);
 
 impl ParseValue for Mechanism {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        Ok(Mechanism {
-            mechanism: match value.to_ascii_uppercase().as_str() {
-                "LOGIN" => AUTH_LOGIN,
-                "PLAIN" => AUTH_PLAIN,
-                "XOAUTH2" => AUTH_XOAUTH2,
-                "OAUTHBEARER" => AUTH_OAUTHBEARER,
-                /*"SCRAM-SHA-256-PLUS" => AUTH_SCRAM_SHA_256_PLUS,
-                "SCRAM-SHA-256" => AUTH_SCRAM_SHA_256,
-                "SCRAM-SHA-1-PLUS" => AUTH_SCRAM_SHA_1_PLUS,
-                "SCRAM-SHA-1" => AUTH_SCRAM_SHA_1,
-                "XOAUTH" => AUTH_XOAUTH,
-                "9798-M-DSA-SHA1" => AUTH_9798_M_DSA_SHA1,
-                "9798-M-ECDSA-SHA1" => AUTH_9798_M_ECDSA_SHA1,
-                "9798-M-RSA-SHA1-ENC" => AUTH_9798_M_RSA_SHA1_ENC,
-                "9798-U-DSA-SHA1" => AUTH_9798_U_DSA_SHA1,
-                "9798-U-ECDSA-SHA1" => AUTH_9798_U_ECDSA_SHA1,
-                "9798-U-RSA-SHA1-ENC" => AUTH_9798_U_RSA_SHA1_ENC,
-                "EAP-AES128" => AUTH_EAP_AES128,
-                "EAP-AES128-PLUS" => AUTH_EAP_AES128_PLUS,
-                "ECDH-X25519-CHALLENGE" => AUTH_ECDH_X25519_CHALLENGE,
-                "ECDSA-NIST256P-CHALLENGE" => AUTH_ECDSA_NIST256P_CHALLENGE,
-                "EXTERNAL" => AUTH_EXTERNAL,
-                "GS2-KRB5" => AUTH_GS2_KRB5,
-                "GS2-KRB5-PLUS" => AUTH_GS2_KRB5_PLUS,
-                "GSS-SPNEGO" => AUTH_GSS_SPNEGO,
-                "GSSAPI" => AUTH_GSSAPI,
-                "KERBEROS_V4" => AUTH_KERBEROS_V4,
-                "KERBEROS_V5" => AUTH_KERBEROS_V5,
-                "NMAS-SAMBA-AUTH" => AUTH_NMAS_SAMBA_AUTH,
-                "NMAS_AUTHEN" => AUTH_NMAS_AUTHEN,
-                "NMAS_LOGIN" => AUTH_NMAS_LOGIN,
-                "NTLM" => AUTH_NTLM,
-                "OAUTH10A" => AUTH_OAUTH10A,
-                "OPENID20" => AUTH_OPENID20,
-                "OTP" => AUTH_OTP,
-                "SAML20" => AUTH_SAML20,
-                "SECURID" => AUTH_SECURID,
-                "SKEY" => AUTH_SKEY,
-                "SPNEGO" => AUTH_SPNEGO,
-                "SPNEGO-PLUS" => AUTH_SPNEGO_PLUS,
-                "SXOVER-PLUS" => AUTH_SXOVER_PLUS,
-                "CRAM-MD5" => AUTH_CRAM_MD5,
-                "DIGEST-MD5" => AUTH_DIGEST_MD5,
-                "ANONYMOUS" => AUTH_ANONYMOUS,*/
-                _ => {
-                    return Err(format!(
-                        "Unsupported mechanism {:?} for property {:?}.",
-                        value,
-                        key.as_key()
-                    ))
+        Ok(Mechanism(match value.to_ascii_uppercase().as_str() {
+            "LOGIN" => AUTH_LOGIN,
+            "PLAIN" => AUTH_PLAIN,
+            "XOAUTH2" => AUTH_XOAUTH2,
+            "OAUTHBEARER" => AUTH_OAUTHBEARER,
+            /*"SCRAM-SHA-256-PLUS" => AUTH_SCRAM_SHA_256_PLUS,
+            "SCRAM-SHA-256" => AUTH_SCRAM_SHA_256,
+            "SCRAM-SHA-1-PLUS" => AUTH_SCRAM_SHA_1_PLUS,
+            "SCRAM-SHA-1" => AUTH_SCRAM_SHA_1,
+            "XOAUTH" => AUTH_XOAUTH,
+            "9798-M-DSA-SHA1" => AUTH_9798_M_DSA_SHA1,
+            "9798-M-ECDSA-SHA1" => AUTH_9798_M_ECDSA_SHA1,
+            "9798-M-RSA-SHA1-ENC" => AUTH_9798_M_RSA_SHA1_ENC,
+            "9798-U-DSA-SHA1" => AUTH_9798_U_DSA_SHA1,
+            "9798-U-ECDSA-SHA1" => AUTH_9798_U_ECDSA_SHA1,
+            "9798-U-RSA-SHA1-ENC" => AUTH_9798_U_RSA_SHA1_ENC,
+            "EAP-AES128" => AUTH_EAP_AES128,
+            "EAP-AES128-PLUS" => AUTH_EAP_AES128_PLUS,
+            "ECDH-X25519-CHALLENGE" => AUTH_ECDH_X25519_CHALLENGE,
+            "ECDSA-NIST256P-CHALLENGE" => AUTH_ECDSA_NIST256P_CHALLENGE,
+            "EXTERNAL" => AUTH_EXTERNAL,
+            "GS2-KRB5" => AUTH_GS2_KRB5,
+            "GS2-KRB5-PLUS" => AUTH_GS2_KRB5_PLUS,
+            "GSS-SPNEGO" => AUTH_GSS_SPNEGO,
+            "GSSAPI" => AUTH_GSSAPI,
+            "KERBEROS_V4" => AUTH_KERBEROS_V4,
+            "KERBEROS_V5" => AUTH_KERBEROS_V5,
+            "NMAS-SAMBA-AUTH" => AUTH_NMAS_SAMBA_AUTH,
+            "NMAS_AUTHEN" => AUTH_NMAS_AUTHEN,
+            "NMAS_LOGIN" => AUTH_NMAS_LOGIN,
+            "NTLM" => AUTH_NTLM,
+            "OAUTH10A" => AUTH_OAUTH10A,
+            "OPENID20" => AUTH_OPENID20,
+            "OTP" => AUTH_OTP,
+            "SAML20" => AUTH_SAML20,
+            "SECURID" => AUTH_SECURID,
+            "SKEY" => AUTH_SKEY,
+            "SPNEGO" => AUTH_SPNEGO,
+            "SPNEGO-PLUS" => AUTH_SPNEGO_PLUS,
+            "SXOVER-PLUS" => AUTH_SXOVER_PLUS,
+            "CRAM-MD5" => AUTH_CRAM_MD5,
+            "DIGEST-MD5" => AUTH_DIGEST_MD5,
+            "ANONYMOUS" => AUTH_ANONYMOUS,*/
+            _ => {
+                return Err(format!(
+                    "Unsupported mechanism {:?} for property {:?}.",
+                    value,
+                    key.as_key()
+                ))
+            }
+        }))
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Mechanism {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Integer(value) => Ok(Mechanism(value as u64)),
+            Variable::Array(items) => {
+                let mut mechanism = 0;
+
+                for item in items {
+                    match item {
+                        Variable::Integer(value) => mechanism |= value as u64,
+                        _ => return Err(()),
+                    }
                 }
-            },
-        })
+
+                Ok(Mechanism(mechanism))
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<Mechanism> for Constant {
+    fn from(value: Mechanism) -> Self {
+        Constant::Integer(value.0 as i64)
+    }
+}
+
+impl ConstantValue for Mechanism {}
+
+impl From<Mechanism> for u64 {
+    fn from(value: Mechanism) -> Self {
+        value.0
+    }
+}
+
+impl From<u64> for Mechanism {
+    fn from(value: u64) -> Self {
+        Mechanism(value)
     }
 }

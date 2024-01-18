@@ -32,14 +32,13 @@ use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, StatusCode};
 use store::{Store, Stores};
-use utils::config::{Config, ServerProtocol, Servers};
+use utils::config::{if_block::IfBlock, Config, ServerProtocol, Servers};
 
 use crate::smtp::{
     inbound::TestQueueEvent, management::send_manage_request, outbound::start_test_server,
     session::TestSession, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::IfBlock,
     core::{management::Message, Session, SMTP},
     queue::{
         manager::{Queue, SpawnQueue},
@@ -99,13 +98,13 @@ async fn manage_queue() {
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
         .unwrap();
-    core.queue.config.directory = directory.directories.get("local").unwrap().clone();
+    core.shared.default_directory = directory.directories.get("local").unwrap().clone();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
-    core.session.config.extensions.future_release = IfBlock::new(Some(Duration::from_secs(86400)));
+    core.session.config.extensions.future_release = IfBlock::new(Duration::from_secs(86400));
     core.session.config.extensions.dsn = IfBlock::new(true);
-    core.queue.config.retry = IfBlock::new(vec![Duration::from_secs(1000)]);
-    core.queue.config.notify = IfBlock::new(vec![Duration::from_secs(2000)]);
+    core.queue.config.retry = IfBlock::new(Duration::from_secs(1000));
+    core.queue.config.notify = IfBlock::new(Duration::from_secs(2000));
     core.queue.config.expire = IfBlock::new(Duration::from_secs(3000));
     let local_qr = core.init_test_queue("smtp_manage_queue_local");
     let core = Arc::new(core);

@@ -89,7 +89,7 @@ impl Directory {
     }
 
     pub async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>> {
-        let mut address = self.subaddressing.to_subaddress(email);
+        let mut address = self.subaddressing.to_subaddress(email).await;
         for _ in 0..2 {
             let result = match &self.store {
                 DirectoryInner::Internal(store) => store.email_to_ids(address.as_ref()).await,
@@ -102,7 +102,7 @@ impl Directory {
 
             if !result.is_empty() {
                 return Ok(result);
-            } else if let Some(catch_all) = self.catch_all.to_catch_all(email) {
+            } else if let Some(catch_all) = self.catch_all.to_catch_all(email).await {
                 address = catch_all;
             } else {
                 break;
@@ -139,7 +139,7 @@ impl Directory {
 
     pub async fn rcpt(&self, email: &str) -> crate::Result<bool> {
         // Expand subaddress
-        let mut address = self.subaddressing.to_subaddress(email);
+        let mut address = self.subaddressing.to_subaddress(email).await;
 
         // Check cache
         if let Some(cache) = &self.cache {
@@ -164,7 +164,7 @@ impl Directory {
                     cache.set_rcpt(address.as_ref(), true);
                 }
                 return Ok(true);
-            } else if let Some(catch_all) = self.catch_all.to_catch_all(email) {
+            } else if let Some(catch_all) = self.catch_all.to_catch_all(email).await {
                 // Check cache
                 if let Some(cache) = &self.cache {
                     if let Some(result) = cache.get_rcpt(catch_all.as_ref()) {
@@ -186,7 +186,7 @@ impl Directory {
     }
 
     pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
-        let address = self.subaddressing.to_subaddress(address);
+        let address = self.subaddressing.to_subaddress(address).await;
         match &self.store {
             DirectoryInner::Internal(store) => store.vrfy(address.as_ref()).await,
             DirectoryInner::Ldap(store) => store.vrfy(address.as_ref()).await,
@@ -198,7 +198,7 @@ impl Directory {
     }
 
     pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
-        let address = self.subaddressing.to_subaddress(address);
+        let address = self.subaddressing.to_subaddress(address).await;
         match &self.store {
             DirectoryInner::Internal(store) => store.expn(address.as_ref()).await,
             DirectoryInner::Ldap(store) => store.expn(address.as_ref()).await,

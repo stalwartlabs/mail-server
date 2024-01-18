@@ -25,7 +25,6 @@ use deadpool::{
     managed::{Manager, Pool},
     Runtime,
 };
-use regex::Regex;
 use std::{sync::Arc, time::Duration};
 use store::{Store, Stores};
 use utils::config::{
@@ -40,7 +39,7 @@ use crate::{
         imap::ImapDirectory, internal::manage::ManageDirectory, ldap::LdapDirectory,
         memory::MemoryDirectory, smtp::SmtpDirectory, sql::SqlDirectory,
     },
-    AddressMapping, Directories, Directory, DirectoryInner, Lookup,
+    AddressMapping, Directories, Directory, DirectoryInner,
 };
 
 use super::cache::CachedDirectory;
@@ -64,7 +63,6 @@ impl ConfigDirectory for Config {
     ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
-            lookups: AHashMap::new(),
         };
 
         for id in self.sub_keys("directory", ".type") {
@@ -154,16 +152,6 @@ impl ConfigDirectory for Config {
                 blocked_ips: servers.blocked_ips.clone(),
             });
 
-            // Add lookups
-            config.lookups.insert(
-                format!("{id}/domains"),
-                Lookup::DomainExists(directory.clone()),
-            );
-            config.lookups.insert(
-                format!("{id}/recipients"),
-                Lookup::EmailExists(directory.clone()),
-            );
-
             // Add directory
             config.directories.insert(id.to_string(), directory);
         }
@@ -183,18 +171,10 @@ impl AddressMapping {
                     "Invalid value for address mapping {key:?}: {value:?}",
                 )),
             }
-        } else if let Some(regex) = config.value((key.as_str(), "map")) {
-            Ok(AddressMapping::Custom {
-                regex: Regex::new(regex).map_err(|err| {
-                    format!(
-                        "Failed to compile regular expression {:?} for key {:?}: {}.",
-                        regex,
-                        (&key, "map").as_key(),
-                        err
-                    )
-                })?,
-                mapping: config.property_require((key.as_str(), "to"))?,
-            })
+        } else if let Some(if_block) =
+            config.parse_if_block(key, |name| Err(format!("Invalid variable name {name:?}.",)))?
+        {
+            Ok(AddressMapping::Custom(if_block))
         } else {
             Ok(AddressMapping::Disable)
         }

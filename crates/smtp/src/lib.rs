@@ -21,14 +21,17 @@
  * for more details.
 */
 
-use crate::core::{
-    throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, SessionCore, TlsConnectors, SMTP,
+use crate::{
+    config::RelayHost,
+    core::{
+        throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, SessionCore, TlsConnectors, SMTP,
+    },
 };
 use std::sync::Arc;
 
 use config::{
-    auth::ConfigAuth, queue::ConfigQueue, remote::ConfigHost, report::ConfigReport,
-    resolver::ConfigResolver, scripts::ConfigSieve, session::ConfigSession, ConfigContext, Host,
+    auth::ConfigAuth, queue::ConfigQueue, report::ConfigReport, resolver::ConfigResolver,
+    scripts::ConfigSieve, session::ConfigSession, shared::ConfigShared, ConfigContext,
 };
 use dashmap::DashMap;
 use directory::Directories;
@@ -66,35 +69,30 @@ impl SMTP {
         config_ctx.directory = directory.clone();
         config_ctx.stores = stores.clone();
 
-        // Parse remote hosts
-        config.parse_remote_hosts(&mut config_ctx)?;
+        // Parse configuration
+        config.parse_signatures(&mut config_ctx)?;
+        let sieve_config = config.parse_sieve(&mut config_ctx)?;
+        let session_config = config.parse_session_config()?;
+        let queue_config = config.parse_queue()?;
+        let mail_auth_config = config.parse_mail_auth()?;
+        let report_config = config.parse_reports()?;
+        let mut shared = config.parse_shared(&config_ctx)?;
 
         // Add local delivery host
         #[cfg(feature = "local_delivery")]
         {
-            config_ctx.hosts.insert(
+            shared.relay_hosts.insert(
                 "local".to_string(),
-                Host {
+                RelayHost {
                     address: String::new(),
                     port: 0,
                     protocol: ServerProtocol::Jmap,
-                    concurrency: Default::default(),
-                    timeout: Default::default(),
                     tls_implicit: Default::default(),
                     tls_allow_invalid_certs: Default::default(),
-                    username: Default::default(),
-                    secret: Default::default(),
+                    auth: None,
                 },
             );
         }
-
-        // Parse configuration
-        config.parse_signatures(&mut config_ctx)?;
-        let sieve_config = config.parse_sieve(&mut config_ctx)?;
-        let session_config = config.parse_session_config(&config_ctx)?;
-        let queue_config = config.parse_queue(&config_ctx)?;
-        let mail_auth_config = config.parse_mail_auth(&config_ctx)?;
-        let report_config = config.parse_reports(&config_ctx)?;
 
         // Build core
         let (queue_tx, queue_rx) = mpsc::channel(1024);
@@ -152,6 +150,7 @@ impl SMTP {
             },
             mail_auth: mail_auth_config,
             sieve: sieve_config,
+            shared,
             #[cfg(feature = "local_delivery")]
             delivery_tx,
         });

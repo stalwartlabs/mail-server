@@ -6434,6 +6434,7 @@ dependencies = [
  "proxy-header",
  "rand",
  "rcgen",
+ "regex",
  "reqwest",
  "ring 0.17.7",
  "rustls 0.22.1",

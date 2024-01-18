@@ -27,14 +27,13 @@ use std::{
 };
 
 use mail_auth::{IpLookupStrategy, MX};
-use utils::config::ServerProtocol;
+use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::TestQueueEvent, outbound::start_test_server, session::TestSession, TestConfig,
     TestSMTP,
 };
 use smtp::{
-    config::IfBlock,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt},
 };

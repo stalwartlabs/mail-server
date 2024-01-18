@@ -61,8 +61,8 @@ pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<SieveCont
 
 pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => Some(&ctx.core.queue.config.lookup_store),
+        Variable::String(v) if !v.is_empty() => ctx.core.shared.lookup_stores.get(v.as_ref()),
+        _ => Some(&ctx.core.shared.default_lookup_store),
     };
 
     if let Some(store) = store {
@@ -107,8 +107,8 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
 
 pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => Some(&ctx.core.queue.config.lookup_store),
+        Variable::String(v) if !v.is_empty() => ctx.core.shared.lookup_stores.get(v.as_ref()),
+        _ => Some(&ctx.core.shared.default_lookup_store),
     };
 
     if let Some(store) = store {
@@ -136,8 +136,8 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
 
 pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.core.sieve.lookup_stores.get(v.as_ref()),
-        _ => Some(&ctx.core.queue.config.lookup_store),
+        Variable::String(v) if !v.is_empty() => ctx.core.shared.lookup_stores.get(v.as_ref()),
+        _ => Some(&ctx.core.shared.default_lookup_store),
     };
 
     if let Some(store) = store {
@@ -399,8 +399,8 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
 
     if !domain.is_empty() {
         let directory = match &ctx.arguments[0] {
-            Variable::String(v) if !v.is_empty() => ctx.core.sieve.directories.get(v.as_ref()),
-            _ => Some(&ctx.core.queue.config.directory),
+            Variable::String(v) if !v.is_empty() => ctx.core.shared.directories.get(v.as_ref()),
+            _ => Some(&ctx.core.shared.default_directory),
         };
 
         if let Some(directory) = directory {

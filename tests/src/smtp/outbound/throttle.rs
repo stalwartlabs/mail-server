@@ -28,13 +28,13 @@ use std::{
 };
 
 use mail_auth::MX;
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, ParseTestConfig,
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Message, QueueEnvelope},
 };
@@ -86,9 +86,9 @@ async fn throttle_outbound() {
     let mut core = SMTP::test();
     let mut local_qr = core.init_test_queue("smtp_throttle_outbound");
     core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.throttle = THROTTLE.parse_queue_throttle(&ConfigContext::new(&[]));
-    core.queue.config.retry = IfBlock::new(vec![Duration::from_secs(86400)]);
-    core.queue.config.notify = IfBlock::new(vec![Duration::from_secs(86400)]);
+    core.queue.config.throttle = THROTTLE.parse_queue_throttle();
+    core.queue.config.retry = IfBlock::new(Duration::from_secs(86400));
+    core.queue.config.notify = IfBlock::new(Duration::from_secs(86400));
     core.queue.config.expire = IfBlock::new(Duration::from_secs(86400));
 
     let core = Arc::new(core);
@@ -106,15 +106,14 @@ async fn throttle_outbound() {
     let mut in_flight = vec![];
     let throttle = &core.queue.config.throttle;
     for t in &throttle.sender {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "", ""),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "", ""),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(!in_flight.is_empty());
 
@@ -130,15 +129,14 @@ async fn throttle_outbound() {
     // Expect rate limit throttle for sender domain 'foobar.net'
     test_message.return_path_domain = "foobar.net".to_string();
     for t in &throttle.sender {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "", ""),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "", ""),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(in_flight.is_empty());
     session
@@ -161,15 +159,14 @@ async fn throttle_outbound() {
     // Expect concurrency throttle for recipient domain 'example.org'
     test_message.return_path_domain = "test.net".to_string();
     for t in &throttle.rcpt {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "example.org", ""),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "example.org", ""),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(!in_flight.is_empty());
     session
@@ -188,15 +185,14 @@ async fn throttle_outbound() {
 
     // Expect rate limit throttle for recipient domain 'example.org'
     for t in &throttle.rcpt {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "example.net", ""),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "example.net", ""),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(in_flight.is_empty());
     session
@@ -235,15 +231,14 @@ async fn throttle_outbound() {
         Instant::now() + Duration::from_secs(10),
     );
     for t in &throttle.host {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "test.org", "mx.test.org"),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "test.org", "mx.test.org"),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(!in_flight.is_empty());
     session
@@ -270,15 +265,14 @@ async fn throttle_outbound() {
         Instant::now() + Duration::from_secs(10),
     );
     for t in &throttle.host {
-        core.queue
-            .is_allowed(
-                t,
-                &QueueEnvelope::test(&test_message, "example.net", "mx.test.net"),
-                &mut in_flight,
-                &span,
-            )
-            .await
-            .unwrap();
+        core.is_allowed(
+            t,
+            &QueueEnvelope::test(&test_message, "example.net", "mx.test.net"),
+            &mut in_flight,
+            &span,
+        )
+        .await
+        .unwrap();
     }
     assert!(in_flight.is_empty());
     session

@@ -32,10 +32,10 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock},
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
+use utils::config::if_block::IfBlock;
 
 #[tokio::test]
 async fn queue_retry() {
@@ -54,20 +54,16 @@ async fn queue_retry() {
     let config = &mut core.session.config.rcpt;
     config.relay = IfBlock::new(true);
     let config = &mut core.session.config.extensions;
-    config.deliver_by = IfBlock::new(Some(Duration::from_secs(86400)));
-    config.future_release = IfBlock::new(Some(Duration::from_secs(86400)));
+    config.deliver_by = IfBlock::new(Duration::from_secs(86400));
+    config.future_release = IfBlock::new(Duration::from_secs(86400));
     let config = &mut core.queue.config;
-    config.retry = IfBlock::new(vec![
-        Duration::from_millis(100),
-        Duration::from_millis(200),
-        Duration::from_millis(300),
-    ]);
+    config.retry = "[100ms, 200ms, 300ms]".parse_if();
     config.notify = "[{if = 'sender-domain', eq = 'test.org', then = ['150ms', '200ms']},
     {else = ['15h', '22h']}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.expire = "[{if = 'sender-domain', eq = 'test.org', then = '600ms'},
     {else = '1d'}]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
 
     // Create test message
     let core = Arc::new(core);

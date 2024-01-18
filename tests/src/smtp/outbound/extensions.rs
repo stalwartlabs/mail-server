@@ -28,7 +28,7 @@ use std::{
 
 use mail_auth::MX;
 use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVER};
-use utils::config::ServerProtocol;
+use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -37,7 +37,6 @@ use crate::smtp::{
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::IfBlock,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt},
 };

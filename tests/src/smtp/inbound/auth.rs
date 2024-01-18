@@ -24,14 +24,14 @@
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::{Store, Stores};
-use utils::config::{Config, DynValue, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::{ConfigContext, EnvelopeKey, IfBlock},
+    config::ConfigContext,
     core::{Session, State, SMTP},
 };
 
@@ -70,28 +70,26 @@ async fn auth() {
 
     config.require = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
-        .parse_if(&ctx);
+        .parse_if();
     config.directory = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'local'},
     {else = false}]"
-        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.directory.directories, "", "")
-        .unwrap();
+        .parse_if();
     config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 2},
     {else = 3}]"
-        .parse_if(&ctx);
-    config.errors_wait = "'100ms'".parse_if(&ctx);
+        .parse_if();
+    config.errors_wait = "'100ms'".parse_if();
     config.mechanisms = format!(
         "[{{if = 'remote-ip', eq = '10.0.0.1', then = {}}},
     {{else = 0}}]",
         AUTH_PLAIN | AUTH_LOGIN
     )
     .as_str()
-    .parse_if(&ctx);
+    .parse_if();
     config.must_match_sender = IfBlock::new(true);
     core.session.config.extensions.future_release =
         r"[{if = 'authenticated-as', ne = '', then = '1d'},
     {else = false}]"
-            .parse_if(&ConfigContext::new(&[]));
+            .parse_if();
 
     // EHLO should not advertise plain text auth without TLS
     let mut session = Session::test(core);

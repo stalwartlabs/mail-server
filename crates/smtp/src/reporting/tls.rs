@@ -93,7 +93,9 @@ impl GenerateTlsReport for Arc<SMTP> {
             let config = &core.report.config.tls;
             let mut report = TlsReport {
                 organization_name: handle
-                    .block_on(config.org_name.eval(&RecipientDomain::new(domain.as_str())))
+                    .block_on(
+                        core.eval_if(&config.org_name, &RecipientDomain::new(domain.as_str())),
+                    )
                     .clone(),
                 date_range: DateRange {
                     start_datetime: DateTime::from_timestamp(path.created as i64),
@@ -101,9 +103,7 @@ impl GenerateTlsReport for Arc<SMTP> {
                 },
                 contact_info: handle
                     .block_on(
-                        config
-                            .contact_info
-                            .eval(&RecipientDomain::new(domain.as_str())),
+                        core.eval_if(&config.contact_info, &RecipientDomain::new(domain.as_str())),
                     )
                     .clone(),
                 report_id: format!(
@@ -245,20 +245,24 @@ impl GenerateTlsReport for Arc<SMTP> {
 
             // Deliver report over SMTP
             if !rcpts.is_empty() {
-                let from_addr =
-                    handle.block_on(config.address.eval(&RecipientDomain::new(domain.as_str())));
+                let from_addr = handle
+                    .block_on(core.eval_if(&config.address, &RecipientDomain::new(domain.as_str())))
+                    .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
                 let mut message = Vec::with_capacity(path.size);
                 let _ = report.write_rfc5322_from_bytes(
                     &domain,
-                    handle.block_on(
-                        core.report
-                            .config
-                            .submitter
-                            .eval(&RecipientDomain::new(domain.as_str())),
-                    ),
+                    &handle
+                        .block_on(core.eval_if(
+                            &core.report.config.submitter,
+                            &RecipientDomain::new(domain.as_str()),
+                        ))
+                        .unwrap_or_else(|| "localhost".to_string()),
                     (
                         handle
-                            .block_on(config.name.eval(&RecipientDomain::new(domain.as_str())))
+                            .block_on(
+                                core.eval_if(&config.name, &RecipientDomain::new(domain.as_str())),
+                            )
+                            .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                             .as_str(),
                         from_addr.as_str(),
                     ),
@@ -269,7 +273,7 @@ impl GenerateTlsReport for Arc<SMTP> {
 
                 // Send report
                 handle.block_on(core.send_report(
-                    from_addr,
+                    &from_addr,
                     rcpts.iter(),
                     message,
                     &config.sign,
@@ -291,12 +295,12 @@ impl GenerateTlsReport for Arc<SMTP> {
 impl Scheduler {
     pub async fn schedule_tls(&mut self, event: Box<TlsEvent>, core: &SMTP) {
         let max_size = core
-            .report
-            .config
-            .tls
-            .max_size
-            .eval(&RecipientDomain::new(event.domain.as_str()))
-            .await;
+            .eval_if(
+                &core.report.config.tls.max_size,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+            .unwrap_or(25 * 1024 * 1024);
         let policy_hash = event.policy.to_hash();
 
         let (path, pos, create) = match self.reports.entry(ReportType::Tls(event.domain)) {
@@ -436,10 +440,10 @@ impl Scheduler {
                     }
                 }
             }
-        } else if path.size < *max_size {
+        } else if path.size < max_size {
             // Append to existing report
             path.size +=
-                json_append(&path.path[pos].inner, &event.failure, *max_size - path.size).await;
+                json_append(&path.path[pos].inner, &event.failure, max_size - path.size).await;
         }
     }
 }

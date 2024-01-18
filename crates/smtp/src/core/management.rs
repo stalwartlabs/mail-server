@@ -239,9 +239,8 @@ impl SMTP {
                     })
                 {
                     match self
-                        .queue
-                        .config
-                        .directory
+                        .shared
+                        .default_directory
                         .authenticate(&Credentials::Plain { username, secret }, remote_addr, false)
                         .await
                     {

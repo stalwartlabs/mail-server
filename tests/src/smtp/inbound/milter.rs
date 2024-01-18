@@ -27,7 +27,7 @@ use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
-    config::{ConfigContext, IfBlock, Milter},
+    config::Milter,
     core::{Session, SessionData, SMTP},
     inbound::milter::{
         receiver::{FrameResult, Receiver},
@@ -39,6 +39,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -79,7 +80,7 @@ async fn milter_session() {
     options.version = 6
     tls = false
     "#
-    .parse_milters(&ConfigContext::new(&[]));
+    .parse_milters();
 
     // Build session
     let mut session = Session::test(core);

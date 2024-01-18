@@ -26,7 +26,7 @@ use std::time::Duration;
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::{config::ConfigStore, Store};
-use utils::config::{Config, DynValue, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::{
     directory::DirectoryStore,
@@ -37,7 +37,7 @@ use crate::{
     store::TempDir,
 };
 use smtp::{
-    config::{ConfigContext, EnvelopeKey, IfBlock},
+    config::{session::Mechanism, ConfigContext},
     core::{Session, SMTP},
 };
 
@@ -142,19 +142,13 @@ async fn lookup_sql() {
 
     // Enable AUTH
     let config = &mut core.session.config.auth;
-    config.directory = r"'sql'"
-        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.directory.directories, "", "")
-        .unwrap();
-    config.mechanisms = IfBlock::new(AUTH_PLAIN | AUTH_LOGIN);
+    config.directory = r"'sql'".parse_if();
+    config.mechanisms = IfBlock::new(Mechanism::from(AUTH_PLAIN | AUTH_LOGIN));
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable VRFY/EXPN/RCPT
     let config = &mut core.session.config.rcpt;
-    config.directory = r"'sql'"
-        .parse_if::<Option<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.directory.directories, "", "")
-        .unwrap();
+    config.directory = r"'sql'".parse_if();
     config.relay = IfBlock::new(false);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
@@ -162,7 +156,7 @@ async fn lookup_sql() {
     core.session.config.extensions.requiretls =
         r"[{if = 'remote-ip', in-list = 'sql/is_ip_allowed', then = true},
     {else = false}]"
-            .parse_if(&ctx);
+            .parse_if();
     let mut session = Session::test(core);
     session.data.remote_ip = "10.0.0.50".parse().unwrap();
     session.eval_session_params().await;

@@ -21,11 +21,11 @@
  * for more details.
 */
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
-use smtp_proto::{MailFrom, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
-use utils::listener::SessionStream;
+use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use utils::{config::Rate, listener::SessionStream};
 
 use crate::{
     core::{Session, SessionAddress},
@@ -124,7 +124,12 @@ impl<T: SessionStream> Session<T> {
         .into();
 
         // Sieve filtering
-        if let Some(script) = self.core.session.config.mail.script.eval(self).await {
+        if let Some(script) = self
+            .core
+            .eval_if::<String, _>(&self.core.session.config.mail.script, self)
+            .await
+            .and_then(|name| self.core.get_sieve_script(&name))
+        {
             match self
                 .run_script(script.clone(), self.build_script_parameters("mail"))
                 .await
@@ -159,14 +164,8 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting
         if let Some(new_address) = self
             .core
-            .session
-            .config
-            .mail
-            .rewrite
-            .eval_and_capture(self)
+            .eval_if::<String, _>(&self.core.session.config.mail.rewrite, self)
             .await
-            .into_value(self)
-            .map(|s| s.into_owned())
         {
             let mail_from = self.data.mail_from.as_mut().unwrap();
             if new_address.contains('@') {
@@ -183,14 +182,24 @@ impl<T: SessionStream> Session<T> {
         // Validate parameters
         let config = &self.core.session.config.extensions;
         let config_data = &self.core.session.config.data;
-        if (from.flags & MAIL_REQUIRETLS) != 0 && !*config.requiretls.eval(self).await {
+        if (from.flags & MAIL_REQUIRETLS) != 0
+            && !self
+                .core
+                .eval_if(&config.requiretls, self)
+                .await
+                .unwrap_or(false)
+        {
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 REQUIRETLS has been disabled.\r\n")
                 .await;
         }
         if (from.flags & (MAIL_BY_NOTIFY | MAIL_BY_RETURN)) != 0 {
-            if let Some(duration) = config.deliver_by.eval(self).await {
+            if let Some(duration) = self
+                .core
+                .eval_if::<Duration, _>(&config.deliver_by, self)
+                .await
+            {
                 if from.by.checked_abs().unwrap_or(0) as u64 <= duration.as_secs()
                     && (from.by.is_positive() || (from.flags & MAIL_BY_NOTIFY) != 0)
                 {
@@ -215,7 +224,12 @@ impl<T: SessionStream> Session<T> {
             }
         }
         if from.mt_priority != 0 {
-            if config.mt_priority.eval(self).await.is_some() {
+            if self
+                .core
+                .eval_if::<MtPriority, _>(&config.mt_priority, self)
+                .await
+                .is_some()
+            {
                 if (-6..6).contains(&from.mt_priority) {
                     self.data.priority = from.mt_priority as i16;
                 } else {
@@ -229,14 +243,25 @@ impl<T: SessionStream> Session<T> {
                     .await;
             }
         }
-        if from.size > 0 && from.size > *config_data.max_message_size.eval(self).await {
+        if from.size > 0
+            && from.size
+                > self
+                    .core
+                    .eval_if(&config_data.max_message_size, self)
+                    .await
+                    .unwrap_or(25 * 1024 * 1024)
+        {
             self.data.mail_from = None;
             return self
                 .write(b"552 5.3.4 Message too big for system.\r\n")
                 .await;
         }
         if from.hold_for != 0 || from.hold_until != 0 {
-            if let Some(max_hold) = config.future_release.eval(self).await {
+            if let Some(max_hold) = self
+                .core
+                .eval_if::<Duration, _>(&config.future_release, self)
+                .await
+            {
                 let max_hold = max_hold.as_secs();
                 let hold_for = if from.hold_for != 0 {
                     from.hold_for
@@ -270,7 +295,7 @@ impl<T: SessionStream> Session<T> {
                     .await;
             }
         }
-        if has_dsn && !*config.dsn.eval(self).await {
+        if has_dsn && !self.core.eval_if(&config.dsn, self).await.unwrap_or(false) {
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 DSN extension has been disabled.\r\n")
@@ -366,9 +391,11 @@ impl<T: SessionStream> Session<T> {
         // Send report
         if let (Some(recipient), Some(rate)) = (
             spf_output.report_address(),
-            self.core.report.config.spf.send.eval(self).await,
+            self.core
+                .eval_if::<Rate, _>(&self.core.report.config.spf.send, self)
+                .await,
         ) {
-            self.send_spf_report(recipient, rate, !result, spf_output)
+            self.send_spf_report(recipient, &rate, !result, spf_output)
                 .await;
         }
 

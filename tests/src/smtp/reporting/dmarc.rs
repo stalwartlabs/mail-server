@@ -32,7 +32,7 @@ use mail_auth::{
     dmarc::Dmarc,
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
-use utils::config::DynValue;
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
@@ -41,7 +41,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext, EnvelopeKey, IfBlock},
+    config::{AggregateFrequency, ConfigContext},
     core::SMTP,
     reporting::{
         dmarc::GenerateDmarcReport,
@@ -64,18 +64,14 @@ async fn report_dmarc() {
     let ctx = ConfigContext::new(&[]).parse_signatures();
     let temp_dir = make_temp_dir("smtp_report_dmarc_test", true);
     let config = &mut core.report.config;
-    config.path = IfBlock::new(temp_dir.temp_dir.clone());
+    config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
-    config.dmarc_aggregate.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
+    config.dmarc_aggregate.sign = "['rsa']".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
     config.dmarc_aggregate.address = IfBlock::new("reports@example.org".to_string());
-    config.dmarc_aggregate.org_name = IfBlock::new("Foobar, Inc.".to_string().into());
-    config.dmarc_aggregate.contact_info =
-        IfBlock::new("https://foobar.org/contact".to_string().into());
+    config.dmarc_aggregate.org_name = IfBlock::new("Foobar, Inc.".to_string());
+    config.dmarc_aggregate.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
     let mut scheduler = Scheduler::default();
 
     // Authorize external report for foobar.org

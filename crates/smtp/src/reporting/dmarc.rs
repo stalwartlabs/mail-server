@@ -36,6 +36,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     runtime::Handle,
 };
+use utils::config::Rate;
 
 use crate::{
     config::AggregateFrequency,
@@ -73,9 +74,10 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         let config = &self.core.report.config.dmarc;
 
         // Send failure report
-        if let (Some(failure_rate), Some(report_options)) =
-            (config.send.eval(self).await, dmarc_output.failure_report())
-        {
+        if let (Some(failure_rate), Some(report_options)) = (
+            self.core.eval_if::<Rate, _>(&config.send, self).await,
+            dmarc_output.failure_report(),
+        ) {
             // Verify that any external reporting addresses are authorized
             let rcpts = match self
                 .core
@@ -89,7 +91,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                         rcpts
                             .into_iter()
                             .filter_map(|rcpt| {
-                                if self.throttle_rcpt(rcpt.uri(), failure_rate, "dmarc") {
+                                if self.throttle_rcpt(rcpt.uri(), &failure_rate, "dmarc") {
                                     rcpt.uri().into()
                                 } else {
                                     None
@@ -126,7 +128,11 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             // Throttle recipient
             if !rcpts.is_empty() {
                 let mut report = Vec::with_capacity(128);
-                let from_addr = config.address.eval(self).await;
+                let from_addr = self
+                    .core
+                    .eval_if(&config.address, self)
+                    .await
+                    .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
                 let mut auth_failure = self
                     .new_auth_failure(AuthFailureType::Dmarc, rejected)
                     .with_authentication_results(auth_results.to_string())
@@ -205,9 +211,20 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                         IdentityAlignment::Spf
                     })
                     .write_rfc5322(
-                        (config.name.eval(self).await.as_str(), from_addr.as_str()),
+                        (
+                            self.core
+                                .eval_if(&config.name, self)
+                                .await
+                                .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                                .as_str(),
+                            from_addr.as_str(),
+                        ),
                         &rcpts.join(", "),
-                        config.subject.eval(self).await,
+                        &self
+                            .core
+                            .eval_if(&config.subject, self)
+                            .await
+                            .unwrap_or_else(|| "DMARC Report".to_string()),
                         &mut report,
                     )
                     .ok();
@@ -224,7 +241,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 // Send report
                 self.core
                     .send_report(
-                        from_addr,
+                        &from_addr,
                         rcpts.into_iter(),
                         report,
                         &config.sign,
@@ -246,12 +263,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         // Send agregate reports
         let interval = self
             .core
-            .report
-            .config
-            .dmarc_aggregate
-            .send
-            .eval(self)
-            .await;
+            .eval_if(&self.core.report.config.dmarc_aggregate.send, self)
+            .await
+            .unwrap_or(AggregateFrequency::Never);
 
         if matches!(interval, AggregateFrequency::Never) || dmarc_record.rua().is_empty() {
             return;
@@ -286,7 +300,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 domain: dmarc_output.into_domain(),
                 report_record,
                 dmarc_record,
-                interval: *interval,
+                interval,
             })
             .await;
     }
@@ -377,59 +391,60 @@ impl GenerateDmarcReport for Arc<SMTP> {
                 .with_date_range_end(deliver_at)
                 .with_report_id(format!("{}_{}", domain.policy, path.created))
                 .with_email(
-                    handle.block_on(
-                        config
-                            .address
-                            .eval(&RecipientDomain::new(domain.inner.as_str())),
-                    ),
+                    handle
+                        .block_on(core.eval_if(
+                            &config.address,
+                            &RecipientDomain::new(domain.inner.as_str()),
+                        ))
+                        .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
                 );
-            if let Some(org_name) = handle.block_on(
-                config
-                    .org_name
-                    .eval(&RecipientDomain::new(domain.inner.as_str())),
-            ) {
+            if let Some(org_name) = handle.block_on(core.eval_if::<String, _>(
+                &config.org_name,
+                &RecipientDomain::new(domain.inner.as_str()),
+            )) {
                 report = report.with_org_name(org_name);
             }
-            if let Some(contact_info) = handle.block_on(
-                config
-                    .contact_info
-                    .eval(&RecipientDomain::new(domain.inner.as_str())),
-            ) {
+            if let Some(contact_info) = handle.block_on(core.eval_if::<String, _>(
+                &config.contact_info,
+                &RecipientDomain::new(domain.inner.as_str()),
+            )) {
                 report = report.with_extra_contact_info(contact_info);
             }
             for (record, count) in record_map {
                 report.add_record(record.with_count(count));
             }
-            let from_addr = handle.block_on(
-                config
-                    .address
-                    .eval(&RecipientDomain::new(domain.inner.as_str())),
-            );
+            let from_addr = handle
+                .block_on(core.eval_if(
+                    &config.address,
+                    &RecipientDomain::new(domain.inner.as_str()),
+                ))
+                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
             let mut message = Vec::with_capacity(path.size);
-            let _ = report.write_rfc5322(
-                handle.block_on(
-                    core.report
-                        .config
-                        .submitter
-                        .eval(&RecipientDomain::new(domain.inner.as_str())),
-                ),
-                (
-                    handle
-                        .block_on(
-                            config
-                                .name
-                                .eval(&RecipientDomain::new(domain.inner.as_str())),
-                        )
-                        .as_str(),
-                    from_addr.as_str(),
-                ),
-                rua.iter().map(|a| a.as_str()),
-                &mut message,
-            );
+            let _ =
+                report.write_rfc5322(
+                    &handle
+                        .block_on(core.eval_if(
+                            &core.report.config.submitter,
+                            &RecipientDomain::new(domain.inner.as_str()),
+                        ))
+                        .unwrap_or_else(|| "localhost".to_string()),
+                    (
+                        handle
+                            .block_on(core.eval_if(
+                                &config.name,
+                                &RecipientDomain::new(domain.inner.as_str()),
+                            ))
+                            .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                            .as_str(),
+                        from_addr.as_str(),
+                    ),
+                    rua.iter().map(|a| a.as_str()),
+                    &mut message,
+                );
 
             // Send report
             handle.block_on(core.send_report(
-                from_addr,
+                &from_addr,
                 rua.iter(),
                 message,
                 &config.sign,
@@ -453,12 +468,12 @@ impl GenerateDmarcReport for Arc<SMTP> {
 impl Scheduler {
     pub async fn schedule_dmarc(&mut self, event: Box<DmarcEvent>, core: &SMTP) {
         let max_size = core
-            .report
-            .config
-            .dmarc_aggregate
-            .max_size
-            .eval(&RecipientDomain::new(event.domain.as_str()))
-            .await;
+            .eval_if(
+                &core.report.config.dmarc_aggregate.max_size,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+            .unwrap_or(25 * 1024 * 1024);
 
         let policy = event.dmarc_record.to_hash();
         let (create, path) = match self.reports.entry(ReportType::Dmarc(ReportPolicy {
@@ -506,9 +521,9 @@ impl Scheduler {
                     policy,
                 }));
             }
-        } else if path.size < *max_size {
+        } else if path.size < max_size {
             // Append to existing report
-            path.size += json_append(&path.path, &event.report_record, *max_size - path.size).await;
+            path.size += json_append(&path.path, &event.report_record, max_size - path.size).await;
         }
     }
 }

@@ -34,34 +34,38 @@ use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::config::QueueConfig;
-use crate::core::QueueCore;
+use crate::core::SMTP;
 
 use super::{
     instant_to_timestamp, DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message,
     Recipient, SimpleEnvelope, Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
-impl QueueCore {
+impl SMTP {
     pub async fn send_dsn(&self, attempt: &mut DeliveryAttempt) {
         if !attempt.message.return_path.is_empty() {
-            if let Some(dsn) = attempt.build_dsn(&self.config).await {
+            if let Some(dsn) = attempt.build_dsn(self).await {
                 let mut dsn_message = Message::new_boxed("", "", "");
                 dsn_message
                     .add_recipient_parts(
                         &attempt.message.return_path,
                         &attempt.message.return_path_lcase,
                         &attempt.message.return_path_domain,
-                        &self.config,
+                        self,
                     )
                     .await;
 
                 // Sign message
-                let signature = attempt
-                    .message
-                    .sign(&self.config.dsn.sign, &dsn, &attempt.span)
+                let signature = self
+                    .sign_message(
+                        &mut attempt.message,
+                        &self.queue.config.dsn.sign,
+                        &dsn,
+                        &attempt.span,
+                    )
                     .await;
-                self.queue_message(dsn_message, signature.as_deref(), &dsn, &attempt.span)
+                self.queue
+                    .queue_message(dsn_message, signature.as_deref(), &dsn, &attempt.span)
                     .await;
             }
         } else {
@@ -71,7 +75,8 @@ impl QueueCore {
 }
 
 impl DeliveryAttempt {
-    pub async fn build_dsn(&mut self, config: &QueueConfig) -> Option<Vec<u8>> {
+    pub async fn build_dsn(&mut self, core: &SMTP) -> Option<Vec<u8>> {
+        let config = &core.queue.config;
         let now = Instant::now();
 
         let mut txt_success = String::new();
@@ -232,14 +237,15 @@ impl DeliveryAttempt {
                 {
                     let envelope = SimpleEnvelope::new(&self.message, &domain.domain);
 
-                    if let Some(next_notify) = config
-                        .notify
-                        .eval(&envelope)
+                    if let Some(next_notify) = core
+                        .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
                         .await
-                        .get((domain.notify.inner + 1) as usize)
+                        .and_then(|notify| {
+                            notify.into_iter().nth((domain.notify.inner + 1) as usize)
+                        })
                     {
                         domain.notify.inner += 1;
-                        domain.notify.due = Instant::now() + *next_notify;
+                        domain.notify.due = Instant::now() + next_notify;
                     } else {
                         domain.notify.due = domain.expires + Duration::from_secs(10);
                     }
@@ -250,14 +256,23 @@ impl DeliveryAttempt {
         }
 
         // Obtain hostname and sender addresses
-        let from_name = config.dsn.name.eval(self.message.as_ref()).await;
-        let from_addr = config.dsn.address.eval(self.message.as_ref()).await;
-        let reporting_mta = config.hostname.eval(self.message.as_ref()).await;
+        let from_name = core
+            .eval_if(&config.dsn.name, self.message.as_ref())
+            .await
+            .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
+        let from_addr = core
+            .eval_if(&config.dsn.address, self.message.as_ref())
+            .await
+            .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
+        let reporting_mta = core
+            .eval_if(&config.hostname, self.message.as_ref())
+            .await
+            .unwrap_or_else(|| String::from("localhost"));
 
         // Prepare DSN
         let mut dsn_header = String::with_capacity(dsn.len() + 128);
         self.message
-            .write_dsn_headers(&mut dsn_header, reporting_mta);
+            .write_dsn_headers(&mut dsn_header, &reporting_mta);
         let dsn = dsn_header + &dsn;
 
         // Fetch up to 1024 bytes of message headers

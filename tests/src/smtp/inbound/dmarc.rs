@@ -35,7 +35,7 @@ use mail_auth::{
     spf::Spf,
 };
 use store::{Store, Stores};
-use utils::config::{Config, DynValue, Rate, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent, TestReportingEvent},
@@ -43,9 +43,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{
-        AggregateFrequency, ConfigContext, EnvelopeKey, IfBlock, MaybeDynValue, VerifyStrategy,
-    },
+    config::{AggregateFrequency, ConfigContext, VerifyStrategy},
     core::{Session, SMTP},
 };
 
@@ -139,9 +137,7 @@ async fn dmarc() {
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
-        directory.directories.get("local").unwrap().clone(),
-    )));
+    config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config;
     config.data.add_auth_results = IfBlock::new(true);
@@ -152,10 +148,7 @@ async fn dmarc() {
     config.data.add_received_spf = IfBlock::new(true);
 
     let config = &mut core.report.config;
-    config.dkim.send = IfBlock::new(Some(Rate {
-        requests: 1,
-        period: Duration::from_secs(1),
-    }));
+    config.dkim.send = "[1, 1s]".parse_if();
     config.dmarc.send = config.dkim.send.clone();
     config.spf.send = config.dkim.send.clone();
     config.dmarc_aggregate.send = IfBlock::new(AggregateFrequency::Daily);
@@ -163,27 +156,18 @@ async fn dmarc() {
     let config = &mut core.mail_auth;
     config.spf.verify_ehlo = "[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
     { else = 'relaxed' }]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dmarc.verify = IfBlock::new(VerifyStrategy::Strict);
     config.arc.verify = config.dmarc.verify.clone();
     config.dkim.verify = "[{if = 'sender-domain', eq = 'test.net', then = 'relaxed'},
     { else = 'strict' }]"
-        .parse_if(&ConfigContext::new(&[]));
+        .parse_if();
 
     let config = &mut core.report.config;
-    config.spf.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
-    config.dmarc.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
-    config.dkim.sign = "['rsa']"
-        .parse_if::<Vec<DynValue<EnvelopeKey>>>(&ctx)
-        .map_if_block(&ctx.signers, "", "")
-        .unwrap();
+    config.spf.sign = "['rsa']".parse_if();
+    config.dmarc.sign = "['rsa']".parse_if();
+    config.dkim.sign = "['rsa']".parse_if();
 
     // SPF must pass
     let core = Arc::new(core);

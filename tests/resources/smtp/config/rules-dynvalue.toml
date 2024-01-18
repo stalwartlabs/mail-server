@@ -9,96 +9,55 @@ remote-ip = "A:B:C::D:E"
 mx = "mx.somedomain.com"
 authenticated-as = "john@foobar.org"
 priority = -4
-listener = 123
+listener = "smtp"
 helo-domain = "hi-domain.net"
 
 [eval."eq"]
 test = [
-    {if = "sender", eq = "bill@foo.net", then = "${0}"},
+    {if = "sender = 'bill@foo.net'", then = "sender"},
     {else = false}
 ]
 expect = "bill@foo.net"
 
 [eval."starts-with"]
 test = [
-    {if = "rcpt-domain", starts-with = "foo", then = "${0}${{0}}"},
+    {if = "starts_with(rcpt_domain, 'foo')", then = "'mx.' + rcpt_domain"},
     {else = false}
 ]
-expect = "foo.example.org${0}"
+expect = "mx.foo.example.org"
 
 [eval."regex"]
 test = [
-    {if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$", then = "${1}+${2}@${3}"},
+    {if = "matches('^([^.]+)@([^.]+)\.(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3"},
     {else = false}
 ]
 expect = "user+foo@example.org"
 
 [eval."regex-full"]
 test = [
-    {if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$", then = "${0}"},
+    {if = "matches('^([^.]+)@([^.]+)\.(.+)$', rcpt)", then = "rcpt"},
     {else = false}
 ]
 expect = "user@foo.example.org"
 
 [eval."envelope-match"]
 test = [
-    {if = "authenticated-as", matches = "^([^.]+)@(.+)$", then = "rcpt ${rcpt} listener ${listener} ip ${local-ip} priority ${priority}"},
+    {if = "matches('^([^.]+)@(.+)$', authenticated_as)", then = "'rcpt ' + rcpt + ' listener ' + listener + ' ip ' + local_ip + ' priority ' + priority"},
     {else = false}
 ]
-expect = "rcpt user@foo.example.org listener 123 ip 192.168.9.3 priority -4"
+expect = "rcpt user@foo.example.org listener smtp ip 192.168.9.3 priority -4"
 
 [eval."static-match"]
 test = [
-    {if = "authenticated-as", matches = "^([^.]+)@(.+)$", then = "hello world"},
+    {if = "matches('^([^.]+)@(.+)$', authenticated_as)", then = "'hello world'"},
     {else = false}
 ]
 expect = "hello world"
 
 [eval."no-match"]
 test = [
-    {if = "authenticated-as", matches = "^([^.]+)@([^.]+)\.(.+)$org", then = "${1}+${2}@${3}"},
+    {if = "matches('^([^.]+)@([^.]+)\.(.+)$org', authenticated_as)", then = "'test'"},
     {else = false}
 ]
 expect = false
-
-[store."list_mx/domains"]
-type = "memory"
-format = "list"
-values = ["mx"]
-
-[store."list_foo/domains"]
-type = "memory"
-format = "list"
-values = ["foo"]
-
-[store."list_123/domains"]
-type = "memory"
-format = "list"
-values = ["123"]
-
-[maybe-eval."dyn_mx"]
-test = [
-    {if = "mx", matches = "([^.]+)\.(.+)$", then = "list_${1}/domains"},
-    {else = false}
-]
-expect = "mx"
-
-[maybe-eval."dyn_foo"]
-test = [
-    {if = "sender-domain", matches = "([^.]+)\.(.+)$", then = "list_${1}/domains"},
-    {else = false}
-]
-expect = "foo"
-
-[maybe-eval."static_mx"]
-test = "list_mx/domains"
-expect = "mx"
-
-[maybe-eval."static_foo"]
-test = "list_foo/domains"
-expect = "foo"
-
-[maybe-eval."dyn_123"]
-test = "list_${listener}/domains"
-expect = "123"
 

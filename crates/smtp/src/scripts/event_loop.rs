@@ -74,7 +74,7 @@ impl SMTP {
             match result {
                 Ok(event) => match event {
                     Event::IncludeScript { name, optional } => {
-                        if let Some(script) = self.sieve.scripts.get(name.as_str()) {
+                        if let Some(script) = self.shared.scripts.get(name.as_str()) {
                             input = Input::script(name, script.clone());
                         } else if optional {
                             input = false.into();
@@ -95,7 +95,7 @@ impl SMTP {
                     } => {
                         input = false.into();
                         'outer: for list in lists {
-                            if let Some(store) = self.sieve.lookup_stores.get(&list) {
+                            if let Some(store) = self.shared.lookup_stores.get(&list) {
                                 for value in &values {
                                     if let Ok(LookupValue::Value { .. }) = handle.block_on(
                                         store.key_get::<VariableExists>(LookupKey::Key(
@@ -163,22 +163,19 @@ impl SMTP {
                         );
                         match recipient {
                             Recipient::Address(rcpt) => {
-                                handle.block_on(message.add_recipient(rcpt, &self.queue.config));
+                                handle.block_on(message.add_recipient(rcpt, self));
                             }
                             Recipient::Group(rcpt_list) => {
                                 for rcpt in rcpt_list {
-                                    handle
-                                        .block_on(message.add_recipient(rcpt, &self.queue.config));
+                                    handle.block_on(message.add_recipient(rcpt, self));
                                 }
                             }
                             Recipient::List(list) => {
-                                if let Some(list) = self.sieve.lookup_stores.get(&list) {
+                                if let Some(list) = self.shared.lookup_stores.get(&list) {
                                     if let LookupStore::Memory(list) = list {
                                         if let MemoryStore::List(list) = list.as_ref() {
                                             for rcpt in &list.set {
-                                                handle.block_on(
-                                                    message.add_recipient(rcpt, &self.queue.config),
-                                                );
+                                                handle.block_on(message.add_recipient(rcpt, self));
                                             }
                                         }
                                     }

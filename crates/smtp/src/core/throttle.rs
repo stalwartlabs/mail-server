@@ -24,16 +24,13 @@
 use ::utils::listener::limiter::{ConcurrencyLimiter, RateLimiter};
 use dashmap::mapref::entry::Entry;
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::config::{KeyLookup, Rate};
+use utils::config::Rate;
 
-use std::{
-    hash::{BuildHasher, Hash, Hasher},
-    net::IpAddr,
-};
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use crate::config::*;
 
-use super::Session;
+use super::{eval::*, ResolveVariable, Session};
 
 #[derive(Debug)]
 pub struct Limiter {
@@ -85,17 +82,21 @@ impl BuildHasher for ThrottleKeyHasherBuilder {
 }
 
 impl QueueQuota {
-    pub fn new_key(&self, e: &impl KeyLookup<Key = EnvelopeKey>) -> ThrottleKey {
+    pub fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
-            hasher.update(e.key(&EnvelopeKey::Recipient).as_bytes());
+            hasher.update(e.resolve_variable(V_RECIPIENT).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_RCPT_DOMAIN) != 0 {
-            hasher.update(e.key(&EnvelopeKey::RecipientDomain).as_bytes());
+            hasher.update(
+                e.resolve_variable(V_RECIPIENT_DOMAIN)
+                    .to_string()
+                    .as_bytes(),
+            );
         }
         if (self.keys & THROTTLE_SENDER) != 0 {
-            let sender = e.key(&EnvelopeKey::Sender);
+            let sender = e.resolve_variable(V_SENDER).into_string();
             hasher.update(
                 if !sender.is_empty() {
                     sender.as_ref()
@@ -106,7 +107,7 @@ impl QueueQuota {
             );
         }
         if (self.keys & THROTTLE_SENDER_DOMAIN) != 0 {
-            let sender_domain = e.key(&EnvelopeKey::SenderDomain);
+            let sender_domain = e.resolve_variable(V_SENDER_DOMAIN).into_string();
             hasher.update(
                 if !sender_domain.is_empty() {
                     sender_domain.as_ref()
@@ -132,17 +133,21 @@ impl QueueQuota {
 }
 
 impl Throttle {
-    pub fn new_key(&self, e: &impl KeyLookup<Key = EnvelopeKey>) -> ThrottleKey {
+    pub fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
-            hasher.update(e.key(&EnvelopeKey::Recipient).as_bytes());
+            hasher.update(e.resolve_variable(V_RECIPIENT).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_RCPT_DOMAIN) != 0 {
-            hasher.update(e.key(&EnvelopeKey::RecipientDomain).as_bytes());
+            hasher.update(
+                e.resolve_variable(V_RECIPIENT_DOMAIN)
+                    .to_string()
+                    .as_bytes(),
+            );
         }
         if (self.keys & THROTTLE_SENDER) != 0 {
-            let sender = e.key(&EnvelopeKey::Sender);
+            let sender = e.resolve_variable(V_SENDER).into_string();
             hasher.update(
                 if !sender.is_empty() {
                     sender.as_ref()
@@ -153,7 +158,7 @@ impl Throttle {
             );
         }
         if (self.keys & THROTTLE_SENDER_DOMAIN) != 0 {
-            let sender_domain = e.key(&EnvelopeKey::SenderDomain);
+            let sender_domain = e.resolve_variable(V_SENDER_DOMAIN).into_string();
             hasher.update(
                 if !sender_domain.is_empty() {
                     sender_domain.as_ref()
@@ -164,36 +169,26 @@ impl Throttle {
             );
         }
         if (self.keys & THROTTLE_HELO_DOMAIN) != 0 {
-            hasher.update(e.key(&EnvelopeKey::HeloDomain).as_bytes());
+            hasher.update(e.resolve_variable(V_HELO_DOMAIN).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_AUTH_AS) != 0 {
-            hasher.update(e.key(&EnvelopeKey::AuthenticatedAs).as_bytes());
+            hasher.update(
+                e.resolve_variable(V_AUTHENTICATED_AS)
+                    .to_string()
+                    .as_bytes(),
+            );
         }
         if (self.keys & THROTTLE_LISTENER) != 0 {
-            hasher.update(&e.key_as_int(&EnvelopeKey::Listener).to_ne_bytes()[..]);
+            hasher.update(e.resolve_variable(V_LISTENER).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_MX) != 0 {
-            hasher.update(e.key(&EnvelopeKey::Mx).as_bytes());
+            hasher.update(e.resolve_variable(V_MX).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_REMOTE_IP) != 0 {
-            match &e.key_as_ip(&EnvelopeKey::RemoteIp) {
-                IpAddr::V4(ip) => {
-                    hasher.update(&ip.octets()[..]);
-                }
-                IpAddr::V6(ip) => {
-                    hasher.update(&ip.octets()[..]);
-                }
-            }
+            hasher.update(e.resolve_variable(V_REMOTE_IP).to_string().as_bytes());
         }
         if (self.keys & THROTTLE_LOCAL_IP) != 0 {
-            match &e.key_as_ip(&EnvelopeKey::LocalIp) {
-                IpAddr::V4(ip) => {
-                    hasher.update(&ip.octets()[..]);
-                }
-                IpAddr::V6(ip) => {
-                    hasher.update(&ip.octets()[..]);
-                }
-            }
+            hasher.update(e.resolve_variable(V_LOCAL_IP).to_string().as_bytes());
         }
         if let Some(rate_limit) = &self.rate {
             hasher.update(&rate_limit.period.as_secs().to_ne_bytes()[..]);
@@ -220,7 +215,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         };
 
         for t in throttles {
-            if t.conditions.conditions.is_empty() || t.conditions.eval(self).await {
+            if t.expr.is_empty()
+                || self
+                    .core
+                    .eval_expr(&t.expr, self, "throttle")
+                    .await
+                    .unwrap_or(false)
+            {
                 if (t.keys & THROTTLE_RCPT_DOMAIN) != 0 {
                     let d = self
                         .data

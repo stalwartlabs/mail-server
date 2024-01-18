@@ -34,6 +34,8 @@ use mail_auth::{
 };
 use smtp_proto::MtPriority;
 
+use crate::expr::{Constant, Variable};
+
 use super::{Config, Rate};
 
 impl Config {
@@ -229,13 +231,13 @@ impl Config {
     }
 }
 
-pub trait ParseValues: Sized + Default {
-    fn parse_values(key: impl AsKey, values: &Config) -> super::Result<Self>;
-    fn is_multivalue() -> bool;
-}
-
 pub trait ParseValue: Sized {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self>;
+}
+
+pub trait ConstantValue:
+    ParseValue + for<'x> TryFrom<Variable<'x>> + Into<Constant> + Sized
+{
 }
 
 pub trait ParseKey<T: ParseValue> {
@@ -257,43 +259,6 @@ impl<T: ParseValue> ParseKey<T> for String {
 impl<T: ParseValue> ParseKey<T> for &String {
     fn parse_key(&self, key: impl AsKey) -> super::Result<T> {
         T::parse_value(key, self.as_str())
-    }
-}
-
-impl<T: ParseValue> ParseValues for Vec<T> {
-    fn is_multivalue() -> bool {
-        true
-    }
-
-    fn parse_values(key: impl AsKey, values: &Config) -> super::Result<Self> {
-        let mut result = Vec::new();
-        for (key, value) in values.values(key) {
-            result.push(T::parse_value(key, value)?);
-        }
-        Ok(result)
-    }
-}
-
-impl<T: ParseValue + Default> ParseValues for T {
-    fn is_multivalue() -> bool {
-        false
-    }
-
-    fn parse_values(key: impl AsKey, values: &Config) -> super::Result<Self> {
-        let mut iter = values.values(key);
-        if let Some((key, value)) = iter.next() {
-            let result = T::parse_value(key, value)?;
-            if iter.next().is_none() {
-                Ok(result)
-            } else {
-                Err(format!(
-                    "Property {:?} cannot have multiple values.",
-                    key.as_key()
-                ))
-            }
-        } else {
-            Ok(T::default())
-        }
     }
 }
 
@@ -470,6 +435,35 @@ impl ParseValue for MtPriority {
     }
 }
 
+impl<'x> TryFrom<Variable<'x>> for MtPriority {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Integer(value) => match value {
+                0 => Ok(MtPriority::Mixer),
+                1 => Ok(MtPriority::Stanag4406),
+                2 => Ok(MtPriority::Nsep),
+                _ => Err(()),
+            },
+            Variable::String(value) => MtPriority::parse_value("", &value).map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<MtPriority> for Constant {
+    fn from(value: MtPriority) -> Self {
+        Constant::Integer(match value {
+            MtPriority::Mixer => 0,
+            MtPriority::Stanag4406 => 1,
+            MtPriority::Nsep => 2,
+        })
+    }
+}
+
+impl ConstantValue for MtPriority {}
+
 impl ParseValue for Canonicalization {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         match value {
@@ -502,6 +496,37 @@ impl ParseValue for IpLookupStrategy {
         })
     }
 }
+
+impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Integer(value) => match value {
+                0 => Ok(IpLookupStrategy::Ipv4Only),
+                1 => Ok(IpLookupStrategy::Ipv6Only),
+                2 => Ok(IpLookupStrategy::Ipv6thenIpv4),
+                3 => Ok(IpLookupStrategy::Ipv4thenIpv6),
+                _ => Err(()),
+            },
+            Variable::String(value) => IpLookupStrategy::parse_value("", &value).map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<IpLookupStrategy> for Constant {
+    fn from(value: IpLookupStrategy) -> Self {
+        Constant::Integer(match value {
+            IpLookupStrategy::Ipv4Only => 0,
+            IpLookupStrategy::Ipv6Only => 1,
+            IpLookupStrategy::Ipv6thenIpv4 => 2,
+            IpLookupStrategy::Ipv4thenIpv6 => 3,
+        })
+    }
+}
+
+impl ConstantValue for IpLookupStrategy {}
 
 impl ParseValue for Algorithm {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
@@ -567,6 +592,124 @@ impl ParseValue for Duration {
             })
     }
 }
+
+impl ConstantValue for Duration {}
+
+impl<'x> TryFrom<Variable<'x>> for Duration {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Integer(value) if value > 0 => Ok(Duration::from_millis(value as u64)),
+            Variable::Float(value) if value > 0.0 => Ok(Duration::from_millis(value as u64)),
+            Variable::String(value) if !value.is_empty() => {
+                Duration::parse_value("", &value).map_err(|_| ())
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<Duration> for Constant {
+    fn from(value: Duration) -> Self {
+        Constant::Integer(value.as_millis() as i64)
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Rate {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Array(items) if items.len() == 2 => {
+                let requests = items[0].to_integer().ok_or(())?;
+                let period = items[1].to_integer().ok_or(())?;
+
+                if requests > 0 && period > 0 {
+                    Ok(Rate {
+                        requests: requests as u64,
+                        period: Duration::from_millis(period as u64),
+                    })
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Ipv4Addr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Ipv6Addr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for IpAddr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x, T: TryFrom<Variable<'x>>> TryFrom<Variable<'x>> for Vec<T>
+where
+    Result<Vec<T>, ()>: FromIterator<Result<T, <T as TryFrom<Variable<'x>>>::Error>>,
+{
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        value
+            .into_array()
+            .into_iter()
+            .map(|v| T::try_from(v))
+            .collect()
+    }
+}
+
+pub struct NoConstants;
+
+impl<'x> TryFrom<Variable<'x>> for NoConstants {
+    type Error = ();
+
+    fn try_from(_: Variable<'x>) -> Result<Self, Self::Error> {
+        Err(())
+    }
+}
+
+impl From<NoConstants> for Constant {
+    fn from(_: NoConstants) -> Self {
+        Constant::Integer(0)
+    }
+}
+
+impl ParseValue for NoConstants {
+    fn parse_value(_: impl AsKey, _: &str) -> super::Result<Self> {
+        Err("".to_string())
+    }
+}
+
+impl ConstantValue for NoConstants {}
 
 impl ParseValue for Rate {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {

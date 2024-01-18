@@ -30,10 +30,11 @@ use mail_auth::{
     report::{ActionDisposition, Alignment, Disposition, DmarcResult, PolicyPublished, Record},
 };
 use tokio::fs;
+use utils::config::if_block::IfBlock;
 
 use crate::smtp::{make_temp_dir, TestConfig};
 use smtp::{
-    config::{AggregateFrequency, IfBlock},
+    config::AggregateFrequency,
     core::SMTP,
     reporting::{
         dmarc::DmarcFormat,
@@ -55,7 +56,7 @@ async fn report_scheduler() {
     let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_scheduler_test", true);
     let config = &mut core.report.config;
-    config.path = IfBlock::new(temp_dir.temp_dir.clone());
+    config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(500);
     config.tls.max_size = IfBlock::new(550);

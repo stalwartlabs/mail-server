@@ -23,14 +23,14 @@
 
 use directory::core::config::ConfigDirectory;
 use store::{Store, Stores};
-use utils::config::{Config, Servers};
+use utils::config::{if_block::IfBlock, Config, Servers};
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::{ConfigContext, IfBlock, MaybeDynValue},
+    config::ConfigContext,
     core::{Session, SMTP},
 };
 
@@ -72,17 +72,15 @@ async fn vrfy_expn() {
         .await
         .unwrap();
     let config = &mut core.session.config.rcpt;
-    config.directory = IfBlock::new(Some(MaybeDynValue::Static(
-        directory.directories.get("local").unwrap().clone(),
-    )));
+    config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config.extensions;
     config.vrfy = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
-        .parse_if(&ctx);
+        .parse_if();
     config.expn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
     {else = false}]"
-        .parse_if(&ctx);
+        .parse_if();
 
     // EHLO should not avertise VRFY/EXPN to 10.0.0.2
     let mut session = Session::test(core);

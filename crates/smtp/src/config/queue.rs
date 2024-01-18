@@ -23,221 +23,205 @@
 
 use std::time::Duration;
 
-use mail_send::Credentials;
+use mail_auth::IpLookupStrategy;
+
+use crate::core::eval::*;
 
 use super::{
-    condition::ConfigCondition,
-    if_block::ConfigIf,
+    map_expr_token,
     throttle::{ConfigThrottle, ParseTrottleKey},
-    *,
+    Dsn, QueueConfig, QueueOutboundSourceIp, QueueOutboundTimeout, QueueOutboundTls, QueueQuota,
+    QueueQuotas, QueueThrottle, RequireOptional, THROTTLE_LOCAL_IP, THROTTLE_MX, THROTTLE_RCPT,
+    THROTTLE_RCPT_DOMAIN, THROTTLE_REMOTE_IP, THROTTLE_SENDER, THROTTLE_SENDER_DOMAIN,
 };
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config, DynValue,
+use utils::{
+    config::{
+        if_block::IfBlock,
+        utils::{AsKey, ConstantValue, NoConstants, ParseValue},
+        Config,
+    },
+    expr::{Constant, Expression, ExpressionItem, Variable},
 };
 
 pub trait ConfigQueue {
-    fn parse_queue(&self, ctx: &ConfigContext) -> super::Result<QueueConfig>;
-    fn parse_queue_throttle(&self, ctx: &ConfigContext) -> super::Result<QueueThrottle>;
-    fn parse_queue_quota(&self, ctx: &ConfigContext) -> super::Result<QueueQuotas>;
-    fn parse_queue_quota_item(
-        &self,
-        prefix: impl AsKey,
-        ctx: &ConfigContext,
-    ) -> super::Result<QueueQuota>;
+    fn parse_queue(&self) -> super::Result<QueueConfig>;
+    fn parse_queue_throttle(&self) -> super::Result<QueueThrottle>;
+    fn parse_queue_quota(&self) -> super::Result<QueueQuotas>;
+    fn parse_queue_quota_item(&self, prefix: impl AsKey) -> super::Result<QueueQuota>;
 }
 
 impl ConfigQueue for Config {
-    fn parse_queue(&self, ctx: &ConfigContext) -> super::Result<QueueConfig> {
-        let rcpt_envelope_keys = [
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
+    fn parse_queue(&self) -> super::Result<QueueConfig> {
+        let rcpt_envelope_keys = &[V_RECIPIENT_DOMAIN, V_SENDER, V_SENDER_DOMAIN, V_PRIORITY];
+        let sender_envelope_keys = &[V_SENDER, V_SENDER_DOMAIN, V_PRIORITY];
+        let mx_envelope_keys = &[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_MX,
         ];
-        let sender_envelope_keys = [
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
+        let host_envelope_keys = &[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_LOCAL_IP,
+            V_REMOTE_IP,
+            V_MX,
         ];
-        let mx_envelope_keys = [
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
-            EnvelopeKey::Mx,
-        ];
-        let host_envelope_keys = [
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
-            EnvelopeKey::LocalIp,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::Mx,
-        ];
-
-        let next_hop = self
-            .parse_if_block::<Option<String>>("queue.outbound.next-hop", ctx, &rcpt_envelope_keys)?
-            .unwrap_or_else(|| IfBlock::new(None));
 
         let default_hostname = self.value_require("server.hostname")?;
 
         let config = QueueConfig {
-            path: self
-                .parse_if_block("queue.path", ctx, &sender_envelope_keys)?
-                .ok_or("Missing \"queue.path\" property.")?,
+            path: self.property_require("queue.path")?,
             hash: self
-                .parse_if_block("queue.hash", ctx, &sender_envelope_keys)?
+                .parse_if_block("queue.hash", |name| {
+                    map_expr_token::<NoConstants>(name, sender_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(32)),
 
             retry: self
-                .parse_if_block("queue.schedule.retry", ctx, &host_envelope_keys)?
-                .unwrap_or_else(|| {
-                    IfBlock::new(vec![
-                        Duration::from_secs(60),
-                        Duration::from_secs(2 * 60),
-                        Duration::from_secs(5 * 60),
-                        Duration::from_secs(10 * 60),
-                        Duration::from_secs(15 * 60),
-                        Duration::from_secs(30 * 60),
-                        Duration::from_secs(3600),
-                        Duration::from_secs(2 * 3600),
-                    ])
-                }),
+                .parse_if_block("queue.schedule.retry", |name| {
+                    map_expr_token::<Duration>(name, host_envelope_keys)
+                })?
+                .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
             notify: self
-                .parse_if_block("queue.schedule.notify", ctx, &rcpt_envelope_keys)?
-                .unwrap_or_else(|| {
-                    IfBlock::new(vec![
-                        Duration::from_secs(86400),
-                        Duration::from_secs(3 * 86400),
-                    ])
-                }),
+                .parse_if_block("queue.schedule.notify", |name| {
+                    map_expr_token::<Duration>(name, rcpt_envelope_keys)
+                })?
+                .unwrap_or_else(|| IfBlock::new(Duration::from_secs(86400))),
             expire: self
-                .parse_if_block("queue.schedule.expire", ctx, &rcpt_envelope_keys)?
+                .parse_if_block("queue.schedule.expire", |name| {
+                    map_expr_token::<Duration>(name, rcpt_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 86400))),
             hostname: self
-                .parse_if_block("queue.outbound.hostname", ctx, &sender_envelope_keys)?
+                .parse_if_block("queue.outbound.hostname", |name| {
+                    map_expr_token::<NoConstants>(name, sender_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(default_hostname.to_string())),
             max_mx: self
-                .parse_if_block("queue.outbound.limits.mx", ctx, &rcpt_envelope_keys)?
+                .parse_if_block("queue.outbound.limits.mx", |name| {
+                    map_expr_token::<NoConstants>(name, rcpt_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(5)),
             max_multihomed: self
-                .parse_if_block("queue.outbound.limits.multihomed", ctx, &rcpt_envelope_keys)?
+                .parse_if_block("queue.outbound.limits.multihomed", |name| {
+                    map_expr_token::<NoConstants>(name, rcpt_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(2)),
             ip_strategy: self
-                .parse_if_block("queue.outbound.ip-strategy", ctx, &sender_envelope_keys)?
+                .parse_if_block("queue.outbound.ip-strategy", |name| {
+                    map_expr_token::<IpLookupStrategy>(name, sender_envelope_keys)
+                })?
                 .unwrap_or_else(|| IfBlock::new(IpLookupStrategy::Ipv4thenIpv6)),
             source_ip: QueueOutboundSourceIp {
                 ipv4: self
-                    .parse_if_block("queue.outbound.source-ip.v4", ctx, &mx_envelope_keys)?
-                    .unwrap_or_else(|| IfBlock::new(Vec::new())),
+                    .parse_if_block("queue.outbound.source-ip.v4", |name| {
+                        map_expr_token::<NoConstants>(name, mx_envelope_keys)
+                    })?
+                    .unwrap_or_default(),
                 ipv6: self
-                    .parse_if_block("queue.outbound.source-ip.v6", ctx, &mx_envelope_keys)?
-                    .unwrap_or_else(|| IfBlock::new(Vec::new())),
+                    .parse_if_block("queue.outbound.source-ip.v6", |name| {
+                        map_expr_token::<NoConstants>(name, mx_envelope_keys)
+                    })?
+                    .unwrap_or_default(),
             },
-            next_hop: next_hop.into_relay_host(ctx)?,
+            next_hop: self
+                .parse_if_block("queue.outbound.next-hop", |name| {
+                    map_expr_token::<NoConstants>(name, rcpt_envelope_keys)
+                })?
+                .unwrap_or_default(),
             tls: QueueOutboundTls {
                 dane: self
-                    .parse_if_block("queue.outbound.tls.dane", ctx, &mx_envelope_keys)?
+                    .parse_if_block("queue.outbound.tls.dane", |name| {
+                        map_expr_token::<RequireOptional>(name, mx_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(RequireOptional::Optional)),
                 mta_sts: self
-                    .parse_if_block("queue.outbound.tls.mta-sts", ctx, &rcpt_envelope_keys)?
+                    .parse_if_block("queue.outbound.tls.mta-sts", |name| {
+                        map_expr_token::<RequireOptional>(name, rcpt_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(RequireOptional::Optional)),
                 start: self
-                    .parse_if_block("queue.outbound.tls.starttls", ctx, &mx_envelope_keys)?
+                    .parse_if_block("queue.outbound.tls.starttls", |name| {
+                        map_expr_token::<RequireOptional>(name, mx_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(RequireOptional::Optional)),
                 invalid_certs: self
-                    .parse_if_block(
-                        "queue.outbound.tls.allow-invalid-certs",
-                        ctx,
-                        &mx_envelope_keys,
-                    )?
+                    .parse_if_block("queue.outbound.tls.allow-invalid-certs", |name| {
+                        map_expr_token::<NoConstants>(name, mx_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(false)),
             },
-            throttle: self.parse_queue_throttle(ctx)?,
-            quota: self.parse_queue_quota(ctx)?,
+            throttle: self.parse_queue_throttle()?,
+            quota: self.parse_queue_quota()?,
             timeout: QueueOutboundTimeout {
                 connect: self
-                    .parse_if_block("queue.outbound.timeouts.connect", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.connect", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
                 greeting: self
-                    .parse_if_block("queue.outbound.timeouts.greeting", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.greeting", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
                 tls: self
-                    .parse_if_block("queue.outbound.timeouts.tls", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.tls", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(3 * 60))),
                 ehlo: self
-                    .parse_if_block("queue.outbound.timeouts.ehlo", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.ehlo", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
                 mail: self
-                    .parse_if_block(
-                        "queue.outbound.timeouts.mail-from",
-                        ctx,
-                        &host_envelope_keys,
-                    )?
+                    .parse_if_block("queue.outbound.timeouts.mail-from", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
                 rcpt: self
-                    .parse_if_block("queue.outbound.timeouts.rcpt-to", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.rcpt-to", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(5 * 60))),
                 data: self
-                    .parse_if_block("queue.outbound.timeouts.data", ctx, &host_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.data", |name| {
+                        map_expr_token::<Duration>(name, host_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(10 * 60))),
                 mta_sts: self
-                    .parse_if_block("queue.outbound.timeouts.mta-sts", ctx, &rcpt_envelope_keys)?
+                    .parse_if_block("queue.outbound.timeouts.mta-sts", |name| {
+                        map_expr_token::<Duration>(name, rcpt_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(Duration::from_secs(10 * 60))),
             },
             dsn: Dsn {
                 name: self
-                    .parse_if_block("report.dsn.from-name", ctx, &sender_envelope_keys)?
+                    .parse_if_block("report.dsn.from-name", |name| {
+                        map_expr_token::<NoConstants>(name, sender_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new("Mail Delivery Subsystem".to_string())),
                 address: self
-                    .parse_if_block("report.dsn.from-address", ctx, &sender_envelope_keys)?
+                    .parse_if_block("report.dsn.from-address", |name| {
+                        map_expr_token::<NoConstants>(name, sender_envelope_keys)
+                    })?
                     .unwrap_or_else(|| IfBlock::new(format!("MAILER-DAEMON@{default_hostname}"))),
                 sign: self
-                    .parse_if_block::<Vec<DynValue<EnvelopeKey>>>(
-                        "report.dsn.sign",
-                        ctx,
-                        &sender_envelope_keys,
-                    )?
-                    .unwrap_or_default()
-                    .map_if_block(&ctx.signers, "report.dsn.sign", "signature")?,
+                    .parse_if_block("report.dsn.sign", |name| {
+                        map_expr_token::<NoConstants>(name, sender_envelope_keys)
+                    })?
+                    .unwrap_or_default(),
             },
-            directory: ctx
-                .directory
-                .directories
-                .get(self.value_require("storage.directory")?)
-                .ok_or_else(|| {
-                    format!(
-                        "Directory {:?} not found for key \"storage.directory\".",
-                        self.value_require("storage.directory").unwrap()
-                    )
-                })?
-                .clone(),
-            data_store: ctx.stores.get_store(self, "storage.data")?,
-            lookup_store: self
-                .value_or_default("storage.lookup", "storage.data")
-                .and_then(|id| ctx.stores.lookup_stores.get(id))
-                .ok_or_else(|| {
-                    format!(
-                        "Lookup store {:?} not found for key \"storage.lookup\".",
-                        self.value_or_default("storage.lookup", "storage.data")
-                            .unwrap()
-                    )
-                })?
-                .clone(),
         };
 
-        if config.retry.has_empty_list() {
-            Err("Property \"queue.schedule.retry\" cannot contain empty lists.".to_string())
-        } else if config.notify.has_empty_list() {
-            Err("Property \"queue.schedule.notify\" cannot contain empty lists.".to_string())
-        } else {
-            Ok(config)
-        }
+        Ok(config)
     }
 
-    fn parse_queue_throttle(&self, ctx: &ConfigContext) -> super::Result<QueueThrottle> {
+    fn parse_queue_throttle(&self) -> super::Result<QueueThrottle> {
         // Parse throttle
         let mut throttle = QueueThrottle {
             sender: Vec::new(),
@@ -245,17 +229,16 @@ impl ConfigQueue for Config {
             host: Vec::new(),
         };
         let envelope_keys = [
-            EnvelopeKey::RecipientDomain,
-            EnvelopeKey::Sender,
-            EnvelopeKey::SenderDomain,
-            EnvelopeKey::Priority,
-            EnvelopeKey::Mx,
-            EnvelopeKey::RemoteIp,
-            EnvelopeKey::LocalIp,
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_MX,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
         ];
         let all_throttles = self.parse_throttle(
             "queue.throttle",
-            ctx,
             &envelope_keys,
             THROTTLE_RCPT_DOMAIN
                 | THROTTLE_SENDER
@@ -266,27 +249,17 @@ impl ConfigQueue for Config {
         )?;
         for t in all_throttles {
             if (t.keys & (THROTTLE_MX | THROTTLE_REMOTE_IP | THROTTLE_LOCAL_IP)) != 0
-                || t.conditions.conditions.iter().any(|c| {
-                    matches!(
-                        c,
-                        Condition::Match {
-                            key: EnvelopeKey::Mx | EnvelopeKey::RemoteIp | EnvelopeKey::LocalIp,
-                            ..
-                        }
-                    )
-                })
+                || t.expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_MX | V_REMOTE_IP | V_LOCAL_IP)))
             {
                 throttle.host.push(t);
             } else if (t.keys & (THROTTLE_RCPT_DOMAIN)) != 0
-                || t.conditions.conditions.iter().any(|c| {
-                    matches!(
-                        c,
-                        Condition::Match {
-                            key: EnvelopeKey::RecipientDomain,
-                            ..
-                        }
-                    )
-                })
+                || t.expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT_DOMAIN)))
             {
                 throttle.rcpt.push(t);
             } else {
@@ -297,7 +270,7 @@ impl ConfigQueue for Config {
         Ok(throttle)
     }
 
-    fn parse_queue_quota(&self, ctx: &ConfigContext) -> super::Result<QueueQuotas> {
+    fn parse_queue_quota(&self) -> super::Result<QueueQuotas> {
         let mut capacities = QueueQuotas {
             sender: Vec::new(),
             rcpt: Vec::new(),
@@ -305,30 +278,22 @@ impl ConfigQueue for Config {
         };
 
         for array_pos in self.sub_keys("queue.quota", "") {
-            let quota = self.parse_queue_quota_item(("queue.quota", array_pos), ctx)?;
+            let quota = self.parse_queue_quota_item(("queue.quota", array_pos))?;
 
             if (quota.keys & THROTTLE_RCPT) != 0
-                || quota.conditions.conditions.iter().any(|c| {
-                    matches!(
-                        c,
-                        Condition::Match {
-                            key: EnvelopeKey::Recipient,
-                            ..
-                        }
-                    )
-                })
+                || quota
+                    .expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT)))
             {
                 capacities.rcpt.push(quota);
             } else if (quota.keys & THROTTLE_RCPT_DOMAIN) != 0
-                || quota.conditions.conditions.iter().any(|c| {
-                    matches!(
-                        c,
-                        Condition::Match {
-                            key: EnvelopeKey::RecipientDomain,
-                            ..
-                        }
-                    )
-                })
+                || quota
+                    .expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT_DOMAIN)))
             {
                 capacities.rcpt_domain.push(quota);
             } else {
@@ -339,11 +304,7 @@ impl ConfigQueue for Config {
         Ok(capacities)
     }
 
-    fn parse_queue_quota_item(
-        &self,
-        prefix: impl AsKey,
-        ctx: &ConfigContext,
-    ) -> super::Result<QueueQuota> {
+    fn parse_queue_quota_item(&self, prefix: impl AsKey) -> super::Result<QueueQuota> {
         let prefix = prefix.as_key();
         let mut keys = 0;
         for (key_, value) in self.values((&prefix, "key")) {
@@ -361,22 +322,21 @@ impl ConfigQueue for Config {
         }
 
         let quota = QueueQuota {
-            conditions: if self.values((&prefix, "match")).next().is_some() {
-                self.parse_condition(
-                    (&prefix, "match"),
-                    ctx,
-                    &[
-                        EnvelopeKey::Recipient,
-                        EnvelopeKey::RecipientDomain,
-                        EnvelopeKey::Sender,
-                        EnvelopeKey::SenderDomain,
-                        EnvelopeKey::Priority,
-                    ],
-                )?
+            expr: if let Some(expr) = self.value((&prefix, "match")) {
+                Expression::parse((&prefix, "match"), expr, |name| {
+                    map_expr_token::<NoConstants>(
+                        name,
+                        &[
+                            V_RECIPIENT,
+                            V_RECIPIENT_DOMAIN,
+                            V_SENDER,
+                            V_SENDER_DOMAIN,
+                            V_PRIORITY,
+                        ],
+                    )
+                })?
             } else {
-                Conditions {
-                    conditions: Vec::with_capacity(0),
-                }
+                Expression::default()
             },
             keys,
             size: self
@@ -402,69 +362,6 @@ impl ConfigQueue for Config {
     }
 }
 
-impl IfBlock<Option<String>> {
-    pub fn into_relay_host(self, ctx: &ConfigContext) -> super::Result<IfBlock<Option<RelayHost>>> {
-        Ok(IfBlock {
-            if_then: {
-                let mut if_then = Vec::with_capacity(self.if_then.len());
-
-                for i in self.if_then {
-                    if_then.push(IfThen {
-                        conditions: i.conditions,
-                        then: if let Some(then) = i.then {
-                            Some(
-                                ctx.hosts
-                                    .get(&then)
-                                    .ok_or_else(|| {
-                                        format!(
-                                            "Host {then:?} not found for property \"queue.next-hop\".",
-                                        )
-                                    })?
-                                    .into(),
-                            )
-                        } else {
-                            None
-                        },
-                    });
-                }
-
-                if_then
-            },
-            default: if let Some(default) = self.default {
-                Some(
-                    ctx.hosts
-                        .get(&default)
-                        .ok_or_else(|| {
-                            format!(
-                                "Relay host {default:?} not found for property \"queue.next-hop\".",
-                            )
-                        })?
-                        .into(),
-                )
-            } else {
-                None
-            },
-        })
-    }
-}
-
-impl From<&Host> for RelayHost {
-    fn from(host: &Host) -> Self {
-        RelayHost {
-            address: host.address.to_string(),
-            port: host.port,
-            protocol: host.protocol,
-            auth: if let (Some(username), Some(secret)) = (&host.username, &host.secret) {
-                Credentials::new(username.to_string(), secret.to_string()).into()
-            } else {
-                None
-            },
-            tls_implicit: host.tls_implicit,
-            tls_allow_invalid_certs: host.tls_allow_invalid_certs,
-        }
-    }
-}
-
 impl ParseValue for RequireOptional {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         match value {
@@ -479,3 +376,28 @@ impl ParseValue for RequireOptional {
         }
     }
 }
+
+impl<'x> TryFrom<Variable<'x>> for RequireOptional {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            utils::expr::Variable::Integer(0) => Ok(RequireOptional::Optional),
+            utils::expr::Variable::Integer(1) => Ok(RequireOptional::Require),
+            utils::expr::Variable::Integer(2) => Ok(RequireOptional::Disable),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<RequireOptional> for Constant {
+    fn from(value: RequireOptional) -> Self {
+        Constant::Integer(match value {
+            RequireOptional::Optional => 0,
+            RequireOptional::Require => 1,
+            RequireOptional::Disable => 2,
+        })
+    }
+}
+
+impl ConstantValue for RequireOptional {}
