@@ -8,38 +8,38 @@ transfer-limit = 262144000 # 250 MB
 duration = "10m"
 
 [session.connect]
-#script = "connect.sieve"
+#script = "'connect'"
 
 [session.ehlo]
 require = true
-reject-non-fqdn = [ { if = "listener", eq = "smtp", then = true},
+reject-non-fqdn = [ { if = "listener = 'smtp'", then = true},
                     { else = false } ]
-#script = "ehlo"
+#script = "'ehlo'"
 
 [session.extensions]
 pipelining = true
 chunking = true
 requiretls = true
 no-soliciting = ""
-dsn = [ { if = "authenticated-as", ne = "", then = true},
+dsn = [ { if = "!is_empty(authenticated_as)", then = true},
         { else = false } ]
-expn = [ { if = "authenticated-as", ne = "", then = true},
+expn = [ { if = "!is_empty(authenticated_as)", then = true},
         { else = false } ]
-vrfy = [ { if = "authenticated-as", ne = "", then = true},
+vrfy = [ { if = "!is_empty(authenticated_as)", then = true},
         { else = false } ]
-future-release = [ { if = "authenticated-as", ne = "", then = "7d"},
+future-release = [ { if = "!is_empty(authenticated_as)", then = "7d"},
                    { else = false } ]
-deliver-by = [ { if = "authenticated-as", ne = "", then = "15d"},
+deliver-by = [ { if = "!is_empty(authenticated_as)", then = "15d"},
                { else = false } ]
-mt-priority = [ { if = "authenticated-as", ne = "", then = "mixer"},
+mt-priority = [ { if = "!is_empty(authenticated_as)", then = "mixer"},
                 { else = false } ]
 
 [session.auth]
-mechanisms = [ { if = "listener", ne = "smtp", then = ["plain", "login"]},
-               { else = [] } ]
-directory = [ { if = "listener", ne = "smtp", then = "%{DEFAULT_DIRECTORY}%" }, 
+mechanisms = [ { if = "listener != 'smtp'", then = "[plain, login]"},
+               { else = false } ]
+directory = [ { if = "listener != 'smtp'", then = "'%{DEFAULT_DIRECTORY}%'" }, 
            { else = false } ]
-require = [ { if = "listener", ne = "smtp", then = true},
+require = [ { if = "listener != 'smtp'", then = true},
             { else = false } ]
 allow-plain-text = false
 
@@ -49,29 +49,25 @@ wait = "5s"
 
 [session.mail]
 #script = "mail-from"
-#rewrite = [ { all-of = [ { if = "listener", ne = "smtp" },
-#                         { if = "rcpt", matches = "^([^.]+)@([^.]+)\.(.+)$"}, 
-#                       ], then = "${1}@${3}" }, 
+#rewrite = [ { if = "listener != 'smtp' & matches('^([^.]+)@([^.]+)\.(.+)$', rcpt)", then = "$1 + '@' + $3" },
 #            { else = false } ]
 
 [session.rcpt]
 #script = "greylist"
-relay = [ { if = "authenticated-as", ne = "", then = true }, 
+relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-#rewrite = [ { all-of = [ { if = "rcpt-domain", in-list = "%{DEFAULT_DIRECTORY}%/domains" },
-#                         { if = "rcpt", matches = "^([^.]+)\.([^.]+)@(.+)$"}, 
-#                       ], then = "${1}+${2}@${3}" }, 
+#rewrite = [ { if = "is_local_domain('%{DEFAULT_DIRECTORY}%', rcpt_domain) & matches('^([^.]+)\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3" },
 #            { else = false } ]
 max-recipients = 25
-directory = "%{DEFAULT_DIRECTORY}%"
+directory = "'%{DEFAULT_DIRECTORY}%'"
 
 [session.rcpt.errors]
 total = 5
 wait = "5s"
 
 [session.data]
-script = [ { if = "authenticated-as", eq = "", then = "spam-filter"},
-           { else = "track-replies" } ]
+script = [ { if = "is_empty(authenticated_as)", then = "'spam-filter'"},
+           { else = "'track-replies'" } ]
 
 [session.data.limits]
 messages = 10
@@ -79,24 +75,24 @@ size = 104857600
 received-headers = 50
 
 [session.data.add-headers]
-received = [ { if = "listener", eq = "smtp", then = true }, 
+received = [ { if = "listener = 'smtp'", then = true }, 
              { else = false } ]
-received-spf = [ { if = "listener", eq = "smtp", then = true }, 
+received-spf = [ { if = "listener = 'smtp'", then = true }, 
                  { else = false } ]
-auth-results = [ { if = "listener", eq = "smtp", then = true }, 
+auth-results = [ { if = "listener = 'smtp'", then = true }, 
                  { else = false } ]
-message-id = [ { if = "listener", eq = "smtp", then = false }, 
+message-id = [ { if = "listener = 'smtp'", then = false }, 
                { else = true } ]
-date = [ { if = "listener", eq = "smtp", then = false }, 
+date = [ { if = "listener = 'smtp'", then = false }, 
          { else = true } ]
 return-path = false
 
 [[session.throttle]]
-#match = {if = "remote-ip", eq = "10.0.0.1"}
-key = ["remote-ip"]
+#match = "remote_ip = '10.0.0.1'"
+key = ["remote_ip"]
 concurrency = 5
 #rate = "5/1h"
 
 [[session.throttle]]
-key = ["sender-domain", "rcpt"]
+key = ["sender_domain", "rcpt"]
 rate = "25/1h"

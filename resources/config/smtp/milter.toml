@@ -3,7 +3,7 @@
 #############################################
 
 #[session.data.milter."rspamd"]
-#enable = [ { if = "listener", eq = "smtp", then = true }, 
+#enable = [ { if = "listener = 'smtp'", then = true }, 
 #           { else = false } ]
 #hostname = "127.0.0.1"
 #port = 11332

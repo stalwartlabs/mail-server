@@ -481,11 +481,11 @@ impl ParseValue for Canonicalization {
 impl ParseValue for IpLookupStrategy {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         Ok(match value.to_lowercase().as_str() {
-            "ipv4-only" => IpLookupStrategy::Ipv4Only,
-            "ipv6-only" => IpLookupStrategy::Ipv6Only,
-            //"ipv4-and-ipv6" => IpLookupStrategy::Ipv4AndIpv6,
-            "ipv6-then-ipv4" => IpLookupStrategy::Ipv6thenIpv4,
-            "ipv4-then-ipv6" => IpLookupStrategy::Ipv4thenIpv6,
+            "ipv4_only" => IpLookupStrategy::Ipv4Only,
+            "ipv6_only" => IpLookupStrategy::Ipv6Only,
+            //"ipv4_and_ipv6" => IpLookupStrategy::Ipv4AndIpv6,
+            "ipv6_then_ipv4" => IpLookupStrategy::Ipv6thenIpv4,
+            "ipv4_then_ipv6" => IpLookupStrategy::Ipv4thenIpv6,
             _ => {
                 return Err(format!(
                     "Invalid IP lookup strategy {:?} for property {:?}.",

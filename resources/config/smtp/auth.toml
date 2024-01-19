@@ -4,25 +4,25 @@
 #############################################
 
 [auth.iprev]
-verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+verify = [ { if = "listener = 'smtp'", then = "relaxed" }, 
            { else = "disable" } ]
 
 [auth.dkim]
 verify = "relaxed"
-sign = [ { if = "listener", ne = "smtp", then = ["rsa"] }, 
-         { else = [] } ]
+sign = [ { if = "listener != 'smtp'", then = "['rsa']" }, 
+         { else = false } ]
 
 [auth.spf.verify]
-ehlo = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+ehlo = [ { if = "listener = 'smtp'", then = "relaxed" }, 
          { else = "disable" } ]
-mail-from = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+mail-from = [ { if = "listener = 'smtp'", then = "relaxed" }, 
               { else = "disable" } ]
 
 [auth.arc]
 verify = "relaxed"
-seal = ["rsa"]
+seal = "['rsa']"
 
 [auth.dmarc]
-verify = [ { if = "listener", eq = "smtp", then = "relaxed" }, 
+verify = [ { if = "listener = 'smtp'", then = "relaxed" }, 
            { else = "disable" } ]
 

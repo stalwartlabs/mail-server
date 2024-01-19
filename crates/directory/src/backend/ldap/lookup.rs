@@ -327,6 +327,13 @@ impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
 
+        tracing::debug!(
+            context = "ldap",
+            event = "fetch_princpal",
+            entry = ?entry,
+            "LDAP entry"
+        );
+
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
                 principal.name = value.into_iter().next().unwrap_or_default();

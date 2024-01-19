@@ -10,6 +10,11 @@ DOMAIN="example.org"
 STORE="rocksdb"
 FTS_STORE="rocksdb"
 BLOB_STORE="rocksdb"
+#STORE="sqlite"
+#FTS_STORE="sqlite"
+#BLOB_STORE="sqlite"
+FEATURES="foundationdb postgres mysql rocks elastic s3 redis"
+#FEATURES="sqlite"
 
 # Directories
 DIRECTORY="internal"
@@ -59,5 +64,5 @@ mkdir -p $BASE_DIR/etc/dkim
 openssl genpkey -algorithm RSA -out $BASE_DIR/etc/dkim/$DOMAIN.key
 
 # Create admin user
-SET_ADMIN_USER="admin" SET_ADMIN_PASS="secret" cargo run -p mail-server --no-default-features --features "foundationdb postgres mysql rocks elastic s3 redis" -- --config=/tmp/stalwart-test/etc/config.toml
-cargo run -p mail-server --no-default-features --features "foundationdb postgres mysql rocks elastic s3 redis" -- --config=/tmp/stalwart-test/etc/config.toml
+SET_ADMIN_USER="admin" SET_ADMIN_PASS="secret" cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=/tmp/stalwart-test/etc/config.toml
+cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=/tmp/stalwart-test/etc/config.toml

@@ -105,9 +105,9 @@ fail2ban = "101/5s"
 reject-non-fqdn = false
 
 [session.rcpt]
-relay = [ { if = "authenticated-as", ne = "", then = true }, 
+relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "auth"
+directory = "'auth'"
 
 [session.rcpt.errors]
 total = 5
@@ -125,8 +125,8 @@ hash = 64
 type = "system"
 
 [queue.outbound]
-next-hop = [ { if = "rcpt-domain", in-list = "local/domains", then = "local" }, 
-             { if = "rcpt-domain", in-list = "local/remote-domains", then = "mock-smtp" },
+next-hop = [ { if = "key_exists('local/domains', rcpt_domain)", then = "'local'" }, 
+             { if = "key_exists('local/remote-domains', rcpt_domain)", then = "'mock-smtp'" },
              { else = false } ]
 
 [remote."mock-smtp"]
@@ -139,7 +139,7 @@ implicit = false
 allow-invalid-certs = true
 
 [session.extensions]
-future-release = [ { if = "authenticated-as", ne = "", then = "99999999d"},
+future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
                    { else = false } ]
 
 [store."sqlite"]
