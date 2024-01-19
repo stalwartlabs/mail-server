@@ -36,7 +36,6 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::ConfigContext,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
@@ -110,18 +109,18 @@ async fn smtp_delivery() {
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
     config.retry = IfBlock::new(Duration::from_millis(100));
-    config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
-    {if = 'rcpt-domain', eq = 'foobar.com', then = ['500ms', '600ms']},
-    {else = ['100ms']}]"
+    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "['100ms', '200ms']"},
+    {if = "rcpt_domain = 'foobar.com'", then = "['500ms', '600ms']"},
+    {else = ['100ms']}]"#
         .parse_if();
-    config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '650ms'},
-    {else = '750ms'}]"
+    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "650ms"},
+    {else = "750ms"}]"#
         .parse_if();
 
     let core = Arc::new(core);
     let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -250,7 +249,7 @@ async fn smtp_delivery() {
 
     // SMTP smuggling
     for separator in ["\n", "\r"].iter() {
-        session.data.remote_ip = "10.0.0.2".parse().unwrap();
+        session.data.remote_ip_str = "10.0.0.2".to_string();
         session.eval_session_params().await;
         session.ehlo("mx.test.org").await;
 

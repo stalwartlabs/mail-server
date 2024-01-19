@@ -69,38 +69,39 @@ async fn rcpt() {
     let mut core = SMTP::test();
 
     let config_ext = &mut core.session.config.extensions;
-    let directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new("local".to_string());
-    config.max_recipients = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
-    {else = 5}]"
+    config.max_recipients = r#"[{if = "remote_ip = '10.0.0.1'", then = 3},
+    {else = 5}]"#
         .parse_if();
-    config.relay = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
-    {else = true}]"
+    config.relay = r#"[{if = "remote_ip = '10.0.0.1'", then = false},
+    {else = true}]"#
         .parse_if();
-    config_ext.dsn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = false},
-    {else = true}]"
+    config_ext.dsn = r#"[{if = "remote_ip = '10.0.0.1'", then = false},
+    {else = true}]"#
         .parse_if();
-    config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 3},
-    {else = 100}]"
+    config.errors_max = r#"[{if = "remote_ip = '10.0.0.1'", then = 3},
+    {else = 100}]"#
         .parse_if();
-    config.errors_wait = r"[{if = 'remote-ip', eq = '10.0.0.1', then = '5ms'},
-    {else = '1s'}]"
+    config.errors_wait = r#"[{if = "remote_ip = '10.0.0.1'", then = '5ms'},
+    {else = '1s'}]"#
         .parse_if();
-    core.session.config.throttle.rcpt_to = r"[[throttle]]
-    match = {if = 'remote-ip', eq = '10.0.0.1'}
+    core.session.config.throttle.rcpt_to = r#"[[throttle]]
+    match = "remote_ip = '10.0.0.1'"
     key = 'sender'
     rate = '2/1s'
-    "
+    "#
     .parse_throttle();
 
     // RCPT without MAIL FROM
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx1.foobar.org").await;
     session.rcpt_to("jane@foobar.org", "503 5.5.1").await;
@@ -153,7 +154,7 @@ async fn rcpt() {
     }
 
     // Relaying should be allowed for 10.0.0.2
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session.rset().await;
     session.mail_from("john@example.net", "250").await;

@@ -630,8 +630,8 @@ async fn address_mappings() {
     expected-catch = false
 
     [custom]
-    catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
-    subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+    catch-all = [{if = "matches('(.+)@(.+)$', address)", then = "'info@' + $2"}, {else = false}]
+    subaddressing = [{ if = "matches('^([^.]+)\.([^.]+)@(.+)$', address)", then = "$2 + '@' + $3" }, {else = false}]
     expected-sub = "doe+alias@example.org"
     expected-catch = "info@example.org"
     "#;

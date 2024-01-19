@@ -35,20 +35,20 @@ use smtp::core::{Session, SMTP};
 async fn limits() {
     let mut core = SMTP::test();
     let config = &mut core.session.config;
-    config.transfer_limit = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 10},
-    {else = 1024}]"
+    config.transfer_limit = r#"[{if = "remote_ip = '10.0.0.1'", then = 10},
+    {else = 1024}]"#
         .parse_if();
-    config.timeout = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '500ms'},
-    {else = '30m'}]"
+    config.timeout = r#"[{if = "remote_ip = '10.0.0.2'", then = '500ms'},
+    {else = '30m'}]"#
         .parse_if();
-    config.duration = r"[{if = 'remote-ip', eq = '10.0.0.3', then = '500ms'},
-    {else = '60m'}]"
+    config.duration = r#"[{if = "remote_ip = '10.0.0.3'", then = '500ms'},
+    {else = '60m'}]"#
         .parse_if();
     let (_tx, rx) = watch::channel(true);
 
     // Exceed max line length
     let mut session = Session::test_with_shutdown(core, rx);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     let mut buf = vec![b'A'; 2049];
     session.ingest(&buf).await.unwrap();
     session.ingest(b"\r\n").await.unwrap();
@@ -66,7 +66,7 @@ async fn limits() {
     session.response().assert_code("451 4.7.28");
 
     // Loitering
-    session.data.remote_ip = "10.0.0.3".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.3".to_string();
     session.data.valid_until = Instant::now();
     session.eval_session_params().await;
     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -75,7 +75,7 @@ async fn limits() {
     session.response().assert_code("453 4.3.2");
 
     // Timeout
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.data.valid_until = Instant::now();
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");

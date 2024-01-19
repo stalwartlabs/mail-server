@@ -39,37 +39,37 @@ use smtp::{
     queue::{manager::Queue, DeliveryAttempt, Message, QueueEnvelope},
 };
 
-const THROTTLE: &str = "
+const THROTTLE: &str = r#"
 [[queue.throttle]]
-match = {if = 'sender-domain', eq = 'foobar.org'}
-key = 'sender-domain'
+match = "sender_domain = 'foobar.org'"
+key = 'sender_domain'
 concurrency = 1
 
 [[queue.throttle]]
-match = {if = 'sender-domain', eq = 'foobar.net'}
-key = 'sender-domain'
+match = "sender_domain = 'foobar.net'"
+key = 'sender_domain'
 rate = '1/30m'
 
 [[queue.throttle]]
-match = {if = 'rcpt-domain', eq = 'example.org'}
-key = 'rcpt-domain'
+match = "rcpt_domain = 'example.org'"
+key = 'rcpt_domain'
 concurrency = 1
 
 [[queue.throttle]]
-match = {if = 'rcpt-domain', eq = 'example.net'}
-key = 'rcpt-domain'
+match = "rcpt_domain = 'example.net'"
+key = 'rcpt_domain'
 rate = '1/40m'
 
 [[queue.throttle]]
-match = {if = 'mx', eq = 'mx.test.org'}
+match = "mx = 'mx.test.org'"
 key = 'mx'
 concurrency = 1
 
 [[queue.throttle]]
-match = {if = 'mx', eq = 'mx.test.net'}
+match = "mx = 'mx.test.net'"
 key = 'mx'
 rate = '1/50m'
-";
+"#;
 
 #[tokio::test]
 async fn throttle_outbound() {
@@ -94,7 +94,7 @@ async fn throttle_outbound() {
     let core = Arc::new(core);
     let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session

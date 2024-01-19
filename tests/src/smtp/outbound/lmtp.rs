@@ -33,7 +33,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::ConfigContext,
+    config::shared::ConfigShared,
     core::{Session, SMTP},
     queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
 };
@@ -78,29 +78,30 @@ async fn lmtp_delivery() {
 
     // Multiple delivery attempts
     let mut local_qr = core.init_test_queue("lmtp_delivery_local");
-
-    let mut ctx = ConfigContext::new(&[]);
-    let config = Config::new(REMOTE).unwrap();
-    core.queue.config.next_hop = "[{if = 'rcpt-domain', eq = 'foobar.org', then = 'lmtp'},
-    {else = false}]"
+    core.shared.relay_hosts.insert(
+        "lmtp".to_string(),
+        Config::new(REMOTE).unwrap().parse_host("lmtp").unwrap(),
+    );
+    core.queue.config.next_hop = r#"[{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
+    {else = false}]"#
         .parse_if();
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
     config.retry = IfBlock::new(Duration::from_millis(100));
-    config.notify = "[{if = 'rcpt-domain', eq = 'foobar.org', then = ['100ms', '200ms']},
-    {else = ['100ms']}]"
+    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "['100ms', '200ms']"},
+    {else = ['100ms']}]"#
         .parse_if();
-    config.expire = "[{if = 'rcpt-domain', eq = 'foobar.org', then = '400ms'},
-    {else = '500ms'}]"
+    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "400ms"},
+    {else = "500ms"}]"#
         .parse_if();
     config.timeout.data = IfBlock::new(Duration::from_millis(50));
 
     let core = Arc::new(core);
     let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session

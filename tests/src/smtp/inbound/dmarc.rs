@@ -62,7 +62,7 @@ email = ["jdoe@example.com"]
 #[tokio::test]
 async fn dmarc() {
     let mut core = SMTP::test();
-    let ctx = ConfigContext::new(&[]).parse_signatures();
+    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dmarc_test");
@@ -131,11 +131,12 @@ async fn dmarc() {
 
     // Create report channels
     let mut rr = core.init_test_report();
-    let directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
@@ -148,31 +149,32 @@ async fn dmarc() {
     config.data.add_received_spf = IfBlock::new(true);
 
     let config = &mut core.report.config;
-    config.dkim.send = "[1, 1s]".parse_if();
+    config.dkim.send = "\"[1, 1s]\"".parse_if();
     config.dmarc.send = config.dkim.send.clone();
     config.spf.send = config.dkim.send.clone();
     config.dmarc_aggregate.send = IfBlock::new(AggregateFrequency::Daily);
 
     let config = &mut core.mail_auth;
-    config.spf.verify_ehlo = "[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
-    { else = 'relaxed' }]"
-        .parse_if();
+    config.spf.verify_ehlo = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+    { else = 'relaxed' }]"#
+        .parse_if_constant::<VerifyStrategy>();
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dmarc.verify = IfBlock::new(VerifyStrategy::Strict);
     config.arc.verify = config.dmarc.verify.clone();
-    config.dkim.verify = "[{if = 'sender-domain', eq = 'test.net', then = 'relaxed'},
-    { else = 'strict' }]"
-        .parse_if();
+    config.dkim.verify = r#"[{if = "sender_domain = 'test.net'", then = 'relaxed'},
+    { else = 'strict' }]"#
+        .parse_if_constant::<VerifyStrategy>();
 
     let config = &mut core.report.config;
-    config.spf.sign = "['rsa']".parse_if();
-    config.dmarc.sign = "['rsa']".parse_if();
-    config.dkim.sign = "['rsa']".parse_if();
+    config.spf.sign = "\"['rsa']\"".parse_if();
+    config.dmarc.sign = "\"['rsa']\"".parse_if();
+    config.dkim.sign = "\"['rsa']\"".parse_if();
 
     // SPF must pass
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session.ehlo("mx.example.com").await;
     session.mail_from("bill@example.com", "550 5.7.23").await;
@@ -195,7 +197,8 @@ async fn dmarc() {
     qr.assert_empty_queue();
 
     // Invalid DKIM signatures should be rejected
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session
         .send_message(

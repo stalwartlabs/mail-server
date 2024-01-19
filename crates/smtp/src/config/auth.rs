@@ -305,9 +305,9 @@ impl<'x> TryFrom<expr::Variable<'x>> for VerifyStrategy {
     fn try_from(value: expr::Variable<'x>) -> Result<Self, Self::Error> {
         match value {
             expr::Variable::Integer(c) => match c {
-                0 => Ok(VerifyStrategy::Relaxed),
-                1 => Ok(VerifyStrategy::Strict),
-                2 => Ok(VerifyStrategy::Disable),
+                2 => Ok(VerifyStrategy::Relaxed),
+                3 => Ok(VerifyStrategy::Strict),
+                4 => Ok(VerifyStrategy::Disable),
                 _ => Err(()),
             },
             _ => Err(()),
@@ -318,9 +318,9 @@ impl<'x> TryFrom<expr::Variable<'x>> for VerifyStrategy {
 impl From<VerifyStrategy> for Constant {
     fn from(value: VerifyStrategy) -> Self {
         Constant::Integer(match value {
-            VerifyStrategy::Relaxed => 0,
-            VerifyStrategy::Strict => 1,
-            VerifyStrategy::Disable => 2,
+            VerifyStrategy::Relaxed => 2,
+            VerifyStrategy::Strict => 3,
+            VerifyStrategy::Disable => 4,
         })
     }
 }

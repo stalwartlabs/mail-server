@@ -214,9 +214,9 @@ impl From<AggregateFrequency> for Constant {
     fn from(value: AggregateFrequency) -> Self {
         match value {
             AggregateFrequency::Never => 0.into(),
-            AggregateFrequency::Hourly => 1.into(),
-            AggregateFrequency::Daily => 2.into(),
-            AggregateFrequency::Weekly => 3.into(),
+            AggregateFrequency::Hourly => 2.into(),
+            AggregateFrequency::Daily => 3.into(),
+            AggregateFrequency::Weekly => 4.into(),
         }
     }
 }
@@ -227,9 +227,9 @@ impl<'x> TryFrom<Variable<'x>> for AggregateFrequency {
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
             Variable::Integer(0) => Ok(AggregateFrequency::Never),
-            Variable::Integer(1) => Ok(AggregateFrequency::Hourly),
-            Variable::Integer(2) => Ok(AggregateFrequency::Daily),
-            Variable::Integer(3) => Ok(AggregateFrequency::Weekly),
+            Variable::Integer(2) => Ok(AggregateFrequency::Hourly),
+            Variable::Integer(3) => Ok(AggregateFrequency::Daily),
+            Variable::Integer(4) => Ok(AggregateFrequency::Weekly),
             _ => Err(()),
         }
     }

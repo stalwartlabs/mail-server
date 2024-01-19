@@ -32,19 +32,15 @@ use utils::config::{if_block::IfBlock, utils::NoConstants, Config, Servers};
 
 const CONFIG: &str = r#"
 [session.mail]
-rewrite = [ { all-of = [ { if = "sender-domain", ends-with = ".foobar.net" },
-                         { if = "sender", matches = "^([^.]+)@([^.]+)\.(.+)$"}, 
-                       ], then = "${1}+${2}@${3}" }, 
+rewrite = [ { if = "ends_with(sender_domain, '.foobar.net') & matches('^([^.]+)@([^.]+)\.(.+)$', sender)", then = "$1 + '+' + $2 + '@' + $3"},
             { else = false } ]
-script = [ { if = "sender-domain", eq = "foobar.org", then = "mail" }, 
+script = [ { if = "sender_domain = 'foobar.org'", then = "'mail'" }, 
             { else = false } ]
 
 [session.rcpt]
-rewrite = [ { all-of = [ { if = "rcpt-domain", eq = "foobar.net" },
-                         { if = "rcpt", matches = "^([^.]+)\.([^.]+)@(.+)$"}, 
-                       ], then = "${1}+${2}@${3}" }, 
+rewrite = [ { if = "rcpt_domain = 'foobar.net' & matches('^([^.]+)\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3"},
             { else = false } ]
-script = [ { if = "rcpt-domain", eq = "foobar.org", then = "rcpt" }, 
+script = [ { if = "rcpt_domain = 'foobar.org'", then = "'rcpt'" }, 
             { else = false } ]
 
 [sieve.trusted]
@@ -104,6 +100,7 @@ async fn address_rewrite() {
         .await
         .unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();
+    core.shared.scripts = ctx.scripts;
     let config = &mut core.session.config;
     config.mail.script = settings
         .parse_if_block("session.mail.script", |name| {
@@ -133,7 +130,7 @@ async fn address_rewrite() {
 
     // Init session
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
 

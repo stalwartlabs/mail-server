@@ -31,7 +31,6 @@ use super::{ConfigContext, RelayHost};
 
 pub trait ConfigShared {
     fn parse_shared(&self, ctx: &ConfigContext) -> super::Result<Shared>;
-
     fn parse_host(&self, id: &str) -> super::Result<RelayHost>;
 }
 

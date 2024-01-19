@@ -22,7 +22,6 @@
 */
 
 use directory::core::config::ConfigDirectory;
-use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::{Store, Stores};
 use utils::config::{if_block::IfBlock, Config, Servers};
 
@@ -31,7 +30,7 @@ use crate::smtp::{
     ParseTestConfig, TestConfig,
 };
 use smtp::{
-    config::ConfigContext,
+    config::session::Mechanism,
     core::{Session, State, SMTP},
 };
 
@@ -59,41 +58,37 @@ member-of = ["sales", "support"]
 #[tokio::test]
 async fn auth() {
     let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new(&[]);
-    ctx.directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
 
     let config = &mut core.session.config.auth;
 
-    config.require = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
-    {else = false}]"
+    config.require = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
+    {else = false}]"#
         .parse_if();
-    config.directory = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'local'},
-    {else = false}]"
+    config.directory = r#"[{if = "remote_ip = '10.0.0.1'", then = "'local'"},
+    {else = false}]"#
         .parse_if();
-    config.errors_max = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 2},
-    {else = 3}]"
+    config.errors_max = r#"[{if = "remote_ip = '10.0.0.1'", then = 2},
+    {else = 3}]"#
         .parse_if();
     config.errors_wait = "'100ms'".parse_if();
-    config.mechanisms = format!(
-        "[{{if = 'remote-ip', eq = '10.0.0.1', then = {}}},
-    {{else = 0}}]",
-        AUTH_PLAIN | AUTH_LOGIN
-    )
-    .as_str()
-    .parse_if();
+    config.mechanisms = r#"[{if = "remote_ip = '10.0.0.1'", then = "[plain, login]"},
+    {else = 0}]"#
+        .parse_if_constant::<Mechanism>();
     config.must_match_sender = IfBlock::new(true);
     core.session.config.extensions.future_release =
-        r"[{if = 'authenticated-as', ne = '', then = '1d'},
+        r"[{if = '!is_empty(authenticated_as)', then = '1d'},
     {else = false}]"
             .parse_if();
 
     // EHLO should not advertise plain text auth without TLS
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.stream.tls = false;
     session
@@ -160,7 +155,7 @@ async fn auth() {
     session.cmd("cDRzc3cwcmQ=", "235 2.7.0").await;
 
     // Login should not be advertised to 10.0.0.2
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session.stream.tls = true;
     session

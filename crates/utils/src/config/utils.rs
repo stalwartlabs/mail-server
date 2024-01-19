@@ -441,9 +441,9 @@ impl<'x> TryFrom<Variable<'x>> for MtPriority {
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
             Variable::Integer(value) => match value {
-                0 => Ok(MtPriority::Mixer),
-                1 => Ok(MtPriority::Stanag4406),
-                2 => Ok(MtPriority::Nsep),
+                2 => Ok(MtPriority::Mixer),
+                3 => Ok(MtPriority::Stanag4406),
+                4 => Ok(MtPriority::Nsep),
                 _ => Err(()),
             },
             Variable::String(value) => MtPriority::parse_value("", &value).map_err(|_| ()),
@@ -455,9 +455,9 @@ impl<'x> TryFrom<Variable<'x>> for MtPriority {
 impl From<MtPriority> for Constant {
     fn from(value: MtPriority) -> Self {
         Constant::Integer(match value {
-            MtPriority::Mixer => 0,
-            MtPriority::Stanag4406 => 1,
-            MtPriority::Nsep => 2,
+            MtPriority::Mixer => 2,
+            MtPriority::Stanag4406 => 3,
+            MtPriority::Nsep => 4,
         })
     }
 }
@@ -503,10 +503,10 @@ impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
             Variable::Integer(value) => match value {
-                0 => Ok(IpLookupStrategy::Ipv4Only),
-                1 => Ok(IpLookupStrategy::Ipv6Only),
-                2 => Ok(IpLookupStrategy::Ipv6thenIpv4),
-                3 => Ok(IpLookupStrategy::Ipv4thenIpv6),
+                2 => Ok(IpLookupStrategy::Ipv4Only),
+                3 => Ok(IpLookupStrategy::Ipv6Only),
+                4 => Ok(IpLookupStrategy::Ipv6thenIpv4),
+                5 => Ok(IpLookupStrategy::Ipv4thenIpv6),
                 _ => Err(()),
             },
             Variable::String(value) => IpLookupStrategy::parse_value("", &value).map_err(|_| ()),
@@ -518,10 +518,10 @@ impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
 impl From<IpLookupStrategy> for Constant {
     fn from(value: IpLookupStrategy) -> Self {
         Constant::Integer(match value {
-            IpLookupStrategy::Ipv4Only => 0,
-            IpLookupStrategy::Ipv6Only => 1,
-            IpLookupStrategy::Ipv6thenIpv4 => 2,
-            IpLookupStrategy::Ipv4thenIpv6 => 3,
+            IpLookupStrategy::Ipv4Only => 2,
+            IpLookupStrategy::Ipv6Only => 3,
+            IpLookupStrategy::Ipv6thenIpv4 => 4,
+            IpLookupStrategy::Ipv4thenIpv6 => 5,
         })
     }
 }

@@ -307,7 +307,13 @@ fn parse_throttle() {
         throttle,
         vec![
             Throttle {
-                expr: Expression::default(),
+                expr: Expression {
+                    items: vec![
+                        ExpressionItem::Variable(8),
+                        ExpressionItem::Constant(Constant::String("127.0.0.1".to_string())),
+                        ExpressionItem::BinaryOperator(BinaryOperator::Eq)
+                    ]
+                },
                 keys: THROTTLE_REMOTE_IP | THROTTLE_AUTH_AS,
                 concurrency: 100.into(),
                 rate: Rate {

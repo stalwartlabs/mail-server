@@ -29,10 +29,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::ConfigContext,
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 const DIRECTORY: &str = r#"
 [directory."local"]
@@ -64,27 +61,27 @@ email-list = ["sales@foobar.org"]
 #[tokio::test]
 async fn vrfy_expn() {
     let mut core = SMTP::test();
-    let ctx = ConfigContext::new(&[]);
 
-    let directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config.extensions;
-    config.vrfy = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
-    {else = false}]"
+    config.vrfy = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
+    {else = false}]"#
         .parse_if();
-    config.expn = r"[{if = 'remote-ip', eq = '10.0.0.1', then = true},
-    {else = false}]"
+    config.expn = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
+    {else = false}]"#
         .parse_if();
 
-    // EHLO should not avertise VRFY/EXPN to 10.0.0.2
+    // EHLO should not advertise VRFY/EXPN to 10.0.0.2
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session
         .ehlo("mx.foobar.org")
@@ -95,7 +92,7 @@ async fn vrfy_expn() {
     session.cmd("EXPN sales@foobar.org", "252 2.5.1").await;
 
     // EHLO should advertise VRFY/EXPN for 10.0.0.1
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session
         .ehlo("mx.foobar.org")

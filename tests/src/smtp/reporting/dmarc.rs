@@ -61,12 +61,12 @@ async fn report_dmarc() {
 
     // Create scheduler
     let mut core = SMTP::test();
-    let ctx = ConfigContext::new(&[]).parse_signatures();
+    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
     let temp_dir = make_temp_dir("smtp_report_dmarc_test", true);
     let config = &mut core.report.config;
     config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
-    config.dmarc_aggregate.sign = "['rsa']".parse_if();
+    config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
     config.dmarc_aggregate.address = IfBlock::new("reports@example.org".to_string());

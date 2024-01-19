@@ -58,12 +58,12 @@ async fn report_tls() {
 
     // Create scheduler
     let mut core = SMTP::test();
-    let ctx = ConfigContext::new(&[]).parse_signatures();
+    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
     let temp_dir = make_temp_dir("smtp_report_tls_test", true);
     let config = &mut core.report.config;
     config.path = temp_dir.temp_dir.clone();
     config.hash = IfBlock::new(16);
-    config.tls.sign = "['rsa']".parse_if();
+    config.tls.sign = "\"['rsa']\"".parse_if();
     config.tls.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
     config.tls.address = IfBlock::new("reports@example.org".to_string());

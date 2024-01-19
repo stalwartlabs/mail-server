@@ -223,7 +223,6 @@ async fn sql_directory() {
             handle.email_to_ids("info@example.org").await.unwrap(),
             map_account_ids(base_store, vec!["bill", "jane", "john"]).await
         );
-        let todo = "test regex subaddressing";
         assert_eq!(
             handle.email_to_ids("jane+alias@example.org").await.unwrap(),
             map_account_ids(base_store, vec!["jane"]).await

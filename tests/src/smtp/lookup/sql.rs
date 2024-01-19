@@ -87,10 +87,12 @@ async fn lookup_sql() {
     let mut ctx = ConfigContext::new(&[]);
     let config = Config::new(&config_file).unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config
+    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
+    core.shared.directories = config
         .parse_directory(&ctx.stores, &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
 
     // Obtain directory handle
     let handle = DirectoryStore {
@@ -142,30 +144,30 @@ async fn lookup_sql() {
 
     // Enable AUTH
     let config = &mut core.session.config.auth;
-    config.directory = r"'sql'".parse_if();
+    config.directory = "\"'sql'\"".parse_if();
     config.mechanisms = IfBlock::new(Mechanism::from(AUTH_PLAIN | AUTH_LOGIN));
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable VRFY/EXPN/RCPT
     let config = &mut core.session.config.rcpt;
-    config.directory = r"'sql'".parse_if();
+    config.directory = "\"'sql'\"".parse_if();
     config.relay = IfBlock::new(false);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable REQUIRETLS based on SQL lookup
     core.session.config.extensions.requiretls =
-        r"[{if = 'remote-ip', in-list = 'sql/is_ip_allowed', then = true},
-    {else = false}]"
+        r#"[{if = "key_exists('sql/is_ip_allowed', remote_ip)", then = true},
+    {else = false}]"#
             .parse_if();
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.50".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.50".parse().unwrap();
     session.eval_session_params().await;
     session.stream.tls = true;
     session
         .ehlo("mx.foobar.org")
         .await
         .assert_contains("REQUIRETLS");
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session
         .ehlo("mx1.foobar.org")

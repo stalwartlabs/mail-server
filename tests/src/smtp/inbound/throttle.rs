@@ -30,27 +30,27 @@ use smtp::core::{Session, SessionAddress, SMTP};
 async fn throttle_inbound() {
     let mut core = SMTP::test();
     let config = &mut core.session.config;
-    config.throttle.connect = r"[[throttle]]
-    match = {if = 'remote-ip', eq = '10.0.0.1'}
-    key = 'remote-ip'
+    config.throttle.connect = r#"[[throttle]]
+    match = "remote_ip = '10.0.0.1'"
+    key = 'remote_ip'
     concurrency = 2
     rate = '3/1s'
-    "
+    "#
     .parse_throttle();
-    config.throttle.mail_from = r"[[throttle]]
+    config.throttle.mail_from = r#"[[throttle]]
     key = 'sender'
     rate = '2/1s'
-    "
+    "#
     .parse_throttle();
-    config.throttle.rcpt_to = r"[[throttle]]
-    key = ['remote-ip', 'rcpt']
+    config.throttle.rcpt_to = r#"[[throttle]]
+    key = ['remote_ip', 'rcpt']
     rate = '2/1s'
-    "
+    "#
     .parse_throttle();
 
     // Test connection concurrency limit
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     assert!(
         session.is_allowed().await,
         "Concurrency limiter too strict."
@@ -105,6 +105,6 @@ async fn throttle_inbound() {
     assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(!session.is_allowed().await, "Rate limiter failed.");
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     assert!(session.is_allowed().await, "Rate limiter too strict.");
 }

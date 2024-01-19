@@ -1,10 +1,10 @@
 [[throttle]]
-match = {if = "remote-ip", eq = "127.0.0.1"}
-key = ["remote-ip", "authenticated-as"]
+match = "remote_ip == '127.0.0.1'"
+key = ["remote_ip", "authenticated_as"]
 concurrency = 100
 rate = "50/30s"
 
 [[throttle]]
-key = "sender-domain"
+key = "sender_domain"
 concurrency = 10000
 

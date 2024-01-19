@@ -55,9 +55,9 @@ format = "list"
 values = ["spammer.org", "spammer.net"]
 
 [session.data.pipe."test"]
-command = [ { if = "remote-ip", eq = "10.0.0.123", then = "/bin/bash" }, 
+command = [ { if = "remote_ip = '10.0.0.123'", then = "'/bin/bash'" }, 
             { else = false } ]
-arguments = ["%CFG_PATH%/pipe_me.sh", "hello", "world"]
+arguments = "['%CFG_PATH%/pipe_me.sh', 'hello', 'world']"
 timeout = "10s"
 
 [sieve.trusted]
@@ -133,12 +133,16 @@ async fn sieve_scripts() {
     )
     .unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    ctx.directory = config
+    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
+    core.shared.directories = config
         .parse_directory(&ctx.stores, &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let pipes = config.parse_pipes(&[V_REMOTE_IP]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
+    core.shared.signers = ctx.signers;
+    core.shared.scripts = ctx.scripts.clone();
     let config = &mut core.session.config;
     config.connect.script = IfBlock::new("stage_connect".to_string());
     config.ehlo.script = IfBlock::new("stage_ehlo".to_string());
@@ -151,7 +155,8 @@ async fn sieve_scripts() {
 
     // Build session
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.88".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.88".parse().unwrap();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     assert!(!session.init_conn().await);
 
     // Run tests
@@ -184,7 +189,8 @@ async fn sieve_scripts() {
     session
         .response()
         .assert_contains("503 5.5.3 Your IP '10.0.0.88' is not welcomed here");
-    session.data.remote_ip = "10.0.0.5".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.5".parse().unwrap();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     assert!(session.init_conn().await);
     session
         .response()
@@ -359,7 +365,8 @@ async fn sieve_scripts() {
     qr.assert_empty_queue();
 
     // Test pipes
-    session.data.remote_ip = "10.0.0.123".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.123".parse().unwrap();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session
         .send_message(
             "test@example.net",

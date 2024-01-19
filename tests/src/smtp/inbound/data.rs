@@ -75,17 +75,18 @@ async fn data() {
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
-    let directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
     let config = &mut core.session.config;
-    config.data.add_auth_results = "[{if = 'remote-ip', eq = '10.0.0.3', then = true},
-    {else = false}]"
+    config.data.add_auth_results = r#"[{if = "remote_ip = '10.0.0.3'", then = true},
+    {else = false}]"#
         .parse_if();
     config.data.add_date = config.data.add_auth_results.clone();
     config.data.add_message_id = config.data.add_auth_results.clone();
@@ -93,30 +94,30 @@ async fn data() {
     config.data.add_return_path = config.data.add_auth_results.clone();
     config.data.add_received_spf = config.data.add_auth_results.clone();
     config.data.max_received_headers = IfBlock::new(3);
-    config.data.max_messages = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1},
-    {else = 100}]"
+    config.data.max_messages = r#"[{if = "remote_ip = '10.0.0.1'", then = 1},
+    {else = 100}]"#
         .parse_if();
 
-    core.queue.config.quota = r"[[queue.quota]]
-    match = {if = 'sender', eq = 'john@doe.org'}
+    core.queue.config.quota = r#"[[queue.quota]]
+    match = "sender = 'john@doe.org'"
     key = ['sender']
     messages = 1
 
     [[queue.quota]]
-    match = {if = 'rcpt-domain', eq = 'foobar.org'}
-    key = ['rcpt-domain']
+    match = "rcpt_domain = 'foobar.org'"
+    key = ['rcpt_domain']
     size = 450
 
     [[queue.quota]]
-    match = {if = 'rcpt', eq = 'jane@domain.net'}
+    match = "rcpt = 'jane@domain.net'"
     key = ['rcpt']
     size = 450
-    "
+    "#
     .parse_quota();
 
     // Test queue message builder
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.test_builder().await;
 
@@ -162,7 +163,7 @@ async fn data() {
     session.rset().await;
 
     // Headers should be added to messages from 10.0.0.3
-    session.data.remote_ip = "10.0.0.3".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.3".to_string();
     session.eval_session_params().await;
     session
         .send_message("john@doe.org", &["mike@test.com"], "test:no_msgid", "250")
@@ -183,7 +184,7 @@ async fn data() {
 
     // Only one message is allowed in the queue from john@doe.org
     let mut queued_messages = vec![];
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session
         .send_message("john@doe.org", &["bill@foobar.org"], "test:no_dkim", "250")

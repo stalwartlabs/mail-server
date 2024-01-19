@@ -229,6 +229,8 @@ async fn antispam() {
     let mut ctx = ConfigContext::new(&[]);
     ctx.stores = config.parse_stores().await.unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
+    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
+    core.shared.scripts = ctx.scripts.clone();
     let config = &mut core.session.config;
     config.rcpt.relay = IfBlock::new(true);
 
@@ -325,6 +327,7 @@ async fn antispam() {
                     let value = value.trim();
                     match param {
                         "remote_ip" => {
+                            session.data.remote_ip_str = value.to_string();
                             session.data.remote_ip = value.parse().unwrap();
                         }
                         "helo_domain" => {

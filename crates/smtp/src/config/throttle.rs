@@ -122,15 +122,15 @@ impl ParseTrottleKey for &str {
     fn parse_throttle_key(&self, key: &str) -> super::Result<u16> {
         match *self {
             "rcpt" => Ok(THROTTLE_RCPT),
-            "rcpt-domain" => Ok(THROTTLE_RCPT_DOMAIN),
+            "rcpt_domain" => Ok(THROTTLE_RCPT_DOMAIN),
             "sender" => Ok(THROTTLE_SENDER),
-            "sender-domain" => Ok(THROTTLE_SENDER_DOMAIN),
-            "authenticated-as" => Ok(THROTTLE_AUTH_AS),
+            "sender_domain" => Ok(THROTTLE_SENDER_DOMAIN),
+            "authenticated_as" => Ok(THROTTLE_AUTH_AS),
             "listener" => Ok(THROTTLE_LISTENER),
             "mx" => Ok(THROTTLE_MX),
-            "remote-ip" => Ok(THROTTLE_REMOTE_IP),
-            "local-ip" => Ok(THROTTLE_LOCAL_IP),
-            "helo-domain" => Ok(THROTTLE_HELO_DOMAIN),
+            "remote_ip" => Ok(THROTTLE_REMOTE_IP),
+            "local_ip" => Ok(THROTTLE_LOCAL_IP),
+            "helo_domain" => Ok(THROTTLE_HELO_DOMAIN),
             _ => Err(format!("Invalid throttle key {self:?} found in {key:?}")),
         }
     }

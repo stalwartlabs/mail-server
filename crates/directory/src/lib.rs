@@ -300,15 +300,21 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Custom(if_block) => {
-                let result = if_block
-                    .eval(
-                        |_| Variable::default(),
-                        |_, _| async { Variable::default() },
-                    )
-                    .await
-                    .into_string();
-                if !result.is_empty() {
-                    return result.into_owned().into();
+                if let Ok(result) = String::try_from(
+                    if_block
+                        .eval(
+                            |name| {
+                                if name == 1 {
+                                    Variable::from(address)
+                                } else {
+                                    Variable::default()
+                                }
+                            },
+                            |_, _| async { Variable::default() },
+                        )
+                        .await,
+                ) {
+                    return result.into();
                 }
             }
             AddressMapping::Disable => (),
@@ -323,16 +329,23 @@ impl AddressMapping {
                 .rsplit_once('@')
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
+
             AddressMapping::Custom(if_block) => {
-                let result = if_block
-                    .eval(
-                        |_| Variable::default(),
-                        |_, _| async { Variable::default() },
-                    )
-                    .await
-                    .into_string();
-                if !result.is_empty() {
-                    Some(result.into_owned().into())
+                if let Ok(result) = String::try_from(
+                    if_block
+                        .eval(
+                            |name| {
+                                if name == 1 {
+                                    Variable::from(address)
+                                } else {
+                                    Variable::default()
+                                }
+                            },
+                            |_, _| async { Variable::default() },
+                        )
+                        .await,
+                ) {
+                    Some(result.into())
                 } else {
                     None
                 }

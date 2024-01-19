@@ -150,11 +150,12 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    let directory = Config::new(DIRECTORY)
+    core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&Stores::default(), &Servers::default(), Store::default())
         .await
-        .unwrap();
+        .unwrap()
+        .directories;
     let config = &mut core.session.config.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
@@ -168,17 +169,19 @@ async fn sign_and_seal() {
 
     let config = &mut core.mail_auth;
     let ctx = ConfigContext::new(&[]).parse_signatures();
+    core.shared.signers = ctx.signers;
+    core.shared.sealers = ctx.sealers;
     config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dkim.verify = config.spf.verify_ehlo.clone();
     config.arc.verify = config.spf.verify_ehlo.clone();
     config.dmarc.verify = config.spf.verify_ehlo.clone();
-    config.dkim.sign = "['rsa']".parse_if();
-    config.arc.seal = "'ed'".parse_if();
+    config.dkim.sign = "\"['rsa']\"".parse_if();
+    config.arc.seal = "\"'ed'\"".parse_if();
 
     // Test DKIM signing
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.example.com").await;
     session

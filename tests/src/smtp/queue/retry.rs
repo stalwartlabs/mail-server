@@ -57,19 +57,19 @@ async fn queue_retry() {
     config.deliver_by = IfBlock::new(Duration::from_secs(86400));
     config.future_release = IfBlock::new(Duration::from_secs(86400));
     let config = &mut core.queue.config;
-    config.retry = "[100ms, 200ms, 300ms]".parse_if();
-    config.notify = "[{if = 'sender-domain', eq = 'test.org', then = ['150ms', '200ms']},
-    {else = ['15h', '22h']}]"
+    config.retry = r#""[100ms, 200ms, 300ms]""#.parse_if();
+    config.notify = r#"[{if = "sender_domain = 'test.org'", then = "['150ms', '200ms']"},
+    {else = ['15h', '22h']}]"#
         .parse_if();
-    config.expire = "[{if = 'sender-domain', eq = 'test.org', then = '600ms'},
-    {else = '1d'}]"
+    config.expire = r#"[{if = "sender_domain = 'test.org'", then = "600ms"},
+    {else = '1d'}]"#
         .parse_if();
 
     // Create test message
     let core = Arc::new(core);
     let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
@@ -166,7 +166,7 @@ async fn queue_retry() {
         .assert_contains("Action: failed");
 
     // Test FUTURERELEASE + DELIVERBY (RETURN)
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session
         .send_message(

@@ -24,13 +24,17 @@
 use std::time::{Duration, Instant};
 
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, SpfResult};
+use smtp_proto::MtPriority;
 use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::core::{Session, SMTP};
+use smtp::{
+    config::VerifyStrategy,
+    core::{Session, SMTP},
+};
 
 #[tokio::test]
 async fn ehlo() {
@@ -47,23 +51,24 @@ async fn ehlo() {
     );
 
     let config = &mut core.session.config;
-    config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 1024},
-    {else = 2048}]"
+    config.data.max_message_size = r#"[{if = "remote_ip = '10.0.0.1'", then = 1024},
+    {else = 2048}]"#
         .parse_if();
-    config.extensions.future_release = r"[{if = 'remote-ip', eq = '10.0.0.1', then = '1h'},
-    {else = false}]"
+    config.extensions.future_release = r#"[{if = "remote_ip = '10.0.0.1'", then = '1h'},
+    {else = false}]"#
         .parse_if();
-    config.extensions.mt_priority = r"[{if = 'remote-ip', eq = '10.0.0.1', then = 'nsep'},
-    {else = false}]"
-        .parse_if();
-    core.mail_auth.spf.verify_ehlo = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
-    {else = 'relaxed'}]"
-        .parse_if();
+    config.extensions.mt_priority = r#"[{if = "remote_ip = '10.0.0.1'", then = 'nsep'},
+    {else = false}]"#
+        .parse_if_constant::<MtPriority>();
+    core.mail_auth.spf.verify_ehlo = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+    {else = 'relaxed'}]"#
+        .parse_if_constant::<VerifyStrategy>();
     config.ehlo.reject_non_fqdn = IfBlock::new(true);
 
     // Reject non-FQDN domains
     let mut session = Session::test(core);
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = false;
     session.eval_session_params().await;
     session.cmd("EHLO domain", "550 5.5.0").await;
@@ -85,7 +90,8 @@ async fn ehlo() {
 
     // Test SPF strict mode
     session.data.helo_domain = String::new();
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = true;
     session.eval_session_params().await;
     session.ingest(b"EHLO mx1.foobar.org\r\n").await.unwrap();

@@ -382,9 +382,9 @@ impl<'x> TryFrom<Variable<'x>> for RequireOptional {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         match value {
-            utils::expr::Variable::Integer(0) => Ok(RequireOptional::Optional),
+            utils::expr::Variable::Integer(2) => Ok(RequireOptional::Optional),
             utils::expr::Variable::Integer(1) => Ok(RequireOptional::Require),
-            utils::expr::Variable::Integer(2) => Ok(RequireOptional::Disable),
+            utils::expr::Variable::Integer(0) => Ok(RequireOptional::Disable),
             _ => Err(()),
         }
     }
@@ -393,9 +393,9 @@ impl<'x> TryFrom<Variable<'x>> for RequireOptional {
 impl From<RequireOptional> for Constant {
     fn from(value: RequireOptional) -> Self {
         Constant::Integer(match value {
-            RequireOptional::Optional => 0,
+            RequireOptional::Optional => 2,
             RequireOptional::Require => 1,
-            RequireOptional::Disable => 2,
+            RequireOptional::Disable => 0,
         })
     }
 }

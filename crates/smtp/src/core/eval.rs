@@ -33,20 +33,14 @@ pub const F_KEY_EXISTS: u32 = 2;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
-    ("rcpt-domain", V_RECIPIENT_DOMAIN),
     ("rcpt_domain", V_RECIPIENT_DOMAIN),
     ("sender", V_SENDER),
-    ("sender-domain", V_SENDER_DOMAIN),
     ("sender_domain", V_SENDER_DOMAIN),
     ("mx", V_MX),
-    ("helo-domain", V_HELO_DOMAIN),
     ("helo_domain", V_HELO_DOMAIN),
-    ("authenticated-as", V_AUTHENTICATED_AS),
     ("authenticated_as", V_AUTHENTICATED_AS),
     ("listener", V_LISTENER),
-    ("remote-ip", V_REMOTE_IP),
     ("remote_ip", V_REMOTE_IP),
-    ("local-ip", V_LOCAL_IP),
     ("local_ip", V_LOCAL_IP),
     ("priority", V_PRIORITY),
 ];

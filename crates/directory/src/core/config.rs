@@ -27,9 +27,12 @@ use deadpool::{
 };
 use std::{sync::Arc, time::Duration};
 use store::{Store, Stores};
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config, Servers,
+use utils::{
+    config::{
+        utils::{AsKey, ParseValue},
+        Config, Servers,
+    },
+    expr::Token,
 };
 
 use ahash::AHashMap;
@@ -171,9 +174,13 @@ impl AddressMapping {
                     "Invalid value for address mapping {key:?}: {value:?}",
                 )),
             }
-        } else if let Some(if_block) =
-            config.parse_if_block(key, |name| Err(format!("Invalid variable name {name:?}.",)))?
-        {
+        } else if let Some(if_block) = config.parse_if_block(key, |name| {
+            if ["address", "email"].contains(&name) {
+                Ok(Token::Variable(1))
+            } else {
+                Err(format!("Invalid variable name {name:?}.",))
+            }
+        })? {
             Ok(AddressMapping::Custom(if_block))
         } else {
             Ok(AddressMapping::Disable)

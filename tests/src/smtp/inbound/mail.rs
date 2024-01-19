@@ -27,7 +27,7 @@ use std::{
 };
 
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
-use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use smtp_proto::{MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
@@ -71,39 +71,40 @@ async fn mail() {
     let config = &mut core.session.config;
     config.ehlo.require = IfBlock::new(true);
     core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
-    core.mail_auth.spf.verify_mail_from = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
-    {else = 'relaxed'}]"
+    core.mail_auth.spf.verify_mail_from = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+    {else = 'relaxed'}]"#
+        .parse_if_constant::<VerifyStrategy>();
+    core.mail_auth.iprev.verify = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+    {else = 'relaxed'}]"#
+        .parse_if_constant::<VerifyStrategy>();
+    config.extensions.future_release = r#"[{if = "remote_ip = '10.0.0.2'", then = '1d'},
+    {else = false}]"#
         .parse_if();
-    core.mail_auth.iprev.verify = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'strict'},
-    {else = 'relaxed'}]"
+    config.extensions.deliver_by = r#"[{if = "remote_ip = '10.0.0.2'", then = '1d'},
+    {else = false}]"#
         .parse_if();
-    config.extensions.future_release = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
-    {else = false}]"
+    config.extensions.requiretls = r#"[{if = "remote_ip = '10.0.0.2'", then = true},
+    {else = false}]"#
         .parse_if();
-    config.extensions.deliver_by = r"[{if = 'remote-ip', eq = '10.0.0.2', then = '1d'},
-    {else = false}]"
-        .parse_if();
-    config.extensions.requiretls = r"[{if = 'remote-ip', eq = '10.0.0.2', then = true},
-    {else = false}]"
-        .parse_if();
-    config.extensions.mt_priority = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 'nsep'},
-    {else = false}]"
-        .parse_if();
-    config.data.max_message_size = r"[{if = 'remote-ip', eq = '10.0.0.2', then = 2048},
-    {else = 1024}]"
+    config.extensions.mt_priority = r#"[{if = "remote_ip = '10.0.0.2'", then = 'nsep'},
+    {else = false}]"#
+        .parse_if_constant::<MtPriority>();
+    config.data.max_message_size = r#"[{if = "remote_ip = '10.0.0.2'", then = 2048},
+    {else = 1024}]"#
         .parse_if();
 
-    config.throttle.mail_from = r"[[throttle]]
-    match = {if = 'remote-ip', eq = '10.0.0.1'}
+    config.throttle.mail_from = r#"[[throttle]]
+    match = "remote_ip = '10.0.0.1'"
     key = 'sender'
     rate = '2/1s'
-    "
+    "#
     .parse_throttle();
 
     // Be rude and do not say EHLO
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
     session
         .ingest(b"MAIL FROM:<bill@foobar.org>\r\n")
@@ -174,7 +175,8 @@ async fn mail() {
     session.response().assert_code("552 5.3.4");
 
     // Test strict IPREV
-    session.data.remote_ip = "10.0.0.2".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.2".to_string();
+    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.data.iprev = None;
     session.eval_session_params().await;
     session

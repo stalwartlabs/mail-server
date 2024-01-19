@@ -55,7 +55,7 @@ use smtp::{
     },
     outbound::dane::DnssecResolver,
 };
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::{if_block::IfBlock, utils::ConstantValue, Config};
 
 pub mod config;
 pub mod inbound;
@@ -68,6 +68,7 @@ pub mod session;
 
 pub trait ParseTestConfig {
     fn parse_if(&self) -> IfBlock;
+    fn parse_if_constant<T: ConstantValue>(&self) -> IfBlock;
     fn parse_throttle(&self) -> Vec<Throttle>;
     fn parse_quota(&self) -> QueueQuotas;
     fn parse_queue_throttle(&self) -> QueueThrottle;
@@ -76,10 +77,14 @@ pub trait ParseTestConfig {
 
 impl ParseTestConfig for &str {
     fn parse_if(&self) -> IfBlock {
+        self.parse_if_constant::<Duration>()
+    }
+
+    fn parse_if_constant<T: ConstantValue>(&self) -> IfBlock {
         Config::new(&format!("test = {self}\n"))
-            .unwrap()
+            .unwrap_or_else(|err| panic!("Failed to parse if {}: {}", self, err))
             .parse_if_block("test", |name| {
-                map_expr_token::<Duration>(
+                map_expr_token::<T>(
                     name,
                     &[
                         V_RECIPIENT,
@@ -96,7 +101,7 @@ impl ParseTestConfig for &str {
                     ],
                 )
             })
-            .unwrap()
+            .unwrap_or_else(|err| panic!("Failed to parse if {}: {}", self, err))
             .unwrap()
     }
 

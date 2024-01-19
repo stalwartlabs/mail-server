@@ -41,13 +41,13 @@ use crate::smtp::{ParseTestConfig, TestConfig};
 
 #[tokio::test]
 async fn lookup_ip() {
-    let ipv6 = vec![
+    let ipv6 = [
         "a:b::1".parse().unwrap(),
         "a:b::2".parse().unwrap(),
         "a:b::3".parse().unwrap(),
         "a:b::4".parse().unwrap(),
     ];
-    let ipv4 = vec![
+    let ipv4 = [
         "10.0.0.1".parse().unwrap(),
         "10.0.0.2".parse().unwrap(),
         "10.0.0.3".parse().unwrap(),
@@ -55,18 +55,18 @@ async fn lookup_ip() {
     ];
     let mut core = SMTP::test();
     core.queue.config.source_ip.ipv4 = format!(
-        "[{}]",
+        "\"[{}]\"",
         ipv4.iter()
-            .map(|ip| format!("\"{}\"", ip))
+            .map(|ip| format!("'{}'", ip))
             .collect::<Vec<_>>()
             .join(",")
     )
     .as_str()
     .parse_if();
     core.queue.config.source_ip.ipv6 = format!(
-        "[{}]",
+        "\"[{}]\"",
         ipv6.iter()
-            .map(|ip| format!("\"{}\"", ip))
+            .map(|ip| format!("'{}'", ip))
             .collect::<Vec<_>>()
             .join(",")
     )

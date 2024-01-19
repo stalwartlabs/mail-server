@@ -83,7 +83,7 @@ async fn extensions() {
     let core = Arc::new(core);
     let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
-    session.data.remote_ip = "10.0.0.1".parse().unwrap();
+    session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
