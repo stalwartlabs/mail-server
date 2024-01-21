@@ -1,6 +1,7 @@
-use std::{borrow::Cow, sync::Arc, vec::IntoIter};
+use std::{borrow::Cow, net::IpAddr, sync::Arc, vec::IntoIter};
 
 use directory::Directory;
+use mail_auth::IpLookupStrategy;
 use sieve::Sieve;
 use store::{LookupKey, LookupStore, LookupValue};
 use utils::{
@@ -28,8 +29,10 @@ pub const V_LOCAL_IP: u32 = 9;
 pub const V_PRIORITY: u32 = 10;
 
 pub const F_IS_LOCAL_DOMAIN: u32 = 0;
-pub const F_KEY_GET: u32 = 1;
-pub const F_KEY_EXISTS: u32 = 2;
+pub const F_IS_LOCAL_ADDRESS: u32 = 1;
+pub const F_KEY_GET: u32 = 2;
+pub const F_KEY_EXISTS: u32 = 3;
+pub const F_DNS_QUERY: u32 = 4;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
@@ -137,6 +140,26 @@ impl SMTP {
                     })
                     .into()
             }
+            F_IS_LOCAL_ADDRESS => {
+                let directory = params.next_as_string();
+                let address = params.next_as_string();
+
+                self.get_directory_or_default(directory.as_ref())
+                    .rcpt(address.as_ref())
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            context = "eval_if",
+                            event = "error",
+                            property = property,
+                            error = ?err,
+                            "Failed to check if address is local."
+                        );
+
+                        false
+                    })
+                    .into()
+            }
             F_KEY_GET => {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
@@ -184,6 +207,7 @@ impl SMTP {
                     })
                     .into()
             }
+            F_DNS_QUERY => self.dns_query(params).await,
             _ => Variable::default(),
         }
     }
@@ -276,6 +300,83 @@ impl SMTP {
 
             None
         })
+    }
+
+    async fn dns_query<'x>(&self, mut arguments: FncParams<'x>) -> Variable<'x> {
+        let entry = arguments.next_as_string();
+        let record_type = arguments.next_as_string();
+
+        if record_type.eq_ignore_ascii_case("ip") {
+            match self
+                .resolvers
+                .dns
+                .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
+                .await
+            {
+                Ok(result) => result
+                    .iter()
+                    .map(|ip| Variable::from(ip.to_string()))
+                    .collect::<Vec<_>>()
+                    .into(),
+                Err(_) => Variable::default(),
+            }
+        } else if record_type.eq_ignore_ascii_case("mx") {
+            match self.resolvers.dns.mx_lookup(entry.as_ref()).await {
+                Ok(result) => result
+                    .iter()
+                    .flat_map(|mx| {
+                        mx.exchanges.iter().map(|host| {
+                            Variable::String(
+                                host.strip_suffix('.')
+                                    .unwrap_or(host.as_str())
+                                    .to_string()
+                                    .into(),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+                Err(_) => Variable::default(),
+            }
+        } else if record_type.eq_ignore_ascii_case("txt") {
+            match self.resolvers.dns.txt_raw_lookup(entry.as_ref()).await {
+                Ok(result) => Variable::from(String::from_utf8(result).unwrap_or_default()),
+                Err(_) => Variable::default(),
+            }
+        } else if record_type.eq_ignore_ascii_case("ptr") {
+            if let Ok(addr) = entry.parse::<IpAddr>() {
+                match self.resolvers.dns.ptr_lookup(addr).await {
+                    Ok(result) => result
+                        .iter()
+                        .map(|host| Variable::from(host.to_string()))
+                        .collect::<Vec<_>>()
+                        .into(),
+                    Err(_) => Variable::default(),
+                }
+            } else {
+                Variable::default()
+            }
+        } else if record_type.eq_ignore_ascii_case("ipv4") {
+            match self.resolvers.dns.ipv4_lookup(entry.as_ref()).await {
+                Ok(result) => result
+                    .iter()
+                    .map(|ip| Variable::from(ip.to_string()))
+                    .collect::<Vec<_>>()
+                    .into(),
+                Err(_) => Variable::default(),
+            }
+        } else if record_type.eq_ignore_ascii_case("ipv6") {
+            match self.resolvers.dns.ipv6_lookup(entry.as_ref()).await {
+                Ok(result) => result
+                    .iter()
+                    .map(|ip| Variable::from(ip.to_string()))
+                    .collect::<Vec<_>>()
+                    .into(),
+                Err(_) => Variable::default(),
+            }
+        } else {
+            Variable::default()
+        }
     }
 }
 
