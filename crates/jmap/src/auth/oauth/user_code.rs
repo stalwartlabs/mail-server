@@ -219,7 +219,7 @@ impl JMAP {
             HtmlResponse::new(response).into_http_response()
         } else {
             hyper::Response::builder()
-                .status(StatusCode::TEMPORARY_REDIRECT)
+                .status(StatusCode::MOVED_PERMANENTLY)
                 .header(header::LOCATION, redirect_link)
                 .body(
                     Full::new(Bytes::from(Vec::<u8>::new()))

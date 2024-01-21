@@ -75,15 +75,7 @@ impl SMTP {
 
         match result.try_into() {
             Ok(value) => Some(value),
-            Err(_) => {
-                tracing::warn!(
-                    context = "eval_if",
-                    event = "error",
-                    property = if_block.key,
-                    "Failed to convert value."
-                );
-                None
-            }
+            Err(_) => None,
         }
     }
 
@@ -112,15 +104,7 @@ impl SMTP {
 
         match result.try_into() {
             Ok(value) => Some(value),
-            Err(_) => {
-                tracing::warn!(
-                    context = "eval_expr",
-                    event = "error",
-                    property = expr_id,
-                    "Failed to convert value."
-                );
-                None
-            }
+            Err(_) => None,
         }
     }
 
