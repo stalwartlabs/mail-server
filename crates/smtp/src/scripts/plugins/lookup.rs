@@ -29,7 +29,7 @@ use std::{
 
 use mail_auth::flate2;
 use sieve::{runtime::Variable, FunctionMap};
-use store::{Deserialize, LookupKey, LookupValue, Value};
+use store::{Deserialize, Value};
 
 use crate::{
     config::scripts::{RemoteList, SieveContext},
@@ -72,10 +72,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
                     if !item.is_empty()
                         && ctx
                             .handle
-                            .block_on(store.key_get::<VariableExists>(LookupKey::Key(
-                                item.to_string().into_owned().into_bytes(),
-                            )))
-                            .map(|v| v != LookupValue::None)
+                            .block_on(store.key_exists(item.to_string().into_owned().into_bytes()))
                             .unwrap_or(false)
                     {
                         return true.into();
@@ -85,10 +82,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             }
             v if !v.is_empty() => ctx
                 .handle
-                .block_on(store.key_get::<VariableExists>(LookupKey::Key(
-                    v.to_string().into_owned().into_bytes(),
-                )))
-                .map(|v| v != LookupValue::None)
+                .block_on(store.key_exists(v.to_string().into_owned().into_bytes()))
                 .unwrap_or(false),
             _ => false,
         }
@@ -113,14 +107,13 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
 
     if let Some(store) = store {
         ctx.handle
-            .block_on(store.key_get::<VariableWrapper>(LookupKey::Key(
-                ctx.arguments[1].to_string().into_owned().into_bytes(),
-            )))
-            .map(|v| match v {
-                LookupValue::Value { value, .. } => value.into_inner(),
-                LookupValue::Counter { num } => num.into(),
-                LookupValue::None => Variable::default(),
-            })
+            .block_on(
+                store.key_get::<VariableWrapper>(
+                    ctx.arguments[1].to_string().into_owned().into_bytes(),
+                ),
+            )
+            .unwrap_or_default()
+            .map(|v| v.into_inner())
             .unwrap_or_default()
     } else {
         tracing::warn!(
@@ -142,22 +135,20 @@ pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
 
     if let Some(store) = store {
         let expires = match &ctx.arguments[3] {
-            Variable::Integer(v) => *v as u64,
-            Variable::Float(v) => *v as u64,
-            _ => 0,
+            Variable::Integer(v) => Some(*v as u64),
+            Variable::Float(v) => Some(*v as u64),
+            _ => None,
         };
 
         ctx.handle
             .block_on(store.key_set(
                 ctx.arguments[1].to_string().into_owned().into_bytes(),
-                LookupValue::Value {
-                    value: if !ctx.arguments[2].is_empty() {
-                        bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
-                    } else {
-                        vec![]
-                    },
-                    expires,
+                if !ctx.arguments[2].is_empty() {
+                    bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
+                } else {
+                    vec![]
                 },
+                expires,
             ))
             .is_ok()
             .into()
@@ -426,9 +417,6 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
 #[derive(Debug, PartialEq, Eq)]
 pub struct VariableWrapper(Variable);
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct VariableExists;
-
 impl Deserialize for VariableWrapper {
     fn deserialize(bytes: &[u8]) -> store::Result<Self> {
         Ok(VariableWrapper(
@@ -439,21 +427,15 @@ impl Deserialize for VariableWrapper {
     }
 }
 
-impl Deserialize for VariableExists {
-    fn deserialize(_: &[u8]) -> store::Result<Self> {
-        Ok(VariableExists)
+impl From<i64> for VariableWrapper {
+    fn from(value: i64) -> Self {
+        VariableWrapper(value.into())
     }
 }
 
 impl VariableWrapper {
     pub fn into_inner(self) -> Variable {
         self.0
-    }
-}
-
-impl From<Value<'static>> for VariableExists {
-    fn from(_: Value<'static>) -> Self {
-        VariableExists
     }
 }
 

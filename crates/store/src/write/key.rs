@@ -22,15 +22,18 @@
 */
 
 use std::convert::TryInto;
-use utils::codec::leb128::Leb128_;
+use utils::{codec::leb128::Leb128_, BLOB_HASH_LEN};
 
 use crate::{
-    BitmapKey, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, BLOB_HASH_LEN, SUBSPACE_BITMAPS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN, WITHOUT_BLOCK_NUM,
-    WITH_SUBSPACE,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_BITMAPS,
+    SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
+    WITHOUT_BLOCK_NUM, WITH_SUBSPACE,
 };
 
-use super::{AnyKey, BitmapClass, BlobOp, DirectoryClass, TagValue, ValueClass};
+use super::{
+    AnyKey, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportEvent, TagValue,
+    ValueClass,
+};
 
 pub struct KeySerializer {
     pub buf: Vec<u8>,
@@ -217,7 +220,16 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        SUBSPACE_VALUES
+        if !matches!(
+            self.class.as_ref(),
+            ValueClass::Directory(DirectoryClass::UsedQuota(_))
+                | ValueClass::Lookup(LookupClass::Counter(_))
+                | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_))
+        ) {
+            SUBSPACE_VALUES
+        } else {
+            SUBSPACE_COUNTERS
+        }
     }
 
     fn serialize(&self, flags: u32) -> Vec<u8> {
@@ -250,7 +262,6 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 .write(self.account_id)
                 .write(self.collection)
                 .write(self.document_id),
-            ValueClass::Key(key) => serializer.write(4u8).write(key.as_slice()),
             ValueClass::IndexEmail(seq) => serializer
                 .write(5u8)
                 .write(*seq)
@@ -276,6 +287,11 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                     .write(self.document_id),
             },
             ValueClass::Config(key) => serializer.write(8u8).write(key.as_slice()),
+            ValueClass::Lookup(lookup) => match lookup {
+                LookupClass::Key(key) => serializer.write(4u8).write(key.as_slice()),
+                LookupClass::Counter(key) => serializer.write(9u8).write(key.as_slice()),
+                LookupClass::CounterExpiry(key) => serializer.write(10u8).write(key.as_slice()),
+            },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::NameToId(name) => serializer.write(20u8).write(name.as_slice()),
                 DirectoryClass::EmailToId(email) => serializer.write(21u8).write(email.as_slice()),
@@ -296,6 +312,41 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                     .write(26u8)
                     .write(*principal_id)
                     .write(*has_member),
+            },
+            ValueClass::Queue(queue) => match queue {
+                QueueClass::Message(queue_id) => serializer.write(50u8).write(*queue_id),
+                QueueClass::MessageEvent(event) => serializer
+                    .write(51u8)
+                    .write(event.due)
+                    .write(event.queue_id),
+                QueueClass::DmarcReportHeader(event) => serializer
+                    .write(52u8)
+                    .write(event.due)
+                    .write(event.domain.as_bytes())
+                    .write(event.policy_hash)
+                    .write(event.seq_id)
+                    .write(0u8),
+                QueueClass::TlsReportHeader(event) => serializer
+                    .write(52u8)
+                    .write(event.due)
+                    .write(event.domain.as_bytes())
+                    .write(event.policy_hash)
+                    .write(event.seq_id)
+                    .write(1u8),
+                QueueClass::DmarcReportEvent(event) => serializer
+                    .write(53u8)
+                    .write(event.due)
+                    .write(event.domain.as_bytes())
+                    .write(event.policy_hash)
+                    .write(event.seq_id),
+                QueueClass::TlsReportEvent(event) => serializer
+                    .write(54u8)
+                    .write(event.due)
+                    .write(event.domain.as_bytes())
+                    .write(event.policy_hash)
+                    .write(event.seq_id),
+                QueueClass::QuotaCount(key) => serializer.write(55u8).write(key.as_slice()),
+                QueueClass::QuotaSize(key) => serializer.write(56u8).write(key.as_slice()),
             },
         }
         .finalize()
@@ -425,7 +476,10 @@ impl ValueClass {
                 U32_LEN * 2 + 3
             }
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
-            ValueClass::Key(v) | ValueClass::Config(v) => v.len(),
+            ValueClass::Lookup(
+                LookupClass::Counter(v) | LookupClass::CounterExpiry(v) | LookupClass::Key(v),
+            )
+            | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
                 DirectoryClass::NameToId(v)
                 | DirectoryClass::EmailToId(v)
@@ -438,6 +492,17 @@ impl ValueClass {
                 BlobOp::Commit { .. } | BlobOp::Link { .. } => BLOB_HASH_LEN + U32_LEN * 2 + 2,
             },
             ValueClass::IndexEmail { .. } => U64_LEN * 2,
+            ValueClass::Queue(q) => match q {
+                QueueClass::Message(_) => U64_LEN,
+                QueueClass::MessageEvent(_) => U64_LEN * 2,
+                QueueClass::DmarcReportEvent(event) | QueueClass::TlsReportEvent(event) => {
+                    event.domain.len() + U64_LEN * 3
+                }
+                QueueClass::DmarcReportHeader(event) | QueueClass::TlsReportHeader(event) => {
+                    event.domain.len() + (U64_LEN * 3) + 1
+                }
+                QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
+            },
         }
     }
 }
@@ -473,5 +538,22 @@ impl From<DirectoryClass> for ValueClass {
 impl From<BlobOp> for ValueClass {
     fn from(value: BlobOp) -> Self {
         ValueClass::Blob(value)
+    }
+}
+
+impl Deserialize for ReportEvent {
+    fn deserialize(key: &[u8]) -> crate::Result<Self> {
+        Ok(ReportEvent {
+            due: key.deserialize_be_u64(1)?,
+            policy_hash: key.deserialize_be_u64(key.len() - (U64_LEN * 2 + 1))?,
+            seq_id: key.deserialize_be_u64(key.len() - (U64_LEN + 1))?,
+            domain: key
+                .get(U64_LEN + 1..key.len() - (U64_LEN * 2 + 1))
+                .and_then(|domain| std::str::from_utf8(domain).ok())
+                .map(|s| s.to_string())
+                .ok_or_else(|| {
+                    crate::Error::InternalError("Failed to deserialize report domain".into())
+                })?,
+        })
     }
 }

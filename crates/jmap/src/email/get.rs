@@ -37,9 +37,9 @@ use jmap_proto::{
     },
 };
 use mail_parser::HeaderName;
-use store::BlobClass;
+use store::{write::Bincode, BlobClass};
 
-use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, Bincode, JMAP};
+use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
 
 use super::{
     body::{ToBodyPart, TruncateBody},

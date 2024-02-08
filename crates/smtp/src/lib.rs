@@ -42,6 +42,7 @@ use store::Stores;
 use tokio::sync::mpsc;
 use utils::{
     config::{Config, ServerProtocol, Servers},
+    snowflake::SnowflakeIdGenerator,
     UnwrapFailure,
 };
 
@@ -129,15 +130,10 @@ impl SMTP {
                         .unwrap_or(32)
                         .next_power_of_two() as usize,
                 ),
-                id_seq: 0.into(),
-                quota: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config.property("global.shared-map.capacity")?.unwrap_or(2),
-                    ThrottleKeyHasherBuilder::default(),
-                    config
-                        .property::<u64>("global.shared-map.shard")?
-                        .unwrap_or(32)
-                        .next_power_of_two() as usize,
-                ),
+                snowflake_id: config
+                    .property::<u64>("storage.cluster.node-id")?
+                    .map(SnowflakeIdGenerator::with_node_id)
+                    .unwrap_or_else(SnowflakeIdGenerator::new),
                 tx: queue_tx,
                 connectors: TlsConnectors {
                     pki_verify: build_tls_connector(false),
@@ -156,10 +152,10 @@ impl SMTP {
         });
 
         // Spawn queue manager
-        queue_rx.spawn(core.clone(), core.queue.read_queue().await);
+        queue_rx.spawn(core.clone());
 
         // Spawn report manager
-        report_rx.spawn(core.clone(), core.report.read_reports().await);
+        report_rx.spawn(core.clone());
 
         Ok(core)
     }

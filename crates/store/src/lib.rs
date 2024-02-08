@@ -119,12 +119,8 @@ pub struct LogKey {
     pub change_id: u64,
 }
 
-pub const BLOB_HASH_LEN: usize = 32;
 pub const U64_LEN: usize = std::mem::size_of::<u64>();
 pub const U32_LEN: usize = std::mem::size_of::<u32>();
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct BlobHash([u8; BLOB_HASH_LEN]);
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -325,19 +321,6 @@ impl From<MemoryStore> for LookupStore {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum LookupKey {
-    Key(Vec<u8>),
-    Counter(Vec<u8>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LookupValue<T> {
-    Value { value: T, expires: u64 },
-    Counter { num: i64 },
-    None,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value<'x> {
     Integer(i64),
@@ -360,16 +343,6 @@ impl<'x> Value<'x> {
             Value::Blob(b) => String::from_utf8_lossy(b.as_ref()),
             Value::Null => Cow::Borrowed(""),
         }
-    }
-}
-
-impl From<LookupKey> for String {
-    fn from(value: LookupKey) -> Self {
-        let key = match value {
-            LookupKey::Key(key) | LookupKey::Counter(key) => key,
-        };
-        String::from_utf8(key)
-            .unwrap_or_else(|err| String::from_utf8_lossy(&err.into_bytes()).into_owned())
     }
 }
 
@@ -555,6 +528,16 @@ impl<'x> From<bool> for Value<'x> {
 impl<'x> From<i64> for Value<'x> {
     fn from(value: i64) -> Self {
         Self::Integer(value)
+    }
+}
+
+impl From<Value<'static>> for i64 {
+    fn from(value: Value<'static>) -> Self {
+        if let Value::Integer(value) = value {
+            value
+        } else {
+            0
+        }
     }
 }
 

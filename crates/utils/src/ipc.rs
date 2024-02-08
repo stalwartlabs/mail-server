@@ -21,9 +21,11 @@
  * for more details.
 */
 
-use std::{borrow::Cow, path::PathBuf};
+use std::borrow::Cow;
 
-use tokio::{fs, io::AsyncReadExt, sync::oneshot};
+use tokio::sync::oneshot;
+
+use crate::BlobHash;
 
 #[derive(Debug)]
 pub enum DeliveryEvent {
@@ -38,7 +40,7 @@ pub enum DeliveryEvent {
 pub struct IngestMessage {
     pub sender_address: String,
     pub recipients: Vec<String>,
-    pub message_path: PathBuf,
+    pub message_blob: BlobHash,
     pub message_size: usize,
 }
 
@@ -52,30 +54,4 @@ pub enum DeliveryResult {
         code: [u8; 3],
         reason: Cow<'static, str>,
     },
-}
-
-impl IngestMessage {
-    pub async fn read_message(&self) -> Result<Vec<u8>, ()> {
-        let mut raw_message = vec![0u8; self.message_size];
-        let mut file = fs::File::open(&self.message_path).await.map_err(|err| {
-            tracing::error!(
-                context = "read_message",
-                event = "error",
-                "Failed to open message file {}: {}",
-                self.message_path.display(),
-                err
-            );
-        })?;
-        file.read_exact(&mut raw_message).await.map_err(|err| {
-            tracing::error!(
-                context = "read_message",
-                event = "error",
-                "Failed to read {} bytes file {} from disk: {}",
-                self.message_size,
-                self.message_path.display(),
-                err
-            );
-        })?;
-        Ok(raw_message)
-    }
 }

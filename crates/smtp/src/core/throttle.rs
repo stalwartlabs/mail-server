@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use ::utils::listener::limiter::{ConcurrencyLimiter, RateLimiter};
+use ::utils::listener::limiter::ConcurrencyLimiter;
 use dashmap::mapref::entry::Entry;
 use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
@@ -31,12 +31,6 @@ use std::hash::{BuildHasher, Hash, Hasher};
 use crate::config::*;
 
 use super::{eval::*, ResolveVariable, Session};
-
-#[derive(Debug)]
-pub struct Limiter {
-    pub rate: Option<RateLimiter>,
-    pub concurrency: Option<ConcurrencyLimiter>,
-}
 
 #[derive(Debug, Clone, Eq)]
 pub struct ThrottleKey {
@@ -52,6 +46,12 @@ impl PartialEq for ThrottleKey {
 impl Hash for ThrottleKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash.hash(state);
+    }
+}
+
+impl AsRef<[u8]> for ThrottleKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.hash
     }
 }
 
@@ -236,10 +236,36 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 }
 
                 // Build throttle key
-                match self.core.session.throttle.entry(t.new_key(self)) {
-                    Entry::Occupied(mut e) => {
-                        let limiter = e.get_mut();
-                        if let Some(limiter) = &limiter.concurrency {
+                let key = t.new_key(self);
+
+                // Check rate
+                if let Some(rate) = &t.rate {
+                    if self
+                        .core
+                        .shared
+                        .default_lookup_store
+                        .is_rate_allowed(key.hash.as_slice(), rate, false)
+                        .await
+                        .unwrap_or_default()
+                        .is_some()
+                    {
+                        tracing::debug!(
+                            parent: &self.span,
+                            context = "throttle",
+                            event = "rate-limit-exceeded",
+                            max_requests = rate.requests,
+                            max_interval = rate.period.as_secs(),
+                            "Rate limit exceeded."
+                        );
+                        return false;
+                    }
+                }
+
+                // Check concurrency
+                if let Some(concurrency) = &t.concurrency {
+                    match self.core.session.throttle.entry(key) {
+                        Entry::Occupied(mut e) => {
+                            let limiter = e.get_mut();
                             if let Some(inflight) = limiter.is_allowed() {
                                 self.in_flight.push(inflight);
                             } else {
@@ -253,35 +279,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                                 return false;
                             }
                         }
-                        if let (Some(limiter), Some(rate)) = (&mut limiter.rate, &t.rate) {
-                            if !limiter.is_allowed(rate) {
-                                tracing::debug!(
-                                    parent: &self.span,
-                                    context = "throttle",
-                                    event = "rate-limit-exceeded",
-                                    max_requests = rate.requests,
-                                    max_interval = rate.period.as_secs(),
-                                    "Rate limit exceeded."
-                                );
-                                return false;
-                            }
-                        }
-                    }
-                    Entry::Vacant(e) => {
-                        let concurrency = t.concurrency.map(|concurrency| {
-                            let limiter = ConcurrencyLimiter::new(concurrency);
+                        Entry::Vacant(e) => {
+                            let limiter = ConcurrencyLimiter::new(*concurrency);
                             if let Some(inflight) = limiter.is_allowed() {
                                 self.in_flight.push(inflight);
                             }
-                            limiter
-                        });
-                        let rate = t.rate.as_ref().map(|rate| {
-                            let r = RateLimiter::new(rate);
-                            r.is_allowed(rate);
-                            r
-                        });
-
-                        e.insert(Limiter { rate, concurrency });
+                            e.insert(limiter);
+                        }
                     }
                 }
             }
@@ -290,33 +294,19 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         true
     }
 
-    pub fn throttle_rcpt(&self, rcpt: &str, rate: &Rate, ctx: &str) -> bool {
+    pub async fn throttle_rcpt(&self, rcpt: &str, rate: &Rate, ctx: &str) -> bool {
         let mut hasher = blake3::Hasher::new();
         hasher.update(rcpt.as_bytes());
         hasher.update(ctx.as_bytes());
         hasher.update(&rate.period.as_secs().to_ne_bytes()[..]);
         hasher.update(&rate.requests.to_ne_bytes()[..]);
-        let key = ThrottleKey {
-            hash: hasher.finalize().into(),
-        };
 
-        match self.core.session.throttle.entry(key) {
-            Entry::Occupied(mut e) => {
-                if let Some(limiter) = &mut e.get_mut().rate {
-                    limiter.is_allowed(rate)
-                } else {
-                    false
-                }
-            }
-            Entry::Vacant(e) => {
-                let limiter = RateLimiter::new(rate);
-                limiter.is_allowed(rate);
-                e.insert(Limiter {
-                    rate: limiter.into(),
-                    concurrency: None,
-                });
-                true
-            }
-        }
+        self.core
+            .shared
+            .default_lookup_store
+            .is_rate_allowed(hasher.finalize().as_bytes(), rate, false)
+            .await
+            .unwrap_or_default()
+            .is_none()
     }
 }

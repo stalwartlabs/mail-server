@@ -24,13 +24,13 @@
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     fts::index::FtsDocument,
-    write::{key::DeserializeBigEndian, BatchBuilder, ValueClass},
+    write::{key::DeserializeBigEndian, BatchBuilder, Bincode, ValueClass},
     Deserialize, IterateParams, ValueKey, U32_LEN, U64_LEN,
 };
 
 use crate::{
     email::{index::IndexMessageText, metadata::MessageMetadata},
-    Bincode, JMAP,
+    JMAP,
 };
 
 use super::housekeeper::Event;

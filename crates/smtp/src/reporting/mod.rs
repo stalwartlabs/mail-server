@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::SystemTime};
+use std::{io, sync::Arc, time::SystemTime};
 
 use mail_auth::{
     common::headers::HeaderWriter,
@@ -37,14 +37,12 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::if_block::IfBlock;
 
 use crate::{
-    config::{AddressMatch, AggregateFrequency, DkimSigner},
-    core::{management, Session, SMTP},
+    config::{AddressMatch, AggregateFrequency},
+    core::{Session, SMTP},
     outbound::{dane::Tlsa, mta_sts::Policy},
     queue::{DomainPart, Message},
     USER_AGENT,
 };
-
-use self::scheduler::{ReportKey, ReportValue};
 
 pub mod analysis;
 pub mod dkim;
@@ -57,7 +55,6 @@ pub mod tls;
 pub enum Event {
     Dmarc(Box<DmarcEvent>),
     Tls(Box<TlsEvent>),
-    Manage(management::ReportRequest),
     Stop,
 }
 
@@ -137,9 +134,11 @@ impl SMTP {
         // Build message
         let from_addr_lcase = from_addr.to_lowercase();
         let from_addr_domain = from_addr_lcase.domain_part().to_string();
-        let mut message = Message::new_boxed(from_addr, from_addr_lcase, from_addr_domain);
+        let mut message = self
+            .queue
+            .new_message(from_addr, from_addr_lcase, from_addr_domain);
         for rcpt_ in rcpts {
-            message.add_recipient(rcpt_.as_ref(), &self).await;
+            message.add_recipient(rcpt_.as_ref(), self).await;
         }
 
         // Sign message
@@ -164,8 +163,8 @@ impl SMTP {
         }
 
         // Queue message
-        self.queue
-            .queue_message(message, signature.as_deref(), &report, span)
+        message
+            .queue(signature.as_deref(), &report, self, span)
             .await;
     }
 
@@ -300,42 +299,28 @@ impl From<(&Option<Arc<Policy>>, &Option<Arc<Tlsa>>)> for PolicyType {
     }
 }
 
-impl ReportKey {
-    pub fn domain(&self) -> &str {
-        match self {
-            scheduler::ReportType::Dmarc(p) => &p.inner,
-            scheduler::ReportType::Tls(d) => d,
-        }
+pub(crate) struct SerializedSize {
+    bytes_left: usize,
+}
+
+impl SerializedSize {
+    pub fn new(bytes_left: usize) -> Self {
+        Self { bytes_left }
     }
 }
 
-impl ReportValue {
-    pub async fn delete(&self) {
-        match self {
-            scheduler::ReportType::Dmarc(path) => {
-                if let Err(err) = tokio::fs::remove_file(&path.path).await {
-                    tracing::warn!(
-                        context = "report",
-                        event = "error",
-                        "Failed to remove report file {}: {}",
-                        path.path.display(),
-                        err
-                    );
-                }
-            }
-            scheduler::ReportType::Tls(path) => {
-                for path in &path.path {
-                    if let Err(err) = tokio::fs::remove_file(&path.inner).await {
-                        tracing::warn!(
-                            context = "report",
-                            event = "error",
-                            "Failed to remove report file {}: {}",
-                            path.inner.display(),
-                            err
-                        );
-                    }
-                }
-            }
+impl io::Write for SerializedSize {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let buf_len = buf.len();
+        if buf_len <= self.bytes_left {
+            self.bytes_left -= buf_len;
+            Ok(buf_len)
+        } else {
+            Err(io::Error::new(io::ErrorKind::Other, "Size exceeded"))
         }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }

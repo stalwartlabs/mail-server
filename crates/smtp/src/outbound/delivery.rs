@@ -24,7 +24,7 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use mail_auth::{
@@ -33,6 +33,7 @@ use mail_auth::{
 };
 use mail_send::SmtpClient;
 use smtp_proto::MAIL_REQUIRETLS;
+use store::write::now;
 use utils::config::ServerProtocol;
 
 use crate::{
@@ -49,71 +50,80 @@ use super::{
     NextHop,
 };
 use crate::queue::{
-    manager::Queue, throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope,
-    Schedule, Status, WorkerResult,
+    throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope, Status,
 };
 
 impl DeliveryAttempt {
-    pub async fn try_deliver(mut self, core: Arc<SMTP>, queue: &mut Queue) {
-        // Check that the message still has recipients to be delivered
-        let has_pending_delivery = self.has_pending_delivery();
-
-        // Send any due Delivery Status Notifications
-        core.send_dsn(&mut self).await;
-
-        if has_pending_delivery {
-            // Re-queue the message if its not yet due for delivery
-            let due = self.message.next_delivery_event();
-            if due > Instant::now() {
-                // Save changes to disk
-                self.message.save_changes().await;
-
-                queue.schedule(Schedule {
-                    due,
-                    inner: self.message,
-                });
-                return;
-            }
-        } else {
-            // All message recipients expired, do not re-queue. (DSN has been already sent)
-            self.message.remove().await;
-            return;
-        }
-
-        // Throttle sender
-        for throttle in &core.queue.config.throttle.sender {
-            if let Err(err) = core
-                .is_allowed(
-                    throttle,
-                    self.message.as_ref(),
-                    &mut self.in_flight,
-                    &self.span,
-                )
-                .await
-            {
-                // Save changes to disk
-                self.message.save_changes().await;
-
-                match err {
-                    throttle::Error::Concurrency { limiter } => {
-                        queue.on_hold(OnHold {
-                            next_due: self.message.next_event_after(Instant::now()),
-                            limiters: vec![limiter],
-                            message: self.message,
-                        });
-                    }
-                    throttle::Error::Rate { retry_at } => {
-                        queue.schedule(Schedule {
-                            due: retry_at,
-                            inner: self.message,
-                        });
-                    }
-                }
-                return;
-            }
-        }
-
+    pub async fn try_deliver(mut self, core: Arc<SMTP>) {
         tokio::spawn(async move {
+            // Check that the message still has recipients to be delivered
+            let has_pending_delivery = self.has_pending_delivery();
+
+            // Send any due Delivery Status Notifications
+            core.send_dsn(&mut self).await;
+
+            if has_pending_delivery {
+                // Re-queue the message if its not yet due for delivery
+                let due = self.message.next_delivery_event();
+                if due > now() {
+                    // Save changes
+                    self.message
+                        .save_changes(&core, self.event.due.into(), due.into())
+                        .await;
+                    if core.queue.tx.send(Event::Reload).await.is_err() {
+                        tracing::warn!("Channel closed while trying to notify queue manager.");
+                    }
+                    return;
+                }
+            } else {
+                // All message recipients expired, do not re-queue. (DSN has been already sent)
+                self.message.remove(&core, self.event.due).await;
+                if core.queue.tx.send(Event::Reload).await.is_err() {
+                    tracing::warn!("Channel closed while trying to notify queue manager.");
+                }
+
+                return;
+            }
+
+            // Throttle sender
+            for throttle in &core.queue.config.throttle.sender {
+                if let Err(err) = core
+                    .is_allowed(throttle, &self.message, &mut self.in_flight, &self.span)
+                    .await
+                {
+                    let event = match err {
+                        throttle::Error::Concurrency { limiter } => {
+                            // Save changes to disk
+                            let next_due = self.message.next_event_after(now());
+                            self.message.save_changes(&core, None, None).await;
+
+                            Event::OnHold(OnHold {
+                                next_due,
+                                limiters: vec![limiter],
+                                message: self.event,
+                            })
+                        }
+                        throttle::Error::Rate { retry_at } => {
+                            // Save changes to disk
+                            let next_event = std::cmp::min(
+                                retry_at,
+                                self.message.next_event_after(now()).unwrap_or(u64::MAX),
+                            );
+                            self.message
+                                .save_changes(&core, self.event.due.into(), next_event.into())
+                                .await;
+
+                            Event::Reload
+                        }
+                    };
+
+                    if core.queue.tx.send(event).await.is_err() {
+                        tracing::warn!("Channel closed while trying to notify queue manager.");
+                    }
+                    return;
+                }
+            }
+
             let queue_config = &core.queue.config;
             let mut on_hold = Vec::new();
             let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
@@ -123,7 +133,7 @@ impl DeliveryAttempt {
             'next_domain: for (domain_idx, domain) in domains.iter_mut().enumerate() {
                 // Only process domains due for delivery
                 if !matches!(&domain.status, Status::Scheduled | Status::TemporaryFailure(_)
-                if domain.retry.due <= Instant::now())
+                if domain.retry.due <= now())
                 {
                     continue;
                 }
@@ -138,7 +148,7 @@ impl DeliveryAttempt {
 
                 // Build envelope
                 let mut envelope = QueueEnvelope {
-                    message: self.message.as_ref(),
+                    message: &self.message,
                     domain: &domain.domain,
                     mx: "",
                     remote_ip: no_ip,
@@ -672,6 +682,7 @@ impl DeliveryAttempt {
                             .unwrap_or_else(|| "localhost".to_string());
                         let params = SessionParams {
                             span: &span,
+                            core: &core,
                             credentials: remote_host.credentials(),
                             is_smtp: remote_host.is_smtp(),
                             hostname: envelope.mx,
@@ -1018,11 +1029,9 @@ impl DeliveryAttempt {
             // Notify queue manager
             let span = self.span;
             let result = if !on_hold.is_empty() {
-                // Release quota for completed deliveries
-                self.message.release_quota();
-
                 // Save changes to disk
-                self.message.save_changes().await;
+                let next_due = self.message.next_event_after(now());
+                self.message.save_changes(&core, None, None).await;
 
                 tracing::info!(
                     parent: &span,
@@ -1032,17 +1041,16 @@ impl DeliveryAttempt {
                     "Too many outbound concurrent connections, message moved to on-hold queue."
                 );
 
-                WorkerResult::OnHold(OnHold {
-                    next_due: self.message.next_event_after(Instant::now()),
+                Event::OnHold(OnHold {
+                    next_due,
                     limiters: on_hold,
-                    message: self.message,
+                    message: self.event,
                 })
             } else if let Some(due) = self.message.next_event() {
-                // Release quota for completed deliveries
-                self.message.release_quota();
-
                 // Save changes to disk
-                self.message.save_changes().await;
+                self.message
+                    .save_changes(&core, self.event.due.into(), due.into())
+                    .await;
 
                 tracing::info!(
                     parent: &span,
@@ -1052,13 +1060,10 @@ impl DeliveryAttempt {
                     "Delivery was not possible, message re-queued for delivery."
                 );
 
-                WorkerResult::Retry(Schedule {
-                    due,
-                    inner: self.message,
-                })
+                Event::Reload
             } else {
                 // Delete message from queue
-                self.message.remove().await;
+                self.message.remove(&core, self.event.due).await;
 
                 tracing::info!(
                     parent: &span,
@@ -1067,9 +1072,9 @@ impl DeliveryAttempt {
                     "Delivery completed."
                 );
 
-                WorkerResult::Done
+                Event::Reload
             };
-            if core.queue.tx.send(Event::Done(result)).await.is_err() {
+            if core.queue.tx.send(result).await.is_err() {
                 tracing::warn!(
                     parent: &span,
                     "Channel closed while trying to notify queue manager."
@@ -1080,7 +1085,7 @@ impl DeliveryAttempt {
 
     /// Marks as failed all domains that reached their expiration time
     pub fn has_pending_delivery(&mut self) -> bool {
-        let now = Instant::now();
+        let now = now();
         let mut has_pending_delivery = false;
         let span = self.span.clone();
 
@@ -1103,7 +1108,6 @@ impl DeliveryAttempt {
 
                     domain.status =
                         std::mem::replace(&mut domain.status, Status::Scheduled).into_permanent();
-                    domain.changed = true;
                 }
                 Status::Scheduled if domain.expires <= now => {
                     tracing::info!(
@@ -1123,7 +1127,6 @@ impl DeliveryAttempt {
                     domain.status = Status::PermanentFailure(Error::Io(
                         "Queue rate limit exceeded.".to_string(),
                     ));
-                    domain.changed = true;
                 }
                 Status::Completed(_) | Status::PermanentFailure(_) => (),
                 _ => {
@@ -1139,7 +1142,6 @@ impl DeliveryAttempt {
 impl Domain {
     pub fn set_status(&mut self, status: impl Into<Status<(), Error>>, schedule: &[Duration]) {
         self.status = status.into();
-        self.changed = true;
         if matches!(
             &self.status,
             Status::TemporaryFailure(_) | Status::Scheduled
@@ -1149,8 +1151,8 @@ impl Domain {
     }
 
     pub fn retry(&mut self, schedule: &[Duration]) {
-        self.retry.due =
-            Instant::now() + schedule[std::cmp::min(self.retry.inner as usize, schedule.len() - 1)];
+        self.retry.due = now()
+            + schedule[std::cmp::min(self.retry.inner as usize, schedule.len() - 1)].as_secs();
         self.retry.inner += 1;
     }
 }

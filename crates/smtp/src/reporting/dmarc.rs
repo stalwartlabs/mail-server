@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{collections::hash_map::Entry, path::PathBuf, sync::Arc};
+use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
 use mail_auth::{
@@ -31,28 +31,22 @@ use mail_auth::{
     ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcOutput,
     SpfResult,
 };
-use serde::{Deserialize, Serialize};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    runtime::Handle,
+use store::{
+    write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
+    Deserialize, IterateParams, Serialize, ValueKey,
 };
+use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use crate::{
     config::AggregateFrequency,
     core::{Session, SMTP},
-    queue::{DomainPart, InstantFromTimestamp, RecipientDomain, Schedule},
+    queue::{DomainPart, RecipientDomain},
 };
 
-use super::{
-    scheduler::{
-        json_append, json_read_blocking, json_write, ReportPath, ReportPolicy, ReportType,
-        Scheduler, ToHash,
-    },
-    DmarcEvent,
-};
+use super::{scheduler::ToHash, DmarcEvent, SerializedSize};
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DmarcFormat {
     pub rua: Vec<URI>,
     pub policy: PolicyPublished,
@@ -88,16 +82,15 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             {
                 Some(rcpts) => {
                     if !rcpts.is_empty() {
-                        rcpts
-                            .into_iter()
-                            .filter_map(|rcpt| {
-                                if self.throttle_rcpt(rcpt.uri(), &failure_rate, "dmarc") {
-                                    rcpt.uri().into()
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect()
+                        let mut new_rcpts = Vec::with_capacity(rcpts.len());
+
+                        for rcpt in rcpts {
+                            if self.throttle_rcpt(rcpt.uri(), &failure_rate, "dmarc").await {
+                                new_rcpts.push(rcpt.uri());
+                            }
+                        }
+
+                        new_rcpts
                     } else {
                         if !dmarc_record.ruf().is_empty() {
                             tracing::debug!(
@@ -306,224 +299,307 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-pub trait GenerateDmarcReport {
-    fn generate_dmarc_report(&self, domain: ReportPolicy<String>, path: ReportPath<PathBuf>);
-}
+impl SMTP {
+    pub async fn generate_dmarc_report(&self, event: ReportEvent) {
+        let span = tracing::info_span!(
+            "dmarc-report",
+            domain = event.domain,
+            range_from = event.seq_id,
+            range_to = event.due,
+        );
 
-impl GenerateDmarcReport for Arc<SMTP> {
-    fn generate_dmarc_report(&self, domain: ReportPolicy<String>, path: ReportPath<PathBuf>) {
-        let core = self.clone();
-        let handle = Handle::current();
-
-        self.worker_pool.spawn(move || {
-            let deliver_at = path.created + path.deliver_at.as_secs();
-            let span = tracing::info_span!(
-                "dmarc-report",
-                domain = domain.inner,
-                range_from = path.created,
-                range_to = deliver_at,
-                size = path.size,
-            );
-
-            // Deserialize report
-            let dmarc = if let Some(dmarc) = json_read_blocking::<DmarcFormat>(&path.path, &span) {
-                dmarc
-            } else {
-                return;
-            };
-
-            // Verify external reporting addresses
-            let rua = match handle.block_on(
-                core.resolvers
-                    .dns
-                    .verify_dmarc_report_address(&domain.inner, &dmarc.rua),
-            ) {
-                Some(rcpts) => {
-                    if !rcpts.is_empty() {
-                        rcpts
-                            .into_iter()
-                            .map(|u| u.uri().to_string())
-                            .collect::<Vec<_>>()
-                    } else {
-                        tracing::info!(
-                            parent: &span,
-                            event = "failed",
-                            reason = "unauthorized-rua",
-                            rua = ?dmarc.rua,
-                            "Unauthorized external reporting addresses"
-                        );
-                        let _ = std::fs::remove_file(&path.path);
-                        return;
-                    }
-                }
-                None => {
-                    tracing::info!(
-                        parent: &span,
-                        event = "failed",
-                        reason = "dns-failure",
-                        rua = ?dmarc.rua,
-                        "Failed to validate external report addresses",
-                    );
-                    let _ = std::fs::remove_file(&path.path);
-                    return;
-                }
-            };
-
-            let config = &core.report.config.dmarc_aggregate;
-
-            // Group duplicates
-            let mut record_map = AHashMap::with_capacity(dmarc.records.len());
-            for record in dmarc.records {
-                match record_map.entry(record) {
-                    Entry::Occupied(mut e) => {
-                        *e.get_mut() += 1;
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(1u32);
-                    }
-                }
-            }
-
-            // Create report
-            let mut report = Report::new()
-                .with_policy_published(dmarc.policy)
-                .with_date_range_begin(path.created)
-                .with_date_range_end(deliver_at)
-                .with_report_id(format!("{}_{}", domain.policy, path.created))
-                .with_email(
-                    handle
-                        .block_on(core.eval_if(
-                            &config.address,
-                            &RecipientDomain::new(domain.inner.as_str()),
-                        ))
-                        .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
-                );
-            if let Some(org_name) = handle.block_on(core.eval_if::<String, _>(
-                &config.org_name,
-                &RecipientDomain::new(domain.inner.as_str()),
-            )) {
-                report = report.with_org_name(org_name);
-            }
-            if let Some(contact_info) = handle.block_on(core.eval_if::<String, _>(
-                &config.contact_info,
-                &RecipientDomain::new(domain.inner.as_str()),
-            )) {
-                report = report.with_extra_contact_info(contact_info);
-            }
-            for (record, count) in record_map {
-                report.add_record(record.with_count(count));
-            }
-            let from_addr = handle
-                .block_on(core.eval_if(
-                    &config.address,
-                    &RecipientDomain::new(domain.inner.as_str()),
-                ))
-                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
-            let mut message = Vec::with_capacity(path.size);
-            let _ =
-                report.write_rfc5322(
-                    &handle
-                        .block_on(core.eval_if(
-                            &core.report.config.submitter,
-                            &RecipientDomain::new(domain.inner.as_str()),
-                        ))
-                        .unwrap_or_else(|| "localhost".to_string()),
-                    (
-                        handle
-                            .block_on(core.eval_if(
-                                &config.name,
-                                &RecipientDomain::new(domain.inner.as_str()),
-                            ))
-                            .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
-                            .as_str(),
-                        from_addr.as_str(),
-                    ),
-                    rua.iter().map(|a| a.as_str()),
-                    &mut message,
-                );
-
-            // Send report
-            handle.block_on(core.send_report(
-                &from_addr,
-                rua.iter(),
-                message,
-                &config.sign,
-                &span,
-                false,
-            ));
-
-            if let Err(err) = std::fs::remove_file(&path.path) {
+        // Deserialize report
+        let dmarc = match self
+            .shared
+            .default_data_store
+            .get_value::<Bincode<DmarcFormat>>(ValueKey::from(ValueClass::Queue(
+                QueueClass::DmarcReportHeader(event.clone()),
+            )))
+            .await
+        {
+            Ok(Some(dmarc)) => dmarc.inner,
+            Ok(None) => {
                 tracing::warn!(
-                    context = "report",
+                    parent: &span,
+                    event = "missing",
+                    "Failed to read DMARC report: Report not found"
+                );
+                return;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    parent: &span,
                     event = "error",
-                    "Failed to remove report file {}: {}",
-                    path.path.display(),
+                    "Failed to read DMARC report: {}",
                     err
                 );
-            }
-        });
-    }
-}
-
-impl Scheduler {
-    pub async fn schedule_dmarc(&mut self, event: Box<DmarcEvent>, core: &SMTP) {
-        let max_size = core
-            .eval_if(
-                &core.report.config.dmarc_aggregate.max_size,
-                &RecipientDomain::new(event.domain.as_str()),
-            )
-            .await
-            .unwrap_or(25 * 1024 * 1024);
-
-        let policy = event.dmarc_record.to_hash();
-        let (create, path) = match self.reports.entry(ReportType::Dmarc(ReportPolicy {
-            inner: event.domain,
-            policy,
-        })) {
-            Entry::Occupied(e) => (None, e.into_mut().dmarc_path()),
-            Entry::Vacant(e) => {
-                let domain = e.key().domain_name().to_string();
-                let created = event.interval.to_timestamp();
-                let deliver_at = created + event.interval.as_secs();
-
-                self.main.push(Schedule {
-                    due: deliver_at.to_instant(),
-                    inner: e.key().clone(),
-                });
-                let path = core
-                    .build_report_path(ReportType::Dmarc(&domain), policy, created, event.interval)
-                    .await;
-                let v = e.insert(ReportType::Dmarc(ReportPath {
-                    path,
-                    deliver_at: event.interval,
-                    created,
-                    size: 0,
-                }));
-                (domain.into(), v.dmarc_path())
+                return;
             }
         };
 
-        if let Some(domain) = create {
+        // Verify external reporting addresses
+        let rua = match self
+            .resolvers
+            .dns
+            .verify_dmarc_report_address(&event.domain, &dmarc.rua)
+            .await
+        {
+            Some(rcpts) => {
+                if !rcpts.is_empty() {
+                    rcpts
+                        .into_iter()
+                        .map(|u| u.uri().to_string())
+                        .collect::<Vec<_>>()
+                } else {
+                    tracing::info!(
+                        parent: &span,
+                        event = "failed",
+                        reason = "unauthorized-rua",
+                        rua = ?dmarc.rua,
+                        "Unauthorized external reporting addresses"
+                    );
+                    self.delete_dmarc_report(event).await;
+                    return;
+                }
+            }
+            None => {
+                tracing::info!(
+                    parent: &span,
+                    event = "failed",
+                    reason = "dns-failure",
+                    rua = ?dmarc.rua,
+                    "Failed to validate external report addresses",
+                );
+                self.delete_dmarc_report(event).await;
+                return;
+            }
+        };
+
+        let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
+            self.eval_if(
+                &self.report.config.dmarc_aggregate.max_size,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+            .unwrap_or(25 * 1024 * 1024),
+        ));
+        let _ = serde::Serialize::serialize(&dmarc, &mut serialized_size);
+        let config = &self.report.config.dmarc_aggregate;
+
+        // Group duplicates
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+            ReportEvent {
+                due: event.due,
+                policy_hash: event.policy_hash,
+                seq_id: 0,
+                domain: event.domain.clone(),
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+            ReportEvent {
+                due: event.due,
+                policy_hash: event.policy_hash,
+                seq_id: u64::MAX,
+                domain: event.domain.clone(),
+            },
+        )));
+        let mut record_map = AHashMap::with_capacity(dmarc.records.len());
+        if let Err(err) = self
+            .shared
+            .default_data_store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending(),
+                |_, v| match record_map.entry(Bincode::<Record>::deserialize(v)?.inner) {
+                    Entry::Occupied(mut e) => {
+                        *e.get_mut() += 1;
+                        Ok(true)
+                    }
+                    Entry::Vacant(e) => {
+                        if serde::Serialize::serialize(e.key(), &mut serialized_size).is_ok() {
+                            e.insert(1u32);
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    }
+                },
+            )
+            .await
+        {
+            tracing::warn!(
+                parent: &span,
+                event = "error",
+                "Failed to read DMARC report: {}",
+                err
+            );
+        }
+
+        // Create report
+        let mut report = Report::new()
+            .with_policy_published(dmarc.policy)
+            .with_date_range_begin(event.seq_id)
+            .with_date_range_end(event.due)
+            .with_report_id(format!("{}_{}", event.policy_hash, event.seq_id))
+            .with_email(
+                self.eval_if(
+                    &config.address,
+                    &RecipientDomain::new(event.domain.as_str()),
+                )
+                .await
+                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
+            );
+        if let Some(org_name) = self
+            .eval_if::<String, _>(
+                &config.org_name,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+        {
+            report = report.with_org_name(org_name);
+        }
+        if let Some(contact_info) = self
+            .eval_if::<String, _>(
+                &config.contact_info,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+        {
+            report = report.with_extra_contact_info(contact_info);
+        }
+        for (record, count) in record_map {
+            report.add_record(record.with_count(count));
+        }
+        let from_addr = self
+            .eval_if(
+                &config.address,
+                &RecipientDomain::new(event.domain.as_str()),
+            )
+            .await
+            .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
+        let mut message = Vec::with_capacity(2048);
+        let _ = report.write_rfc5322(
+            &self
+                .eval_if(
+                    &self.report.config.submitter,
+                    &RecipientDomain::new(event.domain.as_str()),
+                )
+                .await
+                .unwrap_or_else(|| "localhost".to_string()),
+            (
+                self.eval_if(&config.name, &RecipientDomain::new(event.domain.as_str()))
+                    .await
+                    .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
+                    .as_str(),
+                from_addr.as_str(),
+            ),
+            rua.iter().map(|a| a.as_str()),
+            &mut message,
+        );
+
+        // Send report
+        self.send_report(&from_addr, rua.iter(), message, &config.sign, &span, false)
+            .await;
+
+        self.delete_dmarc_report(event).await;
+    }
+
+    pub async fn delete_dmarc_report(&self, event: ReportEvent) {
+        let from_key = ReportEvent {
+            due: event.due,
+            policy_hash: event.policy_hash,
+            seq_id: 0,
+            domain: event.domain.clone(),
+        };
+        let to_key = ReportEvent {
+            due: event.due,
+            policy_hash: event.policy_hash,
+            seq_id: u64::MAX,
+            domain: event.domain.clone(),
+        };
+
+        if let Err(err) = self
+            .shared
+            .default_data_store
+            .delete_range(
+                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(from_key))),
+                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(to_key))),
+            )
+            .await
+        {
+            tracing::warn!(
+                context = "report",
+                event = "error",
+                "Failed to remove repors: {}",
+                err
+            );
+            return;
+        }
+
+        let mut batch = BatchBuilder::new();
+        batch.clear(ValueClass::Queue(QueueClass::DmarcReportHeader(event)));
+        if let Err(err) = self.shared.default_data_store.write(batch.build()).await {
+            tracing::warn!(
+                context = "report",
+                event = "error",
+                "Failed to remove repors: {}",
+                err
+            );
+        }
+    }
+
+    pub async fn schedule_dmarc(&self, event: Box<DmarcEvent>) {
+        let created = event.interval.to_timestamp();
+        let deliver_at = created + event.interval.as_secs();
+        let mut report_event = ReportEvent {
+            due: deliver_at,
+            policy_hash: event.dmarc_record.to_hash(),
+            seq_id: created,
+            domain: event.domain,
+        };
+
+        // Write policy if missing
+        let mut builder = BatchBuilder::new();
+        if self
+            .shared
+            .default_data_store
+            .get_value::<()>(ValueKey::from(ValueClass::Queue(
+                QueueClass::DmarcReportHeader(report_event.clone()),
+            )))
+            .await
+            .unwrap_or_default()
+            .is_none()
+        {
             // Serialize report
             let entry = DmarcFormat {
                 rua: event.dmarc_record.rua().to_vec(),
-                policy: PolicyPublished::from_record(domain, &event.dmarc_record),
-                records: vec![event.report_record],
+                policy: PolicyPublished::from_record(
+                    report_event.domain.to_string(),
+                    &event.dmarc_record,
+                ),
+                records: vec![],
             };
-            let bytes_written = json_write(&path.path, &entry).await;
 
-            if bytes_written > 0 {
-                path.size += bytes_written;
-            } else {
-                // Something went wrong, remove record
-                self.reports.remove(&ReportType::Dmarc(ReportPolicy {
-                    inner: entry.policy.domain,
-                    policy,
-                }));
-            }
-        } else if path.size < max_size {
-            // Append to existing report
-            path.size += json_append(&path.path, &event.report_record, max_size - path.size).await;
+            // Write report
+            builder.set(
+                ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
+                Bincode::new(entry).serialize(),
+            );
+        }
+
+        // Write entry
+        report_event.seq_id = self.queue.snowflake_id.generate().unwrap_or_else(now);
+        builder.set(
+            ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
+            Bincode::new(event.report_record).serialize(),
+        );
+
+        if let Err(err) = self.shared.default_data_store.write(builder.build()).await {
+            tracing::error!(
+                context = "report",
+                event = "error",
+                "Failed to write DMARC report event: {}",
+                err
+            );
         }
     }
 }

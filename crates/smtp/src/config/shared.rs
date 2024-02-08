@@ -72,6 +72,17 @@ impl ConfigShared for Config {
                     )
                 })?
                 .clone(),
+            default_blob_store: self
+                .value_or_default("storage.blob", "storage.data")
+                .and_then(|id| ctx.stores.blob_stores.get(id))
+                .ok_or_else(|| {
+                    format!(
+                        "Lookup store {:?} not found for key \"storage.blob\".",
+                        self.value_or_default("storage.blob", "storage.data")
+                            .unwrap()
+                    )
+                })?
+                .clone(),
         })
     }
 

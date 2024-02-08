@@ -54,8 +54,8 @@ use store::{
     fts::FtsFilter,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ToBitmaps, ValueClass},
-    BitmapKey, BlobStore, Deserialize, FtsStore, Serialize, Store, Stores, ValueKey,
+    write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass},
+    BitmapKey, BlobStore, Deserialize, FtsStore, Store, Stores, ValueKey,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -169,10 +169,6 @@ pub struct Config {
     pub principal_allow_lookups: bool,
 
     pub capabilities: BaseCapabilities,
-}
-
-pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
-    pub inner: T,
 }
 
 #[derive(Debug)]
@@ -756,56 +752,6 @@ impl JMAP {
                 }
             }
         })
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for &Bincode<T> {
-    fn serialize(self) -> Vec<u8> {
-        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
-    fn serialize(self) -> Vec<u8> {
-        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize
-    for Bincode<T>
-{
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        lz4_flex::decompress_size_prepended(bytes)
-            .map_err(|err| {
-                store::Error::InternalError(format!("Bincode decompression failed: {err:?}"))
-            })
-            .and_then(|result| {
-                bincode::deserialize(&result).map_err(|err| {
-                    store::Error::InternalError(format!(
-                        "Bincode deserialization failed (len {}): {err:?}",
-                        result.len()
-                    ))
-                })
-            })
-            .map(|inner| Self { inner })
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T> {
-    fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
-        unreachable!()
-    }
-}
-
-impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for &Bincode<T> {
-    fn to_bitmaps(&self, _ops: &mut Vec<store::write::Operation>, _field: u8, _set: bool) {
-        unreachable!()
     }
 }
 

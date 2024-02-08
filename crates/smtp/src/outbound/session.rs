@@ -30,7 +30,6 @@ use smtp_proto::{
 use std::fmt::Write;
 use std::time::Duration;
 use tokio::{
-    fs,
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
@@ -38,6 +37,7 @@ use tokio_rustls::{client::TlsStream, TlsConnector};
 
 use crate::{
     config::{RequireOptional, TlsStrategy},
+    core::SMTP,
     queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED},
 };
 
@@ -45,6 +45,7 @@ use crate::queue::{Error, Message, Recipient, Status};
 
 pub struct SessionParams<'x> {
     pub span: &'x tracing::Span,
+    pub core: &'x SMTP,
     pub hostname: &'x str,
     pub credentials: Option<&'x Credentials<String>>,
     pub is_smtp: bool,
@@ -532,43 +533,53 @@ pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
     bdat_cmd: &Option<String>,
     params: &SessionParams<'_>,
 ) -> Result<(), Status<(), Error>> {
-    let mut raw_message = vec![0u8; message.size];
-    let mut file = fs::File::open(&message.path).await.map_err(|err| {
-        tracing::error!(parent: params.span,
-                            context = "queue", 
-                            event = "error", 
-                            "Failed to open message file {}: {}", 
-                            message.path.display(),
-                            err);
-        Status::TemporaryFailure(Error::Io("Queue system error.".to_string()))
-    })?;
-    file.read_exact(&mut raw_message).await.map_err(|err| {
-        tracing::error!(parent: params.span,
-                            context = "queue", 
-                            event = "error", 
-                            "Failed to read {} bytes file {} from disk: {}", 
-                            message.size,
-                            message.path.display(),
-                            err);
-        Status::TemporaryFailure(Error::Io("Queue system error.".to_string()))
-    })?;
-    tokio::time::timeout(params.timeout_data, async {
-        if let Some(bdat_cmd) = bdat_cmd {
-            write_chunks(smtp_client, &[bdat_cmd.as_bytes(), &raw_message]).await
-        } else {
-            write_chunks(smtp_client, &[b"DATA\r\n"]).await?;
-            smtp_client.read().await?.assert_code(354)?;
-            smtp_client
-                .write_message(&raw_message)
-                .await
-                .map_err(mail_send::Error::from)
+    match params
+        .core
+        .shared
+        .default_blob_store
+        .get_blob(message.blob_hash.as_slice(), 0..u32::MAX)
+        .await
+    {
+        Ok(Some(raw_message)) => tokio::time::timeout(params.timeout_data, async {
+            if let Some(bdat_cmd) = bdat_cmd {
+                write_chunks(smtp_client, &[bdat_cmd.as_bytes(), &raw_message]).await
+            } else {
+                write_chunks(smtp_client, &[b"DATA\r\n"]).await?;
+                smtp_client.read().await?.assert_code(354)?;
+                smtp_client
+                    .write_message(&raw_message)
+                    .await
+                    .map_err(mail_send::Error::from)
+            }
+        })
+        .await
+        .map_err(|_| Status::timeout(params.hostname, "sending message"))?
+        .map_err(|err| {
+            Status::from_smtp_error(params.hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
+        }),
+        Ok(None) => {
+            tracing::error!(parent: params.span,
+            context = "queue",
+            event = "error",
+            "BlobHash {:?} does not exist.",
+            message.blob_hash,
+            );
+            Err(Status::TemporaryFailure(Error::Io(
+                "Queue system error.".to_string(),
+            )))
         }
-    })
-    .await
-    .map_err(|_| Status::timeout(params.hostname, "sending message"))?
-    .map_err(|err| {
-        Status::from_smtp_error(params.hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
-    })
+        Err(err) => {
+            tracing::error!(parent: params.span,
+                context = "queue", 
+                event = "error", 
+                "Failed to fetch blobId {:?}: {}", 
+                message.blob_hash,
+                err);
+            Err(Status::TemporaryFailure(Error::Io(
+                "Queue system error.".to_string(),
+            )))
+        }
+    }
 }
 
 pub async fn say_helo<T: AsyncRead + AsyncWrite + Unpin>(

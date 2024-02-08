@@ -35,7 +35,8 @@ use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
-use store::{BlobClass, BlobHash};
+use store::BlobClass;
+use utils::BlobHash;
 
 use crate::{auth::AccessToken, JMAP};
 

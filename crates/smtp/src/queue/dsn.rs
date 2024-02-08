@@ -30,22 +30,21 @@ use smtp_proto::{
     Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
 use std::fmt::Write;
-use std::time::{Duration, Instant};
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use std::time::Duration;
+use store::write::now;
 
 use crate::core::SMTP;
 
 use super::{
-    instant_to_timestamp, DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message,
-    Recipient, SimpleEnvelope, Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
+    DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, SimpleEnvelope,
+    Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
 impl SMTP {
     pub async fn send_dsn(&self, attempt: &mut DeliveryAttempt) {
         if !attempt.message.return_path.is_empty() {
             if let Some(dsn) = attempt.build_dsn(self).await {
-                let mut dsn_message = Message::new_boxed("", "", "");
+                let mut dsn_message = self.queue.new_message("", "", "");
                 dsn_message
                     .add_recipient_parts(
                         &attempt.message.return_path,
@@ -64,8 +63,8 @@ impl SMTP {
                         &attempt.span,
                     )
                     .await;
-                self.queue
-                    .queue_message(dsn_message, signature.as_deref(), &dsn, &attempt.span)
+                dsn_message
+                    .queue(signature.as_deref(), &dsn, self, &attempt.span)
                     .await;
             }
         } else {
@@ -77,7 +76,7 @@ impl SMTP {
 impl DeliveryAttempt {
     pub async fn build_dsn(&mut self, core: &SMTP) -> Option<Vec<u8>> {
         let config = &core.queue.config;
-        let now = Instant::now();
+        let now = now();
 
         let mut txt_success = String::new();
         let mut txt_delay = String::new();
@@ -245,11 +244,10 @@ impl DeliveryAttempt {
                         })
                     {
                         domain.notify.inner += 1;
-                        domain.notify.due = Instant::now() + next_notify;
+                        domain.notify.due = now + next_notify.as_secs();
                     } else {
-                        domain.notify.due = domain.expires + Duration::from_secs(10);
+                        domain.notify.due = domain.expires + 10;
                     }
-                    domain.changed = true;
                 }
             }
             self.message.domains = domains;
@@ -257,15 +255,15 @@ impl DeliveryAttempt {
 
         // Obtain hostname and sender addresses
         let from_name = core
-            .eval_if(&config.dsn.name, self.message.as_ref())
+            .eval_if(&config.dsn.name, &self.message)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = core
-            .eval_if(&config.dsn.address, self.message.as_ref())
+            .eval_if(&config.dsn.address, &self.message)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
-            .eval_if(&config.hostname, self.message.as_ref())
+            .eval_if(&config.hostname, &self.message)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 
@@ -276,55 +274,54 @@ impl DeliveryAttempt {
         let dsn = dsn_header + &dsn;
 
         // Fetch up to 1024 bytes of message headers
-        let headers = match File::open(&self.message.path).await {
-            Ok(mut file) => {
-                let mut buf = vec![0u8; std::cmp::min(self.message.size, 1024)];
-                match file.read(&mut buf).await {
-                    Ok(br) => {
-                        let mut prev_ch = 0;
-                        let mut last_lf = br;
-                        for (pos, &ch) in buf.iter().enumerate() {
-                            match ch {
-                                b'\n' => {
-                                    last_lf = pos + 1;
-                                    if prev_ch != b'\n' {
-                                        prev_ch = ch;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                b'\r' => (),
-                                0 => break,
-                                _ => {
-                                    prev_ch = ch;
-                                }
+        let headers = match core
+            .shared
+            .default_blob_store
+            .get_blob(self.message.blob_hash.as_slice(), 0..1024)
+            .await
+        {
+            Ok(Some(mut buf)) => {
+                let mut prev_ch = 0;
+                let mut last_lf = buf.len();
+                for (pos, &ch) in buf.iter().enumerate() {
+                    match ch {
+                        b'\n' => {
+                            last_lf = pos + 1;
+                            if prev_ch != b'\n' {
+                                prev_ch = ch;
+                            } else {
+                                break;
                             }
                         }
-                        if last_lf < 1024 {
-                            buf.truncate(last_lf);
+                        b'\r' => (),
+                        0 => break,
+                        _ => {
+                            prev_ch = ch;
                         }
-                        String::from_utf8(buf).unwrap_or_default()
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            parent: &self.span,
-                            context = "queue",
-                            event = "error",
-                            "Failed to read from {}: {}",
-                            self.message.path.display(),
-                            err
-                        );
-                        String::new()
                     }
                 }
+                if last_lf < 1024 {
+                    buf.truncate(last_lf);
+                }
+                String::from_utf8(buf).unwrap_or_default()
+            }
+            Ok(None) => {
+                tracing::error!(
+                    parent: &self.span,
+                    context = "queue",
+                    event = "error",
+                    "Failed to open blob {:?}: not found",
+                    self.message.blob_hash
+                );
+                String::new()
             }
             Err(err) => {
                 tracing::error!(
                     parent: &self.span,
                     context = "queue",
                     event = "error",
-                    "Failed to open file {}: {}",
-                    self.message.path.display(),
+                    "Failed to open blob {:?}: {}",
+                    self.message.blob_hash,
                     err
                 );
                 String::new()
@@ -387,10 +384,10 @@ impl DeliveryAttempt {
             }
         }
 
-        let now = Instant::now();
+        let now = now();
         for domain in &mut message.domains {
             if domain.notify.due <= now {
-                domain.notify.due = domain.expires + Duration::from_secs(10);
+                domain.notify.due = domain.expires + 10;
             }
         }
 
@@ -520,13 +517,10 @@ impl Recipient {
 
 impl Domain {
     fn write_dsn_will_retry_until(&self, dsn: &mut String) {
-        let now = Instant::now();
+        let now = now();
         if self.expires > now {
             dsn.push_str("Will-Retry-Until: ");
-            dsn.push_str(
-                &DateTime::from_timestamp(instant_to_timestamp(now, self.expires) as i64)
-                    .to_rfc822(),
-            );
+            dsn.push_str(&DateTime::from_timestamp(self.expires as i64).to_rfc822());
             dsn.push_str("\r\n");
         }
     }

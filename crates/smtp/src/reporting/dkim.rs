@@ -46,7 +46,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         };
 
         // Throttle recipient
-        if !self.throttle_rcpt(rcpt, rate, "dkim") {
+        if !self.throttle_rcpt(rcpt, rate, "dkim").await {
             tracing::debug!(
                 parent: &self.span,
                 context = "report",

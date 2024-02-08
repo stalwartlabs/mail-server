@@ -22,10 +22,11 @@
 */
 
 use ahash::AHashSet;
+use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::{
-    write::BatchBuilder, BlobClass, BlobHash, BlobStore, Deserialize, IterateParams, Store,
-    ValueKey, BLOB_HASH_LEN, U32_LEN, U64_LEN,
+    write::BatchBuilder, BlobClass, BlobStore, Deserialize, IterateParams, Store, ValueKey,
+    U32_LEN, U64_LEN,
 };
 
 use super::{key::DeserializeBigEndian, now, BlobOp, Operation, ValueClass, ValueOp};

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
@@ -32,18 +32,12 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use store::{backend::memory::MemoryStore, LookupKey, LookupStore, LookupValue};
+use store::{backend::memory::MemoryStore, LookupStore};
 use tokio::runtime::Handle;
 
-use crate::{
-    core::SMTP,
-    queue::{DomainPart, InstantFromTimestamp, Message},
-};
+use crate::{core::SMTP, queue::DomainPart};
 
-use super::{
-    plugins::{lookup::VariableExists, PluginContext},
-    ScriptModification, ScriptParameters, ScriptResult,
-};
+use super::{plugins::PluginContext, ScriptModification, ScriptParameters, ScriptResult};
 
 impl SMTP {
     pub fn run_script_blocking(
@@ -97,15 +91,15 @@ impl SMTP {
                         'outer: for list in lists {
                             if let Some(store) = self.shared.lookup_stores.get(&list) {
                                 for value in &values {
-                                    if let Ok(LookupValue::Value { .. }) = handle.block_on(
-                                        store.key_get::<VariableExists>(LookupKey::Key(
+                                    if let Ok(true) = handle.block_on(
+                                        store.key_exists(
                                             if !matches!(match_as, MatchAs::Lowercase) {
                                                 value.clone()
                                             } else {
                                                 value.to_lowercase()
                                             }
                                             .into_bytes(),
-                                        )),
+                                        ),
                                     ) {
                                         input = true.into();
                                         break 'outer;
@@ -156,7 +150,7 @@ impl SMTP {
                         // Build message
                         let return_path_lcase = self.sieve.return_path.to_lowercase();
                         let return_path_domain = return_path_lcase.domain_part().to_string();
-                        let mut message = Message::new_boxed(
+                        let mut message = self.queue.new_message(
                             self.sieve.return_path.clone(),
                             return_path_lcase,
                             return_path_domain,
@@ -223,7 +217,6 @@ impl SMTP {
                                 if trace {
                                     message.flags |= MAIL_BY_TRACE;
                                 }
-                                let rlimit = Duration::from_secs(rlimit);
                                 match mode {
                                     ByMode::Notify => {
                                         for domain in &mut message.domains {
@@ -246,16 +239,15 @@ impl SMTP {
                                 if trace {
                                     message.flags |= MAIL_BY_TRACE;
                                 }
-                                let alimit = (alimit as u64).to_instant();
                                 match mode {
                                     ByMode::Notify => {
                                         for domain in &mut message.domains {
-                                            domain.notify.due = alimit;
+                                            domain.notify.due = alimit as u64;
                                         }
                                     }
                                     ByMode::Return => {
                                         for domain in &mut message.domains {
-                                            domain.expires = alimit;
+                                            domain.expires = alimit as u64;
                                         }
                                     }
                                     ByMode::Default => (),
@@ -302,10 +294,10 @@ impl SMTP {
                                 None
                             };
 
-                            handle.block_on(self.queue.queue_message(
-                                message,
+                            handle.block_on(message.queue(
                                 headers.as_deref(),
                                 raw_message,
+                                self,
                                 &span,
                             ));
                         }

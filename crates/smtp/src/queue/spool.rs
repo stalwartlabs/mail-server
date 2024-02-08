@@ -22,163 +22,32 @@
 */
 
 use crate::queue::DomainPart;
-use mail_auth::common::base32::Base32Writer;
-use mail_auth::common::headers::Writer;
-use std::path::PathBuf;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::borrow::Cow;
 use std::time::{Duration, SystemTime};
-use tokio::fs::OpenOptions;
-use tokio::{fs, io::AsyncWriteExt};
+use store::write::key::DeserializeBigEndian;
+use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, QueueEvent, ValueClass};
+use store::{IterateParams, Serialize, ValueKey, U64_LEN};
+use utils::BlobHash;
 
 use crate::core::{QueueCore, SMTP};
 
-use super::{Domain, Event, Message, Recipient, Schedule, SimpleEnvelope, Status};
+use super::{
+    Domain, Event, Message, QueueId, QuotaKey, Recipient, Schedule, SimpleEnvelope, Status,
+};
 
 impl QueueCore {
-    pub async fn queue_message(
+    pub fn new_message(
         &self,
-        mut message: Box<Message>,
-        raw_headers: Option<&[u8]>,
-        raw_message: &[u8],
-        span: &tracing::Span,
-    ) -> bool {
-        // Generate id
-        if message.id == 0 {
-            message.id = self.queue_id();
-        }
-        if message.size == 0 {
-            message.size = raw_message.len() + raw_headers.as_ref().map_or(0, |h| h.len());
-        }
-
-        // Build path
-        let todo = 1;
-        message.path = self.config.path.clone();
-        let hash = 1;
-        if hash > 0 {
-            message.path.push((message.id % hash).to_string());
-        }
-        let _ = fs::create_dir(&message.path).await;
-
-        // Encode file name
-        let mut encoder = Base32Writer::with_capacity(20);
-        encoder.write(&message.id.to_le_bytes()[..]);
-        encoder.write(&(message.size as u32).to_le_bytes()[..]);
-        let mut file = encoder.finalize();
-        file.push_str(".msg");
-        message.path.push(file);
-
-        // Serialize metadata
-        let metadata = message.serialize();
-
-        // Save message
-        let mut file = match fs::File::create(&message.path).await {
-            Ok(file) => file,
-            Err(err) => {
-                tracing::error!(
-                    parent: span,
-                    context = "queue",
-                    event = "error",
-                    "Failed to create file {}: {}",
-                    message.path.display(),
-                    err
-                );
-                return false;
-            }
-        };
-
-        let iter = if let Some(raw_headers) = raw_headers {
-            [raw_headers, raw_message, &metadata].into_iter()
-        } else {
-            [raw_message, &metadata, b""].into_iter()
-        };
-
-        for bytes in iter {
-            if !bytes.is_empty() {
-                if let Err(err) = file.write_all(bytes).await {
-                    tracing::error!(
-                        parent: span,
-                        context = "queue",
-                        event = "error",
-                        "Failed to write to file {}: {}",
-                        message.path.display(),
-                        err
-                    );
-                    return false;
-                }
-            }
-        }
-        if let Err(err) = file.flush().await {
-            tracing::error!(
-                parent: span,
-                context = "queue",
-                event = "error",
-                "Failed to flush file {}: {}",
-                message.path.display(),
-                err
-            );
-            return false;
-        }
-
-        tracing::info!(
-            parent: span,
-            context = "queue",
-            event = "scheduled",
-            id = message.id,
-            from = if !message.return_path.is_empty() {
-                message.return_path.as_str()
-            } else {
-                "<>"
-            },
-            nrcpts = message.recipients.len(),
-            size = message.size,
-            "Message queued for delivery."
-        );
-
-        // Queue the message
-        if self
-            .tx
-            .send(Event::Queue(Schedule {
-                due: message.next_event().unwrap(),
-                inner: message,
-            }))
-            .await
-            .is_err()
-        {
-            tracing::warn!(
-                parent: span,
-                context = "queue",
-                event = "error",
-                "Queue channel closed: Message queued but won't be sent until next restart."
-            );
-        }
-
-        true
-    }
-
-    pub fn queue_id(&self) -> u64 {
-        (SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs())
-            .saturating_sub(946684800)
-            & 0xFFFFFFFF)
-            | (self.id_seq.fetch_add(1, Ordering::Relaxed) as u64) << 32
-    }
-}
-
-impl Message {
-    pub fn new_boxed(
         return_path: impl Into<String>,
         return_path_lcase: impl Into<String>,
         return_path_domain: impl Into<String>,
-    ) -> Box<Message> {
-        Box::new(Message {
-            id: 0,
-            path: PathBuf::new(),
-            created: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+    ) -> Message {
+        let created = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        Message {
+            id: self.snowflake_id.generate().unwrap_or(created),
+            created,
             return_path: return_path.into(),
             return_path_lcase: return_path_lcase.into(),
             return_path_domain: return_path_domain.into(),
@@ -188,8 +57,189 @@ impl Message {
             env_id: None,
             priority: 0,
             size: 0,
-            queue_refs: vec![],
-        })
+            blob_hash: Default::default(),
+            quota_keys: Vec::new(),
+        }
+    }
+}
+
+impl SMTP {
+    pub async fn next_event(&self) -> Vec<QueueEvent> {
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            due: 0,
+            queue_id: 0,
+        })));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            due: u64::MAX,
+            queue_id: u64::MAX,
+        })));
+
+        let mut events = Vec::new();
+        let now = now();
+        let result = self
+            .shared
+            .default_data_store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending().no_values(),
+                |key, _| {
+                    let event = QueueEvent {
+                        due: key.deserialize_be_u64(1)?,
+                        queue_id: key.deserialize_be_u64(U64_LEN + 1)?,
+                    };
+                    let do_continue = event.due <= now;
+                    events.push(event);
+                    Ok(do_continue)
+                },
+            )
+            .await;
+
+        if let Err(err) = result {
+            tracing::error!(
+                context = "queue",
+                event = "error",
+                "Failed to read from store: {}",
+                err
+            );
+        }
+
+        events
+    }
+
+    pub async fn read_message(&self, id: QueueId) -> Option<Message> {
+        match self
+            .shared
+            .default_data_store
+            .get_value::<Bincode<Message>>(ValueKey::from(ValueClass::Queue(QueueClass::Message(
+                id,
+            ))))
+            .await
+        {
+            Ok(Some(message)) => Some(message.inner),
+            Ok(None) => None,
+            Err(err) => {
+                tracing::error!(
+                    context = "queue",
+                    event = "error",
+                    "Failed to read message from store: {}",
+                    err
+                );
+                None
+            }
+        }
+    }
+}
+
+impl Message {
+    pub async fn queue(
+        mut self,
+        raw_headers: Option<&[u8]>,
+        raw_message: &[u8],
+        core: &SMTP,
+        span: &tracing::Span,
+    ) -> bool {
+        // Write blob
+        let message = if let Some(raw_headers) = raw_headers {
+            let mut message = Vec::with_capacity(raw_headers.len() + raw_message.len());
+            message.extend_from_slice(raw_headers);
+            message.extend_from_slice(raw_message);
+            Cow::Owned(message)
+        } else {
+            raw_message.into()
+        };
+        self.blob_hash = BlobHash::from(message.as_ref());
+
+        // Generate id
+        if self.size == 0 {
+            self.size = message.len();
+        }
+
+        // Reserve and write blob
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(u32::MAX).set(
+            BlobOp::Reserve {
+                hash: self.blob_hash.clone(),
+                until: self.next_delivery_event() + 3600,
+            },
+            0u32.serialize(),
+        );
+        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+            tracing::error!(
+                parent: span,
+                context = "queue",
+                event = "error",
+                "Failed to write to data store: {}",
+                err
+            );
+            return false;
+        }
+        if let Err(err) = core
+            .shared
+            .default_blob_store
+            .put_blob(self.blob_hash.as_slice(), message.as_ref())
+            .await
+        {
+            tracing::error!(
+                parent: span,
+                context = "queue",
+                event = "error",
+                "Failed to write to blob store: {}",
+                err
+            );
+            return false;
+        }
+
+        tracing::info!(
+            parent: span,
+            context = "queue",
+            event = "scheduled",
+            id = self.id,
+            from = if !self.return_path.is_empty() {
+                self.return_path.as_str()
+            } else {
+                "<>"
+            },
+            nrcpts = self.recipients.len(),
+            size = self.size,
+            "Message queued for delivery."
+        );
+
+        // Write message to queue
+        let mut batch = BatchBuilder::new();
+        batch
+            .set(
+                ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                    due: self.next_event().unwrap_or_default(),
+                    queue_id: self.id,
+                })),
+                vec![],
+            )
+            .set(
+                ValueClass::Queue(QueueClass::Message(self.id)),
+                Bincode::new(self).serialize(),
+            );
+
+        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+            tracing::error!(
+                parent: span,
+                context = "queue",
+                event = "error",
+                "Failed to write to store: {}",
+                err
+            );
+            return false;
+        }
+
+        // Queue the message
+        if core.queue.tx.send(Event::Reload).await.is_err() {
+            tracing::warn!(
+                parent: span,
+                context = "queue",
+                event = "error",
+                "Queue channel closed: Message queued but won't be sent until next restart."
+            );
+        }
+
+        true
     }
 
     pub async fn add_recipient_parts(
@@ -216,10 +266,9 @@ impl Message {
                     domain: rcpt_domain,
                     retry: Schedule::now(),
                     notify: Schedule::later(expires + Duration::from_secs(10)),
-                    expires: Instant::now() + expires,
+                    expires: now() + expires.as_secs(),
                     status: Status::Scheduled,
                     disable_tls: false,
-                    changed: false,
                 });
                 idx
             };
@@ -241,35 +290,95 @@ impl Message {
             .await;
     }
 
-    pub async fn save_changes(&mut self) {
-        let buf = self.serialize_changes();
-        if !buf.is_empty() {
-            let err = match OpenOptions::new().append(true).open(&self.path).await {
-                Ok(mut file) => match file.write_all(&buf).await {
-                    Ok(_) => return,
-                    Err(err) => err,
+    pub async fn save_changes(
+        mut self,
+        core: &SMTP,
+        prev_event: Option<u64>,
+        next_event: Option<u64>,
+    ) -> bool {
+        debug_assert!(prev_event.is_some() == next_event.is_some());
+
+        let mut batch = BatchBuilder::new();
+
+        // Release quota for completed deliveries
+        self.release_quota(&mut batch);
+
+        // Update message queue
+        let mut batch = BatchBuilder::new();
+        if let Some(prev_event) = prev_event {
+            batch.clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                due: prev_event,
+                queue_id: self.id,
+            })));
+        }
+        if let Some(next_event) = next_event {
+            batch.set(
+                ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                    due: next_event,
+                    queue_id: self.id,
+                })),
+                vec![],
+            );
+        }
+        batch
+            .with_account_id(u32::MAX)
+            .set(
+                BlobOp::Reserve {
+                    hash: self.blob_hash.clone(),
+                    until: self.next_delivery_event() + 3600,
                 },
-                Err(err) => err,
-            };
+                0u32.serialize(),
+            )
+            .set(
+                ValueClass::Queue(QueueClass::Message(self.id)),
+                Bincode::new(self).serialize(),
+            );
+
+        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
             tracing::error!(
                 context = "queue",
                 event = "error",
-                "Failed to write to {}: {}",
-                self.path.display(),
+                "Failed to update queued message: {}",
                 err
             );
+            false
+        } else {
+            true
         }
     }
 
-    pub async fn remove(&self) {
-        if let Err(err) = fs::remove_file(&self.path).await {
+    pub async fn remove(self, core: &SMTP, prev_event: u64) -> bool {
+        let mut batch = BatchBuilder::new();
+
+        // Release all quotas
+        for quota_key in self.quota_keys {
+            match quota_key {
+                QuotaKey::Count { key, .. } => {
+                    batch.clear(ValueClass::Queue(QueueClass::QuotaCount(key)));
+                }
+                QuotaKey::Size { key, .. } => {
+                    batch.clear(ValueClass::Queue(QueueClass::QuotaSize(key)));
+                }
+            }
+        }
+
+        batch
+            .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                due: prev_event,
+                queue_id: self.id,
+            })))
+            .clear(ValueClass::Queue(QueueClass::Message(self.id)));
+
+        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
             tracing::error!(
                 context = "queue",
                 event = "error",
-                "Failed to delete queued message {}: {}",
-                self.path.display(),
+                "Failed to update queued message: {}",
                 err
             );
+            false
+        } else {
+            true
         }
     }
 }

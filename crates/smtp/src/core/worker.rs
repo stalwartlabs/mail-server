@@ -54,16 +54,8 @@ impl SMTP {
 
     fn cleanup(&self) {
         for throttle in [&self.session.throttle, &self.queue.throttle] {
-            throttle.retain(|_, v| {
-                v.concurrency
-                    .as_ref()
-                    .map_or(false, |c| c.concurrent.load(Ordering::Relaxed) > 0)
-                    || v.rate.as_ref().map_or(false, |r| r.is_active())
-            });
+            throttle.retain(|_, v| v.concurrent.load(Ordering::Relaxed) > 0);
         }
-        self.queue.quota.retain(|_, v| {
-            v.messages.load(Ordering::Relaxed) > 0 || v.size.load(Ordering::Relaxed) > 0
-        });
     }
 }
 

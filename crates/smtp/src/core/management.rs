@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Instant};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use directory::{AuthResult, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -35,70 +35,24 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tokio::sync::oneshot;
+use serde::{Deserializer, Serializer};
+use store::{
+    write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
+    Deserialize, IterateParams, ValueKey,
+};
 
 use utils::listener::{limiter::InFlight, SessionData, SessionManager, SessionStream};
 
-use crate::{
-    queue::{self, instant_to_timestamp, InstantFromTimestamp, QueueId, Status},
-    reporting::{
-        self,
-        scheduler::{ReportKey, ReportPolicy, ReportType, ReportValue},
-    },
-};
+use crate::queue::{self, HostResponse, QueueId, Status};
 
 use super::{SmtpAdminSessionManager, SMTP};
 
-#[derive(Debug)]
-pub enum QueueRequest {
-    List {
-        from: Option<String>,
-        to: Option<String>,
-        before: Option<Instant>,
-        after: Option<Instant>,
-        result_tx: oneshot::Sender<Vec<u64>>,
-    },
-    Status {
-        queue_ids: Vec<QueueId>,
-        result_tx: oneshot::Sender<Vec<Option<Message>>>,
-    },
-    Cancel {
-        queue_ids: Vec<QueueId>,
-        item: Option<String>,
-        result_tx: oneshot::Sender<Vec<bool>>,
-    },
-    Retry {
-        queue_ids: Vec<QueueId>,
-        item: Option<String>,
-        time: Instant,
-        result_tx: oneshot::Sender<Vec<bool>>,
-    },
-}
-
-#[derive(Debug)]
-pub enum ReportRequest {
-    List {
-        type_: Option<ReportType<(), ()>>,
-        domain: Option<String>,
-        result_tx: oneshot::Sender<Vec<String>>,
-    },
-    Status {
-        report_ids: Vec<ReportKey>,
-        result_tx: oneshot::Sender<Vec<Option<Report>>>,
-    },
-    Cancel {
-        report_ids: Vec<ReportKey>,
-        result_tx: oneshot::Sender<Vec<bool>>,
-    },
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct Response<T> {
     data: T,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
     pub return_path: String,
     pub domains: Vec<Domain>,
@@ -113,7 +67,7 @@ pub struct Message {
     pub env_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Domain {
     pub name: String,
     pub status: Status<String, String>,
@@ -131,7 +85,7 @@ pub struct Domain {
     pub expires: DateTime,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Recipient {
     pub address: String,
     pub status: Status<String, String>,
@@ -139,7 +93,7 @@ pub struct Recipient {
     pub orcpt: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Report {
     pub domain: String,
     #[serde(rename = "type")]
@@ -362,18 +316,48 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_queue_event(
-                            QueueRequest::List {
-                                from,
-                                to,
-                                before,
-                                after,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::new();
+                        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
+                        let to_key =
+                            ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+                        let has_filters =
+                            from.is_some() || to.is_some() || before.is_some() || after.is_some();
+                        let _ =
+                            self.shared
+                                .default_data_store
+                                .iterate(
+                                    IterateParams::new(from_key, to_key).ascending(),
+                                    |key, value| {
+                                        if has_filters {
+                                            let message =
+                                                Bincode::<queue::Message>::deserialize(value)?
+                                                    .inner;
+                                            if from.as_ref().map_or(true, |from| {
+                                                message.return_path.contains(from)
+                                            }) && to.as_ref().map_or(true, |to| {
+                                                message
+                                                    .recipients
+                                                    .iter()
+                                                    .any(|r| r.address_lcase.contains(to))
+                                            }) && before.as_ref().map_or(true, |before| {
+                                                message.next_delivery_event() < *before
+                                            }) && after.as_ref().map_or(true, |after| {
+                                                message.next_delivery_event() > *after
+                                            }) {
+                                                result.push(key.deserialize_be_u64(1)?);
+                                            }
+                                        } else {
+                                            result.push(key.deserialize_be_u64(1)?);
+                                        }
+                                        Ok(true)
+                                    },
+                                )
+                                .await;
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
@@ -404,22 +388,24 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_queue_event(
-                            QueueRequest::Status {
-                                queue_ids,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::with_capacity(queue_ids.len());
+                        for queue_id in queue_ids {
+                            if let Some(message) = self.read_message(queue_id).await {
+                                result.push(Message::from(&message));
+                            }
+                        }
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
             }
             (&Method::GET, "queue", "retry") => {
                 let mut queue_ids = Vec::new();
-                let mut time = Instant::now();
+                let mut time = now();
                 let mut item = None;
                 let mut error = None;
 
@@ -457,17 +443,49 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_queue_event(
-                            QueueRequest::Retry {
-                                queue_ids,
-                                item,
-                                time,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::with_capacity(queue_ids.len());
+
+                        for queue_id in queue_ids {
+                            let mut found = false;
+
+                            if let Some(mut message) = self.read_message(queue_id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+
+                                for domain in &mut message.domains {
+                                    if matches!(
+                                        domain.status,
+                                        Status::Scheduled | Status::TemporaryFailure(_)
+                                    ) && item
+                                        .as_ref()
+                                        .map_or(true, |item| domain.domain.contains(item))
+                                    {
+                                        domain.retry.due = time;
+                                        if domain.expires > time {
+                                            domain.expires = time + 10;
+                                        }
+                                        found = true;
+                                    }
+                                }
+
+                                if found {
+                                    let next_event = message.next_event().unwrap_or_default();
+                                    message
+                                        .save_changes(self, prev_event.into(), next_event.into())
+                                        .await;
+                                }
+                            }
+
+                            result.push(found);
+                        }
+
+                        if result.iter().any(|r| *r) {
+                            let _ = self.queue.tx.send(queue::Event::Reload).await;
+                        }
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
@@ -502,16 +520,93 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_queue_event(
-                            QueueRequest::Cancel {
-                                queue_ids,
-                                item,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::with_capacity(queue_ids.len());
+
+                        for queue_id in queue_ids {
+                            let mut found = false;
+
+                            if let Some(mut message) = self.read_message(queue_id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+
+                                if let Some(item) = &item {
+                                    // Cancel delivery for all recipients that match
+                                    for rcpt in &mut message.recipients {
+                                        if rcpt.address_lcase.contains(item) {
+                                            rcpt.status = Status::Completed(HostResponse {
+                                                hostname: String::new(),
+                                                response: smtp_proto::Response {
+                                                    code: 0,
+                                                    esc: [0, 0, 0],
+                                                    message: "Delivery canceled.".to_string(),
+                                                },
+                                            });
+                                            found = true;
+                                        }
+                                    }
+                                    if found {
+                                        // Mark as completed domains without any pending deliveries
+                                        for (domain_idx, domain) in
+                                            message.domains.iter_mut().enumerate()
+                                        {
+                                            if matches!(
+                                                domain.status,
+                                                Status::TemporaryFailure(_) | Status::Scheduled
+                                            ) {
+                                                let mut total_rcpt = 0;
+                                                let mut total_completed = 0;
+
+                                                for rcpt in &message.recipients {
+                                                    if rcpt.domain_idx == domain_idx {
+                                                        total_rcpt += 1;
+                                                        if matches!(
+                                                            rcpt.status,
+                                                            Status::PermanentFailure(_)
+                                                                | Status::Completed(_)
+                                                        ) {
+                                                            total_completed += 1;
+                                                        }
+                                                    }
+                                                }
+
+                                                if total_rcpt == total_completed {
+                                                    domain.status = Status::Completed(());
+                                                }
+                                            }
+                                        }
+
+                                        // Delete message if there are no pending deliveries
+                                        if message.domains.iter().any(|domain| {
+                                            matches!(
+                                                domain.status,
+                                                Status::TemporaryFailure(_) | Status::Scheduled
+                                            )
+                                        }) {
+                                            let next_event =
+                                                message.next_event().unwrap_or_default();
+                                            message
+                                                .save_changes(
+                                                    self,
+                                                    next_event.into(),
+                                                    prev_event.into(),
+                                                )
+                                                .await;
+                                        } else {
+                                            message.remove(self, prev_event).await;
+                                        }
+                                    }
+                                } else {
+                                    message.remove(self, prev_event).await;
+                                    found = true;
+                                }
+                            }
+
+                            result.push(found);
+                        }
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
@@ -526,10 +621,10 @@ impl SMTP {
                         match key.as_ref() {
                             "type" => match value.as_ref() {
                                 "dmarc" => {
-                                    type_ = ReportType::Dmarc(()).into();
+                                    type_ = 0u8.into();
                                 }
                                 "tls" => {
-                                    type_ = ReportType::Tls(()).into();
+                                    type_ = 1u8.into();
                                 }
                                 _ => {
                                     error = format!("Invalid report type {value:?}.").into();
@@ -549,16 +644,54 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_report_event(
-                            ReportRequest::List {
-                                type_,
-                                domain,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::new();
+                        let from_key = ValueKey::from(ValueClass::Queue(
+                            QueueClass::DmarcReportHeader(ReportEvent {
+                                due: 0,
+                                policy_hash: 0,
+                                seq_id: 0,
+                                domain: String::new(),
+                            }),
+                        ));
+                        let to_key = ValueKey::from(ValueClass::Queue(
+                            QueueClass::TlsReportHeader(ReportEvent {
+                                due: u64::MAX,
+                                policy_hash: 0,
+                                seq_id: 0,
+                                domain: String::new(),
+                            }),
+                        ));
+                        let _ =
+                            self.shared
+                                .default_data_store
+                                .iterate(
+                                    IterateParams::new(from_key, to_key).ascending().no_values(),
+                                    |key, _| {
+                                        if type_.map_or(true, |t| t == *key.last().unwrap()) {
+                                            let event = ReportEvent::deserialize(key)?;
+                                            if domain.as_ref().map_or(true, |d| {
+                                                d.eq_ignore_ascii_case(&event.domain)
+                                            }) {
+                                                result.push(
+                                                    if *key.last().unwrap() == 0 {
+                                                        QueueClass::DmarcReportHeader(event)
+                                                    } else {
+                                                        QueueClass::TlsReportHeader(event)
+                                                    }
+                                                    .queue_id(),
+                                                );
+                                            }
+                                        }
+
+                                        Ok(true)
+                                    },
+                                )
+                                .await;
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
@@ -588,17 +721,13 @@ impl SMTP {
                 }
 
                 match error {
-                    None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_report_event(
-                            ReportRequest::Status {
-                                report_ids,
-                                result_tx,
-                            },
-                            result_rx,
-                        )
-                        .await
-                    }
+                    None => (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response {
+                            data: report_ids.into_iter().map(Report::from).collect::<Vec<_>>(),
+                        })
+                        .unwrap_or_default(),
+                    ),
                     Some(error) => error.into_bad_request(),
                 }
             }
@@ -628,15 +757,26 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let (result_tx, result_rx) = oneshot::channel();
-                        self.send_report_event(
-                            ReportRequest::Cancel {
-                                report_ids,
-                                result_tx,
-                            },
-                            result_rx,
+                        let mut result = Vec::with_capacity(report_ids.len());
+
+                        for report_id in report_ids {
+                            match report_id {
+                                QueueClass::DmarcReportHeader(event) => {
+                                    self.delete_dmarc_report(event).await;
+                                }
+                                QueueClass::TlsReportHeader(event) => {
+                                    self.delete_tls_report(vec![event]).await;
+                                }
+                                _ => (),
+                            }
+
+                            result.push(true);
+                        }
+
+                        (
+                            StatusCode::OK,
+                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                         )
-                        .await
                     }
                     Some(error) => error.into_bad_request(),
                 }
@@ -660,85 +800,11 @@ impl SMTP {
             )
             .unwrap()
     }
-
-    async fn send_queue_event<T: Serialize>(
-        &self,
-        request: QueueRequest,
-        rx: oneshot::Receiver<T>,
-    ) -> (StatusCode, String) {
-        match self.queue.tx.send(queue::Event::Manage(request)).await {
-            Ok(_) => match rx.await {
-                Ok(result) => {
-                    return (
-                        StatusCode::OK,
-                        serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                    )
-                }
-                Err(_) => {
-                    tracing::debug!(
-                        context = "queue",
-                        event = "recv-error",
-                        reason = "Failed to receive manage request response."
-                    );
-                }
-            },
-            Err(_) => {
-                tracing::debug!(
-                    context = "queue",
-                    event = "send-error",
-                    reason = "Failed to send manage request event."
-                );
-            }
-        }
-
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "{\"error\": \"internal-error\", \"details\": \"Resource unavailable, try again later.\"}"
-                .to_string(),
-        )
-    }
-
-    async fn send_report_event<T: Serialize>(
-        &self,
-        request: ReportRequest,
-        rx: oneshot::Receiver<T>,
-    ) -> (StatusCode, String) {
-        match self.report.tx.send(reporting::Event::Manage(request)).await {
-            Ok(_) => match rx.await {
-                Ok(result) => {
-                    return (
-                        StatusCode::OK,
-                        serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                    )
-                }
-                Err(_) => {
-                    tracing::debug!(
-                        context = "queue",
-                        event = "recv-error",
-                        reason = "Failed to receive manage request response."
-                    );
-                }
-            },
-            Err(_) => {
-                tracing::debug!(
-                    context = "queue",
-                    event = "send-error",
-                    reason = "Failed to send manage request event."
-                );
-            }
-        }
-
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "{\"error\": \"internal-error\", \"details\": \"Resource unavailable, try again later.\"}"
-                .to_string(),
-        )
-    }
 }
 
 impl From<&queue::Message> for Message {
     fn from(message: &queue::Message) -> Self {
-        let now = Instant::now();
+        let now = now();
 
         Message {
             return_path: message.return_path.clone(),
@@ -764,20 +830,12 @@ impl From<&queue::Message> for Message {
                     },
                     retry_num: domain.retry.inner,
                     next_retry: if domain.retry.due > now {
-                        DateTime::from_timestamp(instant_to_timestamp(now, domain.retry.due) as i64)
-                            .into()
+                        DateTime::from_timestamp(domain.retry.due as i64).into()
                     } else {
                         None
                     },
                     next_notify: if domain.notify.due > now {
-                        DateTime::from_timestamp(
-                            instant_to_timestamp(
-                                now,
-                                domain.notify.due,
-                            )
-                                as i64,
-                        )
-                        .into()
+                        DateTime::from_timestamp(domain.notify.due as i64).into()
                     } else {
                         None
                     },
@@ -802,61 +860,64 @@ impl From<&queue::Message> for Message {
                             orcpt: rcpt.orcpt.clone(),
                         })
                         .collect(),
-                    expires: DateTime::from_timestamp(
-                        instant_to_timestamp(now, domain.expires) as i64
-                    ),
+                    expires: DateTime::from_timestamp(domain.expires as i64),
                 })
                 .collect(),
         }
     }
 }
 
-impl From<(&ReportKey, &ReportValue)> for Report {
-    fn from((key, value): (&ReportKey, &ReportValue)) -> Self {
-        match (key, value) {
-            (ReportType::Dmarc(domain), ReportType::Dmarc(value)) => Report {
-                domain: domain.inner.clone(),
-                range_from: DateTime::from_timestamp(value.created as i64),
-                range_to: DateTime::from_timestamp(
-                    (value.created + value.deliver_at.as_secs()) as i64,
-                ),
-                size: value.size,
+impl From<QueueClass> for Report {
+    fn from(value: QueueClass) -> Self {
+        match value {
+            QueueClass::DmarcReportHeader(event) => Report {
+                domain: event.domain,
                 type_: "dmarc".to_string(),
+                range_from: DateTime::from_timestamp(event.due as i64),
+                range_to: DateTime::from_timestamp(event.due as i64),
+                size: 0,
             },
-            (ReportType::Tls(domain), ReportType::Tls(value)) => Report {
-                domain: domain.clone(),
-                range_from: DateTime::from_timestamp(value.created as i64),
-                range_to: DateTime::from_timestamp(
-                    (value.created + value.deliver_at.as_secs()) as i64,
-                ),
-                size: value.size,
+            QueueClass::TlsReportHeader(event) => Report {
+                domain: event.domain,
                 type_: "tls".to_string(),
+                range_from: DateTime::from_timestamp(event.due as i64),
+                range_to: DateTime::from_timestamp(event.due as i64),
+                size: 0,
             },
             _ => unreachable!(),
         }
     }
 }
 
-impl Display for ReportKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+trait GenerateQueueId {
+    fn queue_id(&self) -> String;
+}
+
+impl GenerateQueueId for QueueClass {
+    fn queue_id(&self) -> String {
         match self {
-            ReportType::Dmarc(policy) => write!(f, "d!{}!{}", policy.inner, policy.policy),
-            ReportType::Tls(domain) => write!(f, "t!{domain}"),
+            QueueClass::DmarcReportHeader(h) => {
+                format!("d!{}!{}!{}!{}", h.domain, h.policy_hash, h.seq_id, h.due)
+            }
+            QueueClass::TlsReportHeader(h) => {
+                format!("t!{}!{}!{}!{}", h.domain, h.policy_hash, h.seq_id, h.due)
+            }
+            _ => unreachable!(),
         }
     }
 }
 
 trait ParseValues {
-    fn parse_timestamp(&self) -> Result<Instant, String>;
+    fn parse_timestamp(&self) -> Result<u64, String>;
     fn parse_queue_ids(&self) -> Result<Vec<QueueId>, String>;
-    fn parse_report_ids(&self) -> Result<Vec<ReportKey>, String>;
+    fn parse_report_ids(&self) -> Result<Vec<QueueClass>, String>;
 }
 
 impl ParseValues for Cow<'_, str> {
-    fn parse_timestamp(&self) -> Result<Instant, String> {
+    fn parse_timestamp(&self) -> Result<u64, String> {
         if let Some(dt) = DateTime::parse_rfc3339(self.as_ref()) {
-            let instant = (dt.to_timestamp() as u64).to_instant();
-            if instant >= Instant::now() {
+            let instant = dt.to_timestamp() as u64;
+            if instant >= now() {
                 return Ok(instant);
             }
         }
@@ -881,29 +942,42 @@ impl ParseValues for Cow<'_, str> {
         Ok(ids)
     }
 
-    fn parse_report_ids(&self) -> Result<Vec<ReportKey>, String> {
+    fn parse_report_ids(&self) -> Result<Vec<QueueClass>, String> {
         let mut ids = Vec::new();
         for id in self.split(',') {
             if !id.is_empty() {
                 let mut parts = id.split('!');
-                match (parts.next(), parts.next()) {
-                    (Some("d"), Some(domain)) if !domain.is_empty() => {
-                        if let Some(policy) = parts.next().and_then(|policy| policy.parse().ok()) {
-                            ids.push(ReportType::Dmarc(ReportPolicy {
-                                inner: domain.to_string(),
-                                policy,
-                            }));
-                            continue;
-                        }
+                match (
+                    parts.next(),
+                    parts.next(),
+                    parts.next().and_then(|p| p.parse::<u64>().ok()),
+                    parts.next().and_then(|p| p.parse::<u64>().ok()),
+                    parts.next().and_then(|p| p.parse::<u64>().ok()),
+                ) {
+                    (Some("d"), Some(domain), Some(policy), Some(seq_id), Some(due))
+                        if !domain.is_empty() =>
+                    {
+                        ids.push(QueueClass::DmarcReportHeader(ReportEvent {
+                            due,
+                            policy_hash: policy,
+                            seq_id,
+                            domain: domain.to_string(),
+                        }));
                     }
-                    (Some("t"), Some(domain)) if !domain.is_empty() => {
-                        ids.push(ReportType::Tls(domain.to_string()));
-                        continue;
+                    (Some("t"), Some(domain), Some(policy), Some(seq_id), Some(due))
+                        if !domain.is_empty() =>
+                    {
+                        ids.push(QueueClass::TlsReportHeader(ReportEvent {
+                            due,
+                            policy_hash: policy,
+                            seq_id,
+                            domain: domain.to_string(),
+                        }));
                     }
-                    _ => (),
+                    _ => {
+                        return Err(format!("Failed to parse id {id:?}."));
+                    }
                 }
-
-                return Err(format!("Failed to parse id {id:?}."));
             }
         }
         Ok(ids)
@@ -944,7 +1018,7 @@ fn deserialize_maybe_datetime<'de, D>(deserializer: D) -> Result<Option<DateTime
 where
     D: Deserializer<'de>,
 {
-    if let Some(value) = Option::<&str>::deserialize(deserializer)? {
+    if let Some(value) = <Option<&str> as serde::Deserialize>::deserialize(deserializer)? {
         if let Some(value) = DateTime::parse_rfc3339(value) {
             Ok(Some(value))
         } else {
@@ -968,6 +1042,8 @@ fn deserialize_datetime<'de, D>(deserializer: D) -> Result<DateTime, D::Error>
 where
     D: Deserializer<'de>,
 {
+    use serde::Deserialize;
+
     if let Some(value) = DateTime::parse_rfc3339(<&str>::deserialize(deserializer)?) {
         Ok(value)
     } else {

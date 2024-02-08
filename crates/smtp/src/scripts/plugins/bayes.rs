@@ -29,12 +29,12 @@ use nlp::{
     tokenizers::osb::{OsbToken, OsbTokenizer},
 };
 use sieve::{runtime::Variable, FunctionMap};
-use store::{write::key::KeySerializer, LookupKey, LookupStore, LookupValue, U64_LEN};
+use store::{write::key::KeySerializer, LookupStore, U64_LEN};
 use tokio::runtime::Handle;
 
 use crate::config::scripts::SieveContext;
 
-use super::{lookup::VariableExists, PluginContext};
+use super::PluginContext;
 
 pub fn register_train(plugin_id: u32, fnc_map: &mut FunctionMap<SieveContext>) {
     fnc_map.set_external_function("bayes_train", plugin_id, 3);
@@ -110,14 +110,13 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         for (hash, weights) in model.weights {
             if handle
                 .block_on(
-                    store.key_set(
+                    store.counter_incr(
                         KeySerializer::new(U64_LEN)
                             .write(hash.h1)
                             .write(hash.h2)
                             .finalize(),
-                        LookupValue::Counter {
-                            num: weights.into(),
-                        },
+                        weights.into(),
+                        None,
                     ),
                 )
                 .is_err()
@@ -135,14 +134,13 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         };
         if handle
             .block_on(
-                store.key_set(
+                store.counter_incr(
                     KeySerializer::new(U64_LEN)
                         .write(0u64)
                         .write(0u64)
                         .finalize(),
-                    LookupValue::Counter {
-                        num: weights.into(),
-                    },
+                    weights.into(),
+                    None,
                 ),
             )
             .is_err()
@@ -337,15 +335,15 @@ impl LookupOrInsert for BayesTokenCache {
     ) -> Option<Weights> {
         if let Some(weights) = self.get(&hash) {
             weights.unwrap_or_default().into()
-        } else if let Ok(result) = handle.block_on(
-            get_token.key_get::<VariableExists>(LookupKey::Counter(
+        } else if let Ok(num) = handle.block_on(
+            get_token.counter_get(
                 KeySerializer::new(U64_LEN)
                     .write(hash.h1)
                     .write(hash.h2)
                     .finalize(),
-            )),
+            ),
         ) {
-            if let LookupValue::Counter { num } = result {
+            if num != 0 {
                 let weights = Weights::from(num);
                 self.insert_positive(hash, weights);
                 weights

@@ -23,10 +23,9 @@
 
 use std::{
     borrow::Cow,
-    path::PathBuf,
     process::Stdio,
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, SystemTime},
 };
 
 use mail_auth::{
@@ -38,6 +37,7 @@ use sieve::runtime::Variable;
 use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use store::write::now;
 use tokio::{io::AsyncWriteExt, process::Command};
 use utils::{config::Rate, listener::SessionStream};
 
@@ -654,10 +654,8 @@ impl<T: SessionStream> Session<T> {
         // Verify queue quota
         if self.core.has_quota(&mut message).await {
             let queue_id = message.id;
-            if self
-                .core
-                .queue
-                .queue_message(message, Some(&headers), &raw_message, &self.span)
+            if message
+                .queue(Some(&headers), &raw_message, &self.core, &self.span)
                 .await
             {
                 self.state = State::Accepted(queue_id);
@@ -682,14 +680,14 @@ impl<T: SessionStream> Session<T> {
         &self,
         mail_from: SessionAddress,
         mut rcpt_to: Vec<SessionAddress>,
-    ) -> Box<Message> {
+    ) -> Message {
         // Build message
-        let mut message = Box::new(Message {
-            id: self.core.queue.queue_id(),
-            path: PathBuf::new(),
-            created: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs()),
+        let created = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let mut message = Message {
+            id: self.core.queue.snowflake_id.generate().unwrap_or(created),
+            created,
             return_path: mail_from.address,
             return_path_lcase: mail_from.address_lcase,
             return_path_domain: mail_from.domain,
@@ -699,8 +697,9 @@ impl<T: SessionStream> Session<T> {
             priority: self.data.priority,
             size: 0,
             env_id: mail_from.dsn_info,
-            queue_refs: Vec::with_capacity(0),
-        });
+            blob_hash: Default::default(),
+            quota_keys: Vec::new(),
+        };
 
         // Add recipients
         let future_release = Duration::from_secs(self.data.future_release);
@@ -711,7 +710,7 @@ impl<T: SessionStream> Session<T> {
                 .last()
                 .map_or(true, |d| d.domain != rcpt.domain)
             {
-                let envelope = SimpleEnvelope::new(message.as_ref(), &rcpt.domain);
+                let envelope = SimpleEnvelope::new(&message, &rcpt.domain);
 
                 // Set next retry time
                 let retry = if self.data.future_release == 0 {
@@ -731,18 +730,19 @@ impl<T: SessionStream> Session<T> {
                 let (notify, expires) = if self.data.delivery_by == 0 {
                     (
                         queue::Schedule::later(future_release + next_notify),
-                        Instant::now()
-                            + future_release
+                        now()
+                            + future_release.as_secs()
                             + self
                                 .core
                                 .eval_if(&config.expire, &envelope)
                                 .await
-                                .unwrap_or_else(|| Duration::from_secs(5 * 86400)),
+                                .unwrap_or_else(|| Duration::from_secs(5 * 86400))
+                                .as_secs(),
                     )
                 } else if (message.flags & MAIL_BY_RETURN) != 0 {
                     (
                         queue::Schedule::later(future_release + next_notify),
-                        Instant::now() + Duration::from_secs(self.data.delivery_by as u64),
+                        now() + self.data.delivery_by as u64,
                     )
                 } else {
                     let expire = self
@@ -769,7 +769,7 @@ impl<T: SessionStream> Session<T> {
                     let mut notify = queue::Schedule::later(future_release + notify);
                     notify.inner = (num_intervals - 1) as u32; // Disable further notification attempts
 
-                    (notify, Instant::now() + expire)
+                    (notify, now() + expire_secs)
                 };
 
                 message.domains.push(queue::Domain {
@@ -779,7 +779,6 @@ impl<T: SessionStream> Session<T> {
                     status: queue::Status::Scheduled,
                     domain: rcpt.domain,
                     disable_tls: false,
-                    changed: false,
                 });
             }
 

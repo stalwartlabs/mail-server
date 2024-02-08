@@ -36,7 +36,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         output: &SpfOutput,
     ) {
         // Throttle recipient
-        if !self.throttle_rcpt(rcpt, rate, "spf") {
+        if !self.throttle_rcpt(rcpt, rate, "spf").await {
             tracing::debug!(
                 parent: &self.span,
                 context = "report",

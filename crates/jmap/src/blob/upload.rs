@@ -33,8 +33,9 @@ use jmap_proto::{
 };
 use store::{
     write::{now, BatchBuilder, BlobOp},
-    BlobClass, BlobHash, Serialize,
+    BlobClass, Serialize,
 };
+use utils::BlobHash;
 
 use crate::{auth::AccessToken, JMAP};
 

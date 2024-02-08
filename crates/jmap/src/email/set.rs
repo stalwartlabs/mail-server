@@ -53,15 +53,14 @@ use mail_parser::MessageParser;
 use store::{
     ahash::AHashSet,
     write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
-        ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, Bincode, DeserializeFrom,
+        SerializeInto, ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     Serialize,
 };
 
 use crate::{
-    auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, IngestError,
-    JMAP,
+    auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, IngestError, JMAP,
 };
 
 use super::{

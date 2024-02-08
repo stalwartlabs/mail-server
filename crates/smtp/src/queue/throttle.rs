@@ -21,14 +21,13 @@
  * for more details.
 */
 
-use std::time::{Duration, Instant};
-
 use dashmap::mapref::entry::Entry;
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight, RateLimiter};
+use store::write::now;
+use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
 use crate::{
     config::Throttle,
-    core::{throttle::Limiter, ResolveVariable, SMTP},
+    core::{ResolveVariable, SMTP},
 };
 
 use super::{Domain, Status};
@@ -36,7 +35,7 @@ use super::{Domain, Status};
 #[derive(Debug)]
 pub enum Error {
     Concurrency { limiter: ConcurrencyLimiter },
-    Rate { retry_at: Instant },
+    Rate { retry_at: u64 },
 }
 
 impl SMTP {
@@ -53,10 +52,33 @@ impl SMTP {
                 .await
                 .unwrap_or(false)
         {
-            match self.queue.throttle.entry(throttle.new_key(envelope)) {
-                Entry::Occupied(mut e) => {
-                    let limiter = e.get_mut();
-                    if let Some(limiter) = &limiter.concurrency {
+            let key = throttle.new_key(envelope);
+
+            if let Some(rate) = &throttle.rate {
+                if let Ok(Some(next_refill)) = self
+                    .shared
+                    .default_lookup_store
+                    .is_rate_allowed(key.as_ref(), rate, false)
+                    .await
+                {
+                    tracing::info!(
+                        parent: span,
+                        context = "throttle",
+                        event = "rate-limit-exceeded",
+                        max_requests = rate.requests,
+                        max_interval = rate.period.as_secs(),
+                        "Queue rate limit exceeded."
+                    );
+                    return Err(Error::Rate {
+                        retry_at: now() + next_refill,
+                    });
+                }
+            }
+
+            if let Some(concurrency) = &throttle.concurrency {
+                match self.queue.throttle.entry(key) {
+                    Entry::Occupied(mut e) => {
+                        let limiter = e.get_mut();
                         if let Some(inflight) = limiter.is_allowed() {
                             in_flight.push(inflight);
                         } else {
@@ -72,38 +94,13 @@ impl SMTP {
                             });
                         }
                     }
-                    if let (Some(limiter), Some(rate)) = (&mut limiter.rate, &throttle.rate) {
-                        if !limiter.is_allowed(rate) {
-                            tracing::info!(
-                                parent: span,
-                                context = "throttle",
-                                event = "rate-limit-exceeded",
-                                max_requests = rate.requests,
-                                max_interval = rate.period.as_secs(),
-                                "Queue rate limit exceeded."
-                            );
-                            return Err(Error::Rate {
-                                retry_at: Instant::now()
-                                    + Duration::from_secs(limiter.secs_to_refill()),
-                            });
-                        }
-                    }
-                }
-                Entry::Vacant(e) => {
-                    let concurrency = throttle.concurrency.map(|concurrency| {
-                        let limiter = ConcurrencyLimiter::new(concurrency);
+                    Entry::Vacant(e) => {
+                        let limiter = ConcurrencyLimiter::new(*concurrency);
                         if let Some(inflight) = limiter.is_allowed() {
                             in_flight.push(inflight);
                         }
-                        limiter
-                    });
-                    let rate = throttle.rate.as_ref().map(|rate| {
-                        let r = RateLimiter::new(rate);
-                        r.is_allowed(rate);
-                        r
-                    });
-
-                    e.insert(Limiter { rate, concurrency });
+                        e.insert(limiter);
+                    }
                 }
             }
         }
@@ -124,6 +121,5 @@ impl Domain {
                 self.status = Status::TemporaryFailure(super::Error::RateLimited);
             }
         }
-        self.changed = true;
     }
 }

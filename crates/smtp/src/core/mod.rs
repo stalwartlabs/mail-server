@@ -24,7 +24,7 @@
 use std::{
     hash::Hash,
     net::IpAddr,
-    sync::{atomic::AtomicU32, Arc},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -40,7 +40,7 @@ use smtp_proto::{
     },
     IntoString,
 };
-use store::{LookupStore, Store, Value};
+use store::{BlobStore, LookupStore, Store, Value};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::mpsc,
@@ -50,7 +50,12 @@ use tracing::Span;
 use utils::{
     expr,
     ipc::DeliveryEvent,
-    listener::{limiter::InFlight, stream::NullIo, ServerInstance, TcpAcceptor},
+    listener::{
+        limiter::{ConcurrencyLimiter, InFlight},
+        stream::NullIo,
+        ServerInstance, TcpAcceptor,
+    },
+    snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
@@ -63,11 +68,11 @@ use crate::{
         dane::{DnssecResolver, Tlsa},
         mta_sts,
     },
-    queue::{self, DomainPart, QueueId, QuotaLimiter},
+    queue::{self, DomainPart, QueueId},
     reporting,
 };
 
-use self::throttle::{Limiter, ThrottleKey, ThrottleKeyHasherBuilder};
+use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
 pub mod eval;
 pub mod management;
@@ -121,6 +126,7 @@ pub struct Shared {
     // Default store and directory
     pub default_directory: Arc<Directory>,
     pub default_data_store: Store,
+    pub default_blob_store: BlobStore,
     pub default_lookup_store: LookupStore,
 }
 
@@ -145,15 +151,14 @@ pub struct DnsCache {
 
 pub struct SessionCore {
     pub config: SessionConfig,
-    pub throttle: DashMap<ThrottleKey, Limiter, ThrottleKeyHasherBuilder>,
+    pub throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
 }
 
 pub struct QueueCore {
     pub config: QueueConfig,
-    pub throttle: DashMap<ThrottleKey, Limiter, ThrottleKeyHasherBuilder>,
-    pub quota: DashMap<ThrottleKey, Arc<QuotaLimiter>, ThrottleKeyHasherBuilder>,
+    pub throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub tx: mpsc::Sender<queue::Event>,
-    pub id_seq: AtomicU32,
+    pub snowflake_id: SnowflakeIdGenerator,
     pub connectors: TlsConnectors,
 }
 

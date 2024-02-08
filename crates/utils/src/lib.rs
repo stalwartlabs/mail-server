@@ -50,6 +50,66 @@ use rustls_pki_types::TrustAnchor;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, EnvFilter};
 
+pub const BLOB_HASH_LEN: usize = 32;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct BlobHash([u8; BLOB_HASH_LEN]);
+
+impl BlobHash {
+    pub fn new_max() -> Self {
+        BlobHash([u8::MAX; BLOB_HASH_LEN])
+    }
+
+    pub fn try_from_hash_slice(value: &[u8]) -> Result<BlobHash, std::array::TryFromSliceError> {
+        value.try_into().map(BlobHash)
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl From<&[u8]> for BlobHash {
+    fn from(value: &[u8]) -> Self {
+        BlobHash(blake3::hash(value).into())
+    }
+}
+
+impl From<Vec<u8>> for BlobHash {
+    fn from(value: Vec<u8>) -> Self {
+        value.as_slice().into()
+    }
+}
+
+impl From<&Vec<u8>> for BlobHash {
+    fn from(value: &Vec<u8>) -> Self {
+        value.as_slice().into()
+    }
+}
+
+impl AsRef<BlobHash> for BlobHash {
+    fn as_ref(&self) -> &BlobHash {
+        self
+    }
+}
+
+impl From<BlobHash> for Vec<u8> {
+    fn from(value: BlobHash) -> Self {
+        value.0.to_vec()
+    }
+}
+
+impl AsRef<[u8]> for BlobHash {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for BlobHash {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut()
+    }
+}
 pub trait UnwrapFailure<T> {
     fn failed(self, action: &str) -> T;
 }

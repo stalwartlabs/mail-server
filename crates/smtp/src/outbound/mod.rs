@@ -25,6 +25,7 @@ use std::borrow::Cow;
 
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
+use store::write::QueueEvent;
 use utils::config::ServerProtocol;
 
 use crate::{
@@ -211,8 +212,8 @@ impl From<mta_sts::Error> for Status<(), Error> {
     }
 }
 
-impl From<Box<Message>> for DeliveryAttempt {
-    fn from(message: Box<Message>) -> Self {
+impl DeliveryAttempt {
+    pub fn new(message: Message, event: QueueEvent) -> Self {
         DeliveryAttempt {
             span: tracing::info_span!(
                 "delivery",
@@ -227,6 +228,7 @@ impl From<Box<Message>> for DeliveryAttempt {
             ),
             in_flight: Vec::new(),
             message,
+            event,
         }
     }
 }

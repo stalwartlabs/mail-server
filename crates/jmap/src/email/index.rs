@@ -35,12 +35,13 @@ use store::{
     backend::MAX_TOKEN_LENGTH,
     fts::{index::FtsDocument, Field},
     write::{
-        BatchBuilder, BlobOp, DirectoryClass, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+        BatchBuilder, Bincode, BlobOp, DirectoryClass, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX,
+        F_VALUE,
     },
-    BlobHash,
 };
+use utils::BlobHash;
 
-use crate::{mailbox::UidMailbox, Bincode};
+use crate::mailbox::UidMailbox;
 
 use super::metadata::MessageMetadata;
 

@@ -48,12 +48,12 @@ use jmap_proto::{
 };
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
-    write::{BatchBuilder, ValueClass, F_BITMAP, F_VALUE},
+    write::{BatchBuilder, Bincode, ValueClass, F_BITMAP, F_VALUE},
     BlobClass,
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, Bincode, JMAP};
+use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},

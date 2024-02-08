@@ -3,16 +3,13 @@ use std::{borrow::Cow, net::IpAddr, sync::Arc, vec::IntoIter};
 use directory::Directory;
 use mail_auth::IpLookupStrategy;
 use sieve::Sieve;
-use store::{LookupKey, LookupStore, LookupValue};
+use store::{Deserialize, LookupStore};
 use utils::{
     config::if_block::IfBlock,
     expr::{Expression, Variable},
 };
 
-use crate::{
-    config::{ArcSealer, DkimSigner, RelayHost},
-    scripts::plugins::lookup::VariableExists,
-};
+use crate::config::{ArcSealer, DkimSigner, RelayHost};
 
 use super::{ResolveVariable, SMTP};
 
@@ -165,15 +162,9 @@ impl SMTP {
                 let key = params.next_as_string();
 
                 self.get_lookup_store(store.as_ref())
-                    .key_get::<String>(LookupKey::Key(key.into_owned().into_bytes()))
+                    .key_get::<VariableWrapper>(key.into_owned().into_bytes())
                     .await
-                    .map(|value| {
-                        if let LookupValue::Value { value, .. } = value {
-                            Variable::from(value)
-                        } else {
-                            Variable::default()
-                        }
-                    })
+                    .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             context = "eval_if",
@@ -191,9 +182,8 @@ impl SMTP {
                 let key = params.next_as_string();
 
                 self.get_lookup_store(store.as_ref())
-                    .key_get::<VariableExists>(LookupKey::Key(key.into_owned().into_bytes()))
+                    .key_exists(key.into_owned().into_bytes())
                     .await
-                    .map(|value| matches!(value, LookupValue::Value { .. }))
                     .unwrap_or_else(|err| {
                         tracing::warn!(
                             context = "eval_if",
@@ -393,5 +383,32 @@ impl<'x> FncParams<'x> {
 
     pub fn next_as_string(&mut self) -> Cow<'x, str> {
         self.params.next().unwrap().into_string()
+    }
+}
+
+#[derive(Debug)]
+struct VariableWrapper(Variable<'static>);
+
+impl From<i64> for VariableWrapper {
+    fn from(value: i64) -> Self {
+        VariableWrapper(Variable::Integer(value))
+    }
+}
+
+impl Deserialize for VariableWrapper {
+    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+        String::deserialize(bytes).map(|v| VariableWrapper(Variable::String(v.into())))
+    }
+}
+
+impl From<store::Value<'static>> for VariableWrapper {
+    fn from(value: store::Value<'static>) -> Self {
+        VariableWrapper(value.into())
+    }
+}
+
+impl VariableWrapper {
+    pub fn into_inner(self) -> Variable<'static> {
+        self.0
     }
 }

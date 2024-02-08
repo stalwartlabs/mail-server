@@ -25,11 +25,14 @@ use std::{borrow::Borrow, io::Write};
 
 use store::{
     write::{DeserializeFrom, SerializeInto},
-    BlobClass, BlobHash,
+    BlobClass,
 };
-use utils::codec::{
-    base32_custom::{Base32Reader, Base32Writer},
-    leb128::{Leb128Iterator, Leb128Writer},
+use utils::{
+    codec::{
+        base32_custom::{Base32Reader, Base32Writer},
+        leb128::{Leb128Iterator, Leb128Writer},
+    },
+    BlobHash,
 };
 
 use crate::parser::{base32::JsonBase32Reader, json::Parser, JsonObjectParser};

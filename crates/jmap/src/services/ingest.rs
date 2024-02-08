@@ -32,9 +32,13 @@ use crate::{email::ingest::IngestEmail, mailbox::INBOX_ID, IngestError, JMAP};
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
         // Read message
-        let raw_message = match message.read_message().await {
-            Ok(raw_message) => raw_message,
-            Err(_) => {
+        let raw_message = match self
+            .blob_store
+            .get_blob(message.message_blob.as_slice(), 0..u32::MAX)
+            .await
+        {
+            Ok(Some(raw_message)) => raw_message,
+            _ => {
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
                         reason: "Temporary I/O error.".into(),

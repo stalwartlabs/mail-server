@@ -29,11 +29,12 @@ use std::{
 };
 
 use nlp::tokenizers::word::WordTokenizer;
-use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
-
-use crate::{
-    backend::MAX_TOKEN_LENGTH, BlobClass, BlobHash, Deserialize, Serialize, BLOB_HASH_LEN,
+use utils::{
+    codec::leb128::{Leb128Iterator, Leb128Vec},
+    BlobHash,
 };
+
+use crate::{backend::MAX_TOKEN_LENGTH, BlobClass, Deserialize, Serialize};
 
 use self::assert::AssertValue;
 
@@ -131,13 +132,21 @@ pub enum TagValue {
 pub enum ValueClass {
     Property(u8),
     Acl(u32),
-    Key(Vec<u8>),
+    Lookup(LookupClass),
     TermIndex,
     ReservedId,
     Directory(DirectoryClass),
     Blob(BlobOp),
     IndexEmail(u64),
     Config(Vec<u8>),
+    Queue(QueueClass),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum LookupClass {
+    Key(Vec<u8>),
+    Counter(Vec<u8>),
+    CounterExpiry(Vec<u8>),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -149,6 +158,32 @@ pub enum DirectoryClass {
     Domain(Vec<u8>),
     Principal(u32),
     UsedQuota(u32),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum QueueClass {
+    Message(u64),
+    MessageEvent(QueueEvent),
+    DmarcReportHeader(ReportEvent),
+    DmarcReportEvent(ReportEvent),
+    TlsReportHeader(ReportEvent),
+    TlsReportEvent(ReportEvent),
+    QuotaCount(Vec<u8>),
+    QuotaSize(Vec<u8>),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct QueueEvent {
+    pub due: u64,
+    pub queue_id: u64,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct ReportEvent {
+    pub due: u64,
+    pub policy_hash: u64,
+    pub seq_id: u64,
+    pub domain: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
@@ -260,6 +295,14 @@ impl Deserialize for u64 {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
         Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| {
             crate::Error::InternalError("Failed to deserialize u64".to_string())
+        })?))
+    }
+}
+
+impl Deserialize for i64 {
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        Ok(i64::from_be_bytes(bytes.try_into().map_err(|_| {
+            crate::Error::InternalError("Failed to deserialize i64".to_string())
         })?))
     }
 }
@@ -527,65 +570,9 @@ impl BitmapClass {
     }
 }
 
-impl BlobHash {
-    pub fn new_max() -> Self {
-        BlobHash([u8::MAX; BLOB_HASH_LEN])
-    }
-
-    pub fn try_from_hash_slice(value: &[u8]) -> Result<BlobHash, std::array::TryFromSliceError> {
-        value.try_into().map(BlobHash)
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl From<&[u8]> for BlobHash {
-    fn from(value: &[u8]) -> Self {
-        BlobHash(blake3::hash(value).into())
-    }
-}
-
-impl From<Vec<u8>> for BlobHash {
-    fn from(value: Vec<u8>) -> Self {
-        value.as_slice().into()
-    }
-}
-
-impl From<&Vec<u8>> for BlobHash {
-    fn from(value: &Vec<u8>) -> Self {
-        value.as_slice().into()
-    }
-}
-
-impl AsRef<BlobHash> for BlobHash {
-    fn as_ref(&self) -> &BlobHash {
-        self
-    }
-}
-
-impl AsRef<[u8]> for BlobHash {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl AsMut<[u8]> for BlobHash {
-    fn as_mut(&mut self) -> &mut [u8] {
-        self.0.as_mut()
-    }
-}
-
 impl AsRef<BlobClass> for BlobClass {
     fn as_ref(&self) -> &BlobClass {
         self
-    }
-}
-
-impl From<BlobHash> for Vec<u8> {
-    fn from(value: BlobHash) -> Self {
-        value.0.to_vec()
     }
 }
 
@@ -603,5 +590,59 @@ impl BlobClass {
             BlobClass::Reserved { expires, .. } => *expires > now(),
             BlobClass::Linked { .. } => true,
         }
+    }
+}
+
+pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
+    pub inner: T,
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for &Bincode<T> {
+    fn serialize(self) -> Vec<u8> {
+        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
+    fn serialize(self) -> Vec<u8> {
+        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> Deserialize
+    for Bincode<T>
+{
+    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+        lz4_flex::decompress_size_prepended(bytes)
+            .map_err(|err| {
+                crate::Error::InternalError(format!("Bincode decompression failed: {err:?}"))
+            })
+            .and_then(|result| {
+                bincode::deserialize(&result).map_err(|err| {
+                    crate::Error::InternalError(format!(
+                        "Bincode deserialization failed (len {}): {err:?}",
+                        result.len()
+                    ))
+                })
+            })
+            .map(|inner| Self { inner })
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T> {
+    fn to_bitmaps(&self, _ops: &mut Vec<crate::write::Operation>, _field: u8, _set: bool) {
+        unreachable!()
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for &Bincode<T> {
+    fn to_bitmaps(&self, _ops: &mut Vec<crate::write::Operation>, _field: u8, _set: bool) {
+        unreachable!()
     }
 }

@@ -32,11 +32,11 @@ use jmap_proto::{
 use sieve::Sieve;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder, BlobOp},
+    write::{assert::HashedValue, BatchBuilder, Bincode, BlobOp},
     Deserialize, Serialize,
 };
 
-use crate::{sieve::SeenIds, Bincode, JMAP};
+use crate::{sieve::SeenIds, JMAP};
 
 use super::ActiveScript;
 

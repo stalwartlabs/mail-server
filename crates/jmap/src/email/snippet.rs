@@ -31,9 +31,9 @@ use jmap_proto::{
 };
 use mail_parser::{decoders::html::html_to_text, GetHeader, HeaderName, PartType};
 use nlp::language::{search_snippet::generate_snippet, stemmer::Stemmer, Language};
-use store::backend::MAX_TOKEN_LENGTH;
+use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
-use crate::{auth::AccessToken, Bincode, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::metadata::{MessageMetadata, MetadataPartType};
 

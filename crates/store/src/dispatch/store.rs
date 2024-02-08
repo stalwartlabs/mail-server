@@ -255,7 +255,8 @@ impl Store {
             Self::RocksDb(store) => store.purge_bitmaps().await,
         }
     }
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
+
+    pub async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_range(from, to).await,
@@ -395,9 +396,11 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn blob_expire_all(&self) {
+        use utils::{BlobHash, BLOB_HASH_LEN};
+
         use crate::{
             write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, Operation, ValueOp},
-            BlobHash, BLOB_HASH_LEN, U64_LEN,
+            U64_LEN,
         };
 
         // Delete all temporary hashes

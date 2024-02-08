@@ -21,25 +21,26 @@
  * for more details.
 */
 
-use std::sync::{atomic::Ordering, Arc};
-
-use dashmap::mapref::entry::Entry;
+use store::{
+    write::{BatchBuilder, QueueClass, ValueClass},
+    ValueKey,
+};
 
 use crate::{
     config::QueueQuota,
     core::{ResolveVariable, SMTP},
 };
 
-use super::{Message, QuotaLimiter, SimpleEnvelope, Status, UsedQuota};
+use super::{Message, QuotaKey, SimpleEnvelope, Status};
 
 impl SMTP {
     pub async fn has_quota(&self, message: &mut Message) -> bool {
-        let mut queue_refs = Vec::new();
+        let mut quota_keys = Vec::new();
 
         if !self.queue.config.quota.sender.is_empty() {
             for quota in &self.queue.config.quota.sender {
                 if !self
-                    .reserve_quota(quota, message, message.size, 0, &mut queue_refs)
+                    .check_quota(quota, message, message.size, 0, &mut quota_keys)
                     .await
                 {
                     return false;
@@ -50,12 +51,12 @@ impl SMTP {
         for quota in &self.queue.config.quota.rcpt_domain {
             for (pos, domain) in message.domains.iter().enumerate() {
                 if !self
-                    .reserve_quota(
+                    .check_quota(
                         quota,
                         &SimpleEnvelope::new(message, &domain.domain),
                         message.size,
                         ((pos + 1) << 32) as u64,
-                        &mut queue_refs,
+                        &mut quota_keys,
                     )
                     .await
                 {
@@ -67,7 +68,7 @@ impl SMTP {
         for quota in &self.queue.config.quota.rcpt {
             for (pos, rcpt) in message.recipients.iter().enumerate() {
                 if !self
-                    .reserve_quota(
+                    .check_quota(
                         quota,
                         &SimpleEnvelope::new_rcpt(
                             message,
@@ -76,7 +77,7 @@ impl SMTP {
                         ),
                         message.size,
                         (pos + 1) as u64,
-                        &mut queue_refs,
+                        &mut quota_keys,
                     )
                     .await
                 {
@@ -85,47 +86,65 @@ impl SMTP {
             }
         }
 
-        message.queue_refs = queue_refs;
+        message.quota_keys = quota_keys;
 
         true
     }
 
-    async fn reserve_quota(
+    async fn check_quota(
         &self,
         quota: &QueueQuota,
         envelope: &impl ResolveVariable,
         size: usize,
         id: u64,
-        refs: &mut Vec<UsedQuota>,
+        refs: &mut Vec<QuotaKey>,
     ) -> bool {
         if !quota.expr.is_empty()
             && self
-                .eval_expr(&quota.expr, envelope, "reserve_quota")
+                .eval_expr(&quota.expr, envelope, "check_quota")
                 .await
                 .unwrap_or(false)
         {
-            match self.queue.quota.entry(quota.new_key(envelope)) {
-                Entry::Occupied(e) => {
-                    if let Some(qref) = e.get().is_allowed(id, size) {
-                        refs.push(qref);
-                    } else {
-                        return false;
-                    }
-                }
-                Entry::Vacant(e) => {
-                    let limiter = Arc::new(QuotaLimiter {
-                        max_size: quota.size.unwrap_or(0),
-                        max_messages: quota.messages.unwrap_or(0),
-                        size: 0.into(),
-                        messages: 0.into(),
+            let key = quota.new_key(envelope);
+            if let Some(max_size) = quota.size {
+                if self
+                    .shared
+                    .default_data_store
+                    .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaSize(
+                        key.as_ref().to_vec(),
+                    ))))
+                    .await
+                    .unwrap_or(0) as usize
+                    + size
+                    > max_size
+                {
+                    return false;
+                } else {
+                    refs.push(QuotaKey::Size {
+                        key: key.as_ref().to_vec(),
+                        id,
                     });
+                }
+            }
 
-                    if let Some(qref) = limiter.is_allowed(id, size) {
-                        refs.push(qref);
-                        e.insert(limiter);
-                    } else {
-                        return false;
-                    }
+            if let Some(max_messages) = quota.messages {
+                if self
+                    .shared
+                    .default_data_store
+                    .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaCount(
+                        key.as_ref().to_vec(),
+                    ))))
+                    .await
+                    .unwrap_or(0) as usize
+                    + 1
+                    > max_messages
+                {
+                    return false;
+                } else {
+                    refs.push(QuotaKey::Count {
+                        key: key.as_ref().to_vec(),
+                        id,
+                    });
                 }
             }
         }
@@ -134,7 +153,10 @@ impl SMTP {
 }
 
 impl Message {
-    pub fn release_quota(&mut self) {
+    pub fn release_quota(&mut self, batch: &mut BatchBuilder) {
+        if self.quota_keys.is_empty() {
+            return;
+        }
         let mut quota_ids = Vec::with_capacity(self.domains.len() + self.recipients.len());
         for (pos, domain) in self.domains.iter().enumerate() {
             if matches!(
@@ -153,48 +175,21 @@ impl Message {
             }
         }
         if !quota_ids.is_empty() {
-            self.queue_refs.retain(|q| !quota_ids.contains(&q.id));
-        }
-    }
-}
-
-trait QuotaLimiterAllowed {
-    fn is_allowed(&self, id: u64, size: usize) -> Option<UsedQuota>;
-}
-
-impl QuotaLimiterAllowed for Arc<QuotaLimiter> {
-    fn is_allowed(&self, id: u64, size: usize) -> Option<UsedQuota> {
-        if self.max_messages > 0 {
-            if self.messages.load(Ordering::Relaxed) < self.max_messages {
-                self.messages.fetch_add(1, Ordering::Relaxed);
-            } else {
-                return None;
+            let mut quota_keys = Vec::new();
+            for quota_key in std::mem::take(&mut self.quota_keys) {
+                match quota_key {
+                    QuotaKey::Count { id, key } if quota_ids.contains(&id) => {
+                        batch.clear(ValueClass::Queue(QueueClass::QuotaCount(key)));
+                    }
+                    QuotaKey::Size { id, key } if quota_ids.contains(&id) => {
+                        batch.clear(ValueClass::Queue(QueueClass::QuotaSize(key)));
+                    }
+                    _ => {
+                        quota_keys.push(quota_key);
+                    }
+                }
             }
-        }
-
-        if self.max_size > 0 {
-            if self.size.load(Ordering::Relaxed) + size < self.max_size {
-                self.size.fetch_add(size, Ordering::Relaxed);
-            } else {
-                return None;
-            }
-        }
-
-        Some(UsedQuota {
-            id,
-            size,
-            limiter: self.clone(),
-        })
-    }
-}
-
-impl Drop for UsedQuota {
-    fn drop(&mut self) {
-        if self.limiter.max_messages > 0 {
-            self.limiter.messages.fetch_sub(1, Ordering::Relaxed);
-        }
-        if self.limiter.max_size > 0 {
-            self.limiter.size.fetch_sub(self.size, Ordering::Relaxed);
+            self.quota_keys = quota_keys;
         }
     }
 }

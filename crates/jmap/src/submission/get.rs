@@ -27,8 +27,7 @@ use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use smtp::{core::management::QueueRequest, queue};
-use tokio::sync::oneshot;
+use smtp::queue;
 
 use crate::JMAP;
 
@@ -97,25 +96,10 @@ impl JMAP {
             };
 
             // Obtain queueId
-            let mut queued_message = None;
-            let (result_tx, result_rx) = oneshot::channel();
-            if self
+            let queued_message = self
                 .smtp
-                .queue
-                .tx
-                .send(queue::Event::Manage(QueueRequest::Status {
-                    queue_ids: vec![push.get(&Property::MessageId).as_uint().unwrap_or(u64::MAX)],
-                    result_tx,
-                }))
-                .await
-                .is_ok()
-            {
-                queued_message = result_rx
-                    .await
-                    .ok()
-                    .and_then(|mut result| result.pop())
-                    .flatten();
-            }
+                .read_message(push.get(&Property::MessageId).as_uint().unwrap_or(u64::MAX))
+                .await;
 
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
@@ -124,11 +108,7 @@ impl JMAP {
                     Property::DeliveryStatus => {
                         match (queued_message.as_ref(), push.remove(property)) {
                             (Some(message), Value::Object(mut status)) => {
-                                for rcpt in message
-                                    .domains
-                                    .iter()
-                                    .flat_map(|rcpts| rcpts.recipients.iter())
-                                {
+                                for rcpt in &message.recipients {
                                     status.set(
                                         Property::_T(rcpt.address.clone()),
                                         Object::with_capacity(3)
@@ -146,10 +126,12 @@ impl JMAP {
                                             .with_property(
                                                 Property::SmtpReply,
                                                 match &rcpt.status {
-                                                    queue::Status::Completed(reply)
-                                                    | queue::Status::TemporaryFailure(reply)
+                                                    queue::Status::Completed(reply) => {
+                                                        reply.response.message()
+                                                    }
+                                                    queue::Status::TemporaryFailure(reply)
                                                     | queue::Status::PermanentFailure(reply) => {
-                                                        reply.as_str()
+                                                        reply.response.message()
                                                     }
                                                     queue::Status::Scheduled => "250 2.1.5 Queued",
                                                 }

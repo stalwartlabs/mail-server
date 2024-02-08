@@ -48,19 +48,15 @@ use jmap_proto::{
     },
 };
 use mail_parser::{HeaderName, HeaderValue};
-use smtp::{
-    core::{management::QueueRequest, Session, SessionData, State},
-    queue,
-};
+use smtp::core::{Session, SessionData, State};
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
-use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder};
-use tokio::sync::oneshot;
+use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
 use utils::{
     listener::{stream::NullIo, ServerInstance},
     map::vec_map::VecMap,
 };
 
-use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, Bincode, JMAP};
+use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, JMAP};
 
 pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::UndoStatus).index_as(IndexAs::Text {
@@ -176,24 +172,11 @@ impl JMAP {
 
             match undo_status {
                 Some(undo_status) if undo_status == "canceled" => {
-                    let (result_tx, result_rx) = oneshot::channel();
-                    if self
-                        .smtp
-                        .queue
-                        .tx
-                        .send(queue::Event::Manage(QueueRequest::Cancel {
-                            queue_ids: vec![queue_id],
-                            item: None,
-                            result_tx,
-                        }))
-                        .await
-                        .is_ok()
-                        && result_rx
-                            .await
-                            .ok()
-                            .and_then(|mut r| r.pop())
-                            .unwrap_or(false)
-                    {
+                    if let Some(queue_message) = self.smtp.read_message(queue_id).await {
+                        // Delete message from queue
+                        let message_due = queue_message.next_event().unwrap_or_default();
+                        queue_message.remove(&self.smtp, message_due).await;
+
                         // Update record
                         let mut batch = BatchBuilder::new();
                         batch
