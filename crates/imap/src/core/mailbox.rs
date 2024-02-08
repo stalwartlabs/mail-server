@@ -226,9 +226,13 @@ impl<T: SessionStream> SessionData<T> {
                             ..Default::default()
                         },
                     );
-                    account
-                        .mailbox_names
-                        .insert(mailbox_path.join("/"), *mailbox_id);
+
+                    let mut mailbox_name = mailbox_path.join("/");
+                    if mailbox_name.eq_ignore_ascii_case("inbox") && *mailbox_id != INBOX_ID {
+                        // If there is another mailbox called Inbox, renamed it to avoid conflicts
+                        mailbox_name = format!("{mailbox_name} 2");
+                    }
+                    account.mailbox_names.insert(mailbox_name, *mailbox_id);
 
                     if has_children && iter_stack.len() < 100 {
                         iter_stack.push((iter, parent_id, path));
@@ -508,7 +512,9 @@ impl<T: SessionStream> SessionData<T> {
                 .map_or(true, |p| mailbox_name.starts_with(p))
             {
                 for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
-                    if mailbox_name_ == mailbox_name || (is_inbox && *mailbox_id_ == INBOX_ID) {
+                    if (!is_inbox && mailbox_name_ == mailbox_name)
+                        || (is_inbox && *mailbox_id_ == INBOX_ID)
+                    {
                         return MailboxId {
                             account_id: account.account_id,
                             mailbox_id: *mailbox_id_,

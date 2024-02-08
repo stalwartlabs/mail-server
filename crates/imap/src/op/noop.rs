@@ -29,22 +29,15 @@ use crate::core::{Session, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_noop(&mut self, request: Request<Command>) -> crate::OpResult {
-        match &self.state {
-            State::Authenticated { data, .. } => {
-                data.write_changes(&None, true, false, self.is_qresync, self.version.is_rev2())
-                    .await;
-            }
-            State::Selected { data, mailbox, .. } => {
-                data.write_changes(
-                    &Some(mailbox.clone()),
-                    true,
-                    true,
-                    self.is_qresync,
-                    self.version.is_rev2(),
-                )
-                .await;
-            }
-            _ => (),
+        if let State::Selected { data, mailbox, .. } = &self.state {
+            data.write_changes(
+                &Some(mailbox.clone()),
+                false,
+                true,
+                self.is_qresync,
+                self.version.is_rev2(),
+            )
+            .await;
         }
 
         self.write_bytes(

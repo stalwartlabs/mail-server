@@ -37,7 +37,7 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap::{email::metadata::MessageMetadata, Bincode};
+use jmap::email::metadata::MessageMetadata;
 use jmap_proto::{
     error::method::MethodError,
     types::{
@@ -48,7 +48,7 @@ use jmap_proto::{
 use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
 use store::{
     query::log::{Change, Query},
-    write::{assert::HashedValue, BatchBuilder, F_BITMAP, F_VALUE},
+    write::{assert::HashedValue, BatchBuilder, Bincode, F_BITMAP, F_VALUE},
 };
 use utils::listener::SessionStream;
 
