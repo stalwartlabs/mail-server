@@ -37,7 +37,7 @@ use crate::smtp::{
 };
 use smtp::{
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
+    queue::{manager::Queue, DeliveryAttempt, Event},
 };
 
 const SMUGGLER: &str = r#"From: Joe SixPack <john@foobar.net>
@@ -139,11 +139,11 @@ async fn smtp_delivery() {
             "250",
         )
         .await;
-    let message = local_qr.read_event().await.unwrap_message();
+    let message = local_qr.expect_message().await();
     let num_domains = message.domains.len();
     assert_eq!(num_domains, 3);
     DeliveryAttempt::from(message)
-        .try_deliver(core.clone(), &mut queue)
+        .try_deliver(core.clone())
         .await;
     let mut dsn = Vec::new();
     let mut domain_retries = vec![0; num_domains];
@@ -171,7 +171,7 @@ async fn smtp_delivery() {
         if !queue.scheduled.is_empty() {
             tokio::time::sleep(queue.wake_up_time()).await;
             DeliveryAttempt::from(queue.next_due().unwrap())
-                .try_deliver(core.clone(), &mut queue)
+                .try_deliver(core.clone())
                 .await;
         }
     }
@@ -190,7 +190,7 @@ async fn smtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<ok@foobar.net> (delivered to")
         .assert_contains("<ok@foobar.org> (delivered to")
         .assert_contains("<invalid@domain.org> (failed to lookup")
@@ -199,25 +199,25 @@ async fn smtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("<delay@foobar.org> (host ")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<delay@foobar.org> (host ")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<delay@foobar.org> (host ");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("Action: failed");
 
@@ -261,8 +261,8 @@ async fn smtp_delivery() {
         session
             .send_message("john@doe.org", &["bill@foobar.com"], &message, "250")
             .await;
-        DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-            .try_deliver(core.clone(), &mut queue)
+        local_qr.expect_message_then_deliver().await
+            .try_deliver(core.clone())
             .await;
         let event = local_qr.read_event().await;
 
@@ -272,7 +272,7 @@ async fn smtp_delivery() {
             event
         );
 
-        let message = remote_qr.read_event().await.unwrap_message().read_message();
+        let message = remote_qr.expect_message().await().read_message();
 
         assert!(
             message.contains("This is a smuggled message"),

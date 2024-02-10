@@ -65,7 +65,7 @@ pub struct Schedule<T> {
     pub inner: T,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub id: QueueId,
     pub created: u64,
@@ -85,7 +85,7 @@ pub struct Message {
     pub quota_keys: Vec<QuotaKey>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum QuotaKey {
     Size { key: Vec<u8>, id: u64 },
     Count { key: Vec<u8>, id: u64 },

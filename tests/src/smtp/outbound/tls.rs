@@ -88,20 +88,23 @@ async fn starttls_optional() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     let mut retry = local_qr.read_event().await.unwrap_retry();
     assert!(retry.inner.domains[0].disable_tls);
     retry.inner.domains[0].retry.due = Instant::now();
     DeliveryAttempt::from(retry.inner)
-        .try_deliver(core.clone(), &mut queue)
+        .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.unwrap_done();
     remote_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_not_contains("using TLSv1.3 with cipher");
 }

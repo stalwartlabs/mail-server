@@ -74,13 +74,6 @@ impl ConfigQueue for Config {
         let default_hostname = self.value_require("server.hostname")?;
 
         let config = QueueConfig {
-            path: self.property_require("queue.path")?,
-            hash: self
-                .parse_if_block("queue.hash", |name| {
-                    map_expr_token::<NoConstants>(name, sender_envelope_keys)
-                })?
-                .unwrap_or_else(|| IfBlock::new(32)),
-
             retry: self
                 .parse_if_block("queue.schedule.retry", |name| {
                     map_expr_token::<Duration>(name, host_envelope_keys)

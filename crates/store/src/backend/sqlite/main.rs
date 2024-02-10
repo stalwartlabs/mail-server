@@ -36,7 +36,7 @@ use crate::{
 use super::{pool::SqliteConnectionManager, SqliteStore};
 
 impl SqliteStore {
-    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         let prefix = prefix.as_key();
         let db = Self {
             conn_pool: Pool::builder()

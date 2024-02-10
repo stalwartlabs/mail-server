@@ -228,13 +228,14 @@ async fn sieve_scripts() {
 
     // Expect a modified message
     session.data("test:multipart", "250").await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("X-Part-Number: 5")
         .assert_contains("THIS IS A PIECE OF HTML TEXT");
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Expect rejection for bill@foobar.net
     session
@@ -245,7 +246,7 @@ async fn sieve_scripts() {
             "503 5.5.3 Bill cannot receive messages",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Expect message delivery plus a notification
     session
@@ -256,7 +257,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    let notification = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let notification = qr.last_queued_message().await;
     assert_eq!(notification.return_path, "");
     assert_eq!(notification.recipients.len(), 2);
     assert_eq!(
@@ -268,22 +270,24 @@ async fn sieve_scripts() {
         "jane@example.org"
     );
     notification
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("From: \"Sieve Daemon\" <sieve@foobar.org>")
         .assert_contains("To: <john@example.net>")
         .assert_contains("Cc: <jane@example.org>")
         .assert_contains("Subject: You have got mail")
         .assert_contains("One Two Three Four");
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("One Two Three Four")
         .assert_contains("multi-part message in MIME format")
         .assert_not_contains("X-Part-Number: 5")
         .assert_not_contains("THIS IS A PIECE OF HTML TEXT");
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Expect a modified message delivery plus a notification
     session
@@ -295,10 +299,11 @@ async fn sieve_scripts() {
         )
         .await;
 
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("From: \"Sieve Daemon\" <sieve@foobar.org>")
         .assert_contains("To: <john@example.net>")
@@ -306,10 +311,11 @@ async fn sieve_scripts() {
         .assert_contains("Subject: You have got mail")
         .assert_contains("One Two Three Four");
 
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("X-Part-Number: 5")
         .assert_contains("THIS IS A PIECE OF HTML TEXT")
         .assert_not_contains("X-My-Header: true");
@@ -323,7 +329,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    let redirect = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let redirect = qr.last_queued_message().await;
     assert_eq!(redirect.return_path, "");
     assert_eq!(redirect.recipients.len(), 1);
     assert_eq!(
@@ -331,13 +338,14 @@ async fn sieve_scripts() {
         "redirect@here.email"
     );
     redirect
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("From: no-reply@my.domain")
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
         .assert_not_contains("From: Joe SixPack <joe@football.example.com>");
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Expect an intact redirected message
     session
@@ -348,7 +356,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    let redirect = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let redirect = qr.last_queued_message().await;
     assert_eq!(redirect.return_path, "");
     assert_eq!(redirect.recipients.len(), 1);
     assert_eq!(
@@ -356,13 +365,14 @@ async fn sieve_scripts() {
         "redirect@somewhere.email"
     );
     redirect
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_not_contains("From: no-reply@my.domain")
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
         .assert_contains("From: Joe SixPack <joe@football.example.com>");
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test pipes
     session.data.remote_ip_str = "10.0.0.123".parse().unwrap();
@@ -375,11 +385,12 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("X-My-Header: true")
         .assert_contains("Authentication-Results");
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 }

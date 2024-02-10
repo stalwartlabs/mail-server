@@ -94,15 +94,15 @@ async fn extensions() {
             "250",
         )
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr.expect_message_then_deliver().await
+        .try_deliver(core.clone())
         .await;
 
     local_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
@@ -111,21 +111,21 @@ async fn extensions() {
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Test SIZE extension
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:arc", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr.expect_message_then_deliver().await
+        .try_deliver(core.clone())
         .await;
     local_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<bill@foobar.org> (host 'mx.foobar.org' rejected command 'MAIL FROM:")
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
@@ -142,11 +142,11 @@ async fn extensions() {
             "250",
         )
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr.expect_message_then_deliver().await
+        .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.unwrap_done();
-    let message = remote_qr.read_event().await.unwrap_message();
+    let message = remote_qr.expect_message().await();
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);

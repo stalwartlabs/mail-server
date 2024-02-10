@@ -89,17 +89,11 @@ impl ConfigReport for Config {
                 sender_envelope_keys,
             )?,
             tls: self.parse_aggregate_report("tls", default_hostname, rcpt_envelope_keys)?,
-            path: self.property_require("report.path")?,
             submitter: self
                 .parse_if_block("report.submitter", |name| {
                     map_expr_token::<NoConstants>(name, &[V_RECIPIENT_DOMAIN])
                 })?
                 .unwrap_or_else(|| IfBlock::new(default_hostname.to_string())),
-            hash: self
-                .parse_if_block("report.hash", |name| {
-                    map_expr_token::<NoConstants>(name, sender_envelope_keys)
-                })?
-                .unwrap_or_else(|| IfBlock::new(32)),
             analysis: ReportAnalysis {
                 addresses,
                 forward: self.property("report.analysis.forward")?.unwrap_or(false),

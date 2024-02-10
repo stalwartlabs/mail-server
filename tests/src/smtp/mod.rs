@@ -33,7 +33,7 @@ use mail_auth::{
 use mail_send::smtp::tls::build_tls_connector;
 use sieve::Runtime;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::{LookupStore, Store};
+use store::{backend::sqlite::SqliteStore, LookupStore, Store};
 use tokio::sync::mpsc;
 
 use smtp::{
@@ -55,7 +55,10 @@ use smtp::{
     },
     outbound::dane::DnssecResolver,
 };
-use utils::config::{if_block::IfBlock, utils::ConstantValue, Config};
+use utils::{
+    config::{if_block::IfBlock, utils::ConstantValue, Config},
+    snowflake::SnowflakeIdGenerator,
+};
 
 pub mod config;
 pub mod inbound;
@@ -201,6 +204,7 @@ impl TestConfig for SMTP {
                     blocked_ips: Arc::new(Default::default()),
                 }),
                 default_lookup_store: LookupStore::Store(store.clone()),
+                default_blob_store: store::BlobStore::Store(store.clone()),
                 default_data_store: store,
             },
         }
@@ -300,13 +304,8 @@ impl TestConfig for QueueCore {
                 ThrottleKeyHasherBuilder::default(),
                 16,
             ),
-            quota: DashMap::with_capacity_and_hasher_and_shard_amount(
-                10,
-                ThrottleKeyHasherBuilder::default(),
-                16,
-            ),
             tx: mpsc::channel(1024).0,
-            id_seq: 0.into(),
+            snowflake_id: SnowflakeIdGenerator::new(),
             connectors: TlsConnectors {
                 pki_verify: build_tls_connector(false),
                 dummy_verify: build_tls_connector(true),
@@ -318,8 +317,6 @@ impl TestConfig for QueueCore {
 impl TestConfig for QueueConfig {
     fn test() -> Self {
         Self {
-            path: Default::default(),
-            hash: IfBlock::new(10),
             retry: IfBlock::new(Duration::from_secs(10)),
             notify: IfBlock::new(Duration::from_secs(20)),
             expire: IfBlock::new(Duration::from_secs(10)),
@@ -404,8 +401,6 @@ impl TestConfig for ReportCore {
 impl TestConfig for ReportConfig {
     fn test() -> Self {
         Self {
-            path: Default::default(),
-            hash: IfBlock::new(10),
             submitter: IfBlock::new("example.org".to_string()),
             analysis: ReportAnalysis {
                 addresses: vec![],
@@ -502,6 +497,7 @@ pub fn add_test_certs(config: &str) -> String {
 
 pub struct QueueReceiver {
     _temp_dir: TempDir,
+    store: Store,
     pub queue_rx: mpsc::Receiver<smtp::queue::Event>,
 }
 
@@ -514,17 +510,27 @@ pub trait TestSMTP {
     fn init_test_report(&mut self) -> ReportReceiver;
 }
 
+const QUEUE_STORE_CONFIG: &str = r#"[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
+"#;
+
 impl TestSMTP for SMTP {
     fn init_test_queue(&mut self, test_name: &str) -> QueueReceiver {
         let _temp_dir = make_temp_dir(test_name, true);
-        self.queue.config.path = _temp_dir.temp_dir.clone();
-
+        let config =
+            Config::new(&QUEUE_STORE_CONFIG.replace("{TMP}", _temp_dir.temp_dir.to_str().unwrap()))
+                .unwrap();
+        let store = Store::SQLite(SqliteStore::open(&config, "store.sqlite").unwrap().into());
+        self.shared.default_data_store = store.clone();
+        self.shared.default_blob_store = store.clone().into();
         let (queue_tx, queue_rx) = mpsc::channel(128);
         self.queue.tx = queue_tx;
 
         QueueReceiver {
-            _temp_dir,
+            store,
             queue_rx,
+            _temp_dir,
         }
     }
 

@@ -25,9 +25,9 @@ use ahash::AHashMap;
 use store::{
     config::ConfigStore,
     write::{blob::BlobQuota, now, BatchBuilder, BlobOp},
-    BlobClass, BlobHash, BlobStore, Serialize,
+    BlobClass, BlobStore, Serialize,
 };
-use utils::config::Config;
+use utils::{config::Config, BlobHash};
 
 use crate::store::{TempDir, CONFIG};
 

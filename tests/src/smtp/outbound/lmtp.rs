@@ -35,7 +35,7 @@ use crate::smtp::{
 use smtp::{
     config::shared::ConfigShared,
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
+    queue::{manager::Queue, DeliveryAttempt, Event},
 };
 use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
@@ -119,8 +119,10 @@ async fn lmtp_delivery() {
             "250",
         )
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     let mut dsn = Vec::new();
     loop {
@@ -144,7 +146,7 @@ async fn lmtp_delivery() {
         if !queue.scheduled.is_empty() {
             tokio::time::sleep(queue.wake_up_time()).await;
             DeliveryAttempt::from(queue.next_due().unwrap())
-                .try_deliver(core.clone(), &mut queue)
+                .try_deliver(core.clone())
                 .await;
         }
     }
@@ -155,7 +157,8 @@ async fn lmtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("<jane@foobar.org> (delivered to")
         .assert_contains("<john@foobar.org> (delivered to")
@@ -164,19 +167,22 @@ async fn lmtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: failed");
 

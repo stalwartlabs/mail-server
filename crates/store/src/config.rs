@@ -137,7 +137,7 @@ impl ConfigStore for Config {
                 }
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
-                    let db: Store = SqliteStore::open(self, prefix).await?.into();
+                    let db: Store = SqliteStore::open(self, prefix)?.into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores

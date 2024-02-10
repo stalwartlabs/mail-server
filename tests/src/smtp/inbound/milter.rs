@@ -97,7 +97,7 @@ async fn milter_session() {
             "503 5.5.3",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test discard
     session
@@ -108,7 +108,7 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test temp fail
     session
@@ -119,7 +119,7 @@ async fn milter_session() {
             "451 4.3.5",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test shutdown
     session
@@ -130,7 +130,7 @@ async fn milter_session() {
             "421 4.3.0",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test reply code
     session
@@ -141,7 +141,7 @@ async fn milter_session() {
             "321",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Test accept with header addition
     session
@@ -152,10 +152,11 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("X-Hello: World")
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Are you hungry yet?");
@@ -169,10 +170,11 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("Subject: [SPAM] Saying Hello")
         .assert_count("References: ", 1)
         .assert_contains("Are you hungry yet?");
@@ -186,10 +188,11 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("X-Spam: Yes")
         .assert_contains("123456");
 }

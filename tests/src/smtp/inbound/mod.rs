@@ -23,10 +23,15 @@
 
 use std::time::Duration;
 
+use store::{
+    write::{key::DeserializeBigEndian, Bincode, QueueClass, QueueEvent, ValueClass},
+    Deserialize, IterateParams, ValueKey, U64_LEN,
+};
 use tokio::sync::mpsc::error::TryRecvError;
 
 use smtp::{
-    queue::{self, Message, OnHold, Schedule, WorkerResult},
+    core::SMTP,
+    queue::{self, DeliveryAttempt, Message, OnHold, QueueId},
     reporting::{self, DmarcEvent, TlsEvent},
 };
 
@@ -64,15 +69,105 @@ impl QueueReceiver {
             Err(_) => None,
         }
     }
-    pub fn assert_empty_queue(&mut self) {
+
+    pub fn assert_no_events(&mut self) {
         match self.queue_rx.try_recv() {
             Err(TryRecvError::Empty) => (),
-            Ok(queue::Event::Queue(message)) => {
-                panic!("Unexpected message: {}", message.inner.read_message());
-            }
             Ok(event) => panic!("Expected empty queue but got {event:?}"),
             Err(err) => panic!("Queue error: {err:?}"),
         }
+    }
+
+    pub async fn assert_queue_is_empty(&mut self) {
+        assert_eq!(self.read_queued_messages().await, vec![]);
+        assert_eq!(self.read_queued_events().await, vec![]);
+    }
+
+    pub async fn expect_message(&mut self) -> Message {
+        self.read_event().await.assert_reload();
+        self.last_queued_message().await
+    }
+
+    pub async fn expect_message_then_deliver(&mut self) -> DeliveryAttempt {
+        let message = self.expect_message().await;
+        let event = QueueEvent {
+            due: self.message_due(message.id).await,
+            queue_id: message.id,
+        };
+
+        DeliveryAttempt::new(message, event)
+    }
+
+    pub async fn read_queued_events(&self) -> Vec<QueueEvent> {
+        let mut events = Vec::new();
+
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            due: 0,
+            queue_id: 0,
+        })));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            due: u64::MAX,
+            queue_id: u64::MAX,
+        })));
+
+        self.store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending().no_values(),
+                |key, _| {
+                    events.push(QueueEvent {
+                        due: key.deserialize_be_u64(1)?,
+                        queue_id: key.deserialize_be_u64(U64_LEN + 1)?,
+                    });
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+
+        events
+    }
+
+    pub async fn read_queued_messages(&self) -> Vec<Message> {
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+        let mut messages = Vec::new();
+
+        self.store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending(),
+                |key, value| {
+                    let value = Bincode::<Message>::deserialize(value)?;
+                    assert_eq!(key.deserialize_be_u64(1)?, value.inner.id);
+                    messages.push(value.inner);
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+
+        messages
+    }
+
+    pub async fn last_queued_message(&self) -> Message {
+        self.read_queued_messages()
+            .await
+            .into_iter()
+            .next()
+            .expect("No messages found in queue")
+    }
+
+    pub async fn message_due(&self, queue_id: QueueId) -> u64 {
+        self.read_queued_events()
+            .await
+            .iter()
+            .find_map(|event| {
+                if event.queue_id == queue_id {
+                    Some(event.due)
+                } else {
+                    None
+                }
+            })
+            .expect("No event found in queue for message")
     }
 }
 
@@ -102,65 +197,21 @@ impl ReportReceiver {
 }
 
 pub trait TestQueueEvent {
-    fn unwrap_message(self) -> Box<Message>;
-    fn unwrap_schedule(self) -> Schedule<Box<Message>>;
-    fn unwrap_result(self) -> WorkerResult;
-    fn unwrap_done(self);
-    fn unwrap_on_hold(self) -> OnHold<Box<Message>>;
-    fn unwrap_retry(self) -> Schedule<Box<Message>>;
+    fn assert_reload(self);
+    fn unwrap_on_hold(self) -> OnHold<QueueEvent>;
 }
 
 impl TestQueueEvent for queue::Event {
-    fn unwrap_message(self) -> Box<Message> {
+    fn assert_reload(self) {
         match self {
-            queue::Event::Queue(message) => message.inner,
+            queue::Event::Reload => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
-    fn unwrap_schedule(self) -> Schedule<Box<Message>> {
+    fn unwrap_on_hold(self) -> OnHold<QueueEvent> {
         match self {
-            queue::Event::Queue(message) => message,
-            e => panic!("Unexpected event: {e:?}"),
-        }
-    }
-
-    fn unwrap_result(self) -> WorkerResult {
-        match self {
-            queue::Event::Done(result) => result,
-            queue::Event::Queue(message) => {
-                panic!("Unexpected message: {}", message.inner.read_message());
-            }
-            e => panic!("Unexpected event: {e:?}"),
-        }
-    }
-
-    fn unwrap_done(self) {
-        match self {
-            queue::Event::Done(WorkerResult::Done) => (),
-            queue::Event::Queue(message) => {
-                panic!("Unexpected message: {}", message.inner.read_message());
-            }
-            e => panic!("Unexpected event: {e:?}"),
-        }
-    }
-
-    fn unwrap_on_hold(self) -> OnHold<Box<Message>> {
-        match self {
-            queue::Event::Done(WorkerResult::OnHold(value)) => value,
-            queue::Event::Queue(message) => {
-                panic!("Unexpected message: {}", message.inner.read_message());
-            }
-            e => panic!("Unexpected event: {e:?}"),
-        }
-    }
-
-    fn unwrap_retry(self) -> Schedule<Box<Message>> {
-        match self {
-            queue::Event::Done(WorkerResult::Retry(value)) => value,
-            queue::Event::Queue(message) => {
-                panic!("Unexpected message: {}", message.inner.read_message());
-            }
+            queue::Event::OnHold(value) => value,
             e => panic!("Unexpected event: {e:?}"),
         }
     }
@@ -188,20 +239,26 @@ impl TestReportingEvent for reporting::Event {
 }
 
 pub trait TestMessage {
-    fn read_message(&self) -> String;
-    fn read_lines(&self) -> Vec<String>;
+    async fn read_message(&self, core: &SMTP) -> String;
+    async fn read_lines(&self, core: &SMTP) -> Vec<String>;
 }
 
 impl TestMessage for Message {
-    fn read_message(&self) -> String {
-        let mut buf = vec![0u8; self.size];
-        let mut file = std::fs::File::open(&self.path).unwrap();
-        std::io::Read::read_exact(&mut file, &mut buf).unwrap();
-        String::from_utf8(buf).unwrap()
+    async fn read_message(&self, core: &SMTP) -> String {
+        String::from_utf8(
+            core.shared
+                .default_blob_store
+                .get_blob(self.blob_hash.as_slice(), 0..u32::MAX)
+                .await
+                .unwrap()
+                .expect("Message blob not found"),
+        )
+        .unwrap()
     }
 
-    fn read_lines(&self) -> Vec<String> {
-        self.read_message()
+    async fn read_lines(&self, core: &SMTP) -> Vec<String> {
+        self.read_message(core)
+            .await
             .split('\n')
             .map(|l| l.to_string())
             .collect()

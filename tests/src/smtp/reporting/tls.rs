@@ -40,11 +40,7 @@ use crate::smtp::{
 use smtp::{
     config::{AggregateFrequency, ConfigContext},
     core::SMTP,
-    reporting::{
-        scheduler::{ReportType, Scheduler},
-        tls::{GenerateTlsReport, TLS_HTTP_REPORT},
-        TlsEvent,
-    },
+    reporting::{tls::TLS_HTTP_REPORT, TlsEvent},
 };
 
 #[tokio::test]
@@ -142,14 +138,14 @@ async fn report_tls() {
     }
 
     // Expect report
-    let message = qr.read_event().await.unwrap_message();
+    let message = qr.expect_message().await();
     assert_eq!(
         message.recipients.last().unwrap().address,
         "reports@foobar.org"
     );
     assert_eq!(message.return_path, "reports@example.org");
     message
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: <reports@foobar.org>")
         .assert_contains("Report Domain: foobar.org")

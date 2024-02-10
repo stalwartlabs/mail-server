@@ -96,5 +96,6 @@ async fn report_analyze() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message().await;
 }

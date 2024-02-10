@@ -114,17 +114,20 @@ async fn dane_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No TLSA records found");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
+    local_qr.assert_queue_is_empty().await;
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -162,17 +165,20 @@ async fn dane_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No matching certificates found");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
+    local_qr.assert_queue_is_empty().await;
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -181,7 +187,7 @@ async fn dane_verify() {
         report.failure.as_ref().unwrap().result_type,
         ResultType::ValidationFailure
     );
-    remote_qr.assert_empty_queue();
+    remote_qr.assert_no_events();
 
     // DANE successful delivery
     let tlsa = Arc::new(Tlsa {
@@ -205,15 +211,18 @@ async fn dane_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
-        .await;
-    local_qr.read_event().await.unwrap_done();
-    remote_qr
-        .read_event()
+    local_qr
+        .expect_message_then_deliver()
         .await
-        .unwrap_message()
-        .read_lines()
+        .try_deliver(core.clone())
+        .await;
+    local_qr.read_event().await.assert_reload();
+    local_qr.assert_queue_is_empty().await;
+    remote_qr
+        .last_queued_message()
+        .await
+        .read_lines(&core)
+        .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Expect TLS success report

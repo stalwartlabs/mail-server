@@ -33,7 +33,7 @@ use crate::smtp::{
 };
 use smtp::{
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Event, WorkerResult},
+    queue::{manager::Queue, DeliveryAttempt, Event},
 };
 use utils::config::if_block::IfBlock;
 
@@ -75,17 +75,17 @@ async fn queue_retry() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    let attempt = DeliveryAttempt::from(qr.read_event().await.unwrap_message());
+    let attempt = DeliveryAttempt::from(qr.expect_message().await());
 
     // Expect a failed DSN
     let path = attempt.message.path.clone();
-    attempt.try_deliver(core.clone(), &mut queue).await;
-    let message = qr.read_event().await.unwrap_message();
+    attempt.try_deliver(core.clone()).await;
+    let message = qr.expect_message().await();
     assert_eq!(message.return_path, "");
     assert_eq!(message.domains.first().unwrap().domain, "test.org");
     assert_eq!(message.recipients.first().unwrap().address, "john@test.org");
     message
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("Content-Type: multipart/report")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: failed");
@@ -102,11 +102,11 @@ async fn queue_retry() {
             "250",
         )
         .await;
-    let attempt = DeliveryAttempt::from(qr.read_event().await.unwrap_message());
+    let attempt = DeliveryAttempt::from(qr.expect_message().await());
     let path = attempt.message.path.clone();
     let mut dsn = Vec::new();
     let mut num_retries = 0;
-    attempt.try_deliver(core.clone(), &mut queue).await;
+    attempt.try_deliver(core.clone()).await;
     loop {
         match qr.try_read_event().await {
             Some(Event::Queue(message)) => {
@@ -127,7 +127,7 @@ async fn queue_retry() {
         if !queue.scheduled.is_empty() {
             tokio::time::sleep(queue.wake_up_time()).await;
             DeliveryAttempt::from(queue.next_due().unwrap())
-                .try_deliver(core.clone(), &mut queue)
+                .try_deliver(core.clone())
                 .await;
         }
     }
@@ -139,28 +139,28 @@ async fn queue_retry() {
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<bill@foobar.org> (failed to lookup 'foobar.org'")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: failed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")
         .assert_contains("Action: failed");

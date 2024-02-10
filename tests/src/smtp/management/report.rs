@@ -44,10 +44,7 @@ use crate::smtp::{
 use smtp::{
     config::AggregateFrequency,
     core::{management::Report, SMTP},
-    reporting::{
-        scheduler::{Scheduler, SpawnReport},
-        DmarcEvent, TlsEvent,
-    },
+    reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent},
 };
 
 const DIRECTORY: &str = r#"
@@ -77,8 +74,6 @@ async fn manage_reports() {
     let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_management_test", true);
     let config = &mut core.report.config;
-    config.path = temp_dir.temp_dir.clone();
-    config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
     let directory = Config::new(DIRECTORY)
@@ -90,7 +85,7 @@ async fn manage_reports() {
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;
     let core = Arc::new(core);
-    report_rx.spawn(core.clone(), Scheduler::default());
+    report_rx.spawn(core.clone());
     let _rx_manage = start_test_server(core.clone(), &[ServerProtocol::Http]);
 
     // Send test reporting events

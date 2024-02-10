@@ -150,8 +150,9 @@ async fn data() {
     session
         .send_message("john@doe.org", &["bill@foobar.org"], "test:no_msgid", "250")
         .await;
+    qr.read_event().await.assert_reload();
     assert_eq!(
-        qr.read_event().await.unwrap_message().read_message(),
+        qr.last_queued_message().await.read_message(&core).await,
         load_test_message("no_msgid", "messages")
     );
 
@@ -168,10 +169,11 @@ async fn data() {
     session
         .send_message("john@doe.org", &["mike@test.com"], "test:no_msgid", "250")
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("From: ")
         .assert_contains("To: ")
         .assert_contains("Subject: ")

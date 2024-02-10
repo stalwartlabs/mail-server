@@ -118,8 +118,10 @@ async fn throttle_outbound() {
     assert!(!in_flight.is_empty());
 
     // Expect concurrency throttle for sender domain 'foobar.org'
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr.assert_empty_queue();
     in_flight.clear();
@@ -142,8 +144,10 @@ async fn throttle_outbound() {
     session
         .send_message("john@foobar.net", &["bill@test.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr.assert_empty_queue();
     assert!([1799, 1800].contains(
@@ -177,8 +181,10 @@ async fn throttle_outbound() {
             "250",
         )
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
@@ -203,8 +209,10 @@ async fn throttle_outbound() {
             "250",
         )
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     assert!([2399, 2400].contains(
         &local_qr
@@ -244,8 +252,10 @@ async fn throttle_outbound() {
     session
         .send_message("john@test.net", &["jane@test.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
@@ -278,8 +288,10 @@ async fn throttle_outbound() {
     session
         .send_message("john@test.net", &["jane@test.net"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     assert!([2999, 3000].contains(
         &local_qr

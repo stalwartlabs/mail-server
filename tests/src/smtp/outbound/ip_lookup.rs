@@ -93,12 +93,12 @@ async fn ip_lookup_strategy() {
         session
             .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
             .await;
-        DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-            .try_deliver(core.clone(), &mut queue)
+        local_qr.expect_message_then_deliver().await
+            .try_deliver(core.clone())
             .await;
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
             local_qr.read_event().await.unwrap_done();
-            remote_qr.read_event().await.unwrap_message();
+            remote_qr.expect_message().await();
         } else {
             let status = local_qr.read_event().await.unwrap_retry().inner.domains[0]
                 .status

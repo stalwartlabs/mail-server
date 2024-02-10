@@ -180,13 +180,15 @@ async fn dmarc() {
     session.mail_from("bill@example.com", "550 5.7.23").await;
 
     // Expect SPF auth failure report
-    let message = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let message = qr.last_queued_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "spf-failures@example.com"
     );
     message
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: spf-failures@example.com")
         .assert_contains("Feedback-Type: auth-failure")
@@ -194,7 +196,7 @@ async fn dmarc() {
 
     // Second DKIM failure report should be rate limited
     session.mail_from("bill@example.com", "550 5.7.23").await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Invalid DKIM signatures should be rejected
     session.data.remote_ip_str = "10.0.0.1".to_string();
@@ -210,13 +212,15 @@ async fn dmarc() {
         .await;
 
     // Expect DKIM auth failure report
-    let message = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let message = qr.last_queued_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "dkim-failures@example.com"
     );
     message
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: dkim-failures@example.com")
         .assert_contains("Feedback-Type: auth-failure")
@@ -231,7 +235,7 @@ async fn dmarc() {
             "550 5.7.20",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Invalid ARC should be rejected
     session
@@ -242,7 +246,7 @@ async fn dmarc() {
             "550 5.7.29",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Unaligned DMARC should be rejected
     core.resolvers.dns.txt_add(
@@ -260,13 +264,15 @@ async fn dmarc() {
         .await;
 
     // Expect DMARC auth failure report
-    let message = qr.read_event().await.unwrap_message();
+    qr.read_event().await.assert_reload();
+    let message = qr.last_queued_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "dmarc-failures@example.com"
     );
     message
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: dmarc-failures@example.com")
         .assert_contains("Feedback-Type: auth-failure")
@@ -289,7 +295,7 @@ async fn dmarc() {
             "550 5.7.1",
         )
         .await;
-    qr.assert_empty_queue();
+    qr.assert_no_events();
 
     // Messagess passing DMARC should be accepted
     session
@@ -300,10 +306,11 @@ async fn dmarc() {
             "250",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("dkim=pass")
         .assert_contains("spf=pass")
         .assert_contains("dmarc=pass")

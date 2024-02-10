@@ -36,7 +36,7 @@ use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
-use store::{config::ConfigStore, LookupKey, LookupStore, LookupValue, Store, Stores};
+use store::{config::ConfigStore, LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
 use utils::config::Servers;
 
@@ -599,15 +599,13 @@ async fn lookup_local() {
         ("suffix", "coco", false),
     ] {
         assert_eq!(
-            matches!(
-                lookups
-                    .get(&format!("local/{lookup}"))
-                    .unwrap()
-                    .key_get::<String>(LookupKey::Key(item.as_bytes().to_vec()))
-                    .await
-                    .unwrap(),
-                LookupValue::Value { .. }
-            ),
+            lookups
+                .get(&format!("local/{lookup}"))
+                .unwrap()
+                .key_get::<String>(item.as_bytes().to_vec())
+                .await
+                .unwrap()
+                .is_some(),
             expect,
             "failed for {lookup}, item {item}"
         );

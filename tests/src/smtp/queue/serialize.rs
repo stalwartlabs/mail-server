@@ -110,7 +110,7 @@ async fn queue_serialize() {
             )
             .await
     );
-    let mut message = qr.read_event().await.unwrap_message();
+    let mut message = qr.expect_message().await();
 
     // Deserialize
     assert_msg_eq(

@@ -40,10 +40,7 @@ use crate::smtp::{
 };
 use smtp::{
     core::{management::Message, Session, SMTP},
-    queue::{
-        manager::{Queue, SpawnQueue},
-        QueueId, Status,
-    },
+    queue::{manager::SpawnQueue, QueueId, Status},
 };
 
 const DIRECTORY: &str = r#"
@@ -108,7 +105,7 @@ async fn manage_queue() {
     core.queue.config.expire = IfBlock::new(Duration::from_secs(3000));
     let local_qr = core.init_test_queue("smtp_manage_queue_local");
     let core = Arc::new(core);
-    local_qr.queue_rx.spawn(core.clone(), Queue::default());
+    local_qr.queue_rx.spawn(core.clone());
     let _rx_manage = start_test_server(core.clone(), &[ServerProtocol::Http]);
 
     // Send test messages
@@ -172,11 +169,11 @@ async fn manage_queue() {
 
     // Expect delivery to success@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
+    remote_qr.read_event().await.assert_reload();
     assert_eq!(
         remote_qr
-            .read_event()
+            .last_queued_message()
             .await
-            .unwrap_message()
             .recipients
             .into_iter()
             .map(|r| r.address)
@@ -323,11 +320,11 @@ async fn manage_queue() {
 
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
+    remote_qr.read_event().await.assert_reload();
     assert_eq!(
         remote_qr
-            .read_event()
+            .last_queued_message()
             .await
-            .unwrap_message()
             .recipients
             .into_iter()
             .map(|r| r.address)

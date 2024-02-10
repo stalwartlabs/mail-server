@@ -208,9 +208,6 @@ pub struct RelayHost {
 }
 
 pub struct QueueConfig {
-    pub path: PathBuf,
-    pub hash: IfBlock,
-
     // Schedule
     pub retry: IfBlock,
     pub notify: IfBlock,
@@ -240,8 +237,6 @@ pub struct QueueOutboundSourceIp {
 }
 
 pub struct ReportConfig {
-    pub path: PathBuf,
-    pub hash: IfBlock,
     pub submitter: IfBlock,
     pub analysis: ReportAnalysis,
 

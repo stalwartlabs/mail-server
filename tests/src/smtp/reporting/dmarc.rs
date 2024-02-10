@@ -43,11 +43,7 @@ use crate::smtp::{
 use smtp::{
     config::{AggregateFrequency, ConfigContext},
     core::SMTP,
-    reporting::{
-        dmarc::GenerateDmarcReport,
-        scheduler::{ReportType, Scheduler},
-        DmarcEvent,
-    },
+    reporting::DmarcEvent,
 };
 
 #[tokio::test]
@@ -64,15 +60,12 @@ async fn report_dmarc() {
     core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
     let temp_dir = make_temp_dir("smtp_report_dmarc_test", true);
     let config = &mut core.report.config;
-    config.path = temp_dir.temp_dir.clone();
-    config.hash = IfBlock::new(16);
     config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
     config.dmarc_aggregate.address = IfBlock::new("reports@example.org".to_string());
     config.dmarc_aggregate.org_name = IfBlock::new("Foobar, Inc.".to_string());
     config.dmarc_aggregate.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
-    let mut scheduler = Scheduler::default();
 
     // Authorize external report for foobar.org
     core.resolvers.dns.txt_add(
@@ -94,40 +87,32 @@ async fn report_dmarc() {
     );
     assert_eq!(dmarc_record.rua().len(), 2);
     for _ in 0..2 {
-        scheduler
-            .schedule_dmarc(
-                Box::new(DmarcEvent {
-                    domain: "foobar.org".to_string(),
-                    report_record: Record::new()
-                        .with_source_ip("192.168.1.2".parse().unwrap())
-                        .with_action_disposition(ActionDisposition::Pass)
-                        .with_dmarc_dkim_result(DmarcResult::Pass)
-                        .with_dmarc_spf_result(DmarcResult::Fail)
-                        .with_envelope_from("hello@example.org")
-                        .with_envelope_to("other@example.org")
-                        .with_header_from("bye@example.org"),
-                    dmarc_record: dmarc_record.clone(),
-                    interval: AggregateFrequency::Weekly,
-                }),
-                &core,
-            )
-            .await;
-    }
-    scheduler
-        .schedule_dmarc(
-            Box::new(DmarcEvent {
-                domain: "foobar.org".to_string(),
-                report_record: Record::new()
-                    .with_source_ip("a:b:c::e:f".parse().unwrap())
-                    .with_action_disposition(ActionDisposition::Reject)
-                    .with_dmarc_dkim_result(DmarcResult::Fail)
-                    .with_dmarc_spf_result(DmarcResult::Pass),
-                dmarc_record: dmarc_record.clone(),
-                interval: AggregateFrequency::Weekly,
-            }),
-            &core,
-        )
+        core.schedule_dmarc(Box::new(DmarcEvent {
+            domain: "foobar.org".to_string(),
+            report_record: Record::new()
+                .with_source_ip("192.168.1.2".parse().unwrap())
+                .with_action_disposition(ActionDisposition::Pass)
+                .with_dmarc_dkim_result(DmarcResult::Pass)
+                .with_dmarc_spf_result(DmarcResult::Fail)
+                .with_envelope_from("hello@example.org")
+                .with_envelope_to("other@example.org")
+                .with_header_from("bye@example.org"),
+            dmarc_record: dmarc_record.clone(),
+            interval: AggregateFrequency::Weekly,
+        }))
         .await;
+    }
+    core.schedule_dmarc(Box::new(DmarcEvent {
+        domain: "foobar.org".to_string(),
+        report_record: Record::new()
+            .with_source_ip("a:b:c::e:f".parse().unwrap())
+            .with_action_disposition(ActionDisposition::Reject)
+            .with_dmarc_dkim_result(DmarcResult::Fail)
+            .with_dmarc_spf_result(DmarcResult::Pass),
+        dmarc_record: dmarc_record.clone(),
+        interval: AggregateFrequency::Weekly,
+    }))
+    .await;
     assert_eq!(scheduler.reports.len(), 1);
     tokio::time::sleep(Duration::from_millis(200)).await;
     let report_path;
@@ -140,7 +125,7 @@ async fn report_dmarc() {
     }
 
     // Expect report
-    let message = qr.read_event().await.unwrap_message();
+    let message = qr.expect_message().await();
     qr.assert_empty_queue();
     assert_eq!(message.recipients.len(), 1);
     assert_eq!(
@@ -149,7 +134,7 @@ async fn report_dmarc() {
     );
     assert_eq!(message.return_path, "reports@example.org");
     message
-        .read_lines()
+        .read_lines(&core).await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: <reports@foobar.net>")
         .assert_contains("Report Domain: foobar.org")

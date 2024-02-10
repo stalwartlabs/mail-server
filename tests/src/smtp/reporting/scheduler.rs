@@ -36,11 +36,7 @@ use crate::smtp::{make_temp_dir, TestConfig};
 use smtp::{
     config::AggregateFrequency,
     core::SMTP,
-    reporting::{
-        dmarc::DmarcFormat,
-        scheduler::{ReportType, Scheduler},
-        DmarcEvent, PolicyType, TlsEvent,
-    },
+    reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent},
 };
 
 #[tokio::test]
@@ -56,123 +52,92 @@ async fn report_scheduler() {
     let mut core = SMTP::test();
     let temp_dir = make_temp_dir("smtp_report_scheduler_test", true);
     let config = &mut core.report.config;
-    config.path = temp_dir.temp_dir.clone();
-    config.hash = IfBlock::new(16);
     config.dmarc_aggregate.max_size = IfBlock::new(500);
     config.tls.max_size = IfBlock::new(550);
-    let mut scheduler = Scheduler::default();
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record =
         Arc::new(Dmarc::parse(b"v=DMARC1; p=quarantine; rua=mailto:dmarc@foobar.org").unwrap());
-    scheduler
-        .schedule_dmarc(
-            Box::new(DmarcEvent {
-                domain: "foobar.org".to_string(),
-                report_record: Record::new()
-                    .with_source_ip("192.168.1.2".parse().unwrap())
-                    .with_action_disposition(ActionDisposition::Pass)
-                    .with_dmarc_dkim_result(DmarcResult::Pass)
-                    .with_dmarc_spf_result(DmarcResult::Fail)
-                    .with_envelope_from("hello@example.org")
-                    .with_envelope_to("other@example.org")
-                    .with_header_from("bye@example.org"),
-                dmarc_record: dmarc_record.clone(),
-                interval: AggregateFrequency::Weekly,
-            }),
-            &core,
-        )
-        .await;
+    core.schedule_dmarc(Box::new(DmarcEvent {
+        domain: "foobar.org".to_string(),
+        report_record: Record::new()
+            .with_source_ip("192.168.1.2".parse().unwrap())
+            .with_action_disposition(ActionDisposition::Pass)
+            .with_dmarc_dkim_result(DmarcResult::Pass)
+            .with_dmarc_spf_result(DmarcResult::Fail)
+            .with_envelope_from("hello@example.org")
+            .with_envelope_to("other@example.org")
+            .with_header_from("bye@example.org"),
+        dmarc_record: dmarc_record.clone(),
+        interval: AggregateFrequency::Weekly,
+    }))
+    .await;
 
     // No records should be added once the 550 bytes max size is reached
     for _ in 0..10 {
-        scheduler
-            .schedule_dmarc(
-                Box::new(DmarcEvent {
-                    domain: "foobar.org".to_string(),
-                    report_record: Record::new()
-                        .with_source_ip("192.168.1.2".parse().unwrap())
-                        .with_action_disposition(ActionDisposition::Pass)
-                        .with_dmarc_dkim_result(DmarcResult::Pass)
-                        .with_dmarc_spf_result(DmarcResult::Fail)
-                        .with_envelope_from("hello@example.org")
-                        .with_envelope_to("other@example.org")
-                        .with_header_from("bye@example.org"),
-                    dmarc_record: dmarc_record.clone(),
-                    interval: AggregateFrequency::Weekly,
-                }),
-                &core,
-            )
-            .await;
+        core.schedule_dmarc(Box::new(DmarcEvent {
+            domain: "foobar.org".to_string(),
+            report_record: Record::new()
+                .with_source_ip("192.168.1.2".parse().unwrap())
+                .with_action_disposition(ActionDisposition::Pass)
+                .with_dmarc_dkim_result(DmarcResult::Pass)
+                .with_dmarc_spf_result(DmarcResult::Fail)
+                .with_envelope_from("hello@example.org")
+                .with_envelope_to("other@example.org")
+                .with_header_from("bye@example.org"),
+            dmarc_record: dmarc_record.clone(),
+            interval: AggregateFrequency::Weekly,
+        }))
+        .await;
     }
     let dmarc_record =
         Arc::new(Dmarc::parse(b"v=DMARC1; p=reject; rua=mailto:dmarc@foobar.org").unwrap());
-    scheduler
-        .schedule_dmarc(
-            Box::new(DmarcEvent {
-                domain: "foobar.org".to_string(),
-                report_record: Record::new()
-                    .with_source_ip("a:b:c::e:f".parse().unwrap())
-                    .with_action_disposition(ActionDisposition::Reject)
-                    .with_dmarc_dkim_result(DmarcResult::Fail)
-                    .with_dmarc_spf_result(DmarcResult::Pass),
-                dmarc_record: dmarc_record.clone(),
-                interval: AggregateFrequency::Weekly,
-            }),
-            &core,
-        )
-        .await;
+    core.schedule_dmarc(Box::new(DmarcEvent {
+        domain: "foobar.org".to_string(),
+        report_record: Record::new()
+            .with_source_ip("a:b:c::e:f".parse().unwrap())
+            .with_action_disposition(ActionDisposition::Reject)
+            .with_dmarc_dkim_result(DmarcResult::Fail)
+            .with_dmarc_spf_result(DmarcResult::Pass),
+        dmarc_record: dmarc_record.clone(),
+        interval: AggregateFrequency::Weekly,
+    }))
+    .await;
 
     // Schedule TLS event
     let tls_record = Arc::new(TlsRpt::parse(b"v=TLSRPTv1;rua=mailto:reports@foobar.org").unwrap());
-    scheduler
-        .schedule_tls(
-            Box::new(TlsEvent {
-                domain: "foobar.org".to_string(),
-                policy: PolicyType::Tlsa(None),
-                failure: None,
-                tls_record: tls_record.clone(),
-                interval: AggregateFrequency::Daily,
-            }),
-            &core,
-        )
-        .await;
-    scheduler
-        .schedule_tls(
-            Box::new(TlsEvent {
-                domain: "foobar.org".to_string(),
-                policy: PolicyType::Tlsa(None),
-                failure: None,
-                tls_record: tls_record.clone(),
-                interval: AggregateFrequency::Daily,
-            }),
-            &core,
-        )
-        .await;
-    scheduler
-        .schedule_tls(
-            Box::new(TlsEvent {
-                domain: "foobar.org".to_string(),
-                policy: PolicyType::Sts(None),
-                failure: None,
-                tls_record: tls_record.clone(),
-                interval: AggregateFrequency::Daily,
-            }),
-            &core,
-        )
-        .await;
-    scheduler
-        .schedule_tls(
-            Box::new(TlsEvent {
-                domain: "foobar.org".to_string(),
-                policy: PolicyType::None,
-                failure: None,
-                tls_record: tls_record.clone(),
-                interval: AggregateFrequency::Daily,
-            }),
-            &core,
-        )
-        .await;
+    core.schedule_tls(Box::new(TlsEvent {
+        domain: "foobar.org".to_string(),
+        policy: PolicyType::Tlsa(None),
+        failure: None,
+        tls_record: tls_record.clone(),
+        interval: AggregateFrequency::Daily,
+    }))
+    .await;
+    core.schedule_tls(Box::new(TlsEvent {
+        domain: "foobar.org".to_string(),
+        policy: PolicyType::Tlsa(None),
+        failure: None,
+        tls_record: tls_record.clone(),
+        interval: AggregateFrequency::Daily,
+    }))
+    .await;
+    core.schedule_tls(Box::new(TlsEvent {
+        domain: "foobar.org".to_string(),
+        policy: PolicyType::Sts(None),
+        failure: None,
+        tls_record: tls_record.clone(),
+        interval: AggregateFrequency::Daily,
+    }))
+    .await;
+    core.schedule_tls(Box::new(TlsEvent {
+        domain: "foobar.org".to_string(),
+        policy: PolicyType::None,
+        failure: None,
+        tls_record: tls_record.clone(),
+        interval: AggregateFrequency::Daily,
+    }))
+    .await;
 
     // Verify sizes and counts
     let mut total_tls = 0;

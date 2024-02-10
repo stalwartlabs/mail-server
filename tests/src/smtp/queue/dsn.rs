@@ -121,7 +121,7 @@ async fn generate_dsn() {
     // Failure DSN
     attempt.message.recipients[0].flags = flags;
     core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.read_event().await.unwrap_message(), "failure.eml").await;
+    compare_dsn(qr.expect_message().await(), "failure.eml").await;
 
     // Success DSN
     attempt.message.recipients.push(Recipient {
@@ -140,7 +140,7 @@ async fn generate_dsn() {
         orcpt: None,
     });
     core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.read_event().await.unwrap_message(), "success.eml").await;
+    compare_dsn(qr.expect_message().await(), "success.eml").await;
 
     // Delay DSN
     attempt.message.recipients.push(Recipient {
@@ -152,7 +152,7 @@ async fn generate_dsn() {
         orcpt: "jdoe@example.org".to_string().into(),
     });
     core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.read_event().await.unwrap_message(), "delay.eml").await;
+    compare_dsn(qr.expect_message().await(), "delay.eml").await;
 
     // Mixed DSN
     for rcpt in &mut attempt.message.recipients {
@@ -160,7 +160,7 @@ async fn generate_dsn() {
     }
     attempt.message.domains[0].notify.due = Instant::now();
     core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.read_event().await.unwrap_message(), "mixed.eml").await;
+    compare_dsn(qr.expect_message().await(), "mixed.eml").await;
 
     // Load queue
     let queue = core.queue.read_queue().await;

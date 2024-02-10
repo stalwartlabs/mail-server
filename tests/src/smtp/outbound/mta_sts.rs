@@ -101,14 +101,17 @@ async fn mta_sts_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("Record not found");
     local_qr.read_event().await.unwrap_done();
@@ -135,14 +138,17 @@ async fn mta_sts_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("No 'mx' entries found");
     local_qr.read_event().await.unwrap_done();
@@ -166,14 +172,17 @@ async fn mta_sts_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("not authorized by policy");
     local_qr.read_event().await.unwrap_done();
@@ -213,15 +222,18 @@ async fn mta_sts_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    DeliveryAttempt::from(local_qr.read_event().await.unwrap_message())
-        .try_deliver(core.clone(), &mut queue)
+    local_qr
+        .expect_message_then_deliver()
+        .await
+        .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.unwrap_done();
     remote_qr
         .read_event()
         .await
         .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Expect TLS success report

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use store::{config::ConfigStore, LookupKey, LookupStore, LookupValue};
+use store::{config::ConfigStore, LookupStore};
 use utils::config::Config;
 
 use crate::store::{TempDir, CONFIG};
@@ -33,6 +33,9 @@ pub async fn lookup_tests() {
         Config::new(&CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
     let stores = config.parse_stores().await.unwrap();
 
+    let todo = "test expiry counter + ratelimit";
+    let todo = "use lookup ratelimit everywhere";
+
     for (store_id, store) in stores.lookup_stores {
         println!("Testing lookup store {}...", store_id);
         if let LookupStore::Store(store) = &store {
@@ -40,13 +43,7 @@ pub async fn lookup_tests() {
         } else {
             // Reset redis counter
             store
-                .key_set(
-                    "abc".as_bytes().to_vec(),
-                    LookupValue::Value {
-                        value: "0".as_bytes().to_vec(),
-                        expires: 0,
-                    },
-                )
+                .key_set("abc".as_bytes().to_vec(), "0".as_bytes().to_vec(), None)
                 .await
                 .unwrap();
         }
@@ -54,44 +51,26 @@ pub async fn lookup_tests() {
         // Test key
         let key = "xyz".as_bytes().to_vec();
         store
-            .key_set(
-                key.clone(),
-                LookupValue::Value {
-                    value: "world".to_string().into_bytes(),
-                    expires: 0,
-                },
-            )
+            .key_set(key.clone(), "world".to_string().into_bytes(), None)
             .await
             .unwrap();
         store.purge_expired().await.unwrap();
-        assert!(matches!(store
-            .key_get::<String>(LookupKey::Key(key.clone()))
-            .await
-            .unwrap(), LookupValue::Value { value,.. } if value == "world"));
+        assert_eq!(
+            store.key_get::<String>(key.clone()).await.unwrap(),
+            Some("world".to_string())
+        );
 
         // Test value expiry
         store
-            .key_set(
-                key.clone(),
-                LookupValue::Value {
-                    value: "hello".to_string().into_bytes(),
-                    expires: 1,
-                },
-            )
+            .key_set(key.clone(), "hello".to_string().into_bytes(), 1.into())
             .await
             .unwrap();
-        assert!(matches!(store
-            .key_get::<String>(LookupKey::Key(key.clone()))
-            .await
-            .unwrap(), LookupValue::Value { value,.. } if value == "hello"));
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         assert_eq!(
-            LookupValue::None,
-            store
-                .key_get::<String>(LookupKey::Key(key.clone()))
-                .await
-                .unwrap()
+            store.key_get::<String>(key.clone()).await.unwrap(),
+            Some("hello".to_string())
         );
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        assert_eq!(None, store.key_get::<String>(key.clone()).await.unwrap());
 
         store.purge_expired().await.unwrap();
         if let LookupStore::Store(store) = &store {
@@ -100,27 +79,9 @@ pub async fn lookup_tests() {
 
         // Test counter
         let key = "abc".as_bytes().to_vec();
-        store
-            .key_set(key.clone(), LookupValue::Counter { num: 1 })
-            .await
-            .unwrap();
-        assert_eq!(
-            LookupValue::Counter { num: 1 },
-            store
-                .key_get::<String>(LookupKey::Counter(key.clone()))
-                .await
-                .unwrap()
-        );
-        store
-            .key_set(key.clone(), LookupValue::Counter { num: 2 })
-            .await
-            .unwrap();
-        assert_eq!(
-            LookupValue::Counter { num: 3 },
-            store
-                .key_get::<String>(LookupKey::Counter(key.clone()))
-                .await
-                .unwrap()
-        );
+        store.counter_incr(key.clone(), 1, None).await.unwrap();
+        assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
+        store.counter_incr(key.clone(), 2, None).await.unwrap();
+        assert_eq!(3, store.counter_get(key.clone()).await.unwrap());
     }
 }

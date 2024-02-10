@@ -192,10 +192,11 @@ async fn sign_and_seal() {
             "250",
         )
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains(
             "DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com; c=simple/relaxed;",
         );
@@ -204,10 +205,11 @@ async fn sign_and_seal() {
     session
         .send_message("bill@foobar.org", &["jdoe@example.com"], "test:arc", "250")
         .await;
-    qr.read_event()
+    qr.read_event().await.assert_reload();
+    qr.last_queued_message()
         .await
-        .unwrap_message()
-        .read_lines()
+        .read_lines(&core)
+        .await
         .assert_contains("ARC-Seal: i=3; a=ed25519-sha256; s=ed; d=example.com; cv=pass;")
         .assert_contains(
             "ARC-Message-Signature: i=3; a=ed25519-sha256; s=ed; d=example.com; c=relaxed/simple;",
