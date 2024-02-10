@@ -56,7 +56,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Ehlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Smtp {
-                                    self.handle_ehlo(host).await?;
+                                    self.handle_ehlo(host, true).await?;
                                 } else {
                                     self.write(b"500 5.5.1 Invalid command.\r\n").await?;
                                 }
@@ -172,22 +172,15 @@ impl<T: SessionStream> Session<T> {
                                 .await?;
                             }
                             Request::Helo { host } => {
-                                if self.instance.protocol == ServerProtocol::Smtp
-                                    && self.data.helo_domain.is_empty()
-                                {
-                                    self.data.helo_domain = host;
-                                    self.write(
-                                        format!("250 {} says hello\r\n", self.instance.hostname)
-                                            .as_bytes(),
-                                    )
-                                    .await?;
+                                if self.instance.protocol == ServerProtocol::Smtp {
+                                    self.handle_ehlo(host, false).await?;
                                 } else {
-                                    self.write(b"503 5.5.1 Invalid command.\r\n").await?;
+                                    self.write(b"500 5.5.1 Invalid command.\r\n").await?;
                                 }
                             }
                             Request::Lhlo { host } => {
                                 if self.instance.protocol == ServerProtocol::Lmtp {
-                                    self.handle_ehlo(host).await?;
+                                    self.handle_ehlo(host, true).await?;
                                 } else {
                                     self.write(b"502 5.5.1 Invalid command.\r\n").await?;
                                 }

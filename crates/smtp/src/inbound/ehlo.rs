@@ -29,7 +29,7 @@ use smtp_proto::*;
 use utils::listener::SessionStream;
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_ehlo(&mut self, domain: String) -> Result<(), ()> {
+    pub async fn handle_ehlo(&mut self, domain: String, is_extended: bool) -> Result<(), ()> {
         // Set EHLO domain
 
         if domain != self.data.helo_domain {
@@ -113,6 +113,12 @@ impl<T: SessionStream> Session<T> {
         // Reset
         if self.data.mail_from.is_some() {
             self.reset();
+        }
+
+        if !is_extended {
+            return self
+                .write(format!("250 {} says hello\r\n", self.instance.hostname).as_bytes())
+                .await;
         }
 
         let mut response = EhloResponse::new(self.instance.hostname.as_str());
