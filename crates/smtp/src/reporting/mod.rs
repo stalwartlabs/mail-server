@@ -154,7 +154,7 @@ impl SMTP {
                 use rand::Rng;
                 use std::time::Duration;
 
-                let delivery_time = Duration::from_secs(rand::thread_rng().gen_range(0..10800));
+                let delivery_time = rand::thread_rng().gen_range(0u64..10800u64);
                 for domain in &mut message.domains {
                     domain.retry.due += delivery_time;
                     domain.expires += delivery_time;

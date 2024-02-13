@@ -50,7 +50,7 @@ struct SieveMessage<'x> {
 }
 
 impl JMAP {
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn sieve_script_ingest(
         &self,
         raw_message: &[u8],

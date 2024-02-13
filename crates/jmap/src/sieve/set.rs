@@ -416,7 +416,7 @@ impl JMAP {
         Ok(true)
     }
 
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,

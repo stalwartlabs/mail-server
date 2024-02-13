@@ -81,7 +81,7 @@ pub struct IngestEmail<'x> {
 const MAX_RETRIES: u32 = 10;
 
 impl JMAP {
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn email_ingest(
         &self,
         mut params: IngestEmail<'_>,

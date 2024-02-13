@@ -153,7 +153,7 @@ impl Server {
                                 instance = instance.id,
                                 protocol = ?instance.protocol,
                                 "Listener shutting down.");
-                            manager.shutdown();
+                            manager.shutdown().await;
                             break;
                         }
                     };

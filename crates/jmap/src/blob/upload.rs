@@ -258,7 +258,7 @@ impl JMAP {
         })
     }
 
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn put_blob(
         &self,
         account_id: u32,

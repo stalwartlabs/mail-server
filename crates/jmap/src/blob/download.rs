@@ -41,7 +41,7 @@ use utils::BlobHash;
 use crate::{auth::AccessToken, JMAP};
 
 impl JMAP {
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn blob_download(
         &self,
         blob_id: &BlobId,

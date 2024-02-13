@@ -89,7 +89,7 @@ pub static SCHEMA: &[IndexProperty] = &[
 ];
 
 impl JMAP {
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
@@ -523,7 +523,7 @@ impl JMAP {
         }
     }
 
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     async fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,

@@ -178,6 +178,7 @@ impl JMAP {
         }
     }
 
+    #[allow(clippy::blocks_in_conditions)]
     async fn sieve_script_compile(
         &self,
         account_id: u32,
