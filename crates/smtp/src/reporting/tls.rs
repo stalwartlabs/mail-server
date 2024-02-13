@@ -48,7 +48,7 @@ use crate::{
     USER_AGENT,
 };
 
-use super::{scheduler::ToHash, SerializedSize, TlsEvent};
+use super::{scheduler::ToHash, ReportLock, SerializedSize, TlsEvent};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -57,7 +57,7 @@ pub struct TlsRptOptions {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct TlsFormat {
+pub struct TlsFormat {
     rua: Vec<ReportUri>,
     policy: PolicyDetails,
     records: Vec<Option<FailureDetails>>,
@@ -172,10 +172,9 @@ impl SMTP {
                     if let Some(failure_details) =
                         Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
                     {
-                        total_failure += 1;
-
                         match record_map.entry(failure_details) {
                             Entry::Occupied(mut e) => {
+                                total_failure += 1;
                                 *e.get_mut() += 1;
                                 Ok(true)
                             }
@@ -183,6 +182,7 @@ impl SMTP {
                                 if serde::Serialize::serialize(e.key(), &mut serialized_size)
                                     .is_ok()
                                 {
+                                    total_failure += 1;
                                     e.insert(1u32);
                                     Ok(true)
                                 } else {
@@ -257,7 +257,7 @@ impl SMTP {
         for uri in &rua {
             match uri {
                 ReportUri::Http(uri) => {
-                    if let Ok(client) = reqwest::blocking::Client::builder()
+                    if let Ok(client) = reqwest::Client::builder()
                         .user_agent(USER_AGENT)
                         .timeout(Duration::from_secs(2 * 60))
                         .build()
@@ -274,6 +274,7 @@ impl SMTP {
                             .header(CONTENT_TYPE, "application/tlsrpt+gzip")
                             .body(json.to_vec())
                             .send()
+                            .await
                         {
                             Ok(response) => {
                                 if response.status().is_success() {
@@ -452,6 +453,12 @@ impl SMTP {
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
                 Bincode::new(entry).serialize(),
             );
+
+            // Add lock
+            builder.set(
+                ValueClass::Queue(QueueClass::tls_lock(&report_event)),
+                0u64.serialize(),
+            );
         }
 
         // Write entry
@@ -474,7 +481,7 @@ impl SMTP {
     pub async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
         let mut batch = BatchBuilder::new();
 
-        for event in events {
+        for (pos, event) in events.into_iter().enumerate() {
             let from_key = ReportEvent {
                 due: event.due,
                 policy_hash: event.policy_hash,
@@ -488,6 +495,7 @@ impl SMTP {
                 domain: event.domain.clone(),
             };
 
+            // Remove report events
             if let Err(err) = self
                 .shared
                 .default_data_store
@@ -500,12 +508,18 @@ impl SMTP {
                 tracing::warn!(
                     context = "report",
                     event = "error",
-                    "Failed to remove repors: {}",
+                    "Failed to remove reports: {}",
                     err
                 );
                 return;
             }
 
+            if pos == 0 {
+                // Remove lock
+                batch.clear(ValueClass::Queue(QueueClass::tls_lock(&event)));
+            }
+
+            // Remove report header
             batch.clear(ValueClass::Queue(QueueClass::TlsReportHeader(event)));
         }
 
@@ -513,7 +527,7 @@ impl SMTP {
             tracing::warn!(
                 context = "report",
                 event = "error",
-                "Failed to remove repors: {}",
+                "Failed to remove reports: {}",
                 err
             );
         }

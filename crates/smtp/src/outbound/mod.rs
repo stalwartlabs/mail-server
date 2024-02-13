@@ -25,12 +25,11 @@ use std::borrow::Cow;
 
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
-use store::write::QueueEvent;
 use utils::config::ServerProtocol;
 
 use crate::{
     config::RelayHost,
-    queue::{DeliveryAttempt, Error, ErrorDetails, HostResponse, Message, Status},
+    queue::{spool::QueueEventLock, DeliveryAttempt, Error, ErrorDetails, HostResponse, Status},
 };
 
 pub mod dane;
@@ -213,21 +212,9 @@ impl From<mta_sts::Error> for Status<(), Error> {
 }
 
 impl DeliveryAttempt {
-    pub fn new(message: Message, event: QueueEvent) -> Self {
+    pub fn new(event: QueueEventLock) -> Self {
         DeliveryAttempt {
-            span: tracing::info_span!(
-                "delivery",
-                "id" = message.id,
-                "return_path" = if !message.return_path.is_empty() {
-                    message.return_path.as_ref()
-                } else {
-                    "<>"
-                },
-                "nrcpt" = message.recipients.len(),
-                "size" = message.size
-            ),
             in_flight: Vec::new(),
-            message,
             event,
         }
     }

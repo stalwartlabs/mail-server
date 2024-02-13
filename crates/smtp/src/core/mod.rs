@@ -388,7 +388,6 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance
     limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
     proxy_networks: vec![],
-    blocked_ips: Arc::new(Default::default()),
 });
 }
 

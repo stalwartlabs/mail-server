@@ -28,11 +28,11 @@ use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{
-    inbound::{TestMessage, TestQueueEvent},
+    inbound::{dummy_stores, TestMessage},
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
@@ -94,6 +94,9 @@ set-body-length = false
 ";
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -152,7 +155,7 @@ async fn sign_and_seal() {
 
     core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
@@ -192,10 +195,9 @@ async fn sign_and_seal() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains(
             "DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com; c=simple/relaxed;",
@@ -205,10 +207,9 @@ async fn sign_and_seal() {
     session
         .send_message("bill@foobar.org", &["jdoe@example.com"], "test:arc", "250")
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("ARC-Seal: i=3; a=ed25519-sha256; s=ed; d=example.com; cv=pass;")
         .assert_contains(

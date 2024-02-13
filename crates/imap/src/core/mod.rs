@@ -36,7 +36,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 use jmap::{
-    auth::{rate_limit::AuthenticatedLimiter, AccessToken},
+    auth::{rate_limit::ConcurrencyLimiters, AccessToken},
     JMAP,
 };
 use store::roaring::RoaringBitmap;
@@ -80,7 +80,7 @@ pub struct IMAP {
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,
 
-    pub rate_limiter: DashMap<u32, Arc<AuthenticatedLimiter>>,
+    pub rate_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
 }

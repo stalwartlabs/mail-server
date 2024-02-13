@@ -38,7 +38,6 @@ use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
 use store::{config::ConfigStore, LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
-use utils::config::Servers;
 
 use crate::store::TempDir;
 
@@ -94,6 +93,9 @@ emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY 
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
+
+[storage]
+lookup = "sqlite"
 
 ##############################################################################
 
@@ -315,7 +317,6 @@ impl DirectoryTest {
             directories: config
                 .parse_directory(
                     &stores,
-                    &Servers::default(),
                     id_store
                         .map(|id| stores.stores.get(id).unwrap().clone())
                         .unwrap_or_default(),

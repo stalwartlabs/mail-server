@@ -34,12 +34,12 @@ use mail_auth::{
         ActionDisposition, DmarcResult, Record,
     },
 };
-use store::{Store, Stores};
+use store::Store;
 use tokio::sync::mpsc;
-use utils::config::{if_block::IfBlock, Config, ServerProtocol, Servers};
+use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
 use crate::smtp::{
-    make_temp_dir, management::send_manage_request, outbound::start_test_server, TestConfig,
+    inbound::dummy_stores, management::send_manage_request, outbound::start_test_server, TestConfig,
 };
 use smtp::{
     config::AggregateFrequency,
@@ -48,6 +48,9 @@ use smtp::{
 };
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -72,13 +75,12 @@ async fn manage_reports() {
 
     // Start reporting service
     let mut core = SMTP::test();
-    let temp_dir = make_temp_dir("smtp_report_management_test", true);
     let config = &mut core.report.config;
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap();
     core.shared.default_directory = directory.directories.get("local").unwrap().clone();

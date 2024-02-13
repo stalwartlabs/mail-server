@@ -25,8 +25,9 @@ use std::ops::Range;
 
 use foundationdb::{options::StreamingMode, FdbError, KeySelector, RangeOption};
 use futures::StreamExt;
+use utils::BLOB_HASH_LEN;
 
-use crate::{write::key::KeySerializer, Error, BLOB_HASH_LEN, SUBSPACE_BLOBS};
+use crate::{write::key::KeySerializer, Error, SUBSPACE_BLOBS};
 
 use super::{FdbStore, MAX_VALUE_SIZE};
 

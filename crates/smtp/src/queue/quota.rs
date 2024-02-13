@@ -107,17 +107,15 @@ impl SMTP {
         {
             let key = quota.new_key(envelope);
             if let Some(max_size) = quota.size {
-                if self
+                let used_size = self
                     .shared
                     .default_data_store
                     .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaSize(
                         key.as_ref().to_vec(),
                     ))))
                     .await
-                    .unwrap_or(0) as usize
-                    + size
-                    > max_size
-                {
+                    .unwrap_or(0) as usize;
+                if used_size + size > max_size {
                     return false;
                 } else {
                     refs.push(QuotaKey::Size {
@@ -128,17 +126,15 @@ impl SMTP {
             }
 
             if let Some(max_messages) = quota.messages {
-                if self
+                let total_messages = self
                     .shared
                     .default_data_store
                     .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaCount(
                         key.as_ref().to_vec(),
                     ))))
                     .await
-                    .unwrap_or(0) as usize
-                    + 1
-                    > max_messages
-                {
+                    .unwrap_or(0) as usize;
+                if total_messages + 1 > max_messages {
                     return false;
                 } else {
                     refs.push(QuotaKey::Count {
@@ -174,15 +170,19 @@ impl Message {
                 quota_ids.push((pos + 1) as u64);
             }
         }
+
         if !quota_ids.is_empty() {
             let mut quota_keys = Vec::new();
             for quota_key in std::mem::take(&mut self.quota_keys) {
                 match quota_key {
                     QuotaKey::Count { id, key } if quota_ids.contains(&id) => {
-                        batch.clear(ValueClass::Queue(QueueClass::QuotaCount(key)));
+                        batch.add(ValueClass::Queue(QueueClass::QuotaCount(key)), -1);
                     }
                     QuotaKey::Size { id, key } if quota_ids.contains(&id) => {
-                        batch.clear(ValueClass::Queue(QueueClass::QuotaSize(key)));
+                        batch.add(
+                            ValueClass::Queue(QueueClass::QuotaSize(key)),
+                            -(self.size as i64),
+                        );
                     }
                     _ => {
                         quota_keys.push(quota_key);

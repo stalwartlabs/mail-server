@@ -153,9 +153,10 @@ impl RedisStore {
                 .incr(&key, value)
                 .expire(&key, expires as i64)
                 .ignore()
-                .query_async(conn)
+                .query_async::<_, Vec<i64>>(conn)
                 .await
                 .map_err(Into::into)
+                .map(|v| v.first().copied().unwrap_or(0))
         } else {
             conn.incr(&key, value).await.map_err(Into::into)
         }

@@ -32,7 +32,7 @@ use jmap_client::{
     mailbox::{self},
 };
 use jmap_proto::types::id::Id;
-use utils::listener::blocked::BLOCKED_IP_KEY;
+use store::{dispatch::blocked::BLOCKED_IP_KEY, write::now};
 
 use crate::{
     imap::{ImapConnection, Type},
@@ -64,8 +64,14 @@ pub async fn test(params: &mut JMAPTest) {
         .await;
 
     // Reset rate limiters
-    server.rate_limit_auth.clear();
-    server.rate_limit_unauth.clear();
+    server.concurrency_limiter.clear();
+
+    // Wait until the beginning of the 5 seconds bucket
+    const LIMIT: u64 = 5;
+    let now = now();
+    let range_start = now / LIMIT;
+    let range_end = (range_start * LIMIT) + LIMIT;
+    tokio::time::sleep(Duration::from_secs(range_end - now)).await;
 
     // Incorrect passwords should be rejected with a 401 error
     assert!(matches!(

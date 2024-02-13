@@ -21,8 +21,10 @@
  * for more details.
 */
 
+use std::time::Duration;
+
 use store::{config::ConfigStore, LookupStore};
-use utils::config::Config;
+use utils::config::{Config, Rate};
 
 use crate::store::{TempDir, CONFIG};
 
@@ -32,9 +34,10 @@ pub async fn lookup_tests() {
     let config =
         Config::new(&CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
     let stores = config.parse_stores().await.unwrap();
-
-    let todo = "test expiry counter + ratelimit";
-    let todo = "use lookup ratelimit everywhere";
+    let rate = Rate {
+        requests: 1,
+        period: Duration::from_secs(1),
+    };
 
     for (store_id, store) in stores.lookup_stores {
         println!("Testing lookup store {}...", store_id);
@@ -83,5 +86,38 @@ pub async fn lookup_tests() {
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
         store.counter_incr(key.clone(), 2, None).await.unwrap();
         assert_eq!(3, store.counter_get(key.clone()).await.unwrap());
+        store.counter_incr(key.clone(), -3, None).await.unwrap();
+        assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
+
+        // Test counter expiry
+        let key = "fgh".as_bytes().to_vec();
+        store.counter_incr(key.clone(), 1, 1.into()).await.unwrap();
+        assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        store.purge_expired().await.unwrap();
+        assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
+
+        // Test rate limiter
+        assert!(store
+            .is_rate_allowed("rate".as_bytes(), &rate, false)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .is_rate_allowed("rate".as_bytes(), &rate, false)
+            .await
+            .unwrap()
+            .is_some());
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        assert!(store
+            .is_rate_allowed("rate".as_bytes(), &rate, false)
+            .await
+            .unwrap()
+            .is_none());
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        store.purge_expired().await.unwrap();
+        if let LookupStore::Store(store) = &store {
+            store.assert_is_empty(store.clone().into()).await;
+        }
     }
 }

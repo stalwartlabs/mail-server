@@ -29,10 +29,10 @@ use mail_auth::{
     mta_sts::TlsRpt,
     report::{ActionDisposition, Alignment, Disposition, DmarcResult, PolicyPublished, Record},
 };
-use tokio::fs;
+use store::write::QueueClass;
 use utils::config::if_block::IfBlock;
 
-use crate::smtp::{make_temp_dir, TestConfig};
+use crate::smtp::{TestConfig, TestSMTP};
 use smtp::{
     config::AggregateFrequency,
     core::SMTP,
@@ -50,7 +50,7 @@ async fn report_scheduler() {
 
     // Create scheduler
     let mut core = SMTP::test();
-    let temp_dir = make_temp_dir("smtp_report_scheduler_test", true);
+    let qr = core.init_test_queue("smtp_report_queue_test");
     let config = &mut core.report.config;
     config.dmarc_aggregate.max_size = IfBlock::new(500);
     config.tls.max_size = IfBlock::new(550);
@@ -143,55 +143,27 @@ async fn report_scheduler() {
     let mut total_tls = 0;
     let mut total_tls_policies = 0;
     let mut total_dmarc_policies = 0;
-    for report in scheduler.reports.values() {
+    let mut last_domain = String::new();
+    for report in qr.read_report_events().await {
         match report {
-            ReportType::Dmarc(r) => {
-                assert!(r.size <= 550, "{}", r.size);
-                assert_eq!(fs::metadata(&r.path).await.unwrap().len() as usize, r.size);
-                assert_eq!(r.deliver_at, AggregateFrequency::Weekly);
+            QueueClass::DmarcReportHeader(event) => {
                 total_dmarc_policies += 1;
+                assert_eq!(event.due - event.seq_id, 7 * 86400);
             }
-            ReportType::Tls(r) => {
-                total_tls += 1;
-                total_tls_policies += r.path.len();
-                assert!(r.size <= 550);
-                assert_eq!(r.deliver_at, AggregateFrequency::Daily);
-                let mut sizes = 0;
-                for p in &r.path {
-                    sizes += fs::metadata(&p.inner).await.unwrap().len() as usize;
+            QueueClass::TlsReportHeader(event) => {
+                if event.domain != last_domain {
+                    last_domain = event.domain.clone();
+                    total_tls += 1;
                 }
-                assert_eq!(r.size, sizes);
+                total_tls_policies += 1;
+                assert_eq!(event.due - event.seq_id, 86400);
             }
+            _ => unreachable!(),
         }
     }
     assert_eq!(total_tls, 1);
     assert_eq!(total_tls_policies, 3);
     assert_eq!(total_dmarc_policies, 2);
-
-    // Verify deserialized report queue
-    let mut scheduler_deser = core.report.read_reports().await;
-    for (key, value) in scheduler.reports {
-        let a = Some(value);
-        let b = scheduler_deser.reports.remove(&key);
-        match (&a, &b) {
-            (Some(ReportType::Tls(a)), Some(ReportType::Tls(b))) => {
-                assert_eq!(a.created, b.created);
-                assert_eq!(a.size, b.size);
-                assert_eq!(a.deliver_at, b.deliver_at);
-                assert_eq!(a.path.len(), b.path.len());
-                for p in &a.path {
-                    assert!(b.path.contains(p));
-                }
-                for p in &b.path {
-                    assert!(a.path.contains(p));
-                }
-            }
-            _ => {
-                assert_eq!(a, b, "failed for {key:?}");
-            }
-        }
-    }
-    assert_eq!(scheduler.main.len(), scheduler_deser.main.len());
 }
 
 #[test]

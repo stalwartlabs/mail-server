@@ -44,7 +44,7 @@ Key features:
 - **JMAP** server:
   - JMAP Core ([RFC 8620](https://datatracker.ietf.org/doc/html/rfc8620))
   - JMAP Mail ([RFC 8621](https://datatracker.ietf.org/doc/html/rfc8621))
-  - JMAP for Sieve Scripts ([DRAFT-SIEVE-15](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-15.html))
+  - JMAP for Sieve Scripts ([DRAFT-SIEVE-19](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-19.html))
   - JMAP over WebSocket ([RFC 8887](https://datatracker.ietf.org/doc/html/rfc8887)), JMAP Blob Management ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html)) and JMAP for Quotas ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html)) extensions.
 - **IMAP4** server:
   - IMAP4rev2 ([RFC 9051](https://datatracker.ietf.org/doc/html/rfc9051)) full compliance.
@@ -55,7 +55,7 @@ Key features:
   - Built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
   - Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
   - Inbound throttling and filtering with granular configuration rules, sieve scripting and milter integration.
-  - Virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
+  - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
 - **Spam and Phishing** filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
@@ -105,10 +105,10 @@ Additionally you may become a sponsor to obtain priority support from Stalwart L
 ## Roadmap
 
 - [x] Performance enhancements
+- [x] Distributed SMTP queues
 - [ ] Web-based admin panel
 - [ ] JMAP Calendar, Contacts and Tasks support
-- [ ] Brand Indicators for Message Identification (BIMI) support
-- [ ] Distributed SMTP queues
+- [ ] CalDAV and CardDAV support
 
 See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a full list of proposed features (and known issues).
 
@@ -116,7 +116,7 @@ See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a 
 
 Part of the development of this project was funded through the [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
 
-If you find the project useful you can help by [becoming a sponsor](https://github.com/sponsors/stalwartlabs). Thank you!
+If you find the project useful you can help by [becoming a sponsor](https://liberapay.com/stalwartlabs). Thank you!
 
 ## License
 

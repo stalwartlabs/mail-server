@@ -341,6 +341,15 @@ pub async fn test(params: &mut JMAPTest) {
         params.client.set_default_account_id(account_id.to_string());
         destroy_all_mailboxes(params).await;
     }
+    for event in server.smtp.next_event().await {
+        server
+            .smtp
+            .read_message(event.queue_id)
+            .await
+            .unwrap()
+            .remove(&server.smtp, event.due)
+            .await;
+    }
     assert_is_empty(server).await;
 }
 

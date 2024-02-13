@@ -57,7 +57,7 @@ use smtp::{
     config::{AggregateFrequency, RequireOptional},
     core::{Resolvers, Session, SMTP},
     outbound::dane::{DnssecResolver, Tlsa, TlsaEntry},
-    queue::{manager::Queue, DeliveryAttempt, Error, ErrorDetails, Status},
+    queue::{Error, ErrorDetails, Status},
     reporting::PolicyType,
 };
 
@@ -106,7 +106,6 @@ async fn dane_verify() {
     core.report.config.tls.send = IfBlock::new(AggregateFrequency::Weekly);
 
     let core = Arc::new(core);
-    let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -120,14 +119,14 @@ async fn dane_verify() {
         .try_deliver(core.clone())
         .await;
     local_qr
-        .last_queued_message()
+        .expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No TLSA records found");
     local_qr.read_event().await.assert_reload();
-    local_qr.assert_queue_is_empty().await;
+    local_qr.assert_no_events();
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -173,12 +172,12 @@ async fn dane_verify() {
     local_qr
         .expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No matching certificates found");
     local_qr.read_event().await.assert_reload();
-    local_qr.assert_queue_is_empty().await;
+    local_qr.assert_no_events();
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -217,11 +216,11 @@ async fn dane_verify() {
         .try_deliver(core.clone())
         .await;
     local_qr.read_event().await.assert_reload();
-    local_qr.assert_queue_is_empty().await;
+    local_qr.assert_no_events();
     remote_qr
-        .last_queued_message()
+        .expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&remote_qr)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 

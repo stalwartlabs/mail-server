@@ -44,7 +44,7 @@ use crate::{
     queue::{DomainPart, RecipientDomain},
 };
 
-use super::{scheduler::ToHash, DmarcEvent, SerializedSize};
+use super::{scheduler::ToHash, DmarcEvent, ReportLock, SerializedSize};
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DmarcFormat {
@@ -583,6 +583,12 @@ impl SMTP {
             builder.set(
                 ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
                 Bincode::new(entry).serialize(),
+            );
+
+            // Add lock
+            builder.set(
+                ValueClass::Queue(QueueClass::dmarc_lock(&report_event)),
+                0u64.serialize(),
             );
         }
 

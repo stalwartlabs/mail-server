@@ -271,19 +271,19 @@ impl LookupStore {
         let requests = if !soft_check {
             let requests = self.counter_incr(bucket, 1, expires_in.into()).await?;
             if requests > 0 {
-                requests - 1
+                requests
             } else {
                 // Increment and get not supported by store, fetch counter
                 let mut bucket = Vec::with_capacity(key.len() + U64_LEN);
                 bucket.extend_from_slice(key);
                 bucket.extend_from_slice(range_start.to_be_bytes().as_slice());
-                self.counter_get(bucket).await?.saturating_sub(1)
+                self.counter_get(bucket).await?
             }
         } else {
-            self.counter_get(bucket).await?
+            self.counter_get(bucket).await? + 1
         };
 
-        if requests < rate.requests as i64 {
+        if requests <= rate.requests as i64 {
             Ok(None)
         } else {
             Ok(Some(expires_in))
@@ -302,7 +302,7 @@ impl LookupStore {
                 let mut expired_keys = Vec::new();
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
-                        if value.deserialize_be_u64(0)? < current_time {
+                        if value.deserialize_be_u64(0)? <= current_time {
                             expired_keys.push(key.get(1..).unwrap_or_default().to_vec());
                         }
                         Ok(true)
@@ -337,7 +337,7 @@ impl LookupStore {
                 let mut expired_keys = Vec::new();
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
-                        if value.deserialize_be_u64(0)? < current_time {
+                        if value.deserialize_be_u64(0)? <= current_time {
                             expired_keys.push(key.get(1..).unwrap_or_default().to_vec());
                         }
                         Ok(true)

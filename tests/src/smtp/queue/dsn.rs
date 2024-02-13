@@ -21,26 +21,19 @@
  * for more details.
 */
 
-use std::{
-    fs,
-    path::PathBuf,
-    time::{Duration, Instant, SystemTime},
-};
+use std::{fs, path::PathBuf, time::SystemTime};
 
 use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
-use tokio::{fs::File, io::AsyncReadExt};
+use store::write::now;
+use utils::BlobHash;
 
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestQueueEvent},
-    ParseTestConfig, TestConfig, TestSMTP,
+    inbound::sign::TextConfigContext, ParseTestConfig, QueueReceiver, TestConfig, TestSMTP,
 };
 use smtp::{
     config::ConfigContext,
     core::SMTP,
-    queue::{
-        DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule,
-        Status,
-    },
+    queue::{Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status},
 };
 
 #[tokio::test]
@@ -51,12 +44,12 @@ async fn generate_dsn() {
     path.push("dsn");
     path.push("original.txt");
     let size = fs::metadata(&path).unwrap().len() as usize;
+    let dsn_original = fs::read_to_string(&path).unwrap();
 
     let flags = RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS;
-    let message = Box::new(Message {
+    let mut message = Message {
         size,
         id: 0,
-        path,
         created: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
@@ -85,25 +78,20 @@ async fn generate_dsn() {
             domain: "example.org".to_string(),
             retry: Schedule::now(),
             notify: Schedule::now(),
-            expires: Instant::now() + Duration::from_secs(10),
+            expires: now() + 10,
             status: Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
                 entity: "mx.domain.org".to_string(),
                 details: "Connection timeout".to_string(),
             })),
             disable_tls: false,
-            changed: false,
         }],
         flags: 0,
         env_id: None,
         priority: 0,
-
-        queue_refs: vec![],
-    });
-    let mut attempt = DeliveryAttempt {
-        span: tracing::span!(tracing::Level::INFO, "hi"),
-        message,
-        in_flight: vec![],
+        blob_hash: BlobHash::from(dsn_original.as_bytes()),
+        quota_keys: vec![],
     };
+    let span = tracing::span!(tracing::Level::INFO, "hi");
 
     // Load config
     let mut core = SMTP::test();
@@ -113,18 +101,24 @@ async fn generate_dsn() {
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dsn_test");
+    qr.blob_store
+        .put_blob(message.blob_hash.as_slice(), dsn_original.as_bytes())
+        .await
+        .unwrap();
 
     // Disabled DSN
-    core.send_dsn(&mut attempt).await;
-    qr.assert_empty_queue();
+    core.send_dsn(&mut message, &span).await;
+    qr.assert_no_events();
+    qr.assert_queue_is_empty().await;
 
     // Failure DSN
-    attempt.message.recipients[0].flags = flags;
-    core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.expect_message().await(), "failure.eml").await;
+    message.recipients[0].flags = flags;
+    core.send_dsn(&mut message, &span).await;
+    let dsn_message = qr.expect_message().await;
+    qr.compare_dsn(dsn_message, "failure.eml").await;
 
     // Success DSN
-    attempt.message.recipients.push(Recipient {
+    message.recipients.push(Recipient {
         domain_idx: 0,
         address: "jane@example.org".to_string(),
         address_lcase: "jane@example.org".to_string(),
@@ -139,11 +133,12 @@ async fn generate_dsn() {
         flags,
         orcpt: None,
     });
-    core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.expect_message().await(), "success.eml").await;
+    core.send_dsn(&mut message, &span).await;
+    let dsn_message = qr.expect_message().await;
+    qr.compare_dsn(dsn_message, "success.eml").await;
 
     // Delay DSN
-    attempt.message.recipients.push(Recipient {
+    message.recipients.push(Recipient {
         domain_idx: 0,
         address: "john.doe@example.org".to_string(),
         address_lcase: "john.doe@example.org".to_string(),
@@ -151,49 +146,52 @@ async fn generate_dsn() {
         flags,
         orcpt: "jdoe@example.org".to_string().into(),
     });
-    core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.expect_message().await(), "delay.eml").await;
+    core.send_dsn(&mut message, &span).await;
+    let dsn_message = qr.expect_message().await;
+    qr.compare_dsn(dsn_message, "delay.eml").await;
 
     // Mixed DSN
-    for rcpt in &mut attempt.message.recipients {
+    for rcpt in &mut message.recipients {
         rcpt.flags = flags;
     }
-    attempt.message.domains[0].notify.due = Instant::now();
-    core.send_dsn(&mut attempt).await;
-    compare_dsn(qr.expect_message().await(), "mixed.eml").await;
+    message.domains[0].notify.due = now();
+    core.send_dsn(&mut message, &span).await;
+    let dsn_message = qr.expect_message().await;
+    qr.compare_dsn(dsn_message, "mixed.eml").await;
 
     // Load queue
-    let queue = core.queue.read_queue().await;
-    assert_eq!(queue.scheduled.len(), 4);
+    let queue = qr.read_queued_messages().await;
+    assert_eq!(queue.len(), 4);
 }
 
-async fn compare_dsn(message: Box<Message>, test: &str) {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("resources");
-    path.push("smtp");
-    path.push("dsn");
-    path.push(test);
+impl QueueReceiver {
+    async fn compare_dsn(&self, message: Message, test: &str) {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("resources");
+        path.push("smtp");
+        path.push("dsn");
+        path.push(test);
 
-    let mut bytes = vec![0u8; message.size];
-    File::open(&message.path)
-        .await
-        .unwrap()
-        .read_exact(&mut bytes)
-        .await
-        .unwrap();
+        let bytes = self
+            .blob_store
+            .get_blob(message.blob_hash.as_slice(), 0..u32::MAX)
+            .await
+            .unwrap()
+            .unwrap();
 
-    let dsn = remove_ids(bytes);
-    let dsn_expected = fs::read_to_string(&path).unwrap();
+        let dsn = remove_ids(bytes);
+        let dsn_expected = fs::read_to_string(&path).unwrap();
 
-    if dsn != dsn_expected {
-        let mut failed = PathBuf::from(&path);
-        failed.set_extension("failed");
-        fs::write(&failed, dsn.as_bytes()).unwrap();
-        panic!(
-            "Failed for {}, output saved to {}",
-            path.display(),
-            failed.display()
-        );
+        if dsn != dsn_expected {
+            let mut failed = PathBuf::from(&path);
+            failed.set_extension("failed");
+            fs::write(&failed, dsn.as_bytes()).unwrap();
+            panic!(
+                "Failed for {}, output saved to {}",
+                path.display(),
+                failed.display()
+            );
+        }
     }
 }
 

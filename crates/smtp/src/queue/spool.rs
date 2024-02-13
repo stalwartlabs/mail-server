@@ -26,7 +26,7 @@ use std::borrow::Cow;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
 use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, QueueEvent, ValueClass};
-use store::{IterateParams, Serialize, ValueKey, U64_LEN};
+use store::{Deserialize, IterateParams, Serialize, ValueKey, U64_LEN};
 use utils::BlobHash;
 
 use crate::core::{QueueCore, SMTP};
@@ -34,6 +34,17 @@ use crate::core::{QueueCore, SMTP};
 use super::{
     Domain, Event, Message, QueueId, QuotaKey, Recipient, Schedule, SimpleEnvelope, Status,
 };
+
+pub const LOCK_EXPIRY: u64 = 300;
+pub const BLOB_EXPIRY: u64 = 3600;
+pub const SPOOL_ACCOUNT_ID: u32 = u32::MAX - 1;
+
+#[derive(Debug)]
+pub struct QueueEventLock {
+    pub due: u64,
+    pub queue_id: u64,
+    pub lock_expiry: u64,
+}
 
 impl QueueCore {
     pub fn new_message(
@@ -64,7 +75,7 @@ impl QueueCore {
 }
 
 impl SMTP {
-    pub async fn next_event(&self) -> Vec<QueueEvent> {
+    pub async fn next_event(&self) -> Vec<QueueEventLock> {
         let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
             due: 0,
             queue_id: 0,
@@ -80,14 +91,26 @@ impl SMTP {
             .shared
             .default_data_store
             .iterate(
-                IterateParams::new(from_key, to_key).ascending().no_values(),
-                |key, _| {
-                    let event = QueueEvent {
+                IterateParams::new(from_key, to_key).ascending(),
+                |key, value| {
+                    let event = QueueEventLock {
                         due: key.deserialize_be_u64(1)?,
                         queue_id: key.deserialize_be_u64(U64_LEN + 1)?,
+                        lock_expiry: u64::deserialize(value)?,
                     };
                     let do_continue = event.due <= now;
-                    events.push(event);
+                    if event.lock_expiry < now {
+                        events.push(event);
+                    } else {
+                        tracing::debug!(
+                            context = "queue",
+                            event = "locked",
+                            id = event.queue_id,
+                            due = event.due,
+                            expiry = event.lock_expiry - now,
+                            "Queue event locked by another process."
+                        );
+                    }
                     Ok(do_continue)
                 },
             )
@@ -103,6 +126,47 @@ impl SMTP {
         }
 
         events
+    }
+
+    pub async fn try_lock_event(&self, mut event: QueueEventLock) -> Option<QueueEventLock> {
+        let mut batch = BatchBuilder::new();
+        batch.assert_value(
+            ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                due: event.due,
+                queue_id: event.queue_id,
+            })),
+            event.lock_expiry,
+        );
+        event.lock_expiry = now() + LOCK_EXPIRY;
+        batch.set(
+            ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                due: event.due,
+                queue_id: event.queue_id,
+            })),
+            event.lock_expiry.serialize(),
+        );
+        match self.shared.default_data_store.write(batch.build()).await {
+            Ok(_) => Some(event),
+            Err(store::Error::AssertValueFailed) => {
+                tracing::debug!(
+                    context = "queue",
+                    event = "locked",
+                    id = event.queue_id,
+                    due = event.due,
+                    "Failed to lock event: Event already locked."
+                );
+                None
+            }
+            Err(err) => {
+                tracing::error!(
+                    context = "queue",
+                    event = "error",
+                    "Failed to lock event: {}",
+                    err
+                );
+                None
+            }
+        }
     }
 
     pub async fn read_message(&self, id: QueueId) -> Option<Message> {
@@ -155,10 +219,10 @@ impl Message {
 
         // Reserve and write blob
         let mut batch = BatchBuilder::new();
-        batch.with_account_id(u32::MAX).set(
+        batch.with_account_id(SPOOL_ACCOUNT_ID).set(
             BlobOp::Reserve {
                 hash: self.blob_hash.clone(),
-                until: self.next_delivery_event() + 3600,
+                until: self.next_delivery_event() + BLOB_EXPIRY,
             },
             0u32.serialize(),
         );
@@ -205,12 +269,33 @@ impl Message {
 
         // Write message to queue
         let mut batch = BatchBuilder::new();
+
+        // Reserve quotas
+        for quota_key in &self.quota_keys {
+            match quota_key {
+                QuotaKey::Count { key, .. } => {
+                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key.clone())), 1);
+                }
+                QuotaKey::Size { key, .. } => {
+                    batch.add(
+                        ValueClass::Queue(QueueClass::QuotaSize(key.clone())),
+                        self.size as i64,
+                    );
+                }
+            }
+        }
         batch
             .set(
                 ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                     due: self.next_event().unwrap_or_default(),
                     queue_id: self.id,
                 })),
+                0u64.serialize(),
+            )
+            .set(
+                BlobOp::Commit {
+                    hash: self.blob_hash.clone(),
+                },
                 vec![],
             )
             .set(
@@ -305,34 +390,33 @@ impl Message {
 
         // Update message queue
         let mut batch = BatchBuilder::new();
-        if let Some(prev_event) = prev_event {
-            batch.clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                due: prev_event,
-                queue_id: self.id,
-            })));
-        }
-        if let Some(next_event) = next_event {
-            batch.set(
-                ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                    due: next_event,
+        if let (Some(prev_event), Some(next_event)) = (prev_event, next_event) {
+            batch
+                .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                    due: prev_event,
                     queue_id: self.id,
-                })),
-                vec![],
-            );
+                })))
+                .set(
+                    ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                        due: next_event,
+                        queue_id: self.id,
+                    })),
+                    0u64.serialize(),
+                );
         }
-        batch
-            .with_account_id(u32::MAX)
-            .set(
-                BlobOp::Reserve {
-                    hash: self.blob_hash.clone(),
-                    until: self.next_delivery_event() + 3600,
-                },
-                0u32.serialize(),
-            )
-            .set(
-                ValueClass::Queue(QueueClass::Message(self.id)),
-                Bincode::new(self).serialize(),
-            );
+
+        batch.with_account_id(SPOOL_ACCOUNT_ID).set(
+            BlobOp::Reserve {
+                hash: self.blob_hash.clone(),
+                until: self.next_delivery_event() + BLOB_EXPIRY,
+            },
+            0u32.serialize(),
+        );
+
+        batch.set(
+            ValueClass::Queue(QueueClass::Message(self.id)),
+            Bincode::new(self).serialize(),
+        );
 
         if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
             tracing::error!(
@@ -354,15 +438,30 @@ impl Message {
         for quota_key in self.quota_keys {
             match quota_key {
                 QuotaKey::Count { key, .. } => {
-                    batch.clear(ValueClass::Queue(QueueClass::QuotaCount(key)));
+                    batch.add(ValueClass::Queue(QueueClass::QuotaCount(key)), -1);
                 }
                 QuotaKey::Size { key, .. } => {
-                    batch.clear(ValueClass::Queue(QueueClass::QuotaSize(key)));
+                    batch.add(
+                        ValueClass::Queue(QueueClass::QuotaSize(key)),
+                        -(self.size as i64),
+                    );
                 }
             }
         }
 
         batch
+            .with_account_id(SPOOL_ACCOUNT_ID)
+            .clear(BlobOp::Reserve {
+                hash: self.blob_hash.clone(),
+                until: prev_event + BLOB_EXPIRY,
+            })
+            .set(
+                BlobOp::Reserve {
+                    hash: self.blob_hash.clone(),
+                    until: now() - 1,
+                },
+                0u32.serialize(),
+            )
             .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                 due: prev_event,
                 queue_id: self.id,

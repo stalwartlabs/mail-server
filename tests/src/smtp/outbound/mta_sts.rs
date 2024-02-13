@@ -44,7 +44,6 @@ use smtp::{
     config::{AggregateFrequency, RequireOptional},
     core::{Session, SMTP},
     outbound::mta_sts::{lookup::STS_TEST_POLICY, Policy},
-    queue::{manager::Queue, DeliveryAttempt},
     reporting::PolicyType,
 };
 
@@ -93,7 +92,7 @@ async fn mta_sts_verify() {
     core.report.config.tls.send = IfBlock::new(AggregateFrequency::Weekly);
 
     let core = Arc::new(core);
-    let mut queue = Queue::default();
+    //let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -107,14 +106,13 @@ async fn mta_sts_verify() {
         .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("Record not found");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -144,14 +142,13 @@ async fn mta_sts_verify() {
         .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("No 'mx' entries found");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -178,14 +175,13 @@ async fn mta_sts_verify() {
         .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("not authorized by policy");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
 
     // Expect TLS failure report
     let report = rr.read_report().await.unwrap_tls();
@@ -203,7 +199,7 @@ async fn mta_sts_verify() {
         report.failure.as_ref().unwrap().result_type,
         ResultType::ValidationFailure
     );
-    remote_qr.assert_empty_queue();
+    remote_qr.assert_no_events();
 
     // MTA-STS successful validation
     core.resolvers.dns.txt_add(
@@ -227,12 +223,11 @@ async fn mta_sts_verify() {
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
     remote_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core)
+        .read_lines(&remote_qr)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 

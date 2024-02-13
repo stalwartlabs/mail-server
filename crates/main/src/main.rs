@@ -68,14 +68,10 @@ async fn main() -> std::io::Result<()> {
 
     // Update configuration
     config.update(data_store.config_list("").await.failed("Storage error"));
-    servers
-        .blocked_ips
-        .reload(&config)
-        .failed("Invalid configuration");
 
     // Parse directories
     let directory = config
-        .parse_directory(&stores, &servers, data_store)
+        .parse_directory(&stores, data_store)
         .await
         .failed("Invalid configuration");
     let schedulers = config
@@ -105,6 +101,10 @@ async fn main() -> std::io::Result<()> {
     let imap = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");
+    jmap.directory
+        .blocked_ips
+        .reload(&config)
+        .failed("Invalid configuration");
 
     // Spawn servers
     let (shutdown_tx, shutdown_rx) = servers.spawn(|server, shutdown_rx| {

@@ -36,8 +36,8 @@ use backend::{
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
-use store::Store;
-use utils::{config::if_block::IfBlock, expr::Variable, listener::blocked::BlockedIps};
+use store::{dispatch::blocked::BlockedIps, Store};
+use utils::{config::if_block::IfBlock, expr::Variable};
 
 pub mod backend;
 pub mod core;

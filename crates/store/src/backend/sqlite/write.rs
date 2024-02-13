@@ -25,7 +25,7 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{
     write::{Batch, BitmapClass, Operation, ValueClass, ValueOp},
-    BitmapKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS,
 };
 
 use super::SqliteStore;
@@ -204,7 +204,17 @@ impl SqliteStore {
     }
 
     pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
-        Ok(())
+        let conn = self.conn_pool.get()?;
+        self.spawn_worker(move || {
+            conn.prepare_cached(&format!(
+                "DELETE FROM {} WHERE v = 0",
+                char::from(SUBSPACE_COUNTERS),
+            ))?
+            .execute([])?;
+
+            Ok(())
+        })
+        .await
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {

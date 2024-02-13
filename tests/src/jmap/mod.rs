@@ -185,6 +185,7 @@ private-key = "file://{PK}"
 data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
+lookup = "{STORE}"
 directory = "auth"
 
 [storage.spam]
@@ -402,14 +403,9 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(
-            &stores,
-            &servers,
-            stores.stores.get(store_id).unwrap().clone(),
-        )
+        .parse_directory(&stores, stores.stores.get(store_id).unwrap().clone())
         .await
         .unwrap();
-    servers.blocked_ips.reload(&config).unwrap();
 
     // Start JMAP and SMTP servers
     servers.bind(&config);
@@ -430,6 +426,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let imap: Arc<IMAP> = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");
+    jmap.directory.blocked_ips.reload(&config).unwrap();
 
     let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {

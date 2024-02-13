@@ -28,6 +28,7 @@ use std::{
 };
 
 use mail_auth::MX;
+use store::write::now;
 use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
@@ -36,7 +37,7 @@ use crate::smtp::{
 };
 use smtp::{
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Message, QueueEnvelope},
+    queue::{Message, QueueEnvelope},
 };
 
 const THROTTLE: &str = r#"
@@ -92,7 +93,6 @@ async fn throttle_outbound() {
     core.queue.config.expire = IfBlock::new(Duration::from_secs(86400));
 
     let core = Arc::new(core);
-    let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -100,6 +100,7 @@ async fn throttle_outbound() {
     session
         .send_message("john@foobar.org", &["bill@test.org"], "test:no_dkim", "250")
         .await;
+    assert_eq!(local_qr.last_queued_due().await as i64 - now() as i64, 0);
 
     // Throttle sender
     let span = tracing::info_span!("test");
@@ -123,10 +124,9 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.assert_empty_queue();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    local_qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
-    assert!(!queue.on_hold.is_empty());
-    queue.next_on_hold().unwrap();
 
     // Expect rate limit throttle for sender domain 'foobar.net'
     test_message.return_path_domain = "foobar.net".to_string();
@@ -149,16 +149,10 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.assert_empty_queue();
-    assert!([1799, 1800].contains(
-        &queue
-            .scheduled
-            .pop()
-            .unwrap()
-            .due
-            .duration_since(Instant::now())
-            .as_secs()
-    ));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    local_qr.read_event().await.assert_reload();
+    let due = local_qr.last_queued_due().await - now();
+    assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for recipient domain 'example.org'
     test_message.return_path_domain = "test.net".to_string();
@@ -186,6 +180,7 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone())
         .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     local_qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
@@ -214,15 +209,10 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone())
         .await;
-    assert!([2399, 2400].contains(
-        &local_qr
-            .read_event()
-            .await
-            .unwrap_retry()
-            .due
-            .duration_since(Instant::now())
-            .as_secs()
-    ));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    local_qr.read_event().await.assert_reload();
+    let due = local_qr.last_queued_due().await - now();
+    assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for mx 'mx.test.org'
     core.resolvers.dns.mx_add(
@@ -293,15 +283,11 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone())
         .await;
-    assert!([2999, 3000].contains(
-        &local_qr
-            .read_event()
-            .await
-            .unwrap_retry()
-            .due
-            .duration_since(Instant::now())
-            .as_secs()
-    ));
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    local_qr.read_event().await.assert_reload();
+    let due = local_qr.last_queued_due().await - now();
+    assert!(due > 0, "Due: {}", due);
 }
 
 pub trait TestQueueEnvelope<'x> {

@@ -33,13 +33,13 @@ use mail_auth::{
 };
 use mail_send::SmtpClient;
 use smtp_proto::MAIL_REQUIRETLS;
-use store::write::now;
+use store::write::{now, BatchBuilder, QueueClass, QueueEvent, ValueClass};
 use utils::config::ServerProtocol;
 
 use crate::{
     config::{AggregateFrequency, RequireOptional, TlsStrategy},
     core::SMTP,
-    queue::ErrorDetails,
+    queue::{ErrorDetails, Message},
     reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
 };
 
@@ -56,18 +56,51 @@ use crate::queue::{
 impl DeliveryAttempt {
     pub async fn try_deliver(mut self, core: Arc<SMTP>) {
         tokio::spawn(async move {
+            // Lock message
+            self.event = if let Some(event) = core.try_lock_event(self.event).await {
+                event
+            } else {
+                return;
+            };
+
+            // Fetch message
+            let mut message = if let Some(message) = core.read_message(self.event.queue_id).await {
+                message
+            } else {
+                // Message no longer exists, delete queue event.
+                let mut batch = BatchBuilder::new();
+                batch.clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                    due: self.event.due,
+                    queue_id: self.event.queue_id,
+                })));
+                let _ = core.shared.default_data_store.write(batch.build()).await;
+                return;
+            };
+
+            let span = tracing::info_span!(
+                "delivery",
+                "id" = message.id,
+                "return_path" = if !message.return_path.is_empty() {
+                    message.return_path.as_ref()
+                } else {
+                    "<>"
+                },
+                "nrcpt" = message.recipients.len(),
+                "size" = message.size
+            );
+
             // Check that the message still has recipients to be delivered
-            let has_pending_delivery = self.has_pending_delivery();
+            let has_pending_delivery = message.has_pending_delivery(&span);
 
             // Send any due Delivery Status Notifications
-            core.send_dsn(&mut self).await;
+            core.send_dsn(&mut message, &span).await;
 
             if has_pending_delivery {
                 // Re-queue the message if its not yet due for delivery
-                let due = self.message.next_delivery_event();
+                let due = message.next_delivery_event();
                 if due > now() {
                     // Save changes
-                    self.message
+                    message
                         .save_changes(&core, self.event.due.into(), due.into())
                         .await;
                     if core.queue.tx.send(Event::Reload).await.is_err() {
@@ -77,7 +110,7 @@ impl DeliveryAttempt {
                 }
             } else {
                 // All message recipients expired, do not re-queue. (DSN has been already sent)
-                self.message.remove(&core, self.event.due).await;
+                message.remove(&core, self.event.due).await;
                 if core.queue.tx.send(Event::Reload).await.is_err() {
                     tracing::warn!("Channel closed while trying to notify queue manager.");
                 }
@@ -88,14 +121,14 @@ impl DeliveryAttempt {
             // Throttle sender
             for throttle in &core.queue.config.throttle.sender {
                 if let Err(err) = core
-                    .is_allowed(throttle, &self.message, &mut self.in_flight, &self.span)
+                    .is_allowed(throttle, &message, &mut self.in_flight, &span)
                     .await
                 {
                     let event = match err {
                         throttle::Error::Concurrency { limiter } => {
                             // Save changes to disk
-                            let next_due = self.message.next_event_after(now());
-                            self.message.save_changes(&core, None, None).await;
+                            let next_due = message.next_event_after(now());
+                            message.save_changes(&core, None, None).await;
 
                             Event::OnHold(OnHold {
                                 next_due,
@@ -107,9 +140,9 @@ impl DeliveryAttempt {
                             // Save changes to disk
                             let next_event = std::cmp::min(
                                 retry_at,
-                                self.message.next_event_after(now()).unwrap_or(u64::MAX),
+                                message.next_event_after(now()).unwrap_or(u64::MAX),
                             );
-                            self.message
+                            message
                                 .save_changes(&core, self.event.due.into(), next_event.into())
                                 .await;
 
@@ -128,8 +161,8 @@ impl DeliveryAttempt {
             let mut on_hold = Vec::new();
             let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
-            let mut domains = std::mem::take(&mut self.message.domains);
-            let mut recipients = std::mem::take(&mut self.message.recipients);
+            let mut domains = std::mem::take(&mut message.domains);
+            let mut recipients = std::mem::take(&mut message.recipients);
             'next_domain: for (domain_idx, domain) in domains.iter_mut().enumerate() {
                 // Only process domains due for delivery
                 if !matches!(&domain.status, Status::Scheduled | Status::TemporaryFailure(_)
@@ -140,7 +173,7 @@ impl DeliveryAttempt {
 
                 // Create new span for domain
                 let span = tracing::info_span!(
-                    parent: &self.span,
+                    parent: &span,
                     "attempt",
                     domain = domain.domain,
                     attempt_number = domain.retry.inner,
@@ -148,7 +181,7 @@ impl DeliveryAttempt {
 
                 // Build envelope
                 let mut envelope = QueueEnvelope {
-                    message: &self.message,
+                    message: &message,
                     domain: &domain.domain,
                     mx: "",
                     remote_ip: no_ip,
@@ -176,8 +209,7 @@ impl DeliveryAttempt {
                     #[cfg(feature = "local_delivery")]
                     Some(next_hop) if next_hop.protocol == ServerProtocol::Jmap => {
                         // Deliver message locally
-                        let delivery_result = self
-                            .message
+                        let delivery_result = message
                             .deliver_local(
                                 recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
                                 &core.delivery_tx,
@@ -707,7 +739,7 @@ impl DeliveryAttempt {
 
                         // Prepare TLS connector
                         let is_strict_tls = tls_strategy.is_tls_required()
-                            || (self.message.flags & MAIL_REQUIRETLS) != 0
+                            || (message.flags & MAIL_REQUIRETLS) != 0
                             || mta_sts_policy.is_some()
                             || dane_policy.is_some();
                         let tls_connector =
@@ -823,7 +855,7 @@ impl DeliveryAttempt {
                                         }
 
                                         // Deliver message over TLS
-                                        self.message
+                                        message
                                             .deliver(
                                                 smtp_client,
                                                 recipients
@@ -876,7 +908,7 @@ impl DeliveryAttempt {
                                             continue 'next_host;
                                         } else {
                                             // TLS is not required, proceed in plain-text
-                                            self.message
+                                            message
                                                 .deliver(
                                                     smtp_client,
                                                     recipients
@@ -936,7 +968,7 @@ impl DeliveryAttempt {
                                     reason = if domain.disable_tls {"TLS is disabled for this host"} else {"TLS is unavailable for this host, falling back to plain-text."},
                                 );
 
-                                self.message
+                                message
                                     .deliver(
                                         smtp_client,
                                         recipients
@@ -989,7 +1021,7 @@ impl DeliveryAttempt {
                             }
 
                             // Deliver message
-                            self.message
+                            message
                                 .deliver(
                                     smtp_client,
                                     recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
@@ -1020,18 +1052,18 @@ impl DeliveryAttempt {
                         .unwrap_or_else(|| vec![Duration::from_secs(60)]),
                 );
             }
-            self.message.domains = domains;
-            self.message.recipients = recipients;
+            message.domains = domains;
+            message.recipients = recipients;
 
             // Send Delivery Status Notifications
-            core.send_dsn(&mut self).await;
+            core.send_dsn(&mut message, &span).await;
 
             // Notify queue manager
-            let span = self.span;
+            let span = span;
             let result = if !on_hold.is_empty() {
                 // Save changes to disk
-                let next_due = self.message.next_event_after(now());
-                self.message.save_changes(&core, None, None).await;
+                let next_due = message.next_event_after(now());
+                message.save_changes(&core, None, None).await;
 
                 tracing::info!(
                     parent: &span,
@@ -1046,9 +1078,9 @@ impl DeliveryAttempt {
                     limiters: on_hold,
                     message: self.event,
                 })
-            } else if let Some(due) = self.message.next_event() {
+            } else if let Some(due) = message.next_event() {
                 // Save changes to disk
-                self.message
+                message
                     .save_changes(&core, self.event.due.into(), due.into())
                     .await;
 
@@ -1063,7 +1095,7 @@ impl DeliveryAttempt {
                 Event::Reload
             } else {
                 // Delete message from queue
-                self.message.remove(&core, self.event.due).await;
+                message.remove(&core, self.event.due).await;
 
                 tracing::info!(
                     parent: &span,
@@ -1082,24 +1114,25 @@ impl DeliveryAttempt {
             }
         });
     }
+}
 
+impl Message {
     /// Marks as failed all domains that reached their expiration time
-    pub fn has_pending_delivery(&mut self) -> bool {
+    pub fn has_pending_delivery(&mut self, span: &tracing::Span) -> bool {
         let now = now();
         let mut has_pending_delivery = false;
-        let span = self.span.clone();
 
-        for (idx, domain) in self.message.domains.iter_mut().enumerate() {
+        for (idx, domain) in self.domains.iter_mut().enumerate() {
             match &domain.status {
                 Status::TemporaryFailure(err) if domain.expires <= now => {
                     tracing::info!(
-                        parent: &span,
+                        parent: span,
                         event = "delivery-expired",
                         domain = domain.domain,
                         reason = %err,
                     );
 
-                    for rcpt in &mut self.message.recipients {
+                    for rcpt in &mut self.recipients {
                         if rcpt.domain_idx == idx {
                             rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
                                 .into_permanent();
@@ -1111,13 +1144,13 @@ impl DeliveryAttempt {
                 }
                 Status::Scheduled if domain.expires <= now => {
                     tracing::info!(
-                        parent: &span,
+                        parent: span,
                         event = "delivery-expired",
                         domain = domain.domain,
                         reason = "Queue rate limit exceeded.",
                     );
 
-                    for rcpt in &mut self.message.recipients {
+                    for rcpt in &mut self.recipients {
                         if rcpt.domain_idx == idx {
                             rcpt.status = std::mem::replace(&mut rcpt.status, Status::Scheduled)
                                 .into_permanent();

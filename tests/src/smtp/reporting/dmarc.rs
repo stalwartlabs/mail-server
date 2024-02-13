@@ -32,11 +32,11 @@ use mail_auth::{
     dmarc::Dmarc,
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
+use store::write::QueueClass;
 use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
-    make_temp_dir,
+    inbound::{sign::TextConfigContext, TestMessage},
     session::VerifyResponse,
     ParseTestConfig, TestConfig, TestSMTP,
 };
@@ -58,7 +58,6 @@ async fn report_dmarc() {
     // Create scheduler
     let mut core = SMTP::test();
     core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
-    let temp_dir = make_temp_dir("smtp_report_dmarc_test", true);
     let config = &mut core.report.config;
     config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);
@@ -113,20 +112,19 @@ async fn report_dmarc() {
         interval: AggregateFrequency::Weekly,
     }))
     .await;
-    assert_eq!(scheduler.reports.len(), 1);
     tokio::time::sleep(Duration::from_millis(200)).await;
-    let report_path;
-    match scheduler.reports.into_iter().next().unwrap() {
-        (ReportType::Dmarc(domain), ReportType::Dmarc(path)) => {
-            report_path = path.path.clone();
-            core.generate_dmarc_report(domain, path);
+    let reports = qr.read_report_events().await;
+    assert_eq!(reports.len(), 1);
+    match reports.into_iter().next().unwrap() {
+        QueueClass::DmarcReportHeader(event) => {
+            core.generate_dmarc_report(event).await;
         }
         _ => unreachable!(),
     }
 
     // Expect report
-    let message = qr.expect_message().await();
-    qr.assert_empty_queue();
+    let message = qr.expect_message().await;
+    qr.assert_no_events();
     assert_eq!(message.recipients.len(), 1);
     assert_eq!(
         message.recipients.last().unwrap().address,
@@ -134,14 +132,15 @@ async fn report_dmarc() {
     );
     assert_eq!(message.return_path, "reports@example.org");
     message
-        .read_lines(&core).await
+        .read_lines(&qr)
+        .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: <reports@foobar.net>")
         .assert_contains("Report Domain: foobar.org")
         .assert_contains("Submitter: mx.example.org");
 
     // Verify generated report
-    let report = Report::parse_rfc5322(message.read_message().as_bytes()).unwrap();
+    let report = Report::parse_rfc5322(message.read_message(&qr).await.as_bytes()).unwrap();
     assert_eq!(report.domain(), "foobar.org");
     assert_eq!(report.email(), "reports@example.org");
     assert_eq!(report.org_name(), "Foobar, Inc.");
@@ -166,6 +165,5 @@ async fn report_dmarc() {
             panic!("unexpected ip {source_ip}");
         }
     }
-
-    assert!(!report_path.exists());
+    qr.assert_report_is_empty().await;
 }

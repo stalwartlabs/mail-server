@@ -33,7 +33,9 @@ use mail_auth::{
 use mail_send::smtp::tls::build_tls_connector;
 use sieve::Runtime;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::{backend::sqlite::SqliteStore, LookupStore, Store};
+use store::{
+    backend::sqlite::SqliteStore, dispatch::blocked::BlockedIps, BlobStore, LookupStore, Store,
+};
 use tokio::sync::mpsc;
 
 use smtp::{
@@ -201,7 +203,7 @@ impl TestConfig for SMTP {
                     catch_all: AddressMapping::Disable,
                     subaddressing: AddressMapping::Disable,
                     cache: None,
-                    blocked_ips: Arc::new(Default::default()),
+                    blocked_ips: Arc::new(BlockedIps::new(store.clone().into())),
                 }),
                 default_lookup_store: LookupStore::Store(store.clone()),
                 default_blob_store: store::BlobStore::Store(store.clone()),
@@ -498,6 +500,7 @@ pub fn add_test_certs(config: &str) -> String {
 pub struct QueueReceiver {
     _temp_dir: TempDir,
     store: Store,
+    blob_store: BlobStore,
     pub queue_rx: mpsc::Receiver<smtp::queue::Event>,
 }
 
@@ -524,10 +527,12 @@ impl TestSMTP for SMTP {
         let store = Store::SQLite(SqliteStore::open(&config, "store.sqlite").unwrap().into());
         self.shared.default_data_store = store.clone();
         self.shared.default_blob_store = store.clone().into();
+        self.shared.default_lookup_store = store.clone().into();
         let (queue_tx, queue_rx) = mpsc::channel(128);
         self.queue.tx = queue_tx;
 
         QueueReceiver {
+            blob_store: store.clone().into(),
             store,
             queue_rx,
             _temp_dir,

@@ -27,11 +27,8 @@ use imap_proto::{
     receiver::{self, Request},
     Command, ResponseCode, StatusResponse,
 };
-use jmap::auth::rate_limit::AuthenticatedLimiter;
-use utils::listener::{
-    limiter::{ConcurrencyLimiter, RateLimiter},
-    SessionStream,
-};
+use jmap::auth::rate_limit::ConcurrencyLimiters;
+use utils::listener::{limiter::ConcurrencyLimiter, SessionStream};
 
 use super::{SelectedMailbox, Session, SessionData, State, IMAP};
 
@@ -52,7 +49,7 @@ impl<T: SessionStream> Session<T> {
 
         loop {
             match self.receiver.parse(&mut bytes) {
-                Ok(request) => match self.is_allowed(request) {
+                Ok(request) => match self.is_allowed(request).await {
                     Ok(request) => {
                         requests.push(request);
                     }
@@ -223,19 +220,34 @@ pub fn group_requests(
 }
 
 impl<T: SessionStream> Session<T> {
-    fn is_allowed(&self, request: Request<Command>) -> Result<Request<Command>, StatusResponse> {
+    async fn is_allowed(
+        &self,
+        request: Request<Command>,
+    ) -> Result<Request<Command>, StatusResponse> {
         let state = &self.state;
         // Rate limit request
         if let State::Authenticated { data } | State::Selected { data, .. } = state {
-            if !data
-                .imap
-                .get_authenticated_limiter(data.account_id)
-                .request_limiter
-                .is_allowed(&self.imap.rate_requests)
+            match data
+                .jmap
+                .lookup_store
+                .is_rate_allowed(
+                    format!("ireq:{}", data.account_id).as_bytes(),
+                    &self.imap.rate_requests,
+                    true,
+                )
+                .await
             {
-                return Err(StatusResponse::no("Too many requests")
-                    .with_tag(request.tag)
-                    .with_code(ResponseCode::Limit));
+                Ok(None) => {}
+                Ok(Some(_)) => {
+                    return Err(StatusResponse::no("Too many requests")
+                        .with_tag(request.tag)
+                        .with_code(ResponseCode::Limit));
+                }
+                Err(_) => {
+                    return Err(StatusResponse::no("Internal server error")
+                        .with_tag(request.tag)
+                        .with_code(ResponseCode::ContactAdmin));
+                }
             }
         }
 
@@ -390,13 +402,12 @@ impl<T: SessionStream> State<T> {
 }
 
 impl IMAP {
-    pub fn get_authenticated_limiter(&self, account_id: u32) -> Arc<AuthenticatedLimiter> {
+    pub fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
         self.rate_limiter
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
-                let limiter = Arc::new(AuthenticatedLimiter {
-                    request_limiter: RateLimiter::new(&self.rate_requests),
+                let limiter = Arc::new(ConcurrencyLimiters {
                     concurrent_requests: ConcurrencyLimiter::new(self.rate_concurrent),
                     concurrent_uploads: ConcurrencyLimiter::new(self.rate_concurrent),
                 });

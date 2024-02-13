@@ -27,26 +27,21 @@ use std::{
 };
 
 use mail_auth::MX;
-use store::write::now;
 use utils::config::{if_block::IfBlock, ServerProtocol};
 
-use crate::smtp::{
-    inbound::TestMessage,
-    outbound::start_test_server,
-    session::{TestSession, VerifyResponse},
-    TestConfig, TestSMTP,
-};
+use crate::smtp::{outbound::start_test_server, session::TestSession, TestConfig, TestSMTP};
 use smtp::{
-    config::RequireOptional,
     core::{Session, SMTP},
+    queue::manager::Queue,
 };
 
 #[tokio::test]
 #[serial_test::serial]
-async fn starttls_optional() {
-    /*tracing::subscriber::set_global_default(
+async fn concurrent_queue() {
+    /*let disable = true;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
+            .with_max_level(tracing::Level::DEBUG)
             .finish(),
     )
     .unwrap();*/
@@ -54,63 +49,64 @@ async fn starttls_optional() {
     // Start test server
     let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
-    let mut remote_qr = core.init_test_queue("smtp_starttls_remote");
+    let remote_qr = core.init_test_queue("smtp_concurrent_queue_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.queue.config.hostname = IfBlock::new("badtls.foobar.org".to_string());
     core.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
             preference: 10,
         }],
-        Instant::now() + Duration::from_secs(10),
+        Instant::now() + Duration::from_secs(100),
     );
     core.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
-        Instant::now() + Duration::from_secs(10),
+        Instant::now() + Duration::from_secs(100),
     );
-
-    // Retry on failed STARTTLS
-    let mut local_qr = core.init_test_queue("smtp_starttls_local");
+    let local_qr = core.init_test_queue("smtp_concurrent_queue_local");
     core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.tls.start = IfBlock::new(RequireOptional::Optional);
+    core.session.config.data.max_messages = IfBlock::new(200);
 
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
-    session
-        .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
+
+    // Send 100 test messages
+    for _ in 0..100 {
+        session
+            .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
+            .await;
+    }
+
+    // Spawn 20 concurrent queues at different times
+    for _ in 0..10 {
+        let core = core.clone();
+        tokio::spawn(async move {
+            Queue::new(core).process_events().await;
+        });
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    for _ in 0..10 {
+        let core = core.clone();
+        tokio::spawn(async move {
+            Queue::new(core).process_events().await;
+        });
+    }
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    local_qr.assert_queue_is_empty().await;
+    let remote_messages = remote_qr.read_queued_messages().await;
+    assert_eq!(remote_messages.len(), 100);
+
+    // Make sure local store is queue
+    core.shared
+        .default_data_store
+        .assert_is_empty(core.shared.default_blob_store.clone())
         .await;
-    local_qr
-        .expect_message_then_deliver()
-        .await
-        .try_deliver(core.clone())
-        .await;
-    let mut retry = local_qr.expect_message().await;
-    assert!(retry.domains[0].disable_tls);
-    let prev_due = retry.domains[0].retry.due;
-    let next_due = now();
-    let queue_id = retry.id;
-    retry.domains[0].retry.due = next_due;
-    retry
-        .save_changes(&core, prev_due.into(), next_due.into())
-        .await;
-    local_qr
-        .delivery_attempt(queue_id)
-        .await
-        .try_deliver(core.clone())
-        .await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    remote_qr
-        .expect_message()
-        .await
-        .read_lines(&remote_qr)
-        .await
-        .assert_not_contains("using TLSv1.3 with cipher");
 }

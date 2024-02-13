@@ -29,14 +29,8 @@ use std::{
 use mail_auth::{IpLookupStrategy, MX};
 use utils::config::{if_block::IfBlock, ServerProtocol};
 
-use crate::smtp::{
-    inbound::TestQueueEvent, outbound::start_test_server, session::TestSession, TestConfig,
-    TestSMTP,
-};
-use smtp::{
-    core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt},
-};
+use crate::smtp::{outbound::start_test_server, session::TestSession, TestConfig, TestSMTP};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -85,7 +79,6 @@ async fn ip_lookup_strategy() {
         core.session.config.rcpt.relay = IfBlock::new(true);
 
         let core = Arc::new(core);
-        let mut queue = Queue::default();
         let mut session = Session::test(core.clone());
         session.data.remote_ip_str = "10.0.0.1".to_string();
         session.eval_session_params().await;
@@ -93,17 +86,22 @@ async fn ip_lookup_strategy() {
         session
             .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
             .await;
-        local_qr.expect_message_then_deliver().await
+        local_qr
+            .expect_message_then_deliver()
+            .await
             .try_deliver(core.clone())
             .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
-            local_qr.read_event().await.unwrap_done();
-            remote_qr.expect_message().await();
+            remote_qr.expect_message().await;
         } else {
-            let status = local_qr.read_event().await.unwrap_retry().inner.domains[0]
-                .status
-                .to_string();
-            assert!(status.contains("Connection refused"));
+            let message = local_qr.last_queued_message().await;
+            let status = message.domains[0].status.to_string();
+            assert!(
+                status.contains("Connection refused"),
+                "Message: {:?}",
+                message
+            );
         }
     }
 }

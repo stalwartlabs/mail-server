@@ -33,6 +33,7 @@ use mail_auth::{
 };
 use mail_parser::DateTime;
 
+use store::write::{QueueClass, ReportEvent};
 use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::if_block::IfBlock;
 
@@ -322,5 +323,30 @@ impl io::Write for SerializedSize {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+pub trait ReportLock {
+    fn tls_lock(event: &ReportEvent) -> Self;
+    fn dmarc_lock(event: &ReportEvent) -> Self;
+}
+
+impl ReportLock for QueueClass {
+    fn tls_lock(event: &ReportEvent) -> Self {
+        QueueClass::TlsReportHeader(ReportEvent {
+            due: event.due,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: event.domain.clone(),
+        })
+    }
+
+    fn dmarc_lock(event: &ReportEvent) -> Self {
+        QueueClass::DmarcReportHeader(ReportEvent {
+            due: event.due,
+            policy_hash: event.policy_hash,
+            seq_id: 0,
+            domain: event.domain.clone(),
+        })
     }
 }

@@ -31,7 +31,7 @@ use crate::{
     write::{
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS,
 };
 
 use super::MysqlStore;
@@ -271,8 +271,15 @@ impl MysqlStore {
     }
 
     pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
-        // Not needed for PostgreSQL
-        Ok(())
+        let mut conn = self.conn_pool.get_conn().await?;
+
+        let s = conn
+            .prep(&format!(
+                "DELETE FROM {} WHERE v = 0",
+                char::from(SUBSPACE_COUNTERS),
+            ))
+            .await?;
+        conn.exec_drop(&s, ()).await.map_err(Into::into)
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {

@@ -124,6 +124,14 @@ impl SessionManager for SmtpAdminSessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
+
+    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
+        self.inner
+            .shared
+            .default_directory
+            .blocked_ips
+            .is_blocked(addr)
+    }
 }
 
 async fn handle_request(
@@ -391,7 +399,9 @@ impl SMTP {
                         let mut result = Vec::with_capacity(queue_ids.len());
                         for queue_id in queue_ids {
                             if let Some(message) = self.read_message(queue_id).await {
-                                result.push(Message::from(&message));
+                                result.push(Message::from(&message).into());
+                            } else {
+                                result.push(None);
                             }
                         }
 
@@ -661,32 +671,34 @@ impl SMTP {
                                 domain: String::new(),
                             }),
                         ));
-                        let _ =
-                            self.shared
-                                .default_data_store
-                                .iterate(
-                                    IterateParams::new(from_key, to_key).ascending().no_values(),
-                                    |key, _| {
-                                        if type_.map_or(true, |t| t == *key.last().unwrap()) {
-                                            let event = ReportEvent::deserialize(key)?;
-                                            if domain.as_ref().map_or(true, |d| {
+                        let _ = self
+                            .shared
+                            .default_data_store
+                            .iterate(
+                                IterateParams::new(from_key, to_key).ascending().no_values(),
+                                |key, _| {
+                                    if type_.map_or(true, |t| t == *key.last().unwrap()) {
+                                        let event = ReportEvent::deserialize(key)?;
+                                        if event.seq_id != 0
+                                            && domain.as_ref().map_or(true, |d| {
                                                 d.eq_ignore_ascii_case(&event.domain)
-                                            }) {
-                                                result.push(
-                                                    if *key.last().unwrap() == 0 {
-                                                        QueueClass::DmarcReportHeader(event)
-                                                    } else {
-                                                        QueueClass::TlsReportHeader(event)
-                                                    }
-                                                    .queue_id(),
-                                                );
-                                            }
+                                            })
+                                        {
+                                            result.push(
+                                                if *key.last().unwrap() == 0 {
+                                                    QueueClass::DmarcReportHeader(event)
+                                                } else {
+                                                    QueueClass::TlsReportHeader(event)
+                                                }
+                                                .queue_id(),
+                                            );
                                         }
+                                    }
 
-                                        Ok(true)
-                                    },
-                                )
-                                .await;
+                                    Ok(true)
+                                },
+                            )
+                            .await;
 
                         (
                             StatusCode::OK,
@@ -720,13 +732,24 @@ impl SMTP {
                     }
                 }
 
+                let mut result = Vec::with_capacity(report_ids.len());
+                for report_id in report_ids {
+                    if let Ok(Some(_)) = self
+                        .shared
+                        .default_data_store
+                        .get_value::<()>(ValueKey::from(ValueClass::Queue(report_id.clone())))
+                        .await
+                    {
+                        result.push(Report::from(report_id).into());
+                    } else {
+                        result.push(None);
+                    }
+                }
+
                 match error {
                     None => (
                         StatusCode::OK,
-                        serde_json::to_string(&Response {
-                            data: report_ids.into_iter().map(Report::from).collect::<Vec<_>>(),
-                        })
-                        .unwrap_or_default(),
+                        serde_json::to_string(&Response { data: result }).unwrap_or_default(),
                     ),
                     Some(error) => error.into_bad_request(),
                 }
@@ -873,14 +896,14 @@ impl From<QueueClass> for Report {
             QueueClass::DmarcReportHeader(event) => Report {
                 domain: event.domain,
                 type_: "dmarc".to_string(),
-                range_from: DateTime::from_timestamp(event.due as i64),
+                range_from: DateTime::from_timestamp(event.seq_id as i64),
                 range_to: DateTime::from_timestamp(event.due as i64),
                 size: 0,
             },
             QueueClass::TlsReportHeader(event) => Report {
                 domain: event.domain,
                 type_: "tls".to_string(),
-                range_from: DateTime::from_timestamp(event.due as i64),
+                range_from: DateTime::from_timestamp(event.seq_id as i64),
                 range_to: DateTime::from_timestamp(event.due as i64),
                 size: 0,
             },

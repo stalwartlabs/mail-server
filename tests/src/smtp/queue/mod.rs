@@ -21,7 +21,7 @@
  * for more details.
 */
 
+pub mod concurrent;
 pub mod dsn;
 pub mod manager;
 pub mod retry;
-pub mod serialize;

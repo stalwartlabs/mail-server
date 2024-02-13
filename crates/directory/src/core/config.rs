@@ -26,11 +26,11 @@ use deadpool::{
     Runtime,
 };
 use std::{sync::Arc, time::Duration};
-use store::{Store, Stores};
+use store::{dispatch::blocked::BlockedIps, Store, Stores};
 use utils::{
     config::{
         utils::{AsKey, ParseValue},
-        Config, Servers,
+        Config,
     },
     expr::Token,
 };
@@ -52,7 +52,6 @@ pub trait ConfigDirectory {
     async fn parse_directory(
         &self,
         stores: &Stores,
-        servers: &Servers,
         data_store: Store,
     ) -> utils::config::Result<Directories>;
 }
@@ -61,12 +60,14 @@ impl ConfigDirectory for Config {
     async fn parse_directory(
         &self,
         stores: &Stores,
-        servers: &Servers,
         data_store: Store,
     ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
         };
+        let blocked_ips = Arc::new(BlockedIps::new(
+            stores.get_lookup_store(self, "storage.lookup")?,
+        ));
 
         for id in self.sub_keys("directory", ".type") {
             if id.ends_with(".columns") || id.ends_with(".attributes") || id.contains(".principals")
@@ -152,7 +153,7 @@ impl ConfigDirectory for Config {
                     ("directory", id, "options.subaddressing"),
                 )?,
                 cache: CachedDirectory::try_from_config(self, ("directory", id))?,
-                blocked_ips: servers.blocked_ips.clone(),
+                blocked_ips: blocked_ips.clone(),
             });
 
             // Add directory

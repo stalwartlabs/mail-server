@@ -37,7 +37,7 @@ use tokio::net::TcpSocket;
 use crate::{
     acme::AcmeManager,
     failed,
-    listener::{blocked::BlockedIps, tls::Certificate, TcpAcceptor},
+    listener::{tls::Certificate, TcpAcceptor},
     UnwrapFailure,
 };
 
@@ -63,7 +63,6 @@ pub struct Server {
     pub protocol: ServerProtocol,
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
-    pub blocked_ips: Arc<BlockedIps>,
     pub acceptor: TcpAcceptor,
     pub tls_implicit: bool,
     pub max_connections: u64,
@@ -74,7 +73,6 @@ pub struct Servers {
     pub inner: Vec<Server>,
     pub certificates: Vec<Arc<Certificate>>,
     pub acme_managers: Vec<Arc<AcmeManager>>,
-    pub blocked_ips: Arc<BlockedIps>,
 }
 
 #[derive(Debug)]

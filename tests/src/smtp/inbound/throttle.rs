@@ -23,12 +23,22 @@
 
 use std::time::Duration;
 
-use crate::smtp::{session::TestSession, ParseTestConfig, TestConfig};
+use crate::smtp::{session::TestSession, ParseTestConfig, TestConfig, TestSMTP};
 use smtp::core::{Session, SessionAddress, SMTP};
 
 #[tokio::test]
 async fn throttle_inbound() {
+    // Enable logging
+    /*let disable = "true";
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+
     let mut core = SMTP::test();
+    let _qr = core.init_test_queue("smtp_inbound_throttle");
     let config = &mut core.session.config;
     config.throttle.connect = r#"[[throttle]]
     match = "remote_ip = '10.0.0.1'"

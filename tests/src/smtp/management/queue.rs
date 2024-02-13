@@ -31,11 +31,11 @@ use directory::core::config::ConfigDirectory;
 use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, StatusCode};
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, ServerProtocol, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
 use crate::smtp::{
-    inbound::TestQueueEvent, management::send_manage_request, outbound::start_test_server,
+    inbound::dummy_stores, management::send_manage_request, outbound::start_test_server,
     session::TestSession, TestConfig, TestSMTP,
 };
 use smtp::{
@@ -44,6 +44,9 @@ use smtp::{
 };
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -70,7 +73,8 @@ async fn manage_queue() {
     let mut core = SMTP::test();
     core.session.config.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_manage_queue_remote");
-    let _rx_remote = start_test_server(core.into(), &[ServerProtocol::Smtp]);
+    let remote_core = Arc::new(core);
+    let _rx_remote = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
@@ -92,7 +96,7 @@ async fn manage_queue() {
     // Start local management interface
     let directory = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap();
     core.shared.default_directory = directory.directories.get("local").unwrap().clone();
@@ -169,10 +173,9 @@ async fn manage_queue() {
 
     // Expect delivery to success@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
-    remote_qr.read_event().await.assert_reload();
     assert_eq!(
         remote_qr
-            .last_queued_message()
+            .consume_message(&remote_core)
             .await
             .recipients
             .into_iter()
@@ -216,7 +219,9 @@ async fn manage_queue() {
         let expires = created + 3000 + hold_for;
         for domain in &message.domains {
             if env_id == "c" {
-                test_search = domain.next_retry.as_ref().unwrap().to_rfc3339();
+                let mut dt = *domain.next_retry.as_ref().unwrap();
+                dt.second -= 1;
+                test_search = dt.to_rfc3339();
             }
             if env_id != "f" {
                 assert_eq!(domain.retry_num, 0);
@@ -320,10 +325,9 @@ async fn manage_queue() {
 
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
-    remote_qr.read_event().await.assert_reload();
     assert_eq!(
         remote_qr
-            .last_queued_message()
+            .consume_message(&remote_core)
             .await
             .recipients
             .into_iter()

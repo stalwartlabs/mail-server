@@ -26,29 +26,29 @@ use std::{
     time::Duration,
 };
 
-use store::write::{now, BatchBuilder, QueueClass, QueueEvent, ValueClass};
+use store::write::now;
 use tokio::sync::mpsc;
 
 use crate::core::SMTP;
 
-use super::{DeliveryAttempt, Event, Message, OnHold, Status};
+use super::{spool::QueueEventLock, DeliveryAttempt, Event, Message, OnHold, Status};
 
 pub(crate) const SHORT_WAIT: Duration = Duration::from_millis(1);
 pub(crate) const LONG_WAIT: Duration = Duration::from_secs(86400 * 365);
 
-#[derive(Debug)]
 pub struct Queue {
-    pub on_hold: Vec<OnHold<QueueEvent>>,
+    pub core: Arc<SMTP>,
+    pub on_hold: Vec<OnHold<QueueEventLock>>,
+    pub next_wake_up: Duration,
 }
 
 impl SpawnQueue for mpsc::Receiver<Event> {
     fn spawn(mut self, core: Arc<SMTP>) {
         tokio::spawn(async move {
-            let mut queue = Queue::default();
-            let mut next_wake_up = SHORT_WAIT;
+            let mut queue = Queue::new(core);
 
             loop {
-                let on_hold = match tokio::time::timeout(next_wake_up, self.recv()).await {
+                let on_hold = match tokio::time::timeout(queue.next_wake_up, self.recv()).await {
                     Ok(Some(Event::OnHold(on_hold))) => on_hold.into(),
                     Ok(Some(Event::Stop)) | Ok(None) => {
                         break;
@@ -56,46 +56,7 @@ impl SpawnQueue for mpsc::Receiver<Event> {
                     _ => None,
                 };
 
-                // Deliver any concurrency limited messages
-                let mut delete_events = Vec::new();
-                while let Some(queue_event) = queue.next_on_hold() {
-                    if let Some(message) = core.read_message(queue_event.queue_id).await {
-                        DeliveryAttempt::new(message, queue_event)
-                            .try_deliver(core.clone())
-                            .await;
-                    } else {
-                        delete_events.push(queue_event);
-                    }
-                }
-
-                // Deliver scheduled messages
-                let now = now();
-                next_wake_up = LONG_WAIT;
-                for queue_event in core.next_event().await {
-                    if queue_event.due <= now {
-                        if let Some(message) = core.read_message(queue_event.queue_id).await {
-                            DeliveryAttempt::new(message, queue_event)
-                                .try_deliver(core.clone())
-                                .await;
-                        } else {
-                            delete_events.push(queue_event);
-                        }
-                    } else {
-                        next_wake_up = Duration::from_secs(queue_event.due - now);
-                    }
-                }
-
-                // Delete unlinked events
-                if !delete_events.is_empty() {
-                    let core = core.clone();
-                    tokio::spawn(async move {
-                        let mut batch = BatchBuilder::new();
-                        for queue_event in delete_events {
-                            batch.clear(ValueClass::Queue(QueueClass::MessageEvent(queue_event)));
-                        }
-                        let _ = core.shared.default_data_store.write(batch.build()).await;
-                    });
-                }
+                queue.process_events().await;
 
                 // Add message on hold
                 if let Some(on_hold) = on_hold {
@@ -107,7 +68,37 @@ impl SpawnQueue for mpsc::Receiver<Event> {
 }
 
 impl Queue {
-    pub fn on_hold(&mut self, message: OnHold<QueueEvent>) {
+    pub fn new(core: Arc<SMTP>) -> Self {
+        Queue {
+            core,
+            on_hold: Vec::with_capacity(128),
+            next_wake_up: SHORT_WAIT,
+        }
+    }
+
+    pub async fn process_events(&mut self) {
+        // Deliver any concurrency limited messages
+        while let Some(queue_event) = self.next_on_hold() {
+            DeliveryAttempt::new(queue_event)
+                .try_deliver(self.core.clone())
+                .await;
+        }
+
+        // Deliver scheduled messages
+        let now = now();
+        self.next_wake_up = LONG_WAIT;
+        for queue_event in self.core.next_event().await {
+            if queue_event.due <= now {
+                DeliveryAttempt::new(queue_event)
+                    .try_deliver(self.core.clone())
+                    .await;
+            } else {
+                self.next_wake_up = Duration::from_secs(queue_event.due - now);
+            }
+        }
+    }
+
+    pub fn on_hold(&mut self, message: OnHold<QueueEventLock>) {
         self.on_hold.push(OnHold {
             next_due: message.next_due,
             limiters: message.limiters,
@@ -115,7 +106,7 @@ impl Queue {
         });
     }
 
-    pub fn next_on_hold(&mut self) -> Option<QueueEvent> {
+    pub fn next_on_hold(&mut self) -> Option<QueueEventLock> {
         let now = now();
         self.on_hold
             .iter()
@@ -207,14 +198,6 @@ impl Message {
         }
 
         next_event
-    }
-}
-
-impl Default for Queue {
-    fn default() -> Self {
-        Queue {
-            on_hold: Vec::with_capacity(128),
-        }
     }
 }
 

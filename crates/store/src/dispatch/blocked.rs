@@ -30,42 +30,35 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use arc_swap::{ArcSwap, ArcSwapOption};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
+use utils::config::{ipmask::IpAddrMask, utils::ParseKey, Config, ConfigKey, Rate};
 
-use crate::config::{ipmask::IpAddrMask, utils::ParseKey, Config, ConfigKey, Rate};
-
-use super::limiter::RateLimiter;
+use crate::LookupStore;
 
 pub struct BlockedIps {
     ip_addresses: RwLock<AHashSet<IpAddr>>,
     ip_networks: ArcSwap<Vec<IpAddrMask>>,
     has_networks: AtomicBool,
-    limiters: Mutex<AHashMap<LimitBy, RateLimiter>>,
+    store: LookupStore,
     limiter_rate: ArcSwapOption<Rate>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-enum LimitBy {
-    IpAddr(IpAddr),
-    Login(String),
 }
 
 pub const BLOCKED_IP_KEY: &str = "server.security.blocked-networks";
 
 impl BlockedIps {
-    pub fn new() -> Self {
+    pub fn new(store: LookupStore) -> Self {
         Self {
             ip_addresses: RwLock::new(AHashSet::new()),
             ip_networks: ArcSwap::new(Arc::new(Vec::new())),
-            limiters: Mutex::new(Default::default()),
-            limiter_rate: ArcSwapOption::empty(),
             has_networks: AtomicBool::new(false),
+            limiter_rate: ArcSwapOption::empty(),
+            store,
         }
     }
 
-    pub fn reload(&self, config: &Config) -> crate::config::Result<()> {
+    pub fn reload(&self, config: &Config) -> utils::config::Result<()> {
         self.limiter_rate.store(
             config
                 .property::<Rate>("server.security.fail2ban")?
@@ -74,7 +67,7 @@ impl BlockedIps {
         self.reload_blocked_ips(config)
     }
 
-    pub fn reload_blocked_ips(&self, config: &Config) -> crate::config::Result<()> {
+    pub fn reload_blocked_ips(&self, config: &Config) -> utils::config::Result<()> {
         let mut ip_addresses = AHashSet::new();
         let mut ip_networks = Vec::new();
 
@@ -94,21 +87,20 @@ impl BlockedIps {
         Ok(())
     }
 
-    pub fn is_fail2banned(&self, ip: IpAddr, login: String) -> Option<ConfigKey> {
+    pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> Option<ConfigKey> {
         if let Some(rate) = self.limiter_rate.load().as_ref() {
             let is_allowed = self
-                .limiters
-                .lock()
-                .entry(LimitBy::IpAddr(ip))
-                .or_insert_with(|| RateLimiter::new(rate))
-                .is_allowed(rate)
+                .store
+                .is_rate_allowed(format!("b:{}", ip).as_bytes(), rate.as_ref(), false)
+                .await
+                .map(|v| v.is_none())
+                .unwrap_or(false)
                 && self
-                    .limiters
-                    .lock()
-                    .entry(LimitBy::Login(login))
-                    .or_insert_with(|| RateLimiter::new(rate))
-                    .is_allowed(rate);
-
+                    .store
+                    .is_rate_allowed(format!("b:{}", login).as_bytes(), rate.as_ref(), false)
+                    .await
+                    .map(|v| v.is_none())
+                    .unwrap_or(false);
             if !is_allowed {
                 self.ip_addresses.write().insert(ip);
                 return Some(ConfigKey {
@@ -123,12 +115,6 @@ impl BlockedIps {
 
     pub fn has_fail2ban(&self) -> bool {
         self.limiter_rate.load().is_some()
-    }
-
-    pub fn cleanup(&self) {
-        self.limiters
-            .lock()
-            .retain(|_, limiter| limiter.is_active());
     }
 
     pub fn is_blocked(&self, ip: &IpAddr) -> bool {
@@ -147,14 +133,7 @@ impl Debug for BlockedIps {
         f.debug_struct("BlockedIps")
             .field("ip_addresses", &self.ip_addresses)
             .field("ip_networks", &self.ip_networks)
-            .field("limiters", &self.limiters)
             .field("limiter_rate", &self.limiter_rate)
             .finish()
-    }
-}
-
-impl Default for BlockedIps {
-    fn default() -> Self {
-        Self::new()
     }
 }

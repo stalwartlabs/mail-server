@@ -42,7 +42,7 @@ use tokio::{
 use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
-    inbound::{TestMessage, TestQueueEvent},
+    inbound::TestMessage,
     session::{load_test_message, TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
@@ -152,10 +152,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("X-Hello: World")
         .assert_contains("Subject: Is dinner ready?")
@@ -170,10 +169,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("Subject: [SPAM] Saying Hello")
         .assert_count("References: ", 1)
@@ -188,10 +186,9 @@ async fn milter_session() {
             "250 2.0.0",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("X-Spam: Yes")
         .assert_contains("123456");

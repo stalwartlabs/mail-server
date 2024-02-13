@@ -112,14 +112,12 @@ enum SmtpDirectory {
     Imap,
 }
 
-const DIRECTORIES: [[&str; 2]; 7] = [
+const DIRECTORIES: [[&str; 2]; 5] = [
     ["bin", ""],
     ["etc", "dkim"],
     ["etc", "acme"],
     ["data", "blobs"],
     ["logs", ""],
-    ["queue", ""],
-    ["reports", ""],
 ];
 
 #[derive(Debug, Parser)]
@@ -560,8 +558,6 @@ fn main() -> std::io::Result<()> {
                 .arg("770")
                 .arg(&format!("{}/etc", base_path.display()))
                 .arg(&format!("{}/data", base_path.display()))
-                .arg(&format!("{}/queue", base_path.display()))
-                .arg(&format!("{}/reports", base_path.display()))
                 .arg(&format!("{}/logs", base_path.display()));
             if let Err(err) = cmd.status() {
                 eprintln!("Warning: Failed to set permissions: {}", err);
@@ -659,7 +655,7 @@ fn main() -> std::io::Result<()> {
         );
     }
 
-    eprintln!("\n✅ {dkim_instructions}\n🎉 Installation completed!\n");
+    eprintln!("\n✅ {dkim_instructions}\n🎉 Installation completed! Please consider sponsoring Stalwart at https://liberapay.com/stalwartlabs\n");
 
     Ok(())
 }

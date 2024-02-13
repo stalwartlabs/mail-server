@@ -29,17 +29,17 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use store::{
-    write::{now, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, ValueKey,
+    write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
+    Deserialize, IterateParams, Serialize, ValueKey,
 };
 use tokio::sync::mpsc;
 
 use crate::{
     core::{worker::SpawnCleanup, SMTP},
-    queue::manager::LONG_WAIT,
+    queue::{manager::LONG_WAIT, spool::LOCK_EXPIRY},
 };
 
-use super::Event;
+use super::{Event, ReportLock};
 
 impl SpawnReport for mpsc::Receiver<Event> {
     fn spawn(mut self, core: Arc<SMTP>) {
@@ -69,7 +69,9 @@ impl SpawnReport for mpsc::Receiver<Event> {
                     for report_event in events {
                         match report_event {
                             QueueClass::DmarcReportHeader(event) if event.due <= now => {
-                                core_.generate_dmarc_report(event).await;
+                                if core_.try_lock_report(QueueClass::dmarc_lock(&event)).await {
+                                    core_.generate_dmarc_report(event).await;
+                                }
                             }
                             QueueClass::TlsReportHeader(event) if event.due <= now => {
                                 tls_reports
@@ -82,7 +84,12 @@ impl SpawnReport for mpsc::Receiver<Event> {
                     }
 
                     for (domain_name, tls_report) in tls_reports {
-                        core_.generate_tls_report(domain_name, tls_report).await;
+                        if core_
+                            .try_lock_report(QueueClass::tls_lock(tls_report.first().unwrap()))
+                            .await
+                        {
+                            core_.generate_tls_report(domain_name, tls_report).await;
+                        }
                     }
                 });
 
@@ -138,6 +145,10 @@ impl SMTP {
                 IterateParams::new(from_key, to_key).ascending().no_values(),
                 |key, _| {
                     let event = ReportEvent::deserialize(key)?;
+                    if event.seq_id == 0 {
+                        // Skip lock
+                        return Ok(true);
+                    }
                     let do_continue = event.due <= now;
                     events.push(if *key.last().unwrap() == 0 {
                         QueueClass::DmarcReportHeader(event)
@@ -159,6 +170,76 @@ impl SMTP {
         }
 
         events
+    }
+
+    pub async fn try_lock_report(&self, lock: QueueClass) -> bool {
+        let now = now();
+        match self
+            .shared
+            .default_data_store
+            .get_value::<u64>(ValueKey::from(ValueClass::Queue(lock.clone())))
+            .await
+        {
+            Ok(Some(expiry)) => {
+                if expiry < now {
+                    let mut batch = BatchBuilder::new();
+                    batch.assert_value(ValueClass::Queue(lock.clone()), expiry);
+                    batch.set(
+                        ValueClass::Queue(lock.clone()),
+                        (now + LOCK_EXPIRY).serialize(),
+                    );
+                    match self.shared.default_data_store.write(batch.build()).await {
+                        Ok(_) => true,
+                        Err(store::Error::AssertValueFailed) => {
+                            tracing::debug!(
+                                context = "queue",
+                                event = "locked",
+                                key = ?lock,
+                                "Failed to lock report: Event already locked."
+                            );
+                            false
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                context = "queue",
+                                event = "error",
+                                "Failed to lock report: {}",
+                                err
+                            );
+                            false
+                        }
+                    }
+                } else {
+                    tracing::debug!(
+                        context = "queue",
+                        event = "locked",
+                        key = ?lock,
+                        expiry = expiry - now,
+                        "Failed to lock report: Report already locked."
+                    );
+                    false
+                }
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    context = "queue",
+                    event = "locked",
+                    key = ?lock,
+                    "Failed to lock report: Report lock deleted."
+                );
+                false
+            }
+            Err(err) => {
+                tracing::error!(
+                    context = "queue",
+                    event = "error",
+                    key = ?lock,
+                    "Failed to lock report: {}",
+                    err
+                );
+                false
+            }
+        }
     }
 }
 

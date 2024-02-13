@@ -52,7 +52,7 @@ impl JMAP {
                 let addr = self.build_remote_addr(req, remote_ip);
                 if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
-                    self.is_auth_allowed_soft(&addr)?;
+                    self.is_auth_allowed_soft(&addr).await?;
 
                     // Decode the base64 encoded credentials
                     if let Some((account, secret)) = base64_decode(token.as_bytes())
@@ -80,7 +80,7 @@ impl JMAP {
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
                     // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(&addr)?;
+                    self.is_anonymous_allowed(&addr).await?;
 
                     match self.validate_access_token("access_token", &token).await {
                         Ok((account_id, _, _)) => self.get_access_token(account_id).await,
@@ -95,7 +95,7 @@ impl JMAP {
                     }
                 } else {
                     // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(&addr)?;
+                    self.is_anonymous_allowed(&addr).await?;
                     None
                 }
                 .map(|access_token| {
@@ -108,13 +108,14 @@ impl JMAP {
 
             if let Some(session) = session {
                 // Enforce authenticated rate limit
-                Ok(Some((self.is_account_allowed(&session)?, session)))
+                Ok(Some((self.is_account_allowed(&session).await?, session)))
             } else {
                 Ok(None)
             }
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(&self.build_remote_addr(req, remote_ip))?;
+            self.is_anonymous_allowed(&self.build_remote_addr(req, remote_ip))
+                .await?;
 
             Ok(None)
         }
@@ -190,7 +191,7 @@ impl JMAP {
         {
             Ok(AuthResult::Success(principal)) => AuthResult::Success(AccessToken::new(principal)),
             Ok(AuthResult::Failure) => {
-                let _ = self.is_auth_allowed_hard(&remote_ip);
+                let _ = self.is_auth_allowed_hard(&remote_ip).await;
                 AuthResult::Failure
             }
             Ok(AuthResult::Banned) => AuthResult::Banned,

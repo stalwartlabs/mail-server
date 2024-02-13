@@ -29,13 +29,15 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
-use store::write::{now, QueueEvent};
+use store::write::now;
 use utils::{
     listener::limiter::{ConcurrencyLimiter, InFlight},
     BlobHash,
 };
 
 use crate::core::{eval::*, ResolveVariable};
+
+use self::spool::QueueEventLock;
 
 pub mod dsn;
 pub mod manager;
@@ -48,7 +50,7 @@ pub type QueueId = u64;
 #[derive(Debug)]
 pub enum Event {
     Reload,
-    OnHold(OnHold<QueueEvent>),
+    OnHold(OnHold<QueueEventLock>),
     Stop,
 }
 
@@ -59,13 +61,13 @@ pub struct OnHold<T> {
     pub message: T,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schedule<T> {
     pub due: u64,
     pub inner: T,
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub id: QueueId,
     pub created: u64,
@@ -85,13 +87,13 @@ pub struct Message {
     pub quota_keys: Vec<QuotaKey>,
 }
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum QuotaKey {
     Size { key: Vec<u8>, id: u64 },
     Count { key: Vec<u8>, id: u64 },
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Domain {
     pub domain: String,
     pub retry: Schedule<u32>,
@@ -101,7 +103,7 @@ pub struct Domain {
     pub disable_tls: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Recipient {
     pub domain_idx: usize,
     pub address: String,
@@ -114,7 +116,7 @@ pub struct Recipient {
 pub const RCPT_DSN_SENT: u64 = 1 << 32;
 pub const RCPT_STATUS_CHANGED: u64 = 2 << 32;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Status<T, E> {
     #[serde(rename = "scheduled")]
     Scheduled,
@@ -126,13 +128,13 @@ pub enum Status<T, E> {
     PermanentFailure(E),
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HostResponse<T> {
     pub hostname: T,
     pub response: Response<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Error {
     DnsError(String),
     UnexpectedResponse(HostResponse<ErrorDetails>),
@@ -145,17 +147,15 @@ pub enum Error {
     Io(String),
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorDetails {
     pub entity: String,
     pub details: String,
 }
 
 pub struct DeliveryAttempt {
-    pub span: tracing::Span,
     pub in_flight: Vec<InFlight>,
-    pub message: Message,
-    pub event: QueueEvent,
+    pub event: QueueEventLock,
 }
 
 impl<T> Ord for Schedule<T> {

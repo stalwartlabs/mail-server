@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
 
 use store::config::ConfigStore;
 use tokio::net::TcpSocket;
@@ -364,7 +364,6 @@ fn parse_servers() {
             tls_implicit: false,
             max_connections: 8192,
             proxy_networks: vec![],
-            blocked_ips: Arc::new(Default::default()),
         },
         Server {
             id: "smtps".to_string(),
@@ -394,7 +393,6 @@ fn parse_servers() {
             tls_implicit: true,
             max_connections: 1024,
             proxy_networks: vec![],
-            blocked_ips: Arc::new(Default::default()),
         },
         Server {
             id: "submission".to_string(),
@@ -414,7 +412,6 @@ fn parse_servers() {
             tls_implicit: true,
             max_connections: 8192,
             proxy_networks: vec![],
-            blocked_ips: Arc::new(Default::default()),
         },
     ];
 

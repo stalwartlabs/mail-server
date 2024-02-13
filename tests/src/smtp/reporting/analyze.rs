@@ -78,7 +78,7 @@ async fn report_analyze() {
                     "250",
                 )
                 .await;
-            qr.assert_empty_queue();
+            qr.assert_no_events();
             ac += 1;
         }
     }

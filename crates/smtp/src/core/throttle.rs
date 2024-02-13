@@ -238,32 +238,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 // Build throttle key
                 let key = t.new_key(self);
 
-                // Check rate
-                if let Some(rate) = &t.rate {
-                    if self
-                        .core
-                        .shared
-                        .default_lookup_store
-                        .is_rate_allowed(key.hash.as_slice(), rate, false)
-                        .await
-                        .unwrap_or_default()
-                        .is_some()
-                    {
-                        tracing::debug!(
-                            parent: &self.span,
-                            context = "throttle",
-                            event = "rate-limit-exceeded",
-                            max_requests = rate.requests,
-                            max_interval = rate.period.as_secs(),
-                            "Rate limit exceeded."
-                        );
-                        return false;
-                    }
-                }
-
                 // Check concurrency
                 if let Some(concurrency) = &t.concurrency {
-                    match self.core.session.throttle.entry(key) {
+                    match self.core.session.throttle.entry(key.clone()) {
                         Entry::Occupied(mut e) => {
                             let limiter = e.get_mut();
                             if let Some(inflight) = limiter.is_allowed() {
@@ -286,6 +263,29 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                             }
                             e.insert(limiter);
                         }
+                    }
+                }
+
+                // Check rate
+                if let Some(rate) = &t.rate {
+                    if self
+                        .core
+                        .shared
+                        .default_lookup_store
+                        .is_rate_allowed(key.hash.as_slice(), rate, false)
+                        .await
+                        .unwrap_or_default()
+                        .is_some()
+                    {
+                        tracing::debug!(
+                            parent: &self.span,
+                            context = "throttle",
+                            event = "rate-limit-exceeded",
+                            max_requests = rate.requests,
+                            max_interval = rate.period.as_secs(),
+                            "Rate limit exceeded."
+                        );
+                        return false;
                     }
                 }
             }

@@ -77,7 +77,12 @@ impl<T: SessionStream> Session<T> {
         };
 
         // Throttle authentication requests
-        if self.jmap.is_auth_allowed_soft(&self.remote_addr).is_err() {
+        if self
+            .jmap
+            .is_auth_allowed_soft(&self.remote_addr)
+            .await
+            .is_err()
+        {
             tracing::debug!(parent: &self.span,
                 event = "disconnect",
                 "Too many authentication attempts, disconnecting.",
@@ -128,7 +133,7 @@ impl<T: SessionStream> Session<T> {
             // Enforce concurrency limits
             let in_flight = self
                 .imap
-                .get_authenticated_limiter(access_token.primary_id())
+                .get_concurrency_limiter(access_token.primary_id())
                 .concurrent_requests
                 .is_allowed();
             if let Some(in_flight) = in_flight {

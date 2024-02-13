@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use imap::core::IMAP;
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
@@ -43,16 +42,14 @@ impl<T: SessionStream> Session<T> {
 
         loop {
             match self.receiver.parse(&mut bytes) {
-                Ok(request) => {
-                    match request.validate_request(&self.imap, &self.state, self.stream.is_tls()) {
-                        Ok(request) => {
-                            requests.push(request);
-                        }
-                        Err(response) => {
-                            self.write(&response.into_bytes()).await?;
-                        }
+                Ok(request) => match self.validate_request(request).await {
+                    Ok(request) => {
+                        requests.push(request);
                     }
-                }
+                    Err(response) => {
+                        self.write(&response.into_bytes()).await?;
+                    }
+                },
                 Err(receiver::Error::NeedsMoreData) => {
                     break;
                 }
@@ -107,6 +104,64 @@ impl<T: SessionStream> Session<T> {
         }
 
         Ok(true)
+    }
+
+    async fn validate_request(
+        &self,
+        command: Request<Command>,
+    ) -> Result<Request<Command>, StatusResponse> {
+        match &command.command {
+            Command::Capability | Command::Logout | Command::Noop => Ok(command),
+            Command::Authenticate => {
+                if let State::NotAuthenticated { .. } = &self.state {
+                    if self.stream.is_tls() {
+                        Ok(command)
+                    } else {
+                        Err(StatusResponse::no("Cannot authenticate over plain-text.")
+                            .with_code(ResponseCode::EncryptNeeded))
+                    }
+                } else {
+                    Err(StatusResponse::no("Already authenticated."))
+                }
+            }
+            Command::StartTls => {
+                if !self.stream.is_tls() {
+                    Ok(command)
+                } else {
+                    Err(StatusResponse::no("Already in TLS mode."))
+                }
+            }
+            Command::HaveSpace
+            | Command::PutScript
+            | Command::ListScripts
+            | Command::SetActive
+            | Command::GetScript
+            | Command::DeleteScript
+            | Command::RenameScript
+            | Command::CheckScript
+            | Command::Unauthenticate => {
+                if let State::Authenticated { access_token, .. } = &self.state {
+                    match self
+                        .jmap
+                        .lookup_store
+                        .is_rate_allowed(
+                            format!("ireq:{}", access_token.primary_id()).as_bytes(),
+                            &self.imap.rate_requests,
+                            true,
+                        )
+                        .await
+                    {
+                        Ok(None) => Ok(command),
+                        Ok(Some(_)) => Err(StatusResponse::no("Too many requests")
+                            .with_code(ResponseCode::TryLater)),
+                        Err(_) => Err(StatusResponse::no("Internal server error")
+                            .with_code(ResponseCode::TryLater)),
+                    }
+                } else {
+                    Err(StatusResponse::no("Not authenticated."))
+                }
+            }
+        }
     }
 }
 
@@ -175,70 +230,5 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
                         .with_code(ResponseCode::NonExistent)
                 })
             })
-    }
-}
-
-trait ValidateRequest: Sized {
-    fn validate_request(
-        self,
-        imap: &IMAP,
-        state: &State,
-        is_tls: bool,
-    ) -> Result<Self, StatusResponse>;
-}
-
-impl ValidateRequest for Request<Command> {
-    fn validate_request(
-        self,
-        imap: &IMAP,
-        state: &State,
-        is_tls: bool,
-    ) -> Result<Self, StatusResponse> {
-        match &self.command {
-            Command::Capability | Command::Logout | Command::Noop => Ok(self),
-            Command::Authenticate => {
-                if let State::NotAuthenticated { .. } = state {
-                    if is_tls {
-                        Ok(self)
-                    } else {
-                        Err(StatusResponse::no("Cannot authenticate over plain-text.")
-                            .with_code(ResponseCode::EncryptNeeded))
-                    }
-                } else {
-                    Err(StatusResponse::no("Already authenticated."))
-                }
-            }
-            Command::StartTls => {
-                if !is_tls {
-                    Ok(self)
-                } else {
-                    Err(StatusResponse::no("Already in TLS mode."))
-                }
-            }
-            Command::HaveSpace
-            | Command::PutScript
-            | Command::ListScripts
-            | Command::SetActive
-            | Command::GetScript
-            | Command::DeleteScript
-            | Command::RenameScript
-            | Command::CheckScript
-            | Command::Unauthenticate => {
-                if let State::Authenticated { access_token, .. } = state {
-                    if imap
-                        .get_authenticated_limiter(access_token.primary_id())
-                        .request_limiter
-                        .is_allowed(&imap.rate_requests)
-                    {
-                        Ok(self)
-                    } else {
-                        Err(StatusResponse::no("Too many requests")
-                            .with_code(ResponseCode::TryLater))
-                    }
-                } else {
-                    Err(StatusResponse::no("Not authenticated."))
-                }
-            }
-        }
     }
 }

@@ -43,7 +43,6 @@ use tokio_rustls::TlsAcceptor;
 use crate::{
     acme::{directory::ACME_TLS_ALPN_NAME, AcmeManager},
     listener::{
-        blocked::BlockedIps,
         tls::{Certificate, CertificateResolver},
         TcpAcceptor,
     },
@@ -66,8 +65,7 @@ impl Config {
 
         // Parse servers
         for (internal_id, id) in self.sub_keys("server.listener", ".protocol").enumerate() {
-            let mut server =
-                self.parse_server(id, &certificates, &acmes, servers.blocked_ips.clone())?;
+            let mut server = self.parse_server(id, &certificates, &acmes)?;
             if !servers.inner.iter().any(|s| s.id == server.id) {
                 server.internal_id = internal_id as u16;
                 servers.inner.push(server);
@@ -116,7 +114,6 @@ impl Config {
         id: &str,
         certificates: &AHashMap<String, Arc<Certificate>>,
         acmes: &AHashMap<String, Arc<AcmeManager>>,
-        blocked_ips: Arc<BlockedIps>,
     ) -> super::Result<Server> {
         // Build listeners
         let mut listeners = Vec::new();
@@ -378,7 +375,6 @@ impl Config {
             acceptor,
             tls_implicit,
             proxy_networks,
-            blocked_ips,
         })
     }
 }

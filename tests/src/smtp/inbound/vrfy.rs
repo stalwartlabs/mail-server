@@ -22,16 +22,20 @@
 */
 
 use directory::core::config::ConfigDirectory;
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{
+    inbound::dummy_stores,
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::core::{Session, SMTP};
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -64,7 +68,7 @@ async fn vrfy_expn() {
 
     core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;

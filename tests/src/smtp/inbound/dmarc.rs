@@ -34,11 +34,11 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent, TestReportingEvent},
+    inbound::{dummy_stores, sign::TextConfigContext, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
@@ -48,6 +48,9 @@ use smtp::{
 };
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -133,7 +136,7 @@ async fn dmarc() {
     let mut rr = core.init_test_report();
     core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
@@ -180,14 +183,13 @@ async fn dmarc() {
     session.mail_from("bill@example.com", "550 5.7.23").await;
 
     // Expect SPF auth failure report
-    qr.read_event().await.assert_reload();
-    let message = qr.last_queued_message().await;
+    let message = qr.expect_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "spf-failures@example.com"
     );
     message
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: spf-failures@example.com")
@@ -212,14 +214,13 @@ async fn dmarc() {
         .await;
 
     // Expect DKIM auth failure report
-    qr.read_event().await.assert_reload();
-    let message = qr.last_queued_message().await;
+    let message = qr.expect_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "dkim-failures@example.com"
     );
     message
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: dkim-failures@example.com")
@@ -264,14 +265,13 @@ async fn dmarc() {
         .await;
 
     // Expect DMARC auth failure report
-    qr.read_event().await.assert_reload();
-    let message = qr.last_queued_message().await;
+    let message = qr.expect_message().await;
     assert_eq!(
         message.recipients.last().unwrap().address,
         "dmarc-failures@example.com"
     );
     message
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: dmarc-failures@example.com")
@@ -306,10 +306,9 @@ async fn dmarc() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("dkim=pass")
         .assert_contains("spf=pass")

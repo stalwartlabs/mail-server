@@ -63,7 +63,6 @@ impl Server {
             hostname: self.hostname,
             acceptor: self.acceptor,
             proxy_networks: self.proxy_networks,
-            blocked_ips: self.blocked_ips,
             limiter: ConcurrencyLimiter::new(self.max_connections),
             shutdown_rx,
         });
@@ -116,7 +115,7 @@ impl Server {
                                                                             .proxied_address()
                                                                             .map(|addr| addr.source)
                                                                             .unwrap_or(remote_addr);
-                                                    if let Some(session) = instance.build_session(stream, local_ip, remote_addr) {
+                                                    if let Some(session) = instance.build_session(stream, local_ip, remote_addr, &manager) {
                                                         // Spawn session
                                                         manager.spawn(session, is_tls);
                                                     }
@@ -131,7 +130,7 @@ impl Server {
                                                 }
                                             }
                                         });
-                                    } else if let Some(session) = instance.build_session(stream, local_ip, remote_addr) {
+                                    } else if let Some(session) = instance.build_session(stream, local_ip, remote_addr, &manager) {
                                         // Set socket options
                                         opts.apply(&session.stream);
 
@@ -165,20 +164,22 @@ impl Server {
 }
 
 trait BuildSession {
-    fn build_session<T: SessionStream>(
+    fn build_session<T: SessionStream, M: SessionManager>(
         &self,
         stream: T,
         local_ip: IpAddr,
         remote_addr: SocketAddr,
+        manager: &M,
     ) -> Option<SessionData<T>>;
 }
 
 impl BuildSession for Arc<ServerInstance> {
-    fn build_session<T: SessionStream>(
+    fn build_session<T: SessionStream, M: SessionManager>(
         &self,
         stream: T,
         local_ip: IpAddr,
         remote_addr: SocketAddr,
+        manager: &M,
     ) -> Option<SessionData<T>> {
         // Convert mapped IPv6 addresses to IPv4
         let remote_ip = match remote_addr.ip() {
@@ -191,7 +192,7 @@ impl BuildSession for Arc<ServerInstance> {
         let remote_port = remote_addr.port();
 
         // Check if blocked
-        if self.blocked_ips.is_blocked(&remote_ip) {
+        if manager.is_ip_blocked(&remote_ip) {
             tracing::debug!(
                 context = "listener",
                 event = "blocked",

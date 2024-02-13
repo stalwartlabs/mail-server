@@ -21,17 +21,11 @@
  * for more details.
 */
 
-use std::{
-    collections::hash_map::RandomState, fmt::Display, net::IpAddr, sync::Arc, time::Duration,
-};
+use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
 
 use ::sieve::{Compiler, Runtime};
 use api::session::BaseCapabilities;
-use auth::{
-    oauth::OAuthCode,
-    rate_limit::{AnonymousLimiter, AuthenticatedLimiter},
-    AccessToken,
-};
+use auth::{oauth::OAuthCode, rate_limit::ConcurrencyLimiters, AccessToken};
 use dashmap::DashMap;
 use directory::{Directories, Directory, QueryBy};
 use jmap_proto::{
@@ -55,7 +49,7 @@ use store::{
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass},
-    BitmapKey, BlobStore, Deserialize, FtsStore, Store, Stores, ValueKey,
+    BitmapKey, BlobStore, Deserialize, FtsStore, LookupStore, Store, Stores, ValueKey,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -89,6 +83,7 @@ pub struct JMAP {
     pub store: Store,
     pub blob_store: BlobStore,
     pub fts_store: FtsStore,
+    pub lookup_store: LookupStore,
     pub config: Config,
     pub directory: Arc<Directory>,
 
@@ -96,9 +91,7 @@ pub struct JMAP {
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
 
-    pub rate_limit_auth: DashMap<u32, Arc<AuthenticatedLimiter>>,
-    pub rate_limit_unauth: DashMap<IpAddr, Arc<AnonymousLimiter>>,
-
+    pub concurrency_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
     pub oauth_codes: TtlDashMap<String, Arc<OAuthCode>>,
 
     pub state_tx: mpsc::Sender<state::Event>,
@@ -211,6 +204,7 @@ impl JMAP {
             store: stores.get_store(config, "storage.data")?,
             fts_store: stores.get_fts_store(config, "storage.fts")?,
             blob_store: stores.get_blob_store(config, "storage.blob")?,
+            lookup_store: stores.get_lookup_store(config, "storage.lookup")?,
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
@@ -220,14 +214,7 @@ impl JMAP {
                 config.property("jmap.session.cache.size")?.unwrap_or(100),
                 shard_amount,
             ),
-            rate_limit_auth: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config
-                    .property("jmap.rate-limit.cache.size")?
-                    .unwrap_or(1024),
-                RandomState::default(),
-                shard_amount,
-            ),
-            rate_limit_unauth: DashMap::with_capacity_and_hasher_and_shard_amount(
+            concurrency_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
                     .property("jmap.rate-limit.cache.size")?
                     .unwrap_or(1024),

@@ -37,9 +37,12 @@ use smtp::{
 };
 use store::{config::ConfigStore, Store};
 use tokio::runtime::Handle;
-use utils::config::{if_block::IfBlock, Config, Servers};
+use utils::config::{if_block::IfBlock, Config};
 
 const CONFIG: &str = r#"
+[storage]
+lookup = "sql"
+
 [store."sql"]
 type = "sqlite"
 path = "%PATH%/smtp_sieve.db"
@@ -135,7 +138,7 @@ async fn sieve_scripts() {
     ctx.stores = config.parse_stores().await.unwrap();
     core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
     core.shared.directories = config
-        .parse_directory(&ctx.stores, &Servers::default(), Store::default())
+        .parse_directory(&ctx.stores, Store::default())
         .await
         .unwrap()
         .directories;
@@ -228,10 +231,10 @@ async fn sieve_scripts() {
 
     // Expect a modified message
     session.data("test:multipart", "250").await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("X-Part-Number: 5")
         .assert_contains("THIS IS A PIECE OF HTML TEXT");
@@ -247,6 +250,7 @@ async fn sieve_scripts() {
         )
         .await;
     qr.assert_no_events();
+    qr.clear_queue(&core).await;
 
     // Expect message delivery plus a notification
     session
@@ -258,7 +262,11 @@ async fn sieve_scripts() {
         )
         .await;
     qr.read_event().await.assert_reload();
-    let notification = qr.last_queued_message().await;
+    qr.read_event().await.assert_reload();
+    let messages = qr.read_queued_messages().await;
+    assert_eq!(messages.len(), 2);
+    let mut messages = messages.into_iter().rev();
+    let notification = messages.next().unwrap();
     assert_eq!(notification.return_path, "");
     assert_eq!(notification.recipients.len(), 2);
     assert_eq!(
@@ -270,7 +278,7 @@ async fn sieve_scripts() {
         "jane@example.org"
     );
     notification
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("From: \"Sieve Daemon\" <sieve@foobar.org>")
@@ -278,16 +286,18 @@ async fn sieve_scripts() {
         .assert_contains("Cc: <jane@example.org>")
         .assert_contains("Subject: You have got mail")
         .assert_contains("One Two Three Four");
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
-        .await
-        .read_lines(&core)
+
+    messages
+        .next()
+        .unwrap()
+        .read_lines(&qr)
         .await
         .assert_contains("One Two Three Four")
         .assert_contains("multi-part message in MIME format")
         .assert_not_contains("X-Part-Number: 5")
         .assert_not_contains("THIS IS A PIECE OF HTML TEXT");
     qr.assert_no_events();
+    qr.clear_queue(&core).await;
 
     // Expect a modified message delivery plus a notification
     session
@@ -298,11 +308,16 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-
     qr.read_event().await.assert_reload();
-    qr.last_queued_message()
-        .await
-        .read_lines(&core)
+    qr.read_event().await.assert_reload();
+    let messages = qr.read_queued_messages().await;
+    assert_eq!(messages.len(), 2);
+    let mut messages = messages.into_iter().rev();
+
+    messages
+        .next()
+        .unwrap()
+        .read_lines(&qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("From: \"Sieve Daemon\" <sieve@foobar.org>")
@@ -311,14 +326,15 @@ async fn sieve_scripts() {
         .assert_contains("Subject: You have got mail")
         .assert_contains("One Two Three Four");
 
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
-        .await
-        .read_lines(&core)
+    messages
+        .next()
+        .unwrap()
+        .read_lines(&qr)
         .await
         .assert_contains("X-Part-Number: 5")
         .assert_contains("THIS IS A PIECE OF HTML TEXT")
         .assert_not_contains("X-My-Header: true");
+    qr.clear_queue(&core).await;
 
     // Expect a modified redirected message
     session
@@ -329,8 +345,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    let redirect = qr.last_queued_message().await;
+
+    let redirect = qr.expect_message().await;
     assert_eq!(redirect.return_path, "");
     assert_eq!(redirect.recipients.len(), 1);
     assert_eq!(
@@ -338,7 +354,7 @@ async fn sieve_scripts() {
         "redirect@here.email"
     );
     redirect
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("From: no-reply@my.domain")
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
@@ -356,8 +372,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    let redirect = qr.last_queued_message().await;
+
+    let redirect = qr.expect_message().await;
     assert_eq!(redirect.return_path, "");
     assert_eq!(redirect.recipients.len(), 1);
     assert_eq!(
@@ -365,7 +381,7 @@ async fn sieve_scripts() {
         "redirect@somewhere.email"
     );
     redirect
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_not_contains("From: no-reply@my.domain")
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
@@ -385,10 +401,10 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("X-My-Header: true")
         .assert_contains("Authentication-Results");

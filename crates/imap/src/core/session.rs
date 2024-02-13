@@ -51,6 +51,10 @@ impl SessionManager for ImapSessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
+
+    fn is_ip_blocked(&self, addr: &std::net::IpAddr) -> bool {
+        self.jmap.directory.blocked_ips.is_blocked(addr)
+    }
 }
 
 impl<T: SessionStream> Session<T> {

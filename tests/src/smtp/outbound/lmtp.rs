@@ -27,7 +27,7 @@ use std::{
 };
 
 use crate::smtp::{
-    inbound::{TestMessage, TestQueueEvent},
+    inbound::TestMessage,
     outbound::start_test_server,
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
@@ -35,8 +35,9 @@ use crate::smtp::{
 use smtp::{
     config::shared::ConfigShared,
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Event},
+    queue::{DeliveryAttempt, Event},
 };
+use store::write::now;
 use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
 const REMOTE: &str = "
@@ -89,17 +90,16 @@ async fn lmtp_delivery() {
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
-    config.retry = IfBlock::new(Duration::from_millis(100));
-    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "['100ms', '200ms']"},
-    {else = ['100ms']}]"#
+    config.retry = IfBlock::new(Duration::from_secs(1));
+    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
+    {else = [1s]}]"#
         .parse_if();
-    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "400ms"},
-    {else = "500ms"}]"#
+    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "4s"},
+    {else = "5s"}]"#
         .parse_if();
     config.timeout.data = IfBlock::new(Duration::from_millis(50));
 
     let core = Arc::new(core);
-    let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -127,37 +127,39 @@ async fn lmtp_delivery() {
     let mut dsn = Vec::new();
     loop {
         match local_qr.try_read_event().await {
-            Some(Event::Queue(message)) => {
-                dsn.push(message.inner);
-            }
-            Some(Event::Done(wr)) => match wr {
-                WorkerResult::Done => {
-                    break;
-                }
-                WorkerResult::Retry(retry) => {
-                    queue.schedule(retry);
-                }
-                WorkerResult::OnHold(_) => unreachable!(),
-            },
+            Some(Event::Reload) => {}
+            Some(Event::OnHold(_)) => unreachable!(),
             None | Some(Event::Stop) => break,
-            Some(Event::Manage(_)) => unreachable!(),
         }
 
-        if !queue.scheduled.is_empty() {
-            tokio::time::sleep(queue.wake_up_time()).await;
-            DeliveryAttempt::from(queue.next_due().unwrap())
-                .try_deliver(core.clone())
-                .await;
+        let events = core.next_event().await;
+        if events.is_empty() {
+            break;
+        }
+        let now = now();
+        for event in events {
+            if event.due > now {
+                tokio::time::sleep(Duration::from_secs(event.due - now)).await;
+            }
+
+            let message = core.read_message(event.queue_id).await.unwrap();
+            if message.return_path.is_empty() {
+                message.clone().remove(&core, event.due).await;
+                dsn.push(message);
+            } else {
+                DeliveryAttempt::new(event).try_deliver(core.clone()).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
     }
-    assert!(queue.scheduled.is_empty());
+    local_qr.assert_queue_is_empty().await;
     assert_eq!(dsn.len(), 4);
 
     let mut dsn = dsn.into_iter();
 
     dsn.next()
         .unwrap()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("<jane@foobar.org> (delivered to")
@@ -167,30 +169,29 @@ async fn lmtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&core)
+        .read_lines(&local_qr)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: failed");
 
     assert_eq!(
         remote_qr
-            .read_event()
+            .expect_message()
             .await
-            .unwrap_message()
             .recipients
             .into_iter()
             .map(|r| r.address)
@@ -201,5 +202,5 @@ async fn lmtp_delivery() {
             "john@foobar.org".to_string()
         ]
     );
-    remote_qr.assert_empty_queue();
+    remote_qr.assert_no_events();
 }

@@ -21,16 +21,23 @@
  * for more details.
 */
 
-use crate::smtp::{inbound::sign::TextConfigContext, session::TestSession, TestConfig};
+use crate::smtp::{
+    inbound::{dummy_stores, sign::TextConfigContext},
+    session::TestSession,
+    TestConfig,
+};
 use directory::core::config::ConfigDirectory;
 use smtp::{
     config::{map_expr_token, scripts::ConfigSieve, ConfigContext},
     core::{eval::*, Session, SMTP},
 };
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, utils::NoConstants, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, utils::NoConstants, Config};
 
 const CONFIG: &str = r#"
+[storage]
+lookup = "dummy"
+
 [session.mail]
 rewrite = [ { if = "ends_with(sender_domain, '.foobar.net') & matches('^([^.]+)@([^.]+)\.(.+)$', sender)", then = "$1 + '+' + $2 + '@' + $3"},
             { else = false } ]
@@ -96,7 +103,7 @@ async fn address_rewrite() {
     let mut ctx = ConfigContext::new(&[]).parse_signatures();
     let settings = Config::new(CONFIG).unwrap();
     ctx.directory = settings
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();

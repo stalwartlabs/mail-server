@@ -550,14 +550,14 @@ impl Store {
                             );
                         }
                         SUBSPACE_VALUES
-                            if key[0] == 3
-                                || key[0] >= 20
+                            if [3, 9, 10].contains(&key[0])
+                                || (key[0] >= 20 && key[0] < 30)
                                 || key.get(1..5).unwrap_or_default() == u32::MAX.to_be_bytes() =>
                         {
                             // Ignore lastId counter and ID mappings
                             return Ok(true);
                         }
-                        SUBSPACE_COUNTERS if key.len() <= 4 => {
+                        SUBSPACE_COUNTERS if key[0] == 9 || key.len() <= 4 => {
                             // Ignore named keys
                             return Ok(true);
                         }

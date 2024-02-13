@@ -24,14 +24,14 @@
 use std::time::Duration;
 
 use store::{
-    write::{key::DeserializeBigEndian, Bincode, QueueClass, QueueEvent, ValueClass},
-    Deserialize, IterateParams, ValueKey, U64_LEN,
+    write::{key::DeserializeBigEndian, Bincode, QueueClass, QueueEvent, ReportEvent, ValueClass},
+    Deserialize, IterateParams, Store, Stores, ValueKey, U64_LEN,
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
 use smtp::{
     core::SMTP,
-    queue::{self, DeliveryAttempt, Message, OnHold, QueueId},
+    queue::{self, spool::QueueEventLock, DeliveryAttempt, Message, OnHold, QueueId},
     reporting::{self, DmarcEvent, TlsEvent},
 };
 
@@ -78,9 +78,58 @@ impl QueueReceiver {
         }
     }
 
-    pub async fn assert_queue_is_empty(&mut self) {
+    pub async fn assert_queue_is_empty(&self) {
         assert_eq!(self.read_queued_messages().await, vec![]);
         assert_eq!(self.read_queued_events().await, vec![]);
+    }
+
+    pub async fn assert_report_is_empty(&self) {
+        assert_eq!(self.read_report_events().await, vec![]);
+
+        for (from_key, to_key) in [
+            (
+                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+                    due: 0,
+                    policy_hash: 0,
+                    seq_id: 0,
+                    domain: String::new(),
+                }))),
+                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+                    due: u64::MAX,
+                    policy_hash: 0,
+                    seq_id: 0,
+                    domain: String::new(),
+                }))),
+            ),
+            (
+                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+                    ReportEvent {
+                        due: 0,
+                        policy_hash: 0,
+                        seq_id: 0,
+                        domain: String::new(),
+                    },
+                ))),
+                ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+                    ReportEvent {
+                        due: u64::MAX,
+                        policy_hash: 0,
+                        seq_id: 0,
+                        domain: String::new(),
+                    },
+                ))),
+            ),
+        ] {
+            self.store
+                .iterate(
+                    IterateParams::new(from_key, to_key).ascending().no_values(),
+                    |key, _| {
+                        panic!("Unexpected report event: {key:?}");
+                    },
+                )
+                .await
+                .unwrap();
+        }
     }
 
     pub async fn expect_message(&mut self) -> Message {
@@ -88,14 +137,28 @@ impl QueueReceiver {
         self.last_queued_message().await
     }
 
+    pub async fn consume_message(&mut self, core: &SMTP) -> Message {
+        self.read_event().await.assert_reload();
+        let message = self.last_queued_message().await;
+        message
+            .clone()
+            .remove(core, self.last_queued_due().await)
+            .await;
+        message
+    }
+
     pub async fn expect_message_then_deliver(&mut self) -> DeliveryAttempt {
         let message = self.expect_message().await;
-        let event = QueueEvent {
-            due: self.message_due(message.id).await,
-            queue_id: message.id,
-        };
 
-        DeliveryAttempt::new(message, event)
+        self.delivery_attempt(message.id).await
+    }
+
+    pub async fn delivery_attempt(&mut self, queue_id: u64) -> DeliveryAttempt {
+        DeliveryAttempt::new(QueueEventLock {
+            due: self.message_due(queue_id).await,
+            queue_id,
+            lock_expiry: 0,
+        })
     }
 
     pub async fn read_queued_events(&self) -> Vec<QueueEvent> {
@@ -134,7 +197,7 @@ impl QueueReceiver {
 
         self.store
             .iterate(
-                IterateParams::new(from_key, to_key).ascending(),
+                IterateParams::new(from_key, to_key).descending(),
                 |key, value| {
                     let value = Bincode::<Message>::deserialize(value)?;
                     assert_eq!(key.deserialize_be_u64(1)?, value.inner.id);
@@ -148,12 +211,56 @@ impl QueueReceiver {
         messages
     }
 
+    pub async fn read_report_events(&self) -> Vec<QueueClass> {
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
+            ReportEvent {
+                due: 0,
+                policy_hash: 0,
+                seq_id: 0,
+                domain: String::new(),
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
+            ReportEvent {
+                due: u64::MAX,
+                policy_hash: 0,
+                seq_id: 0,
+                domain: String::new(),
+            },
+        )));
+
+        let mut events = Vec::new();
+        self.store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending().no_values(),
+                |key, _| {
+                    let event = ReportEvent::deserialize(key)?;
+                    // Skip lock
+                    if event.seq_id != 0 {
+                        events.push(if *key.last().unwrap() == 0 {
+                            QueueClass::DmarcReportHeader(event)
+                        } else {
+                            QueueClass::TlsReportHeader(event)
+                        });
+                    }
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+        events
+    }
+
     pub async fn last_queued_message(&self) -> Message {
         self.read_queued_messages()
             .await
             .into_iter()
             .next()
             .expect("No messages found in queue")
+    }
+
+    pub async fn last_queued_due(&self) -> u64 {
+        self.message_due(self.last_queued_message().await.id).await
     }
 
     pub async fn message_due(&self, queue_id: QueueId) -> u64 {
@@ -168,6 +275,13 @@ impl QueueReceiver {
                 }
             })
             .expect("No event found in queue for message")
+    }
+
+    pub async fn clear_queue(&self, core: &SMTP) {
+        for message in self.read_queued_messages().await {
+            let due = self.message_due(message.id).await;
+            message.remove(core, due).await;
+        }
     }
 }
 
@@ -198,7 +312,7 @@ impl ReportReceiver {
 
 pub trait TestQueueEvent {
     fn assert_reload(self);
-    fn unwrap_on_hold(self) -> OnHold<QueueEvent>;
+    fn unwrap_on_hold(self) -> OnHold<QueueEventLock>;
 }
 
 impl TestQueueEvent for queue::Event {
@@ -209,7 +323,7 @@ impl TestQueueEvent for queue::Event {
         }
     }
 
-    fn unwrap_on_hold(self) -> OnHold<QueueEvent> {
+    fn unwrap_on_hold(self) -> OnHold<QueueEventLock> {
         match self {
             queue::Event::OnHold(value) => value,
             e => panic!("Unexpected event: {e:?}"),
@@ -238,16 +352,16 @@ impl TestReportingEvent for reporting::Event {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait TestMessage {
-    async fn read_message(&self, core: &SMTP) -> String;
-    async fn read_lines(&self, core: &SMTP) -> Vec<String>;
+    async fn read_message(&self, core: &QueueReceiver) -> String;
+    async fn read_lines(&self, core: &QueueReceiver) -> Vec<String>;
 }
 
 impl TestMessage for Message {
-    async fn read_message(&self, core: &SMTP) -> String {
+    async fn read_message(&self, core: &QueueReceiver) -> String {
         String::from_utf8(
-            core.shared
-                .default_blob_store
+            core.blob_store
                 .get_blob(self.blob_hash.as_slice(), 0..u32::MAX)
                 .await
                 .unwrap()
@@ -256,11 +370,25 @@ impl TestMessage for Message {
         .unwrap()
     }
 
-    async fn read_lines(&self, core: &SMTP) -> Vec<String> {
+    async fn read_lines(&self, core: &QueueReceiver) -> Vec<String> {
         self.read_message(core)
             .await
             .split('\n')
             .map(|l| l.to_string())
             .collect()
     }
+}
+
+pub fn dummy_stores() -> Stores {
+    let mut stores = Stores::default();
+    let store = Store::default();
+    stores.stores.insert("dummy".to_string(), store.clone());
+    stores
+        .lookup_stores
+        .insert("dummy".to_string(), store.clone().into());
+    stores
+        .fts_stores
+        .insert("dummy".to_string(), store.clone().into());
+    stores.blob_stores.insert("dummy".to_string(), store.into());
+    stores
 }

@@ -356,6 +356,10 @@ impl utils::listener::SessionManager for SessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
+
+    fn is_ip_blocked(&self, _: &std::net::IpAddr) -> bool {
+        false
+    }
 }
 
 async fn expect_push(event_rx: &mut mpsc::Receiver<PushMessage>) -> PushMessage {

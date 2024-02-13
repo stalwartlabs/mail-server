@@ -27,6 +27,7 @@ use std::{
 };
 
 use mail_auth::MX;
+use store::write::now;
 use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
@@ -37,7 +38,7 @@ use crate::smtp::{
 };
 use smtp::{
     core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt, Event},
+    queue::{DeliveryAttempt, Event},
 };
 
 const SMUGGLER: &str = r#"From: Joe SixPack <john@foobar.net>
@@ -77,7 +78,8 @@ async fn smtp_delivery() {
     core.session.config.extensions.dsn = IfBlock::new(true);
     core.session.config.extensions.chunking = IfBlock::new(false);
     let mut remote_qr = core.init_test_queue("smtp_delivery_remote");
-    let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
+    let remote_core = Arc::new(core);
+    let _rx = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
@@ -108,17 +110,16 @@ async fn smtp_delivery() {
     core.session.config.rcpt.max_recipients = IfBlock::new(100);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let config = &mut core.queue.config;
-    config.retry = IfBlock::new(Duration::from_millis(100));
-    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "['100ms', '200ms']"},
-    {if = "rcpt_domain = 'foobar.com'", then = "['500ms', '600ms']"},
-    {else = ['100ms']}]"#
+    config.retry = IfBlock::new(Duration::from_secs(1));
+    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
+    {if = "rcpt_domain = 'foobar.com'", then = "[5s, 6s]"},
+    {else = [1s]}]"#
         .parse_if();
-    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "650ms"},
-    {else = "750ms"}]"#
+    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "6s"},
+    {else = "7s"}]"#
         .parse_if();
 
     let core = Arc::new(core);
-    let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -139,40 +140,44 @@ async fn smtp_delivery() {
             "250",
         )
         .await;
-    let message = local_qr.expect_message().await();
+    let message = local_qr.expect_message().await;
     let num_domains = message.domains.len();
     assert_eq!(num_domains, 3);
-    DeliveryAttempt::from(message)
+    local_qr
+        .delivery_attempt(message.id)
+        .await
         .try_deliver(core.clone())
         .await;
     let mut dsn = Vec::new();
     let mut domain_retries = vec![0; num_domains];
     loop {
         match local_qr.try_read_event().await {
-            Some(Event::Queue(message)) => {
-                dsn.push(message.inner);
-            }
-            Some(Event::Done(wr)) => match wr {
-                WorkerResult::Done => {
-                    break;
-                }
-                WorkerResult::Retry(retry) => {
-                    for (idx, domain) in retry.inner.domains.iter().enumerate() {
-                        domain_retries[idx] = domain.retry.inner;
-                    }
-                    queue.schedule(retry);
-                }
-                WorkerResult::OnHold(_) => unreachable!(),
-            },
+            Some(Event::Reload) => {}
+            Some(Event::OnHold(_)) => unreachable!(),
             None | Some(Event::Stop) => break,
-            Some(Event::Manage(_)) => unreachable!(),
         }
 
-        if !queue.scheduled.is_empty() {
-            tokio::time::sleep(queue.wake_up_time()).await;
-            DeliveryAttempt::from(queue.next_due().unwrap())
-                .try_deliver(core.clone())
-                .await;
+        let events = core.next_event().await;
+        if events.is_empty() {
+            break;
+        }
+        let now = now();
+        for event in events {
+            if event.due > now {
+                tokio::time::sleep(Duration::from_secs(event.due - now)).await;
+            }
+
+            let message = core.read_message(event.queue_id).await.unwrap();
+            if message.return_path.is_empty() {
+                message.clone().remove(&core, event.due).await;
+                dsn.push(message);
+            } else {
+                for (idx, domain) in message.domains.iter().enumerate() {
+                    domain_retries[idx] = domain.retry.inner;
+                }
+                DeliveryAttempt::new(event).try_deliver(core.clone()).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
     }
     assert_eq!(domain_retries[0], 0, "retries {domain_retries:?}");
@@ -183,14 +188,15 @@ async fn smtp_delivery() {
         "retries {domain_retries:?}"
     );
 
-    assert!(queue.scheduled.is_empty());
+    local_qr.assert_queue_is_empty().await;
     assert_eq!(dsn.len(), 5);
 
     let mut dsn = dsn.into_iter();
 
     dsn.next()
         .unwrap()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<ok@foobar.net> (delivered to")
         .assert_contains("<ok@foobar.org> (delivered to")
         .assert_contains("<invalid@domain.org> (failed to lookup")
@@ -199,53 +205,54 @@ async fn smtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("<delay@foobar.org> (host ")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<delay@foobar.org> (host ")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<delay@foobar.org> (host ");
 
     dsn.next()
         .unwrap()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("Action: failed");
 
     assert_eq!(
         remote_qr
-            .read_event()
+            .consume_message(&remote_core)
             .await
-            .unwrap_message()
-            .recipients
-            .into_iter()
-            .map(|r| r.address)
-            .collect::<Vec<_>>(),
-        vec!["ok@foobar.net".to_string()]
-    );
-    assert_eq!(
-        remote_qr
-            .read_event()
-            .await
-            .unwrap_message()
             .recipients
             .into_iter()
             .map(|r| r.address)
             .collect::<Vec<_>>(),
         vec!["ok@foobar.org".to_string()]
     );
+    assert_eq!(
+        remote_qr
+            .consume_message(&remote_core)
+            .await
+            .recipients
+            .into_iter()
+            .map(|r| r.address)
+            .collect::<Vec<_>>(),
+        vec!["ok@foobar.net".to_string()]
+    );
 
-    remote_qr.assert_empty_queue();
-    local_qr.assert_empty_queue();
+    remote_qr.assert_no_events();
 
     // SMTP smuggling
     for separator in ["\n", "\r"].iter() {
@@ -261,18 +268,18 @@ async fn smtp_delivery() {
         session
             .send_message("john@doe.org", &["bill@foobar.com"], &message, "250")
             .await;
-        local_qr.expect_message_then_deliver().await
+        local_qr
+            .expect_message_then_deliver()
+            .await
             .try_deliver(core.clone())
             .await;
-        let event = local_qr.read_event().await;
+        local_qr.read_event().await.assert_reload();
 
-        assert!(
-            matches!(event, Event::Done(WorkerResult::Done)),
-            "event: {:?}",
-            event
-        );
-
-        let message = remote_qr.expect_message().await().read_message();
+        let message = remote_qr
+            .consume_message(&remote_core)
+            .await
+            .read_message(&remote_qr)
+            .await;
 
         assert!(
             message.contains("This is a smuggled message"),

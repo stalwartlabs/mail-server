@@ -52,6 +52,7 @@ impl Directory {
             if let Some(banned) = self
                 .blocked_ips
                 .is_fail2banned(remote_ip, login.to_string())
+                .await
             {
                 tracing::info!(
                     context = "directory",

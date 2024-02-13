@@ -35,12 +35,8 @@ use tokio::{
 };
 use tokio_rustls::{Accept, TlsAcceptor};
 
-use self::{
-    blocked::BlockedIps,
-    limiter::{ConcurrencyLimiter, InFlight},
-};
+use self::limiter::{ConcurrencyLimiter, InFlight};
 
-pub mod blocked;
 pub mod limiter;
 pub mod listen;
 pub mod stream;
@@ -55,7 +51,6 @@ pub struct ServerInstance {
     pub acceptor: TcpAcceptor,
     pub limiter: ConcurrencyLimiter,
     pub proxy_networks: Vec<IpAddrMask>,
-    pub blocked_ips: Arc<BlockedIps>,
     pub shutdown_rx: watch::Receiver<bool>,
 }
 
@@ -144,6 +139,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send;
+    fn is_ip_blocked(&self, addr: &IpAddr) -> bool;
 
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send;
 }

@@ -22,6 +22,7 @@
 */
 
 pub mod blob;
+pub mod blocked;
 pub mod config;
 pub mod fts;
 pub mod lookup;

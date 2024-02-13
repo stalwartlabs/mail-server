@@ -26,7 +26,7 @@ use std::time::Duration;
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::{config::ConfigStore, Store};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::{
     directory::DirectoryStore,
@@ -42,6 +42,9 @@ use smtp::{
 };
 
 const CONFIG: &str = r#"
+[storage]
+lookup = "sql"
+
 [store."sql"]
 type = "sqlite"
 path = "{TMP}/smtp_sql.db"
@@ -89,7 +92,7 @@ async fn lookup_sql() {
     ctx.stores = config.parse_stores().await.unwrap();
     core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
     core.shared.directories = config
-        .parse_directory(&ctx.stores, &Servers::default(), Store::default())
+        .parse_directory(&ctx.stores, Store::default())
         .await
         .unwrap()
         .directories;

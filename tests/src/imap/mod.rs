@@ -178,6 +178,7 @@ uidplus = true
 data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
+lookup = "{STORE}"
 directory = "auth"
 
 [jmap.protocol]
@@ -277,11 +278,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(
-            &stores,
-            &servers,
-            stores.stores.get(store_id).unwrap().clone(),
-        )
+        .parse_directory(&stores, stores.stores.get(store_id).unwrap().clone())
         .await
         .unwrap();
 

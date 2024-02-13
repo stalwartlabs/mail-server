@@ -36,45 +36,40 @@ use store::write::now;
 use crate::core::SMTP;
 
 use super::{
-    DeliveryAttempt, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, SimpleEnvelope,
-    Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
+    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, SimpleEnvelope, Status,
+    RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
 impl SMTP {
-    pub async fn send_dsn(&self, attempt: &mut DeliveryAttempt) {
-        if !attempt.message.return_path.is_empty() {
-            if let Some(dsn) = attempt.build_dsn(self).await {
+    pub async fn send_dsn(&self, message: &mut Message, span: &tracing::Span) {
+        if !message.return_path.is_empty() {
+            if let Some(dsn) = message.build_dsn(self, span).await {
                 let mut dsn_message = self.queue.new_message("", "", "");
                 dsn_message
                     .add_recipient_parts(
-                        &attempt.message.return_path,
-                        &attempt.message.return_path_lcase,
-                        &attempt.message.return_path_domain,
+                        &message.return_path,
+                        &message.return_path_lcase,
+                        &message.return_path_domain,
                         self,
                     )
                     .await;
 
                 // Sign message
                 let signature = self
-                    .sign_message(
-                        &mut attempt.message,
-                        &self.queue.config.dsn.sign,
-                        &dsn,
-                        &attempt.span,
-                    )
+                    .sign_message(message, &self.queue.config.dsn.sign, &dsn, span)
                     .await;
                 dsn_message
-                    .queue(signature.as_deref(), &dsn, self, &attempt.span)
+                    .queue(signature.as_deref(), &dsn, self, span)
                     .await;
             }
         } else {
-            attempt.handle_double_bounce();
+            message.handle_double_bounce(span);
         }
     }
 }
 
-impl DeliveryAttempt {
-    pub async fn build_dsn(&mut self, core: &SMTP) -> Option<Vec<u8>> {
+impl Message {
+    pub async fn build_dsn(&mut self, core: &SMTP, span: &tracing::Span) -> Option<Vec<u8>> {
         let config = &core.queue.config;
         let now = now();
 
@@ -83,11 +78,11 @@ impl DeliveryAttempt {
         let mut txt_failed = String::new();
         let mut dsn = String::new();
 
-        for rcpt in &mut self.message.recipients {
+        for rcpt in &mut self.recipients {
             if rcpt.has_flag(RCPT_DSN_SENT | RCPT_NOTIFY_NEVER) {
                 continue;
             }
-            let domain = &self.message.domains[rcpt.domain_idx];
+            let domain = &self.domains[rcpt.domain_idx];
             match &rcpt.status {
                 Status::Completed(response) => {
                     rcpt.flags |= RCPT_DSN_SENT | RCPT_STATUS_CHANGED;
@@ -227,14 +222,14 @@ impl DeliveryAttempt {
 
         // Update next delay notification time
         if has_delay {
-            let mut domains = std::mem::take(&mut self.message.domains);
+            let mut domains = std::mem::take(&mut self.domains);
             for domain in &mut domains {
                 if matches!(
                     &domain.status,
                     Status::TemporaryFailure(_) | Status::Scheduled
                 ) && domain.notify.due <= now
                 {
-                    let envelope = SimpleEnvelope::new(&self.message, &domain.domain);
+                    let envelope = SimpleEnvelope::new(self, &domain.domain);
 
                     if let Some(next_notify) = core
                         .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
@@ -250,34 +245,33 @@ impl DeliveryAttempt {
                     }
                 }
             }
-            self.message.domains = domains;
+            self.domains = domains;
         }
 
         // Obtain hostname and sender addresses
         let from_name = core
-            .eval_if(&config.dsn.name, &self.message)
+            .eval_if(&config.dsn.name, self)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = core
-            .eval_if(&config.dsn.address, &self.message)
+            .eval_if(&config.dsn.address, self)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
-            .eval_if(&config.hostname, &self.message)
+            .eval_if(&config.hostname, self)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 
         // Prepare DSN
         let mut dsn_header = String::with_capacity(dsn.len() + 128);
-        self.message
-            .write_dsn_headers(&mut dsn_header, &reporting_mta);
+        self.write_dsn_headers(&mut dsn_header, &reporting_mta);
         let dsn = dsn_header + &dsn;
 
         // Fetch up to 1024 bytes of message headers
         let headers = match core
             .shared
             .default_blob_store
-            .get_blob(self.message.blob_hash.as_slice(), 0..1024)
+            .get_blob(self.blob_hash.as_slice(), 0..1024)
             .await
         {
             Ok(Some(mut buf)) => {
@@ -307,21 +301,21 @@ impl DeliveryAttempt {
             }
             Ok(None) => {
                 tracing::error!(
-                    parent: &self.span,
+                    parent: span,
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: not found",
-                    self.message.blob_hash
+                    self.blob_hash
                 );
                 String::new()
             }
             Err(err) => {
                 tracing::error!(
-                    parent: &self.span,
+                    parent: span,
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: {}",
-                    self.message.blob_hash,
+                    self.blob_hash,
                     err
                 );
                 String::new()
@@ -331,10 +325,7 @@ impl DeliveryAttempt {
         // Build message
         MessageBuilder::new()
             .from((from_name.as_str(), from_addr.as_str()))
-            .header(
-                "To",
-                HeaderType::Text(self.message.return_path.as_str().into()),
-            )
+            .header("To", HeaderType::Text(self.return_path.as_str().into()))
             .header("Auto-Submitted", HeaderType::Text("auto-generated".into()))
             .message_id(format!("<{}@{}>", make_boundary("."), reporting_mta))
             .subject(subject)
@@ -357,11 +348,10 @@ impl DeliveryAttempt {
             .into()
     }
 
-    fn handle_double_bounce(&mut self) {
+    fn handle_double_bounce(&mut self, span: &tracing::Span) {
         let mut is_double_bounce = Vec::with_capacity(0);
-        let message = &mut self.message;
 
-        for rcpt in &mut message.recipients {
+        for rcpt in &mut self.recipients {
             if !rcpt.has_flag(RCPT_DSN_SENT | RCPT_NOTIFY_NEVER) {
                 match &rcpt.status {
                     Status::PermanentFailure(err) => {
@@ -371,7 +361,7 @@ impl DeliveryAttempt {
                         is_double_bounce.push(dsn);
                     }
                     Status::Scheduled => {
-                        let domain = &message.domains[rcpt.domain_idx];
+                        let domain = &self.domains[rcpt.domain_idx];
                         if let Status::PermanentFailure(err) = &domain.status {
                             rcpt.flags |= RCPT_DSN_SENT;
                             let mut dsn = String::new();
@@ -385,7 +375,7 @@ impl DeliveryAttempt {
         }
 
         let now = now();
-        for domain in &mut message.domains {
+        for domain in &mut self.domains {
             if domain.notify.due <= now {
                 domain.notify.due = domain.expires + 10;
             }
@@ -393,10 +383,10 @@ impl DeliveryAttempt {
 
         if !is_double_bounce.is_empty() {
             tracing::info!(
-                parent: &self.span,
+                parent: span,
                 context = "queue",
                 event = "double-bounce",
-                id = self.message.id,
+                id = self.id,
                 failures = ?is_double_bounce,
                 "Failed delivery of message with null return path.",
             );

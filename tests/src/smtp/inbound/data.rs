@@ -21,18 +21,23 @@
  * for more details.
 */
 
+use std::sync::Arc;
+
 use directory::core::config::ConfigDirectory;
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{
-    inbound::{TestMessage, TestQueueEvent},
+    inbound::{dummy_stores, TestMessage},
     session::{load_test_message, TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::core::{Session, SMTP};
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -77,7 +82,7 @@ async fn data() {
     let mut qr = core.init_test_queue("smtp_data_test");
     core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
@@ -116,7 +121,8 @@ async fn data() {
     .parse_quota();
 
     // Test queue message builder
-    let mut session = Session::test(core);
+    let core = Arc::new(core);
+    let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.test_builder().await;
@@ -148,11 +154,10 @@ async fn data() {
 
     // No headers should be added to messages from 10.0.0.1
     session
-        .send_message("john@doe.org", &["bill@foobar.org"], "test:no_msgid", "250")
+        .send_message("john@test.org", &["mike@test.com"], "test:no_msgid", "250")
         .await;
-    qr.read_event().await.assert_reload();
     assert_eq!(
-        qr.last_queued_message().await.read_message(&core).await,
+        qr.expect_message().await.read_message(&qr).await,
         load_test_message("no_msgid", "messages")
     );
 
@@ -167,12 +172,11 @@ async fn data() {
     session.data.remote_ip_str = "10.0.0.3".to_string();
     session.eval_session_params().await;
     session
-        .send_message("john@doe.org", &["mike@test.com"], "test:no_msgid", "250")
+        .send_message("bill@doe.org", &["mike@test.com"], "test:no_msgid", "250")
         .await;
-    qr.read_event().await.assert_reload();
-    qr.last_queued_message()
+    qr.expect_message()
         .await
-        .read_lines(&core)
+        .read_lines(&qr)
         .await
         .assert_contains("From: ")
         .assert_contains("To: ")
@@ -185,13 +189,11 @@ async fn data() {
         .assert_contains("Received-SPF: ");
 
     // Only one message is allowed in the queue from john@doe.org
-    let mut queued_messages = vec![];
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session
         .send_message("john@doe.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    queued_messages.push(qr.read_event().await);
     session
         .send_message(
             "john@doe.org",
@@ -202,7 +204,7 @@ async fn data() {
         .await;
 
     // Release quota
-    queued_messages.clear();
+    qr.clear_queue(&core).await;
 
     // Only 1500 bytes are allowed in the queue to domain foobar.org
     session
@@ -213,7 +215,6 @@ async fn data() {
             "250",
         )
         .await;
-    queued_messages.push(qr.read_event().await);
     session
         .send_message(
             "jane@foobar.org",
@@ -232,7 +233,6 @@ async fn data() {
             "250",
         )
         .await;
-    queued_messages.push(qr.read_event().await);
     session
         .send_message(
             "jane@foobar.org",
@@ -240,5 +240,12 @@ async fn data() {
             "test:no_dkim",
             "452 4.3.1",
         )
+        .await;
+
+    // Make sure store is empty
+    qr.clear_queue(&core).await;
+    core.shared
+        .default_data_store
+        .assert_is_empty(core.shared.default_blob_store.clone())
         .await;
 }

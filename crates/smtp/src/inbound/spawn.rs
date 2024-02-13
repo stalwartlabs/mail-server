@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::time::Instant;
+use std::{net::IpAddr, time::Instant};
 
 use tokio_rustls::server::TlsStream;
 use utils::listener::{SessionManager, SessionStream};
@@ -75,6 +75,14 @@ impl SessionManager for SmtpSessionManager {
                 .send(utils::ipc::DeliveryEvent::Stop)
                 .await;
         }
+    }
+
+    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
+        self.inner
+            .shared
+            .default_directory
+            .blocked_ips
+            .is_blocked(addr)
     }
 }
 

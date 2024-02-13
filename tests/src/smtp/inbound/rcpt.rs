@@ -25,16 +25,20 @@ use std::time::Duration;
 
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
-use store::{Store, Stores};
-use utils::config::{if_block::IfBlock, Config, Servers};
+use store::Store;
+use utils::config::{if_block::IfBlock, Config};
 
 use crate::smtp::{
+    inbound::dummy_stores,
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
 use smtp::core::{Session, State, SMTP};
 
 const DIRECTORY: &str = r#"
+[storage]
+lookup = "dummy"
+
 [directory."local"]
 type = "memory"
 
@@ -71,7 +75,7 @@ async fn rcpt() {
     let config_ext = &mut core.session.config.extensions;
     core.shared.directories = Config::new(DIRECTORY)
         .unwrap()
-        .parse_directory(&Stores::default(), &Servers::default(), Store::default())
+        .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;

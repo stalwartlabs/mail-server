@@ -23,10 +23,10 @@
 
 use std::sync::Arc;
 
+use store::dispatch::blocked::BLOCKED_IP_KEY;
 use tokio::sync::mpsc;
 use utils::{
     config::{cron::SimpleCron, Config, Servers},
-    listener::blocked::BLOCKED_IP_KEY,
     map::ttl_dashmap::TtlMap,
     UnwrapFailure,
 };
@@ -57,7 +57,6 @@ pub fn spawn_housekeeper(
         .failed("Initialize housekeeper");
 
     let certificates = std::mem::take(&mut servers.certificates);
-    let blocked_ips = servers.blocked_ips.clone();
 
     tokio::spawn(async move {
         tracing::debug!("Housekeeper task started.");
@@ -110,11 +109,12 @@ pub fn spawn_housekeeper(
                         // Future releases will support reloading the configuration
                         // for now, we just reload the blocked IP addresses
                         let core = core.clone();
-                        let blocked_ips = blocked_ips.clone();
                         tokio::spawn(async move {
                             match core.store.config_list(BLOCKED_IP_KEY).await {
                                 Ok(config) => {
-                                    if let Err(err) = blocked_ips.reload_blocked_ips(&config) {
+                                    if let Err(err) =
+                                        core.directory.blocked_ips.reload_blocked_ips(&config)
+                                    {
                                         tracing::error!(
                                             context = "store",
                                             event = "error",
@@ -176,16 +176,12 @@ pub fn spawn_housekeeper(
 
             if do_purge {
                 let core = core.clone();
-                let blocked_ips = blocked_ips.clone();
                 tokio::spawn(async move {
                     tracing::info!("Purging session cache.");
-                    blocked_ips.cleanup();
                     core.sessions.cleanup();
                     core.access_tokens.cleanup();
                     core.oauth_codes.cleanup();
-                    core.rate_limit_auth
-                        .retain(|_, limiter| limiter.is_active());
-                    core.rate_limit_unauth
+                    core.concurrency_limiter
                         .retain(|_, limiter| limiter.is_active());
                 });
             }

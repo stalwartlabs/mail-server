@@ -700,6 +700,23 @@ impl Stores {
             })
     }
 
+    pub fn get_lookup_store(
+        &self,
+        config: &utils::config::Config,
+        key: &str,
+    ) -> utils::config::Result<LookupStore> {
+        self.lookup_stores
+            .get(config.value_require(key)?)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Unable to find Lookup store '{}' defined in key '{}'",
+                    config.value_require(key).unwrap(),
+                    key
+                )
+            })
+    }
+
     pub fn get_fts_store(
         &self,
         config: &utils::config::Config,

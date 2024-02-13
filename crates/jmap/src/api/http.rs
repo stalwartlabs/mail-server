@@ -190,7 +190,7 @@ pub async fn parse_jmap_request(
             ("oauth-authorization-server", &Method::GET) => {
                 let remote_addr = jmap.build_remote_addr(&req, remote_ip);
                 // Limit anonymous requests
-                return match jmap.is_anonymous_allowed(&remote_addr) {
+                return match jmap.is_anonymous_allowed(&remote_addr).await {
                     Ok(_) => {
                         JsonResponse::new(OAuthMetadata::new(&instance.data)).into_http_response()
                     }
@@ -207,13 +207,13 @@ pub async fn parse_jmap_request(
 
             match (path.next().unwrap_or(""), req.method()) {
                 ("", &Method::GET) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr) {
+                    return match jmap.is_anonymous_allowed(&remote_addr).await {
                         Ok(_) => jmap.handle_user_device_auth(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("", &Method::POST) => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr) {
+                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
                         Ok(_) => {
                             jmap.handle_user_device_auth_post(&mut req, remote_addr)
                                 .await
@@ -222,25 +222,25 @@ pub async fn parse_jmap_request(
                     }
                 }
                 ("code", &Method::GET) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr) {
+                    return match jmap.is_anonymous_allowed(&remote_addr).await {
                         Ok(_) => jmap.handle_user_code_auth(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("code", &Method::POST) => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr) {
+                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
                         Ok(_) => jmap.handle_user_code_auth_post(&mut req, remote_addr).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("device", &Method::POST) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr) {
+                    return match jmap.is_anonymous_allowed(&remote_addr).await {
                         Ok(_) => jmap.handle_device_auth(&mut req, instance).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("token", &Method::POST) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr) {
+                    return match jmap.is_anonymous_allowed(&remote_addr).await {
                         Ok(_) => jmap.handle_token_request(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
@@ -259,7 +259,7 @@ pub async fn parse_jmap_request(
                     return jmap.handle_crypto_update(&mut req, remote_addr).await;
                 }
                 Method::POST => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr) {
+                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
                         Ok(_) => jmap.handle_crypto_update(&mut req, remote_addr).await,
                         Err(err) => err.into_http_response(),
                     }
@@ -297,6 +297,10 @@ impl SessionManager for JmapSessionManager {
         async {
             let _ = self.inner.state_tx.send(state::Event::Stop).await;
         }
+    }
+
+    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
+        self.inner.directory.blocked_ips.is_blocked(addr)
     }
 }
 

@@ -40,9 +40,10 @@ use super::{
 };
 use crate::{
     write::{
-        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+        Batch, BitmapClass, LookupClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS,
+        MAX_COMMIT_TIME,
     },
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey, WITHOUT_BLOCK_NUM,
+    BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
 };
 
 impl RocksDbStore {
@@ -120,7 +121,40 @@ impl RocksDbStore {
     }
 
     pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
-        Ok(())
+        let db = self.db.clone();
+        self.spawn_worker(move || {
+            let cf = db
+                .cf_handle(std::str::from_utf8(&[SUBSPACE_COUNTERS]).unwrap())
+                .unwrap();
+
+            let mut delete_keys = Vec::new();
+
+            for row in db.iterator_cf(&cf, IteratorMode::Start) {
+                let (key, value) = row?;
+
+                if i64::deserialize(&value)? <= 0 {
+                    delete_keys.push(key);
+                }
+            }
+
+            let txn_opts = OptimisticTransactionOptions::default();
+            for key in delete_keys {
+                let txn = db.transaction_opt(&WriteOptions::default(), &txn_opts);
+                if txn
+                    .get_pinned_for_update_cf(&cf, &key, true)?
+                    .map(|value| i64::deserialize(&value).map(|v| v == 0).unwrap_or(false))
+                    .unwrap_or(false)
+                {
+                    txn.delete(key)?;
+                    txn.commit()?;
+                } else {
+                    txn.rollback()?;
+                }
+            }
+
+            Ok(())
+        })
+        .await
     }
 }
 
@@ -227,7 +261,14 @@ impl<'x> RocksDBTransaction<'x> {
                                 }
                             }
                         } else {
-                            txn.delete_cf(&self.cf_values, &key)?;
+                            txn.delete_cf(
+                                if matches!(class, ValueClass::Lookup(LookupClass::Counter(_))) {
+                                    &self.cf_counters
+                                } else {
+                                    &self.cf_values
+                                },
+                                &key,
+                            )?;
                         }
                     }
                     Operation::Index { field, key, set } => {
@@ -347,7 +388,14 @@ impl<'x> RocksDBTransaction<'x> {
                         if let ValueOp::Set(value) = op {
                             wb.put_cf(&self.cf_values, &key, value);
                         } else {
-                            wb.delete_cf(&self.cf_values, &key);
+                            wb.delete_cf(
+                                if matches!(class, ValueClass::Lookup(LookupClass::Counter(_))) {
+                                    &self.cf_counters
+                                } else {
+                                    &self.cf_values
+                                },
+                                &key,
+                            );
                         }
                     }
                     Operation::Index { field, key, set } => {

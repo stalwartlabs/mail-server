@@ -36,10 +36,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig, TestSMTP,
 };
-use smtp::{
-    core::{Session, SMTP},
-    queue::{manager::Queue, DeliveryAttempt},
-};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -81,7 +78,7 @@ async fn extensions() {
     core.session.config.rcpt.relay = IfBlock::new(true);
     core.session.config.extensions.dsn = IfBlock::new(true);
     let core = Arc::new(core);
-    let mut queue = Queue::default();
+    //let mut queue = Queue::default();
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -94,44 +91,48 @@ async fn extensions() {
             "250",
         )
         .await;
-    local_qr.expect_message_then_deliver().await
+    local_qr
+        .expect_message_then_deliver()
+        .await
         .try_deliver(core.clone())
         .await;
 
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
-    local_qr.read_event().await.unwrap_done();
+    local_qr.read_event().await.assert_reload();
     remote_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core).await
+        .read_lines(&remote_qr)
+        .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Test SIZE extension
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:arc", "250")
         .await;
-    local_qr.expect_message_then_deliver().await
+    local_qr
+        .expect_message_then_deliver()
+        .await
         .try_deliver(core.clone())
         .await;
     local_qr
-        .read_event()
+        .expect_message()
         .await
-        .unwrap_message()
-        .read_lines(&core).await
+        .read_lines(&local_qr)
+        .await
         .assert_contains("<bill@foobar.org> (host 'mx.foobar.org' rejected command 'MAIL FROM:")
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
         .assert_contains("Status: 5.3.4");
-    local_qr.read_event().await.unwrap_done();
-    remote_qr.assert_empty_queue();
+    local_qr.read_event().await.assert_reload();
+    remote_qr.assert_no_events();
 
     // Test DSN, SMTPUTF8 and REQUIRETLS extensions
     session
@@ -142,11 +143,13 @@ async fn extensions() {
             "250",
         )
         .await;
-    local_qr.expect_message_then_deliver().await
+    local_qr
+        .expect_message_then_deliver()
+        .await
         .try_deliver(core.clone())
         .await;
-    local_qr.read_event().await.unwrap_done();
-    let message = remote_qr.expect_message().await();
+    local_qr.read_event().await.assert_reload();
+    let message = remote_qr.expect_message().await;
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);

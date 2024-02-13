@@ -501,6 +501,9 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .take_ids()
     {
+        let _ = client
+            .email_submission_change_status(&id, UndoStatus::Canceled)
+            .await;
         client.email_submission_destroy(&id).await.unwrap();
     }
     destroy_all_mailboxes(params).await;

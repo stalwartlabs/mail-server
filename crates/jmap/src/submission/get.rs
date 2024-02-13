@@ -126,16 +126,21 @@ impl JMAP {
                                             .with_property(
                                                 Property::SmtpReply,
                                                 match &rcpt.status {
-                                                    queue::Status::Completed(reply) => {
-                                                        reply.response.message()
-                                                    }
+                                                    queue::Status::Completed(reply) => reply
+                                                        .response
+                                                        .to_string()
+                                                        .replace('\n', " "),
                                                     queue::Status::TemporaryFailure(reply)
                                                     | queue::Status::PermanentFailure(reply) => {
-                                                        reply.response.message()
+                                                        reply
+                                                            .response
+                                                            .to_string()
+                                                            .replace('\n', " ")
                                                     }
-                                                    queue::Status::Scheduled => "250 2.1.5 Queued",
-                                                }
-                                                .replace('\n', " "),
+                                                    queue::Status::Scheduled => {
+                                                        "250 2.1.5 Queued".to_string()
+                                                    }
+                                                },
                                             )
                                             .with_property(Property::Displayed, "unknown"),
                                     );

@@ -40,7 +40,8 @@ use crate::{
         key::KeySerializer,
         Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_VALUES, WITH_SUBSPACE,
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_COUNTERS,
+    SUBSPACE_VALUES, WITH_SUBSPACE,
 };
 
 use super::{
@@ -420,18 +421,58 @@ impl FdbStore {
                 }
             }
         }
+
+        // Obtain all zero counters
+        let trx = self.db.create_trx()?;
+        let mut iter = trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(&[SUBSPACE_COUNTERS, 0u8][..]),
+                end: KeySelector::first_greater_or_equal(
+                    &[
+                        SUBSPACE_COUNTERS,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                        u8::MAX,
+                    ][..],
+                ),
+                mode: options::StreamingMode::WantAll,
+                reverse: false,
+                ..Default::default()
+            },
+            true,
+        );
+
+        while let Some(values) = iter.next().await {
+            for value in values? {
+                if value.value().iter().all(|byte| *byte == 0) {
+                    delete_keys.push(value.key().to_vec());
+                }
+            }
+        }
+
         if delete_keys.is_empty() {
             return Ok(());
         }
 
         // Delete keys
         let bitmap = DenseBitmap::empty();
+        let integer = 0i64.to_le_bytes();
         for chunk in delete_keys.chunks(1024) {
             let mut retry_count = 0;
             loop {
                 let trx = self.db.create_trx()?;
                 for key in chunk {
-                    trx.atomic_op(key, &bitmap.bitmap, MutationType::CompareAndClear);
+                    trx.atomic_op(
+                        key,
+                        if key[0] == SUBSPACE_BITMAPS {
+                            &bitmap.bitmap
+                        } else {
+                            &integer
+                        },
+                        MutationType::CompareAndClear,
+                    );
                 }
                 match trx.commit().await {
                     Ok(_) => {
