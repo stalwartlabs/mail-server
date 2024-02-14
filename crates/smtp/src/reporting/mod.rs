@@ -152,7 +152,6 @@ impl SMTP {
             #[cfg(not(feature = "test_mode"))]
             {
                 use rand::Rng;
-                use std::time::Duration;
 
                 let delivery_time = rand::thread_rng().gen_range(0u64..10800u64);
                 for domain in &mut message.domains {

@@ -47,8 +47,10 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
 
 pub const FUNCTIONS_MAP: &[(&str, u32, u32)] = &[
     ("is_local_domain", F_IS_LOCAL_DOMAIN, 2),
+    ("is_local_address", F_IS_LOCAL_ADDRESS, 2),
     ("key_get", F_KEY_GET, 2),
     ("key_exists", F_KEY_EXISTS, 2),
+    ("dns_query", F_DNS_QUERY, 2),
 ];
 
 impl SMTP {

@@ -3,8 +3,6 @@
 #############################################
 
 [report]
-path = "%{BASE_PATH}%/reports"
-hash = 64
 #submitter = "%{HOST}%"
 
 [report.analysis]

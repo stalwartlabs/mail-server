@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.6.0] - 2024-02-14
+
+This version introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Distributed and fault-tolerant SMTP message queues.
+- Distributed rate-limiting and fail2ban.
+- Expressions in configuration files.
+
+### Changed
+
+### Fixed
+- Do not include `STATUS` in IMAP `NOOP` responses (#234).
+- Allow multiple SMTP `HELO` commands.
+- Redirect OAuth using a `301` instead of a `307` code.
+
 ## [0.5.3] - 2024-01-14
 
 Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.

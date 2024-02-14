@@ -23,7 +23,7 @@ body:
       label: Is your feature request related to a problem?
       description: Write a clear and concise description of what the problem is.
       placeholder: Tell us what the problem is!
-      value: "I'm always frustrated when..."
+      value: "I'm having a problem with..."
   - type: checkboxes
     id: terms
     attributes:

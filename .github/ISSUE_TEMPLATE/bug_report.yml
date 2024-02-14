@@ -31,6 +31,7 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.6.x
         - v0.5.x
         - v0.4.x
         - v0.3.x or lower
