@@ -389,7 +389,7 @@ impl ParseValue for ServerProtocol {
             Ok(Self::Jmap)
         } else if value.eq_ignore_ascii_case("imap") {
             Ok(Self::Imap)
-        } else if value.eq_ignore_ascii_case("http") {
+        } else if value.eq_ignore_ascii_case("http") | value.eq_ignore_ascii_case("https") {
             Ok(Self::Http)
         } else if value.eq_ignore_ascii_case("managesieve") {
             Ok(Self::ManageSieve)

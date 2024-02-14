@@ -2,6 +2,7 @@ Upgrading from `v0.5.3` to `v0.6.0`
 -----------------------------------
 
 - In order to support [expressions](https://stalw.art/docs/configuration/expressions/overview), version `0.6.0` introduces multiple breaking changes in the SMTP server configuration file. It is recommended to download the new SMTP configuration files from the [repository](https://github.com/stalwartlabs/mail-server/tree/main/resources/config/smtp), make any necessary changes and replace the old files under `INSTALL_DIR/etc/smtp` with the new ones.
+- If you are using custom subaddressing of catch-all rules, you'll need to replace these rules with expressions. Check out the updated [syntax](https://stalw.art/docs/directory/addresses).
 - Message queues are now distributed and stored in the backend specified by the `storage.data` and `storage.blob` settings. Make sure to flush your SMTP message queue before upgrading to `0.6.0` to avoid losing any outgoing messages pending delivery.
 - Replace the binary with the new version.
 - Restart the service.

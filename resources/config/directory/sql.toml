@@ -9,9 +9,11 @@ disable = true
 
 [directory."sql".options]
 catch-all = true
-#catch-all = { map = "(.+)@(.+)$", to = "info@${2}" }
+#catch-all = [ { if = "matches('(.+)@(.+)$', address)", then = "'info@' + $2" },
+#              { else = false } ]
 subaddressing = true
-#subaddressing = { map = "^([^.]+)\.([^.]+)@(.+)$", to = "${2}@${3}" }
+#subaddressing = [ { if = "matches('^([^.]+)\.([^.]+)@(.+)$', address)", then = "$2 + '@' + $3" }, 
+#                  { else = false } ]
 
 [directory."sql".cache]
 entries = 500
