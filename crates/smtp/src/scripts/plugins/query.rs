@@ -40,16 +40,20 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
 
     // Obtain store name
-    let store = ctx.arguments[0].to_string();
-    let store = if let Some(store_) = ctx.core.shared.lookup_stores.get(store.as_ref()) {
-        store_
+    let store = match &ctx.arguments[0] {
+        Variable::String(v) if !v.is_empty() => ctx.core.shared.lookup_stores.get(v.as_ref()),
+        _ => Some(&ctx.core.shared.default_lookup_store),
+    };
+
+    let store = if let Some(store) = store {
+        store
     } else {
         tracing::warn!(
             parent: span,
             context = "sieve:query",
             event = "failed",
             reason = "Unknown store",
-            store = %store,
+            store = ctx.arguments[0].to_string().as_ref(),
         );
         return false.into();
     };
