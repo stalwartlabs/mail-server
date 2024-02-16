@@ -30,8 +30,11 @@ pub const F_IS_LOCAL_DOMAIN: u32 = 0;
 pub const F_IS_LOCAL_ADDRESS: u32 = 1;
 pub const F_KEY_GET: u32 = 2;
 pub const F_KEY_EXISTS: u32 = 3;
-pub const F_SQL_QUERY: u32 = 4;
-pub const F_DNS_QUERY: u32 = 5;
+pub const F_KEY_SET: u32 = 4;
+pub const F_COUNTER_INCR: u32 = 5;
+pub const F_COUNTER_GET: u32 = 6;
+pub const F_SQL_QUERY: u32 = 7;
+pub const F_DNS_QUERY: u32 = 8;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
@@ -52,6 +55,9 @@ pub const FUNCTIONS_MAP: &[(&str, u32, u32)] = &[
     ("is_local_address", F_IS_LOCAL_ADDRESS, 2),
     ("key_get", F_KEY_GET, 2),
     ("key_exists", F_KEY_EXISTS, 2),
+    ("key_set", F_KEY_SET, 3),
+    ("counter_incr", F_COUNTER_INCR, 3),
+    ("counter_get", F_COUNTER_GET, 2),
     ("dns_query", F_DNS_QUERY, 2),
     ("sql_query", F_SQL_QUERY, 3),
 ];
@@ -201,6 +207,73 @@ impl SMTP {
                         false
                     })
                     .into()
+            }
+            F_KEY_SET => {
+                let store = params.next_as_string();
+                let key = params.next_as_string();
+                let value = params.next_as_string();
+
+                self.get_lookup_store(store.as_ref())
+                    .key_set(
+                        key.into_owned().into_bytes(),
+                        value.into_owned().into_bytes(),
+                        None,
+                    )
+                    .await
+                    .map(|_| true)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            context = "eval_if",
+                            event = "error",
+                            property = property,
+                            error = ?err,
+                            "Failed to set key."
+                        );
+
+                        false
+                    })
+                    .into()
+            }
+            F_COUNTER_INCR => {
+                let store = params.next_as_string();
+                let key = params.next_as_string();
+                let value = params.next_as_integer();
+
+                self.get_lookup_store(store.as_ref())
+                    .counter_incr(key.into_owned().into_bytes(), value, None)
+                    .await
+                    .map(Variable::Integer)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            context = "eval_if",
+                            event = "error",
+                            property = property,
+                            error = ?err,
+                            "Failed to increment counter."
+                        );
+
+                        Variable::default()
+                    })
+            }
+            F_COUNTER_GET => {
+                let store = params.next_as_string();
+                let key = params.next_as_string();
+
+                self.get_lookup_store(store.as_ref())
+                    .counter_get(key.into_owned().into_bytes())
+                    .await
+                    .map(Variable::Integer)
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(
+                            context = "eval_if",
+                            event = "error",
+                            property = property,
+                            error = ?err,
+                            "Failed to increment counter."
+                        );
+
+                        Variable::default()
+                    })
             }
             F_DNS_QUERY => self.dns_query(params).await,
             F_SQL_QUERY => self.sql_query(params).await,
@@ -448,6 +521,10 @@ impl<'x> FncParams<'x> {
 
     pub fn next_as_string(&mut self) -> Cow<'x, str> {
         self.params.next().unwrap().into_string()
+    }
+
+    pub fn next_as_integer(&mut self) -> i64 {
+        self.params.next().unwrap().to_integer().unwrap_or_default()
     }
 
     pub fn next(&mut self) -> Variable<'x> {

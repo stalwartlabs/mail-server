@@ -21,12 +21,16 @@
  * for more details.
 */
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use directory::core::config::ConfigDirectory;
+use mail_auth::MX;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
 use store::{config::ConfigStore, Store};
-use utils::config::{if_block::IfBlock, Config};
+use utils::{
+    config::{if_block::IfBlock, Config},
+    expr::Expression,
+};
 
 use crate::{
     directory::DirectoryStore,
@@ -37,8 +41,9 @@ use crate::{
     store::TempDir,
 };
 use smtp::{
-    config::{session::Mechanism, ConfigContext},
-    core::{Session, SMTP},
+    config::{map_expr_token, session::Mechanism, ConfigContext},
+    core::{eval::*, Session, SMTP},
+    queue::RecipientDomain,
 };
 
 const CONFIG: &str = r#"
@@ -76,9 +81,10 @@ type = "type"
 #[tokio::test]
 async fn lookup_sql() {
     // Enable logging
-    /*tracing::subscriber::set_global_default(
+    /*let disable = true;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
@@ -96,6 +102,14 @@ async fn lookup_sql() {
         .await
         .unwrap()
         .directories;
+    core.resolvers.dns.mx_add(
+        "test.org",
+        vec![MX {
+            exchanges: vec!["mx.foobar.org".to_string()],
+            preference: 10,
+        }],
+        Instant::now() + Duration::from_secs(10),
+    );
 
     // Obtain directory handle
     let handle = DirectoryStore {
@@ -143,6 +157,58 @@ async fn lookup_sql() {
             .query::<usize>(query, Vec::new())
             .await
             .unwrap();
+    }
+
+    // Test expression functions
+    for (expr, expected) in [
+        (
+            "sql_query('sql', 'SELECT description FROM domains WHERE name = ?', 'foobar.org')",
+            "Main domain",
+        ),
+        ("dns_query(rcpt_domain, 'mx')[0]", "mx.foobar.org"),
+        (
+            concat!(
+                "key_get('sql', 'hello') + '-' + key_exists('sql', 'hello') + '-' + ",
+                "key_set('sql', 'hello', 'world') + '-' + key_get('sql', 'hello') + ",
+                "'-' + key_exists('sql', 'hello')"
+            ),
+            "0-0-1-world-1",
+        ),
+        (
+            concat!(
+                "counter_get('sql', 'county') + '-' + counter_incr('sql', 'county', 1) + '-' ",
+                "+ counter_incr('sql', 'county', 1) + '-' + counter_get('sql', 'county')"
+            ),
+            "0-0-0-2",
+        ),
+    ] {
+        let e = Expression::parse("test", expr, |name| {
+            map_expr_token::<Duration>(
+                name,
+                &[
+                    V_RECIPIENT,
+                    V_RECIPIENT_DOMAIN,
+                    V_SENDER,
+                    V_SENDER_DOMAIN,
+                    V_MX,
+                    V_HELO_DOMAIN,
+                    V_AUTHENTICATED_AS,
+                    V_LISTENER,
+                    V_REMOTE_IP,
+                    V_LOCAL_IP,
+                    V_PRIORITY,
+                ],
+            )
+        })
+        .unwrap();
+        assert_eq!(
+            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
+                .await
+                .unwrap(),
+            expected,
+            "failed for '{}'",
+            expr
+        );
     }
 
     // Enable AUTH
