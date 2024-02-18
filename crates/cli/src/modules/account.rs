@@ -61,7 +61,7 @@ impl AccountCommands {
                     ..Default::default()
                 };
                 let account_id = client
-                    .http_request::<u32, _>(Method::POST, "/admin/principal", Some(principal))
+                    .http_request::<u32, _>(Method::POST, "/api/principal", Some(principal))
                     .await;
                 eprintln!("Successfully created account {name:?} with id {account_id}.");
             }
@@ -131,7 +131,7 @@ impl AccountCommands {
                     client
                         .http_request::<Value, _>(
                             Method::PATCH,
-                            &format!("/admin/principal/{name}"),
+                            &format!("/api/principal/{name}"),
                             Some(changes),
                         )
                         .await;
@@ -144,7 +144,7 @@ impl AccountCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             addresses
                                 .into_iter()
@@ -164,7 +164,7 @@ impl AccountCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             addresses
                                 .into_iter()
@@ -184,7 +184,7 @@ impl AccountCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             member_of
                                 .into_iter()
@@ -204,7 +204,7 @@ impl AccountCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             member_of
                                 .into_iter()
@@ -224,7 +224,7 @@ impl AccountCommands {
                 client
                     .http_request::<Value, String>(
                         Method::DELETE,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         None,
                     )
                     .await;
@@ -233,9 +233,13 @@ impl AccountCommands {
             AccountCommands::Display { name } => {
                 client.display_principal(&name).await;
             }
-            AccountCommands::List { from, limit } => {
+            AccountCommands::List {
+                filter,
+                limit,
+                page,
+            } => {
                 client
-                    .list_principals("individual", "Account", from, limit)
+                    .list_principals("individual", "Account", filter, page, limit)
                     .await;
             }
         }
@@ -245,11 +249,7 @@ impl AccountCommands {
 impl Client {
     pub async fn display_principal(&self, name: &str) {
         let principal = self
-            .http_request::<Principal, String>(
-                Method::GET,
-                &format!("/admin/principal/{name}"),
-                None,
-            )
+            .http_request::<Principal, String>(Method::GET, &format!("/api/principal/{name}"), None)
             .await;
         let mut table = Table::new();
         if let Some(name) = principal.name {
@@ -318,31 +318,35 @@ impl Client {
         &self,
         record_type: &str,
         record_name: &str,
-        from: Option<String>,
+        filter: Option<String>,
+        page: Option<usize>,
         limit: Option<usize>,
     ) {
-        let mut query = form_urlencoded::Serializer::new("/admin/principal?".to_string());
+        let mut query = form_urlencoded::Serializer::new("/api/principal?".to_string());
 
         query.append_pair("type", record_type);
 
-        if let Some(from) = &from {
-            query.append_pair("from", from);
+        if let Some(filter) = &filter {
+            query.append_pair("filter", filter);
         }
         if let Some(limit) = limit {
             query.append_pair("limit", &limit.to_string());
         }
+        if let Some(page) = page {
+            query.append_pair("page", &page.to_string());
+        }
 
         let results = self
-            .http_request::<Vec<String>, String>(Method::GET, &query.finish(), None)
+            .http_request::<ListResponse, String>(Method::GET, &query.finish(), None)
             .await;
-        if !results.is_empty() {
+        if !results.items.is_empty() {
             let mut table = Table::new();
             table.add_row(Row::new(vec![
                 Cell::new(&format!("{record_name} Name")).with_style(Attr::Bold)
             ]));
 
-            for domain in &results {
-                table.add_row(Row::new(vec![Cell::new(domain)]));
+            for item in &results.items {
+                table.add_row(Row::new(vec![Cell::new(item)]));
             }
 
             eprintln!();
@@ -352,11 +356,17 @@ impl Client {
 
         eprintln!(
             "\n\n{} {}{} found.\n",
-            results.len(),
+            results.total,
             record_name.to_ascii_lowercase(),
-            if results.len() == 1 { "" } else { "s" }
+            if results.total == 1 { "" } else { "s" }
         );
     }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ListResponse {
+    pub total: usize,
+    pub items: Vec<String>,
 }
 
 impl Display for Type {

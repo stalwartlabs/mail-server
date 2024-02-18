@@ -102,7 +102,7 @@ impl QueueCommands {
                     for (message, id) in client
                         .http_request::<Vec<Option<Message>>, String>(
                             Method::GET,
-                            &build_query("/admin/queue/status?ids=", chunk),
+                            &build_query("/api/queue/status?ids=", chunk),
                             None,
                         )
                         .await
@@ -176,7 +176,7 @@ impl QueueCommands {
                 for (message, id) in client
                     .http_request::<Vec<Option<Message>>, String>(
                         Method::GET,
-                        &build_query("/admin/queue/status?ids=", &parse_ids(&ids)),
+                        &build_query("/api/queue/status?ids=", &parse_ids(&ids)),
                         None,
                     )
                     .await
@@ -316,7 +316,7 @@ impl QueueCommands {
                     std::process::exit(1);
                 }
 
-                let mut query = form_urlencoded::Serializer::new("/admin/queue/retry?".to_string());
+                let mut query = form_urlencoded::Serializer::new("/api/queue/retry?".to_string());
 
                 if let Some(filter) = &domain {
                     query.append_pair("filter", filter);
@@ -371,8 +371,7 @@ impl QueueCommands {
                     std::process::exit(1);
                 }
 
-                let mut query =
-                    form_urlencoded::Serializer::new("/admin/queue/cancel?".to_string());
+                let mut query = form_urlencoded::Serializer::new("/api/queue/cancel?".to_string());
 
                 if let Some(filter) = &rcpt {
                     query.append_pair("filter", filter);
@@ -414,7 +413,7 @@ impl Client {
         before: &Option<DateTime>,
         after: &Option<DateTime>,
     ) -> Vec<u64> {
-        let mut query = form_urlencoded::Serializer::new("/admin/queue/list?".to_string());
+        let mut query = form_urlencoded::Serializer::new("/api/queue/list?".to_string());
 
         if let Some(sender) = from {
             query.append_pair("from", sender);

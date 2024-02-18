@@ -55,9 +55,8 @@ pub trait ManageDirectory: Sized {
     async fn delete_account(&self, by: QueryBy<'_>) -> crate::Result<()>;
     async fn list_accounts(
         &self,
-        start_from: Option<&str>,
+        filter: Option<&str>,
         typ: Option<Type>,
-        limit: usize,
     ) -> crate::Result<Vec<String>>;
     async fn map_group_ids(&self, principal: Principal<u32>) -> crate::Result<Principal<String>>;
     async fn map_group_names(
@@ -67,11 +66,7 @@ pub trait ManageDirectory: Sized {
     ) -> crate::Result<Principal<u32>>;
     async fn create_domain(&self, domain: &str) -> crate::Result<()>;
     async fn delete_domain(&self, domain: &str) -> crate::Result<()>;
-    async fn list_domains(
-        &self,
-        start_from: Option<&str>,
-        limit: usize,
-    ) -> crate::Result<Vec<String>>;
+    async fn list_domains(&self, filter: Option<&str>) -> crate::Result<Vec<String>>;
     async fn init(self) -> crate::Result<Self>;
 }
 
@@ -802,61 +797,88 @@ impl ManageDirectory for Store {
 
     async fn list_accounts(
         &self,
-        start_from: Option<&str>,
+        filter: Option<&str>,
         typ: Option<Type>,
-        limit: usize,
     ) -> crate::Result<Vec<String>> {
-        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(
-            start_from.unwrap_or("").as_bytes().to_vec(),
-        )));
+        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
             u8::MAX;
             10
         ])));
 
-        let mut results = Vec::with_capacity(limit);
+        let mut results = Vec::new();
         self.iterate(
-            IterateParams::new(from_key, to_key)
-                .set_values(typ.is_some())
-                .ascending(),
+            IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                if typ.map_or(true, |t| {
-                    PrincipalIdType::deserialize(value)
-                        .map(|v| v.typ == t)
-                        .unwrap_or(false)
-                }) {
-                    results.push(
+                let pt = PrincipalIdType::deserialize(value)?;
+
+                if typ.map_or(true, |t| pt.typ == t) {
+                    results.push((
+                        pt.account_id,
                         String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned(),
-                    );
+                    ));
                 }
-                Ok(limit == 0 || results.len() < limit)
+
+                Ok(true)
             },
         )
         .await?;
 
-        Ok(results)
+        if let Some(filter) = filter {
+            let mut filtered = Vec::new();
+            let filters = filter
+                .split_whitespace()
+                .map(|r| r.to_lowercase())
+                .collect::<Vec<_>>();
+
+            for (account_id, account_name) in results {
+                let principal = self
+                    .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+                        DirectoryClass::Principal(account_id),
+                    )))
+                    .await?
+                    .ok_or_else(|| {
+                        DirectoryError::Management(ManagementError::NotFound(
+                            account_id.to_string(),
+                        ))
+                    })?;
+                if filters.iter().all(|f| {
+                    principal.name.to_lowercase().contains(f)
+                        || principal
+                            .description
+                            .as_ref()
+                            .map_or(false, |d| d.to_lowercase().contains(f))
+                        || principal
+                            .emails
+                            .iter()
+                            .any(|email| email.to_lowercase().contains(f))
+                }) {
+                    filtered.push(account_name);
+                }
+            }
+
+            Ok(filtered)
+        } else {
+            Ok(results.into_iter().map(|(_, name)| name).collect())
+        }
     }
 
-    async fn list_domains(
-        &self,
-        start_from: Option<&str>,
-        limit: usize,
-    ) -> crate::Result<Vec<String>> {
-        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(
-            start_from.unwrap_or("").as_bytes().to_vec(),
-        )));
+    async fn list_domains(&self, filter: Option<&str>) -> crate::Result<Vec<String>> {
+        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![])));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![
             u8::MAX;
             10
         ])));
 
-        let mut results = Vec::with_capacity(limit);
+        let mut results = Vec::new();
         self.iterate(
             IterateParams::new(from_key, to_key).no_values().ascending(),
             |key, _| {
-                results
-                    .push(String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned());
-                Ok(limit == 0 || results.len() < limit)
+                let domain = String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned();
+                if filter.map_or(true, |f| domain.contains(f)) {
+                    results.push(domain);
+                }
+                Ok(true)
             },
         )
         .await?;

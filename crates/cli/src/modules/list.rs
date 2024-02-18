@@ -50,13 +50,13 @@ impl ListCommands {
                     ..Default::default()
                 };
                 let account_id = client
-                    .http_request::<u32, _>(Method::POST, "/admin/principal", Some(principal))
+                    .http_request::<u32, _>(Method::POST, "/api/principal", Some(principal))
                     .await;
                 if let Some(members) = members {
                     client
                         .http_request::<Value, _>(
                             Method::PATCH,
-                            &format!("/admin/principal/{name}"),
+                            &format!("/api/principal/{name}"),
                             Some(vec![PrincipalUpdate::set(
                                 PrincipalField::Members,
                                 PrincipalValue::StringList(members),
@@ -103,7 +103,7 @@ impl ListCommands {
                     client
                         .http_request::<Value, _>(
                             Method::PATCH,
-                            &format!("/admin/principal/{name}"),
+                            &format!("/api/principal/{name}"),
                             Some(changes),
                         )
                         .await;
@@ -116,7 +116,7 @@ impl ListCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             members
                                 .into_iter()
@@ -136,7 +136,7 @@ impl ListCommands {
                 client
                     .http_request::<Value, _>(
                         Method::PATCH,
-                        &format!("/admin/principal/{name}"),
+                        &format!("/api/principal/{name}"),
                         Some(
                             members
                                 .into_iter()
@@ -155,9 +155,13 @@ impl ListCommands {
             ListCommands::Display { name } => {
                 client.display_principal(&name).await;
             }
-            ListCommands::List { from, limit } => {
+            ListCommands::List {
+                filter,
+                limit,
+                page,
+            } => {
                 client
-                    .list_principals("list", "Mailing List", from, limit)
+                    .list_principals("list", "Mailing List", filter, page, limit)
                     .await;
             }
         }

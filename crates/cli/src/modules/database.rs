@@ -32,19 +32,19 @@ impl ServerCommands {
         match self {
             ServerCommands::DatabaseMaintenance {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/admin/store/maintenance", None)
+                    .http_request::<Value, String>(Method::GET, "/api/store/maintenance", None)
                     .await;
                 eprintln!("Success.");
             }
             ServerCommands::ReloadCertificates {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/admin/reload/certificates", None)
+                    .http_request::<Value, String>(Method::GET, "/api/reload/certificates", None)
                     .await;
                 eprintln!("Success.");
             }
             ServerCommands::ReloadConfig {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/admin/reload/config", None)
+                    .http_request::<Value, String>(Method::GET, "/api/reload/config", None)
                     .await;
                 eprintln!("Success.");
             }
@@ -52,7 +52,7 @@ impl ServerCommands {
                 client
                     .http_request::<Value, _>(
                         Method::POST,
-                        "/admin/config",
+                        "/api/config",
                         Some(vec![(key.clone(), value.unwrap_or_default())]),
                     )
                     .await;
@@ -62,7 +62,7 @@ impl ServerCommands {
                 client
                     .http_request::<Value, String>(
                         Method::DELETE,
-                        &format!("/admin/config/{key}"),
+                        &format!("/api/config/{key}"),
                         None,
                     )
                     .await;
@@ -72,7 +72,7 @@ impl ServerCommands {
                 let results = client
                     .http_request::<Vec<(String, String)>, String>(
                         Method::GET,
-                        &format!("/admin/config/{}", prefix.unwrap_or_default()),
+                        &format!("/api/config/{}", prefix.unwrap_or_default()),
                         None,
                     )
                     .await;

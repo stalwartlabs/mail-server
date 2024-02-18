@@ -86,8 +86,9 @@ impl JMAP {
             }
             ("principal", None, &Method::GET) => {
                 // List principal ids
-                let mut from_key = None;
+                let mut filter = None;
                 let mut typ = None;
+                let mut page: usize = 0;
                 let mut limit: usize = 0;
 
                 if let Some(query) = req.uri().query() {
@@ -96,26 +97,40 @@ impl JMAP {
                             "limit" => {
                                 limit = value.parse().unwrap_or_default();
                             }
+                            "page" => {
+                                page = value.parse().unwrap_or_default();
+                            }
                             "type" => {
                                 typ = Type::parse(value.as_ref());
                             }
-                            "from" => {
-                                from_key = value.into();
+                            "filter" => {
+                                filter = value.into();
                             }
                             _ => {}
                         }
                     }
                 }
 
-                match self
-                    .store
-                    .list_accounts(from_key.as_deref(), typ, limit)
-                    .await
-                {
-                    Ok(accounts) => JsonResponse::new(json!({
-                            "data": accounts,
-                    }))
-                    .into_http_response(),
+                match self.store.list_accounts(filter.as_deref(), typ).await {
+                    Ok(accounts) => {
+                        let (total, accounts) = if limit > 0 {
+                            let offset = page.saturating_sub(1) * limit;
+                            (
+                                accounts.len(),
+                                accounts.into_iter().skip(offset).take(limit).collect(),
+                            )
+                        } else {
+                            (accounts.len(), accounts)
+                        };
+
+                        JsonResponse::new(json!({
+                                "data": {
+                                    "items": accounts,
+                                    "total": total,
+                                },
+                        }))
+                        .into_http_response()
+                    }
                     Err(err) => map_directory_error(err),
                 }
             }
@@ -232,8 +247,9 @@ impl JMAP {
                 }
             }
             ("domain", None, &Method::GET) => {
-                // List principal ids
-                let mut from_key = None;
+                // List domains
+                let mut filter = None;
+                let mut page: usize = 0;
                 let mut limit: usize = 0;
 
                 if let Some(query) = req.uri().query() {
@@ -242,19 +258,37 @@ impl JMAP {
                             "limit" => {
                                 limit = value.parse().unwrap_or_default();
                             }
-                            "from" => {
-                                from_key = value.into();
+                            "page" => {
+                                page = value.parse().unwrap_or_default();
+                            }
+                            "filter" => {
+                                filter = value.into();
                             }
                             _ => {}
                         }
                     }
                 }
 
-                match self.store.list_domains(from_key.as_deref(), limit).await {
-                    Ok(domains) => JsonResponse::new(json!({
-                            "data": domains,
-                    }))
-                    .into_http_response(),
+                match self.store.list_domains(filter.as_deref()).await {
+                    Ok(domains) => {
+                        let (total, domains) = if limit > 0 {
+                            let offset = page.saturating_sub(1) * limit;
+                            (
+                                domains.len(),
+                                domains.into_iter().skip(offset).take(limit).collect(),
+                            )
+                        } else {
+                            (domains.len(), domains)
+                        };
+
+                        JsonResponse::new(json!({
+                                "data": {
+                                    "items": domains,
+                                    "total": total,
+                                },
+                        }))
+                        .into_http_response()
+                    }
                     Err(err) => map_directory_error(err),
                 }
             }

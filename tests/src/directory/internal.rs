@@ -503,32 +503,26 @@ async fn internal_directory() {
 
         // List accounts
         assert_eq!(
-            store.list_accounts(None, None, 0).await.unwrap(),
+            store.list_accounts(None, None).await.unwrap(),
             vec!["jane", "john.doe", "list", "sales", "support"]
         );
         assert_eq!(
-            store.list_accounts("john".into(), None, 2).await.unwrap(),
-            vec!["john.doe", "list"]
+            store.list_accounts("john".into(), None).await.unwrap(),
+            vec!["john.doe"]
         );
         assert_eq!(
             store
-                .list_accounts(None, Type::Individual.into(), 0)
+                .list_accounts(None, Type::Individual.into())
                 .await
                 .unwrap(),
             vec!["jane", "john.doe"]
         );
         assert_eq!(
-            store
-                .list_accounts(None, Type::Group.into(), 0)
-                .await
-                .unwrap(),
+            store.list_accounts(None, Type::Group.into()).await.unwrap(),
             vec!["sales", "support"]
         );
         assert_eq!(
-            store
-                .list_accounts(None, Type::List.into(), 0)
-                .await
-                .unwrap(),
+            store.list_accounts(None, Type::List.into()).await.unwrap(),
             vec!["list"]
         );
 
@@ -572,7 +566,7 @@ async fn internal_directory() {
         );
         assert!(!store.rcpt("john.doe@example.org").await.unwrap());
         assert_eq!(
-            store.list_accounts(None, None, 0).await.unwrap(),
+            store.list_accounts(None, None).await.unwrap(),
             vec!["jane", "list", "sales", "support"]
         );
         assert_eq!(

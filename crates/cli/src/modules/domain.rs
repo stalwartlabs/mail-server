@@ -36,7 +36,7 @@ impl DomainCommands {
                 client
                     .http_request::<Value, String>(
                         Method::POST,
-                        &format!("/admin/domain/{name}"),
+                        &format!("/api/domain/{name}"),
                         None,
                     )
                     .await;
@@ -46,7 +46,7 @@ impl DomainCommands {
                 client
                     .http_request::<Value, String>(
                         Method::DELETE,
-                        &format!("/admin/domain/{name}"),
+                        &format!("/api/domain/{name}"),
                         None,
                     )
                     .await;
@@ -54,9 +54,9 @@ impl DomainCommands {
             }
             DomainCommands::List { from, limit } => {
                 let query = if from.is_none() && limit.is_none() {
-                    Cow::Borrowed("/admin/domain")
+                    Cow::Borrowed("/api/domain")
                 } else {
-                    let mut query = "/admin/domain?".to_string();
+                    let mut query = "/api/domain?".to_string();
                     if let Some(from) = &from {
                         query.push_str(&format!("from={from}"));
                     }

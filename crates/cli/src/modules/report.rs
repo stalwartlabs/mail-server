@@ -51,7 +51,7 @@ impl ReportCommands {
                 page_size,
             } => {
                 let stdout = Term::buffered_stdout();
-                let mut query = form_urlencoded::Serializer::new("/admin/report/list?".to_string());
+                let mut query = form_urlencoded::Serializer::new("/api/report/list?".to_string());
 
                 if let Some(domain) = &domain {
                     query.append_pair("domain", domain);
@@ -78,7 +78,7 @@ impl ReportCommands {
                     for (report, id) in client
                         .http_request::<Vec<Option<Report>>, String>(
                             Method::GET,
-                            &format!("/admin/report/status?ids={}", chunk.join(",")),
+                            &format!("/api/report/status?ids={}", chunk.join(",")),
                             None,
                         )
                         .await
@@ -117,7 +117,7 @@ impl ReportCommands {
                 for (report, id) in client
                     .http_request::<Vec<Option<Report>>, String>(
                         Method::GET,
-                        &format!("/admin/report/status?ids={}", ids.join(",")),
+                        &format!("/api/report/status?ids={}", ids.join(",")),
                         None,
                     )
                     .await
@@ -173,7 +173,7 @@ impl ReportCommands {
                 for (success, id) in client
                     .http_request::<Vec<bool>, String>(
                         Method::GET,
-                        &format!("/admin/report/cancel?ids={}", ids.join(",")),
+                        &format!("/api/report/cancel?ids={}", ids.join(",")),
                         None,
                     )
                     .await

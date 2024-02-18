@@ -190,10 +190,12 @@ pub enum AccountCommands {
 
     /// List all user accounts
     List {
-        /// Starting point for listing accounts
-        from: Option<String>,
+        /// Filter accounts by keywords
+        filter: Option<String>,
         /// Maximum number of accounts to list
         limit: Option<usize>,
+        /// Page number
+        page: Option<usize>,
     },
 }
 
@@ -255,10 +257,12 @@ pub enum ListCommands {
 
     /// List all mailing lists
     List {
-        /// Starting point for listing mailing lists
-        from: Option<String>,
+        /// Filter mailing lists by keywords
+        filter: Option<String>,
         /// Maximum number of mailing lists to list
         limit: Option<usize>,
+        /// Page number
+        page: Option<usize>,
     },
 }
 
@@ -320,10 +324,12 @@ pub enum GroupCommands {
 
     /// List all groups
     List {
-        /// Starting point for listing groups
-        from: Option<String>,
+        /// Filter groups by keywords
+        filter: Option<String>,
         /// Maximum number of groups to list
         limit: Option<usize>,
+        /// Page number
+        page: Option<usize>,
     },
 }
 

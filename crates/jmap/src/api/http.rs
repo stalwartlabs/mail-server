@@ -267,7 +267,7 @@ pub async fn parse_jmap_request(
                 _ => (),
             }
         }
-        "admin" => {
+        "api" => {
             // Make sure the user is a superuser
             let body = match jmap.authenticate_headers(&req, remote_ip).await {
                 Ok(Some((_, access_token))) if access_token.is_super_user() => {
