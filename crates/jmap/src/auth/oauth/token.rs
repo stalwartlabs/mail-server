@@ -43,8 +43,8 @@ use crate::{
 };
 
 use super::{
-    ErrorType, FormData, TokenResponse, CLIENT_ID_MAX_LEN, MAX_POST_LEN, RANDOM_CODE_LEN,
-    STATUS_AUTHORIZED, STATUS_PENDING, STATUS_TOKEN_ISSUED,
+    ErrorType, FormData, OAuthResponse, TokenResponse, CLIENT_ID_MAX_LEN, MAX_POST_LEN,
+    RANDOM_CODE_LEN, STATUS_AUTHORIZED, STATUS_PENDING, STATUS_TOKEN_ISSUED,
 };
 
 impl JMAP {
@@ -83,6 +83,7 @@ impl JMAP {
                             true,
                         )
                         .await
+                        .map(TokenResponse::Granted)
                         .unwrap_or_else(|err| {
                             tracing::error!("Failed to generate OAuth token: {}", err);
                             TokenResponse::error(ErrorType::InvalidRequest)
@@ -122,6 +123,7 @@ impl JMAP {
                                 true,
                             )
                             .await
+                            .map(TokenResponse::Granted)
                             .unwrap_or_else(|err| {
                                 tracing::error!("Failed to generate OAuth token: {}", err);
                                 TokenResponse::error(ErrorType::InvalidRequest)
@@ -153,6 +155,7 @@ impl JMAP {
                             time_left <= self.config.oauth_expiry_refresh_token_renew,
                         )
                         .await
+                        .map(TokenResponse::Granted)
                         .unwrap_or_else(|err| {
                             tracing::debug!("Failed to refresh OAuth token: {}", err);
                             TokenResponse::error(ErrorType::InvalidGrant)
@@ -174,12 +177,12 @@ impl JMAP {
         .into_http_response()
     }
 
-    async fn issue_token(
+    pub async fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         with_refresh_token: bool,
-    ) -> Result<TokenResponse, &'static str> {
+    ) -> Result<OAuthResponse, &'static str> {
         let password_hash = self
             .directory
             .query(QueryBy::Id(account_id), false)
@@ -191,7 +194,7 @@ impl JMAP {
             .next()
             .ok_or("Failed to obtain password hash")?;
 
-        Ok(TokenResponse::Granted {
+        Ok(OAuthResponse {
             access_token: self.encode_access_token(
                 "access_token",
                 account_id,
@@ -297,8 +300,7 @@ impl JMAP {
             return Err("Token expired.");
         }
 
-        // Optain password hash
-
+        // Obtain password hash
         let password_hash = self
             .directory
             .query(QueryBy::Id(account_id), false)

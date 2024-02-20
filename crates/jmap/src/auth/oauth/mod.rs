@@ -73,6 +73,7 @@ pub struct OAuth {
     pub metadata: String,
 }
 
+#[derive(Debug)]
 pub struct OAuthCode {
     pub status: AtomicU32,
     pub account_id: AtomicU32,
@@ -136,18 +137,19 @@ pub struct TokenRequest {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TokenResponse {
-    Granted {
-        access_token: String,
-        token_type: String,
-        expires_in: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        refresh_token: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        scope: Option<String>,
-    },
-    Error {
-        error: ErrorType,
-    },
+    Granted(OAuthResponse),
+    Error { error: ErrorType },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OAuthResponse {
+    access_token: String,
+    token_type: String,
+    expires_in: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -201,6 +203,12 @@ impl OAuthMetadata {
             scopes_supported: vec!["offline_access".to_string()],
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OAuthCodeRequest {
+    pub client_id: String,
+    pub redirect_uri: Option<String>,
 }
 
 impl TokenResponse {

@@ -39,6 +39,7 @@ use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse},
+    auth::AccessToken,
     JMAP,
 };
 
@@ -108,6 +109,33 @@ impl JMAP {
         HtmlResponse::new(response).into_http_response()
     }
 
+    pub fn issue_client_code(
+        &self,
+        access_token: &AccessToken,
+        client_id: String,
+        redirect_uri: Option<String>,
+    ) -> String {
+        // Generate client code
+        let client_code = thread_rng()
+            .sample_iter(Alphanumeric)
+            .take(DEVICE_CODE_LEN)
+            .map(char::from)
+            .collect::<String>();
+
+        // Add client code
+        self.oauth_codes.insert_with_ttl(
+            client_code.clone(),
+            Arc::new(OAuthCode {
+                status: STATUS_AUTHORIZED.into(),
+                account_id: access_token.primary_id().into(),
+                client_id,
+                redirect_uri,
+            }),
+            Instant::now() + Duration::from_secs(self.config.oauth_expiry_auth_code),
+        );
+        client_code
+    }
+
     // Handles POST request from the code authorization form
     pub async fn handle_user_code_auth_post(
         &self,
@@ -141,30 +169,17 @@ impl JMAP {
             if let AuthResult::Success(access_token) =
                 self.authenticate_plain(email, password, remote_addr).await
             {
-                // Generate client code
-                let client_code = thread_rng()
-                    .sample_iter(Alphanumeric)
-                    .take(DEVICE_CODE_LEN)
-                    .map(char::from)
-                    .collect::<String>();
-
-                // Add client code
-                self.oauth_codes.insert_with_ttl(
-                    client_code.clone(),
-                    Arc::new(OAuthCode {
-                        status: STATUS_AUTHORIZED.into(),
-                        account_id: access_token.primary_id().into(),
-                        client_id: code_req
+                auth_code = self
+                    .issue_client_code(
+                        &access_token,
+                        code_req
                             .get("client_id")
                             .map(|s| s.as_str())
                             .unwrap_or_default()
                             .to_string(),
-                        redirect_uri: code_req.get("redirect_uri").cloned(),
-                    }),
-                    Instant::now() + Duration::from_secs(self.config.oauth_expiry_auth_code),
-                );
-
-                auth_code = client_code.into();
+                        code_req.get("redirect_uri").cloned(),
+                    )
+                    .into();
             }
         }
 

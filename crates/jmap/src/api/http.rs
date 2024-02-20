@@ -268,16 +268,25 @@ pub async fn parse_jmap_request(
             }
         }
         "api" => {
-            // Make sure the user is a superuser
-            let body = match jmap.authenticate_headers(&req, remote_ip).await {
-                Ok(Some((_, access_token))) if access_token.is_super_user() => {
-                    fetch_body(&mut req, 8192, &access_token).await
-                }
-                Ok(_) => return RequestError::unauthorized().into_http_response(),
-                Err(err) => return err.into_http_response(),
-            };
+            // Allow CORS preflight requests
+            if req.method() == Method::OPTIONS {
+                return ().into_http_response();
+            }
 
-            return jmap.handle_manage_request(&req, body).await;
+            // Make sure the user is a superuser
+            return match jmap.authenticate_headers(&req, remote_ip).await {
+                Ok(Some((_, access_token))) => {
+                    let body = fetch_body(&mut req, 8192, &access_token).await;
+                    if access_token.is_super_user() {
+                        jmap.handle_api_manage_request(&req, body, access_token)
+                            .await
+                    } else {
+                        jmap.handle_api_request(&req, body, access_token).await
+                    }
+                }
+                Ok(None) => RequestError::unauthorized().into_http_response(),
+                Err(err) => err.into_http_response(),
+            };
         }
         _ => (),
     }

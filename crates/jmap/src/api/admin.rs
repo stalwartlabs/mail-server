@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::sync::Arc;
+
 use directory::{
     backend::internal::{lookup::DirectoryStore, manage::ManageDirectory, PrincipalUpdate},
     DirectoryError, ManagementError, Principal, QueryBy, Type,
@@ -31,7 +33,11 @@ use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use utils::config::ConfigKey;
 
-use crate::{services::housekeeper, JMAP};
+use crate::{
+    auth::{oauth::OAuthCodeRequest, AccessToken},
+    services::housekeeper,
+    JMAP,
+};
 
 use super::{http::ToHttpResponse, HttpRequest, JsonResponse};
 
@@ -53,10 +59,11 @@ pub struct PrincipalResponse {
 }
 
 impl JMAP {
-    pub async fn handle_manage_request(
+    pub async fn handle_api_manage_request(
         &self,
         req: &HttpRequest,
         body: Option<Vec<u8>>,
+        access_token: Arc<AccessToken>,
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
         let mut path = req.uri().path().split('/');
         path.next();
@@ -423,12 +430,45 @@ impl JMAP {
                     .into_http_response()
                 }
             }
+            ("oauth", _, _) => self.handle_api_request(req, body, access_token).await,
             (path_1 @ ("queue" | "report"), Some(path_2), &Method::GET) => {
                 self.smtp
                     .handle_manage_request(req.uri(), req.method(), path_1, path_2)
                     .await
             }
             _ => RequestError::not_found().into_http_response(),
+        }
+    }
+
+    pub async fn handle_api_request(
+        &self,
+        req: &HttpRequest,
+        body: Option<Vec<u8>>,
+        access_token: Arc<AccessToken>,
+    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+        let mut path = req.uri().path().split('/');
+        path.next();
+        path.next();
+
+        match (path.next().unwrap_or(""), path.next(), req.method()) {
+            ("oauth", Some("code"), &Method::POST) => {
+                if let Some(request) =
+                    body.and_then(|body| serde_json::from_slice::<OAuthCodeRequest>(&body).ok())
+                {
+                    JsonResponse::new(json!({
+                        "data": self.issue_client_code(&access_token, request.client_id, request.redirect_uri),
+                    }))
+                    .into_http_response()
+                } else {
+                    RequestError::blank(
+                        StatusCode::BAD_REQUEST.as_u16(),
+                        "Invalid parameters",
+                        "Failed to deserialize modify request",
+                    )
+                    .into_http_response()
+                }
+            }
+            _ => RequestError::unauthorized().into_http_response(),
         }
     }
 }
