@@ -143,13 +143,13 @@ pub enum TokenResponse {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OAuthResponse {
-    access_token: String,
-    token_type: String,
-    expires_in: u64,
+    pub access_token: String,
+    pub token_type: String,
+    pub expires_in: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    refresh_token: Option<String>,
+    pub refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    scope: Option<String>,
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]

@@ -99,9 +99,21 @@ impl LookupStore {
         key: Vec<u8>,
         value: i64,
         expires: Option<u64>,
+        return_value: bool,
     ) -> crate::Result<i64> {
         match self {
             LookupStore::Store(store) => {
+                let result = if return_value {
+                    store
+                        .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
+                            key.clone(),
+                        ))))
+                        .await?
+                        + 1
+                } else {
+                    0
+                };
+
                 let mut batch = BatchBuilder::new();
 
                 if let Some(expires) = expires {
@@ -122,7 +134,7 @@ impl LookupStore {
 
                 store.write(batch.build()).await?;
 
-                Ok(0)
+                Ok(result)
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
@@ -269,16 +281,8 @@ impl LookupStore {
         bucket.extend_from_slice(range_start.to_be_bytes().as_slice());
 
         let requests = if !soft_check {
-            let requests = self.counter_incr(bucket, 1, expires_in.into()).await?;
-            if requests > 0 {
-                requests
-            } else {
-                // Increment and get not supported by store, fetch counter
-                let mut bucket = Vec::with_capacity(key.len() + U64_LEN);
-                bucket.extend_from_slice(key);
-                bucket.extend_from_slice(range_start.to_be_bytes().as_slice());
-                self.counter_get(bucket).await?
-            }
+            self.counter_incr(bucket, 1, expires_in.into(), true)
+                .await?
         } else {
             self.counter_get(bucket).await? + 1
         };

@@ -434,15 +434,13 @@ fn parse_code_redirect(uri: String, state: &str) -> String {
 
 fn unwrap_token_response(response: TokenResponse) -> (String, Option<String>, u64) {
     match response {
-        TokenResponse::Granted {
-            access_token,
-            token_type,
-            expires_in,
-            refresh_token,
-            ..
-        } => {
-            assert_eq!(token_type, "bearer");
-            (access_token, refresh_token, expires_in)
+        TokenResponse::Granted(granted) => {
+            assert_eq!(granted.token_type, "bearer");
+            (
+                granted.access_token,
+                granted.refresh_token,
+                granted.expires_in,
+            )
         }
         TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),
     }

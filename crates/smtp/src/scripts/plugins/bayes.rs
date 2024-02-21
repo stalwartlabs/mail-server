@@ -117,6 +117,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
                             .finalize(),
                         weights.into(),
                         None,
+                        false,
                     ),
                 )
                 .is_err()
@@ -141,6 +142,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
                         .finalize(),
                     weights.into(),
                     None,
+                    false,
                 ),
             )
             .is_err()

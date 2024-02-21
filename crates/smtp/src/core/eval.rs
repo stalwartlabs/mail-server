@@ -240,7 +240,7 @@ impl SMTP {
                 let value = params.next_as_integer();
 
                 self.get_lookup_store(store.as_ref())
-                    .counter_incr(key.into_owned().into_bytes(), value, None)
+                    .counter_incr(key.into_owned().into_bytes(), value, None, true)
                     .await
                     .map(Variable::Integer)
                     .unwrap_or_else(|err| {

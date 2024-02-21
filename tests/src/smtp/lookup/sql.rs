@@ -179,7 +179,7 @@ async fn lookup_sql() {
                 "counter_get('sql', 'county') + '-' + counter_incr('sql', 'county', 1) + '-' ",
                 "+ counter_incr('sql', 'county', 1) + '-' + counter_get('sql', 'county')"
             ),
-            "0-0-0-2",
+            "0-1-2-2",
         ),
     ] {
         let e = Expression::parse("test", expr, |name| {

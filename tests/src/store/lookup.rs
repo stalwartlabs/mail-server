@@ -82,16 +82,28 @@ pub async fn lookup_tests() {
 
         // Test counter
         let key = "abc".as_bytes().to_vec();
-        store.counter_incr(key.clone(), 1, None).await.unwrap();
+        store
+            .counter_incr(key.clone(), 1, None, false)
+            .await
+            .unwrap();
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
-        store.counter_incr(key.clone(), 2, None).await.unwrap();
+        store
+            .counter_incr(key.clone(), 2, None, false)
+            .await
+            .unwrap();
         assert_eq!(3, store.counter_get(key.clone()).await.unwrap());
-        store.counter_incr(key.clone(), -3, None).await.unwrap();
+        store
+            .counter_incr(key.clone(), -3, None, false)
+            .await
+            .unwrap();
         assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
 
         // Test counter expiry
         let key = "fgh".as_bytes().to_vec();
-        store.counter_incr(key.clone(), 1, 1.into()).await.unwrap();
+        store
+            .counter_incr(key.clone(), 1, 1.into(), false)
+            .await
+            .unwrap();
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         store.purge_expired().await.unwrap();
