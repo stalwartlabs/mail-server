@@ -43,18 +43,27 @@ use super::{http::ToHttpResponse, HttpRequest, JsonResponse};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PrincipalResponse {
+    #[serde(default)]
     pub id: u32,
     #[serde(rename = "type")]
     pub typ: Type,
+    #[serde(default)]
     pub quota: u32,
     #[serde(rename = "usedQuota")]
+    #[serde(default)]
     pub used_quota: u32,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub emails: Vec<String>,
+    #[serde(default)]
     pub secrets: Vec<String>,
     #[serde(rename = "memberOf")]
+    #[serde(default)]
     pub member_of: Vec<String>,
+    #[serde(default)]
     pub members: Vec<String>,
+    #[serde(default)]
     pub description: Option<String>,
 }
 
@@ -73,9 +82,25 @@ impl JMAP {
             ("principal", None, &Method::POST) => {
                 // Create principal
                 if let Some(principal) =
-                    body.and_then(|body| serde_json::from_slice::<Principal<String>>(&body).ok())
+                    body.and_then(|body| serde_json::from_slice::<PrincipalResponse>(&body).ok())
                 {
-                    match self.store.create_account(principal).await {
+                    match self
+                        .store
+                        .create_account(
+                            Principal {
+                                id: principal.id,
+                                typ: principal.typ,
+                                quota: principal.quota,
+                                name: principal.name,
+                                secrets: principal.secrets,
+                                emails: principal.emails,
+                                member_of: principal.member_of,
+                                description: principal.description,
+                            },
+                            principal.members,
+                        )
+                        .await
+                    {
                         Ok(account_id) => JsonResponse::new(json!({
                             "data": account_id,
                         }))
@@ -220,7 +245,7 @@ impl JMAP {
                         // Delete account
                         match self.store.delete_account(QueryBy::Id(account_id)).await {
                             Ok(_) => JsonResponse::new(json!({
-                                "data": [],
+                                "data": (),
                             }))
                             .into_http_response(),
                             Err(err) => map_directory_error(err),
@@ -235,8 +260,8 @@ impl JMAP {
                                 .update_account(QueryBy::Id(account_id), changes)
                                 .await
                             {
-                                Ok(account_id) => JsonResponse::new(json!({
-                                    "data": account_id,
+                                Ok(_) => JsonResponse::new(json!({
+                                    "data": (),
                                 }))
                                 .into_http_response(),
                                 Err(err) => map_directory_error(err),
@@ -303,7 +328,7 @@ impl JMAP {
                 // Create domain
                 match self.store.create_domain(domain).await {
                     Ok(_) => JsonResponse::new(json!({
-                        "data": [],
+                        "data": (),
                     }))
                     .into_http_response(),
                     Err(err) => map_directory_error(err),
@@ -313,7 +338,7 @@ impl JMAP {
                 // Delete domain
                 match self.store.delete_domain(domain).await {
                     Ok(_) => JsonResponse::new(json!({
-                        "data": [],
+                        "data": (),
                     }))
                     .into_http_response(),
                     Err(err) => map_directory_error(err),
@@ -323,7 +348,7 @@ impl JMAP {
                 match self.store.purge_blobs(self.blob_store.clone()).await {
                     Ok(_) => match self.store.purge_bitmaps().await {
                         Ok(_) => JsonResponse::new(json!({
-                            "data": [],
+                            "data": (),
                         }))
                         .into_http_response(),
                         Err(err) => RequestError::blank(
@@ -348,7 +373,7 @@ impl JMAP {
                     .await;
 
                 JsonResponse::new(json!({
-                    "data": [],
+                    "data": (),
                 }))
                 .into_http_response()
             }
@@ -359,7 +384,7 @@ impl JMAP {
                     .await;
 
                 JsonResponse::new(json!({
-                    "data": [],
+                    "data": (),
                 }))
                 .into_http_response()
             }
@@ -386,7 +411,7 @@ impl JMAP {
                 };
                 match result {
                     Ok(_) => JsonResponse::new(json!({
-                        "data": [],
+                        "data": (),
                     }))
                     .into_http_response(),
                     Err(err) => RequestError::blank(
@@ -411,7 +436,7 @@ impl JMAP {
                         .await
                     {
                         Ok(_) => JsonResponse::new(json!({
-                            "data": [],
+                            "data": (),
                         }))
                         .into_http_response(),
                         Err(err) => RequestError::blank(

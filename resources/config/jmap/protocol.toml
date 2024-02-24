@@ -44,5 +44,5 @@ allow-lookups = true
 
 [jmap.http]
 #headers = ["Access-Control-Allow-Origin: *", 
-#           "Access-Control-Allow-Methods: POST, GET, HEAD, OPTIONS", 
+#           "Access-Control-Allow-Methods: POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
 #           "Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With"]

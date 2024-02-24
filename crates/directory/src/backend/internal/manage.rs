@@ -46,7 +46,11 @@ pub trait ManageDirectory: Sized {
     async fn get_account_name(&self, account_id: u32) -> crate::Result<Option<String>>;
     async fn get_member_of(&self, account_id: u32) -> crate::Result<Vec<u32>>;
     async fn get_members(&self, account_id: u32) -> crate::Result<Vec<u32>>;
-    async fn create_account(&self, principal: Principal<String>) -> crate::Result<u32>;
+    async fn create_account(
+        &self,
+        principal: Principal<String>,
+        members: Vec<String>,
+    ) -> crate::Result<u32>;
     async fn update_account(
         &self,
         by: QueryBy<'_>,
@@ -59,11 +63,16 @@ pub trait ManageDirectory: Sized {
         typ: Option<Type>,
     ) -> crate::Result<Vec<String>>;
     async fn map_group_ids(&self, principal: Principal<u32>) -> crate::Result<Principal<String>>;
-    async fn map_group_names(
+    async fn map_principal(
         &self,
         principal: Principal<String>,
         create_if_missing: bool,
     ) -> crate::Result<Principal<u32>>;
+    async fn map_group_names(
+        &self,
+        members: Vec<String>,
+        create_if_missing: bool,
+    ) -> crate::Result<Vec<u32>>;
     async fn create_domain(&self, domain: &str) -> crate::Result<()>;
     async fn delete_domain(&self, domain: &str) -> crate::Result<()>;
     async fn list_domains(&self, filter: Option<&str>) -> crate::Result<Vec<String>>;
@@ -160,7 +169,11 @@ impl ManageDirectory for Store {
         }
     }
 
-    async fn create_account(&self, principal: Principal<String>) -> crate::Result<u32> {
+    async fn create_account(
+        &self,
+        principal: Principal<String>,
+        members: Vec<String>,
+    ) -> crate::Result<u32> {
         // Make sure the principal has a name
         if principal.name.is_empty() {
             return Err(DirectoryError::Management(ManagementError::MissingField(
@@ -169,7 +182,8 @@ impl ManageDirectory for Store {
         }
 
         // Map group names
-        let mut principal = self.map_group_names(principal, false).await?;
+        let mut principal = self.map_principal(principal, false).await?;
+        let members = self.map_group_names(members, false).await?;
 
         // Make sure new name is not taken
         principal.name = principal.name.to_lowercase();
@@ -246,6 +260,22 @@ impl ManageDirectory for Store {
                 ValueClass::Directory(DirectoryClass::Members {
                     principal_id: member_of,
                     has_member: principal.id,
+                }),
+                vec![],
+            );
+        }
+        for member_id in members {
+            batch.set(
+                ValueClass::Directory(DirectoryClass::MemberOf {
+                    principal_id: member_id,
+                    member_of: principal.id,
+                }),
+                vec![],
+            );
+            batch.set(
+                ValueClass::Directory(DirectoryClass::Members {
+                    principal_id: principal.id,
+                    has_member: member_id,
                 }),
                 vec![],
             );
@@ -765,23 +795,33 @@ impl ManageDirectory for Store {
         Ok(mapped)
     }
 
-    async fn map_group_names(
+    async fn map_principal(
         &self,
         principal: Principal<String>,
         create_if_missing: bool,
     ) -> crate::Result<Principal<u32>> {
-        let mut mapped = Principal {
+        Ok(Principal {
             id: principal.id,
             typ: principal.typ,
             quota: principal.quota,
             name: principal.name,
             secrets: principal.secrets,
             emails: principal.emails,
-            member_of: Vec::with_capacity(principal.member_of.len()),
+            member_of: self
+                .map_group_names(principal.member_of, create_if_missing)
+                .await?,
             description: principal.description,
-        };
+        })
+    }
 
-        for member in principal.member_of {
+    async fn map_group_names(
+        &self,
+        members: Vec<String>,
+        create_if_missing: bool,
+    ) -> crate::Result<Vec<u32>> {
+        let mut member_ids = Vec::with_capacity(members.len());
+
+        for member in members {
             let account_id = if create_if_missing {
                 self.get_or_create_account_id(&member).await?
             } else {
@@ -789,10 +829,10 @@ impl ManageDirectory for Store {
                     .await?
                     .ok_or_else(|| DirectoryError::Management(ManagementError::NotFound(member)))?
             };
-            mapped.member_of.push(account_id);
+            member_ids.push(account_id);
         }
 
-        Ok(mapped)
+        Ok(member_ids)
     }
 
     async fn list_accounts(
@@ -946,16 +986,19 @@ impl ManageDirectory for Store {
                 .await?;
                 eprintln!("Successfully updated password for {admin_user:?}.");
             } else {
-                self.create_account(Principal {
-                    typ: Type::Superuser,
-                    quota: 0,
-                    name: admin_user.clone(),
-                    secrets: vec![admin_pass],
-                    emails: vec![],
-                    member_of: vec![],
-                    description: "Superuser".to_string().into(),
-                    ..Default::default()
-                })
+                self.create_account(
+                    Principal {
+                        typ: Type::Superuser,
+                        quota: 0,
+                        name: admin_user.clone(),
+                        secrets: vec![admin_pass],
+                        emails: vec![],
+                        member_of: vec![],
+                        description: "Superuser".to_string().into(),
+                        ..Default::default()
+                    },
+                    vec![],
+                )
                 .await?;
                 eprintln!("Successfully created administrator account {admin_user:?}.");
             }
@@ -981,16 +1024,19 @@ impl ManageDirectory for Store {
                 .collect::<String>();
             let hashed_secret = sha512_crypt::hash(&secret).unwrap();
 
-            self.create_account(Principal {
-                typ: Type::Superuser,
-                quota: 0,
-                name: "admin".to_string(),
-                secrets: vec![hashed_secret],
-                emails: vec![],
-                member_of: vec![],
-                description: "Superuser".to_string().into(),
-                ..Default::default()
-            })
+            self.create_account(
+                Principal {
+                    typ: Type::Superuser,
+                    quota: 0,
+                    name: "admin".to_string(),
+                    secrets: vec![hashed_secret],
+                    emails: vec![],
+                    member_of: vec![],
+                    description: "Superuser".to_string().into(),
+                    ..Default::default()
+                },
+                vec![],
+            )
             .await?;
 
             tracing::info!(

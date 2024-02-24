@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_DIR="/tmp/stalwart-test"
+BASE_DIR="/Users/me/Downloads/stalwart-test"
 DOMAIN="example.org"
 
 # Stores
@@ -24,7 +24,7 @@ SQL_STORE="sqlite"
 rm -rf $BASE_DIR
 
 # Create directories
-mkdir -p $BASE_DIR $BASE_DIR/data $BASE_DIR/data/blobs $BASE_DIR/logs $BASE_DIR/reports $BASE_DIR/queue
+mkdir -p $BASE_DIR $BASE_DIR/data $BASE_DIR/data/blobs $BASE_DIR/logs
 
 # Copy config files
 cp -r resources/config $BASE_DIR/etc
@@ -40,7 +40,7 @@ sed -i '' -e 's/disable = true//g' "$BASE_DIR/etc/store/$STORE.toml"
 sed -i '' -e 's/disable = true//g' "$BASE_DIR/etc/store/$FTS_STORE.toml"
 sed -i '' -e 's/disable = true//g' "$BASE_DIR/etc/store/$BLOB_STORE.toml"
 sed -i '' -e "s/__FTS_STORE__/$FTS_STORE/g" \
-          -e "s/__BLOB_STORE__/$BLOB_STORE/g" "$BASE_DIR/etc/jmap/store.toml"
+          -e "s/__BLOB_STORE__/$BLOB_STORE/g" "$BASE_DIR/etc/common/store.toml"
 
 # Replace settings
 sed -i ''  -e "s/__STORE__/$STORE/g" \
@@ -64,5 +64,5 @@ mkdir -p $BASE_DIR/etc/dkim
 openssl genpkey -algorithm RSA -out $BASE_DIR/etc/dkim/$DOMAIN.key
 
 # Create admin user
-SET_ADMIN_USER="admin" SET_ADMIN_PASS="secret" cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=/tmp/stalwart-test/etc/config.toml
-cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=/tmp/stalwart-test/etc/config.toml
+SET_ADMIN_USER="admin" SET_ADMIN_PASS="secret" cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=$BASE_DIR/etc/config.toml
+cargo run -p mail-server --no-default-features --features "$FEATURES" -- --config=$BASE_DIR/etc/config.toml

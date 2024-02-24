@@ -48,7 +48,7 @@ async fn internal_directory() {
 
         // A principal without name should fail
         assert_eq!(
-            store.create_account(Principal::default()).await,
+            store.create_account(Principal::default(), vec![]).await,
             Err(DirectoryError::Management(ManagementError::MissingField(
                 PrincipalField::Name
             )))
@@ -57,12 +57,15 @@ async fn internal_directory() {
         // Basic account creation
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "john".to_string(),
-                    description: Some("John Doe".to_string()),
-                    secrets: vec!["secret".to_string(), "secret2".to_string()],
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "john".to_string(),
+                        description: Some("John Doe".to_string()),
+                        secrets: vec!["secret".to_string(), "secret2".to_string()],
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Ok(0)
         );
@@ -70,10 +73,13 @@ async fn internal_directory() {
         // Two accounts with the same name should fail
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "john".to_string(),
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "john".to_string(),
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Err(DirectoryError::Management(ManagementError::AlreadyExists {
                 field: PrincipalField::Name,
@@ -84,11 +90,14 @@ async fn internal_directory() {
         // An account using a non-existent domain should fail
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "jane".to_string(),
-                    emails: vec!["jane@example.org".to_string()],
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "jane".to_string(),
+                        emails: vec!["jane@example.org".to_string()],
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Err(DirectoryError::Management(ManagementError::NotFound(
                 "example.org".to_string()
@@ -138,14 +147,17 @@ async fn internal_directory() {
         // Create an account with an email address
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "jane".to_string(),
-                    description: Some("Jane Doe".to_string()),
-                    secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
-                    emails: vec!["jane@example.org".to_string()],
-                    quota: 123,
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "jane".to_string(),
+                        description: Some("Jane Doe".to_string()),
+                        secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
+                        emails: vec!["jane@example.org".to_string()],
+                        quota: 123,
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Ok(1)
         );
@@ -194,12 +206,15 @@ async fn internal_directory() {
         // Duplicate email address should fail
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "janeth".to_string(),
-                    description: Some("Janeth Doe".to_string()),
-                    emails: vec!["jane@example.org".to_string()],
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "janeth".to_string(),
+                        description: Some("Janeth Doe".to_string()),
+                        emails: vec!["jane@example.org".to_string()],
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Err(DirectoryError::Management(ManagementError::AlreadyExists {
                 field: PrincipalField::Emails,
@@ -210,12 +225,15 @@ async fn internal_directory() {
         // Create a mailing list
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "list".to_string(),
-                    typ: Type::List,
-                    emails: vec!["list@example.org".to_string()],
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "list".to_string(),
+                        typ: Type::List,
+                        emails: vec!["list@example.org".to_string()],
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Ok(2)
         );
@@ -258,23 +276,29 @@ async fn internal_directory() {
         // Create groups
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "sales".to_string(),
-                    description: Some("Sales Team".to_string()),
-                    typ: Type::Group,
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "sales".to_string(),
+                        description: Some("Sales Team".to_string()),
+                        typ: Type::Group,
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Ok(3)
         );
         assert_eq!(
             store
-                .create_account(Principal {
-                    name: "support".to_string(),
-                    description: Some("Support Team".to_string()),
-                    typ: Type::Group,
-                    ..Default::default()
-                })
+                .create_account(
+                    Principal {
+                        name: "support".to_string(),
+                        description: Some("Support Team".to_string()),
+                        typ: Type::Group,
+                        ..Default::default()
+                    },
+                    vec![]
+                )
                 .await,
             Ok(4)
         );

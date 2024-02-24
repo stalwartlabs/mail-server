@@ -164,7 +164,7 @@ impl LdapDirectory {
 
             // Map ids
             self.data_store
-                .map_group_names(principal, true)
+                .map_principal(principal, true)
                 .await
                 .map(Some)
         } else {
