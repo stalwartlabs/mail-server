@@ -34,10 +34,12 @@ impl<T: SessionStream> Session<T> {
         response.extend_from_slice(b"\"\r\n");
         response.extend_from_slice(b"\"VERSION\" \"1.0\"\r\n");
         if !self.stream.is_tls() {
-            response.extend_from_slice(b"\"SASL\" \"\"\r\n");
             response.extend_from_slice(b"\"STARTTLS\"\r\n");
-        } else {
+        }
+        if self.stream.is_tls() || self.imap.allow_plain_auth {
             response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
+        } else {
+            response.extend_from_slice(b"\"SASL\" \"\"\r\n");
         };
         if let Some(sieve) = self
             .jmap

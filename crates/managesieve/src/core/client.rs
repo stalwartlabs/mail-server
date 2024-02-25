@@ -114,7 +114,7 @@ impl<T: SessionStream> Session<T> {
             Command::Capability | Command::Logout | Command::Noop => Ok(command),
             Command::Authenticate => {
                 if let State::NotAuthenticated { .. } = &self.state {
-                    if self.stream.is_tls() {
+                    if self.stream.is_tls() || self.imap.allow_plain_auth {
                         Ok(command)
                     } else {
                         Err(StatusResponse::no("Cannot authenticate over plain-text.")
