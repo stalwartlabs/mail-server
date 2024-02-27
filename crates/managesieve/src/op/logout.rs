@@ -27,7 +27,7 @@ use crate::core::{Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_logout(&mut self) -> super::OpResult {
-        Err(StatusResponse::bye(concat!(
+        Err(StatusResponse::ok(concat!(
             "Stalwart ManageSieve v",
             env!("CARGO_PKG_VERSION"),
             " bids you farewell."
