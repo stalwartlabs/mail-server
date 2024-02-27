@@ -147,7 +147,7 @@ pub enum Error {
     Io(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ErrorDetails {
     pub entity: String,
     pub details: String,

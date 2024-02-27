@@ -27,7 +27,7 @@ use directory::{AuthResult, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
-    header::{self, AUTHORIZATION},
+    header::{self, HeaderValue, AUTHORIZATION},
     server::conn::http1,
     service::service_fn,
     Method, StatusCode, Uri,
@@ -36,6 +36,7 @@ use hyper_util::rt::TokioIo;
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
 use serde::{Deserializer, Serializer};
+use serde_json::json;
 use store::{
     write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, ValueKey,
@@ -43,7 +44,10 @@ use store::{
 
 use utils::listener::{limiter::InFlight, SessionData, SessionManager, SessionStream};
 
-use crate::queue::{self, HostResponse, QueueId, Status};
+use crate::{
+    queue::{self, ErrorDetails, HostResponse, QueueId, Status},
+    reporting::{dmarc::DmarcFormat, tls::TlsFormat},
+};
 
 use super::{SmtpAdminSessionManager, SMTP};
 
@@ -54,6 +58,7 @@ pub struct Response<T> {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
+    pub id: QueueId,
     pub return_path: String,
     pub domains: Vec<Domain>,
     #[serde(deserialize_with = "deserialize_datetime")]
@@ -94,17 +99,30 @@ pub struct Recipient {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Report {
-    pub domain: String,
-    #[serde(rename = "type")]
-    pub type_: String,
-    #[serde(deserialize_with = "deserialize_datetime")]
-    #[serde(serialize_with = "serialize_datetime")]
-    pub range_from: DateTime,
-    #[serde(deserialize_with = "deserialize_datetime")]
-    #[serde(serialize_with = "serialize_datetime")]
-    pub range_to: DateTime,
-    pub size: usize,
+#[serde(tag = "type")]
+pub enum Report {
+    Tls {
+        id: String,
+        domain: String,
+        #[serde(deserialize_with = "deserialize_datetime")]
+        #[serde(serialize_with = "serialize_datetime")]
+        range_from: DateTime,
+        #[serde(deserialize_with = "deserialize_datetime")]
+        #[serde(serialize_with = "serialize_datetime")]
+        range_to: DateTime,
+        report: TlsFormat,
+    },
+    Dmarc {
+        id: String,
+        domain: String,
+        #[serde(deserialize_with = "deserialize_datetime")]
+        #[serde(serialize_with = "serialize_datetime")]
+        range_from: DateTime,
+        #[serde(deserialize_with = "deserialize_datetime")]
+        #[serde(serialize_with = "serialize_datetime")]
+        range_to: DateTime,
+        report: DmarcFormat,
+    },
 }
 
 impl SessionManager for SmtpAdminSessionManager {
@@ -148,7 +166,28 @@ async fn handle_request(
                 let core = core.clone();
 
                 async move {
-                    let response = core.parse_request(&req, remote_addr).await;
+                    let mut response = core.parse_request(&req, remote_addr).await;
+
+                    // Add CORS headers
+                    if let Ok(response) = &mut response {
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                            HeaderValue::from_static("*"),
+                        );
+                        headers.insert(
+                            header::ACCESS_CONTROL_ALLOW_METHODS,
+                            HeaderValue::from_static(
+                                "POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
+                            ),
+                        );
+                        headers.insert(
+                            header::ACCESS_CONTROL_ALLOW_HEADERS,
+                            HeaderValue::from_static(
+                                "Authorization, Content-Type, Accept, X-Requested-With",
+                            ),
+                        );
+                    }
 
                     tracing::debug!(
                         context = "management",
@@ -182,6 +221,17 @@ impl SMTP {
         req: &hyper::Request<hyper::body::Incoming>,
         remote_addr: IpAddr,
     ) -> Result<hyper::Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+        if req.method() == Method::OPTIONS {
+            return Ok(hyper::Response::builder()
+                .status(StatusCode::OK)
+                .body(
+                    Empty::<Bytes>::new()
+                        .map_err(|never| match never {})
+                        .boxed(),
+                )
+                .unwrap());
+        }
+
         // Authenticate request
         let mut is_authenticated = false;
         if let Some((mechanism, payload)) = req
@@ -261,7 +311,7 @@ impl SMTP {
 
         let mut path = req.uri().path().split('/');
         path.next();
-        path.next(); // Skip the leading /admin
+        path.next(); // Skip the leading /api
         Ok(self
             .handle_manage_request(
                 req.uri(),
@@ -281,20 +331,33 @@ impl SMTP {
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
         let (status, response) = match (method, path_1, path_2) {
             (&Method::GET, "queue", "list") => {
+                let mut text = None;
                 let mut from = None;
                 let mut to = None;
                 let mut before = None;
                 let mut after = None;
                 let mut error = None;
+                let mut page: usize = 0;
+                let mut limit: usize = 0;
+                let mut values = false;
 
                 if let Some(query) = uri.query() {
                     for (key, value) in form_urlencoded::parse(query.as_bytes()) {
                         match key.as_ref() {
+                            "text" => {
+                                if !value.is_empty() {
+                                    text = value.into_owned().into();
+                                }
+                            }
                             "from" => {
-                                from = value.into_owned().into();
+                                if !value.is_empty() {
+                                    from = value.into_owned().into();
+                                }
                             }
                             "to" => {
-                                to = value.into_owned().into();
+                                if !value.is_empty() {
+                                    to = value.into_owned().into();
+                                }
                             }
                             "after" => match value.parse_timestamp() {
                                 Ok(dt) => {
@@ -314,6 +377,15 @@ impl SMTP {
                                     break;
                                 }
                             },
+                            "values" => {
+                                values = true;
+                            }
+                            "limit" => {
+                                limit = value.parse().unwrap_or_default();
+                            }
+                            "page" => {
+                                page = value.parse().unwrap_or_default();
+                            }
                             _ => {
                                 error = format!("Invalid parameter {key:?}.").into();
                                 break;
@@ -324,39 +396,70 @@ impl SMTP {
 
                 match error {
                     None => {
-                        let mut result = Vec::new();
+                        let mut result_ids = Vec::new();
+                        let mut result_values = Vec::new();
                         let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
                         let to_key =
                             ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
-                        let has_filters =
-                            from.is_some() || to.is_some() || before.is_some() || after.is_some();
+                        let has_filters = text.is_some()
+                            || from.is_some()
+                            || to.is_some()
+                            || before.is_some()
+                            || after.is_some();
+                        let mut offset = page.saturating_sub(1) * limit;
+                        let mut total = 0;
+                        let mut total_returned = 0;
                         let _ =
                             self.shared
                                 .default_data_store
                                 .iterate(
                                     IterateParams::new(from_key, to_key).ascending(),
                                     |key, value| {
-                                        if has_filters {
-                                            let message =
-                                                Bincode::<queue::Message>::deserialize(value)?
-                                                    .inner;
-                                            if from.as_ref().map_or(true, |from| {
-                                                message.return_path.contains(from)
-                                            }) && to.as_ref().map_or(true, |to| {
-                                                message
-                                                    .recipients
-                                                    .iter()
-                                                    .any(|r| r.address_lcase.contains(to))
-                                            }) && before.as_ref().map_or(true, |before| {
-                                                message.next_delivery_event() < *before
-                                            }) && after.as_ref().map_or(true, |after| {
-                                                message.next_delivery_event() > *after
-                                            }) {
-                                                result.push(key.deserialize_be_u64(1)?);
+                                        let message =
+                                            Bincode::<queue::Message>::deserialize(value)?.inner;
+                                        let matches =
+                                            !has_filters
+                                                || (text
+                                                    .as_ref()
+                                                    .map(|text| {
+                                                        message.return_path.contains(text)
+                                                            || message.recipients.iter().any(|r| {
+                                                                r.address_lcase.contains(text)
+                                                            })
+                                                    })
+                                                    .unwrap_or_else(|| {
+                                                        from.as_ref().map_or(true, |from| {
+                                                            message.return_path.contains(from)
+                                                        }) && to.as_ref().map_or(true, |to| {
+                                                            message.recipients.iter().any(|r| {
+                                                                r.address_lcase.contains(to)
+                                                            })
+                                                        })
+                                                    })
+                                                    && before.as_ref().map_or(true, |before| {
+                                                        message.next_delivery_event() < *before
+                                                    })
+                                                    && after.as_ref().map_or(true, |after| {
+                                                        message.next_delivery_event() > *after
+                                                    }));
+
+                                        if matches {
+                                            if offset == 0 {
+                                                if limit == 0 || total_returned < limit {
+                                                    if values {
+                                                        result_values.push(Message::from(&message));
+                                                    } else {
+                                                        result_ids.push(key.deserialize_be_u64(1)?);
+                                                    }
+                                                    total_returned += 1;
+                                                }
+                                            } else {
+                                                offset -= 1;
                                             }
-                                        } else {
-                                            result.push(key.deserialize_be_u64(1)?);
+
+                                            total += 1;
                                         }
+
                                         Ok(true)
                                     },
                                 )
@@ -364,7 +467,22 @@ impl SMTP {
 
                         (
                             StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
+                            if values {
+                                serde_json::to_string(&json!({
+                                        "data": {
+                                            "items": result_values,
+                                            "total": total,
+                                        },
+                                }))
+                            } else {
+                                serde_json::to_string(&json!({
+                                        "data": {
+                                            "items": result_ids,
+                                            "total": total,
+                                        },
+                                }))
+                            }
+                            .unwrap_or_default(),
                         )
                     }
                     Some(error) => error.into_bad_request(),
@@ -441,7 +559,9 @@ impl SMTP {
                                 }
                             },
                             "filter" => {
-                                item = value.into_owned().into();
+                                if !value.is_empty() {
+                                    item = value.into_owned().into();
+                                }
                             }
                             _ => {
                                 error = format!("Invalid parameter {key:?}.").into();
@@ -518,7 +638,9 @@ impl SMTP {
                                 }
                             },
                             "filter" => {
-                                item = value.into_owned().into();
+                                if !value.is_empty() {
+                                    item = value.into_owned().into();
+                                }
                             }
                             _ => {
                                 error = format!("Invalid parameter {key:?}.").into();
@@ -542,8 +664,8 @@ impl SMTP {
                                     // Cancel delivery for all recipients that match
                                     for rcpt in &mut message.recipients {
                                         if rcpt.address_lcase.contains(item) {
-                                            rcpt.status = Status::Completed(HostResponse {
-                                                hostname: String::new(),
+                                            rcpt.status = Status::PermanentFailure(HostResponse {
+                                                hostname: ErrorDetails::default(),
                                                 response: smtp_proto::Response {
                                                     code: 0,
                                                     esc: [0, 0, 0],
@@ -734,16 +856,55 @@ impl SMTP {
 
                 let mut result = Vec::with_capacity(report_ids.len());
                 for report_id in report_ids {
-                    if let Ok(Some(_)) = self
-                        .shared
-                        .default_data_store
-                        .get_value::<()>(ValueKey::from(ValueClass::Queue(report_id.clone())))
-                        .await
-                    {
-                        result.push(Report::from(report_id).into());
-                    } else {
-                        result.push(None);
+                    match report_id {
+                        QueueClass::DmarcReportHeader(event) => {
+                            if let Ok(Some(report)) = self
+                                .shared
+                                .default_data_store
+                                .get_value::<Bincode<DmarcFormat>>(ValueKey::from(
+                                    ValueClass::Queue(QueueClass::DmarcReportHeader(event.clone())),
+                                ))
+                                .await
+                            {
+                                let mut report = report.inner;
+                                if let Ok(records) =
+                                    self.fetch_dmarc_records(&event, &report, None).await
+                                {
+                                    report.records = records;
+                                    result.push(Report::dmarc(event, report).into());
+                                    continue;
+                                }
+                            }
+                        }
+                        QueueClass::TlsReportHeader(event) => {
+                            if let Ok(Some(report)) = self
+                                .shared
+                                .default_data_store
+                                .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
+                                    QueueClass::TlsReportHeader(event.clone()),
+                                )))
+                                .await
+                            {
+                                let mut report = report.inner;
+                                if let Ok(policy) =
+                                    self.fetch_tls_policy(&event, report.policy, None).await
+                                {
+                                    report.policy = policy.policy;
+                                    for record in policy.failure_details {
+                                        report.records.push(record.into());
+                                    }
+                                    for _ in 0..policy.summary.total_success {
+                                        report.records.push(None);
+                                    }
+                                    result.push(Report::tls(event, report).into());
+                                    continue;
+                                }
+                            }
+                        }
+                        _ => (),
                     }
+
+                    result.push(None);
                 }
 
                 match error {
@@ -815,7 +976,7 @@ impl SMTP {
 
         hyper::Response::builder()
             .status(status)
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(header::CONTENT_TYPE, "application/json")
             .body(
                 Full::new(Bytes::from(response))
                     .map_err(|never| match never {})
@@ -830,6 +991,7 @@ impl From<&queue::Message> for Message {
         let now = now();
 
         Message {
+            id: message.id,
             return_path: message.return_path.clone(),
             created: DateTime::from_timestamp(message.created as i64),
             size: message.size,
@@ -852,11 +1014,7 @@ impl From<&queue::Message> for Message {
                         }
                     },
                     retry_num: domain.retry.inner,
-                    next_retry: if domain.retry.due > now {
-                        DateTime::from_timestamp(domain.retry.due as i64).into()
-                    } else {
-                        None
-                    },
+                    next_retry: Some(DateTime::from_timestamp(domain.retry.due as i64)),
                     next_notify: if domain.notify.due > now {
                         DateTime::from_timestamp(domain.notify.due as i64).into()
                     } else {
@@ -890,24 +1048,24 @@ impl From<&queue::Message> for Message {
     }
 }
 
-impl From<QueueClass> for Report {
-    fn from(value: QueueClass) -> Self {
-        match value {
-            QueueClass::DmarcReportHeader(event) => Report {
-                domain: event.domain,
-                type_: "dmarc".to_string(),
-                range_from: DateTime::from_timestamp(event.seq_id as i64),
-                range_to: DateTime::from_timestamp(event.due as i64),
-                size: 0,
-            },
-            QueueClass::TlsReportHeader(event) => Report {
-                domain: event.domain,
-                type_: "tls".to_string(),
-                range_from: DateTime::from_timestamp(event.seq_id as i64),
-                range_to: DateTime::from_timestamp(event.due as i64),
-                size: 0,
-            },
-            _ => unreachable!(),
+impl Report {
+    fn dmarc(event: ReportEvent, report: DmarcFormat) -> Self {
+        Self::Dmarc {
+            domain: event.domain.clone(),
+            range_from: DateTime::from_timestamp(event.seq_id as i64),
+            range_to: DateTime::from_timestamp(event.due as i64),
+            id: QueueClass::DmarcReportHeader(event).queue_id(),
+            report,
+        }
+    }
+
+    fn tls(event: ReportEvent, report: TlsFormat) -> Self {
+        Self::Tls {
+            domain: event.domain.clone(),
+            range_from: DateTime::from_timestamp(event.seq_id as i64),
+            range_to: DateTime::from_timestamp(event.due as i64),
+            id: QueueClass::TlsReportHeader(event).queue_id(),
+            report,
         }
     }
 }

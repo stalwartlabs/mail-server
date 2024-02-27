@@ -386,53 +386,22 @@ impl SMTP {
         let _ = serde::Serialize::serialize(&dmarc, &mut serialized_size);
         let config = &self.report.config.dmarc_aggregate;
 
-        // Group duplicates
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
-            ReportEvent {
-                due: event.due,
-                policy_hash: event.policy_hash,
-                seq_id: 0,
-                domain: event.domain.clone(),
-            },
-        )));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
-            ReportEvent {
-                due: event.due,
-                policy_hash: event.policy_hash,
-                seq_id: u64::MAX,
-                domain: event.domain.clone(),
-            },
-        )));
-        let mut record_map = AHashMap::with_capacity(dmarc.records.len());
-        if let Err(err) = self
-            .shared
-            .default_data_store
-            .iterate(
-                IterateParams::new(from_key, to_key).ascending(),
-                |_, v| match record_map.entry(Bincode::<Record>::deserialize(v)?.inner) {
-                    Entry::Occupied(mut e) => {
-                        *e.get_mut() += 1;
-                        Ok(true)
-                    }
-                    Entry::Vacant(e) => {
-                        if serde::Serialize::serialize(e.key(), &mut serialized_size).is_ok() {
-                            e.insert(1u32);
-                            Ok(true)
-                        } else {
-                            Ok(false)
-                        }
-                    }
-                },
-            )
+        // Fetch records
+        let records = match self
+            .fetch_dmarc_records(&event, &dmarc, Some(&mut serialized_size))
             .await
         {
-            tracing::warn!(
-                parent: &span,
-                event = "error",
-                "Failed to read DMARC report: {}",
-                err
-            );
-        }
+            Ok(records) => records,
+            Err(err) => {
+                tracing::warn!(
+                    parent: &span,
+                    event = "error",
+                    "Failed to read DMARC records: {}",
+                    err
+                );
+                return;
+            }
+        };
 
         // Create report
         let mut report = Report::new()
@@ -466,8 +435,8 @@ impl SMTP {
         {
             report = report.with_extra_contact_info(contact_info);
         }
-        for (record, count) in record_map {
-            report.add_record(record.with_count(count));
+        for record in records {
+            report = report.with_record(record);
         }
         let from_addr = self
             .eval_if(
@@ -501,6 +470,64 @@ impl SMTP {
             .await;
 
         self.delete_dmarc_report(event).await;
+    }
+
+    pub(crate) async fn fetch_dmarc_records(
+        &self,
+        event: &ReportEvent,
+        dmarc: &DmarcFormat,
+        mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+    ) -> store::Result<Vec<Record>> {
+        // Group duplicates
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+            ReportEvent {
+                due: event.due,
+                policy_hash: event.policy_hash,
+                seq_id: 0,
+                domain: event.domain.clone(),
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(
+            ReportEvent {
+                due: event.due,
+                policy_hash: event.policy_hash,
+                seq_id: u64::MAX,
+                domain: event.domain.clone(),
+            },
+        )));
+        let mut record_map = AHashMap::with_capacity(dmarc.records.len());
+        self.shared
+            .default_data_store
+            .iterate(
+                IterateParams::new(from_key, to_key).ascending(),
+                |_, v| match record_map.entry(Bincode::<Record>::deserialize(v)?.inner) {
+                    Entry::Occupied(mut e) => {
+                        *e.get_mut() += 1;
+                        Ok(true)
+                    }
+                    Entry::Vacant(e) => {
+                        if serialized_size
+                            .as_deref_mut()
+                            .map_or(true, |serialized_size| {
+                                serde::Serialize::serialize(e.key(), serialized_size).is_ok()
+                            })
+                        {
+                            e.insert(1u32);
+                            Ok(true)
+                        } else {
+                            Ok(false)
+                        }
+                    }
+                },
+            )
+            .await?;
+
+        let mut records = Vec::with_capacity(record_map.len());
+        for (record, count) in record_map {
+            records.push(record.with_count(count));
+        }
+
+        Ok(records)
     }
 
     pub async fn delete_dmarc_report(&self, event: ReportEvent) {

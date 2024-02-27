@@ -152,15 +152,29 @@ async fn manage_reports() {
         let mut parts = id.split('!');
         let report = report.unwrap();
         let mut id_num = if parts.next().unwrap() == "t" {
-            assert_eq!(report.type_, "tls");
+            assert!(matches!(report, Report::Tls { .. }));
             2
         } else {
-            assert_eq!(report.type_, "dmarc");
+            assert!(matches!(report, Report::Dmarc { .. }));
             0
         };
-        assert_eq!(parts.next().unwrap(), report.domain);
-        let diff = report.range_to.to_timestamp() - report.range_from.to_timestamp();
-        if report.domain == "foobar.org" {
+        let (domain, range_to, range_from) = match report {
+            Report::Dmarc {
+                domain,
+                range_to,
+                range_from,
+                ..
+            } => (domain, range_to, range_from),
+            Report::Tls {
+                domain,
+                range_to,
+                range_from,
+                ..
+            } => (domain, range_to, range_from),
+        };
+        assert_eq!(parts.next().unwrap(), domain);
+        let diff = range_to.to_timestamp() - range_from.to_timestamp();
+        if domain == "foobar.org" {
             assert_eq!(diff, 86400);
         } else {
             assert_eq!(diff, 7 * 86400);

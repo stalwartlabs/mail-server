@@ -59,6 +59,13 @@ member-of = ["superusers"]
 
 "#;
 
+#[derive(serde::Deserialize)]
+#[allow(dead_code)]
+struct List<T> {
+    items: Vec<T>,
+    total: usize,
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn manage_queue() {
@@ -185,10 +192,11 @@ async fn manage_queue() {
     );
 
     // Fetch and validate messages
-    let ids = send_manage_request::<Vec<QueueId>>("/admin/queue/list")
+    let ids = send_manage_request::<List<QueueId>>("/api/queue/list")
         .await
         .unwrap()
-        .unwrap_data();
+        .unwrap_data()
+        .items;
     assert_eq!(ids.len(), 6);
     let mut id_map = AHashMap::new();
     let mut id_map_rev = AHashMap::new();
@@ -269,31 +277,32 @@ async fn manage_queue() {
     // Test list search
     for (query, expected_ids) in [
         (
-            "/admin/queue/list?from=bill1@foobar.net".to_string(),
+            "/api/queue/list?from=bill1@foobar.net".to_string(),
             vec!["a"],
         ),
         (
-            "/admin/queue/list?to=foobar.org".to_string(),
+            "/api/queue/list?to=foobar.org".to_string(),
             vec!["d", "e", "f"],
         ),
         (
-            "/admin/queue/list?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
+            "/api/queue/list?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
             vec!["c"],
         ),
         (
-            format!("/admin/queue/list?before={test_search}"),
+            format!("/api/queue/list?before={test_search}"),
             vec!["a", "b"],
         ),
         (
-            format!("/admin/queue/list?after={test_search}"),
+            format!("/api/queue/list?after={test_search}"),
             vec!["d", "e", "f", "c"],
         ),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
-        let ids = send_manage_request::<Vec<QueueId>>(&query)
+        let ids = send_manage_request::<List<QueueId>>(&query)
             .await
             .unwrap()
             .unwrap_data()
+            .items
             .into_iter()
             .map(|id| id_map_rev.get(&id).unwrap().clone())
             .collect::<HashSet<_>>();
@@ -303,7 +312,7 @@ async fn manage_queue() {
     // Retry delivery
     assert_eq!(
         send_manage_request::<Vec<bool>>(&format!(
-            "/admin/queue/retry?id={},{}",
+            "/api/queue/retry?id={},{}",
             id_map.get("e").unwrap(),
             id_map.get("f").unwrap()
         ))
@@ -314,7 +323,7 @@ async fn manage_queue() {
     );
     assert_eq!(
         send_manage_request::<Vec<bool>>(&format!(
-            "/admin/queue/retry?id={}&filter=example1.org&at=2200-01-01T00:00:00Z",
+            "/api/queue/retry?id={}&filter=example1.org&at=2200-01-01T00:00:00Z",
             id_map.get("a").unwrap(),
         ))
         .await
@@ -377,7 +386,7 @@ async fn manage_queue() {
     ] {
         assert_eq!(
             send_manage_request::<Vec<bool>>(&format!(
-                "/admin/queue/cancel?id={}{}{}",
+                "/api/queue/cancel?id={}{}{}",
                 id_map.get(id).unwrap(),
                 if !filter.is_empty() { "&filter=" } else { "" },
                 filter
@@ -390,10 +399,11 @@ async fn manage_queue() {
         );
     }
     assert_eq!(
-        send_manage_request::<Vec<QueueId>>("/admin/queue/list")
+        send_manage_request::<List<QueueId>>("/api/queue/list")
             .await
             .unwrap()
             .unwrap_data()
+            .items
             .len(),
         3
     );
@@ -418,7 +428,7 @@ async fn manage_queue() {
                         if domain.name == "example2.org" {
                             assert_eq!(&domain.status, &Status::Completed("".to_string()));
                             for rcpt in &domain.recipients {
-                                assert!(matches!(&rcpt.status, Status::Completed(_)));
+                                assert!(matches!(&rcpt.status, Status::PermanentFailure(_)));
                             }
                         } else {
                             assert_eq!(&domain.status, &Status::Scheduled);
@@ -432,7 +442,7 @@ async fn manage_queue() {
                         if domain.name == "example2.com" {
                             for rcpt in &domain.recipients {
                                 if rcpt.address == "rcpt6@example2.com" {
-                                    assert!(matches!(&rcpt.status, Status::Completed(_)));
+                                    assert!(matches!(&rcpt.status, Status::PermanentFailure(_)));
                                 } else {
                                     assert!(matches!(&rcpt.status, Status::Scheduled));
                                 }
@@ -476,7 +486,7 @@ fn assert_timestamp(timestamp: &DateTime, expected: i64, ctx: &str, message: &Me
 
 async fn get_messages(ids: &[QueueId]) -> Vec<Option<Message>> {
     send_manage_request(&format!(
-        "/admin/queue/status?id={}",
+        "/api/queue/status?id={}",
         ids.iter()
             .map(|id| id.to_string())
             .collect::<Vec<_>>()

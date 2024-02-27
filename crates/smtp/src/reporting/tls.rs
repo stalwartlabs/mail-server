@@ -58,9 +58,9 @@ pub struct TlsRptOptions {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct TlsFormat {
-    rua: Vec<ReportUri>,
-    policy: PolicyDetails,
-    records: Vec<Option<FailureDetails>>,
+    pub rua: Vec<ReportUri>,
+    pub policy: PolicyDetails,
+    pub records: Vec<Option<FailureDetails>>,
 }
 
 #[cfg(feature = "test_mode")]
@@ -146,81 +146,29 @@ impl SMTP {
             };
             let _ = serde::Serialize::serialize(&tls, &mut serialized_size);
 
-            // Group duplicates
-            let mut total_success = 0;
-            let mut total_failure = 0;
-
-            let from_key =
-                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-                    due: event.due,
-                    policy_hash: event.policy_hash,
-                    seq_id: 0,
-                    domain: event.domain.clone(),
-                })));
-            let to_key =
-                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-                    due: event.due,
-                    policy_hash: event.policy_hash,
-                    seq_id: u64::MAX,
-                    domain: event.domain.clone(),
-                })));
-            let mut record_map = AHashMap::with_capacity(tls.records.len());
-            if let Err(err) = self
-                .shared
-                .default_data_store
-                .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                    if let Some(failure_details) =
-                        Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
-                    {
-                        match record_map.entry(failure_details) {
-                            Entry::Occupied(mut e) => {
-                                total_failure += 1;
-                                *e.get_mut() += 1;
-                                Ok(true)
-                            }
-                            Entry::Vacant(e) => {
-                                if serde::Serialize::serialize(e.key(), &mut serialized_size)
-                                    .is_ok()
-                                {
-                                    total_failure += 1;
-                                    e.insert(1u32);
-                                    Ok(true)
-                                } else {
-                                    Ok(false)
-                                }
-                            }
-                        }
-                    } else {
-                        total_success += 1;
-                        Ok(true)
-                    }
-                })
+            // Fetch policy
+            match self
+                .fetch_tls_policy(event, tls.policy, Some(&mut serialized_size))
                 .await
             {
-                tracing::warn!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to read TLS report: {}",
-                    err
-                );
+                Ok(policy) => {
+                    report.policies.push(policy);
+                    for entry in tls.rua {
+                        if !rua.contains(&entry) {
+                            rua.push(entry);
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        parent: &span,
+                        event = "error",
+                        "Failed to read TLS report: {}",
+                        err
+                    );
+                    return;
+                }
             }
-
-            report.policies.push(Policy {
-                policy: tls.policy,
-                summary: Summary {
-                    total_success,
-                    total_failure,
-                },
-                failure_details: record_map
-                    .into_iter()
-                    .map(|(mut r, count)| {
-                        r.failed_session_count = count;
-                        r
-                    })
-                    .collect(),
-            });
-
-            rua = tls.rua;
         }
 
         if report.policies.is_empty() {
@@ -360,6 +308,79 @@ impl SMTP {
             );
         }
         self.delete_tls_report(events).await;
+    }
+
+    pub(crate) async fn fetch_tls_policy(
+        &self,
+        event: &ReportEvent,
+        policy_details: PolicyDetails,
+        mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+    ) -> store::Result<Policy> {
+        // Group duplicates
+        let mut total_success = 0;
+        let mut total_failure = 0;
+
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+            due: event.due,
+            policy_hash: event.policy_hash,
+            seq_id: 0,
+            domain: event.domain.clone(),
+        })));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+            due: event.due,
+            policy_hash: event.policy_hash,
+            seq_id: u64::MAX,
+            domain: event.domain.clone(),
+        })));
+        let mut record_map = AHashMap::new();
+        self.shared
+            .default_data_store
+            .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
+                if let Some(failure_details) =
+                    Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
+                {
+                    match record_map.entry(failure_details) {
+                        Entry::Occupied(mut e) => {
+                            total_failure += 1;
+                            *e.get_mut() += 1;
+                            Ok(true)
+                        }
+                        Entry::Vacant(e) => {
+                            if serialized_size
+                                .as_deref_mut()
+                                .map_or(true, |serialized_size| {
+                                    serde::Serialize::serialize(e.key(), serialized_size).is_ok()
+                                })
+                            {
+                                total_failure += 1;
+                                e.insert(1u32);
+                                Ok(true)
+                            } else {
+                                Ok(false)
+                            }
+                        }
+                    }
+                } else {
+                    total_success += 1;
+                    Ok(true)
+                }
+            })
+            .await?;
+
+        Ok(Policy {
+            policy: policy_details,
+            summary: Summary {
+                total_success,
+                total_failure,
+            },
+            failure_details: record_map
+                .into_iter()
+                .map(|(mut r, count)| {
+                    r.failed_session_count = count;
+                    r
+                })
+                .collect(),
+        })
     }
 
     pub async fn schedule_tls(&self, event: Box<TlsEvent>) {
