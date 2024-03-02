@@ -206,7 +206,7 @@ impl TestConfig for SMTP {
                     blocked_ips: Arc::new(BlockedIps::new(store.clone().into())),
                 }),
                 default_lookup_store: LookupStore::Store(store.clone()),
-                default_blob_store: store::BlobStore::Store(store.clone()),
+                default_blob_store: store.clone().into(),
                 default_data_store: store,
             },
         }

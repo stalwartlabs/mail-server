@@ -35,7 +35,7 @@ impl FdbStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let block_start = range.start as usize / MAX_VALUE_SIZE;
         let bytes_start = range.start as usize % MAX_VALUE_SIZE;

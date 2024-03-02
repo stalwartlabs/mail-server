@@ -318,7 +318,7 @@ impl<T: SessionStream> SessionData<T> {
             // Fetch and parse blob
             let raw_message = if needs_blobs {
                 // Retrieve raw message if needed
-                match self.jmap.get_blob(&email.blob_hash, 0..u32::MAX).await {
+                match self.jmap.get_blob(&email.blob_hash, 0..usize::MAX).await {
                     Ok(Some(raw_message)) => raw_message,
                     Ok(None) => {
                         tracing::warn!(event = "not-found",

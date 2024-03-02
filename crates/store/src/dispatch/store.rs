@@ -339,7 +339,11 @@ impl Store {
         Ok(())
     }
 
-    pub async fn get_blob(&self, key: &[u8], range: Range<u32>) -> crate::Result<Option<Vec<u8>>> {
+    pub async fn get_blob(
+        &self,
+        key: &[u8],
+        range: Range<usize>,
+    ) -> crate::Result<Option<Vec<u8>>> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_blob(key, range).await,

@@ -95,22 +95,19 @@ impl JMAP {
                             continue 'outer;
                         }
 
-                        let offset = offset.unwrap_or(0) as u32;
+                        let offset = offset.unwrap_or(0);
                         let length = length
-                            .map(|length| (length as u32).saturating_add(offset))
-                            .unwrap_or(u32::MAX);
+                            .map(|length| length.saturating_add(offset))
+                            .unwrap_or(usize::MAX);
                         let bytes = if let Some(section) = &id.section {
                             self.get_blob_section(&id.hash, section)
                                 .await?
                                 .map(|bytes| {
-                                    if offset == 0 && length == u32::MAX {
+                                    if offset == 0 && length == usize::MAX {
                                         bytes
                                     } else {
                                         bytes
-                                            .get(
-                                                offset as usize
-                                                    ..std::cmp::min(length as usize, bytes.len()),
-                                            )
+                                            .get(offset..std::cmp::min(length, bytes.len()))
                                             .unwrap_or_default()
                                             .to_vec()
                                     }

@@ -537,7 +537,7 @@ pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
         .core
         .shared
         .default_blob_store
-        .get_blob(message.blob_hash.as_slice(), 0..u32::MAX)
+        .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
         .await
     {
         Ok(Some(raw_message)) => tokio::time::timeout(params.timeout_data, async {

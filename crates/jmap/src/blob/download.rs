@@ -102,7 +102,7 @@ impl JMAP {
         if let Some(section) = &blob_id.section {
             self.get_blob_section(&blob_id.hash, section).await
         } else {
-            self.get_blob(&blob_id.hash, 0..u32::MAX).await
+            self.get_blob(&blob_id.hash, 0..usize::MAX).await
         }
     }
 
@@ -114,8 +114,7 @@ impl JMAP {
         Ok(self
             .get_blob(
                 hash,
-                (section.offset_start as u32)
-                    ..(section.offset_start.saturating_add(section.size) as u32),
+                (section.offset_start)..(section.offset_start.saturating_add(section.size)),
             )
             .await?
             .and_then(|bytes| match Encoding::from(section.encoding) {
@@ -128,7 +127,7 @@ impl JMAP {
     pub async fn get_blob(
         &self,
         hash: &BlobHash,
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> Result<Option<Vec<u8>>, MethodError> {
         match self.blob_store.get_blob(hash.as_ref(), range).await {
             Ok(blob) => Ok(blob),

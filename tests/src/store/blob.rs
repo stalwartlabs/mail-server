@@ -93,7 +93,7 @@ pub async fn blob_tests() {
         // Blob hash should now exist
         assert!(store.blob_exists(&hash).await.unwrap());
         assert!(blob_store
-            .get_blob(hash.as_ref(), 0..u32::MAX)
+            .get_blob(hash.as_ref(), 0..usize::MAX)
             .await
             .unwrap()
             .is_some());
@@ -149,7 +149,7 @@ pub async fn blob_tests() {
 
         // Blob should no longer be in store
         assert!(blob_store
-            .get_blob(hash.as_ref(), 0..u32::MAX)
+            .get_blob(hash.as_ref(), 0..usize::MAX)
             .await
             .unwrap()
             .is_none());
@@ -269,7 +269,7 @@ pub async fn blob_tests() {
             assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
-                    .get_blob(hash.as_ref(), 0..u32::MAX)
+                    .get_blob(hash.as_ref(), 0..usize::MAX)
                     .await
                     .unwrap()
                     .is_some()
@@ -356,7 +356,7 @@ pub async fn blob_tests() {
             assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
-                    .get_blob(hash.as_ref(), 0..u32::MAX)
+                    .get_blob(hash.as_ref(), 0..usize::MAX)
                     .await
                     .unwrap()
                     .is_some()
@@ -410,7 +410,7 @@ pub async fn blob_tests() {
             assert!(store.blob_exists(&hash).await.unwrap() ^ ct);
             assert!(
                 blob_store
-                    .get_blob(hash.as_ref(), 0..u32::MAX)
+                    .get_blob(hash.as_ref(), 0..usize::MAX)
                     .await
                     .unwrap()
                     .is_some()
@@ -430,7 +430,7 @@ async fn test_store(store: BlobStore) {
     assert_eq!(
         String::from_utf8(
             store
-                .get_blob(hash.as_slice(), 0..u32::MAX)
+                .get_blob(hash.as_slice(), 0..usize::MAX)
                 .await
                 .unwrap()
                 .unwrap()
@@ -451,7 +451,7 @@ async fn test_store(store: BlobStore) {
     );
     assert!(store.delete_blob(hash.as_slice()).await.unwrap());
     assert!(store
-        .get_blob(hash.as_slice(), 0..u32::MAX)
+        .get_blob(hash.as_slice(), 0..usize::MAX)
         .await
         .unwrap()
         .is_none());
@@ -468,7 +468,7 @@ async fn test_store(store: BlobStore) {
     assert_eq!(
         String::from_utf8(
             store
-                .get_blob(hash.as_slice(), 0..u32::MAX)
+                .get_blob(hash.as_slice(), 0..usize::MAX)
                 .await
                 .unwrap()
                 .unwrap()
@@ -490,7 +490,7 @@ async fn test_store(store: BlobStore) {
     );
     assert!(store.delete_blob(hash.as_slice()).await.unwrap());
     assert!(store
-        .get_blob(hash.as_slice(), 0..u32::MAX)
+        .get_blob(hash.as_slice(), 0..usize::MAX)
         .await
         .unwrap()
         .is_none());

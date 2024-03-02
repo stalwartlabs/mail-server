@@ -207,7 +207,19 @@ pub enum Store {
 }
 
 #[derive(Clone)]
-pub enum BlobStore {
+pub struct BlobStore {
+    pub backend: BlobBackend,
+    pub compression: CompressionAlgo,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CompressionAlgo {
+    None,
+    Lz4,
+}
+
+#[derive(Clone)]
+pub enum BlobBackend {
     Store(Store),
     Fs(Arc<FsStore>),
     #[cfg(feature = "s3")]
@@ -272,14 +284,20 @@ impl From<RocksDbStore> for Store {
 
 impl From<FsStore> for BlobStore {
     fn from(store: FsStore) -> Self {
-        Self::Fs(Arc::new(store))
+        BlobStore {
+            backend: BlobBackend::Fs(Arc::new(store)),
+            compression: CompressionAlgo::None,
+        }
     }
 }
 
 #[cfg(feature = "s3")]
 impl From<S3Store> for BlobStore {
     fn from(store: S3Store) -> Self {
-        Self::S3(Arc::new(store))
+        BlobStore {
+            backend: BlobBackend::S3(Arc::new(store)),
+            compression: CompressionAlgo::None,
+        }
     }
 }
 
@@ -305,7 +323,10 @@ impl From<Store> for FtsStore {
 
 impl From<Store> for BlobStore {
     fn from(store: Store) -> Self {
-        Self::Store(store)
+        BlobStore {
+            backend: BlobBackend::Store(store),
+            compression: CompressionAlgo::None,
+        }
     }
 }
 

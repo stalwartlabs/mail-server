@@ -31,7 +31,7 @@ impl SqliteStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
@@ -40,14 +40,11 @@ impl SqliteStore {
                 .query_row([&key], |row| {
                     Ok({
                         let bytes = row.get_ref(0)?.as_bytes()?;
-                        if range.start == 0 && range.end == u32::MAX {
+                        if range.start == 0 && range.end == usize::MAX {
                             bytes.to_vec()
                         } else {
                             bytes
-                                .get(
-                                    range.start as usize
-                                        ..std::cmp::min(bytes.len(), range.end as usize),
-                                )
+                                .get(range.start..std::cmp::min(bytes.len(), range.end))
                                 .unwrap_or_default()
                                 .to_vec()
                         }

@@ -226,7 +226,7 @@ impl JMAP {
 
         // Obtain the sieve script blob
         let script_bytes = self
-            .get_blob(&blob_id.hash, 0..u32::MAX)
+            .get_blob(&blob_id.hash, 0..usize::MAX)
             .await?
             .ok_or(MethodError::ServerPartialFail)?;
 

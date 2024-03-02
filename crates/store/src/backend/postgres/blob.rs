@@ -29,7 +29,7 @@ impl PostgresStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let conn = self.conn_pool.get().await?;
         let s = conn.prepare_cached("SELECT v FROM t WHERE k = $1").await?;
@@ -37,15 +37,12 @@ impl PostgresStore {
             .await
             .and_then(|row| {
                 if let Some(row) = row {
-                    Ok(Some(if range.start == 0 && range.end == u32::MAX {
+                    Ok(Some(if range.start == 0 && range.end == usize::MAX {
                         row.try_get::<_, Vec<u8>>(0)?
                     } else {
                         let bytes = row.try_get::<_, &[u8]>(0)?;
                         bytes
-                            .get(
-                                range.start as usize
-                                    ..std::cmp::min(bytes.len(), range.end as usize),
-                            )
+                            .get(range.start..std::cmp::min(bytes.len(), range.end))
                             .unwrap_or_default()
                             .to_vec()
                     }))

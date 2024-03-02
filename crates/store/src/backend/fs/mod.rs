@@ -59,23 +59,22 @@ impl FsStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let blob_path = self.build_path(key);
         let blob_size = match fs::metadata(&blob_path).await {
-            Ok(m) => m.len(),
+            Ok(m) => m.len() as usize,
             Err(_) => return Ok(None),
         };
         let mut blob = File::open(&blob_path).await?;
 
-        Ok(Some(if range.start != 0 || range.end != u32::MAX {
-            let from_offset = if range.start < blob_size as u32 {
+        Ok(Some(if range.start != 0 || range.end != usize::MAX {
+            let from_offset = if range.start < blob_size {
                 range.start
             } else {
                 0
             };
-            let mut buf =
-                vec![0; (std::cmp::min(range.end, blob_size as u32) - from_offset) as usize];
+            let mut buf = vec![0; (std::cmp::min(range.end, blob_size) - from_offset) as usize];
 
             if from_offset > 0 {
                 blob.seek(SeekFrom::Start(from_offset as u64)).await?;

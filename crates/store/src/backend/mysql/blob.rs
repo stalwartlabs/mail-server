@@ -31,22 +31,19 @@ impl MysqlStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let mut conn = self.conn_pool.get_conn().await?;
         let s = conn.prep("SELECT v FROM t WHERE k = ?").await?;
         conn.exec_first::<Vec<u8>, _, _>(&s, (key,))
             .await
             .map(|bytes| {
-                if range.start == 0 && range.end == u32::MAX {
+                if range.start == 0 && range.end == usize::MAX {
                     bytes
                 } else {
                     bytes.map(|bytes| {
                         bytes
-                            .get(
-                                range.start as usize
-                                    ..std::cmp::min(bytes.len(), range.end as usize),
-                            )
+                            .get(range.start..std::cmp::min(bytes.len(), range.end))
                             .unwrap_or_default()
                             .to_vec()
                     })

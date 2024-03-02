@@ -169,7 +169,8 @@ impl JMAP {
 
             // Retrieve raw message if needed
             let raw_message = if needs_body {
-                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..u32::MAX).await? {
+                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await?
+                {
                     raw_message
                 } else {
                     tracing::warn!(event = "not-found",

@@ -75,10 +75,10 @@ impl S3Store {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let path = self.build_key(key);
-        let response = if range.start != 0 || range.end != u32::MAX {
+        let response = if range.start != 0 || range.end != usize::MAX {
             self.bucket
                 .get_object_range(
                     path,

@@ -29,21 +29,18 @@ impl RocksDbStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
-        range: Range<u32>,
+        range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
         let db = self.db.clone();
         self.spawn_worker(move || {
             db.get_pinned_cf(&db.cf_handle(CF_BLOBS).unwrap(), key)
                 .map(|obj| {
                     obj.map(|bytes| {
-                        if range.start == 0 && range.end == u32::MAX {
+                        if range.start == 0 && range.end == usize::MAX {
                             bytes.to_vec()
                         } else {
                             bytes
-                                .get(
-                                    range.start as usize
-                                        ..std::cmp::min(bytes.len(), range.end as usize),
-                                )
+                                .get(range.start..std::cmp::min(bytes.len(), range.end))
                                 .unwrap_or_default()
                                 .to_vec()
                         }

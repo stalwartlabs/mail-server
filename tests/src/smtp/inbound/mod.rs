@@ -362,7 +362,7 @@ impl TestMessage for Message {
     async fn read_message(&self, core: &QueueReceiver) -> String {
         String::from_utf8(
             core.blob_store
-                .get_blob(self.blob_hash.as_slice(), 0..u32::MAX)
+                .get_blob(self.blob_hash.as_slice(), 0..usize::MAX)
                 .await
                 .unwrap()
                 .expect("Message blob not found"),

@@ -95,8 +95,9 @@ impl JMAP {
                         if metadata.inner.blob_hash.as_slice() == blob_hash.as_slice() =>
                     {
                         // Obtain raw message
-                        let raw_message = if let Ok(Some(raw_message)) =
-                            self.get_blob(&metadata.inner.blob_hash, 0..u32::MAX).await
+                        let raw_message = if let Ok(Some(raw_message)) = self
+                            .get_blob(&metadata.inner.blob_hash, 0..usize::MAX)
+                            .await
                         {
                             raw_message
                         } else {

@@ -28,7 +28,7 @@ use utils::config::{cron::SimpleCron, Config};
 use crate::{
     backend::{fs::FsStore, memory::MemoryStore},
     write::purge::{PurgeSchedule, PurgeStore},
-    LookupStore, QueryStore, Store, Stores,
+    BlobStore, CompressionAlgo, LookupStore, QueryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -83,6 +83,8 @@ impl ConfigStore for Config {
                 .to_ascii_lowercase();
             let prefix = ("store", id);
             let store_id = id.to_string();
+            let compression_algo =
+                self.property_or_static::<CompressionAlgo>(("store", id, "compression"), "lz4")?;
 
             let lookup_store: Store = match protocol.as_str() {
                 #[cfg(feature = "rocks")]
@@ -92,9 +94,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
+                    config.blob_stores.insert(
+                        store_id.clone(),
+                        BlobStore::from(db.clone()).with_compression(compression_algo),
+                    );
                     config.lookup_stores.insert(store_id, db.into());
                     continue;
                 }
@@ -105,9 +108,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
+                    config.blob_stores.insert(
+                        store_id.clone(),
+                        BlobStore::from(db.clone()).with_compression(compression_algo),
+                    );
                     config.lookup_stores.insert(store_id, db.into());
                     continue;
                 }
@@ -118,9 +122,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
+                    config.blob_stores.insert(
+                        store_id.clone(),
+                        BlobStore::from(db.clone()).with_compression(compression_algo),
+                    );
                     db
                 }
                 #[cfg(feature = "mysql")]
@@ -130,9 +135,10 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
+                    config.blob_stores.insert(
+                        store_id.clone(),
+                        BlobStore::from(db.clone()).with_compression(compression_algo),
+                    );
                     db
                 }
                 #[cfg(feature = "sqlite")]
@@ -142,22 +148,27 @@ impl ConfigStore for Config {
                     config
                         .fts_stores
                         .insert(store_id.clone(), db.clone().into());
-                    config
-                        .blob_stores
-                        .insert(store_id.clone(), db.clone().into());
+                    config.blob_stores.insert(
+                        store_id.clone(),
+                        BlobStore::from(db.clone()).with_compression(compression_algo),
+                    );
                     db
                 }
                 "fs" => {
-                    config
-                        .blob_stores
-                        .insert(store_id, FsStore::open(self, prefix).await?.into());
+                    config.blob_stores.insert(
+                        store_id,
+                        BlobStore::from(FsStore::open(self, prefix).await?)
+                            .with_compression(compression_algo),
+                    );
                     continue;
                 }
                 #[cfg(feature = "s3")]
                 "s3" => {
-                    config
-                        .blob_stores
-                        .insert(store_id, S3Store::open(self, prefix).await?.into());
+                    config.blob_stores.insert(
+                        store_id,
+                        BlobStore::from(S3Store::open(self, prefix).await?)
+                            .with_compression(compression_algo),
+                    );
                     continue;
                 }
                 #[cfg(feature = "elastic")]

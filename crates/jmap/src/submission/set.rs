@@ -559,22 +559,22 @@ impl JMAP {
         );
 
         // Obtain raw message
-        let message = if let Some(message) = self.get_blob(&metadata.blob_hash, 0..u32::MAX).await?
-        {
-            if message.len() > self.config.mail_max_size {
-                return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
-                    .with_description(format!(
-                        "Message exceeds maximum size of {} bytes.",
-                        self.config.mail_max_size
-                    ))));
-            }
+        let message =
+            if let Some(message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await? {
+                if message.len() > self.config.mail_max_size {
+                    return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
+                        .with_description(format!(
+                            "Message exceeds maximum size of {} bytes.",
+                            self.config.mail_max_size
+                        ))));
+                }
 
-            message
-        } else {
-            return Ok(Err(SetError::invalid_properties()
-                .with_property(Property::EmailId)
-                .with_description("Blob for email not found.")));
-        };
+                message
+            } else {
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::EmailId)
+                    .with_description("Blob for email not found.")));
+            };
 
         // Begin local SMTP session
         let mut session =

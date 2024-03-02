@@ -174,7 +174,7 @@ impl QueueReceiver {
 
         let bytes = self
             .blob_store
-            .get_blob(message.blob_hash.as_slice(), 0..u32::MAX)
+            .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
             .await
             .unwrap()
             .unwrap();

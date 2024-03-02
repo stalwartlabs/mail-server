@@ -150,19 +150,20 @@ impl JMAP {
                 snippet.preview = body.into();
             } else {*/
             // Download message
-            let raw_message =
-                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..u32::MAX).await? {
-                    raw_message
-                } else {
-                    tracing::warn!(event = "not-found",
+            let raw_message = if let Some(raw_message) =
+                self.get_blob(&metadata.blob_hash, 0..usize::MAX).await?
+            {
+                raw_message
+            } else {
+                tracing::warn!(event = "not-found",
                     account_id = account_id,
                     collection = ?Collection::Email,
                     document_id = email_id.document_id(),
                     blob_id = ?metadata.blob_hash,
                     "Blob not found");
-                    response.not_found.push(email_id);
-                    continue;
-                };
+                response.not_found.push(email_id);
+                continue;
+            };
 
             // Find a matching part
             'outer: for part in &metadata.contents.parts {
