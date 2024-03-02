@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{ops::Range, time::Duration};
+use std::{io::Write, ops::Range, time::Duration};
 
 use s3::{
     creds::{error::CredentialsError, Credentials},
@@ -35,6 +35,7 @@ use utils::{
 
 pub struct S3Store {
     bucket: Bucket,
+    prefix: Option<String>,
 }
 
 impl S3Store {
@@ -67,6 +68,7 @@ impl S3Store {
             )?
             .with_path_style()
             .with_request_timeout(timeout),
+            prefix: config.value((&prefix, "key-prefix")).map(|s| s.to_string()),
         })
     }
 
@@ -75,7 +77,7 @@ impl S3Store {
         key: &[u8],
         range: Range<u32>,
     ) -> crate::Result<Option<Vec<u8>>> {
-        let path = Base32Writer::from_bytes(key).finalize();
+        let path = self.build_key(key);
         let response = if range.start != 0 || range.end != u32::MAX {
             self.bucket
                 .get_object_range(
@@ -102,11 +104,7 @@ impl S3Store {
     }
 
     pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        match self
-            .bucket
-            .put_object(Base32Writer::from_bytes(key).finalize(), data)
-            .await
-        {
+        match self.bucket.put_object(self.build_key(key), data).await {
             Ok(response) if (200..300).contains(&response.status_code()) => Ok(()),
             Ok(response) => Err(crate::Error::InternalError(format!(
                 "S3 error code {}: {}",
@@ -119,10 +117,22 @@ impl S3Store {
 
     pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
         self.bucket
-            .delete_object(Base32Writer::from_bytes(key).finalize())
+            .delete_object(self.build_key(key))
             .await
             .map(|response| (200..300).contains(&response.status_code()))
             .map_err(|e| e.into())
+    }
+
+    fn build_key(&self, key: &[u8]) -> String {
+        if let Some(prefix) = &self.prefix {
+            let mut writer =
+                Base32Writer::with_raw_capacity(prefix.len() + ((key.len() + 3) / 4 * 5));
+            writer.push_string(prefix);
+            writer.write_all(key).unwrap();
+            writer.finalize()
+        } else {
+            Base32Writer::from_bytes(key).finalize()
+        }
     }
 }
 

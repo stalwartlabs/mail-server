@@ -57,8 +57,12 @@ impl Base32Writer {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
+        Self::with_raw_capacity((capacity + 3) / 4 * 5)
+    }
+
+    pub fn with_raw_capacity(capacity: usize) -> Self {
         Base32Writer {
-            result: String::with_capacity((capacity + 3) / 4 * 5),
+            result: String::with_capacity(capacity),
             last_byte: 0,
             pos: 0,
         }
@@ -66,6 +70,10 @@ impl Base32Writer {
 
     pub fn push_char(&mut self, ch: char) {
         self.result.push(ch);
+    }
+
+    pub fn push_string(&mut self, string: &str) {
+        self.result.push_str(string);
     }
 
     fn push_byte(&mut self, byte: u8, is_remainder: bool) {
