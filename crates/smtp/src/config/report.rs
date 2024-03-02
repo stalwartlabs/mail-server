@@ -31,6 +31,7 @@ use utils::{
         Config,
     },
     expr::{Constant, Variable},
+    snowflake::SnowflakeIdGenerator,
 };
 
 use super::{
@@ -98,7 +99,10 @@ impl ConfigReport for Config {
                 addresses,
                 forward: self.property("report.analysis.forward")?.unwrap_or(false),
                 store: self.property("report.analysis.store")?,
-                report_id: 0.into(),
+                report_id: self
+                    .property::<u64>("storage.cluster.node-id")?
+                    .map(SnowflakeIdGenerator::with_node_id)
+                    .unwrap_or_else(SnowflakeIdGenerator::new),
             },
         })
     }

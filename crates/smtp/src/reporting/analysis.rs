@@ -25,7 +25,7 @@ use std::{
     borrow::Cow,
     collections::hash_map::Entry,
     io::{Cursor, Read},
-    sync::{atomic::Ordering, Arc},
+    sync::Arc,
     time::SystemTime,
 };
 
@@ -37,6 +37,12 @@ use mail_auth::{
 };
 use mail_parser::{DateTime, MessageParser, MimeHeaders, PartType};
 
+use store::{
+    write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
+    Serialize,
+};
+use tokio::runtime::Handle;
+
 use crate::core::SMTP;
 
 enum Compression {
@@ -45,16 +51,24 @@ enum Compression {
     Zip,
 }
 
-enum Format {
-    Dmarc,
-    Tls,
-    Arf,
+enum Format<D, T, A> {
+    Dmarc(D),
+    Tls(T),
+    Arf(A),
 }
 
 struct ReportData<'x> {
     compression: Compression,
-    format: Format,
+    format: Format<(), (), ()>,
     data: &'x [u8],
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct IncomingReport<T> {
+    pub from: String,
+    pub to: Vec<String>,
+    pub subject: String,
+    pub report: T,
 }
 
 pub trait AnalyzeReport {
@@ -64,6 +78,7 @@ pub trait AnalyzeReport {
 impl AnalyzeReport for Arc<SMTP> {
     fn analyze_report(&self, message: Arc<Vec<u8>>) {
         let core = self.clone();
+        let handle = Handle::current();
         self.worker_pool.spawn(move || {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
@@ -75,7 +90,15 @@ impl AnalyzeReport for Arc<SMTP> {
                 .from()
                 .and_then(|a| a.last())
                 .and_then(|a| a.address())
-                .unwrap_or("unknown");
+                .unwrap_or_default()
+                .to_string();
+            let to = message.to().map_or_else(Vec::new, |a| {
+                a.iter()
+                    .filter_map(|a| a.address())
+                    .map(|a| a.to_string())
+                    .collect()
+            });
+            let subject = message.subject().unwrap_or_default().to_string();
             let mut reports = Vec::new();
 
             for part in &message.parts {
@@ -92,13 +115,13 @@ impl AnalyzeReport for Arc<SMTP> {
                         {
                             reports.push(ReportData {
                                 compression: Compression::None,
-                                format: Format::Dmarc,
+                                format: Format::Dmarc(()),
                                 data: report.as_bytes(),
                             });
                         } else if part.is_content_type("message", "feedback-report") {
                             reports.push(ReportData {
                                 compression: Compression::None,
-                                format: Format::Arf,
+                                format: Format::Arf(()),
                                 data: report.as_bytes(),
                             });
                         }
@@ -107,7 +130,7 @@ impl AnalyzeReport for Arc<SMTP> {
                         if part.is_content_type("message", "feedback-report") {
                             reports.push(ReportData {
                                 compression: Compression::None,
-                                format: Format::Arf,
+                                format: Format::Arf(()),
                                 data: report.as_ref(),
                             });
                             continue;
@@ -131,13 +154,13 @@ impl AnalyzeReport for Arc<SMTP> {
                             _ => Compression::None,
                         };
                         let format = match (tls_parts.map(|(c, _)| c).unwrap_or(subtype), ext) {
-                            ("xml", _) => Format::Dmarc,
-                            ("tlsrpt", _) | (_, "json") => Format::Tls,
+                            ("xml", _) => Format::Dmarc(()),
+                            ("tlsrpt", _) | (_, "json") => Format::Tls(()),
                             _ => {
                                 if attachment_name
                                     .map_or(false, |n| n.contains(".xml") || n.contains('!'))
                                 {
-                                    Format::Dmarc
+                                    Format::Dmarc(())
                                 } else {
                                     continue;
                                 }
@@ -213,10 +236,11 @@ impl AnalyzeReport for Arc<SMTP> {
                     }
                 };
 
-                match report.format {
-                    Format::Dmarc => match Report::parse_xml(&data) {
+                let report = match report.format {
+                    Format::Dmarc(_) => match Report::parse_xml(&data) {
                         Ok(report) => {
                             report.log();
+                            Format::Dmarc(report)
                         }
                         Err(err) => {
                             tracing::debug!(
@@ -228,9 +252,10 @@ impl AnalyzeReport for Arc<SMTP> {
                             continue;
                         }
                     },
-                    Format::Tls => match TlsReport::parse_json(&data) {
+                    Format::Tls(_) => match TlsReport::parse_json(&data) {
                         Ok(report) => {
                             report.log();
+                            Format::Tls(report)
                         }
                         Err(err) => {
                             tracing::debug!(
@@ -242,9 +267,10 @@ impl AnalyzeReport for Arc<SMTP> {
                             continue;
                         }
                     },
-                    Format::Arf => match Feedback::parse_arf(&data) {
+                    Format::Arf(_) => match Feedback::parse_arf(&data) {
                         Some(report) => {
                             report.log();
+                            Format::Arf(report.into_owned())
                         }
                         None => {
                             tracing::debug!(
@@ -255,47 +281,72 @@ impl AnalyzeReport for Arc<SMTP> {
                             continue;
                         }
                     },
-                }
+                };
 
-                // Save report
-                if let Some(report_path) = &core.report.config.analysis.store {
-                    let (report_format, extension) = match report.format {
-                        Format::Dmarc => ("dmarc", "xml"),
-                        Format::Tls => ("tlsrpt", "json"),
-                        Format::Arf => ("arf", "txt"),
-                    };
-                    let c_extension = match report.compression {
-                        Compression::None => "",
-                        Compression::Gzip => ".gz",
-                        Compression::Zip => ".zip",
-                    };
-                    let now = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .map_or(0, |d| d.as_secs());
+                // Store report
+                if let Some(expires_in) = &core.report.config.analysis.store {
+                    let expires = now() + expires_in.as_secs();
                     let id = core
                         .report
                         .config
                         .analysis
                         .report_id
-                        .fetch_add(1, Ordering::Relaxed);
+                        .generate()
+                        .unwrap_or(expires);
 
-                    // Build path
-                    let mut report_path = report_path.clone();
-                    report_path.push(format!(
-                        "{report_format}_{now}_{id}.{extension}{c_extension}"
-                    ));
-                    if let Err(err) = std::fs::write(&report_path, report.data) {
-                        tracing::warn!(
-                            context = "report",
-                            event = "error",
-                            from = from,
-                            "Failed to write incoming report to {}: {}",
-                            report_path.display(),
-                            err
-                        );
+                    let mut batch = BatchBuilder::new();
+                    match report {
+                        Format::Dmarc(report) => {
+                            batch.set(
+                                ValueClass::Report(ReportClass::Dmarc { id, expires }),
+                                Bincode::new(IncomingReport {
+                                    from,
+                                    to,
+                                    subject,
+                                    report,
+                                })
+                                .serialize(),
+                            );
+                        }
+                        Format::Tls(report) => {
+                            batch.set(
+                                ValueClass::Report(ReportClass::Tls { id, expires }),
+                                Bincode::new(IncomingReport {
+                                    from,
+                                    to,
+                                    subject,
+                                    report,
+                                })
+                                .serialize(),
+                            );
+                        }
+                        Format::Arf(report) => {
+                            batch.set(
+                                ValueClass::Report(ReportClass::Arf { id, expires }),
+                                Bincode::new(IncomingReport {
+                                    from,
+                                    to,
+                                    subject,
+                                    report,
+                                })
+                                .serialize(),
+                            );
+                        }
                     }
+                    let batch = batch.build();
+                    let _enter = handle.enter();
+                    handle.spawn(async move {
+                        if let Err(err) = core.shared.default_data_store.write(batch).await {
+                            tracing::warn!(
+                                context = "report",
+                                event = "error",
+                                "Failed to write incoming report: {}",
+                                err
+                            );
+                        }
+                    });
                 }
-                break;
+                return;
             }
         });
     }

@@ -346,7 +346,7 @@ impl JMAP {
             }
             ("store", Some("maintenance"), &Method::GET) => {
                 match self.store.purge_blobs(self.blob_store.clone()).await {
-                    Ok(_) => match self.store.purge_bitmaps().await {
+                    Ok(_) => match self.store.purge_store().await {
                         Ok(_) => JsonResponse::new(json!({
                             "data": (),
                         }))
@@ -456,9 +456,9 @@ impl JMAP {
                 }
             }
             ("oauth", _, _) => self.handle_api_request(req, body, access_token).await,
-            (path_1 @ ("queue" | "report"), Some(path_2), &Method::GET) => {
+            (path_1 @ ("queue" | "reports"), Some(path_2), &Method::GET) => {
                 self.smtp
-                    .handle_manage_request(req.uri(), req.method(), path_1, path_2)
+                    .handle_manage_request(req.uri(), req.method(), path_1, path_2, path.next())
                     .await
             }
             _ => RequestError::not_found().into_http_response(),

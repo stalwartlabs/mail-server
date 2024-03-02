@@ -29,7 +29,7 @@ use utils::config::cron::SimpleCron;
 use crate::{BlobStore, LookupStore, Store};
 
 pub enum PurgeStore {
-    Bitmaps(Store),
+    Data(Store),
     Blobs { store: Store, blob_store: BlobStore },
     Lookup(LookupStore),
 }
@@ -62,11 +62,11 @@ impl PurgeSchedule {
                 }
 
                 let result = match &self.store {
-                    PurgeStore::Bitmaps(store) => store.purge_bitmaps().await,
+                    PurgeStore::Data(store) => store.purge_store().await,
                     PurgeStore::Blobs { store, blob_store } => {
                         store.purge_blobs(blob_store.clone()).await
                     }
-                    PurgeStore::Lookup(store) => store.purge_expired().await,
+                    PurgeStore::Lookup(store) => store.purge_lookup_store().await,
                 };
 
                 if let Err(err) = result {
@@ -85,7 +85,7 @@ impl PurgeSchedule {
 impl Display for PurgeStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PurgeStore::Bitmaps(_) => write!(f, "bitmaps"),
+            PurgeStore::Data(_) => write!(f, "bitmaps"),
             PurgeStore::Blobs { .. } => write!(f, "blobs"),
             PurgeStore::Lookup(_) => write!(f, "expired keys"),
         }

@@ -117,6 +117,12 @@ pub enum PrincipalField {
     Members,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct List<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PrincipalUpdate {
     action: PrincipalAction,

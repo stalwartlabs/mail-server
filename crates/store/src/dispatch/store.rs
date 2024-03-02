@@ -26,7 +26,7 @@ use std::ops::{BitAndAssign, Range};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::KeySerializer, AnyKey, Batch, BitmapClass, ValueClass},
+    write::{key::KeySerializer, now, AnyKey, Batch, BitmapClass, ReportClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
     SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
@@ -241,18 +241,45 @@ impl Store {
         }
     }
 
-    pub async fn purge_bitmaps(&self) -> crate::Result<()> {
+    pub async fn purge_store(&self) -> crate::Result<()> {
+        // Delete expired reports
+        let now = now();
+        self.delete_range(
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc { id: 0, expires: 0 })),
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                id: u64::MAX,
+                expires: now,
+            })),
+        )
+        .await?;
+        self.delete_range(
+            ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
+            ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                id: u64::MAX,
+                expires: now,
+            })),
+        )
+        .await?;
+        self.delete_range(
+            ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
+            ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                id: u64::MAX,
+                expires: now,
+            })),
+        )
+        .await?;
+
         match self {
             #[cfg(feature = "sqlite")]
-            Self::SQLite(store) => store.purge_bitmaps().await,
+            Self::SQLite(store) => store.purge_store().await,
             #[cfg(feature = "foundation")]
-            Self::FoundationDb(store) => store.purge_bitmaps().await,
+            Self::FoundationDb(store) => store.purge_store().await,
             #[cfg(feature = "postgres")]
-            Self::PostgreSQL(store) => store.purge_bitmaps().await,
+            Self::PostgreSQL(store) => store.purge_store().await,
             #[cfg(feature = "mysql")]
-            Self::MySQL(store) => store.purge_bitmaps().await,
+            Self::MySQL(store) => store.purge_store().await,
             #[cfg(feature = "rocks")]
-            Self::RocksDb(store) => store.purge_bitmaps().await,
+            Self::RocksDb(store) => store.purge_store().await,
         }
     }
 
@@ -462,7 +489,7 @@ impl Store {
 
         self.blob_expire_all().await;
         self.purge_blobs(blob_store).await.unwrap();
-        self.purge_bitmaps().await.unwrap();
+        self.purge_store().await.unwrap();
 
         let store = self.clone();
         let mut failed = false;

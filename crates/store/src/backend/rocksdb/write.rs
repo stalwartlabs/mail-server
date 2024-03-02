@@ -120,7 +120,7 @@ impl RocksDbStore {
         .await
     }
 
-    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let db = self.db.clone();
         self.spawn_worker(move || {
             let cf = db

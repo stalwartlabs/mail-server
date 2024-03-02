@@ -34,12 +34,16 @@ use mail_auth::{
         ActionDisposition, DmarcResult, Record,
     },
 };
+use reqwest::Method;
 use store::Store;
 use tokio::sync::mpsc;
 use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
 use crate::smtp::{
-    inbound::dummy_stores, management::send_manage_request, outbound::start_test_server, TestConfig,
+    inbound::dummy_stores,
+    management::{queue::List, send_manage_request},
+    outbound::start_test_server,
+    TestConfig,
 };
 use smtp::{
     config::AggregateFrequency,
@@ -141,10 +145,11 @@ async fn manage_reports() {
     .await;
 
     // List reports
-    let ids = send_manage_request::<Vec<String>>("/admin/report/list")
+    let ids = send_manage_request::<List<String>>(Method::GET, "/api/queue/reports")
         .await
         .unwrap()
-        .unwrap_data();
+        .unwrap_data()
+        .items;
     assert_eq!(ids.len(), 4);
     let mut id_map = AHashMap::new();
     let mut id_map_rev = AHashMap::new();
@@ -186,18 +191,19 @@ async fn manage_reports() {
 
     // Test list search
     for (query, expected_ids) in [
-        ("/admin/report/list?type=dmarc", vec!["a", "b"]),
-        ("/admin/report/list?type=tls", vec!["c", "d"]),
-        ("/admin/report/list?domain=foobar.org", vec!["a", "c"]),
-        ("/admin/report/list?domain=foobar.net", vec!["b", "d"]),
-        ("/admin/report/list?domain=foobar.org&type=dmarc", vec!["a"]),
-        ("/admin/report/list?domain=foobar.net&type=tls", vec!["d"]),
+        ("/api/queue/reports?type=dmarc", vec!["a", "b"]),
+        ("/api/queue/reports?type=tls", vec!["c", "d"]),
+        ("/api/queue/reports?domain=foobar.org", vec!["a", "c"]),
+        ("/api/queue/reports?domain=foobar.net", vec!["b", "d"]),
+        ("/api/queue/reports?domain=foobar.org&type=dmarc", vec!["a"]),
+        ("/api/queue/reports?domain=foobar.net&type=tls", vec!["d"]),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
-        let ids = send_manage_request::<Vec<String>>(query)
+        let ids = send_manage_request::<List<String>>(Method::GET, query)
             .await
             .unwrap()
             .unwrap_data()
+            .items
             .into_iter()
             .map(|id| id_map_rev.get(&id).unwrap().clone())
             .collect::<HashSet<_>>();
@@ -206,23 +212,23 @@ async fn manage_reports() {
 
     // Cancel reports
     for id in ["a", "b"] {
-        assert_eq!(
-            send_manage_request::<Vec<bool>>(&format!(
-                "/admin/report/cancel?id={}",
-                id_map.get(id).unwrap(),
-            ))
+        assert!(
+            send_manage_request::<bool>(
+                Method::DELETE,
+                &format!("/api/queue/reports/{}", id_map.get(id).unwrap(),)
+            )
             .await
             .unwrap()
             .unwrap_data(),
-            vec![true],
             "failed for {id}"
         );
     }
     assert_eq!(
-        send_manage_request::<Vec<String>>("/admin/report/list")
+        send_manage_request::<List<String>>(Method::GET, "/api/queue/reports")
             .await
             .unwrap()
             .unwrap_data()
+            .items
             .len(),
         2
     );
@@ -241,8 +247,16 @@ async fn manage_reports() {
 }
 
 async fn get_reports(ids: &[String]) -> Vec<Option<Report>> {
-    send_manage_request(&format!("/admin/report/status?id={}", ids.join(",")))
-        .await
-        .unwrap()
-        .unwrap_data()
+    let mut results = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        let report =
+            send_manage_request::<Report>(Method::GET, &format!("/api/queue/reports/{id}",))
+                .await
+                .unwrap()
+                .try_unwrap_data();
+        results.push(report);
+    }
+
+    results
 }

@@ -21,7 +21,10 @@
  * for more details.
 */
 
-use super::cli::{Client, QueueCommands};
+use super::{
+    cli::{Client, QueueCommands},
+    List,
+};
 use console::Term;
 use human_size::{Byte, SpecificSize};
 use mail_parser::DateTime;
@@ -99,65 +102,62 @@ impl QueueCommands {
                             .map(|p| Cell::new(p).with_style(Attr::Bold))
                             .collect(),
                     ));
-                    for (message, id) in client
-                        .http_request::<Vec<Option<Message>>, String>(
-                            Method::GET,
-                            &build_query("/api/queue/status?ids=", chunk),
-                            None,
-                        )
-                        .await
-                        .into_iter()
-                        .zip(chunk)
-                    {
-                        if let Some(message) = message {
-                            let mut rcpts = String::new();
-                            let mut deliver_at = i64::MAX;
-                            let mut deliver_pos = 0;
-                            for (pos, domain) in message.domains.iter().enumerate() {
-                                if let Some(next_retry) = &domain.next_retry {
-                                    let ts = next_retry.to_timestamp();
-                                    if ts < deliver_at {
-                                        deliver_at = ts;
-                                        deliver_pos = pos;
-                                    }
-                                }
-                                for rcpt in &domain.recipients {
-                                    if !rcpts.is_empty() {
-                                        rcpts.push('\n');
-                                    }
-                                    rcpts.push_str(&rcpt.address);
-                                    rcpts.push_str(" (");
-                                    rcpts.push_str(rcpt.status.status_short());
-                                    rcpts.push(')');
+                    for id in chunk {
+                        let message = client
+                            .http_request::<Message, String>(
+                                Method::GET,
+                                &format!("/api/queue/messages/{id}"),
+                                None,
+                            )
+                            .await;
+
+                        let mut rcpts = String::new();
+                        let mut deliver_at = i64::MAX;
+                        let mut deliver_pos = 0;
+                        for (pos, domain) in message.domains.iter().enumerate() {
+                            if let Some(next_retry) = &domain.next_retry {
+                                let ts = next_retry.to_timestamp();
+                                if ts < deliver_at {
+                                    deliver_at = ts;
+                                    deliver_pos = pos;
                                 }
                             }
-
-                            let mut cells = Vec::new();
-                            cells.push(Cell::new(&format!("{id:X}")));
-                            cells.push(if deliver_at != i64::MAX {
-                                Cell::new(
-                                    &message.domains[deliver_pos]
-                                        .next_retry
-                                        .as_ref()
-                                        .unwrap()
-                                        .to_rfc822(),
-                                )
-                            } else {
-                                Cell::new("None")
-                            });
-                            cells.push(Cell::new(if !message.return_path.is_empty() {
-                                &message.return_path
-                            } else {
-                                "<>"
-                            }));
-                            cells.push(Cell::new(&rcpts));
-                            cells.push(Cell::new(
-                                &SpecificSize::new(message.size as u32, Byte)
-                                    .unwrap()
-                                    .to_string(),
-                            ));
-                            table.add_row(Row::new(cells));
+                            for rcpt in &domain.recipients {
+                                if !rcpts.is_empty() {
+                                    rcpts.push('\n');
+                                }
+                                rcpts.push_str(&rcpt.address);
+                                rcpts.push_str(" (");
+                                rcpts.push_str(rcpt.status.status_short());
+                                rcpts.push(')');
+                            }
                         }
+
+                        let mut cells = Vec::new();
+                        cells.push(Cell::new(&format!("{id:X}")));
+                        cells.push(if deliver_at != i64::MAX {
+                            Cell::new(
+                                &message.domains[deliver_pos]
+                                    .next_retry
+                                    .as_ref()
+                                    .unwrap()
+                                    .to_rfc822(),
+                            )
+                        } else {
+                            Cell::new("None")
+                        });
+                        cells.push(Cell::new(if !message.return_path.is_empty() {
+                            &message.return_path
+                        } else {
+                            "<>"
+                        }));
+                        cells.push(Cell::new(&rcpts));
+                        cells.push(Cell::new(
+                            &SpecificSize::new(message.size as u32, Byte)
+                                .unwrap()
+                                .to_string(),
+                        ));
+                        table.add_row(Row::new(cells));
                     }
 
                     eprintln!();
@@ -173,21 +173,20 @@ impl QueueCommands {
                 eprintln!("\n{ids_len} queued message(s) found.")
             }
             QueueCommands::Status { ids } => {
-                for (message, id) in client
-                    .http_request::<Vec<Option<Message>>, String>(
-                        Method::GET,
-                        &build_query("/api/queue/status?ids=", &parse_ids(&ids)),
-                        None,
-                    )
-                    .await
-                    .into_iter()
-                    .zip(&ids)
-                {
+                for (uid, id) in parse_ids(&ids).into_iter().zip(ids) {
+                    let message = client
+                        .try_http_request::<Message, String>(
+                            Method::GET,
+                            &format!("/api/queue/messages/{uid}"),
+                            None,
+                        )
+                        .await;
                     let mut table = Table::new();
                     table.add_row(Row::new(vec![
                         Cell::new("ID").with_style(Attr::Bold),
-                        Cell::new(id),
+                        Cell::new(&id),
                     ]));
+
                     if let Some(message) = message {
                         table.add_row(Row::new(vec![
                             Cell::new("Sender").with_style(Attr::Bold),
@@ -316,30 +315,31 @@ impl QueueCommands {
                     std::process::exit(1);
                 }
 
-                let mut query = form_urlencoded::Serializer::new("/api/queue/retry?".to_string());
-
-                if let Some(filter) = &domain {
-                    query.append_pair("filter", filter);
-                }
-                if let Some(at) = time {
-                    query.append_pair("at", &at.to_rfc3339());
-                }
-                query.append_pair("ids", &append_ids(String::new(), &parsed_ids));
-
                 let mut success_count = 0;
                 let mut failed_list = vec![];
-                for (success, id) in client
-                    .http_request::<Vec<bool>, String>(Method::GET, &query.finish(), None)
-                    .await
-                    .into_iter()
-                    .zip(ids)
-                {
-                    if success {
+
+                for id in parsed_ids {
+                    let mut query =
+                        form_urlencoded::Serializer::new(format!("/api/queue/messages/{id}"));
+
+                    if let Some(filter) = &domain {
+                        query.append_pair("filter", filter);
+                    }
+                    if let Some(at) = time {
+                        query.append_pair("at", &at.to_rfc3339());
+                    }
+
+                    if client
+                        .try_http_request::<bool, String>(Method::PATCH, &query.finish(), None)
+                        .await
+                        .unwrap_or(false)
+                    {
                         success_count += 1;
                     } else {
-                        failed_list.push(id);
+                        failed_list.push(id.to_string());
                     }
                 }
+
                 eprint!("\nSuccessfully rescheduled {success_count} message(s).");
                 if !failed_list.is_empty() {
                     eprint!(" Unable to reschedule id(s): {}.", failed_list.join(", "));
@@ -371,27 +371,28 @@ impl QueueCommands {
                     std::process::exit(1);
                 }
 
-                let mut query = form_urlencoded::Serializer::new("/api/queue/cancel?".to_string());
-
-                if let Some(filter) = &rcpt {
-                    query.append_pair("filter", filter);
-                }
-                query.append_pair("ids", &append_ids(String::new(), &parsed_ids));
-
                 let mut success_count = 0;
                 let mut failed_list = vec![];
-                for (success, id) in client
-                    .http_request::<Vec<bool>, String>(Method::GET, &query.finish(), None)
-                    .await
-                    .into_iter()
-                    .zip(ids)
-                {
-                    if success {
+
+                for id in parsed_ids {
+                    let mut query =
+                        form_urlencoded::Serializer::new(format!("/api/queue/messages/{id}"));
+
+                    if let Some(filter) = &rcpt {
+                        query.append_pair("filter", filter);
+                    }
+
+                    if client
+                        .try_http_request::<bool, String>(Method::DELETE, &query.finish(), None)
+                        .await
+                        .unwrap_or(false)
+                    {
                         success_count += 1;
                     } else {
-                        failed_list.push(id);
+                        failed_list.push(id.to_string());
                     }
                 }
+
                 eprint!("\nCancelled delivery of {success_count} message(s).");
                 if !failed_list.is_empty() {
                     eprint!(
@@ -413,7 +414,7 @@ impl Client {
         before: &Option<DateTime>,
         after: &Option<DateTime>,
     ) -> Vec<u64> {
-        let mut query = form_urlencoded::Serializer::new("/api/queue/list?".to_string());
+        let mut query = form_urlencoded::Serializer::new("/api/queue/messages".to_string());
 
         if let Some(sender) = from {
             query.append_pair("from", sender);
@@ -428,8 +429,9 @@ impl Client {
             query.append_pair("after", &after.to_rfc3339());
         }
 
-        self.http_request::<Vec<u64>, String>(Method::GET, &query.finish(), None)
+        self.http_request::<List<u64>, String>(Method::GET, &query.finish(), None)
             .await
+            .items
     }
 }
 
@@ -477,22 +479,6 @@ fn parse_ids(ids: &[String]) -> Vec<u64> {
         }
     }
     result
-}
-
-fn build_query(path: &str, ids: &[u64]) -> String {
-    let mut query = String::with_capacity(path.len() + (ids.len() * 10));
-    query.push_str(path);
-    append_ids(query, ids)
-}
-
-fn append_ids(mut query: String, ids: &[u64]) -> String {
-    for (pos, id) in ids.iter().enumerate() {
-        if pos != 0 {
-            query.push(',');
-        }
-        query.push_str(&id.to_string());
-    }
-    query
 }
 
 impl Status {

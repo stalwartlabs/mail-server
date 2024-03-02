@@ -57,7 +57,7 @@ pub async fn lookup_tests() {
             .key_set(key.clone(), "world".to_string().into_bytes(), None)
             .await
             .unwrap();
-        store.purge_expired().await.unwrap();
+        store.purge_lookup_store().await.unwrap();
         assert_eq!(
             store.key_get::<String>(key.clone()).await.unwrap(),
             Some("world".to_string())
@@ -75,7 +75,7 @@ pub async fn lookup_tests() {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         assert_eq!(None, store.key_get::<String>(key.clone()).await.unwrap());
 
-        store.purge_expired().await.unwrap();
+        store.purge_lookup_store().await.unwrap();
         if let LookupStore::Store(store) = &store {
             store.assert_is_empty(store.clone().into()).await;
         }
@@ -106,7 +106,7 @@ pub async fn lookup_tests() {
             .unwrap();
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        store.purge_expired().await.unwrap();
+        store.purge_lookup_store().await.unwrap();
         assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
 
         // Test rate limiter
@@ -127,7 +127,7 @@ pub async fn lookup_tests() {
             .unwrap()
             .is_none());
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        store.purge_expired().await.unwrap();
+        store.purge_lookup_store().await.unwrap();
         if let LookupStore::Store(store) = &store {
             store.assert_is_empty(store.clone().into()).await;
         }

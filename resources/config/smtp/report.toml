@@ -8,7 +8,7 @@
 [report.analysis]
 addresses = ["dmarc@*", "abuse@*", "postmaster@*"]
 forward = true
-#store = "%{BASE_PATH}%/incoming"
+store = "30d"
 
 [report.dsn]
 from-name = "'Mail Delivery Subsystem'"

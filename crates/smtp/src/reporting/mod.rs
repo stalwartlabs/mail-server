@@ -311,6 +311,7 @@ impl SerializedSize {
 
 impl io::Write for SerializedSize {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        //let c = print!(" (left: {}, buf: {})", self.bytes_left, buf.len());
         let buf_len = buf.len();
         if buf_len <= self.bytes_left {
             self.bytes_left -= buf_len;

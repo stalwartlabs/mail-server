@@ -294,7 +294,7 @@ impl LookupStore {
         }
     }
 
-    pub async fn purge_expired(&self) -> crate::Result<()> {
+    pub async fn purge_lookup_store(&self) -> crate::Result<()> {
         match self {
             LookupStore::Store(store) => {
                 // Delete expired keys

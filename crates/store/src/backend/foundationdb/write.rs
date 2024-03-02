@@ -390,7 +390,7 @@ impl FdbStore {
         }
     }
 
-    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         // Obtain all empty bitmaps
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(

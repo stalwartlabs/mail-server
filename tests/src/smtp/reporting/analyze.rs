@@ -21,25 +21,25 @@
  * for more details.
 */
 
-use std::{fs, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use crate::smtp::{
-    inbound::TestQueueEvent, make_temp_dir, session::TestSession, TestConfig, TestSMTP,
-};
+use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestConfig, TestSMTP};
 use smtp::{
     config::AddressMatch,
     core::{Session, SMTP},
 };
+use store::{
+    write::{ReportClass, ValueClass},
+    IterateParams, ValueKey,
+};
 use utils::config::if_block::IfBlock;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
     let mut core = SMTP::test();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_analyze_report_test");
-    let report_dir = make_temp_dir("smtp_report_incoming", true);
-
     let config = &mut core.session.config.rcpt;
     config.relay = IfBlock::new(true);
     let config = &mut core.session.config.data;
@@ -51,10 +51,16 @@ async fn report_analyze() {
         AddressMatch::Equals("feedback@foobar.org".to_string()),
     ];
     config.forward = false;
-    config.store = report_dir.temp_dir.clone().into();
+    config.store = Duration::from_secs(1).into();
+    //config.store = Duration::from_secs(86400).into();
 
     // Create test message
     let core = Arc::new(core);
+    /*let rx_manage = crate::smtp::outbound::start_test_server(
+        core.clone(),
+        &[utils::config::ServerProtocol::Http],
+    );*/
+
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -84,13 +90,52 @@ async fn report_analyze() {
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
 
+    //let c = tokio::time::sleep(Duration::from_secs(86400)).await;
+
+    // Purging the database shouldn't remove the reports
+    qr.store.purge_store().await.unwrap();
+
+    // Make sure the reports are in the store
     let mut total_reports = 0;
-    for entry in fs::read_dir(&report_dir.temp_dir).unwrap() {
-        let path = entry.unwrap().path();
-        assert_ne!(fs::metadata(&path).unwrap().len(), 0);
-        total_reports += 1;
-    }
+    qr.store
+        .iterate(
+            IterateParams::new(
+                ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
+                ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                    id: u64::MAX,
+                    expires: u64::MAX,
+                })),
+            ),
+            |_, _| {
+                total_reports += 1;
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
     assert_eq!(total_reports, total_reports_received);
+
+    // Wait one second, purge, and make sure they are gone
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    qr.store.purge_store().await.unwrap();
+    let mut total_reports = 0;
+    qr.store
+        .iterate(
+            IterateParams::new(
+                ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
+                ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                    id: u64::MAX,
+                    expires: u64::MAX,
+                })),
+            ),
+            |_, _| {
+                total_reports += 1;
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(total_reports, 0);
 
     // Test delivery to non-report addresses
     session

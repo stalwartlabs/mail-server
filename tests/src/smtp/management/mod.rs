@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use reqwest::header::AUTHORIZATION;
+use reqwest::{header::AUTHORIZATION, Method};
 use serde::{de::DeserializeOwned, Deserialize};
 
 pub mod queue;
@@ -36,19 +36,22 @@ pub enum Response<T> {
     Error { error: String, details: String },
 }
 
-pub async fn send_manage_request<T: DeserializeOwned>(query: &str) -> Result<Response<T>, String> {
-    send_manage_request_raw(query).await.map(|result| {
+pub async fn send_manage_request<T: DeserializeOwned>(
+    method: Method,
+    query: &str,
+) -> Result<Response<T>, String> {
+    send_manage_request_raw(method, query).await.map(|result| {
         serde_json::from_str::<Response<T>>(&result).unwrap_or_else(|err| panic!("{err}: {result}"))
     })
 }
 
-pub async fn send_manage_request_raw(query: &str) -> Result<String, String> {
+pub async fn send_manage_request_raw(method: Method, query: &str) -> Result<String, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_millis(500))
         .danger_accept_invalid_certs(true)
         .build()
         .unwrap()
-        .get(format!("https://127.0.0.1:9980{query}"))
+        .request(method, format!("https://127.0.0.1:9980{query}"))
         .header(AUTHORIZATION, "Basic YWRtaW46c2VjcmV0")
         .send()
         .await
@@ -63,6 +66,16 @@ impl<T> Response<T> {
     pub fn unwrap_data(self) -> T {
         match self {
             Response::Data { data } => data,
+            Response::Error { error, details } => {
+                panic!("Expected data, found error {error:?}: {details:?}")
+            }
+        }
+    }
+
+    pub fn try_unwrap_data(self) -> Option<T> {
+        match self {
+            Response::Data { data } => Some(data),
+            Response::Error { error, .. } if error == "not-found" => None,
             Response::Error { error, details } => {
                 panic!("Expected data, found error {error:?}: {details:?}")
             }

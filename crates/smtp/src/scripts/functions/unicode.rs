@@ -87,7 +87,10 @@ impl CharUtils for char {
 }
 
 pub fn fn_cure_text<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {
-    decancer::cure(v[0].to_string().as_ref()).into_str().into()
+    decancer::cure(v[0].to_string().as_ref(), decancer::Options::default())
+        .map(|s| s.into_str())
+        .unwrap_or_default()
+        .into()
 }
 
 pub fn fn_unicode_skeleton<'x>(_: &'x Context<'x, SieveContext>, v: Vec<Variable>) -> Variable {

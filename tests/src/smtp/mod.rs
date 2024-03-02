@@ -408,7 +408,7 @@ impl TestConfig for ReportConfig {
                 addresses: vec![],
                 forward: true,
                 store: None,
-                report_id: 0.into(),
+                report_id: SnowflakeIdGenerator::new(),
             },
             dkim: Report::test(),
             spf: Report::test(),

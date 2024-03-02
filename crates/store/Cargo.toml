@@ -9,8 +9,8 @@ utils = { path = "../utils" }
 nlp = { path = "../nlp" }
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
 foundationdb = { version = "0.8.0", features = ["embedded-fdb-include"], optional = true }
-rusqlite = { version = "0.30.0", features = ["bundled"], optional = true }
-rust-s3 = { version = "0.33.0", default-features = false, features = ["tokio-rustls-tls"], optional = true }
+rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
+rust-s3 = { version = "0.33.0", default-features = false, features = ["tokio-rustls-tls", "no-verify-ssl"], optional = true }
 tokio = { version = "1.23", features = ["sync", "fs", "io-util"] }
 r2d2 = { version = "0.8.10", optional = true }
 futures = { version = "0.3", optional = true }

@@ -73,7 +73,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .with_dkim_domain(signature.domain())
             .with_dkim_selector(signature.selector())
             .with_dkim_identity(signature.identity())
-            .with_headers(message.raw_headers())
+            .with_headers(std::str::from_utf8(message.raw_headers()).unwrap_or_default())
             .write_rfc5322(
                 (
                     self.core

@@ -203,7 +203,7 @@ impl SqliteStore {
         .await
     }
 
-    pub(crate) async fn purge_bitmaps(&self) -> crate::Result<()> {
+    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             conn.prepare_cached(&format!(

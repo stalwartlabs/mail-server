@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, net::IpAddr, str::FromStr, sync::Arc};
 
 use directory::{AuthResult, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -33,20 +33,32 @@ use hyper::{
     Method, StatusCode, Uri,
 };
 use hyper_util::rt::TokioIo;
+use mail_auth::{
+    dmarc::URI,
+    mta_sts::ReportUri,
+    report::{
+        self,
+        tlsrpt::{FailureDetails, Policy, TlsReport},
+        Feedback,
+    },
+};
 use mail_parser::{decoders::base64::base64_decode, DateTime};
 use mail_send::Credentials;
 use serde::{Deserializer, Serializer};
 use serde_json::json;
 use store::{
-    write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, ValueKey,
+    write::{
+        key::DeserializeBigEndian, now, BatchBuilder, Bincode, QueueClass, ReportClass,
+        ReportEvent, ValueClass,
+    },
+    Deserialize, IterateParams, ValueKey, U64_LEN,
 };
 
 use utils::listener::{limiter::InFlight, SessionData, SessionManager, SessionStream};
 
 use crate::{
     queue::{self, ErrorDetails, HostResponse, QueueId, Status},
-    reporting::{dmarc::DmarcFormat, tls::TlsFormat},
+    reporting::analysis::IncomingReport,
 };
 
 use super::{SmtpAdminSessionManager, SMTP};
@@ -110,7 +122,8 @@ pub enum Report {
         #[serde(deserialize_with = "deserialize_datetime")]
         #[serde(serialize_with = "serialize_datetime")]
         range_to: DateTime,
-        report: TlsFormat,
+        report: TlsReport,
+        rua: Vec<ReportUri>,
     },
     Dmarc {
         id: String,
@@ -121,7 +134,8 @@ pub enum Report {
         #[serde(deserialize_with = "deserialize_datetime")]
         #[serde(serialize_with = "serialize_datetime")]
         range_to: DateTime,
-        report: DmarcFormat,
+        report: report::Report,
+        rua: Vec<URI>,
     },
 }
 
@@ -318,6 +332,7 @@ impl SMTP {
                 req.method(),
                 path.next().unwrap_or_default(),
                 path.next().unwrap_or_default(),
+                path.next(),
             )
             .await)
     }
@@ -328,484 +343,293 @@ impl SMTP {
         method: &Method,
         path_1: &str,
         path_2: &str,
+        path_3: Option<&str>,
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let (status, response) = match (method, path_1, path_2) {
-            (&Method::GET, "queue", "list") => {
-                let mut text = None;
-                let mut from = None;
-                let mut to = None;
-                let mut before = None;
-                let mut after = None;
-                let mut error = None;
-                let mut page: usize = 0;
-                let mut limit: usize = 0;
-                let mut values = false;
+        let params = UrlParams::new(uri);
 
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "text" => {
-                                if !value.is_empty() {
-                                    text = value.into_owned().into();
-                                }
-                            }
-                            "from" => {
-                                if !value.is_empty() {
-                                    from = value.into_owned().into();
-                                }
-                            }
-                            "to" => {
-                                if !value.is_empty() {
-                                    to = value.into_owned().into();
-                                }
-                            }
-                            "after" => match value.parse_timestamp() {
-                                Ok(dt) => {
-                                    after = dt.into();
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            "before" => match value.parse_timestamp() {
-                                Ok(dt) => {
-                                    before = dt.into();
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            "values" => {
-                                values = true;
-                            }
-                            "limit" => {
-                                limit = value.parse().unwrap_or_default();
-                            }
-                            "page" => {
-                                page = value.parse().unwrap_or_default();
-                            }
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
-                        }
-                    }
-                }
+        let (status, response) = match (method, path_1, path_2, path_3) {
+            (&Method::GET, "queue", "messages", None) => {
+                let text = params.get("text");
+                let from = params.get("from");
+                let to = params.get("to");
+                let before = params.parse::<Timestamp>("before").map(|t| t.into_inner());
+                let after = params.parse::<Timestamp>("after").map(|t| t.into_inner());
+                let page: usize = params.parse::<usize>("page").unwrap_or_default();
+                let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
+                let values = params.has_key("values");
 
-                match error {
-                    None => {
-                        let mut result_ids = Vec::new();
-                        let mut result_values = Vec::new();
-                        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
-                        let to_key =
-                            ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
-                        let has_filters = text.is_some()
-                            || from.is_some()
-                            || to.is_some()
-                            || before.is_some()
-                            || after.is_some();
-                        let mut offset = page.saturating_sub(1) * limit;
-                        let mut total = 0;
-                        let mut total_returned = 0;
-                        let _ =
-                            self.shared
-                                .default_data_store
-                                .iterate(
-                                    IterateParams::new(from_key, to_key).ascending(),
-                                    |key, value| {
-                                        let message =
-                                            Bincode::<queue::Message>::deserialize(value)?.inner;
-                                        let matches =
-                                            !has_filters
-                                                || (text
-                                                    .as_ref()
-                                                    .map(|text| {
-                                                        message.return_path.contains(text)
-                                                            || message.recipients.iter().any(|r| {
-                                                                r.address_lcase.contains(text)
-                                                            })
-                                                    })
-                                                    .unwrap_or_else(|| {
-                                                        from.as_ref().map_or(true, |from| {
-                                                            message.return_path.contains(from)
-                                                        }) && to.as_ref().map_or(true, |to| {
-                                                            message.recipients.iter().any(|r| {
-                                                                r.address_lcase.contains(to)
-                                                            })
-                                                        })
-                                                    })
-                                                    && before.as_ref().map_or(true, |before| {
-                                                        message.next_delivery_event() < *before
-                                                    })
-                                                    && after.as_ref().map_or(true, |after| {
-                                                        message.next_delivery_event() > *after
-                                                    }));
+                let mut result_ids = Vec::new();
+                let mut result_values = Vec::new();
+                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
+                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+                let has_filters = text.is_some()
+                    || from.is_some()
+                    || to.is_some()
+                    || before.is_some()
+                    || after.is_some();
+                let mut offset = page.saturating_sub(1) * limit;
+                let mut total = 0;
+                let mut total_returned = 0;
+                let _ = self
+                    .shared
+                    .default_data_store
+                    .iterate(
+                        IterateParams::new(from_key, to_key).ascending(),
+                        |key, value| {
+                            let message = Bincode::<queue::Message>::deserialize(value)?.inner;
+                            let matches = !has_filters
+                                || (text
+                                    .as_ref()
+                                    .map(|text| {
+                                        message.return_path.contains(text)
+                                            || message
+                                                .recipients
+                                                .iter()
+                                                .any(|r| r.address_lcase.contains(text))
+                                    })
+                                    .unwrap_or_else(|| {
+                                        from.as_ref()
+                                            .map_or(true, |from| message.return_path.contains(from))
+                                            && to.as_ref().map_or(true, |to| {
+                                                message
+                                                    .recipients
+                                                    .iter()
+                                                    .any(|r| r.address_lcase.contains(to))
+                                            })
+                                    })
+                                    && before.as_ref().map_or(true, |before| {
+                                        message.next_delivery_event() < *before
+                                    })
+                                    && after.as_ref().map_or(true, |after| {
+                                        message.next_delivery_event() > *after
+                                    }));
 
-                                        if matches {
-                                            if offset == 0 {
-                                                if limit == 0 || total_returned < limit {
-                                                    if values {
-                                                        result_values.push(Message::from(&message));
-                                                    } else {
-                                                        result_ids.push(key.deserialize_be_u64(1)?);
-                                                    }
-                                                    total_returned += 1;
-                                                }
-                                            } else {
-                                                offset -= 1;
-                                            }
-
-                                            total += 1;
-                                        }
-
-                                        Ok(true)
-                                    },
-                                )
-                                .await;
-
-                        (
-                            StatusCode::OK,
-                            if values {
-                                serde_json::to_string(&json!({
-                                        "data": {
-                                            "items": result_values,
-                                            "total": total,
-                                        },
-                                }))
-                            } else {
-                                serde_json::to_string(&json!({
-                                        "data": {
-                                            "items": result_ids,
-                                            "total": total,
-                                        },
-                                }))
-                            }
-                            .unwrap_or_default(),
-                        )
-                    }
-                    Some(error) => error.into_bad_request(),
-                }
-            }
-            (&Method::GET, "queue", "status") => {
-                let mut queue_ids = Vec::new();
-                let mut error = None;
-
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "id" | "ids" => match value.parse_queue_ids() {
-                                Ok(ids) => {
-                                    queue_ids = ids;
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                match error {
-                    None => {
-                        let mut result = Vec::with_capacity(queue_ids.len());
-                        for queue_id in queue_ids {
-                            if let Some(message) = self.read_message(queue_id).await {
-                                result.push(Message::from(&message).into());
-                            } else {
-                                result.push(None);
-                            }
-                        }
-
-                        (
-                            StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                        )
-                    }
-                    Some(error) => error.into_bad_request(),
-                }
-            }
-            (&Method::GET, "queue", "retry") => {
-                let mut queue_ids = Vec::new();
-                let mut time = now();
-                let mut item = None;
-                let mut error = None;
-
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "id" | "ids" => match value.parse_queue_ids() {
-                                Ok(ids) => {
-                                    queue_ids = ids;
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            "at" => match value.parse_timestamp() {
-                                Ok(dt) => {
-                                    time = dt;
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            "filter" => {
-                                if !value.is_empty() {
-                                    item = value.into_owned().into();
-                                }
-                            }
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                match error {
-                    None => {
-                        let mut result = Vec::with_capacity(queue_ids.len());
-
-                        for queue_id in queue_ids {
-                            let mut found = false;
-
-                            if let Some(mut message) = self.read_message(queue_id).await {
-                                let prev_event = message.next_event().unwrap_or_default();
-
-                                for domain in &mut message.domains {
-                                    if matches!(
-                                        domain.status,
-                                        Status::Scheduled | Status::TemporaryFailure(_)
-                                    ) && item
-                                        .as_ref()
-                                        .map_or(true, |item| domain.domain.contains(item))
-                                    {
-                                        domain.retry.due = time;
-                                        if domain.expires > time {
-                                            domain.expires = time + 10;
-                                        }
-                                        found = true;
-                                    }
-                                }
-
-                                if found {
-                                    let next_event = message.next_event().unwrap_or_default();
-                                    message
-                                        .save_changes(self, prev_event.into(), next_event.into())
-                                        .await;
-                                }
-                            }
-
-                            result.push(found);
-                        }
-
-                        if result.iter().any(|r| *r) {
-                            let _ = self.queue.tx.send(queue::Event::Reload).await;
-                        }
-
-                        (
-                            StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                        )
-                    }
-                    Some(error) => error.into_bad_request(),
-                }
-            }
-            (&Method::GET, "queue", "cancel") => {
-                let mut queue_ids = Vec::new();
-                let mut item = None;
-                let mut error = None;
-
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "id" | "ids" => match value.parse_queue_ids() {
-                                Ok(ids) => {
-                                    queue_ids = ids;
-                                }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            "filter" => {
-                                if !value.is_empty() {
-                                    item = value.into_owned().into();
-                                }
-                            }
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                match error {
-                    None => {
-                        let mut result = Vec::with_capacity(queue_ids.len());
-
-                        for queue_id in queue_ids {
-                            let mut found = false;
-
-                            if let Some(mut message) = self.read_message(queue_id).await {
-                                let prev_event = message.next_event().unwrap_or_default();
-
-                                if let Some(item) = &item {
-                                    // Cancel delivery for all recipients that match
-                                    for rcpt in &mut message.recipients {
-                                        if rcpt.address_lcase.contains(item) {
-                                            rcpt.status = Status::PermanentFailure(HostResponse {
-                                                hostname: ErrorDetails::default(),
-                                                response: smtp_proto::Response {
-                                                    code: 0,
-                                                    esc: [0, 0, 0],
-                                                    message: "Delivery canceled.".to_string(),
-                                                },
-                                            });
-                                            found = true;
-                                        }
-                                    }
-                                    if found {
-                                        // Mark as completed domains without any pending deliveries
-                                        for (domain_idx, domain) in
-                                            message.domains.iter_mut().enumerate()
-                                        {
-                                            if matches!(
-                                                domain.status,
-                                                Status::TemporaryFailure(_) | Status::Scheduled
-                                            ) {
-                                                let mut total_rcpt = 0;
-                                                let mut total_completed = 0;
-
-                                                for rcpt in &message.recipients {
-                                                    if rcpt.domain_idx == domain_idx {
-                                                        total_rcpt += 1;
-                                                        if matches!(
-                                                            rcpt.status,
-                                                            Status::PermanentFailure(_)
-                                                                | Status::Completed(_)
-                                                        ) {
-                                                            total_completed += 1;
-                                                        }
-                                                    }
-                                                }
-
-                                                if total_rcpt == total_completed {
-                                                    domain.status = Status::Completed(());
-                                                }
-                                            }
-                                        }
-
-                                        // Delete message if there are no pending deliveries
-                                        if message.domains.iter().any(|domain| {
-                                            matches!(
-                                                domain.status,
-                                                Status::TemporaryFailure(_) | Status::Scheduled
-                                            )
-                                        }) {
-                                            let next_event =
-                                                message.next_event().unwrap_or_default();
-                                            message
-                                                .save_changes(
-                                                    self,
-                                                    next_event.into(),
-                                                    prev_event.into(),
-                                                )
-                                                .await;
+                            if matches {
+                                if offset == 0 {
+                                    if limit == 0 || total_returned < limit {
+                                        if values {
+                                            result_values.push(Message::from(&message));
                                         } else {
-                                            message.remove(self, prev_event).await;
+                                            result_ids.push(key.deserialize_be_u64(1)?);
                                         }
+                                        total_returned += 1;
                                     }
                                 } else {
-                                    message.remove(self, prev_event).await;
-                                    found = true;
+                                    offset -= 1;
                                 }
+
+                                total += 1;
                             }
 
-                            result.push(found);
-                        }
+                            Ok(true)
+                        },
+                    )
+                    .await;
 
-                        (
-                            StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                        )
+                (
+                    StatusCode::OK,
+                    if values {
+                        serde_json::to_string(&json!({
+                                "data": {
+                                    "items": result_values,
+                                    "total": total,
+                                },
+                        }))
+                    } else {
+                        serde_json::to_string(&json!({
+                                "data": {
+                                    "items": result_ids,
+                                    "total": total,
+                                },
+                        }))
                     }
-                    Some(error) => error.into_bad_request(),
+                    .unwrap_or_default(),
+                )
+            }
+            (&Method::GET, "queue", "messages", Some(queue_id)) => {
+                if let Some(message) = self
+                    .read_message(queue_id.parse().unwrap_or_default())
+                    .await
+                {
+                    (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response {
+                            data: Message::from(&message),
+                        })
+                        .unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
                 }
             }
-            (&Method::GET, "report", "list") => {
-                let mut domain = None;
-                let mut type_ = None;
-                let mut error = None;
+            (&Method::PATCH, "queue", "messages", Some(queue_id)) => {
+                let time = params
+                    .parse::<Timestamp>("at")
+                    .map(|t| t.into_inner())
+                    .unwrap_or_else(now);
+                let item = params.get("filter");
 
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "type" => match value.as_ref() {
-                                "dmarc" => {
-                                    type_ = 0u8.into();
-                                }
-                                "tls" => {
-                                    type_ = 1u8.into();
-                                }
-                                _ => {
-                                    error = format!("Invalid report type {value:?}.").into();
-                                    break;
-                                }
-                            },
-                            "domain" => {
-                                domain = value.into_owned().into();
+                if let Some(mut message) = self
+                    .read_message(queue_id.parse().unwrap_or_default())
+                    .await
+                {
+                    let prev_event = message.next_event().unwrap_or_default();
+                    let mut found = false;
+
+                    for domain in &mut message.domains {
+                        if matches!(
+                            domain.status,
+                            Status::Scheduled | Status::TemporaryFailure(_)
+                        ) && item
+                            .as_ref()
+                            .map_or(true, |item| domain.domain.contains(item))
+                        {
+                            domain.retry.due = time;
+                            if domain.expires > time {
+                                domain.expires = time + 10;
                             }
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
+                            found = true;
                         }
                     }
-                }
 
-                match error {
-                    None => {
-                        let mut result = Vec::new();
-                        let from_key = ValueKey::from(ValueClass::Queue(
-                            QueueClass::DmarcReportHeader(ReportEvent {
-                                due: 0,
-                                policy_hash: 0,
-                                seq_id: 0,
-                                domain: String::new(),
-                            }),
-                        ));
-                        let to_key = ValueKey::from(ValueClass::Queue(
-                            QueueClass::TlsReportHeader(ReportEvent {
-                                due: u64::MAX,
-                                policy_hash: 0,
-                                seq_id: 0,
-                                domain: String::new(),
-                            }),
-                        ));
-                        let _ = self
-                            .shared
-                            .default_data_store
-                            .iterate(
-                                IterateParams::new(from_key, to_key).ascending().no_values(),
-                                |key, _| {
-                                    if type_.map_or(true, |t| t == *key.last().unwrap()) {
-                                        let event = ReportEvent::deserialize(key)?;
-                                        if event.seq_id != 0
-                                            && domain.as_ref().map_or(true, |d| {
-                                                d.eq_ignore_ascii_case(&event.domain)
-                                            })
-                                        {
+                    if found {
+                        let next_event = message.next_event().unwrap_or_default();
+                        message
+                            .save_changes(self, prev_event.into(), next_event.into())
+                            .await;
+                        let _ = self.queue.tx.send(queue::Event::Reload).await;
+                    }
+
+                    (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response { data: found }).unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
+                }
+            }
+            (&Method::DELETE, "queue", "messages", Some(queue_id)) => {
+                if let Some(mut message) = self
+                    .read_message(queue_id.parse().unwrap_or_default())
+                    .await
+                {
+                    let mut found = false;
+                    let prev_event = message.next_event().unwrap_or_default();
+
+                    if let Some(item) = params.get("filter") {
+                        // Cancel delivery for all recipients that match
+                        for rcpt in &mut message.recipients {
+                            if rcpt.address_lcase.contains(item) {
+                                rcpt.status = Status::PermanentFailure(HostResponse {
+                                    hostname: ErrorDetails::default(),
+                                    response: smtp_proto::Response {
+                                        code: 0,
+                                        esc: [0, 0, 0],
+                                        message: "Delivery canceled.".to_string(),
+                                    },
+                                });
+                                found = true;
+                            }
+                        }
+                        if found {
+                            // Mark as completed domains without any pending deliveries
+                            for (domain_idx, domain) in message.domains.iter_mut().enumerate() {
+                                if matches!(
+                                    domain.status,
+                                    Status::TemporaryFailure(_) | Status::Scheduled
+                                ) {
+                                    let mut total_rcpt = 0;
+                                    let mut total_completed = 0;
+
+                                    for rcpt in &message.recipients {
+                                        if rcpt.domain_idx == domain_idx {
+                                            total_rcpt += 1;
+                                            if matches!(
+                                                rcpt.status,
+                                                Status::PermanentFailure(_) | Status::Completed(_)
+                                            ) {
+                                                total_completed += 1;
+                                            }
+                                        }
+                                    }
+
+                                    if total_rcpt == total_completed {
+                                        domain.status = Status::Completed(());
+                                    }
+                                }
+                            }
+
+                            // Delete message if there are no pending deliveries
+                            if message.domains.iter().any(|domain| {
+                                matches!(
+                                    domain.status,
+                                    Status::TemporaryFailure(_) | Status::Scheduled
+                                )
+                            }) {
+                                let next_event = message.next_event().unwrap_or_default();
+                                message
+                                    .save_changes(self, next_event.into(), prev_event.into())
+                                    .await;
+                            } else {
+                                message.remove(self, prev_event).await;
+                            }
+                        }
+                    } else {
+                        message.remove(self, prev_event).await;
+                        found = true;
+                    }
+
+                    (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response { data: found }).unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
+                }
+            }
+            (&Method::GET, "queue", "reports", None) => {
+                let domain = params.get("domain").map(|d| d.to_lowercase());
+                let type_ = params.get("type").and_then(|t| match t {
+                    "dmarc" => 0u8.into(),
+                    "tls" => 1u8.into(),
+                    _ => None,
+                });
+                let page: usize = params.parse("page").unwrap_or_default();
+                let limit: usize = params.parse("limit").unwrap_or_default();
+
+                let mut result = Vec::new();
+                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
+                    ReportEvent {
+                        due: 0,
+                        policy_hash: 0,
+                        seq_id: 0,
+                        domain: String::new(),
+                    },
+                )));
+                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
+                    ReportEvent {
+                        due: u64::MAX,
+                        policy_hash: 0,
+                        seq_id: 0,
+                        domain: String::new(),
+                    },
+                )));
+                let mut offset = page.saturating_sub(1) * limit;
+                let mut total = 0;
+                let mut total_returned = 0;
+                let _ = self
+                    .shared
+                    .default_data_store
+                    .iterate(
+                        IterateParams::new(from_key, to_key).ascending().no_values(),
+                        |key, _| {
+                            if type_.map_or(true, |t| t == *key.last().unwrap()) {
+                                let event = ReportEvent::deserialize(key)?;
+                                if event.seq_id != 0
+                                    && domain.as_ref().map_or(true, |d| event.domain.contains(d))
+                                {
+                                    if offset == 0 {
+                                        if limit == 0 || total_returned < limit {
                                             result.push(
                                                 if *key.last().unwrap() == 0 {
                                                     QueueClass::DmarcReportHeader(event)
@@ -814,164 +638,274 @@ impl SMTP {
                                                 }
                                                 .queue_id(),
                                             );
+                                            total_returned += 1;
                                         }
+                                    } else {
+                                        offset -= 1;
                                     }
 
-                                    Ok(true)
-                                },
-                            )
-                            .await;
-
-                        (
-                            StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                        )
-                    }
-                    Some(error) => error.into_bad_request(),
-                }
-            }
-            (&Method::GET, "report", "status") => {
-                let mut report_ids = Vec::new();
-                let mut error = None;
-
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "id" | "ids" => match value.parse_report_ids() {
-                                Ok(ids) => {
-                                    report_ids = ids;
+                                    total += 1;
                                 }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
-                                }
-                            },
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
                             }
-                        }
-                    }
-                }
 
-                let mut result = Vec::with_capacity(report_ids.len());
-                for report_id in report_ids {
+                            Ok(true)
+                        },
+                    )
+                    .await;
+
+                (
+                    StatusCode::OK,
+                    serde_json::to_string(&json!({
+                            "data": {
+                                "items": result,
+                                "total": total,
+                            },
+                    }))
+                    .unwrap_or_default(),
+                )
+            }
+            (&Method::GET, "queue", "reports", Some(report_id)) => {
+                let mut result = None;
+                if let Some(report_id) = parse_queued_report_id(report_id) {
                     match report_id {
                         QueueClass::DmarcReportHeader(event) => {
+                            let mut rua = Vec::new();
                             if let Ok(Some(report)) = self
-                                .shared
-                                .default_data_store
-                                .get_value::<Bincode<DmarcFormat>>(ValueKey::from(
-                                    ValueClass::Queue(QueueClass::DmarcReportHeader(event.clone())),
-                                ))
+                                .generate_dmarc_aggregate_report(&event, &mut rua, None)
                                 .await
                             {
-                                let mut report = report.inner;
-                                if let Ok(records) =
-                                    self.fetch_dmarc_records(&event, &report, None).await
-                                {
-                                    report.records = records;
-                                    result.push(Report::dmarc(event, report).into());
-                                    continue;
-                                }
+                                result = Report::dmarc(event, report, rua).into();
                             }
                         }
                         QueueClass::TlsReportHeader(event) => {
+                            let mut rua = Vec::new();
                             if let Ok(Some(report)) = self
-                                .shared
-                                .default_data_store
-                                .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
-                                    QueueClass::TlsReportHeader(event.clone()),
-                                )))
+                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None)
                                 .await
                             {
-                                let mut report = report.inner;
-                                if let Ok(policy) =
-                                    self.fetch_tls_policy(&event, report.policy, None).await
-                                {
-                                    report.policy = policy.policy;
-                                    for record in policy.failure_details {
-                                        report.records.push(record.into());
-                                    }
-                                    for _ in 0..policy.summary.total_success {
-                                        report.records.push(None);
-                                    }
-                                    result.push(Report::tls(event, report).into());
-                                    continue;
-                                }
+                                result = Report::tls(event, report, rua).into();
                             }
                         }
                         _ => (),
                     }
-
-                    result.push(None);
                 }
 
-                match error {
-                    None => (
+                if let Some(result) = result {
+                    (
                         StatusCode::OK,
                         serde_json::to_string(&Response { data: result }).unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
+                }
+            }
+            (&Method::DELETE, "queue", "reports", Some(report_id)) => {
+                if let Some(report_id) = parse_queued_report_id(report_id) {
+                    match report_id {
+                        QueueClass::DmarcReportHeader(event) => {
+                            self.delete_dmarc_report(event).await;
+                        }
+                        QueueClass::TlsReportHeader(event) => {
+                            self.delete_tls_report(vec![event]).await;
+                        }
+                        _ => (),
+                    }
+
+                    (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response { data: true }).unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
+                }
+            }
+            (&Method::GET, "reports", class @ ("dmarc" | "tls" | "arf"), None) => {
+                let filter = params.get("text");
+                let page: usize = params.parse::<usize>("page").unwrap_or_default();
+                let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
+
+                let (from_key, to_key, typ) = match class {
+                    "dmarc" => (
+                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                            id: 0,
+                            expires: 0,
+                        })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                            id: u64::MAX,
+                            expires: u64::MAX,
+                        })),
+                        ReportType::Dmarc,
                     ),
-                    Some(error) => error.into_bad_request(),
-                }
-            }
-            (&Method::GET, "report", "cancel") => {
-                let mut report_ids = Vec::new();
-                let mut error = None;
+                    "tls" => (
+                        ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                            id: u64::MAX,
+                            expires: u64::MAX,
+                        })),
+                        ReportType::Tls,
+                    ),
+                    "arf" => (
+                        ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                            id: u64::MAX,
+                            expires: u64::MAX,
+                        })),
+                        ReportType::Arf,
+                    ),
+                    _ => unreachable!(),
+                };
 
-                if let Some(query) = uri.query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "id" | "ids" => match value.parse_report_ids() {
-                                Ok(ids) => {
-                                    report_ids = ids;
+                let mut results = Vec::new();
+                let mut offset = page.saturating_sub(1) * limit;
+                let mut total = 0;
+                let mut last_id = 0;
+                let result = self
+                    .shared
+                    .default_data_store
+                    .iterate(
+                        IterateParams::new(from_key, to_key)
+                            .set_values(filter.is_some())
+                            .descending(),
+                        |key, value| {
+                            // Skip chunked records
+                            let id = key.deserialize_be_u64(U64_LEN + 1)?;
+                            if id == last_id {
+                                return Ok(true);
+                            }
+                            last_id = id;
+
+                            // TODO: Support filtering chunked records (over 10MB) on FDB
+                            let matches = filter.map_or(true, |filter| match typ {
+                                ReportType::Dmarc => Bincode::<
+                                    IncomingReport<mail_auth::report::Report>,
+                                >::deserialize(
+                                    value
+                                )
+                                .map_or(false, |v| v.inner.contains(filter)),
+                                ReportType::Tls => {
+                                    Bincode::<IncomingReport<TlsReport>>::deserialize(value)
+                                        .map_or(false, |v| v.inner.contains(filter))
                                 }
-                                Err(reason) => {
-                                    error = reason.into();
-                                    break;
+                                ReportType::Arf => {
+                                    Bincode::<IncomingReport<Feedback>>::deserialize(value)
+                                        .map_or(false, |v| v.inner.contains(filter))
                                 }
+                            });
+                            if matches {
+                                if offset == 0 {
+                                    if limit == 0 || results.len() < limit {
+                                        results.push(format!(
+                                            "{}_{}",
+                                            id,
+                                            key.deserialize_be_u64(1)?
+                                        ));
+                                    }
+                                } else {
+                                    offset -= 1;
+                                }
+
+                                total += 1;
+                            }
+
+                            Ok(true)
+                        },
+                    )
+                    .await;
+                match result {
+                    Ok(_) => (
+                        StatusCode::OK,
+                        serde_json::to_string(&json!({
+                            "data": {
+                                "items": results,
+                                "total": total,
                             },
-                            _ => {
-                                error = format!("Invalid parameter {key:?}.").into();
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                match error {
-                    None => {
-                        let mut result = Vec::with_capacity(report_ids.len());
-
-                        for report_id in report_ids {
-                            match report_id {
-                                QueueClass::DmarcReportHeader(event) => {
-                                    self.delete_dmarc_report(event).await;
-                                }
-                                QueueClass::TlsReportHeader(event) => {
-                                    self.delete_tls_report(vec![event]).await;
-                                }
-                                _ => (),
-                            }
-
-                            result.push(true);
-                        }
-
-                        (
-                            StatusCode::OK,
-                            serde_json::to_string(&Response { data: result }).unwrap_or_default(),
-                        )
-                    }
-                    Some(error) => error.into_bad_request(),
+                        }))
+                        .unwrap_or_default(),
+                    ),
+                    Err(err) => err.into_bad_request(),
                 }
             }
-            _ => (
-                StatusCode::NOT_FOUND,
-                format!(
-                    "{{\"error\": \"not-found\", \"details\": \"URL {} does not exist.\"}}",
-                    uri.path()
-                ),
-            ),
+            (&Method::GET, "reports", class @ ("dmarc" | "tls" | "arf"), Some(report_id)) => {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                    match &report_id {
+                        ReportClass::Tls { .. } => match self
+                            .shared
+                            .default_data_store
+                            .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
+                                ValueClass::Report(report_id),
+                            ))
+                            .await
+                        {
+                            Ok(Some(report)) => (
+                                StatusCode::OK,
+                                serde_json::to_string(&json!({
+                                    "data": report.inner,
+                                }))
+                                .unwrap_or_default(),
+                            ),
+                            Ok(None) => not_found(),
+                            Err(err) => err.into_bad_request(),
+                        },
+                        ReportClass::Dmarc { .. } => match self
+                            .shared
+                            .default_data_store
+                            .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
+                                ValueKey::from(ValueClass::Report(report_id)),
+                            )
+                            .await
+                        {
+                            Ok(Some(report)) => (
+                                StatusCode::OK,
+                                serde_json::to_string(&json!({
+                                    "data": report.inner,
+                                }))
+                                .unwrap_or_default(),
+                            ),
+                            Ok(None) => not_found(),
+                            Err(err) => err.into_bad_request(),
+                        },
+                        ReportClass::Arf { .. } => match self
+                            .shared
+                            .default_data_store
+                            .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
+                                ValueClass::Report(report_id),
+                            ))
+                            .await
+                        {
+                            Ok(Some(report)) => (
+                                StatusCode::OK,
+                                serde_json::to_string(&json!({
+                                    "data": report.inner,
+                                }))
+                                .unwrap_or_default(),
+                            ),
+                            Ok(None) => not_found(),
+                            Err(err) => err.into_bad_request(),
+                        },
+                    }
+                } else {
+                    not_found()
+                }
+            }
+            (&Method::DELETE, "reports", class @ ("dmarc" | "tls" | "arf"), Some(report_id)) => {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                    let mut batch = BatchBuilder::new();
+                    batch.clear(ValueClass::Report(report_id));
+                    let result = self
+                        .shared
+                        .default_data_store
+                        .write(batch.build())
+                        .await
+                        .is_ok();
+                    (
+                        StatusCode::OK,
+                        serde_json::to_string(&Response { data: result }).unwrap_or_default(),
+                    )
+                } else {
+                    not_found()
+                }
+            }
+            _ => not_found(),
         };
 
         hyper::Response::builder()
@@ -983,6 +917,203 @@ impl SMTP {
                     .boxed(),
             )
             .unwrap()
+    }
+}
+
+fn not_found() -> (StatusCode, String) {
+    (
+        StatusCode::NOT_FOUND,
+        "{\"error\": \"not-found\", \"details\": \"URL does not exist.\"}".to_string(),
+    )
+}
+
+#[derive(Default)]
+struct UrlParams<'x> {
+    params: HashMap<Cow<'x, str>, Cow<'x, str>>,
+}
+
+impl<'x> UrlParams<'x> {
+    pub fn new(uri: &'x Uri) -> Self {
+        if let Some(query) = uri.query() {
+            Self {
+                params: form_urlencoded::parse(query.as_bytes())
+                    .filter(|(_, value)| !value.is_empty())
+                    .collect(),
+            }
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.params.get(key).map(|v| v.as_ref())
+    }
+
+    pub fn has_key(&self, key: &str) -> bool {
+        self.params.contains_key(key)
+    }
+
+    pub fn parse<T>(&self, key: &str) -> Option<T>
+    where
+        T: std::str::FromStr,
+    {
+        self.get(key).and_then(|v| v.parse().ok())
+    }
+}
+
+enum ReportType {
+    Dmarc,
+    Tls,
+    Arf,
+}
+
+impl From<&str> for ReportType {
+    fn from(s: &str) -> Self {
+        match s {
+            "dmarc" => Self::Dmarc,
+            "tls" => Self::Tls,
+            "arf" => Self::Arf,
+            _ => unreachable!(),
+        }
+    }
+}
+
+trait Contains {
+    fn contains(&self, text: &str) -> bool;
+}
+
+impl Contains for mail_auth::report::Report {
+    fn contains(&self, text: &str) -> bool {
+        self.domain().contains(text)
+            || self.org_name().to_lowercase().contains(text)
+            || self.report_id().contains(text)
+            || self
+                .extra_contact_info()
+                .map_or(false, |c| c.to_lowercase().contains(text))
+            || self.records().iter().any(|record| record.contains(text))
+    }
+}
+
+impl Contains for mail_auth::report::Record {
+    fn contains(&self, filter: &str) -> bool {
+        self.envelope_from().contains(filter)
+            || self.header_from().contains(filter)
+            || self.envelope_to().map_or(false, |to| to.contains(filter))
+            || self.dkim_auth_result().iter().any(|dkim| {
+                dkim.domain().contains(filter)
+                    || dkim.selector().contains(filter)
+                    || dkim
+                        .human_result()
+                        .as_ref()
+                        .map_or(false, |r| r.contains(filter))
+            })
+            || self.spf_auth_result().iter().any(|spf| {
+                spf.domain().contains(filter)
+                    || spf.human_result().map_or(false, |r| r.contains(filter))
+            })
+            || self
+                .source_ip()
+                .map_or(false, |ip| ip.to_string().contains(filter))
+    }
+}
+
+impl Contains for TlsReport {
+    fn contains(&self, text: &str) -> bool {
+        self.organization_name
+            .as_ref()
+            .map_or(false, |o| o.to_lowercase().contains(text))
+            || self
+                .contact_info
+                .as_ref()
+                .map_or(false, |c| c.to_lowercase().contains(text))
+            || self.report_id.contains(text)
+            || self.policies.iter().any(|p| p.contains(text))
+    }
+}
+
+impl Contains for Policy {
+    fn contains(&self, filter: &str) -> bool {
+        self.policy.policy_domain.contains(filter)
+            || self
+                .policy
+                .policy_string
+                .iter()
+                .any(|s| s.to_lowercase().contains(filter))
+            || self
+                .policy
+                .mx_host
+                .iter()
+                .any(|s| s.to_lowercase().contains(filter))
+            || self.failure_details.iter().any(|f| f.contains(filter))
+    }
+}
+
+impl Contains for FailureDetails {
+    fn contains(&self, filter: &str) -> bool {
+        self.sending_mta_ip
+            .map_or(false, |s| s.to_string().contains(filter))
+            || self
+                .receiving_ip
+                .map_or(false, |s| s.to_string().contains(filter))
+            || self
+                .receiving_mx_hostname
+                .as_ref()
+                .map_or(false, |s| s.contains(filter))
+            || self
+                .receiving_mx_helo
+                .as_ref()
+                .map_or(false, |s| s.contains(filter))
+            || self
+                .additional_information
+                .as_ref()
+                .map_or(false, |s| s.contains(filter))
+            || self
+                .failure_reason_code
+                .as_ref()
+                .map_or(false, |s| s.contains(filter))
+    }
+}
+
+impl<'x> Contains for Feedback<'x> {
+    fn contains(&self, text: &str) -> bool {
+        // Check if any of the string fields contain the filter
+        self.authentication_results()
+            .iter()
+            .any(|s| s.contains(text))
+            || self
+                .original_envelope_id()
+                .map_or(false, |s| s.contains(text))
+            || self
+                .original_mail_from()
+                .map_or(false, |s| s.contains(text))
+            || self.original_rcpt_to().map_or(false, |s| s.contains(text))
+            || self.reported_domain().iter().any(|s| s.contains(text))
+            || self.reported_uri().iter().any(|s| s.contains(text))
+            || self.reporting_mta().map_or(false, |s| s.contains(text))
+            || self.user_agent().map_or(false, |s| s.contains(text))
+            || self.dkim_adsp_dns().map_or(false, |s| s.contains(text))
+            || self
+                .dkim_canonicalized_body()
+                .map_or(false, |s| s.contains(text))
+            || self
+                .dkim_canonicalized_header()
+                .map_or(false, |s| s.contains(text))
+            || self.dkim_domain().map_or(false, |s| s.contains(text))
+            || self.dkim_identity().map_or(false, |s| s.contains(text))
+            || self.dkim_selector().map_or(false, |s| s.contains(text))
+            || self.dkim_selector_dns().map_or(false, |s| s.contains(text))
+            || self.spf_dns().map_or(false, |s| s.contains(text))
+            || self.message().map_or(false, |s| s.contains(text))
+            || self.headers().map_or(false, |s| s.contains(text))
+    }
+}
+
+impl<T: Contains> Contains for IncomingReport<T> {
+    fn contains(&self, text: &str) -> bool {
+        self.from.to_lowercase().contains(text)
+            || self.to.iter().any(|to| to.to_lowercase().contains(text))
+            || self.subject.to_lowercase().contains(text)
+            || self.report.contains(text)
     }
 }
 
@@ -1049,23 +1180,25 @@ impl From<&queue::Message> for Message {
 }
 
 impl Report {
-    fn dmarc(event: ReportEvent, report: DmarcFormat) -> Self {
+    fn dmarc(event: ReportEvent, report: report::Report, rua: Vec<URI>) -> Self {
         Self::Dmarc {
             domain: event.domain.clone(),
             range_from: DateTime::from_timestamp(event.seq_id as i64),
             range_to: DateTime::from_timestamp(event.due as i64),
             id: QueueClass::DmarcReportHeader(event).queue_id(),
             report,
+            rua,
         }
     }
 
-    fn tls(event: ReportEvent, report: TlsFormat) -> Self {
+    fn tls(event: ReportEvent, report: TlsReport, rua: Vec<ReportUri>) -> Self {
         Self::Tls {
             domain: event.domain.clone(),
             range_from: DateTime::from_timestamp(event.seq_id as i64),
             range_to: DateTime::from_timestamp(event.due as i64),
             id: QueueClass::TlsReportHeader(event).queue_id(),
             report,
+            rua,
         }
     }
 }
@@ -1088,80 +1221,54 @@ impl GenerateQueueId for QueueClass {
     }
 }
 
-trait ParseValues {
-    fn parse_timestamp(&self) -> Result<u64, String>;
-    fn parse_queue_ids(&self) -> Result<Vec<QueueId>, String>;
-    fn parse_report_ids(&self) -> Result<Vec<QueueClass>, String>;
+fn parse_queued_report_id(id: &str) -> Option<QueueClass> {
+    let mut parts = id.split('!');
+    let type_ = parts.next()?;
+    let event = ReportEvent {
+        domain: parts.next()?.to_string(),
+        policy_hash: parts.next().and_then(|p| p.parse::<u64>().ok())?,
+        seq_id: parts.next().and_then(|p| p.parse::<u64>().ok())?,
+        due: parts.next().and_then(|p| p.parse::<u64>().ok())?,
+    };
+    match type_ {
+        "d" => Some(QueueClass::DmarcReportHeader(event)),
+        "t" => Some(QueueClass::TlsReportHeader(event)),
+        _ => None,
+    }
 }
 
-impl ParseValues for Cow<'_, str> {
-    fn parse_timestamp(&self) -> Result<u64, String> {
-        if let Some(dt) = DateTime::parse_rfc3339(self.as_ref()) {
+fn parse_incoming_report_id(class: &str, id: &str) -> Option<ReportClass> {
+    let mut parts = id.split('_');
+    let id = parts.next()?.parse().ok()?;
+    let expires = parts.next()?.parse().ok()?;
+    match class {
+        "dmarc" => Some(ReportClass::Dmarc { id, expires }),
+        "tls" => Some(ReportClass::Tls { id, expires }),
+        "arf" => Some(ReportClass::Arf { id, expires }),
+        _ => None,
+    }
+}
+
+struct Timestamp(u64);
+
+impl FromStr for Timestamp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(dt) = DateTime::parse_rfc3339(s) {
             let instant = dt.to_timestamp() as u64;
             if instant >= now() {
-                return Ok(instant);
+                return Ok(Timestamp(instant));
             }
         }
 
-        Err(format!("Invalid timestamp {self:?}."))
+        Err(())
     }
+}
 
-    fn parse_queue_ids(&self) -> Result<Vec<QueueId>, String> {
-        let mut ids = Vec::new();
-        for id in self.split(',') {
-            if !id.is_empty() {
-                match id.parse() {
-                    Ok(id) => {
-                        ids.push(id);
-                    }
-                    Err(_) => {
-                        return Err(format!("Failed to parse id {id:?}."));
-                    }
-                }
-            }
-        }
-        Ok(ids)
-    }
-
-    fn parse_report_ids(&self) -> Result<Vec<QueueClass>, String> {
-        let mut ids = Vec::new();
-        for id in self.split(',') {
-            if !id.is_empty() {
-                let mut parts = id.split('!');
-                match (
-                    parts.next(),
-                    parts.next(),
-                    parts.next().and_then(|p| p.parse::<u64>().ok()),
-                    parts.next().and_then(|p| p.parse::<u64>().ok()),
-                    parts.next().and_then(|p| p.parse::<u64>().ok()),
-                ) {
-                    (Some("d"), Some(domain), Some(policy), Some(seq_id), Some(due))
-                        if !domain.is_empty() =>
-                    {
-                        ids.push(QueueClass::DmarcReportHeader(ReportEvent {
-                            due,
-                            policy_hash: policy,
-                            seq_id,
-                            domain: domain.to_string(),
-                        }));
-                    }
-                    (Some("t"), Some(domain), Some(policy), Some(seq_id), Some(due))
-                        if !domain.is_empty() =>
-                    {
-                        ids.push(QueueClass::TlsReportHeader(ReportEvent {
-                            due,
-                            policy_hash: policy,
-                            seq_id,
-                            domain: domain.to_string(),
-                        }));
-                    }
-                    _ => {
-                        return Err(format!("Failed to parse id {id:?}."));
-                    }
-                }
-            }
-        }
-        Ok(ids)
+impl Timestamp {
+    pub fn into_inner(self) -> u64 {
+        self.0
     }
 }
 
@@ -1177,6 +1284,19 @@ impl BadRequest for String {
                 "{{\"error\": \"bad-parameters\", \"details\": {}}}",
                 serde_json::to_string(&self).unwrap()
             ),
+        )
+    }
+}
+
+impl BadRequest for store::Error {
+    fn into_bad_request(self) -> (StatusCode, String) {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::to_string(&json!({
+                "error": "internal-error",
+                "details": self.to_string(),
+            }))
+            .unwrap_or_default(),
         )
     }
 }

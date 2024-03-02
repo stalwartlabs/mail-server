@@ -67,10 +67,10 @@ pub struct TlsFormat {
 pub static TLS_HTTP_REPORT: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
 impl SMTP {
-    pub async fn generate_tls_report(&self, domain_name: String, events: Vec<ReportEvent>) {
-        let (event_from, event_to, policy) = events
+    pub async fn send_tls_aggregate_report(&self, events: Vec<ReportEvent>) {
+        let (domain_name, event_from, event_to) = events
             .first()
-            .map(|e| (e.seq_id, e.due, e.policy_hash))
+            .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
         let span = tracing::info_span!(
@@ -80,107 +80,41 @@ impl SMTP {
             range_to = event_to,
         );
 
-        // Deserialize report
-        let config = &self.report.config.tls;
-        let mut report = TlsReport {
-            organization_name: self
-                .eval_if(
-                    &config.org_name,
-                    &RecipientDomain::new(domain_name.as_str()),
-                )
-                .await
-                .clone(),
-            date_range: DateRange {
-                start_datetime: DateTime::from_timestamp(event_from as i64),
-                end_datetime: DateTime::from_timestamp(event_to as i64),
-            },
-            contact_info: self
-                .eval_if(
-                    &config.contact_info,
-                    &RecipientDomain::new(domain_name.as_str()),
-                )
-                .await
-                .clone(),
-            report_id: format!("{}_{}", event_from, policy),
-            policies: Vec::with_capacity(events.len()),
-        };
+        // Generate report
         let mut rua = Vec::new();
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
             self.eval_if(
                 &self.report.config.tls.max_size,
-                &RecipientDomain::new(domain_name.as_str()),
+                &RecipientDomain::new(domain_name),
             )
             .await
             .unwrap_or(25 * 1024 * 1024),
         ));
-        let _ = serde::Serialize::serialize(&report, &mut serialized_size);
-
-        for event in &events {
-            // Deserialize report
-            let tls = match self
-                .shared
-                .default_data_store
-                .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
-                    QueueClass::TlsReportHeader(event.clone()),
-                )))
-                .await
-            {
-                Ok(Some(dmarc)) => dmarc.inner,
-                Ok(None) => {
-                    tracing::warn!(
-                        parent: &span,
-                        event = "missing",
-                        "Failed to read DMARC report: Report not found"
-                    );
-                    continue;
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        parent: &span,
-                        event = "error",
-                        "Failed to read DMARC report: {}",
-                        err
-                    );
-                    continue;
-                }
-            };
-            let _ = serde::Serialize::serialize(&tls, &mut serialized_size);
-
-            // Fetch policy
-            match self
-                .fetch_tls_policy(event, tls.policy, Some(&mut serialized_size))
-                .await
-            {
-                Ok(policy) => {
-                    report.policies.push(policy);
-                    for entry in tls.rua {
-                        if !rua.contains(&entry) {
-                            rua.push(entry);
-                        }
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        parent: &span,
-                        event = "error",
-                        "Failed to read TLS report: {}",
-                        err
-                    );
-                    return;
-                }
+        let report = match self
+            .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size))
+            .await
+        {
+            Ok(Some(report)) => report,
+            Ok(None) => {
+                // This should not happen
+                tracing::warn!(
+                    parent: &span,
+                    event = "empty-report",
+                    "No policies found in report"
+                );
+                self.delete_tls_report(events).await;
+                return;
             }
-        }
-
-        if report.policies.is_empty() {
-            // This should not happen
-            tracing::warn!(
-                parent: &span,
-                event = "empty-report",
-                "No policies found in report"
-            );
-            self.delete_tls_report(events).await;
-            return;
-        }
+            Err(err) => {
+                tracing::warn!(
+                    parent: &span,
+                    event = "error",
+                    "Failed to read TLS report: {}",
+                    err
+                );
+                return;
+            }
+        };
 
         // Compress and serialize report
         let json = report.to_json();
@@ -264,22 +198,23 @@ impl SMTP {
 
         // Deliver report over SMTP
         if !rcpts.is_empty() {
+            let config = &self.report.config.tls;
             let from_addr = self
-                .eval_if(&config.address, &RecipientDomain::new(domain_name.as_str()))
+                .eval_if(&config.address, &RecipientDomain::new(domain_name))
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
             let mut message = Vec::with_capacity(2048);
             let _ = report.write_rfc5322_from_bytes(
-                &domain_name,
+                domain_name,
                 &self
                     .eval_if(
                         &self.report.config.submitter,
-                        &RecipientDomain::new(domain_name.as_str()),
+                        &RecipientDomain::new(domain_name),
                     )
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
-                    self.eval_if(&config.name, &RecipientDomain::new(domain_name.as_str()))
+                    self.eval_if(&config.name, &RecipientDomain::new(domain_name))
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -310,76 +245,139 @@ impl SMTP {
         self.delete_tls_report(events).await;
     }
 
-    pub(crate) async fn fetch_tls_policy(
+    pub(crate) async fn generate_tls_aggregate_report(
         &self,
-        event: &ReportEvent,
-        policy_details: PolicyDetails,
+        events: &[ReportEvent],
+        rua: &mut Vec<ReportUri>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
-    ) -> store::Result<Policy> {
-        // Group duplicates
-        let mut total_success = 0;
-        let mut total_failure = 0;
+    ) -> store::Result<Option<TlsReport>> {
+        let (domain_name, event_from, event_to, policy) = events
+            .first()
+            .map(|e| (e.domain.as_str(), e.seq_id, e.due, e.policy_hash))
+            .unwrap();
+        let config = &self.report.config.tls;
+        let mut report = TlsReport {
+            organization_name: self
+                .eval_if(&config.org_name, &RecipientDomain::new(domain_name))
+                .await
+                .clone(),
+            date_range: DateRange {
+                start_datetime: DateTime::from_timestamp(event_from as i64),
+                end_datetime: DateTime::from_timestamp(event_to as i64),
+            },
+            contact_info: self
+                .eval_if(&config.contact_info, &RecipientDomain::new(domain_name))
+                .await
+                .clone(),
+            report_id: format!("{}_{}", event_from, policy),
+            policies: Vec::with_capacity(events.len()),
+        };
 
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-            due: event.due,
-            policy_hash: event.policy_hash,
-            seq_id: 0,
-            domain: event.domain.clone(),
-        })));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
-            due: event.due,
-            policy_hash: event.policy_hash,
-            seq_id: u64::MAX,
-            domain: event.domain.clone(),
-        })));
-        let mut record_map = AHashMap::new();
-        self.shared
-            .default_data_store
-            .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
-                if let Some(failure_details) =
-                    Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
-                {
-                    match record_map.entry(failure_details) {
-                        Entry::Occupied(mut e) => {
-                            total_failure += 1;
-                            *e.get_mut() += 1;
-                            Ok(true)
-                        }
-                        Entry::Vacant(e) => {
-                            if serialized_size
-                                .as_deref_mut()
-                                .map_or(true, |serialized_size| {
-                                    serde::Serialize::serialize(e.key(), serialized_size).is_ok()
-                                })
-                            {
+        if let Some(serialized_size) = serialized_size.as_deref_mut() {
+            let _ = serde::Serialize::serialize(&report, serialized_size);
+        }
+
+        for event in events {
+            let tls = if let Some(tls) = self
+                .shared
+                .default_data_store
+                .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
+                    QueueClass::TlsReportHeader(event.clone()),
+                )))
+                .await?
+            {
+                tls.inner
+            } else {
+                continue;
+            };
+
+            if let Some(serialized_size) = serialized_size.as_deref_mut() {
+                if serde::Serialize::serialize(&tls, serialized_size).is_err() {
+                    continue;
+                }
+            }
+
+            // Group duplicates
+            let mut total_success = 0;
+            let mut total_failure = 0;
+            let from_key =
+                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+                    due: event.due,
+                    policy_hash: event.policy_hash,
+                    seq_id: 0,
+                    domain: event.domain.clone(),
+                })));
+            let to_key =
+                ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(ReportEvent {
+                    due: event.due,
+                    policy_hash: event.policy_hash,
+                    seq_id: u64::MAX,
+                    domain: event.domain.clone(),
+                })));
+            let mut record_map = AHashMap::new();
+            self.shared
+                .default_data_store
+                .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
+                    if let Some(failure_details) =
+                        Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
+                    {
+                        match record_map.entry(failure_details) {
+                            Entry::Occupied(mut e) => {
                                 total_failure += 1;
-                                e.insert(1u32);
+                                *e.get_mut() += 1;
                                 Ok(true)
-                            } else {
-                                Ok(false)
+                            }
+                            Entry::Vacant(e) => {
+                                if serialized_size
+                                    .as_deref_mut()
+                                    .map_or(true, |serialized_size| {
+                                        serde::Serialize::serialize(e.key(), serialized_size)
+                                            .is_ok()
+                                    })
+                                {
+                                    total_failure += 1;
+                                    e.insert(1u32);
+                                    Ok(true)
+                                } else {
+                                    Ok(false)
+                                }
                             }
                         }
+                    } else {
+                        total_success += 1;
+                        Ok(true)
                     }
-                } else {
-                    total_success += 1;
-                    Ok(true)
-                }
-            })
-            .await?;
-
-        Ok(Policy {
-            policy: policy_details,
-            summary: Summary {
-                total_success,
-                total_failure,
-            },
-            failure_details: record_map
-                .into_iter()
-                .map(|(mut r, count)| {
-                    r.failed_session_count = count;
-                    r
                 })
-                .collect(),
+                .await?;
+
+            // Add policy
+            report.policies.push(Policy {
+                policy: tls.policy,
+                summary: Summary {
+                    total_success,
+                    total_failure,
+                },
+                failure_details: record_map
+                    .into_iter()
+                    .map(|(mut r, count)| {
+                        r.failed_session_count = count;
+                        r
+                    })
+                    .collect(),
+            });
+
+            // Add report URIs
+            for entry in tls.rua {
+                if !rua.contains(&entry) {
+                    rua.push(entry);
+                }
+            }
+        }
+
+        Ok(if !report.policies.is_empty() {
+            Some(report)
+        } else {
+            None
         })
     }
 

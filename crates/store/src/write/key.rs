@@ -31,8 +31,8 @@ use crate::{
 };
 
 use super::{
-    AnyKey, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportEvent, TagValue,
-    ValueClass,
+    AnyKey, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass, ReportEvent,
+    TagValue, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -348,6 +348,17 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 QueueClass::QuotaCount(key) => serializer.write(55u8).write(key.as_slice()),
                 QueueClass::QuotaSize(key) => serializer.write(56u8).write(key.as_slice()),
             },
+            ValueClass::Report(report) => match report {
+                ReportClass::Tls { id, expires } => {
+                    serializer.write(60u8).write(*expires).write(*id)
+                }
+                ReportClass::Dmarc { id, expires } => {
+                    serializer.write(61u8).write(*expires).write(*id)
+                }
+                ReportClass::Arf { id, expires } => {
+                    serializer.write(62u8).write(*expires).write(*id)
+                }
+            },
         }
         .finalize()
     }
@@ -503,6 +514,7 @@ impl ValueClass {
                 }
                 QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
             },
+            ValueClass::Report(_) => U64_LEN * 2 + 1,
         }
     }
 }

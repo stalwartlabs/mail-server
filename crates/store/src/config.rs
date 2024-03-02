@@ -228,7 +228,7 @@ impl ConfigStore for Config {
                 schedules.push(PurgeSchedule {
                     cron,
                     store_id: store_id.to_string(),
-                    store: PurgeStore::Bitmaps(store.clone()),
+                    store: PurgeStore::Data(store.clone()),
                 });
             }
 

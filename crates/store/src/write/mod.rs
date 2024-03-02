@@ -140,6 +140,7 @@ pub enum ValueClass {
     IndexEmail(u64),
     Config(Vec<u8>),
     Queue(QueueClass),
+    Report(ReportClass),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -170,6 +171,13 @@ pub enum QueueClass {
     TlsReportEvent(ReportEvent),
     QuotaCount(Vec<u8>),
     QuotaSize(Vec<u8>),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum ReportClass {
+    Tls { id: u64, expires: u64 },
+    Dmarc { id: u64, expires: u64 },
+    Arf { id: u64, expires: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

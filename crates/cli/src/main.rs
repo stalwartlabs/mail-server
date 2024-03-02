@@ -208,6 +208,20 @@ impl Client {
         url: &str,
         body: Option<B>,
     ) -> R {
+        self.try_http_request(method, url, body)
+            .await
+            .unwrap_or_else(|| {
+                eprintln!("Request failed: No data returned.");
+                std::process::exit(1);
+            })
+    }
+
+    pub async fn try_http_request<R: DeserializeOwned, B: Serialize>(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<B>,
+    ) -> Option<R> {
         let url = format!(
             "{}{}{}",
             self.url,
@@ -240,6 +254,9 @@ impl Client {
 
         match response.status() {
             StatusCode::OK => (),
+            StatusCode::NOT_FOUND => {
+                return None;
+            }
             StatusCode::UNAUTHORIZED => {
                 eprintln!("Authentication failed. Make sure the credentials are correct and that the account has administrator rights.");
                 std::process::exit(1);
@@ -258,7 +275,7 @@ impl Client {
         )
         .unwrap_result("deserialize response")
         {
-            Response::Data { data } => data,
+            Response::Data { data } => Some(data),
             Response::Error { error, details } => {
                 eprintln!("Request failed: {details} ({error:?})");
                 std::process::exit(1);

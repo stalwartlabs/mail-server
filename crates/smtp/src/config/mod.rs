@@ -30,12 +30,7 @@ pub mod session;
 pub mod shared;
 pub mod throttle;
 
-use std::{
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{atomic::AtomicU64, Arc},
-    time::Duration,
-};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use directory::Directories;
@@ -49,6 +44,7 @@ use store::Stores;
 use utils::{
     config::{if_block::IfBlock, utils::ConstantValue, Rate, Server, ServerProtocol},
     expr::{Expression, Token},
+    snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
@@ -250,8 +246,8 @@ pub struct ReportConfig {
 pub struct ReportAnalysis {
     pub addresses: Vec<AddressMatch>,
     pub forward: bool,
-    pub store: Option<PathBuf>,
-    pub report_id: AtomicU64,
+    pub store: Option<Duration>,
+    pub report_id: SnowflakeIdGenerator,
 }
 
 pub enum AddressMatch {

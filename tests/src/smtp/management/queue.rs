@@ -30,7 +30,7 @@ use ahash::{AHashMap, HashMap, HashSet};
 use directory::core::config::ConfigDirectory;
 use mail_auth::MX;
 use mail_parser::DateTime;
-use reqwest::{header::AUTHORIZATION, StatusCode};
+use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 use store::Store;
 use utils::config::{if_block::IfBlock, Config, ServerProtocol};
 
@@ -61,9 +61,9 @@ member-of = ["superusers"]
 
 #[derive(serde::Deserialize)]
 #[allow(dead_code)]
-struct List<T> {
-    items: Vec<T>,
-    total: usize,
+pub(super) struct List<T> {
+    pub items: Vec<T>,
+    pub total: usize,
 }
 
 #[tokio::test]
@@ -192,7 +192,7 @@ async fn manage_queue() {
     );
 
     // Fetch and validate messages
-    let ids = send_manage_request::<List<QueueId>>("/api/queue/list")
+    let ids = send_manage_request::<List<QueueId>>(Method::GET, "/api/queue/messages")
         .await
         .unwrap()
         .unwrap_data()
@@ -277,28 +277,28 @@ async fn manage_queue() {
     // Test list search
     for (query, expected_ids) in [
         (
-            "/api/queue/list?from=bill1@foobar.net".to_string(),
+            "/api/queue/messages?from=bill1@foobar.net".to_string(),
             vec!["a"],
         ),
         (
-            "/api/queue/list?to=foobar.org".to_string(),
+            "/api/queue/messages?to=foobar.org".to_string(),
             vec!["d", "e", "f"],
         ),
         (
-            "/api/queue/list?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
+            "/api/queue/messages?from=bill3@foobar.net&to=rcpt5@example1.com".to_string(),
             vec!["c"],
         ),
         (
-            format!("/api/queue/list?before={test_search}"),
+            format!("/api/queue/messages?before={test_search}"),
             vec!["a", "b"],
         ),
         (
-            format!("/api/queue/list?after={test_search}"),
+            format!("/api/queue/messages?after={test_search}"),
             vec!["d", "e", "f", "c"],
         ),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
-        let ids = send_manage_request::<List<QueueId>>(&query)
+        let ids = send_manage_request::<List<QueueId>>(Method::GET, &query)
             .await
             .unwrap()
             .unwrap_data()
@@ -310,27 +310,24 @@ async fn manage_queue() {
     }
 
     // Retry delivery
-    assert_eq!(
-        send_manage_request::<Vec<bool>>(&format!(
-            "/api/queue/retry?id={},{}",
-            id_map.get("e").unwrap(),
-            id_map.get("f").unwrap()
-        ))
-        .await
-        .unwrap()
-        .unwrap_data(),
-        vec![true, true]
-    );
-    assert_eq!(
-        send_manage_request::<Vec<bool>>(&format!(
-            "/api/queue/retry?id={}&filter=example1.org&at=2200-01-01T00:00:00Z",
+    for id in [id_map.get("e").unwrap(), id_map.get("f").unwrap()] {
+        assert!(
+            send_manage_request::<bool>(Method::PATCH, &format!("/api/queue/messages/{id}",))
+                .await
+                .unwrap()
+                .unwrap_data(),
+        );
+    }
+    assert!(send_manage_request::<bool>(
+        Method::PATCH,
+        &format!(
+            "/api/queue/messages/{}?filter=example1.org&at=2200-01-01T00:00:00Z",
             id_map.get("a").unwrap(),
-        ))
-        .await
-        .unwrap()
-        .unwrap_data(),
-        vec![true]
-    );
+        )
+    )
+    .await
+    .unwrap()
+    .unwrap_data());
 
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -384,22 +381,24 @@ async fn manage_queue() {
         ("c", "rcpt6@example2.com"),
         ("d", ""),
     ] {
-        assert_eq!(
-            send_manage_request::<Vec<bool>>(&format!(
-                "/api/queue/cancel?id={}{}{}",
-                id_map.get(id).unwrap(),
-                if !filter.is_empty() { "&filter=" } else { "" },
-                filter
-            ))
+        assert!(
+            send_manage_request::<bool>(
+                Method::DELETE,
+                &format!(
+                    "/api/queue/messages/{}{}{}",
+                    id_map.get(id).unwrap(),
+                    if !filter.is_empty() { "?filter=" } else { "" },
+                    filter
+                )
+            )
             .await
             .unwrap()
             .unwrap_data(),
-            vec![true],
             "failed for {id}: {filter}"
         );
     }
     assert_eq!(
-        send_manage_request::<List<QueueId>>("/api/queue/list")
+        send_manage_request::<List<QueueId>>(Method::GET, "/api/queue/messages")
             .await
             .unwrap()
             .unwrap_data()
@@ -485,14 +484,16 @@ fn assert_timestamp(timestamp: &DateTime, expected: i64, ctx: &str, message: &Me
 }
 
 async fn get_messages(ids: &[QueueId]) -> Vec<Option<Message>> {
-    send_manage_request(&format!(
-        "/api/queue/status?id={}",
-        ids.iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    ))
-    .await
-    .unwrap()
-    .unwrap_data()
+    let mut results = Vec::with_capacity(ids.len());
+
+    for id in ids {
+        let message =
+            send_manage_request::<Message>(Method::GET, &format!("/api/queue/messages/{id}",))
+                .await
+                .unwrap()
+                .try_unwrap_data();
+        results.push(message);
+    }
+
+    results
 }

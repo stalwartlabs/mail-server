@@ -70,7 +70,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
                         match report_event {
                             QueueClass::DmarcReportHeader(event) if event.due <= now => {
                                 if core_.try_lock_report(QueueClass::dmarc_lock(&event)).await {
-                                    core_.generate_dmarc_report(event).await;
+                                    core_.send_dmarc_aggregate_report(event).await;
                                 }
                             }
                             QueueClass::TlsReportHeader(event) if event.due <= now => {
@@ -83,12 +83,12 @@ impl SpawnReport for mpsc::Receiver<Event> {
                         }
                     }
 
-                    for (domain_name, tls_report) in tls_reports {
+                    for (_, tls_report) in tls_reports {
                         if core_
                             .try_lock_report(QueueClass::tls_lock(tls_report.first().unwrap()))
                             .await
                         {
-                            core_.generate_tls_report(domain_name, tls_report).await;
+                            core_.send_tls_aggregate_report(tls_report).await;
                         }
                     }
                 });

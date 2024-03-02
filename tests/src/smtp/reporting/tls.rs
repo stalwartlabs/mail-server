@@ -85,7 +85,7 @@ async fn report_tls() {
 
     for (policy, rt) in [
         (
-            smtp::reporting::PolicyType::None,
+            smtp::reporting::PolicyType::None, // Quota limited at 1532 bytes, this should not be included in the report.
             ResultType::CertificateExpired,
         ),
         (
@@ -101,7 +101,7 @@ async fn report_tls() {
             ResultType::StsPolicyInvalid,
         ),
         (
-            smtp::reporting::PolicyType::Sts(None), // Quota limited at 1532 bytes, this should not be included in the report.
+            smtp::reporting::PolicyType::Sts(None),
             ResultType::StsWebpkiInvalid,
         ),
     ] {
@@ -128,8 +128,7 @@ async fn report_tls() {
             _ => unreachable!(),
         }
     }
-    core.generate_tls_report(tls_reports.first().unwrap().domain.clone(), tls_reports)
-        .await;
+    core.send_tls_aggregate_report(tls_reports).await;
 
     // Expect report
     let message = qr.expect_message().await;
@@ -167,10 +166,10 @@ async fn report_tls() {
             }
             PolicyType::Sts => {
                 seen[1] = true;
-                assert_eq!(policy.summary.total_failure, 2);
+                assert_eq!(policy.summary.total_failure, 3);
                 assert_eq!(policy.summary.total_success, 0);
                 assert_eq!(policy.policy.policy_domain, "foobar.org");
-                assert_eq!(policy.failure_details.len(), 2);
+                assert_eq!(policy.failure_details.len(), 3);
                 assert!(policy
                     .failure_details
                     .iter()
@@ -182,14 +181,14 @@ async fn report_tls() {
             }
             PolicyType::NoPolicyFound => {
                 seen[2] = true;
-                assert_eq!(policy.summary.total_failure, 1);
+                assert_eq!(policy.summary.total_failure, 0);
                 assert_eq!(policy.summary.total_success, 2);
                 assert_eq!(policy.policy.policy_domain, "foobar.org");
-                assert_eq!(policy.failure_details.len(), 1);
-                assert_eq!(
+                assert_eq!(policy.failure_details.len(), 0);
+                /*assert_eq!(
                     policy.failure_details.first().unwrap().result_type,
                     ResultType::CertificateExpired
-                );
+                );*/
             }
             PolicyType::Other => unreachable!(),
         }
@@ -218,8 +217,7 @@ async fn report_tls() {
     assert_eq!(reports.len(), 1);
     match reports.into_iter().next().unwrap() {
         QueueClass::TlsReportHeader(event) => {
-            core.generate_tls_report(event.domain.clone(), vec![event])
-                .await;
+            core.send_tls_aggregate_report(vec![event]).await;
         }
         _ => unreachable!(),
     }

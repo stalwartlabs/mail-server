@@ -117,7 +117,7 @@ async fn report_dmarc() {
     assert_eq!(reports.len(), 1);
     match reports.into_iter().next().unwrap() {
         QueueClass::DmarcReportHeader(event) => {
-            core.generate_dmarc_report(event).await;
+            core.send_dmarc_aggregate_report(event).await;
         }
         _ => unreachable!(),
     }
