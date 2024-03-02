@@ -222,11 +222,11 @@ impl<T: SessionStream> SessionData<T> {
 
         for attribute in &arguments.attributes {
             match attribute {
-                Attribute::Envelope
-                | Attribute::Rfc822Header
-                | Attribute::Body
-                | Attribute::BodyStructure
-                | Attribute::BinarySize { .. } => {
+                Attribute::BodySection { sections, .. }
+                    if sections.first().map_or(false, |s| {
+                        matches!(s, Section::Header | Section::HeaderFields { .. })
+                    }) => {}
+                Attribute::Body | Attribute::BodyStructure | Attribute::BinarySize { .. } => {
                     /*
                         Note that this did not result in \Seen being set, because
                         RFC822.HEADER response data occurs as a result of a FETCH
@@ -319,7 +319,7 @@ impl<T: SessionStream> SessionData<T> {
             let raw_message = if needs_blobs {
                 // Retrieve raw message if needed
                 match self.jmap.get_blob(&email.blob_hash, 0..u32::MAX).await {
-                    Ok(Some(raw_message)) => raw_message.into(),
+                    Ok(Some(raw_message)) => raw_message,
                     Ok(None) => {
                         tracing::warn!(event = "not-found",
                         account_id = account_id,
@@ -334,11 +334,9 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
             } else {
-                None
+                email.raw_headers
             };
-            let message = email
-                .contents
-                .into_message(raw_message.as_deref().unwrap_or_default());
+            let message = email.contents.into_message(&raw_message);
 
             // Build response
             let mut items = Vec::with_capacity(arguments.attributes.len());
@@ -403,15 +401,13 @@ impl<T: SessionStream> SessionData<T> {
                     }
                     Attribute::Rfc822 => {
                         items.push(DataItem::Rfc822 {
-                            contents: raw_message.as_ref().unwrap().into(),
+                            contents: raw_message.as_slice().into(),
                         });
                     }
                     Attribute::Rfc822Header => {
                         let message = message.root_part();
-                        if let Some(header) = raw_message
-                            .as_ref()
-                            .unwrap()
-                            .get(message.offset_header..message.offset_body)
+                        if let Some(header) =
+                            raw_message.get(message.offset_header..message.offset_body)
                         {
                             items.push(DataItem::Rfc822Header {
                                 contents: header.into(),
@@ -419,16 +415,9 @@ impl<T: SessionStream> SessionData<T> {
                         }
                     }
                     Attribute::Rfc822Text => {
-                        let message = message.root_part();
-                        if let Some(text) = raw_message
-                            .as_ref()
-                            .unwrap()
-                            .get(message.offset_body..message.offset_end)
-                        {
-                            items.push(DataItem::Rfc822Text {
-                                contents: text.into(),
-                            });
-                        }
+                        items.push(DataItem::Rfc822Text {
+                            contents: raw_message.as_slice().into(),
+                        });
                     }
                     Attribute::Body => {
                         items.push(DataItem::Body {

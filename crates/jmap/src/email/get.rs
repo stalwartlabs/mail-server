@@ -130,24 +130,17 @@ impl JMAP {
         };
 
         // Check if we need to fetch the raw headers or body
-        let mut needs_headers = false;
         let mut needs_body = false;
         for property in &properties {
-            match property {
-                Property::Header(_) | Property::Headers => {
-                    needs_headers = true;
-                }
+            if matches!(
+                property,
                 Property::BodyValues
-                | Property::TextBody
-                | Property::HtmlBody
-                | Property::Attachments
-                | Property::BodyStructure => {
-                    needs_body = true;
-                }
-                _ => (),
-            }
-
-            if needs_body {
+                    | Property::TextBody
+                    | Property::HtmlBody
+                    | Property::Attachments
+                    | Property::BodyStructure
+            ) {
+                needs_body = true;
                 break;
             }
         }
@@ -175,14 +168,8 @@ impl JMAP {
             };
 
             // Retrieve raw message if needed
-            let raw_message = if needs_body || needs_headers {
-                let offset = if !needs_body {
-                    metadata.contents.parts[0].offset_body as u32
-                } else {
-                    u32::MAX
-                };
-
-                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..offset).await? {
+            let raw_message = if needs_body {
+                if let Some(raw_message) = self.get_blob(&metadata.blob_hash, 0..u32::MAX).await? {
                     raw_message
                 } else {
                     tracing::warn!(event = "not-found",
@@ -195,7 +182,7 @@ impl JMAP {
                     continue;
                 }
             } else {
-                vec![]
+                metadata.raw_headers
             };
             let blob_id = BlobId {
                 hash: metadata.blob_hash.clone(),

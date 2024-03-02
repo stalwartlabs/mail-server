@@ -42,6 +42,7 @@ pub struct MessageMetadata<'x> {
     pub received_at: u64,
     pub preview: String,
     pub has_attachments: bool,
+    pub raw_headers: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

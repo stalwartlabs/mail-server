@@ -161,11 +161,18 @@ impl IndexMessage for BatchBuilder {
         );
 
         // Store message metadata
+        let root_part = message.root_part();
         self.value(
             Property::BodyStructure,
             Bincode::new(MessageMetadata {
                 preview: preview.unwrap_or_default().into_owned(),
                 size: message.raw_message.len(),
+                raw_headers: message
+                    .raw_message
+                    .as_ref()
+                    .get(root_part.offset_header..root_part.offset_body)
+                    .unwrap_or_default()
+                    .to_vec(),
                 contents: message.into(),
                 received_at,
                 has_attachments,
