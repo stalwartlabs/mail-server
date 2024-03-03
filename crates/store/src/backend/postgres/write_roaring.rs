@@ -21,21 +21,23 @@
  * for more details.
 */
 
-use std::time::{Duration, Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{Duration, Instant},
+};
 
 use ahash::AHashMap;
 use deadpool_postgres::Object;
 use rand::Rng;
+use roaring::RoaringBitmap;
 use tokio_postgres::{error::SqlState, IsolationLevel};
 
 use crate::{
-    write::{
-        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS,
+    write::{Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
 };
 
-use super::PostgresStore;
+use super::{deserialize_bitmap, PostgresStore};
 
 impl PostgresStore {
     pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
@@ -54,7 +56,9 @@ impl PostgresStore {
                 }
                 Err(err) => match err.code() {
                     Some(
-                        &SqlState::T_R_SERIALIZATION_FAILURE | &SqlState::T_R_DEADLOCK_DETECTED,
+                        &SqlState::T_R_SERIALIZATION_FAILURE
+                        | &SqlState::T_R_DEADLOCK_DETECTED
+                        | &SqlState::UNIQUE_VIOLATION,
                     ) if retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME => {
                         let backoff = rand::thread_rng().gen_range(50..=300);
                         tokio::time::sleep(Duration::from_millis(backoff)).await;
@@ -84,6 +88,141 @@ impl PostgresStore {
             .start()
             .await?;
 
+        // Sort the operations by key to avoid deadlocks
+        let mut assert_values = BTreeMap::new();
+        let mut bitmap_updates = BTreeMap::new();
+        let mut advisory_locks = BTreeSet::new();
+        for op in &batch.ops {
+            match op {
+                Operation::AccountId {
+                    account_id: account_id_,
+                } => {
+                    account_id = *account_id_;
+                }
+                Operation::Collection {
+                    collection: collection_,
+                } => {
+                    collection = *collection_;
+                }
+                Operation::DocumentId {
+                    document_id: document_id_,
+                } => {
+                    document_id = *document_id_;
+                }
+                Operation::AssertValue {
+                    class,
+                    assert_value,
+                } => {
+                    let key = ValueKey {
+                        account_id,
+                        collection,
+                        document_id,
+                        class,
+                    };
+                    let table = char::from(key.subspace());
+                    assert_values.insert(key.serialize(0), (table, assert_value));
+                    if account_id != u32::MAX {
+                        advisory_locks.insert((account_id as u64) << 32 | collection as u64);
+                    }
+                }
+                Operation::Bitmap { class, set } => {
+                    bitmap_updates
+                        .entry(
+                            BitmapKey {
+                                account_id,
+                                collection,
+                                class,
+                                block_num: 0,
+                            }
+                            .serialize(WITHOUT_BLOCK_NUM),
+                        )
+                        .or_insert_with(Vec::new)
+                        .push((*set, document_id));
+                    if account_id != u32::MAX {
+                        advisory_locks.insert((account_id as u64) << 32 | collection as u64);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Acquire advisory locks
+        for lock in advisory_locks {
+            trx.execute("SELECT pg_advisory_xact_lock($1)", &[&(lock as i64)])
+                .await?;
+        }
+
+        // Assert values
+        for (key, (table, assert_value)) in assert_values {
+            let s = trx
+                .prepare_cached(&format!("SELECT v FROM {} WHERE k = $1 FOR UPDATE", table))
+                .await?;
+            let (exists, matches) = trx
+                .query_opt(&s, &[&key])
+                .await?
+                .map(|row| {
+                    row.try_get::<_, &[u8]>(0)
+                        .map_or((true, false), |v| (true, assert_value.matches(v)))
+                })
+                .unwrap_or_else(|| (false, assert_value.is_none()));
+            if !matches {
+                return Ok(false);
+            }
+            asserted_values.insert(key, exists);
+        }
+
+        // Update bitmaps
+        for (key, changes) in bitmap_updates {
+            let s = trx
+                .prepare_cached("SELECT v FROM b WHERE k = $1 FOR UPDATE")
+                .await?;
+            let (value_exists, mut bm) = match trx
+                .query_opt(&s, &[&key])
+                .await?
+                .map(|r| deserialize_bitmap(r.get(0)))
+            {
+                Some(Ok(bm)) => (true, bm),
+                None => (false, RoaringBitmap::new()),
+                Some(Err(e)) => {
+                    tracing::error!("Failed to deserialize bitmap: {:?}", e);
+                    return Ok(false);
+                }
+            };
+
+            let mut has_changes = false;
+            for (set, document_id) in changes {
+                if set {
+                    if bm.insert(document_id) {
+                        has_changes = true;
+                    }
+                } else if bm.remove(document_id) {
+                    has_changes = true;
+                }
+            }
+
+            if has_changes {
+                if !bm.is_empty() {
+                    let mut bytes = Vec::with_capacity(bm.serialized_size() + 1);
+                    let _ = bm.serialize_into(&mut bytes);
+                    let s = if value_exists {
+                        trx.prepare_cached("UPDATE b SET v = $2 WHERE k = $1")
+                            .await?
+                    } else {
+                        trx.prepare_cached("INSERT INTO b (k, V) VALUES ($1, $2)")
+                            .await?
+                    };
+                    trx.execute(&s, &[&key, &bytes]).await?;
+                } else if value_exists {
+                    let s = trx.prepare_cached("DELETE FROM b WHERE k = $1").await?;
+                    trx.execute(&s, &[&key]).await?;
+                }
+            }
+        }
+
+        // Apply the operations
+        account_id = u32::MAX;
+        collection = u8::MAX;
+        document_id = u32::MAX;
         for op in &batch.ops {
             match op {
                 Operation::AccountId {
@@ -168,20 +307,32 @@ impl PostgresStore {
                             return Ok(false);
                         }
 
-                        if matches!(class, ValueClass::ReservedId) {
+                        /*if matches!(class, ValueClass::ReservedId) {
                             // Make sure the reserved id is not already in use
-                            let s = trx.prepare_cached("SELECT 1 FROM b WHERE k = $1").await?;
+                            let s = trx.prepare_cached("SELECT v FROM b WHERE k = $1").await?;
                             let key = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
                                 block_num: document_id,
                             }
-                            .serialize(0);
-                            if trx.query_opt(&s, &[&key]).await?.is_some() {
-                                return Ok(false);
+                            .serialize(WITHOUT_BLOCK_NUM);
+
+                            match trx
+                                .query_opt(&s, &[&key])
+                                .await?
+                                .map(|r| deserialize_bitmap(r.get(0)))
+                            {
+                                Some(Ok(bm)) if bm.contains(document_id) => {
+                                    return Ok(false);
+                                }
+                                Some(Err(e)) => {
+                                    tracing::error!("Failed to deserialize bitmap: {:?}", e);
+                                    return Ok(false);
+                                }
+                                _ => {}
                             }
-                        }
+                        }*/
                     } else {
                         let s = trx
                             .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
@@ -209,29 +360,7 @@ impl PostgresStore {
                     };
                     trx.execute(&s, &[&key]).await?;
                 }
-                Operation::Bitmap { class, set } => {
-                    let key = BitmapKey {
-                        account_id,
-                        collection,
-                        class,
-                        block_num: document_id,
-                    }
-                    .serialize(0);
 
-                    let s = if *set {
-                        if matches!(class, BitmapClass::DocumentIds) {
-                            trx.prepare_cached("INSERT INTO b (k) VALUES ($1)").await?
-                        } else {
-                            trx.prepare_cached(
-                                "INSERT INTO b (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
-                            )
-                            .await?
-                        }
-                    } else {
-                        trx.prepare_cached("DELETE FROM b WHERE k = $1").await?
-                    };
-                    trx.execute(&s, &[&key]).await?;
-                }
                 Operation::Log {
                     collection,
                     change_id,
@@ -252,35 +381,7 @@ impl PostgresStore {
                         .await?;
                     trx.execute(&s, &[&key, set]).await?;
                 }
-                Operation::AssertValue {
-                    class,
-                    assert_value,
-                } => {
-                    let key = ValueKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        class,
-                    };
-                    let table = char::from(key.subspace());
-                    let key = key.serialize(0);
-
-                    let s = trx
-                        .prepare_cached(&format!("SELECT v FROM {} WHERE k = $1 FOR UPDATE", table))
-                        .await?;
-                    let (exists, matches) = trx
-                        .query_opt(&s, &[&key])
-                        .await?
-                        .map(|row| {
-                            row.try_get::<_, &[u8]>(0)
-                                .map_or((true, false), |v| (true, assert_value.matches(v)))
-                        })
-                        .unwrap_or_else(|| (false, assert_value.is_none()));
-                    if !matches {
-                        return Ok(false);
-                    }
-                    asserted_values.insert(key, exists);
-                }
+                Operation::Bitmap { .. } | Operation::AssertValue { .. } => {}
             }
         }
 
