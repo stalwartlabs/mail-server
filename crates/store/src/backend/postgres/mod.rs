@@ -45,3 +45,10 @@ impl From<tokio_postgres::Error> for crate::Error {
         Self::InternalError(format!("PostgreSQL error: {}", err))
     }
 }
+
+#[inline(always)]
+pub fn deserialize_bitmap(bytes: &[u8]) -> crate::Result<roaring::RoaringBitmap> {
+    roaring::RoaringBitmap::deserialize_unchecked_from(bytes).map_err(|err| {
+        crate::Error::InternalError(format!("Failed to deserialize bitmap: {}", err))
+    })
+}

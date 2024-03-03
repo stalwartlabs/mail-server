@@ -25,12 +25,11 @@ use futures::{pin_mut, TryStreamExt};
 use roaring::RoaringBitmap;
 
 use crate::{
-    backend::rocksdb::bitmap::deserialize_bitmap,
     write::{BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, WITHOUT_BLOCK_NUM,
 };
 
-use super::PostgresStore;
+use super::{deserialize_bitmap, PostgresStore};
 
 impl PostgresStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>

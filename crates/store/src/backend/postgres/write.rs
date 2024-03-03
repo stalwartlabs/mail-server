@@ -33,12 +33,11 @@ use roaring::RoaringBitmap;
 use tokio_postgres::{error::SqlState, IsolationLevel};
 
 use crate::{
-    backend::rocksdb::bitmap::deserialize_bitmap,
     write::{Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
     BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
 };
 
-use super::PostgresStore;
+use super::{deserialize_bitmap, PostgresStore};
 
 impl PostgresStore {
     pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
