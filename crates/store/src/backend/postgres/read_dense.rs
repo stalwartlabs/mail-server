@@ -25,9 +25,8 @@ use futures::{pin_mut, TryStreamExt};
 use roaring::RoaringBitmap;
 
 use crate::{
-    backend::rocksdb::bitmap::deserialize_bitmap,
-    write::{BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, WITHOUT_BLOCK_NUM,
+    write::{bitmap::DeserializeBlock, key::DeserializeBigEndian, BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
 use super::PostgresStore;
@@ -59,26 +58,30 @@ impl PostgresStore {
 
     pub(crate) async fn get_bitmap(
         &self,
-        key: BitmapKey<BitmapClass>,
+        mut key: BitmapKey<BitmapClass>,
     ) -> crate::Result<Option<RoaringBitmap>> {
+        let begin = key.serialize(0);
+        key.block_num = u32::MAX;
+        let key_len = begin.len();
+        let end = key.serialize(0);
         let conn = self.conn_pool.get().await?;
-        let s = conn.prepare_cached("SELECT v FROM b WHERE k = $1").await?;
-        let key = key.serialize(WITHOUT_BLOCK_NUM);
-        conn.query_opt(&s, &[&key])
-            .await
-            .map_err(Into::into)
-            .and_then(|r| {
-                if let Some(r) = r {
-                    let bm = deserialize_bitmap(r.get(0))?;
-                    if !bm.is_empty() {
-                        Ok(Some(bm))
-                    } else {
-                        Ok(None)
-                    }
-                } else {
-                    Ok(None)
-                }
-            })
+
+        let mut bm = RoaringBitmap::new();
+        let s = conn
+            .prepare_cached("SELECT k, v FROM b WHERE k >= $1 AND k <= $2")
+            .await?;
+        let rows = conn.query_raw(&s, &[&begin, &end]).await?;
+
+        pin_mut!(rows);
+
+        while let Some(row) = rows.try_next().await? {
+            let key: &[u8] = row.try_get(0)?;
+            if key.len() == key_len {
+                let value: &[u8] = row.try_get(0)?;
+                bm.deserialize_block(value, key.deserialize_be_u32(key.len() - U32_LEN)?);
+            }
+        }
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(

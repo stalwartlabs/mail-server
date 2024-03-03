@@ -58,8 +58,10 @@ pub fn deserialize_bitlist(bm: &mut RoaringBitmap, bytes: &[u8]) {
 }
 
 #[inline(always)]
-pub fn deserialize_bitmap(bytes: &[u8]) -> Option<RoaringBitmap> {
-    RoaringBitmap::deserialize_unchecked_from(&bytes[1..]).ok()
+pub fn deserialize_bitmap(bytes: &[u8]) -> crate::Result<RoaringBitmap> {
+    RoaringBitmap::deserialize_unchecked_from(bytes).map_err(|err| {
+        crate::Error::InternalError(format!("Failed to deserialize bitmap: {}", err))
+    })
 }
 
 impl Deserialize for RoaringBitmap {
@@ -68,9 +70,7 @@ impl Deserialize for RoaringBitmap {
             .first()
             .ok_or_else(|| crate::Error::InternalError("Empty bitmap".to_string()))?
         {
-            IS_BITMAP => deserialize_bitmap(bytes).ok_or_else(|| {
-                crate::Error::InternalError("Failed to deserialize bitmap".to_string())
-            }),
+            IS_BITMAP => deserialize_bitmap(&bytes[1..]),
             IS_BITLIST => {
                 let mut bm = RoaringBitmap::new();
                 deserialize_bitlist(&mut bm, bytes);
@@ -220,7 +220,7 @@ pub fn bitmap_merge<'x>(
     for op in operands.into_iter() {
         match *op.first()? {
             IS_BITMAP => {
-                if let Some(union_bm) = deserialize_bitmap(op) {
+                if let Ok(union_bm) = deserialize_bitmap(&op[1..]) {
                     if !bm.is_empty() {
                         bm |= union_bm;
                     } else {

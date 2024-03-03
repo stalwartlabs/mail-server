@@ -65,9 +65,16 @@ impl DenseBitmap {
         self.bitmap[(index / 8) as usize] &= !(1 << (index & 7));
     }
 
+    #[inline(always)]
     pub fn block_num(index: u32) -> u32 {
         index / BITS_PER_BLOCK_L
     }
+
+    #[inline(always)]
+    pub fn block_index(index: u32) -> u32 {
+        index & BITS_MASK_L
+    }
+
 }
 
 pub trait DeserializeBlock {

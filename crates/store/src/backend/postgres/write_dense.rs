@@ -22,20 +22,21 @@
 */
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
 use deadpool_postgres::Object;
 use rand::Rng;
-use roaring::RoaringBitmap;
 use tokio_postgres::{error::SqlState, IsolationLevel};
 
 use crate::{
-    backend::rocksdb::bitmap::deserialize_bitmap,
-    write::{Batch, Operation, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME},
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
+    write::{
+        bitmap::{block_contains, DenseBitmap},
+        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+    },
+    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS,
 };
 
 use super::PostgresStore;
@@ -92,7 +93,6 @@ impl PostgresStore {
         // Sort the operations by key to avoid deadlocks
         let mut assert_values = BTreeMap::new();
         let mut bitmap_updates = BTreeMap::new();
-        let mut advisory_locks = BTreeSet::new();
         for op in &batch.ops {
             match op {
                 Operation::AccountId {
@@ -122,9 +122,6 @@ impl PostgresStore {
                     };
                     let table = char::from(key.subspace());
                     assert_values.insert(key.serialize(0), (table, assert_value));
-                    if account_id != u32::MAX {
-                        advisory_locks.insert((account_id as u64) << 32 | collection as u64);
-                    }
                 }
                 Operation::Bitmap { class, set } => {
                     bitmap_updates
@@ -133,24 +130,15 @@ impl PostgresStore {
                                 account_id,
                                 collection,
                                 class,
-                                block_num: 0,
+                                block_num: DenseBitmap::block_num(document_id),
                             }
-                            .serialize(WITHOUT_BLOCK_NUM),
+                            .serialize(0),
                         )
                         .or_insert_with(Vec::new)
                         .push((*set, document_id));
-                    if account_id != u32::MAX {
-                        advisory_locks.insert((account_id as u64) << 32 | collection as u64);
-                    }
                 }
                 _ => {}
             }
-        }
-
-        // Acquire advisory locks
-        for lock in advisory_locks {
-            trx.execute("SELECT pg_advisory_xact_lock($1)", &[&(lock as i64)])
-                .await?;
         }
 
         // Assert values
@@ -174,49 +162,36 @@ impl PostgresStore {
 
         // Update bitmaps
         for (key, changes) in bitmap_updates {
-            let s = trx
-                .prepare_cached("SELECT v FROM b WHERE k = $1 FOR UPDATE")
-                .await?;
-            let (value_exists, mut bm) = match trx
-                .query_opt(&s, &[&key])
-                .await?
-                .map(|r| deserialize_bitmap(r.get(0)))
-            {
-                Some(Ok(bm)) => (true, bm),
-                None => (false, RoaringBitmap::new()),
-                Some(Err(e)) => {
-                    tracing::error!("Failed to deserialize bitmap: {:?}", e);
-                    return Ok(false);
-                }
-            };
-
-            let mut has_changes = false;
-            for (set, document_id) in changes {
-                if set {
-                    if bm.insert(document_id) {
-                        has_changes = true;
-                    }
-                } else if bm.remove(document_id) {
-                    has_changes = true;
-                }
+            // Try updating the bitmap first
+            let mut update_query = String::from("v");
+            let mut has_inserts = false;
+            for (set, document_id) in &changes {
+                update_query = format!(
+                    "set_bit({update_query},{},{})",
+                    DenseBitmap::block_index(*document_id),
+                    *set as i8
+                );
+                has_inserts = has_inserts || *set;
             }
 
-            if has_changes {
-                if !bm.is_empty() {
-                    let mut bytes = Vec::with_capacity(bm.serialized_size() + 1);
-                    let _ = bm.serialize_into(&mut bytes);
-                    let s = if value_exists {
-                        trx.prepare_cached("UPDATE b SET v = $2 WHERE k = $1")
-                            .await?
-                    } else {
-                        trx.prepare_cached("INSERT INTO b (k, V) VALUES ($1, $2)")
-                            .await?
-                    };
-                    trx.execute(&s, &[&key, &bytes]).await?;
-                } else if value_exists {
-                    let s = trx.prepare_cached("DELETE FROM b WHERE k = $1").await?;
-                    trx.execute(&s, &[&key]).await?;
+            let s = trx
+                .prepare(&format!("UPDATE b SET v = {update_query} WHERE k = $1"))
+                .await?;
+            if trx.execute(&s, &[&key]).await? == 0 && has_inserts {
+                // The bitmap does not exist, create it
+                let mut dense_bm = DenseBitmap::empty();
+                for (set, document_id) in changes {
+                    if set {
+                        dense_bm.set(document_id);
+                    }
                 }
+                let s = trx
+                    .prepare(&format!(
+                        "INSERT INTO b (k, v) VALUES ($1, $2) ON CONFLICT(k) DO UPDATE SET v = {}",
+                        update_query.replace("(v,", "(b.v,")
+                    ))
+                    .await?;
+                trx.execute(&s, &[&key, &&dense_bm.bitmap[..]]).await?;
             }
         }
 
@@ -308,32 +283,24 @@ impl PostgresStore {
                             return Ok(false);
                         }
 
-                        /*if matches!(class, ValueClass::ReservedId) {
+                        if matches!(class, ValueClass::ReservedId) {
                             // Make sure the reserved id is not already in use
+                            let block_num = DenseBitmap::block_num(document_id);
                             let s = trx.prepare_cached("SELECT v FROM b WHERE k = $1").await?;
                             let key = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
-                                block_num: document_id,
+                                block_num,
                             }
-                            .serialize(WITHOUT_BLOCK_NUM);
+                            .serialize(0);
 
-                            match trx
-                                .query_opt(&s, &[&key])
-                                .await?
-                                .map(|r| deserialize_bitmap(r.get(0)))
-                            {
-                                Some(Ok(bm)) if bm.contains(document_id) => {
+                            if let Some(row) = trx.query_opt(&s, &[&key]).await? {
+                                if block_contains(row.get(0), block_num, document_id) {
                                     return Ok(false);
                                 }
-                                Some(Err(e)) => {
-                                    tracing::error!("Failed to deserialize bitmap: {:?}", e);
-                                    return Ok(false);
-                                }
-                                _ => {}
                             }
-                        }*/
+                        }
                     } else {
                         let s = trx
                             .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
@@ -390,6 +357,7 @@ impl PostgresStore {
     }
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
+        let todo = "delete bitmaps";
         let conn = self.conn_pool.get().await?;
 
         let s = conn
