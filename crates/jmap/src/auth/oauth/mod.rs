@@ -81,6 +81,8 @@ pub struct OAuthCode {
     pub redirect_uri: Option<String>,
 }
 
+struct TodoStoreOAuthCodeInDb {}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeviceAuthGet {
     code: Option<String>,

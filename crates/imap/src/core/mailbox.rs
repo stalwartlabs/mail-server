@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::atomic::Ordering};
+use std::{
+    collections::BTreeMap,
+    sync::{atomic::Ordering, Arc},
+};
 
 use ahash::AHashMap;
 use directory::QueryBy;
@@ -15,7 +18,7 @@ use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use utils::listener::{limiter::InFlight, SessionStream};
 
-use super::{Account, Mailbox, MailboxId, MailboxSync, Session, SessionData};
+use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn new(
@@ -82,6 +85,39 @@ impl<T: SessionStream> SessionData<T> {
         mailbox_prefix: Option<String>,
         access_token: &AccessToken,
     ) -> crate::Result<Account> {
+        let state_mailbox = self
+            .jmap
+            .store
+            .get_last_change_id(account_id, Collection::Mailbox)
+            .await
+            .map_err(|_| {})?;
+        let state_email = self
+            .jmap
+            .store
+            .get_last_change_id(account_id, Collection::Email)
+            .await
+            .map_err(|_| {})?;
+        let cached_account_ = self
+            .imap
+            .cache_account
+            .entry(AccountId {
+                account_id,
+                primary_id: access_token.primary_id(),
+            })
+            .or_insert_with(|| {
+                Arc::new(tokio::sync::Mutex::new(Account {
+                    account_id: u32::MAX,
+                    ..Default::default()
+                }))
+            });
+        let mut cached_account = cached_account_.lock().await;
+        if cached_account.state_mailbox == state_mailbox
+            && cached_account.state_email == state_email
+            && cached_account.account_id != u32::MAX
+        {
+            return Ok((*cached_account).clone());
+        }
+
         let mailbox_ids = if access_token.is_primary_id(account_id)
             || access_token.member_of.contains(&account_id)
         {
@@ -150,18 +186,8 @@ impl<T: SessionStream> SessionData<T> {
             prefix: mailbox_prefix,
             mailbox_names: BTreeMap::new(),
             mailbox_state: AHashMap::with_capacity(mailboxes.len()),
-            state_mailbox: self
-                .jmap
-                .store
-                .get_last_change_id(account_id, Collection::Mailbox)
-                .await
-                .map_err(|_| {})?,
-            state_email: self
-                .jmap
-                .store
-                .get_last_change_id(account_id, Collection::Email)
-                .await
-                .map_err(|_| {})?,
+            state_mailbox,
+            state_email,
         };
 
         loop {
@@ -229,7 +255,7 @@ impl<T: SessionStream> SessionData<T> {
 
                     let mut mailbox_name = mailbox_path.join("/");
                     if mailbox_name.eq_ignore_ascii_case("inbox") && *mailbox_id != INBOX_ID {
-                        // If there is another mailbox called Inbox, renamed it to avoid conflicts
+                        // If there is another mailbox called Inbox, rename it to avoid conflicts
                         mailbox_name = format!("{mailbox_name} 2");
                     }
                     account.mailbox_names.insert(mailbox_name, *mailbox_id);
@@ -251,6 +277,9 @@ impl<T: SessionStream> SessionData<T> {
                 break;
             }
         }
+
+        // Update cache
+        *cached_account = account.clone();
 
         Ok(account)
     }

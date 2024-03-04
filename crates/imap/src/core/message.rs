@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use imap_proto::{
@@ -372,6 +372,12 @@ impl<T: SessionStream> SessionData<T> {
                 }
             }
             current_state.id_to_imap = id_to_imap;
+
+            // Update cache
+            self.imap.cache_mailbox.insert(
+                mailbox.id,
+                Arc::new(tokio::sync::Mutex::new(new_state.clone())),
+            );
 
             // Update state
             current_state.modseq = new_state.modseq;

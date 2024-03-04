@@ -40,6 +40,13 @@ static SERVER_GREETING: &str = concat!(
 
 impl IMAP {
     pub async fn init(config: &Config) -> utils::config::Result<Arc<Self>> {
+        let shard_amount = config
+            .property::<u64>("global.shared-map.shard")?
+            .unwrap_or(32)
+            .next_power_of_two() as usize;
+
+        let todo = "document imap.cache.rate-limit.size and imap.cache.mailbox.size";
+
         Ok(Arc::new(IMAP {
             max_request_size: config.property_or_static("imap.request.max-size", "52428800")?,
             max_auth_failures: config.property_or_static("imap.auth.max-failures", "3")?,
@@ -62,18 +69,25 @@ impl IMAP {
                 .into_bytes(),
             rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
                 config
-                    .property("imap.rate-limit.cache.size")?
+                    .property("imap.cache.rate-limit.size")?
                     .unwrap_or(2048),
                 RandomState::default(),
-                config
-                    .property::<u64>("global.shared-map.shard")?
-                    .unwrap_or(32)
-                    .next_power_of_two() as usize,
+                shard_amount,
             ),
             rate_requests: config.property_or_static("imap.rate-limit.requests", "2000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
             enable_uidplus: config.property_or_static("imap.protocol.uidplus", "false")?,
+            cache_account: DashMap::with_capacity_and_hasher_and_shard_amount(
+                config.property("imap.cache.account.size")?.unwrap_or(2048),
+                RandomState::default(),
+                shard_amount,
+            ),
+            cache_mailbox: DashMap::with_capacity_and_hasher_and_shard_amount(
+                config.property("imap.cache.mailbox.size")?.unwrap_or(2048),
+                RandomState::default(),
+                shard_amount,
+            ),
         }))
     }
 }

@@ -83,6 +83,9 @@ pub struct IMAP {
     pub rate_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
+
+    pub cache_mailbox: DashMap<MailboxId, Arc<tokio::sync::Mutex<MailboxState>>>,
+    pub cache_account: DashMap<AccountId, Arc<tokio::sync::Mutex<Account>>>,
 }
 
 pub struct Session<T: SessionStream> {
@@ -113,7 +116,7 @@ pub struct SessionData<T: SessionStream> {
     pub in_flight: InFlight,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Mailbox {
     pub has_children: bool,
     pub is_subscribed: bool,
@@ -127,7 +130,7 @@ pub struct Mailbox {
     pub recent_messages: RoaringBitmap,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct Account {
     pub account_id: u32,
     pub prefix: Option<String>,
@@ -145,13 +148,19 @@ pub struct SelectedMailbox {
     pub is_condstore: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct MailboxId {
     pub account_id: u32,
     pub mailbox_id: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct AccountId {
+    pub account_id: u32,
+    pub primary_id: u32,
+}
+
+#[derive(Debug, Clone)]
 pub struct MailboxState {
     pub uid_next: u32,
     pub uid_validity: u32,
@@ -163,7 +172,7 @@ pub struct MailboxState {
     pub next_state: Option<Box<NextMailboxState>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NextMailboxState {
     pub next_state: MailboxState,
     pub deletions: Vec<ImapId>,
