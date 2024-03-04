@@ -37,7 +37,7 @@ use imap_proto::{
 use jmap_proto::types::id::Id;
 use utils::listener::SessionStream;
 
-use crate::core::{SavedSearch, SelectedMailbox, Session, State};
+use crate::core::{CachedItem, MailboxState, SavedSearch, SelectedMailbox, Session, State};
 
 use super::ToModSeq;
 
@@ -58,21 +58,21 @@ impl<T: SessionStream> Session<T> {
 
                 if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
                     // Try obtaining the mailbox from the cache
-                    let state = if let Some(cached_state) = self.imap.cache_mailbox.get(&mailbox) {
-                        let modseq = match data.get_modseq(mailbox.account_id).await {
-                            Ok(modseq) => modseq,
-                            Err(mut response) => {
-                                response.tag = arguments.tag.into();
-                                return self.write_bytes(response.into_bytes()).await;
-                            }
-                        };
+                    let state = {
+                        let cached_state_ = self
+                            .imap
+                            .cache_mailbox
+                            .entry(mailbox)
+                            .or_insert_with(|| CachedItem::new(MailboxState::default()));
+                        let mut cached_state = cached_state_.get().await;
+                        let is_cache_miss =
+                            cached_state.uid_validity == 0 && cached_state.uid_max == 0;
+                        let mut modseq = None;
 
-                        // Refresh the mailbox if the modseq has changed
-                        let mut cached_state_ = cached_state.lock().await;
-                        if cached_state_.modseq != modseq {
-                            match data.fetch_messages(&mailbox).await {
-                                Ok(new_state) => {
-                                    *cached_state_ = new_state;
+                        if !is_cache_miss {
+                            match data.get_modseq(mailbox.account_id).await {
+                                Ok(modseq_) => {
+                                    modseq = modseq_;
                                 }
                                 Err(mut response) => {
                                     response.tag = arguments.tag.into();
@@ -81,23 +81,20 @@ impl<T: SessionStream> Session<T> {
                             }
                         }
 
-                        (*cached_state_).clone()
-                    } else {
-                        // Synchronize messages
-                        match data.fetch_messages(&mailbox).await {
-                            Ok(state) => {
-                                let todo = "cache cleanup";
-                                self.imap.cache_mailbox.insert(
-                                    mailbox,
-                                    Arc::new(tokio::sync::Mutex::new(state.clone())),
-                                );
-                                state
-                            }
-                            Err(mut response) => {
-                                response.tag = arguments.tag.into();
-                                return self.write_bytes(response.into_bytes()).await;
+                        // Refresh the mailbox if the modseq has changed or if it's a cache miss
+                        if is_cache_miss || cached_state.modseq != modseq {
+                            match data.fetch_messages(&mailbox).await {
+                                Ok(new_state) => {
+                                    *cached_state = new_state;
+                                }
+                                Err(mut response) => {
+                                    response.tag = arguments.tag.into();
+                                    return self.write_bytes(response.into_bytes()).await;
+                                }
                             }
                         }
+
+                        (*cached_state).clone()
                     };
 
                     // Synchronize messages

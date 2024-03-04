@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    sync::{atomic::Ordering, Arc},
-};
+use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use ahash::AHashMap;
 use directory::QueryBy;
@@ -18,7 +15,9 @@ use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use utils::listener::{limiter::InFlight, SessionStream};
 
-use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, SessionData};
+use super::{
+    Account, AccountId, CachedItem, Mailbox, MailboxId, MailboxSync, Session, SessionData,
+};
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn new(
@@ -105,12 +104,12 @@ impl<T: SessionStream> SessionData<T> {
                 primary_id: access_token.primary_id(),
             })
             .or_insert_with(|| {
-                Arc::new(tokio::sync::Mutex::new(Account {
+                CachedItem::new(Account {
                     account_id: u32::MAX,
                     ..Default::default()
-                }))
+                })
             });
-        let mut cached_account = cached_account_.lock().await;
+        let mut cached_account = cached_account_.get().await;
         if cached_account.state_mailbox == state_mailbox
             && cached_account.state_email == state_email
             && cached_account.account_id != u32::MAX
@@ -417,6 +416,7 @@ impl<T: SessionStream> SessionData<T> {
                                 StatusResponse::database_failure()
                             },
                         )?;
+                    let state_mailbox = Some(changelog.to_change_id);
                     for account in self.mailboxes.lock().iter_mut() {
                         if account.account_id == account_id {
                             account.mailbox_state.values_mut().for_each(|v| {
@@ -426,9 +426,30 @@ impl<T: SessionStream> SessionData<T> {
                                 v.size = None;
                                 v.uid_next = None;
                             });
-                            account.state_mailbox = changelog.to_change_id.into();
+                            account.state_mailbox = state_mailbox;
                             account.state_email = state_email;
                             break;
+                        }
+                    }
+
+                    // Update cache
+                    if let Some(cached_account) = self.imap.cache_account.get(&AccountId {
+                        account_id,
+                        primary_id: access_token.primary_id(),
+                    }) {
+                        let mut cached_account = cached_account.get().await;
+                        if cached_account.state_mailbox != state_mailbox
+                            || cached_account.state_email != state_email
+                        {
+                            cached_account.mailbox_state.values_mut().for_each(|v| {
+                                v.total_deleted = None;
+                                v.total_unseen = None;
+                                v.total_messages = None;
+                                v.size = None;
+                                v.uid_next = None;
+                            });
+                            cached_account.state_mailbox = state_mailbox;
+                            cached_account.state_email = state_email;
                         }
                     }
                 } else {

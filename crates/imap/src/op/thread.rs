@@ -37,7 +37,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{write::ValueClass, ValueKey};
 use utils::listener::SessionStream;
 
-use crate::core::{SelectedMailbox, Session, SessionData};
+use crate::core::{CachedItem, SelectedMailbox, Session, SessionData, Threads};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_thread(
@@ -80,33 +80,73 @@ impl<T: SessionStream> SessionData<T> {
         // Synchronize mailbox
         if !result_set.results.is_empty() {
             self.synchronize_messages(&mailbox).await?;
+        } else {
+            return Ok(Response {
+                is_uid,
+                threads: vec![],
+            });
+        }
+
+        // Obtain current state
+        let modseq = self
+            .jmap
+            .store
+            .get_last_change_id(mailbox.id.account_id, Collection::Thread)
+            .await
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                        context = "store",
+                        account_id = mailbox.id.account_id,
+                        collection = ?Collection::Thread,
+                        error = ?err,
+                        "Failed to obtain state");
+                StatusResponse::database_failure()
+            })?;
+
+        // Lock the cache
+        let thread_cache_ = self
+            .imap
+            .cache_threads
+            .entry(mailbox.id.account_id)
+            .or_insert_with(|| CachedItem::new(Threads::default()));
+        let mut thread_cache = thread_cache_.get().await;
+
+        // Invalidate cache if the modseq has changed
+        if thread_cache.modseq != modseq {
+            thread_cache.threads.clear();
         }
 
         // Obtain threadIds for matching messages
-        let thread_ids = self
-            .jmap
-            .store
-            .get_values::<u32>(
-                result_set
-                    .results
-                    .iter()
-                    .map(|document_id| ValueKey {
-                        account_id: mailbox.id.account_id,
-                        collection: Collection::Email.into(),
-                        document_id,
-                        class: ValueClass::Property(Property::ThreadId.into()),
-                    })
-                    .collect(),
-            )
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "thread_query",
-                error = ?err,
-                "Failed to obtain threadIds.");
-                StatusResponse::database_failure()
-            })?;
+        let mut thread_ids = Vec::with_capacity(result_set.results.len() as usize);
+        for document_id in &result_set.results {
+            if let Some(thread_id) = thread_cache.threads.get(&document_id) {
+                thread_ids.push((*thread_id).into());
+            } else if let Some(thread_id) = self
+                .jmap
+                .store
+                .get_value::<u32>(ValueKey {
+                    account_id: mailbox.id.account_id,
+                    collection: Collection::Email.into(),
+                    document_id,
+                    class: ValueClass::Property(Property::ThreadId.into()),
+                })
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                        event = "error",
+                        context = "thread_query",
+                        error = ?err,
+                        "Failed to obtain threadId.");
+                    StatusResponse::database_failure()
+                })?
+            {
+                thread_ids.push(thread_id.into());
+                thread_cache.threads.insert(document_id, thread_id);
+            } else {
+                thread_ids.push(None);
+            }
+        }
+        thread_cache.modseq = modseq;
 
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();

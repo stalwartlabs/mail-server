@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use ahash::AHashMap;
 use imap_proto::{
@@ -41,7 +41,9 @@ use utils::listener::SessionStream;
 
 use crate::core::ImapId;
 
-use super::{Mailbox, MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
+use super::{
+    CachedItem, Mailbox, MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData,
+};
 
 pub(crate) const MAX_RETRIES: usize = 10;
 
@@ -374,10 +376,9 @@ impl<T: SessionStream> SessionData<T> {
             current_state.id_to_imap = id_to_imap;
 
             // Update cache
-            self.imap.cache_mailbox.insert(
-                mailbox.id,
-                Arc::new(tokio::sync::Mutex::new(new_state.clone())),
-            );
+            self.imap
+                .cache_mailbox
+                .insert(mailbox.id, CachedItem::new(new_state.clone()));
 
             // Update state
             current_state.modseq = new_state.modseq;

@@ -24,11 +24,14 @@
 use std::{
     collections::BTreeMap,
     net::IpAddr,
-    sync::{atomic::AtomicU32, Arc},
+    sync::{
+        atomic::{AtomicU32, AtomicU64},
+        Arc,
+    },
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
@@ -39,7 +42,7 @@ use jmap::{
     auth::{rate_limit::ConcurrencyLimiters, AccessToken},
     JMAP,
 };
-use store::roaring::RoaringBitmap;
+use store::{roaring::RoaringBitmap, write::now};
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
@@ -84,8 +87,18 @@ pub struct IMAP {
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
 
-    pub cache_mailbox: DashMap<MailboxId, Arc<tokio::sync::Mutex<MailboxState>>>,
-    pub cache_account: DashMap<AccountId, Arc<tokio::sync::Mutex<Account>>>,
+    pub cache_account: DashMap<AccountId, CachedItem<Account>>,
+    pub cache_account_expiry: u64,
+    pub cache_mailbox: DashMap<MailboxId, CachedItem<MailboxState>>,
+    pub cache_mailbox_expiry: u64,
+    pub cache_threads: DashMap<u32, CachedItem<Threads>>,
+    pub cache_threads_expiry: u64,
+}
+
+#[derive(Clone)]
+pub struct CachedItem<T> {
+    last_access: Arc<AtomicU64>,
+    item: Arc<tokio::sync::Mutex<T>>,
 }
 
 pub struct Session<T: SessionStream> {
@@ -160,7 +173,7 @@ pub struct AccountId {
     pub primary_id: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MailboxState {
     pub uid_next: u32,
     pub uid_validity: u32,
@@ -183,6 +196,12 @@ pub struct MailboxSync {
     pub added: Vec<String>,
     pub changed: Vec<String>,
     pub deleted: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct Threads {
+    pub threads: AHashMap<u32, u32>,
+    pub modseq: Option<u64>,
 }
 
 pub enum SavedSearch {
@@ -263,5 +282,25 @@ impl<T: SessionStream> SessionData<T> {
             state: self.state,
             in_flight: self.in_flight,
         }
+    }
+}
+
+impl<T> CachedItem<T> {
+    pub fn new(item: T) -> Self {
+        Self {
+            last_access: Arc::new(AtomicU64::new(now())),
+            item: Arc::new(tokio::sync::Mutex::new(item)),
+        }
+    }
+
+    pub async fn get(&self) -> tokio::sync::MutexGuard<'_, T> {
+        let lock = self.item.lock().await;
+        self.last_access
+            .store(now(), std::sync::atomic::Ordering::Relaxed);
+        lock
+    }
+
+    pub fn last_access(&self) -> u64 {
+        self.last_access.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -21,12 +21,14 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, sync::Arc};
+use core::mailbox;
+use std::{collections::hash_map::RandomState, sync::Arc, time::Duration};
 
 use crate::core::IMAP;
 
 use dashmap::DashMap;
 use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
+use store::write::now;
 use utils::config::Config;
 
 pub mod core;
@@ -88,7 +90,33 @@ impl IMAP {
                 RandomState::default(),
                 shard_amount,
             ),
+            cache_threads: DashMap::with_capacity_and_hasher_and_shard_amount(
+                config.property("imap.cache.thread.size")?.unwrap_or(2048),
+                RandomState::default(),
+                shard_amount,
+            ),
+            cache_account_expiry: config
+                .property_or_static::<Duration>("imap.cache.account.expiry", "1h")?
+                .as_secs(),
+            cache_mailbox_expiry: config
+                .property_or_static::<Duration>("imap.cache.mailbox.expiry", "1h")?
+                .as_secs(),
+            cache_threads_expiry: config
+                .property_or_static::<Duration>("imap.cache.thread.expiry", "1h")?
+                .as_secs(),
         }))
+    }
+
+    pub fn purge(&self) {
+        let account_expiry = now() - self.cache_account_expiry;
+        let mailbox_expiry = now() - self.cache_mailbox_expiry;
+        let thread_expiry = now() - self.cache_threads_expiry;
+        self.cache_account
+            .retain(|_, item| item.last_access() > account_expiry);
+        self.cache_mailbox
+            .retain(|_, item| item.last_access() > mailbox_expiry);
+        self.cache_threads
+            .retain(|_, item| item.last_access() > thread_expiry);
     }
 }
 
