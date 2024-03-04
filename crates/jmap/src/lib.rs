@@ -28,6 +28,7 @@ use api::session::BaseCapabilities;
 use auth::{oauth::OAuthCode, rate_limit::ConcurrencyLimiters, AccessToken};
 use dashmap::DashMap;
 use directory::{Directories, Directory, QueryBy};
+use email::cache::Threads;
 use jmap_proto::{
     error::method::MethodError,
     method::{
@@ -57,7 +58,7 @@ use utils::{
     ipc::DeliveryEvent,
     map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
-    UnwrapFailure,
+    CachedItem, UnwrapFailure,
 };
 
 pub mod api;
@@ -97,6 +98,8 @@ pub struct JMAP {
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
     pub smtp: Arc<SMTP>,
+
+    pub cache_threads: DashMap<u32, CachedItem<Threads>>,
 
     pub sieve_compiler: Compiler,
     pub sieve_runtime: Runtime<()>,
@@ -151,6 +154,8 @@ pub struct Config {
     pub oauth_expiry_refresh_token: u64,
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
+
+    pub cache_expiry: u64,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
@@ -207,22 +212,25 @@ impl JMAP {
             lookup_store: stores.get_lookup_store(config, "storage.lookup")?,
             config: Config::new(config).failed("Invalid configuration file"),
             sessions: TtlDashMap::with_capacity(
-                config.property("jmap.session.cache.size")?.unwrap_or(100),
+                config.property("cache.session.size")?.unwrap_or(100),
                 shard_amount,
             ),
             access_tokens: TtlDashMap::with_capacity(
-                config.property("jmap.session.cache.size")?.unwrap_or(100),
+                config.property("cache.session.size")?.unwrap_or(100),
                 shard_amount,
             ),
             concurrency_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config
-                    .property("jmap.rate-limit.cache.size")?
-                    .unwrap_or(1024),
+                config.property("cache.rate-limit.size")?.unwrap_or(1024),
                 RandomState::default(),
                 shard_amount,
             ),
             oauth_codes: TtlDashMap::with_capacity(
-                config.property("oauth.cache.size")?.unwrap_or(128),
+                config.property("cache.oauth.size")?.unwrap_or(128),
+                shard_amount,
+            ),
+            cache_threads: DashMap::with_capacity_and_hasher_and_shard_amount(
+                config.property("cache.messages.size")?.unwrap_or(2048),
+                RandomState::default(),
                 shard_amount,
             ),
             state_tx,

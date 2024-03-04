@@ -35,9 +35,9 @@ use imap_proto::{
 };
 
 use jmap_proto::types::id::Id;
-use utils::listener::SessionStream;
+use utils::{listener::SessionStream, CachedItem};
 
-use crate::core::{CachedItem, MailboxState, SavedSearch, SelectedMailbox, Session, State};
+use crate::core::{MailboxState, SavedSearch, SelectedMailbox, Session, State};
 
 use super::ToModSeq;
 

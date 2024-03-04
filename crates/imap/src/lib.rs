@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use core::mailbox;
 use std::{collections::hash_map::RandomState, sync::Arc, time::Duration};
 
 use crate::core::IMAP;
@@ -47,8 +46,6 @@ impl IMAP {
             .unwrap_or(32)
             .next_power_of_two() as usize;
 
-        let todo = "document imap.cache.rate-limit.size and imap.cache.mailbox.size";
-
         Ok(Arc::new(IMAP {
             max_request_size: config.property_or_static("imap.request.max-size", "52428800")?,
             max_auth_failures: config.property_or_static("imap.auth.max-failures", "3")?,
@@ -70,9 +67,7 @@ impl IMAP {
                 })
                 .into_bytes(),
             rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config
-                    .property("imap.cache.rate-limit.size")?
-                    .unwrap_or(2048),
+                config.property("cache.rate-limit.size")?.unwrap_or(2048),
                 RandomState::default(),
                 shard_amount,
             ),
@@ -81,42 +76,27 @@ impl IMAP {
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
             enable_uidplus: config.property_or_static("imap.protocol.uidplus", "false")?,
             cache_account: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("imap.cache.account.size")?.unwrap_or(2048),
+                config.property("cache.messages.size")?.unwrap_or(2048),
                 RandomState::default(),
                 shard_amount,
             ),
             cache_mailbox: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("imap.cache.mailbox.size")?.unwrap_or(2048),
+                config.property("cache.messages.size")?.unwrap_or(2048),
                 RandomState::default(),
                 shard_amount,
             ),
-            cache_threads: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("imap.cache.thread.size")?.unwrap_or(2048),
-                RandomState::default(),
-                shard_amount,
-            ),
-            cache_account_expiry: config
-                .property_or_static::<Duration>("imap.cache.account.expiry", "1h")?
-                .as_secs(),
-            cache_mailbox_expiry: config
-                .property_or_static::<Duration>("imap.cache.mailbox.expiry", "1h")?
-                .as_secs(),
-            cache_threads_expiry: config
-                .property_or_static::<Duration>("imap.cache.thread.expiry", "1h")?
+            cache_expiry: config
+                .property_or_static::<Duration>("cache.messages.ttl", "1h")?
                 .as_secs(),
         }))
     }
 
     pub fn purge(&self) {
-        let account_expiry = now() - self.cache_account_expiry;
-        let mailbox_expiry = now() - self.cache_mailbox_expiry;
-        let thread_expiry = now() - self.cache_threads_expiry;
+        let expiry = now() - self.cache_expiry;
         self.cache_account
-            .retain(|_, item| item.last_access() > account_expiry);
+            .retain(|_, item| item.last_access() > expiry);
         self.cache_mailbox
-            .retain(|_, item| item.last_access() > mailbox_expiry);
-        self.cache_threads
-            .retain(|_, item| item.last_access() > thread_expiry);
+            .retain(|_, item| item.last_access() > expiry);
     }
 }
 

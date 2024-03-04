@@ -96,10 +96,11 @@ impl ConfigResolver for Config {
                 .map_err(|err| format!("Failed to build DNSSEC resolver: {err}"))?,
             cache: crate::core::DnsCache {
                 tlsa: LruCache::with_capacity(
-                    self.property("resolver.cache.tlsa")?.unwrap_or(1024),
+                    self.property("cache.resolver.tlsa.size")?.unwrap_or(1024),
                 ),
                 mta_sts: LruCache::with_capacity(
-                    self.property("resolver.cache.mta-sts")?.unwrap_or(1024),
+                    self.property("cache.resolver.mta-sts.size")?
+                        .unwrap_or(1024),
                 ),
             },
         })

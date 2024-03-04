@@ -22,6 +22,7 @@
 */
 
 pub mod body;
+pub mod cache;
 pub mod copy;
 pub mod crypto;
 pub mod get;

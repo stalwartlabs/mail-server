@@ -261,18 +261,21 @@ impl JMAP {
     ) -> Result<usize, MethodError> {
         if let Some(document_ids) = document_ids {
             let mut thread_ids = AHashSet::default();
-            self.get_properties::<u32>(
-                account_id,
-                Collection::Email,
-                document_ids.into_iter(),
-                Property::ThreadId,
-            )
-            .await?
-            .into_iter()
-            .flatten()
-            .for_each(|thread_id| {
-                thread_ids.insert(thread_id);
-            });
+            self.get_cached_thread_ids(account_id, document_ids.into_iter())
+                .await
+                .map_err(|err| {
+                    tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                error = ?err,
+                                "Failed to retrieve thread Ids");
+                    MethodError::ServerPartialFail
+                })?
+                .into_iter()
+                .flatten()
+                .for_each(|thread_id| {
+                    thread_ids.insert(thread_id);
+                });
             Ok(thread_ids.len())
         } else {
             Ok(0)

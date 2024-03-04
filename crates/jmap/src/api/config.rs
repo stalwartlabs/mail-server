@@ -97,7 +97,7 @@ impl crate::Config {
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
             session_cache_ttl: settings
-                .property("jmap.session.cache.ttl")?
+                .property("cache.session.ttl")?
                 .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: settings
                 .property_or_static("jmap.rate-limit.account", "1000/1m")?,
@@ -177,6 +177,9 @@ impl crate::Config {
                     }
                 })
                 .collect::<Result<Vec<_>, String>>()?,
+            cache_expiry: settings
+                .property_or_static::<Duration>("cache.messages.ttl", "1h")?
+                .as_secs(),
         };
         config.add_capabilites(settings);
         Ok(config)

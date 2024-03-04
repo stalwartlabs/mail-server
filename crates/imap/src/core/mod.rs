@@ -24,14 +24,11 @@
 use std::{
     collections::BTreeMap,
     net::IpAddr,
-    sync::{
-        atomic::{AtomicU32, AtomicU64},
-        Arc,
-    },
+    sync::{atomic::AtomicU32, Arc},
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
@@ -42,7 +39,7 @@ use jmap::{
     auth::{rate_limit::ConcurrencyLimiters, AccessToken},
     JMAP,
 };
-use store::{roaring::RoaringBitmap, write::now};
+use store::roaring::RoaringBitmap;
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
@@ -50,6 +47,7 @@ use tokio::{
 use utils::{
     config::Rate,
     listener::{limiter::InFlight, ServerInstance, SessionStream},
+    CachedItem,
 };
 
 pub mod client;
@@ -88,17 +86,8 @@ pub struct IMAP {
     pub rate_concurrent: u64,
 
     pub cache_account: DashMap<AccountId, CachedItem<Account>>,
-    pub cache_account_expiry: u64,
     pub cache_mailbox: DashMap<MailboxId, CachedItem<MailboxState>>,
-    pub cache_mailbox_expiry: u64,
-    pub cache_threads: DashMap<u32, CachedItem<Threads>>,
-    pub cache_threads_expiry: u64,
-}
-
-#[derive(Clone)]
-pub struct CachedItem<T> {
-    last_access: Arc<AtomicU64>,
-    item: Arc<tokio::sync::Mutex<T>>,
+    pub cache_expiry: u64,
 }
 
 pub struct Session<T: SessionStream> {
@@ -198,12 +187,6 @@ pub struct MailboxSync {
     pub deleted: Vec<String>,
 }
 
-#[derive(Debug, Default)]
-pub struct Threads {
-    pub threads: AHashMap<u32, u32>,
-    pub modseq: Option<u64>,
-}
-
 pub enum SavedSearch {
     InFlight {
         rx: watch::Receiver<Arc<Vec<ImapId>>>,
@@ -282,25 +265,5 @@ impl<T: SessionStream> SessionData<T> {
             state: self.state,
             in_flight: self.in_flight,
         }
-    }
-}
-
-impl<T> CachedItem<T> {
-    pub fn new(item: T) -> Self {
-        Self {
-            last_access: Arc::new(AtomicU64::new(now())),
-            item: Arc::new(tokio::sync::Mutex::new(item)),
-        }
-    }
-
-    pub async fn get(&self) -> tokio::sync::MutexGuard<'_, T> {
-        let lock = self.item.lock().await;
-        self.last_access
-            .store(now(), std::sync::atomic::Ordering::Relaxed);
-        lock
-    }
-
-    pub fn last_access(&self) -> u64 {
-        self.last_access.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -69,8 +69,6 @@ impl ConfigDirectory for Config {
             stores.get_lookup_store(self, "storage.lookup")?,
         ));
 
-        let todo = "store quota as u64";
-
         for id in self.sub_keys("directory", ".type") {
             if id.ends_with(".columns") || id.ends_with(".attributes") || id.contains(".principals")
             {

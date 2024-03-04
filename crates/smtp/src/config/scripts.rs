@@ -77,9 +77,9 @@ impl ConfigSieve for Config {
         let sieve_ctx = SieveContext {
             psl: self.parse_public_suffix()?,
             bayes_cache: BayesTokenCache::new(
-                self.property_or_static("bayes.cache.capacity", "8192")?,
-                self.property_or_static("bayes.cache.ttl.positive", "1h")?,
-                self.property_or_static("bayes.cache.ttl.negative", "1h")?,
+                self.property_or_static("cache.bayes.capacity", "8192")?,
+                self.property_or_static("cache.bayes.ttl.positive", "1h")?,
+                self.property_or_static("cache.bayes.ttl.negative", "1h")?,
             ),
             remote_lists: Default::default(),
         };

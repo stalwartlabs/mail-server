@@ -42,7 +42,7 @@ use store::{
         log::ChangeLogBuilder, now, BatchBuilder, BitmapClass, TagValue, ValueClass, F_BITMAP,
         F_CLEAR, F_VALUE,
     },
-    BitmapKey, BlobClass, ValueKey,
+    BitmapKey, BlobClass,
 };
 use utils::map::vec_map::VecMap;
 
@@ -437,18 +437,7 @@ impl JMAP {
 
             // Obtain threadIds for matching messages
             let thread_ids = self
-                .store
-                .get_values::<u32>(
-                    results
-                        .iter()
-                        .map(|document_id| ValueKey {
-                            account_id,
-                            collection: Collection::Email.into(),
-                            document_id,
-                            class: ValueClass::Property(Property::ThreadId.into()),
-                        })
-                        .collect(),
-                )
+                .get_cached_thread_ids(account_id, results.iter())
                 .await
                 .map_err(|err| {
                     tracing::error!(

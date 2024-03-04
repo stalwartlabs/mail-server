@@ -110,17 +110,22 @@ impl JMAP {
                 .iter()
                 .take(self.config.get_max_objects)
                 .collect::<Vec<_>>();
-            self.get_properties::<u32>(
-                account_id,
-                Collection::Email,
-                document_ids.iter().copied(),
-                Property::ThreadId,
-            )
-            .await?
-            .into_iter()
-            .zip(document_ids)
-            .filter_map(|(thread_id, document_id)| Id::from_parts(thread_id?, document_id).into())
-            .collect()
+            self.get_cached_thread_ids(account_id, document_ids.iter().copied())
+                .await
+                .map_err(|err| {
+                    tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                error = ?err,
+                                "Failed to retrieve thread Ids");
+                    MethodError::ServerPartialFail
+                })?
+                .into_iter()
+                .zip(document_ids)
+                .filter_map(|(thread_id, document_id)| {
+                    Id::from_parts(thread_id?, document_id).into()
+                })
+                .collect()
         };
         let mut response = GetResponse {
             account_id: request.account_id.into(),
