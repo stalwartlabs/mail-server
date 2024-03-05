@@ -49,8 +49,11 @@ use store::{
     fts::FtsFilter,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
-    write::{BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass},
-    BitmapKey, BlobStore, Deserialize, FtsStore, LookupStore, Store, Stores, ValueKey,
+    write::{
+        key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass,
+    },
+    BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, LookupStore, Store, Stores,
+    ValueKey, U32_LEN,
 };
 use tokio::sync::mpsc;
 use utils::{
@@ -451,44 +454,62 @@ impl JMAP {
         }
     }
 
-    pub async fn get_properties<U>(
+    pub async fn get_properties<U, I, P>(
         &self,
         account_id: u32,
         collection: Collection,
-        document_ids: impl Iterator<Item = u32>,
-        property: impl AsRef<Property>,
-    ) -> Result<Vec<Option<U>>, MethodError>
+        iterate: &I,
+        property: P,
+    ) -> Result<Vec<(u32, U)>, MethodError>
     where
+        I: PropertiesIterator + Send + Sync,
+        P: AsRef<Property>,
         U: Deserialize + 'static,
     {
-        let property = property.as_ref();
+        let property: u8 = property.as_ref().into();
+        let collection: u8 = collection.into();
+        let expected_results = iterate.len();
+        let mut results = Vec::with_capacity(expected_results);
 
-        match self
-            .store
-            .get_values::<U>(
-                document_ids
-                    .map(|document_id| ValueKey {
+        self.store
+            .iterate(
+                IterateParams::new(
+                    ValueKey {
                         account_id,
-                        collection: collection.into(),
-                        document_id,
-                        class: ValueClass::Property(property.into()),
-                    })
-                    .collect(),
+                        collection,
+                        document_id: iterate.min(),
+                        class: ValueClass::Property(property),
+                    },
+                    ValueKey {
+                        account_id,
+                        collection,
+                        document_id: iterate.max(),
+                        class: ValueClass::Property(property),
+                    },
+                ),
+                |key, value| {
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+                    if iterate.contains(document_id) {
+                        results.push((document_id, U::deserialize(value)?));
+                        Ok(expected_results == 0 || results.len() < expected_results)
+                    } else {
+                        Ok(true)
+                    }
+                },
             )
             .await
-        {
-            Ok(value) => Ok(value),
-            Err(err) => {
+            .map_err(|err| {
                 tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                property = ?property,
-                                error = ?err,
-                                "Failed to retrieve properties");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+            context = "store",
+            account_id = account_id,
+            collection = ?collection,
+            property = ?property,
+            error = ?err,
+            "Failed to retrieve properties");
+                MethodError::ServerPartialFail
+            })?;
+
+        Ok(results)
     }
 
     pub async fn get_document_ids(
@@ -768,5 +789,49 @@ impl UpdateResults for QueryResponse {
         } else {
             Err(MethodError::AnchorNotFound)
         }
+    }
+}
+
+#[allow(clippy::len_without_is_empty)]
+pub trait PropertiesIterator {
+    fn min(&self) -> u32;
+    fn max(&self) -> u32;
+    fn contains(&self, id: u32) -> bool;
+    fn len(&self) -> usize;
+}
+
+impl PropertiesIterator for RoaringBitmap {
+    fn min(&self) -> u32 {
+        self.min().unwrap_or(0)
+    }
+
+    fn max(&self) -> u32 {
+        self.max().map(|m| m + 1).unwrap_or(0)
+    }
+
+    fn contains(&self, id: u32) -> bool {
+        self.contains(id)
+    }
+
+    fn len(&self) -> usize {
+        self.len() as usize
+    }
+}
+
+impl PropertiesIterator for () {
+    fn min(&self) -> u32 {
+        0
+    }
+
+    fn max(&self) -> u32 {
+        u32::MAX
+    }
+
+    fn contains(&self, _: u32) -> bool {
+        true
+    }
+
+    fn len(&self) -> usize {
+        0
     }
 }

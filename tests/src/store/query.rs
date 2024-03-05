@@ -459,26 +459,21 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
             .await
             .unwrap();
 
-        assert_eq!(
-            db.get_values::<String>(
-                sorted_docset
-                    .ids
-                    .into_iter()
-                    .map(|document_id| ValueKey {
-                        account_id: 0,
-                        collection: COLLECTION_ID,
-                        document_id: document_id as u32,
-                        class: ValueClass::Property(fields_u8["accession_number"])
-                    })
-                    .collect()
-            )
-            .await
-            .unwrap()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>(),
-            expected_results
-        );
+        let mut results = Vec::new();
+        for document_id in sorted_docset.ids {
+            results.push(
+                db.get_value::<String>(ValueKey {
+                    account_id: 0,
+                    collection: COLLECTION_ID,
+                    document_id: document_id as u32,
+                    class: ValueClass::Property(fields_u8["accession_number"]),
+                })
+                .await
+                .unwrap()
+                .unwrap(),
+            );
+        }
+        assert_eq!(results, expected_results);
     }
 }
 
@@ -554,25 +549,20 @@ pub async fn test_sort(db: Store) {
             .await
             .unwrap();
 
-        assert_eq!(
-            db.get_values::<String>(
-                sorted_docset
-                    .ids
-                    .into_iter()
-                    .map(|document_id| ValueKey {
-                        account_id: 0,
-                        collection: COLLECTION_ID,
-                        document_id: document_id as u32,
-                        class: ValueClass::Property(fields["accession_number"])
-                    })
-                    .collect()
-            )
-            .await
-            .unwrap()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>(),
-            expected_results
-        );
+        let mut results = Vec::new();
+        for document_id in sorted_docset.ids {
+            results.push(
+                db.get_value::<String>(ValueKey {
+                    account_id: 0,
+                    collection: COLLECTION_ID,
+                    document_id: document_id as u32,
+                    class: ValueClass::Property(fields["accession_number"]),
+                })
+                .await
+                .unwrap()
+                .unwrap(),
+            );
+        }
+        assert_eq!(results, expected_results);
     }
 }

@@ -74,12 +74,7 @@ impl PostgresStore {
     pub(super) async fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
 
-        for table in [
-            SUBSPACE_VALUES,
-            SUBSPACE_LOGS,
-            SUBSPACE_BLOBS,
-            SUBSPACE_BITMAPS,
-        ] {
+        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_BLOBS] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -93,7 +88,7 @@ impl PostgresStore {
             .await?;
         }
 
-        for table in [SUBSPACE_INDEXES] {
+        for table in [SUBSPACE_INDEXES, SUBSPACE_BITMAPS] {
             let table = char::from(table);
             conn.execute(
                 &format!(

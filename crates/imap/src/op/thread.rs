@@ -102,10 +102,8 @@ impl<T: SessionStream> SessionData<T> {
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();
         let state = mailbox.state.lock();
-        for (document_id, thread_id) in result_set.results.into_iter().zip(thread_ids) {
-            if let (Some(thread_id), Some((imap_id, _))) =
-                (thread_id, state.map_result_id(document_id, is_uid))
-            {
+        for (document_id, thread_id) in thread_ids {
+            if let Some((imap_id, _)) = state.map_result_id(document_id, is_uid) {
                 threads.entry(thread_id).or_default().push(imap_id);
             }
         }

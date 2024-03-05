@@ -119,20 +119,19 @@ impl JMAP {
             && (paginate.is_some()
                 || (response.total.map_or(false, |total| total > 0) && filter_as_tree))
         {
-            for document_id in mailbox_ids {
-                let parent_id = self
-                    .get_property::<Object<Value>>(
-                        account_id,
-                        Collection::Mailbox,
-                        document_id,
-                        Property::Value,
-                    )
-                    .await?
-                    .and_then(|o| {
-                        o.properties
-                            .get(&Property::ParentId)
-                            .and_then(|id| id.as_id().map(|id| id.document_id()))
-                    })
+            for (document_id, value) in self
+                .get_properties::<Object<Value>, _, _>(
+                    account_id,
+                    Collection::Mailbox,
+                    &mailbox_ids,
+                    Property::Value,
+                )
+                .await?
+            {
+                let parent_id = value
+                    .properties
+                    .get(&Property::ParentId)
+                    .and_then(|id| id.as_id().map(|id| id.document_id()))
                     .unwrap_or(0);
                 hierarchy.insert(document_id + 1, parent_id);
                 tree.entry(parent_id)

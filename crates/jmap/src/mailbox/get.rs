@@ -272,8 +272,7 @@ impl JMAP {
                     MethodError::ServerPartialFail
                 })?
                 .into_iter()
-                .flatten()
-                .for_each(|thread_id| {
+                .for_each(|(_, thread_id)| {
                     thread_ids.insert(thread_id);
                 });
             Ok(thread_ids.len())

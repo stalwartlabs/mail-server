@@ -56,7 +56,6 @@ pub async fn test(db: Store) {
             BatchBuilder::new()
                 .with_account_id(0)
                 .with_collection(0)
-                .with_account_id(0)
                 .update_document(0)
                 .set(ValueClass::Property(1), value.as_slice())
                 .set(ValueClass::Property(0), "check1")
@@ -86,7 +85,6 @@ pub async fn test(db: Store) {
             BatchBuilder::new()
                 .with_account_id(0)
                 .with_collection(0)
-                .with_account_id(0)
                 .update_document(0)
                 .clear(ValueClass::Property(1))
                 .build_batch(),

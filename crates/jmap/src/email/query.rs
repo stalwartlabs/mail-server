@@ -375,37 +375,34 @@ impl JMAP {
             .get_tag(account_id, Collection::Email, Property::Keywords, keyword)
             .await?
             .unwrap_or_default();
+        if keyword_doc_ids.is_empty() {
+            return Ok(keyword_doc_ids);
+        }
+        let keyword_thread_ids = self
+            .get_cached_thread_ids(account_id, keyword_doc_ids.iter())
+            .await?;
 
         let mut not_matched_ids = RoaringBitmap::new();
         let mut matched_ids = RoaringBitmap::new();
 
-        for keyword_doc_id in &keyword_doc_ids {
+        for (keyword_doc_id, thread_id) in keyword_thread_ids {
             if matched_ids.contains(keyword_doc_id) || not_matched_ids.contains(keyword_doc_id) {
                 continue;
             }
-            if let Some(thread_id) = self
-                .get_property::<u32>(
-                    account_id,
-                    Collection::Email,
-                    keyword_doc_id,
-                    &Property::ThreadId,
-                )
+
+            if let Some(thread_doc_ids) = self
+                .get_tag(account_id, Collection::Email, Property::ThreadId, thread_id)
                 .await?
             {
-                if let Some(thread_doc_ids) = self
-                    .get_tag(account_id, Collection::Email, Property::ThreadId, thread_id)
-                    .await?
-                {
-                    let mut thread_tag_intersection = thread_doc_ids.clone();
-                    thread_tag_intersection &= &keyword_doc_ids;
+                let mut thread_tag_intersection = thread_doc_ids.clone();
+                thread_tag_intersection &= &keyword_doc_ids;
 
-                    if (match_all && thread_tag_intersection == thread_doc_ids)
-                        || (!match_all && !thread_tag_intersection.is_empty())
-                    {
-                        matched_ids |= &thread_doc_ids;
-                    } else if !thread_tag_intersection.is_empty() {
-                        not_matched_ids |= &thread_tag_intersection;
-                    }
+                if (match_all && thread_tag_intersection == thread_doc_ids)
+                    || (!match_all && !thread_tag_intersection.is_empty())
+                {
+                    matched_ids |= &thread_doc_ids;
+                } else if !thread_tag_intersection.is_empty() {
+                    not_matched_ids |= &thread_tag_intersection;
                 }
             }
         }

@@ -103,38 +103,35 @@ impl<T: SessionStream> SessionData<T> {
         let mut unassigned = Vec::new();
 
         // Obtain all message ids
-        for (uid_mailbox, message_id) in self
+        for (message_id, uid_mailbox) in self
             .jmap
-            .get_properties::<HashedValue<Vec<UidMailbox>>>(
+            .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
                 mailbox.account_id,
                 Collection::Email,
-                message_ids.iter(),
+                &message_ids,
                 Property::MailboxIds,
             )
             .await?
             .into_iter()
-            .zip(message_ids.iter())
         {
             // Make sure the message is still in this mailbox
-            if let Some(uid_mailbox) = uid_mailbox {
-                if let Some(item) = uid_mailbox
-                    .inner
-                    .iter()
-                    .find(|item| item.mailbox_id == mailbox.mailbox_id)
-                {
-                    if item.uid > 0 {
-                        if assigned.insert(item.uid, message_id).is_some() {
-                            tracing::warn!(event = "error",
+            if let Some(item) = uid_mailbox
+                .inner
+                .iter()
+                .find(|item| item.mailbox_id == mailbox.mailbox_id)
+            {
+                if item.uid > 0 {
+                    if assigned.insert(item.uid, message_id).is_some() {
+                        tracing::warn!(event = "error",
                                 context = "store",
                                 account_id = mailbox.account_id,
                                 collection = ?Collection::Mailbox,
                                 mailbox_id = mailbox.mailbox_id,
                                 message_id = message_id,
                                 "Duplicate UID");
-                        }
-                    } else {
-                        unassigned.push((message_id, uid_mailbox));
                     }
+                } else {
+                    unassigned.push((message_id, uid_mailbox));
                 }
             }
         }

@@ -133,36 +133,29 @@ impl<T: SessionStream> SessionData<T> {
 
         // Fetch mailboxes
         let mut mailboxes = Vec::with_capacity(10);
-        for mailbox_id in mailbox_ids {
-            mailboxes.push(
-                match self
-                    .jmap
-                    .get_property::<Object<Value>>(
-                        account_id,
-                        Collection::Mailbox,
-                        mailbox_id,
-                        &Property::Value,
-                    )
-                    .await
-                    .map_err(|_| {})?
-                {
-                    Some(values) => (
-                        mailbox_id,
-                        values
-                            .properties
-                            .get(&Property::ParentId)
-                            .map(|parent_id| match parent_id {
-                                Value::Id(value) => value.document_id(),
-                                _ => 0,
-                            })
-                            .unwrap_or(0),
-                        values,
-                    ),
-                    None => {
-                        continue;
-                    }
-                },
-            );
+        for (mailbox_id, values) in self
+            .jmap
+            .get_properties::<Object<Value>, _, _>(
+                account_id,
+                Collection::Mailbox,
+                &mailbox_ids,
+                Property::Value,
+            )
+            .await
+            .map_err(|_| {})?
+        {
+            mailboxes.push((
+                mailbox_id,
+                values
+                    .properties
+                    .get(&Property::ParentId)
+                    .map(|parent_id| match parent_id {
+                        Value::Id(value) => value.document_id(),
+                        _ => 0,
+                    })
+                    .unwrap_or(0),
+                values,
+            ));
         }
 
         // Build tree

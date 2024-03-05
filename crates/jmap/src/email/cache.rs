@@ -21,15 +21,20 @@
  * for more details.
 */
 
-use jmap_proto::types::{collection::Collection, property::Property};
-use store::{ahash::AHashMap, write::ValueClass, ValueKey};
+use std::collections::HashMap;
+
+use futures_util::TryFutureExt;
+use jmap_proto::{
+    error::method::MethodError,
+    types::{collection::Collection, property::Property},
+};
 use utils::CachedItem;
 
 use crate::JMAP;
 
 #[derive(Debug, Default)]
 pub struct Threads {
-    pub threads: AHashMap<u32, u32>,
+    pub threads: HashMap<u32, u32>,
     pub modseq: Option<u64>,
 }
 
@@ -38,11 +43,19 @@ impl JMAP {
         &self,
         account_id: u32,
         message_ids: impl Iterator<Item = u32>,
-    ) -> store::Result<Vec<Option<u32>>> {
+    ) -> Result<Vec<(u32, u32)>, MethodError> {
         // Obtain current state
         let modseq = self
             .store
             .get_last_change_id(account_id, Collection::Thread)
+            .map_err(|err| {
+                tracing::error!(event = "error",
+                                context = "store",
+                                account_id = account_id,
+                                error = ?err,
+                                "Failed to retrieve threads last change id");
+                MethodError::ServerPartialFail
+            })
             .await?;
 
         // Lock the cache
@@ -53,32 +66,22 @@ impl JMAP {
         let mut thread_cache = thread_cache_.get().await;
 
         // Invalidate cache if the modseq has changed
-        if thread_cache.modseq != modseq {
-            thread_cache.threads.clear();
+        if thread_cache.modseq.unwrap_or(0) < modseq.unwrap_or(0) {
+            thread_cache.threads = self
+                .get_properties::<u32, _, _>(account_id, Collection::Email, &(), Property::ThreadId)
+                .await?
+                .into_iter()
+                .collect();
+            thread_cache.modseq = modseq;
         }
 
         // Obtain threadIds for matching messages
         let mut thread_ids = Vec::with_capacity(message_ids.size_hint().0);
         for document_id in message_ids {
             if let Some(thread_id) = thread_cache.threads.get(&document_id) {
-                thread_ids.push((*thread_id).into());
-            } else if let Some(thread_id) = self
-                .store
-                .get_value::<u32>(ValueKey {
-                    account_id,
-                    collection: Collection::Email.into(),
-                    document_id,
-                    class: ValueClass::Property(Property::ThreadId.into()),
-                })
-                .await?
-            {
-                thread_ids.push(thread_id.into());
-                thread_cache.threads.insert(document_id, thread_id);
-            } else {
-                thread_ids.push(None);
+                thread_ids.push((document_id, *thread_id));
             }
         }
-        thread_cache.modseq = modseq;
 
         Ok(thread_ids)
     }

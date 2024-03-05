@@ -28,7 +28,10 @@ use std::{borrow::Borrow, io::Write};
 pub trait Leb128_ {
     fn to_leb128_writer(self, out: &mut impl Write) -> std::io::Result<usize>;
     fn to_leb128_bytes(self, out: &mut Vec<u8>);
-    fn from_leb128_bytes(slice: &[u8]) -> Option<(Self, usize)>
+    fn from_leb128_bytes_pos(slice: &[u8]) -> Option<(Self, usize)>
+    where
+        Self: std::marker::Sized;
+    fn from_leb128_bytes(slice: &[u8]) -> Option<Self>
     where
         Self: std::marker::Sized;
     fn from_leb128_it<T, I>(it: T) -> Option<Self>
@@ -79,7 +82,7 @@ where
 pub trait Leb128Reader: AsRef<[u8]> {
     #[inline(always)]
     fn read_leb128<T: Leb128_>(&self) -> Option<(T, usize)> {
-        T::from_leb128_bytes(self.as_ref())
+        T::from_leb128_bytes_pos(self.as_ref())
     }
 
     #[inline(always)]
@@ -133,13 +136,29 @@ macro_rules! impl_unsigned_leb128 {
             }
 
             #[inline(always)]
-            fn from_leb128_bytes(slice: &[u8]) -> Option<($int_ty, usize)> {
+            fn from_leb128_bytes_pos(slice: &[u8]) -> Option<($int_ty, usize)> {
                 let mut result = 0;
 
                 for (shift, (pos, &byte)) in $shifts.into_iter().zip(slice.iter().enumerate()) {
                     if (byte & 0x80) == 0 {
                         result |= (byte as $int_ty) << shift;
                         return Some((result, pos + 1));
+                    } else {
+                        result |= ((byte & 0x7F) as $int_ty) << shift;
+                    }
+                }
+
+                None
+            }
+
+            #[inline(always)]
+            fn from_leb128_bytes(slice: &[u8]) -> Option<$int_ty> {
+                let mut result = 0;
+
+                for (shift, &byte) in $shifts.into_iter().zip(slice.iter()) {
+                    if (byte & 0x80) == 0 {
+                        result |= (byte as $int_ty) << shift;
+                        return Some(result);
                     } else {
                         result |= ((byte & 0x7F) as $int_ty) << shift;
                     }

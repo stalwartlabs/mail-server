@@ -56,19 +56,6 @@ impl Store {
         }
     }
 
-    pub async fn get_values<U>(&self, key: Vec<impl Key>) -> crate::Result<Vec<Option<U>>>
-    where
-        U: Deserialize + 'static,
-    {
-        let mut results = Vec::with_capacity(key.len());
-
-        for key in key {
-            results.push(self.get_value(key).await?);
-        }
-
-        Ok(results)
-    }
-
     pub async fn get_bitmap(
         &self,
         key: BitmapKey<BitmapClass>,

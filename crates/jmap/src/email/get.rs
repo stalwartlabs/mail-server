@@ -121,9 +121,8 @@ impl JMAP {
                     MethodError::ServerPartialFail
                 })?
                 .into_iter()
-                .zip(document_ids)
                 .filter_map(|(thread_id, document_id)| {
-                    Id::from_parts(thread_id?, document_id).into()
+                    Id::from_parts(thread_id, document_id).into()
                 })
                 .collect()
         };

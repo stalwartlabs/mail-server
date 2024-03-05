@@ -32,7 +32,8 @@ jemallocator = "0.5.0"
 
 [features]
 #default = ["sqlite", "foundationdb", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
+default = ["foundationdb", "postgres"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 postgres = ["store/postgres"]

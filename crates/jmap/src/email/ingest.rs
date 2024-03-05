@@ -449,14 +449,17 @@ impl JMAP {
                 })?;
 
             if thread_ids.len() == 1 {
-                return Ok(thread_ids.into_iter().next().unwrap());
+                return Ok(thread_ids
+                    .into_iter()
+                    .next()
+                    .map(|(_, thread_id)| thread_id));
             }
 
             // Find the most common threadId
             let mut thread_counts = VecMap::<u32, u32>::with_capacity(thread_ids.len());
             let mut thread_id = u32::MAX;
             let mut thread_count = 0;
-            for thread_id_ in thread_ids.iter().flatten() {
+            for (_, thread_id_) in thread_ids.iter() {
                 let tc = thread_counts.get_mut_or_insert(*thread_id_);
                 *tc += 1;
                 if *tc > thread_count {
@@ -494,7 +497,11 @@ impl JMAP {
 
             // Move messages to the new threadId
             batch.with_collection(Collection::Email);
-            for old_thread_id in thread_ids.into_iter().flatten().collect::<AHashSet<_>>() {
+            for old_thread_id in thread_ids
+                .into_iter()
+                .map(|(_, thread_id)| thread_id)
+                .collect::<AHashSet<_>>()
+            {
                 if thread_id != old_thread_id {
                     for document_id in self
                         .store

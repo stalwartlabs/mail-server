@@ -244,8 +244,8 @@ impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
                 .write(0u8)
                 .write(self.account_id)
                 .write(self.collection)
-                .write_leb128(self.document_id)
-                .write(*field),
+                .write(*field)
+                .write(self.document_id),
             ValueClass::TermIndex => serializer
                 .write(1u8)
                 .write(self.account_id)
