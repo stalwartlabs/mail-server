@@ -48,10 +48,10 @@ pub struct PrincipalResponse {
     #[serde(rename = "type")]
     pub typ: Type,
     #[serde(default)]
-    pub quota: u32,
+    pub quota: u64,
     #[serde(rename = "usedQuota")]
     #[serde(default)]
-    pub used_quota: u32,
+    pub used_quota: u64,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -204,7 +204,7 @@ impl JMAP {
                                 let mut principal = PrincipalResponse::from(principal);
                                 principal.used_quota =
                                     self.get_used_quota(account_id).await.unwrap_or_default()
-                                        as u32;
+                                        as u64;
 
                                 // Obtain member names
                                 for member_id in

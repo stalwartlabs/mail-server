@@ -82,7 +82,7 @@ impl<T: SessionStream> Session<T> {
                         }
 
                         // Refresh the mailbox if the modseq has changed or if it's a cache miss
-                        if is_cache_miss || cached_state.modseq != modseq {
+                        if is_cache_miss || cached_state.modseq.unwrap_or(0) < modseq.unwrap_or(0) {
                             match data.fetch_messages(&mailbox).await {
                                 Ok(new_state) => {
                                     *cached_state = new_state;

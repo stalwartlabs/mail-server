@@ -128,7 +128,7 @@ pub enum AccountCommands {
         description: Option<String>,
         /// Update quota in bytes
         #[clap(short, long)]
-        quota: Option<u32>,
+        quota: Option<u64>,
         /// Whether the account is an administrator
         #[clap(short, long)]
         is_admin: Option<bool>,

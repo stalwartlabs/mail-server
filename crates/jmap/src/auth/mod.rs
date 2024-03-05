@@ -51,7 +51,7 @@ pub struct AccessToken {
     pub access_to: Vec<(u32, Bitmap<Collection>)>,
     pub name: String,
     pub description: Option<String>,
-    pub quota: u32,
+    pub quota: u64,
     pub is_superuser: bool,
 }
 

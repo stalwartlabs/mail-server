@@ -37,9 +37,9 @@ impl FdbStore {
         key: &[u8],
         range: Range<usize>,
     ) -> crate::Result<Option<Vec<u8>>> {
-        let block_start = range.start as usize / MAX_VALUE_SIZE;
-        let bytes_start = range.start as usize % MAX_VALUE_SIZE;
-        let block_end = (range.end as usize / MAX_VALUE_SIZE) + 1;
+        let block_start = range.start / MAX_VALUE_SIZE;
+        let bytes_start = range.start % MAX_VALUE_SIZE;
+        let block_end = (range.end / MAX_VALUE_SIZE) + 1;
 
         let begin = KeySerializer::new(key.len() + 3)
             .write(SUBSPACE_BLOBS)
@@ -64,7 +64,7 @@ impl FdbStore {
             true,
         );
         let mut blob_data: Option<Vec<u8>> = None;
-        let blob_range = (range.end - range.start) as usize;
+        let blob_range = range.end - range.start;
 
         'outer: while let Some(values) = values.next().await {
             for value in values? {

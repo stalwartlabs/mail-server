@@ -175,7 +175,7 @@ pub enum PrincipalAction {
 pub enum PrincipalValue {
     String(String),
     StringList(Vec<String>),
-    Integer(u32),
+    Integer(u64),
 }
 
 impl PrincipalUpdate {

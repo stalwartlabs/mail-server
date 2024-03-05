@@ -57,7 +57,7 @@ pub struct Principal<T> {
     #[serde(rename = "type")]
     pub typ: Type,
     #[serde(default)]
-    pub quota: u32,
+    pub quota: u64,
     pub name: String,
     #[serde(default)]
     pub secrets: Vec<String>,

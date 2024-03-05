@@ -222,7 +222,7 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {
-                        principal.quota = quota as u32;
+                        principal.quota = quota as u64;
                     }
                 }
             }
