@@ -62,7 +62,7 @@ impl<T: SessionStream> Session<T> {
         // Register with state manager
         let mut change_rx = if let Some(change_rx) = self
             .jmap
-            .subscribe_state_manager(data.account_id, data.account_id, types)
+            .subscribe_state_manager(data.account_id, types)
             .await
         {
             change_rx

@@ -63,11 +63,7 @@ impl JMAP {
 
         // Register with state manager
         let mut change_rx = if let Some(change_rx) = self
-            .subscribe_state_manager(
-                access_token.primary_id(),
-                access_token.primary_id(),
-                Bitmap::all(),
-            )
+            .subscribe_state_manager(access_token.primary_id(), Bitmap::all())
             .await
         {
             change_rx

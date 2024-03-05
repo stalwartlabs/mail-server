@@ -23,6 +23,8 @@
 
 use imap_proto::ResponseType;
 
+use crate::jmap::delivery::SmtpConnection;
+
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
@@ -144,6 +146,28 @@ pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .assert_read(Type::Status, ResponseType::Ok)
         .await
         .assert_contains("* 0 EXISTS");
+
+    // Test SMTP delivery notifications
+    let mut lmtp = SmtpConnection::connect_port(11201).await;
+    lmtp.ingest(
+        "bill@example.com",
+        &["jdoe@example.com"],
+        concat!(
+            "From: bill@example.com\r\n",
+            "To: jdoe@example.com\r\n",
+            "Subject: TPS Report\r\n",
+            "X-Spam-Status: No\r\n",
+            "\r\n",
+            "I'm going to need those TPS reports ASAP. ",
+            "So, if you could do that, that'd be great."
+        ),
+    )
+    .await;
+    imap_check
+        .assert_read(Type::Status, ResponseType::Ok)
+        .await
+        .assert_contains("STATUS \"INBOX\"")
+        .assert_contains("MESSAGES 11");
 
     // Stop IDLE mode
     imap_check.send_raw("DONE").await;

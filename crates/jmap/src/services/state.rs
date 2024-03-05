@@ -41,7 +41,6 @@ use super::IPC_CHANNEL_BUFFER;
 #[derive(Debug)]
 pub enum Event {
     Subscribe {
-        id: u32,
         account_id: u32,
         types: Bitmap<DataType>,
         tx: mpsc::Sender<StateChange>,
@@ -80,11 +79,17 @@ impl Subscriber {
     }
 }
 
-const PURGE_EVERY_SECS: u64 = 3600;
-const SEND_TIMEOUT_MS: u64 = 500;
+const PURGE_EVERY: Duration = Duration::from_secs(3600);
+const SEND_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub fn init_state_manager() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
     mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum SubscriberId {
+    Ipc(u32),
+    Push(u32),
 }
 
 #[allow(clippy::unwrap_or_default)]
@@ -96,7 +101,8 @@ pub fn spawn_state_manager(
     let push_tx = spawn_push_manager(settings);
 
     tokio::spawn(async move {
-        let mut subscribers: AHashMap<u32, AHashMap<u32, Subscriber>> = AHashMap::default();
+        let mut subscribers: AHashMap<u32, AHashMap<SubscriberId, Subscriber>> =
+            AHashMap::default();
         let mut shared_accounts: AHashMap<u32, Vec<u32>> = AHashMap::default();
         let mut shared_accounts_map: AHashMap<u32, AHashMap<u32, Bitmap<DataType>>> =
             AHashMap::default();
@@ -104,7 +110,7 @@ pub fn spawn_state_manager(
         let mut last_purge = Instant::now();
 
         while let Some(event) = change_rx.recv().await {
-            let mut purge_needed = last_purge.elapsed() >= Duration::from_secs(PURGE_EVERY_SECS);
+            let mut purge_needed = last_purge.elapsed() >= PURGE_EVERY;
 
             match event {
                 Event::Stop => {
@@ -176,7 +182,6 @@ pub fn spawn_state_manager(
                     shared_accounts.insert(account_id, shared_account_ids);
                 }
                 Event::Subscribe {
-                    id,
                     account_id,
                     types,
                     tx,
@@ -185,7 +190,7 @@ pub fn spawn_state_manager(
                         .entry(account_id)
                         .or_insert_with(AHashMap::default)
                         .insert(
-                            u32::MAX - id,
+                            SubscriberId::Ipc(rand::random()),
                             Subscriber {
                                 types,
                                 subscription: SubscriberType::Ipc { tx },
@@ -226,7 +231,7 @@ pub fn spawn_state_manager(
                                                                 account_id: state_change.account_id,
                                                                 types,
                                                             },
-                                                            Duration::from_millis(SEND_TIMEOUT_MS),
+                                                            SEND_TIMEOUT,
                                                         )
                                                         .await
                                                     {
@@ -242,7 +247,7 @@ pub fn spawn_state_manager(
                                             {
                                                 push_ids.push(Id::from_parts(
                                                     *owner_account_id,
-                                                    *subscriber_id,
+                                                    (*subscriber_id).into(),
                                                 ));
                                             }
                                             _ => {
@@ -278,22 +283,20 @@ pub fn spawn_state_manager(
                         let mut remove_ids = Vec::new();
 
                         for subscriber_id in subscribers.keys() {
-                            #[allow(clippy::match_like_matches_macro)]
-                            if (*subscriber_id < u32::MAX / 2)
-                                && !subscriptions.iter().any(|s| match s {
-                                    UpdateSubscription::Verified(
-                                        crate::push::PushSubscription { id, .. },
-                                    ) if id == subscriber_id => true,
-                                    _ => false,
-                                })
-                            {
-                                remove_ids.push(*subscriber_id);
+                            if let SubscriberId::Push(push_id) = subscriber_id {
+                                if !subscriptions.iter().any(|s| {
+                                    matches!(s, UpdateSubscription::Verified(
+                                        crate::push::PushSubscription { id, .. }
+                                    ) if id == push_id)
+                                }) {
+                                    remove_ids.push(*subscriber_id);
+                                }
                             }
                         }
 
                         for remove_id in remove_ids {
                             push_updates.push(crate::push::PushUpdate::Unregister {
-                                id: Id::from_parts(account_id, remove_id),
+                                id: Id::from_parts(account_id, remove_id.into()),
                             });
                             subscribers.remove(&remove_id);
                         }
@@ -321,7 +324,7 @@ pub fn spawn_state_manager(
                                     .entry(account_id)
                                     .or_insert_with(AHashMap::default)
                                     .insert(
-                                        verified.id,
+                                        SubscriberId::Push(verified.id),
                                         Subscriber {
                                             types: verified.types,
                                             subscription: SubscriberType::Push {
@@ -390,7 +393,6 @@ pub fn spawn_state_manager(
 impl JMAP {
     pub async fn subscribe_state_manager(
         &self,
-        id: u32,
         account_id: u32,
         types: Bitmap<DataType>,
     ) -> Option<mpsc::Receiver<StateChange>> {
@@ -400,7 +402,6 @@ impl JMAP {
         for event in [
             Event::UpdateSharedAccounts { account_id },
             Event::Subscribe {
-                id,
                 account_id,
                 types,
                 tx: change_tx,
@@ -454,5 +455,14 @@ impl JMAP {
         }
 
         true
+    }
+}
+
+impl From<SubscriberId> for u32 {
+    fn from(subscriber_id: SubscriberId) -> u32 {
+        match subscriber_id {
+            SubscriberId::Ipc(id) => id,
+            SubscriberId::Push(id) => id,
+        }
     }
 }
