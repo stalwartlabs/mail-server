@@ -43,9 +43,3 @@ impl From<FdbError> for Error {
         Self::InternalError(format!("FoundationDB error: {}", error.message()))
     }
 }
-
-fn deserialize_i64_le(bytes: &[u8]) -> crate::Result<i64> {
-    Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-        crate::Error::InternalError("Invalid counter value.".to_string())
-    })?))
-}

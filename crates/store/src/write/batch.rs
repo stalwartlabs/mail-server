@@ -220,6 +220,10 @@ impl Batch {
                         class: ValueClass::ReservedId,
                         op: ValueOp::Set(_)
                     }
+                    | Operation::Value {
+                        op: ValueOp::AddAndGet(_),
+                        ..
+                    }
             )
         })
     }

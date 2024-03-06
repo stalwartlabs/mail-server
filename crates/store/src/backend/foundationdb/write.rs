@@ -35,6 +35,7 @@ use futures::StreamExt;
 use rand::Rng;
 
 use crate::{
+    backend::deserialize_i64_le,
     write::{
         bitmap::{block_contains, DenseBitmap},
         key::KeySerializer,
@@ -45,7 +46,6 @@ use crate::{
 };
 
 use super::{
-    deserialize_i64_le,
     read::{read_chunked_value, ChunkedValue},
     FdbStore, MAX_VALUE_SIZE,
 };

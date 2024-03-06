@@ -30,6 +30,7 @@ use futures::StreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
+    backend::deserialize_i64_le,
     write::{
         bitmap::DeserializeBlock,
         key::{DeserializeBigEndian, KeySerializer},
@@ -38,7 +39,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{deserialize_i64_le, FdbStore, MAX_VALUE_SIZE};
+use super::{FdbStore, MAX_VALUE_SIZE};
 
 #[cfg(feature = "fdb-chunked-bm")]
 pub(crate) enum ChunkedBitmap {

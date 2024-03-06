@@ -37,19 +37,15 @@ use crate::{
 use super::MysqlStore;
 
 impl MysqlStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
         let start = Instant::now();
         let mut retry_count = 0;
         let mut conn = self.conn_pool.get_conn().await?;
 
         loop {
             match self.write_trx(&mut conn, &batch).await {
-                Ok(success) => {
-                    return if success {
-                        Ok(())
-                    } else {
-                        Err(crate::Error::AssertValueFailed)
-                    };
+                Ok(result) => {
+                    return result;
                 }
                 Err(Error::Server(err))
                     if [1062, 1213].contains(&err.code)
@@ -67,7 +63,11 @@ impl MysqlStore {
         }
     }
 
-    async fn write_trx(&self, conn: &mut Conn, batch: &Batch) -> Result<bool, mysql_async::Error> {
+    async fn write_trx(
+        &self,
+        conn: &mut Conn,
+        batch: &Batch,
+    ) -> Result<crate::Result<Option<i64>>, mysql_async::Error> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
@@ -77,6 +77,7 @@ impl MysqlStore {
             .with_consistent_snapshot(false)
             .with_isolation_level(IsolationLevel::ReadCommitted);
         let mut trx = conn.start_transaction(tx_opts).await?;
+        let mut result = None;
 
         for op in &batch.ops {
             match op {
@@ -95,31 +96,6 @@ impl MysqlStore {
                 } => {
                     document_id = *document_id_;
                 }
-                Operation::Value {
-                    class,
-                    op: ValueOp::AtomicAdd(by),
-                } => {
-                    let key = ValueKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        class,
-                    }
-                    .serialize(0);
-
-                    if *by >= 0 {
-                        let s = trx
-                            .prep(concat!(
-                                "INSERT INTO c (k, v) VALUES (?, ?) ",
-                                "ON DUPLICATE KEY UPDATE v = v + VALUES(v)"
-                            ))
-                            .await?;
-                        trx.exec_drop(&s, (key, by)).await?;
-                    } else {
-                        let s = trx.prep("UPDATE c SET v = v + ? WHERE k = ?").await?;
-                        trx.exec_drop(&s, (by, key)).await?;
-                    }
-                }
                 Operation::Value { class, op } => {
                     let key = ValueKey {
                         account_id,
@@ -130,57 +106,99 @@ impl MysqlStore {
                     let table = char::from(key.subspace());
                     let key = key.serialize(0);
 
-                    if let ValueOp::Set(value) = op {
-                        let exists = asserted_values.get(&key);
-                        let s = if let Some(exists) = exists {
-                            if *exists {
-                                trx.prep(&format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                    match op {
+                        ValueOp::Set(value) => {
+                            let exists = asserted_values.get(&key);
+                            let s = if let Some(exists) = exists {
+                                if *exists {
+                                    trx.prep(&format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                                        .await?
+                                } else {
+                                    trx.prep(&format!(
+                                        "INSERT INTO {} (k, v) VALUES (:k, :v)",
+                                        table
+                                    ))
                                     .await?
+                                }
                             } else {
-                                trx.prep(&format!("INSERT INTO {} (k, v) VALUES (:k, :v)", table))
-                                    .await?
-                            }
-                        } else {
-                            trx
+                                trx
                             .prep(
                                 &format!("INSERT INTO {} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)", table),
                             )
                             .await?
-                        };
+                            };
 
-                        match trx.exec_drop(&s, params! {"k" => key, "v" => value}).await {
-                            Ok(_) => {
-                                if exists.is_some() && trx.affected_rows() == 0 {
+                            match trx.exec_drop(&s, params! {"k" => key, "v" => value}).await {
+                                Ok(_) => {
+                                    if exists.is_some() && trx.affected_rows() == 0 {
+                                        trx.rollback().await?;
+                                        return Ok(Err(crate::Error::AssertValueFailed));
+                                    }
+                                }
+                                Err(err) => {
                                     trx.rollback().await?;
-                                    return Ok(false);
+                                    return Err(err);
                                 }
                             }
-                            Err(err) => {
-                                trx.rollback().await?;
-                                return Err(err);
-                            }
-                        }
 
-                        if matches!(class, ValueClass::ReservedId) {
-                            // Make sure the reserved id is not already in use
-                            let s = trx.prep("SELECT 1 FROM b WHERE k = ?").await?;
-                            let key = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                block_num: document_id,
-                            }
-                            .serialize(0);
-                            if trx.exec_first::<Row, _, _>(&s, (key,)).await?.is_some() {
-                                trx.rollback().await?;
-                                return Ok(false);
+                            if matches!(class, ValueClass::ReservedId) {
+                                // Make sure the reserved id is not already in use
+                                let s = trx.prep("SELECT 1 FROM b WHERE k = ?").await?;
+                                let key = BitmapKey {
+                                    account_id,
+                                    collection,
+                                    class: BitmapClass::DocumentIds,
+                                    block_num: document_id,
+                                }
+                                .serialize(0);
+                                if trx.exec_first::<Row, _, _>(&s, (key,)).await?.is_some() {
+                                    trx.rollback().await?;
+                                    return Ok(Err(crate::Error::AssertValueFailed));
+                                }
                             }
                         }
-                    } else {
-                        let s = trx
-                            .prep(&format!("DELETE FROM {} WHERE k = ?", table))
-                            .await?;
-                        trx.exec_drop(&s, (key,)).await?;
+                        ValueOp::AtomicAdd(by) => {
+                            if *by >= 0 {
+                                let s = trx
+                                    .prep(concat!(
+                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
+                                        "ON DUPLICATE KEY UPDATE v = v + VALUES(v)"
+                                    ))
+                                    .await?;
+                                trx.exec_drop(&s, (key, by)).await?;
+                            } else {
+                                let s = trx.prep("UPDATE c SET v = v + ? WHERE k = ?").await?;
+                                trx.exec_drop(&s, (by, key)).await?;
+                            }
+                        }
+                        ValueOp::AddAndGet(by) => {
+                            let s = trx
+                                .prep(concat!(
+                                    "INSERT INTO c (k, v) VALUES (:k, LAST_INSERT_ID(:v)) ",
+                                    "ON DUPLICATE KEY UPDATE v = LAST_INSERT_ID(v + :v)"
+                                ))
+                                .await?;
+                            trx.exec_drop(&s, params! {"k" => key, "v" => by}).await?;
+                            let s = trx.prep("SELECT LAST_INSERT_ID()").await?;
+                            result = trx
+                                .exec_first::<i64, _, _>(&s, ())
+                                .await?
+                                .ok_or_else(|| {
+                                    mysql_async::Error::Io(mysql_async::IoError::Io(
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::Other,
+                                            "LAST_INSERT_ID() did not return a value",
+                                        ),
+                                    ))
+                                })
+                                .map(Some)?;
+                        }
+                        ValueOp::Clear => {
+                            let s = trx
+                                .prep(&format!("DELETE FROM {} WHERE k = ?", table))
+                                .await?;
+                            trx.exec_drop(&s, (key,)).await?;
+                        }
                     }
                 }
                 Operation::Index { field, key, set } => {
@@ -260,14 +278,14 @@ impl MysqlStore {
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
                         trx.rollback().await?;
-                        return Ok(false);
+                        return Ok(Err(crate::Error::AssertValueFailed));
                     }
                     asserted_values.insert(key, exists);
                 }
             }
         }
 
-        trx.commit().await.map(|_| true)
+        trx.commit().await.map(|_| Ok(result))
     }
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {

@@ -169,6 +169,16 @@ impl<T: AsRef<ValueClass>> ValueKey<T> {
             ..self
         }
     }
+
+    pub fn is_counter(&self) -> bool {
+        match self.class.as_ref() {
+            ValueClass::Directory(DirectoryClass::UsedQuota(_))
+            | ValueClass::Lookup(LookupClass::Counter(_))
+            | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_)) => true,
+            ValueClass::Property(84) if self.collection == 1 => true, // TODO: Find a more elegant way to do this
+            _ => false,
+        }
+    }
 }
 
 impl Key for IndexKeyPrefix {
@@ -220,14 +230,10 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        match self.class.as_ref() {
-            ValueClass::Directory(DirectoryClass::UsedQuota(_))
-            | ValueClass::Lookup(LookupClass::Counter(_))
-            | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_)) => {
-                SUBSPACE_COUNTERS
-            }
-            ValueClass::Property(84) if self.collection == 1 => SUBSPACE_COUNTERS, // TODO: Find a more elegant way to do this
-            _ => SUBSPACE_VALUES,
+        if self.is_counter() {
+            SUBSPACE_COUNTERS
+        } else {
+            SUBSPACE_VALUES
         }
     }
 
