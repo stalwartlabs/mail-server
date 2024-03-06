@@ -177,7 +177,7 @@ impl<T: SessionStream> SessionData<T> {
                 } else {
                     continue;
                 };
-            let mailbox_id = UidMailbox::from(mailbox_id);
+            let mailbox_id = UidMailbox::new_unassigned(mailbox_id);
             if !mailboxes.current().contains(&mailbox_id) {
                 continue;
             } else if mailboxes.current().len() > 1 {

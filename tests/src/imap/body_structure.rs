@@ -34,6 +34,8 @@ use super::resources_dir;
 
 #[test]
 fn body_structure() {
+    println!("Running BODYSTRUCTURE...");
+
     for file_name in fs::read_dir(resources_dir()).unwrap() {
         let mut file_name = file_name.as_ref().unwrap().path();
         if file_name.extension().map_or(true, |e| e != "txt") {

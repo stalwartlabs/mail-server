@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, sync::atomic::Ordering};
+use std::{
+    collections::BTreeMap,
+    sync::{atomic::Ordering, Arc},
+};
 
 use ahash::AHashMap;
 use directory::QueryBy;
@@ -13,11 +16,12 @@ use jmap_proto::{
 };
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
-use utils::listener::{limiter::InFlight, SessionStream};
-
-use super::{
-    Account, AccountId, CachedItem, Mailbox, MailboxId, MailboxSync, Session, SessionData,
+use utils::{
+    listener::{limiter::InFlight, SessionStream},
+    lru_cache::LruCached,
 };
+
+use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn new(
@@ -96,25 +100,25 @@ impl<T: SessionStream> SessionData<T> {
             .get_last_change_id(account_id, Collection::Email)
             .await
             .map_err(|_| {})?;
-        let cached_account_ = self
-            .imap
-            .cache_account
-            .entry(AccountId {
-                account_id,
-                primary_id: access_token.primary_id(),
-            })
-            .or_insert_with(|| {
-                CachedItem::new(Account {
-                    account_id: u32::MAX,
-                    ..Default::default()
+        let cached_account_id = AccountId {
+            account_id,
+            primary_id: access_token.primary_id(),
+        };
+        if let Some(cached_account) =
+            self.imap
+                .cache_account
+                .get(&cached_account_id)
+                .and_then(|cached_account| {
+                    if cached_account.state_mailbox == state_mailbox
+                        && cached_account.state_email == state_email
+                    {
+                        Some(cached_account)
+                    } else {
+                        None
+                    }
                 })
-            });
-        let mut cached_account = cached_account_.get().await;
-        if cached_account.state_mailbox == state_mailbox
-            && cached_account.state_email == state_email
-            && cached_account.account_id != u32::MAX
         {
-            return Ok((*cached_account).clone());
+            return Ok(cached_account.as_ref().clone());
         }
 
         let mailbox_ids = if access_token.is_primary_id(account_id)
@@ -271,7 +275,9 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Update cache
-        *cached_account = account.clone();
+        self.imap
+            .cache_account
+            .insert(cached_account_id, Arc::new(account.clone()));
 
         Ok(account)
     }
@@ -426,14 +432,16 @@ impl<T: SessionStream> SessionData<T> {
                     }
 
                     // Update cache
-                    if let Some(cached_account) = self.imap.cache_account.get(&AccountId {
-                        account_id,
-                        primary_id: access_token.primary_id(),
-                    }) {
-                        let mut cached_account = cached_account.get().await;
-                        if cached_account.state_mailbox != state_mailbox
-                            || cached_account.state_email != state_email
+                    if let Some(cached_account_) =
+                        self.imap.cache_account.lock().get_mut(&AccountId {
+                            account_id,
+                            primary_id: access_token.primary_id(),
+                        })
+                    {
+                        if cached_account_.state_mailbox != state_mailbox
+                            || cached_account_.state_email != state_email
                         {
+                            let mut cached_account = cached_account_.as_ref().clone();
                             cached_account.mailbox_state.values_mut().for_each(|v| {
                                 v.total_deleted = None;
                                 v.total_unseen = None;
@@ -443,6 +451,7 @@ impl<T: SessionStream> SessionData<T> {
                             });
                             cached_account.state_mailbox = state_mailbox;
                             cached_account.state_email = state_email;
+                            *cached_account_ = Arc::new(cached_account);
                         }
                     }
                 } else {

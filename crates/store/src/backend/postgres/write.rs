@@ -38,19 +38,15 @@ use crate::{
 use super::PostgresStore;
 
 impl PostgresStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
         let mut conn = self.conn_pool.get().await?;
         let start = Instant::now();
         let mut retry_count = 0;
 
         loop {
             match self.write_trx(&mut conn, &batch).await {
-                Ok(success) => {
-                    return if success {
-                        Ok(())
-                    } else {
-                        Err(crate::Error::AssertValueFailed)
-                    };
+                Ok(result) => {
+                    return result;
                 }
                 Err(err) => match err.code() {
                     Some(
@@ -73,7 +69,7 @@ impl PostgresStore {
         &self,
         conn: &mut Object,
         batch: &Batch,
-    ) -> Result<bool, tokio_postgres::Error> {
+    ) -> Result<crate::Result<Option<i64>>, tokio_postgres::Error> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
@@ -83,6 +79,7 @@ impl PostgresStore {
             .isolation_level(IsolationLevel::ReadCommitted)
             .start()
             .await?;
+        let mut result = None;
 
         for op in &batch.ops {
             match op {
@@ -101,33 +98,6 @@ impl PostgresStore {
                 } => {
                     document_id = *document_id_;
                 }
-                Operation::Value {
-                    class,
-                    op: ValueOp::Add(by),
-                } => {
-                    let key = ValueKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        class,
-                    }
-                    .serialize(0);
-
-                    if *by >= 0 {
-                        let s = trx
-                            .prepare_cached(concat!(
-                                "INSERT INTO c (k, v) VALUES ($1, $2) ",
-                                "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v"
-                            ))
-                            .await?;
-                        trx.execute(&s, &[&key, &by]).await?;
-                    } else {
-                        let s = trx
-                            .prepare_cached("UPDATE c SET v = v + $1 WHERE k = $2")
-                            .await?;
-                        trx.execute(&s, &[&by, &key]).await?;
-                    }
-                }
                 Operation::Value { class, op } => {
                     let key = ValueKey {
                         account_id,
@@ -138,55 +108,87 @@ impl PostgresStore {
                     let table = char::from(key.subspace());
                     let key = key.serialize(0);
 
-                    if let ValueOp::Set(value) = op {
-                        let s = if let Some(exists) = asserted_values.get(&key) {
-                            if *exists {
-                                trx.prepare_cached(&format!(
-                                    "UPDATE {} SET v = $2 WHERE k = $1",
-                                    table
-                                ))
-                                .await?
+                    match op {
+                        ValueOp::Set(value) => {
+                            let s = if let Some(exists) = asserted_values.get(&key) {
+                                if *exists {
+                                    trx.prepare_cached(&format!(
+                                        "UPDATE {} SET v = $2 WHERE k = $1",
+                                        table
+                                    ))
+                                    .await?
+                                } else {
+                                    trx.prepare_cached(&format!(
+                                        "INSERT INTO {} (k, v) VALUES ($1, $2)",
+                                        table
+                                    ))
+                                    .await?
+                                }
                             } else {
                                 trx.prepare_cached(&format!(
-                                    "INSERT INTO {} (k, v) VALUES ($1, $2)",
+                                    concat!(
+                                        "INSERT INTO {} (k, v) VALUES ($1, $2) ",
+                                        "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
+                                    ),
                                     table
                                 ))
                                 .await?
-                            }
-                        } else {
-                            trx.prepare_cached(&format!(
-                                concat!(
-                                    "INSERT INTO {} (k, v) VALUES ($1, $2) ",
-                                    "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
-                                ),
-                                table
-                            ))
-                            .await?
-                        };
+                            };
 
-                        if trx.execute(&s, &[&key, value]).await? == 0 {
-                            return Ok(false);
-                        }
-
-                        if matches!(class, ValueClass::ReservedId) {
-                            // Make sure the reserved id is not already in use
-                            let s = trx.prepare_cached("SELECT 1 FROM b WHERE k = $1").await?;
-                            let key = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                block_num: document_id,
+                            if trx.execute(&s, &[&key, value]).await? == 0 {
+                                return Ok(Err(crate::Error::AssertValueFailed));
                             }
-                            .serialize(0);
-                            if trx.query_opt(&s, &[&key]).await?.is_some() {
-                                return Ok(false);
+
+                            if matches!(class, ValueClass::ReservedId) {
+                                // Make sure the reserved id is not already in use
+                                let s = trx.prepare_cached("SELECT 1 FROM b WHERE k = $1").await?;
+                                let key = BitmapKey {
+                                    account_id,
+                                    collection,
+                                    class: BitmapClass::DocumentIds,
+                                    block_num: document_id,
+                                }
+                                .serialize(0);
+                                if trx.query_opt(&s, &[&key]).await?.is_some() {
+                                    return Ok(Err(crate::Error::AssertValueFailed));
+                                }
                             }
                         }
-                    } else {
-                        let s = trx
-                            .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
-                            .await?;
-                        trx.execute(&s, &[&key]).await?;
+                        ValueOp::AtomicAdd(by) => {
+                            if *by >= 0 {
+                                let s = trx
+                                    .prepare_cached(concat!(
+                                        "INSERT INTO c (k, v) VALUES ($1, $2) ",
+                                        "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v"
+                                    ))
+                                    .await?;
+                                trx.execute(&s, &[&key, &by]).await?;
+                            } else {
+                                let s = trx
+                                    .prepare_cached("UPDATE c SET v = v + $1 WHERE k = $2")
+                                    .await?;
+                                trx.execute(&s, &[&by, &key]).await?;
+                            }
+                        }
+                        ValueOp::AddAndGet(by) => {
+                            let s = trx
+                                .prepare_cached(concat!(
+                                    "INSERT INTO c (k, v) VALUES ($1, $2) ",
+                                    "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v RETURNING v"
+                                ))
+                                .await?;
+                            result = trx
+                                .query_one(&s, &[&key, &by])
+                                .await
+                                .and_then(|row| row.try_get::<_, i64>(0))?
+                                .into();
+                        }
+                        ValueOp::Clear => {
+                            let s = trx
+                                .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
+                                .await?;
+                            trx.execute(&s, &[&key]).await?;
+                        }
                     }
                 }
                 Operation::Index { field, key, set } => {
@@ -277,14 +279,14 @@ impl PostgresStore {
                         })
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
-                        return Ok(false);
+                        return Ok(Err(crate::Error::AssertValueFailed));
                     }
                     asserted_values.insert(key, exists);
                 }
             }
         }
 
-        trx.commit().await.map(|_| true)
+        trx.commit().await.map(|_| Ok(result))
     }
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {

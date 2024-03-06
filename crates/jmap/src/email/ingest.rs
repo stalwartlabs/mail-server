@@ -64,6 +64,7 @@ pub struct IngestedEmail {
     pub change_id: u64,
     pub blob_id: BlobId,
     pub size: usize,
+    pub imap_uids: Vec<u32>,
 }
 
 pub struct IngestEmail<'x> {
@@ -193,6 +194,7 @@ impl JMAP {
                     id: Id::default(),
                     change_id: u64::MAX,
                     blob_id: BlobId::default(),
+                    imap_uids: Vec::new(),
                     size: 0,
                 });
             }
@@ -295,6 +297,25 @@ impl JMAP {
                 IngestError::Temporary
             })?;
 
+        // Assign IMAP UIDs
+        let mut mailbox_ids = Vec::with_capacity(params.mailbox_ids.len());
+        let mut imap_uids = Vec::with_capacity(params.mailbox_ids.len());
+        for mailbox_id in &params.mailbox_ids {
+            let uid = self
+                .assign_imap_uid(params.account_id, *mailbox_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                    event = "error",
+                    context = "email_ingest",
+                    error = ?err,
+                    "Failed to assign IMAP UID.");
+                    IngestError::Temporary
+                })?;
+            mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
+            imap_uids.push(uid);
+        }
+
         // Prepare batch
         let mut batch = BatchBuilder::new();
         batch.with_account_id(params.account_id);
@@ -337,11 +358,7 @@ impl JMAP {
                 message,
                 blob_id.hash.clone(),
                 params.keywords,
-                params
-                    .mailbox_ids
-                    .iter()
-                    .map(|id| UidMailbox::from(*id))
-                    .collect(),
+                mailbox_ids,
                 params.received_at.unwrap_or_else(now),
             )
             .value(Property::Cid, change_id, F_VALUE)
@@ -390,6 +407,7 @@ impl JMAP {
                 section: blob_id.section,
             },
             size: raw_message_len as usize,
+            imap_uids,
         })
     }
 
@@ -557,6 +575,20 @@ impl JMAP {
                 }
             }
         }
+    }
+
+    pub async fn assign_imap_uid(&self, account_id: u32, mailbox_id: u32) -> store::Result<u32> {
+        // Increment UID next
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Mailbox)
+            .update_document(mailbox_id)
+            .add_and_get(Property::EmailIds, 1);
+        self.store
+            .write(batch.build())
+            .await
+            .map(|v| v.expect("UID next") as u32)
     }
 }
 

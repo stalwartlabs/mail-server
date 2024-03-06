@@ -28,6 +28,8 @@ use crate::jmap::wait_for_index;
 use super::{AssertResult, IMAPTest, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, handle: &IMAPTest) {
+    println!("Running STORE tests...");
+
     // Select INBOX
     imap.send("SELECT INBOX").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)

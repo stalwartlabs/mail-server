@@ -76,7 +76,7 @@ impl LookupStore {
                             .finalize(),
                     ),
                 });
-                store.write(batch.build()).await
+                store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_set(key, value, expires).await,
@@ -103,17 +103,6 @@ impl LookupStore {
     ) -> crate::Result<i64> {
         match self {
             LookupStore::Store(store) => {
-                let result = if return_value {
-                    store
-                        .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
-                            key.clone(),
-                        ))))
-                        .await?
-                        + 1
-                } else {
-                    0
-                };
-
                 let mut batch = BatchBuilder::new();
 
                 if let Some(expires) = expires {
@@ -129,12 +118,14 @@ impl LookupStore {
 
                 batch.ops.push(Operation::Value {
                     class: ValueClass::Lookup(LookupClass::Counter(key)),
-                    op: ValueOp::Add(value),
+                    op: if return_value {
+                        ValueOp::AddAndGet(value)
+                    } else {
+                        ValueOp::AtomicAdd(value)
+                    },
                 });
 
-                store.write(batch.build()).await?;
-
-                Ok(result)
+                store.write(batch.build()).await.map(|r| r.unwrap_or(0))
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
@@ -152,7 +143,7 @@ impl LookupStore {
                     class: ValueClass::Lookup(LookupClass::Key(key)),
                     op: ValueOp::Clear,
                 });
-                store.write(batch.build()).await
+                store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
@@ -170,7 +161,7 @@ impl LookupStore {
                     class: ValueClass::Lookup(LookupClass::Counter(key)),
                     op: ValueOp::Clear,
                 });
-                store.write(batch.build()).await
+                store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,

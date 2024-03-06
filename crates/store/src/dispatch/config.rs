@@ -64,13 +64,13 @@ impl Store {
         for key in keys {
             batch.set(ValueClass::Config(key.key.into_bytes()), key.value);
         }
-        self.write(batch.build()).await
+        self.write(batch.build()).await.map(|_| ())
     }
 
     pub async fn config_clear(&self, key: impl Into<String>) -> crate::Result<()> {
         let mut batch = BatchBuilder::new();
         batch.clear(ValueClass::Config(key.into().into_bytes()));
-        self.write(batch.build()).await
+        self.write(batch.build()).await.map(|_| ())
     }
 
     pub async fn config_clear_prefix(&self, key: impl AsRef<str>) -> crate::Result<()> {

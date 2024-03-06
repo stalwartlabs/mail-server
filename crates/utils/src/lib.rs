@@ -21,11 +21,7 @@
  * for more details.
 */
 
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU64, Arc},
-    time::SystemTime,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use config::Config;
 
@@ -35,6 +31,7 @@ pub mod config;
 pub mod expr;
 pub mod ipc;
 pub mod listener;
+pub mod lru_cache;
 pub mod map;
 pub mod snowflake;
 pub mod suffixlist;
@@ -112,40 +109,6 @@ impl AsRef<[u8]> for BlobHash {
 impl AsMut<[u8]> for BlobHash {
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.as_mut()
-    }
-}
-
-#[derive(Clone)]
-pub struct CachedItem<T> {
-    last_access: Arc<AtomicU64>,
-    item: Arc<tokio::sync::Mutex<T>>,
-}
-
-impl<T> CachedItem<T> {
-    pub fn new(item: T) -> Self {
-        Self {
-            last_access: Arc::new(AtomicU64::new(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs()),
-            )),
-            item: Arc::new(tokio::sync::Mutex::new(item)),
-        }
-    }
-
-    pub async fn get(&self) -> tokio::sync::MutexGuard<'_, T> {
-        let lock = self.item.lock().await;
-        self.last_access.store(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs()),
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        lock
-    }
-
-    pub fn last_access(&self) -> u64 {
-        self.last_access.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

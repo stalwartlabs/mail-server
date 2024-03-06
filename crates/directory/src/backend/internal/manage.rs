@@ -758,7 +758,10 @@ impl ManageDirectory for Store {
             ValueClass::Directory(DirectoryClass::Domain(domain.to_lowercase().into_bytes())),
             vec![],
         );
-        self.write(batch.build()).await.map_err(Into::into)
+        self.write(batch.build())
+            .await
+            .map_err(Into::into)
+            .map(|_| ())
     }
 
     async fn delete_domain(&self, domain: &str) -> crate::Result<()> {
@@ -771,7 +774,10 @@ impl ManageDirectory for Store {
         batch.clear(ValueClass::Directory(DirectoryClass::Domain(
             domain.to_lowercase().into_bytes(),
         )));
-        self.write(batch.build()).await.map_err(Into::into)
+        self.write(batch.build())
+            .await
+            .map_err(Into::into)
+            .map(|_| ())
     }
 
     async fn map_group_ids(&self, principal: Principal<u32>) -> crate::Result<Principal<String>> {

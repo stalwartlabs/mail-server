@@ -35,6 +35,8 @@ use tokio_rustls::client::TlsStream;
 use super::AssertResult;
 
 pub async fn test() {
+    println!("Running ManageSieve tests...");
+
     // Connect to ManageSieve
     let mut sieve = SieveConnection::connect().await;
     sieve

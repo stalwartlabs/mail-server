@@ -375,6 +375,25 @@ impl JMAP {
             ..Default::default()
         };
 
+        // Assign IMAP UIDs
+        let mut mailbox_ids = Vec::with_capacity(mailboxes.len());
+        email.imap_uids = Vec::with_capacity(mailboxes.len());
+        for mailbox_id in &mailboxes {
+            let uid = self
+                .assign_imap_uid(account_id, *mailbox_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(
+                            event = "error",
+                            context = "email_copy",
+                            error = ?err,
+                            "Failed to assign IMAP UID.");
+                    MethodError::ServerPartialFail
+                })?;
+            mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
+            email.imap_uids.push(uid);
+        }
+
         // Prepare batch
         let mut batch = BatchBuilder::new();
         batch.with_account_id(account_id);
@@ -406,14 +425,7 @@ impl JMAP {
             .with_collection(Collection::Email)
             .create_document(message_id)
             .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
-            .value(
-                Property::MailboxIds,
-                mailboxes
-                    .into_iter()
-                    .map(UidMailbox::from)
-                    .collect::<Vec<_>>(),
-                F_VALUE | F_BITMAP,
-            )
+            .value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP)
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, changes.change_id, F_VALUE)
             .set(

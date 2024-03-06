@@ -45,6 +45,7 @@ use crate::{
 };
 
 use super::{
+    deserialize_i64_le,
     read::{read_chunked_value, ChunkedValue},
     FdbStore, MAX_VALUE_SIZE,
 };
@@ -69,7 +70,7 @@ impl BitmapOp {
 }
 
 impl FdbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
         let start = Instant::now();
         let mut retry_count = 0;
         #[cfg(not(feature = "fdb-chunked-bm"))]
@@ -83,6 +84,7 @@ impl FdbStore {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+            let mut result = None;
 
             let trx = self.db.create_trx()?;
 
@@ -103,20 +105,6 @@ impl FdbStore {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::Value {
-                        class,
-                        op: ValueOp::Add(by),
-                    } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        }
-                        .serialize(WITH_SUBSPACE);
-
-                        trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
-                    }
                     Operation::Value { class, op } => {
                         let mut key = ValueKey {
                             account_id,
@@ -127,62 +115,79 @@ impl FdbStore {
                         .serialize(WITH_SUBSPACE);
                         let do_chunk = key[0] == SUBSPACE_VALUES;
 
-                        if let ValueOp::Set(value) = op {
-                            if !value.is_empty() && do_chunk {
-                                for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
-                                    match pos.cmp(&1) {
-                                        Ordering::Less => {}
-                                        Ordering::Equal => {
-                                            key.push(0);
-                                        }
-                                        Ordering::Greater => {
-                                            if pos < u8::MAX as usize {
-                                                *key.last_mut().unwrap() += 1;
-                                            } else {
-                                                trx.cancel();
-                                                return Err(crate::Error::InternalError(
-                                                    "Value too large".into(),
-                                                ));
+                        match op {
+                            ValueOp::Set(value) => {
+                                if !value.is_empty() && do_chunk {
+                                    for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
+                                        match pos.cmp(&1) {
+                                            Ordering::Less => {}
+                                            Ordering::Equal => {
+                                                key.push(0);
+                                            }
+                                            Ordering::Greater => {
+                                                if pos < u8::MAX as usize {
+                                                    *key.last_mut().unwrap() += 1;
+                                                } else {
+                                                    trx.cancel();
+                                                    return Err(crate::Error::InternalError(
+                                                        "Value too large".into(),
+                                                    ));
+                                                }
                                             }
                                         }
+                                        trx.set(&key, chunk);
                                     }
-                                    trx.set(&key, chunk);
+                                } else {
+                                    trx.set(&key, value);
                                 }
-                            } else {
-                                trx.set(&key, value);
-                            }
 
-                            if matches!(class, ValueClass::ReservedId) {
-                                let block_num = DenseBitmap::block_num(document_id);
-                                if let Ok(Some(bytes)) = trx
-                                    .get(
-                                        &BitmapKey {
-                                            account_id,
-                                            collection,
-                                            class: BitmapClass::DocumentIds,
-                                            block_num,
+                                if matches!(class, ValueClass::ReservedId) {
+                                    let block_num = DenseBitmap::block_num(document_id);
+                                    if let Ok(Some(bytes)) = trx
+                                        .get(
+                                            &BitmapKey {
+                                                account_id,
+                                                collection,
+                                                class: BitmapClass::DocumentIds,
+                                                block_num,
+                                            }
+                                            .serialize(WITH_SUBSPACE),
+                                            true,
+                                        )
+                                        .await
+                                    {
+                                        if block_contains(&bytes, block_num, document_id) {
+                                            trx.cancel();
+                                            return Err(crate::Error::AssertValueFailed);
                                         }
-                                        .serialize(WITH_SUBSPACE),
-                                        true,
-                                    )
-                                    .await
-                                {
-                                    if block_contains(&bytes, block_num, document_id) {
-                                        trx.cancel();
-                                        return Err(crate::Error::AssertValueFailed);
                                     }
                                 }
                             }
-                        } else if do_chunk {
-                            trx.clear_range(
-                                &key,
-                                &KeySerializer::new(key.len() + 1)
-                                    .write(key.as_slice())
-                                    .write(u8::MAX)
-                                    .finalize(),
-                            );
-                        } else {
-                            trx.clear(&key);
+                            ValueOp::AtomicAdd(by) => {
+                                trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
+                            }
+                            ValueOp::AddAndGet(by) => {
+                                let num = if let Some(bytes) = trx.get(&key, false).await? {
+                                    deserialize_i64_le(&bytes)? + *by
+                                } else {
+                                    *by
+                                };
+                                trx.set(&key, &num.to_le_bytes()[..]);
+                                result = Some(num);
+                            }
+                            ValueOp::Clear => {
+                                if do_chunk {
+                                    trx.clear_range(
+                                        &key,
+                                        &KeySerializer::new(key.len() + 1)
+                                            .write(key.as_slice())
+                                            .write(u8::MAX)
+                                            .finalize(),
+                                    );
+                                } else {
+                                    trx.clear(&key);
+                                }
+                            }
                         }
                     }
                     Operation::Index { field, key, set } => {
@@ -374,7 +379,7 @@ impl FdbStore {
 
             match trx.commit().await {
                 Ok(_) => {
-                    return Ok(());
+                    return Ok(result);
                 }
                 Err(err) => {
                     if retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME {

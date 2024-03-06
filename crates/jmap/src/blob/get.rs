@@ -254,7 +254,10 @@ impl JMAP {
                                             DataType::Mailbox,
                                             mailboxes
                                                 .into_iter()
-                                                .map(|m| Id::from(m.mailbox_id))
+                                                .map(|m| {
+                                                    debug_assert!(m.uid != 0);
+                                                    Id::from(m.mailbox_id)
+                                                })
                                                 .collect::<Vec<_>>(),
                                         );
                                     }

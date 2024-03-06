@@ -26,6 +26,8 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+    println!("Running FETCH tests...");
+
     // Examine INBOX
     imap.send("EXAMINE INBOX").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)

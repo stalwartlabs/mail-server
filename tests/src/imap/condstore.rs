@@ -31,6 +31,8 @@ use crate::imap::{
 use super::{ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
+    println!("Running CONDSTORE...");
+
     // Test CONDSTORE parameter
     imap.send("SELECT INBOX (CONDSTORE)").await;
     let hms = imap

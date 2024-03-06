@@ -177,9 +177,6 @@ impl crate::Config {
                     }
                 })
                 .collect::<Result<Vec<_>, String>>()?,
-            cache_expiry: settings
-                .property_or_static::<Duration>("cache.messages.ttl", "1h")?
-                .as_secs(),
         };
         config.add_capabilites(settings);
         Ok(config)

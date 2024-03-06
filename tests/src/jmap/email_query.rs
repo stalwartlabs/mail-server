@@ -32,10 +32,13 @@ use jmap_client::{
     core::query::{Comparator, Filter},
     email,
 };
-use jmap_proto::types::{collection::Collection, id::Id};
+use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use mail_parser::HeaderName;
 
-use store::{ahash::AHashMap, write::BatchBuilder};
+use store::{
+    ahash::AHashMap,
+    write::{BatchBuilder, ValueClass},
+};
 
 use super::JMAPTest;
 
@@ -57,7 +60,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
-        for mailbox_id in 0..99999 {
+        for mailbox_id in 1545..3010 {
             batch.create_document(mailbox_id);
         }
         server.store.write(batch.build()).await.unwrap();
@@ -71,8 +74,10 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox);
-        for mailbox_id in 0..99999 {
-            batch.delete_document(mailbox_id);
+        for mailbox_id in 1545..3010 {
+            batch
+                .delete_document(mailbox_id)
+                .clear(ValueClass::Property(Property::EmailIds.into()));
         }
         server.store.write(batch.build()).await.unwrap();
 
@@ -747,10 +752,10 @@ pub async fn create(client: &mut Client) {
             .email_import(
                 format!(
                     concat!(
-                "From: \"{}\" <artist@domain.com>\nCc: \"{}\" <cc@domain.com>\nMessage-ID: <{}>\n",
-                "References: <{}>\nComments: {}\nSubject: [{}]",
-                " Year {}\n\n{}\n{}\n"
-            ),
+                        "From: \"{}\" <artist@domain.com>\nCc: \"{}\" <cc@domain.com>\nMessage-ID: <{}>\n",
+                        "References: <{}>\nComments: {}\nSubject: [{}]",
+                        " Year {}\n\n{}\n{}\n"
+                    ),
                     values_str["artist"],
                     values_str["medium"],
                     values_str["accession_number"],

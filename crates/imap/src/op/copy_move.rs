@@ -184,7 +184,7 @@ impl<T: SessionStream> SessionData<T> {
         if src_mailbox.id.account_id == dest_mailbox.account_id {
             // Mailboxes are in the same account
             let account_id = src_mailbox.id.account_id;
-            let dest_mailbox_id = UidMailbox::from(dest_mailbox_id);
+            let dest_mailbox_id = UidMailbox::new_unassigned(dest_mailbox_id);
             for (id, imap_id) in ids {
                 // Obtain mailbox tags
                 let (mut mailboxes, thread_id) = if let Some(result) = self
@@ -196,10 +196,11 @@ impl<T: SessionStream> SessionData<T> {
                 } else {
                     continue;
                 };
+
                 // Make sure the message still belongs to this mailbox
                 if !mailboxes
                     .current()
-                    .contains(&UidMailbox::from(src_mailbox.id.mailbox_id))
+                    .contains(&UidMailbox::new_unassigned(src_mailbox.id.mailbox_id))
                     || mailboxes.current().contains(&dest_mailbox_id)
                 {
                     tracing::debug!(
@@ -213,7 +214,30 @@ impl<T: SessionStream> SessionData<T> {
                 // Add destination folder
                 mailboxes.update(dest_mailbox_id, true);
                 if is_move {
-                    mailboxes.update(UidMailbox::from(src_mailbox.id.mailbox_id), false);
+                    mailboxes.update(UidMailbox::new_unassigned(src_mailbox.id.mailbox_id), false);
+                }
+
+                // Assign IMAP UIDs
+                for uid_mailbox in mailboxes.inner_tags_mut() {
+                    if uid_mailbox.uid == 0 {
+                        uid_mailbox.uid = match self
+                            .jmap
+                            .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
+                            .await
+                        {
+                            Ok(assigned_uid) => {
+                                debug_assert!(assigned_uid > 0);
+                                copied_ids.push((imap_id.uid, assigned_uid));
+
+                                assigned_uid
+                            }
+                            Err(_) => {
+                                return Err(
+                                    StatusResponse::database_failure().with_tag(&arguments.tag)
+                                );
+                            }
+                        };
+                    }
                 }
 
                 // Write changes
@@ -239,7 +263,6 @@ impl<T: SessionStream> SessionData<T> {
                                 .log_child_update(Collection::Mailbox, src_mailbox.id.mailbox_id);
                             did_move = true;
                         }
-                        copied_ids.push((imap_id, id));
                     }
                     Err(MethodError::ServerUnavailable) => {
                         response.rtype = ResponseType::No;
@@ -280,7 +303,10 @@ impl<T: SessionStream> SessionData<T> {
                 {
                     Ok(Ok(email)) => {
                         dest_change_id = email.change_id.into();
-                        copied_ids.push((imap_id, email.id.document_id()));
+                        if let Some(assigned_uid) = email.imap_uids.first() {
+                            debug_assert!(*assigned_uid > 0);
+                            copied_ids.push((imap_id.uid, *assigned_uid));
+                        }
                     }
                     Ok(Err(err)) => {
                         if err.type_ != SetErrorType::NotFound {
@@ -310,7 +336,7 @@ impl<T: SessionStream> SessionData<T> {
                     };
 
                     // Make sure the message is still in the mailbox
-                    let src_mailbox_id = UidMailbox::from(src_mailbox.id.mailbox_id);
+                    let src_mailbox_id = UidMailbox::new_unassigned(src_mailbox.id.mailbox_id);
                     if !mailboxes.current().contains(&src_mailbox_id) {
                         continue;
                     } else if mailboxes.current().len() == 1 {
@@ -410,22 +436,16 @@ impl<T: SessionStream> SessionData<T> {
             .with_tag(arguments.tag));
         }
 
-        let dest_mailbox = self
-            .fetch_messages(&dest_mailbox)
+        // Prepare response
+        let uid_validity = self
+            .get_uid_validity(&dest_mailbox)
             .await
             .map_err(|r| r.with_tag(&arguments.tag))?;
-
-        // Prepare response
-        let uid_validity = dest_mailbox.uid_validity;
         let mut src_uids = Vec::with_capacity(copied_ids.len());
         let mut dest_uids = Vec::with_capacity(copied_ids.len());
-        for (src_id, dest_id) in copied_ids {
-            if let Some(dest_uid) = dest_mailbox.id_to_imap.get(&dest_id) {
-                src_uids.push(src_id.uid);
-                dest_uids.push(dest_uid.uid);
-            } else {
-                tracing::debug!("Could not map JMAP ID {} to IMAP UID", dest_id);
-            }
+        for (src_uid, dest_uid) in copied_ids {
+            src_uids.push(src_uid);
+            dest_uids.push(dest_uid);
         }
         src_uids.sort_unstable();
         dest_uids.sort_unstable();

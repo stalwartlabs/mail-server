@@ -145,7 +145,15 @@ impl BatchBuilder {
     pub fn add(&mut self, class: impl Into<ValueClass>, value: i64) -> &mut Self {
         self.ops.push(Operation::Value {
             class: class.into(),
-            op: ValueOp::Add(value),
+            op: ValueOp::AtomicAdd(value),
+        });
+        self
+    }
+
+    pub fn add_and_get(&mut self, class: impl Into<ValueClass>, value: i64) -> &mut Self {
+        self.ops.push(Operation::Value {
+            class: class.into(),
+            op: ValueOp::AddAndGet(value),
         });
         self
     }

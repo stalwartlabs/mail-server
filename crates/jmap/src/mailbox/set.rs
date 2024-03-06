@@ -375,10 +375,10 @@ impl JMAP {
                         )
                         .await?
                         .and_then(|mut ids| {
-                            let idx = ids
-                                .inner
-                                .iter()
-                                .position(|&id| id.mailbox_id == document_id)?;
+                            let idx = ids.inner.iter().position(|&id| {
+                                debug_assert!(id.uid != 0);
+                                id.mailbox_id == document_id
+                            })?;
                             ids.inner.swap_remove(idx);
                             Some(ids)
                         })

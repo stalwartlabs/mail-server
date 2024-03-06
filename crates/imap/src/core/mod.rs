@@ -39,7 +39,6 @@ use jmap::{
     auth::{rate_limit::ConcurrencyLimiters, AccessToken},
     JMAP,
 };
-use store::roaring::RoaringBitmap;
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
@@ -47,7 +46,7 @@ use tokio::{
 use utils::{
     config::Rate,
     listener::{limiter::InFlight, ServerInstance, SessionStream},
-    CachedItem,
+    lru_cache::LruCache,
 };
 
 pub mod client;
@@ -72,7 +71,6 @@ pub struct IMAP {
     pub max_auth_failures: u32,
     pub name_shared: String,
     pub allow_plain_auth: bool,
-    pub enable_uidplus: bool,
 
     pub timeout_auth: Duration,
     pub timeout_unauth: Duration,
@@ -85,9 +83,8 @@ pub struct IMAP {
     pub rate_requests: Rate,
     pub rate_concurrent: u64,
 
-    pub cache_account: DashMap<AccountId, CachedItem<Account>>,
-    pub cache_mailbox: DashMap<MailboxId, CachedItem<MailboxState>>,
-    pub cache_expiry: u64,
+    pub cache_account: LruCache<AccountId, Arc<Account>>,
+    pub cache_mailbox: LruCache<MailboxId, Arc<MailboxState>>,
 }
 
 pub struct Session<T: SessionStream> {
@@ -129,7 +126,6 @@ pub struct Mailbox {
     pub uid_validity: Option<u32>,
     pub uid_next: Option<u32>,
     pub size: Option<u32>,
-    pub recent_messages: RoaringBitmap,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -201,6 +197,12 @@ pub enum SavedSearch {
 pub struct ImapId {
     pub uid: u32,
     pub seqnum: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ImapUidToId {
+    pub uid: u32,
+    pub id: u32,
 }
 
 pub enum State<T: SessionStream> {

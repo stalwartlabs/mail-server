@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2023 Stalwart Labs Ltd.
  *
- * This file is part of the Stalwart Mail Server.
+ * This file is part of Stalwart Mail Server.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -21,31 +21,38 @@
  * for more details.
 */
 
-use foundationdb::{api::NetworkAutoStop, Database, FdbError};
+use std::{borrow::Borrow, hash::Hash};
 
-use crate::Error;
+use parking_lot::Mutex;
 
-pub mod blob;
-pub mod main;
-pub mod read;
-pub mod write;
+pub type LruCache<K, V> = Mutex<lru_cache::LruCache<K, V, ahash::RandomState>>;
 
-const MAX_VALUE_SIZE: usize = 100000;
-
-#[allow(dead_code)]
-pub struct FdbStore {
-    db: Database,
-    guard: NetworkAutoStop,
+pub trait LruCached<K, V>: Sized {
+    fn with_capacity(capacity: usize) -> Self;
+    fn get<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq;
+    fn insert(&self, name: K, value: V) -> Option<V>;
 }
 
-impl From<FdbError> for Error {
-    fn from(error: FdbError) -> Self {
-        Self::InternalError(format!("FoundationDB error: {}", error.message()))
+impl<K: Hash + Eq, V: Clone> LruCached<K, V> for LruCache<K, V> {
+    fn with_capacity(capacity: usize) -> Self {
+        Mutex::new(lru_cache::LruCache::with_hasher(
+            capacity,
+            ahash::RandomState::new(),
+        ))
     }
-}
 
-fn deserialize_i64_le(bytes: &[u8]) -> crate::Result<i64> {
-    Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-        crate::Error::InternalError("Invalid counter value.".to_string())
-    })?))
+    fn get<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        self.lock().get_mut(name).map(|entry| entry.clone())
+    }
+
+    fn insert(&self, name: K, item: V) -> Option<V> {
+        self.lock().insert(name, item)
+    }
 }

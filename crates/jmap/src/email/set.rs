@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
 use jmap_proto::{
     error::{
@@ -811,7 +811,8 @@ impl JMAP {
                         mailboxes.set(
                             ids.into_iter()
                                 .filter_map(|id| {
-                                    UidMailbox::from(id.try_unwrap_id()?.document_id()).into()
+                                    UidMailbox::new_unassigned(id.try_unwrap_id()?.document_id())
+                                        .into()
                                 })
                                 .collect(),
                         );
@@ -820,7 +821,7 @@ impl JMAP {
                         let mut patch = patch.into_iter();
                         if let Some(id) = patch.next().unwrap().try_unwrap_id() {
                             mailboxes.update(
-                                UidMailbox::from(id.document_id()),
+                                UidMailbox::new_unassigned(id.document_id()),
                                 patch.next().unwrap().try_unwrap_bool().unwrap_or_default(),
                             );
                         }
@@ -954,6 +955,23 @@ impl JMAP {
                             )),
                         );
                         continue 'update;
+                    }
+                }
+
+                // Obtain IMAP UIDs for added mailboxes
+                for uid_mailbox in mailboxes.inner_tags_mut() {
+                    if uid_mailbox.uid == 0 {
+                        uid_mailbox.uid = self
+                            .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
+                            .await
+                            .map_err(|err| {
+                                tracing::error!(
+                                    event = "error",
+                                    context = "email_copy",
+                                    error = ?err,
+                                    "Failed to assign IMAP UID.");
+                                MethodError::ServerPartialFail
+                            })?;
                     }
                 }
 
@@ -1101,6 +1119,7 @@ impl JMAP {
             return Ok(Err(SetError::not_found()));
         };
         for mailbox_id in &mailboxes.inner {
+            debug_assert!(mailbox_id.uid != 0);
             changes.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
         }
         batch.assert_value(Property::MailboxIds, &mailboxes).value(
@@ -1324,6 +1343,10 @@ impl<
 
     pub fn changed_tags(&self) -> impl Iterator<Item = &T> {
         self.added.iter().chain(self.removed.iter())
+    }
+
+    pub fn inner_tags_mut(&mut self) -> IterMut<'_, T> {
+        self.current.inner.iter_mut()
     }
 
     pub fn has_tags(&self) -> bool {

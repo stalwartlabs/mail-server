@@ -106,7 +106,7 @@ impl<T: SessionStream> SessionData<T> {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_qresync: bool,
-        is_rev2: bool,
+        _is_rev2: bool,
         enabled_condstore: bool,
     ) -> StatusResponse {
         // Validate VANISHED parameter
@@ -125,11 +125,6 @@ impl<T: SessionStream> SessionData<T> {
         let mut modseq = match self.synchronize_messages(&mailbox).await {
             Ok(modseq) => modseq,
             Err(response) => return response.with_tag(arguments.tag),
-        };
-        let recent_messages = if !is_rev2 {
-            self.get_recent(&mailbox.id).into()
-        } else {
-            None
         };
 
         // Convert IMAP ids to JMAP ids.
@@ -370,12 +365,6 @@ impl<T: SessionStream> SessionData<T> {
                             .collect::<Vec<_>>();
                         if set_seen_flag {
                             flags.push(Flag::Seen);
-                        }
-                        if recent_messages
-                            .as_ref()
-                            .map_or(false, |recent| recent.contains(id))
-                        {
-                            flags.push(Flag::Recent);
                         }
                         items.push(DataItem::Flags { flags });
                     }

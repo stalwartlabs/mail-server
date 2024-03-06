@@ -29,6 +29,8 @@ use mail_send::Credentials;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+    println!("Running basic tests...");
+
     // Test CAPABILITY
     imap.send("CAPABILITY").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;

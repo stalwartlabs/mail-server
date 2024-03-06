@@ -197,7 +197,8 @@ pub struct ReportEvent {
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
 pub enum ValueOp {
     Set(Vec<u8>),
-    Add(i64),
+    AtomicAdd(i64),
+    AddAndGet(i64),
     #[default]
     Clear,
 }
@@ -252,6 +253,12 @@ impl Serialize for u32 {
 }
 
 impl Serialize for u64 {
+    fn serialize(self) -> Vec<u8> {
+        self.to_be_bytes().to_vec()
+    }
+}
+
+impl Serialize for i64 {
     fn serialize(self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }

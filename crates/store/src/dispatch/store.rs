@@ -133,7 +133,7 @@ impl Store {
         }
     }
 
-    pub async fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
             use crate::write::Operation;
@@ -211,7 +211,7 @@ impl Store {
                 }
             }
 
-            return Ok(());
+            return Ok(None);
         }
 
         match self {

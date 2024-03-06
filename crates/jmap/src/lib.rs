@@ -59,9 +59,10 @@ use tokio::sync::mpsc;
 use utils::{
     config::{Rate, Servers},
     ipc::DeliveryEvent,
+    lru_cache::{LruCache, LruCached},
     map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
-    CachedItem, UnwrapFailure,
+    UnwrapFailure,
 };
 
 pub mod api;
@@ -102,7 +103,7 @@ pub struct JMAP {
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
     pub smtp: Arc<SMTP>,
 
-    pub cache_threads: DashMap<u32, CachedItem<Threads>>,
+    pub cache_threads: LruCache<u32, Arc<Threads>>,
 
     pub sieve_compiler: Compiler,
     pub sieve_runtime: Runtime<()>,
@@ -157,8 +158,6 @@ pub struct Config {
     pub oauth_expiry_refresh_token: u64,
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
-
-    pub cache_expiry: u64,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
@@ -231,10 +230,8 @@ impl JMAP {
                 config.property("cache.oauth.size")?.unwrap_or(128),
                 shard_amount,
             ),
-            cache_threads: DashMap::with_capacity_and_hasher_and_shard_amount(
+            cache_threads: LruCache::with_capacity(
                 config.property("cache.messages.size")?.unwrap_or(2048),
-                RandomState::default(),
-                shard_amount,
             ),
             state_tx,
             housekeeper_tx,
@@ -747,27 +744,31 @@ impl JMAP {
     }
 
     pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
-        self.store.write(batch.build()).await.map_err(|err| {
-            match err {
-                store::Error::InternalError(err) => {
-                    tracing::error!(
+        self.store
+            .write(batch.build())
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                match err {
+                    store::Error::InternalError(err) => {
+                        tracing::error!(
                         event = "error",
                         context = "write_batch",
                         error = ?err,
                         "Failed to write batch.");
-                    MethodError::ServerPartialFail
+                        MethodError::ServerPartialFail
+                    }
+                    store::Error::AssertValueFailed => {
+                        // This should not occur, as we are not using assertions.
+                        tracing::debug!(
+                            event = "assert_failed",
+                            context = "write_batch",
+                            "Failed to assert value."
+                        );
+                        MethodError::ServerUnavailable
+                    }
                 }
-                store::Error::AssertValueFailed => {
-                    // This should not occur, as we are not using assertions.
-                    tracing::debug!(
-                        event = "assert_failed",
-                        context = "write_batch",
-                        "Failed to assert value."
-                    );
-                    MethodError::ServerUnavailable
-                }
-            }
-        })
+            })
     }
 }
 

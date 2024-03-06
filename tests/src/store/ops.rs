@@ -21,8 +21,10 @@
  * for more details.
 */
 
+use std::collections::HashSet;
+
 use store::{
-    write::{BatchBuilder, ValueClass},
+    write::{BatchBuilder, DirectoryClass, ValueClass},
     Store, ValueKey,
 };
 
@@ -30,6 +32,46 @@ use store::{
 const MAX_VALUE_SIZE: usize = 100000;
 
 pub async fn test(db: Store) {
+    // Increment a counter 1000 times concurrently
+    let mut handles = Vec::new();
+    let mut assigned_ids = HashSet::new();
+    println!("Incrementing counter 1000 times concurrently...");
+    for _ in 0..1000 {
+        handles.push({
+            let db = db.clone();
+            tokio::spawn(async move {
+                let mut builder = BatchBuilder::new();
+                builder
+                    .with_account_id(0)
+                    .with_collection(0)
+                    .update_document(0)
+                    .add_and_get(ValueClass::Directory(DirectoryClass::UsedQuota(0)), 1);
+                db.write(builder.build_batch()).await.unwrap().unwrap()
+            })
+        });
+    }
+
+    for handle in handles {
+        let assigned_id = handle.await.unwrap();
+        assert!(
+            assigned_ids.insert(assigned_id),
+            "counter assigned {assigned_id} twice or more times."
+        );
+    }
+    assert_eq!(assigned_ids.len(), 1000);
+    assert_eq!(
+        db.get_counter(ValueKey {
+            account_id: 0,
+            collection: 0,
+            document_id: 0,
+            class: ValueClass::Directory(DirectoryClass::UsedQuota(0)),
+        })
+        .await
+        .unwrap(),
+        1000
+    );
+
+    println!("Running chunking tests...");
     for (test_num, value) in [
         vec![b'A'; 0],
         vec![b'A'; 1],
@@ -132,6 +174,7 @@ pub async fn test(db: Store) {
                 .update_document(0)
                 .clear(ValueClass::Property(0))
                 .clear(ValueClass::Property(2))
+                .clear(ValueClass::Directory(DirectoryClass::UsedQuota(0)))
                 .build_batch(),
         )
         .await

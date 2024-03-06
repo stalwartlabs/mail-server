@@ -256,6 +256,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
                     );
                     }
                     let mailbox_tag = mailbox_tags[0];
+                    assert!(mailbox_tag.uid != 0);
                     if mailbox_tag.mailbox_id != mailbox_id {
                         panic!(
                             concat!(

@@ -26,6 +26,8 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(_imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
+    println!("Running COPY/MOVE tests...");
+
     // Check status
     imap_check
         .send("LIST \"\" % RETURN (STATUS (UIDNEXT MESSAGES UNSEEN SIZE RECENT))")
@@ -77,13 +79,13 @@ pub async fn test(_imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("MESSAGES 4")
-        .assert_contains("RECENT 4")
+        //.assert_contains("RECENT 4")
         .assert_contains("UNSEEN 4")
         .assert_contains("UIDNEXT 5")
         .assert_contains("SIZE 5851");
 
     // Check \Recent flag
-    imap_check.send("SELECT \"Scamorza Affumicata\"").await;
+    /*imap_check.send("SELECT \"Scamorza Affumicata\"").await;
     imap_check
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -115,9 +117,11 @@ pub async fn test(_imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
     imap_check
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
-        .assert_count("\\Recent", 0);
+        .assert_count("\\Recent", 0);*/
 
     // Move all messages to Burrata
+    imap_check.send("SELECT \"Scamorza Affumicata\"").await;
+    imap_check.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap_check.send("MOVE 1:* \"Burrata al Tartufo\"").await;
     imap_check
         .assert_read(Type::Tagged, ResponseType::Ok)

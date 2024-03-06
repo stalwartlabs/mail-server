@@ -224,6 +224,7 @@ impl JMAP {
                             .map(|ids| {
                                 let mut obj = Object::with_capacity(ids.len());
                                 for id in ids {
+                                    debug_assert!(id.uid != 0);
                                     obj.append(
                                         Property::_T(Id::from(id.mailbox_id).to_string()),
                                         true,

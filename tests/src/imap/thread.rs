@@ -28,6 +28,8 @@ use crate::imap::{expand_uid_list, AssertResult};
 use super::{append::build_messages, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
+    println!("Running THREAD tests...");
+
     // Create test messages
     let messages = build_messages();
 

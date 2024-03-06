@@ -29,6 +29,7 @@ use super::{append::assert_append_message, AssertResult, ImapConnection, Type};
 
 pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConnection) {
     // Delivery to support account
+    println!("Running ACL tests...");
     let mut lmtp = SmtpConnection::connect_port(11201).await;
     lmtp.ingest(
         "bill@example.com",

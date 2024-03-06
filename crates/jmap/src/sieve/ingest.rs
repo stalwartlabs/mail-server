@@ -117,6 +117,7 @@ impl JMAP {
             change_id: u64::MAX,
             blob_id: Default::default(),
             size: raw_message.len(),
+            imap_uids: Vec::new(),
         };
 
         while let Some(event) = instance.run(input) {

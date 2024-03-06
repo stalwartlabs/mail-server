@@ -570,10 +570,10 @@ impl<T: SessionStream> SessionData<T> {
                         filters.push(query::Filter::End);
                     }
                     search::Filter::Recent => {
-                        filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
+                        //filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
                     }
                     search::Filter::New => {
-                        filters.push(query::Filter::And);
+                        /*filters.push(query::Filter::And);
                         filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
                         filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_bitmap(
@@ -581,12 +581,12 @@ impl<T: SessionStream> SessionData<T> {
                             Keyword::Seen,
                         ));
                         filters.push(query::Filter::End);
-                        filters.push(query::Filter::End);
+                        filters.push(query::Filter::End);*/
                     }
                     search::Filter::Old => {
-                        filters.push(query::Filter::Not);
+                        /*filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_set(self.get_recent(&mailbox.id)));
-                        filters.push(query::Filter::End);
+                        filters.push(query::Filter::End);*/
                     }
                     search::Filter::Older(secs) => {
                         filters.push(query::Filter::le(

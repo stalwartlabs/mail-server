@@ -27,6 +27,8 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(mut imap: &mut ImapConnection, mut imap_check: &mut ImapConnection) {
+    println!("Running mailbox tests...");
+
     // Create third connection for testing
     let mut other_conn = ImapConnection::connect(b"_z ").await;
     other_conn

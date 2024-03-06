@@ -6521,6 +6521,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
+ "lru-cache",
  "mail-auth",
  "mail-send",
  "opentelemetry",

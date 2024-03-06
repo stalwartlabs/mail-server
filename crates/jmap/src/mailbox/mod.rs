@@ -87,8 +87,12 @@ impl Serialize for UidMailbox {
     }
 }
 
-impl From<u32> for UidMailbox {
-    fn from(mailbox_id: u32) -> Self {
+impl UidMailbox {
+    pub fn new(mailbox_id: u32, uid: u32) -> Self {
+        UidMailbox { mailbox_id, uid }
+    }
+
+    pub fn new_unassigned(mailbox_id: u32) -> Self {
         UidMailbox { mailbox_id, uid: 0 }
     }
 }

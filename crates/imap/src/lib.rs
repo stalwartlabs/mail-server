@@ -21,14 +21,16 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, sync::Arc, time::Duration};
+use std::{collections::hash_map::RandomState, sync::Arc};
 
 use crate::core::IMAP;
 
 use dashmap::DashMap;
 use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
-use store::write::now;
-use utils::config::Config;
+use utils::{
+    config::Config,
+    lru_cache::{LruCache, LruCached},
+};
 
 pub mod core;
 pub mod op;
@@ -74,29 +76,13 @@ impl IMAP {
             rate_requests: config.property_or_static("imap.rate-limit.requests", "2000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
-            enable_uidplus: config.property_or_static("imap.protocol.uidplus", "false")?,
-            cache_account: DashMap::with_capacity_and_hasher_and_shard_amount(
+            cache_account: LruCache::with_capacity(
                 config.property("cache.messages.size")?.unwrap_or(2048),
-                RandomState::default(),
-                shard_amount,
             ),
-            cache_mailbox: DashMap::with_capacity_and_hasher_and_shard_amount(
+            cache_mailbox: LruCache::with_capacity(
                 config.property("cache.messages.size")?.unwrap_or(2048),
-                RandomState::default(),
-                shard_amount,
             ),
-            cache_expiry: config
-                .property_or_static::<Duration>("cache.messages.ttl", "1h")?
-                .as_secs(),
         }))
-    }
-
-    pub fn purge(&self) {
-        let expiry = now() - self.cache_expiry;
-        self.cache_account
-            .retain(|_, item| item.last_access() > expiry);
-        self.cache_mailbox
-            .retain(|_, item| item.last_access() > expiry);
     }
 }
 

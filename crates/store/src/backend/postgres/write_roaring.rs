@@ -242,7 +242,7 @@ impl PostgresStore {
                 }
                 Operation::Value {
                     class,
-                    op: ValueOp::Add(by),
+                    op: ValueOp::AtomicAdd(by),
                 } => {
                     let key = ValueKey {
                         account_id,

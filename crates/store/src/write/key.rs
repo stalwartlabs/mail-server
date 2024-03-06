@@ -220,15 +220,14 @@ impl Key for LogKey {
 
 impl<T: AsRef<ValueClass> + Sync + Send> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
-        if !matches!(
-            self.class.as_ref(),
+        match self.class.as_ref() {
             ValueClass::Directory(DirectoryClass::UsedQuota(_))
-                | ValueClass::Lookup(LookupClass::Counter(_))
-                | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_))
-        ) {
-            SUBSPACE_VALUES
-        } else {
-            SUBSPACE_COUNTERS
+            | ValueClass::Lookup(LookupClass::Counter(_))
+            | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_)) => {
+                SUBSPACE_COUNTERS
+            }
+            ValueClass::Property(84) if self.collection == 1 => SUBSPACE_COUNTERS, // TODO: Find a more elegant way to do this
+            _ => SUBSPACE_VALUES,
         }
     }
 

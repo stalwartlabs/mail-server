@@ -26,6 +26,8 @@ use imap_proto::ResponseType;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
+    println!("Running SEARCH tests...");
+
     // Searches without selecting a mailbox should fail.
     imap.send("SEARCH RETURN (MIN MAX COUNT ALL) ALL").await;
     imap.assert_read(Type::Tagged, ResponseType::Bad).await;

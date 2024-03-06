@@ -28,6 +28,8 @@ use crate::jmap::delivery::SmtpConnection;
 use super::{AssertResult, ImapConnection, Type};
 
 pub async fn test(imap: &mut ImapConnection, imap_check: &mut ImapConnection) {
+    println!("Running IDLE tests...");
+
     // Switch connection to IDLE mode
     imap_check.send("CREATE Parmeggiano").await;
     imap_check.assert_read(Type::Tagged, ResponseType::Ok).await;

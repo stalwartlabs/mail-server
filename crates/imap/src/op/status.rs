@@ -34,7 +34,9 @@ use jmap_proto::{
     types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
 };
 use store::{
-    roaring::RoaringBitmap, write::key::DeserializeBigEndian, IndexKeyPrefix, IterateParams,
+    roaring::RoaringBitmap,
+    write::{key::DeserializeBigEndian, ValueClass},
+    IndexKeyPrefix, IterateParams, ValueKey,
 };
 use store::{Deserialize, U32_LEN};
 use utils::listener::SessionStream;
@@ -201,10 +203,7 @@ impl<T: SessionStream> SessionData<T> {
                         }
                         Status::Recent => {
                             if !update_recent {
-                                items_response.push((
-                                    *item,
-                                    StatusItemType::Number(mailbox_state.recent_messages.len()),
-                                ));
+                                items_response.push((*item, StatusItemType::Number(0)));
                             } else {
                                 items_update.push_unique(*item);
                             }
@@ -239,14 +238,24 @@ impl<T: SessionStream> SessionData<T> {
                     Status::UidNext => {
                         (self
                             .jmap
-                            .get_property::<u32>(
-                                mailbox.account_id,
-                                Collection::Mailbox,
-                                mailbox.mailbox_id,
-                                Property::EmailIds,
-                            )
-                            .await?
-                            .unwrap_or(0)
+                            .store
+                            .get_counter(ValueKey {
+                                account_id: mailbox.account_id,
+                                collection: Collection::Mailbox.into(),
+                                document_id: mailbox.mailbox_id,
+                                class: ValueClass::Property(Property::EmailIds.into()),
+                            })
+                            .await
+                            .map_err(|err| {
+                                tracing::debug!(event = "error",
+                                context = "store",
+                                account_id = mailbox.account_id,
+                                collection = ?Collection::Mailbox,
+                                mailbox_id = mailbox.mailbox_id,
+                                reason = ?err,
+                                "Failed to obtain uid next");
+                                StatusResponse::no("Mailbox unavailable.")
+                            })?
                             + 1) as u64
                     }
                     Status::UidValidity => self
@@ -352,8 +361,7 @@ impl<T: SessionStream> SessionData<T> {
                                     .iter_mut()
                                     .find(|(i, _)| *i == Status::Recent)
                                     .unwrap()
-                                    .1 =
-                                    StatusItemType::Number(mailbox_state.recent_messages.len());
+                                    .1 = StatusItemType::Number(0);
                             }
                             Status::HighestModSeq | Status::MailboxId => {
                                 unreachable!()

@@ -389,15 +389,7 @@ impl<T: SessionStream> State<T> {
     }
 
     pub fn close_mailbox(&self) -> bool {
-        match self {
-            State::Selected { mailbox, data } => {
-                if mailbox.is_select {
-                    data.clear_recent(&mailbox.id);
-                }
-                true
-            }
-            _ => false,
-        }
+        matches!(self, State::Selected { .. })
     }
 }
 

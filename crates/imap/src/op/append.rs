@@ -34,7 +34,7 @@ use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_sta
 use mail_parser::MessageParser;
 use utils::listener::SessionStream;
 
-use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
+use crate::core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData};
 
 use super::ToModSeq;
 
@@ -138,7 +138,10 @@ impl<T: SessionStream> SessionData<T> {
                 .await
             {
                 Ok(email) => {
-                    created_ids.push(email.id.document_id());
+                    created_ids.push(ImapUidToId {
+                        uid: email.imap_uids[0],
+                        id: email.id.document_id(),
+                    });
                     last_change_id = Some(email.change_id);
                 }
                 Err(err) => {
@@ -172,49 +175,26 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         if !created_ids.is_empty() {
-            let (uids, uid_validity) = match selected_mailbox {
+            let uids = created_ids.iter().map(|id| id.uid).collect();
+            let uid_validity = match selected_mailbox {
                 Some(selected_mailbox) if selected_mailbox.id == mailbox => {
-                    let modseq = self
-                        .write_mailbox_changes(&selected_mailbox, is_qresync)
-                        .await
-                        .map_err(|r| r.with_tag(&arguments.tag))?;
-
                     // Write updated modseq
                     if is_qresync {
-                        self.write_bytes(HighestModSeq::new(modseq.to_modseq()).into_bytes())
-                            .await;
+                        self.write_bytes(
+                            HighestModSeq::new(last_change_id.to_modseq()).into_bytes(),
+                        )
+                        .await;
                     }
 
-                    let mailbox = selected_mailbox.state.lock();
-                    (
-                        created_ids
-                            .into_iter()
-                            .filter_map(|id| mailbox.id_to_imap.get(&id))
-                            .map(|id| id.uid)
-                            .collect::<Vec<_>>(),
-                        mailbox.uid_validity,
-                    )
+                    selected_mailbox.append_messages(created_ids, last_change_id)
                 }
-
-                _ if self.imap.enable_uidplus => {
-                    let mailbox = self
-                        .fetch_messages(&mailbox)
-                        .await
-                        .map_err(|r| r.with_tag(&arguments.tag))?;
-                    (
-                        created_ids
-                            .into_iter()
-                            .filter_map(|id| mailbox.id_to_imap.get(&id))
-                            .map(|id| id.uid)
-                            .collect(),
-                        mailbox.uid_validity,
-                    )
-                }
-                _ => (vec![], 0),
+                _ => self
+                    .get_uid_validity(&mailbox)
+                    .await
+                    .map_err(|r| r.with_tag(&arguments.tag))?,
             };
-            if !uids.is_empty() {
-                response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });
-            }
+
+            response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });
         }
 
         Ok(response.with_tag(arguments.tag))

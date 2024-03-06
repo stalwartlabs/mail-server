@@ -38,7 +38,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{FdbStore, MAX_VALUE_SIZE};
+use super::{deserialize_i64_le, FdbStore, MAX_VALUE_SIZE};
 
 #[cfg(feature = "fdb-chunked-bm")]
 pub(crate) enum ChunkedBitmap {
@@ -158,9 +158,7 @@ impl FdbStore {
     ) -> crate::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
         if let Some(bytes) = self.db.create_trx()?.get(&key, true).await? {
-            Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-                crate::Error::InternalError("Invalid counter value.".to_string())
-            })?))
+            deserialize_i64_le(&bytes)
         } else {
             Ok(0)
         }

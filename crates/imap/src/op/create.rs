@@ -34,7 +34,7 @@ use jmap_proto::{
         type_state::DataType, value::Value,
     },
 };
-use store::{query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{query::Filter, write::BatchBuilder};
 use utils::listener::SessionStream;
 
 use crate::core::{Account, Mailbox, Session, SessionData};
@@ -217,7 +217,6 @@ impl<T: SessionStream> SessionData<T> {
                     } else {
                         None
                     },
-                    recent_messages: RoaringBitmap::new(),
                 },
             );
         }

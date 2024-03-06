@@ -21,14 +21,14 @@
  * for more details.
 */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use futures_util::TryFutureExt;
 use jmap_proto::{
     error::method::MethodError,
     types::{collection::Collection, property::Property},
 };
-use utils::CachedItem;
+use utils::lru_cache::LruCached;
 
 use crate::JMAP;
 
@@ -59,21 +59,32 @@ impl JMAP {
             .await?;
 
         // Lock the cache
-        let thread_cache_ = self
-            .cache_threads
-            .entry(account_id)
-            .or_insert_with(|| CachedItem::new(Threads::default()));
-        let mut thread_cache = thread_cache_.get().await;
-
-        // Invalidate cache if the modseq has changed
-        if thread_cache.modseq.unwrap_or(0) < modseq.unwrap_or(0) {
-            thread_cache.threads = self
-                .get_properties::<u32, _, _>(account_id, Collection::Email, &(), Property::ThreadId)
-                .await?
-                .into_iter()
-                .collect();
-            thread_cache.modseq = modseq;
-        }
+        let thread_cache = if let Some(thread_cache) =
+            self.cache_threads.get(&account_id).and_then(|t| {
+                if t.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
+                    Some(t)
+                } else {
+                    None
+                }
+            }) {
+            thread_cache
+        } else {
+            let thread_cache = Arc::new(Threads {
+                threads: self
+                    .get_properties::<u32, _, _>(
+                        account_id,
+                        Collection::Email,
+                        &(),
+                        Property::ThreadId,
+                    )
+                    .await?
+                    .into_iter()
+                    .collect(),
+                modseq,
+            });
+            self.cache_threads.insert(account_id, thread_cache.clone());
+            thread_cache
+        };
 
         // Obtain threadIds for matching messages
         let mut thread_ids = Vec::with_capacity(message_ids.size_hint().0);

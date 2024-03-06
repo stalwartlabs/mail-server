@@ -31,13 +31,14 @@ use crate::{
 use super::SqliteStore;
 
 impl SqliteStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<()> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
         let mut conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
             let trx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let mut result = None;
 
             for op in &batch.ops {
                 match op {
@@ -56,29 +57,6 @@ impl SqliteStore {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::Value {
-                        class,
-                        op: ValueOp::Add(by),
-                    } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        }
-                        .serialize(0);
-
-                        if *by >= 0 {
-                            trx.prepare_cached(concat!(
-                                "INSERT INTO c (k, v) VALUES (?, ?) ",
-                                "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
-                            ))?
-                            .execute(params![&key, *by])?;
-                        } else {
-                            trx.prepare_cached("UPDATE c SET v = v + ? WHERE k = ?")?
-                                .execute(params![*by, &key])?;
-                        }
-                    }
                     Operation::Value { class, op } => {
                         let key = ValueKey {
                             account_id,
@@ -89,35 +67,59 @@ impl SqliteStore {
                         let table = char::from(key.subspace());
                         let key = key.serialize(0);
 
-                        if let ValueOp::Set(value) = op {
-                            trx.prepare_cached(&format!(
-                                "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
-                                table
-                            ))?
-                            .execute([&key, value])?;
+                        match op {
+                            ValueOp::Set(value) => {
+                                trx.prepare_cached(&format!(
+                                    "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
+                                    table
+                                ))?
+                                .execute([&key, value])?;
 
-                            if matches!(class, ValueClass::ReservedId) {
-                                // Make sure the reserved id is not already in use
-                                let key = BitmapKey {
-                                    account_id,
-                                    collection,
-                                    class: BitmapClass::DocumentIds,
-                                    block_num: document_id,
-                                }
-                                .serialize(0);
-                                if trx
-                                    .prepare_cached("SELECT 1 FROM b WHERE k = ?")?
-                                    .query_row([&key], |_| Ok(true))
-                                    .optional()?
-                                    .unwrap_or(false)
-                                {
-                                    trx.rollback()?;
-                                    return Err(crate::Error::AssertValueFailed);
+                                if matches!(class, ValueClass::ReservedId) {
+                                    // Make sure the reserved id is not already in use
+                                    let key = BitmapKey {
+                                        account_id,
+                                        collection,
+                                        class: BitmapClass::DocumentIds,
+                                        block_num: document_id,
+                                    }
+                                    .serialize(0);
+                                    if trx
+                                        .prepare_cached("SELECT 1 FROM b WHERE k = ?")?
+                                        .query_row([&key], |_| Ok(true))
+                                        .optional()?
+                                        .unwrap_or(false)
+                                    {
+                                        trx.rollback()?;
+                                        return Err(crate::Error::AssertValueFailed);
+                                    }
                                 }
                             }
-                        } else {
-                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))?
-                                .execute([&key])?;
+                            ValueOp::AtomicAdd(by) => {
+                                if *by >= 0 {
+                                    trx.prepare_cached(concat!(
+                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
+                                        "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                                    ))?
+                                    .execute(params![&key, *by])?;
+                                } else {
+                                    trx.prepare_cached("UPDATE c SET v = v + ? WHERE k = ?")?
+                                        .execute(params![*by, &key])?;
+                                }
+                            }
+                            ValueOp::AddAndGet(by) => {
+                                result = trx
+                                    .prepare_cached(concat!(
+                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
+                                        "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v RETURNING v"
+                                    ))?
+                                    .query_row(params![&key, &by], |row| row.get::<_, i64>(0))?
+                                    .into();
+                            }
+                            ValueOp::Clear => {
+                                trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))?
+                                    .execute([&key])?;
+                            }
                         }
                     }
                     Operation::Index { field, key, set } => {
@@ -198,7 +200,7 @@ impl SqliteStore {
                 }
             }
 
-            trx.commit().map_err(Into::into)
+            trx.commit().map(|_| result).map_err(Into::into)
         })
         .await
     }

@@ -35,9 +35,9 @@ use imap_proto::{
 };
 
 use jmap_proto::types::id::Id;
-use utils::{listener::SessionStream, CachedItem};
+use utils::{listener::SessionStream, lru_cache::LruCached};
 
-use crate::core::{MailboxState, SavedSearch, SelectedMailbox, Session, State};
+use crate::core::{SavedSearch, SelectedMailbox, Session, State};
 
 use super::ToModSeq;
 
@@ -59,33 +59,33 @@ impl<T: SessionStream> Session<T> {
                 if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
                     // Try obtaining the mailbox from the cache
                     let state = {
-                        let cached_state_ = self
-                            .imap
-                            .cache_mailbox
-                            .entry(mailbox)
-                            .or_insert_with(|| CachedItem::new(MailboxState::default()));
-                        let mut cached_state = cached_state_.get().await;
-                        let is_cache_miss =
-                            cached_state.uid_validity == 0 && cached_state.uid_max == 0;
-                        let mut modseq = None;
-
-                        if !is_cache_miss {
-                            match data.get_modseq(mailbox.account_id).await {
-                                Ok(modseq_) => {
-                                    modseq = modseq_;
-                                }
-                                Err(mut response) => {
-                                    response.tag = arguments.tag.into();
-                                    return self.write_bytes(response.into_bytes()).await;
-                                }
+                        let modseq = match data.get_modseq(mailbox.account_id).await {
+                            Ok(modseq) => modseq,
+                            Err(mut response) => {
+                                response.tag = arguments.tag.into();
+                                return self.write_bytes(response.into_bytes()).await;
                             }
-                        }
+                        };
 
-                        // Refresh the mailbox if the modseq has changed or if it's a cache miss
-                        if is_cache_miss || cached_state.modseq.unwrap_or(0) < modseq.unwrap_or(0) {
+                        if let Some(cached_state) =
+                            self.imap
+                                .cache_mailbox
+                                .get(&mailbox)
+                                .and_then(|cached_state| {
+                                    if cached_state.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
+                                        Some(cached_state)
+                                    } else {
+                                        None
+                                    }
+                                })
+                        {
+                            cached_state.as_ref().clone()
+                        } else {
                             match data.fetch_messages(&mailbox).await {
                                 Ok(new_state) => {
-                                    *cached_state = new_state;
+                                    let new_state = Arc::new(new_state);
+                                    self.imap.cache_mailbox.insert(mailbox, new_state.clone());
+                                    new_state.as_ref().clone()
                                 }
                                 Err(mut response) => {
                                     response.tag = arguments.tag.into();
@@ -93,8 +93,6 @@ impl<T: SessionStream> Session<T> {
                                 }
                             }
                         }
-
-                        (*cached_state).clone()
                     };
 
                     // Synchronize messages
@@ -160,7 +158,7 @@ impl<T: SessionStream> Session<T> {
                     let response = Response {
                         mailbox: ListItem::new(arguments.mailbox_name),
                         total_messages,
-                        recent_messages: data.get_recent_count(&mailbox.id),
+                        recent_messages: 0,
                         unseen_seq: 0,
                         uid_validity,
                         uid_next,
