@@ -620,23 +620,27 @@ async fn address_mappings() {
     catch-all = true
     subaddressing = true
     expected-sub = "john.doe@example.org"
+    expected-sub-nomatch = "jane@example.org"
     expected-catch = "@example.org"
 
     [disable]
     catch-all = false
     subaddressing = false
     expected-sub = "john.doe+alias@example.org"
+    expected-sub-nomatch = "jane@example.org"
     expected-catch = false
 
     [custom]
     catch-all = [{if = "matches('(.+)@(.+)$', address)", then = "'info@' + $2"}, {else = false}]
-    subaddressing = [{ if = "matches('^([^.]+)\.([^.]+)@(.+)$', address)", then = "$2 + '@' + $3" }, {else = false}]
+    subaddressing = [{ if = "matches('^([^.]+)\\.([^.]+)@(.+)$', address)", then = "$2 + '@' + $3" }, {else = false}]
     expected-sub = "doe+alias@example.org"
+    expected-sub-nomatch = "jane@example.org"
     expected-catch = "info@example.org"
     "#;
 
     let config = utils::config::Config::new(MAPPINGS).unwrap();
     const ADDR: &str = "john.doe+alias@example.org";
+    const ADDR_NO_MATCH: &str = "jane@example.org";
 
     for test in ["enable", "disable", "custom"] {
         let catch_all = AddressMapping::from_config(&config, (test, "catch-all")).unwrap();
@@ -646,6 +650,14 @@ async fn address_mappings() {
             subaddressing.to_subaddress(ADDR).await,
             config.value_require((test, "expected-sub")).unwrap(),
             "failed subaddress for {test:?}"
+        );
+
+        assert_eq!(
+            subaddressing.to_subaddress(ADDR_NO_MATCH).await,
+            config
+                .value_require((test, "expected-sub-nomatch"))
+                .unwrap(),
+            "failed subaddress no match for {test:?}"
         );
 
         assert_eq!(

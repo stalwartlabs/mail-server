@@ -45,7 +45,7 @@ script = [ { if = "sender_domain = 'foobar.org'", then = "'mail'" },
             { else = false } ]
 
 [session.rcpt]
-rewrite = [ { if = "rcpt_domain = 'foobar.net' & matches('^([^.]+)\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3"},
+rewrite = [ { if = "rcpt_domain = 'foobar.net' & matches('^([^.]+)\\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3"},
             { else = false } ]
 script = [ { if = "rcpt_domain = 'foobar.org'", then = "'rcpt'" }, 
             { else = false } ]

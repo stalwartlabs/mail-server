@@ -49,14 +49,14 @@ wait = "5s"
 
 [session.mail]
 #script = "mail-from"
-#rewrite = [ { if = "listener != 'smtp' & matches('^([^.]+)@([^.]+)\.(.+)$', rcpt)", then = "$1 + '@' + $3" },
+#rewrite = [ { if = "listener != 'smtp' & matches('^([^.]+)@([^.]+)\\.(.+)$', rcpt)", then = "$1 + '@' + $3" },
 #            { else = false } ]
 
 [session.rcpt]
 #script = "greylist"
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-#rewrite = [ { if = "is_local_domain('%{DEFAULT_DIRECTORY}%', rcpt_domain) & matches('^([^.]+)\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3" },
+#rewrite = [ { if = "is_local_domain('%{DEFAULT_DIRECTORY}%', rcpt_domain) & matches('^([^.]+)\\.([^.]+)@(.+)$', rcpt)", then = "$1 + '+' + $2 + '@' + $3" },
 #            { else = false } ]
 max-recipients = 25
 directory = "'%{DEFAULT_DIRECTORY}%'"

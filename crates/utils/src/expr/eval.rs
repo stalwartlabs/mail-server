@@ -130,7 +130,7 @@ impl Expression {
                     captures.clear();
                     let value = stack.pop().unwrap_or_default().into_string();
 
-                    for captures_ in regex.captures_iter(value.as_ref()) {
+                    if let Some(captures_) = regex.captures(value.as_ref()) {
                         for capture in captures_.iter() {
                             captures.push(capture.map_or("", |m| m.as_str()).to_string());
                         }
