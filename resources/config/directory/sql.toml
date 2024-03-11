@@ -20,7 +20,7 @@ entries = 500
 ttl = {positive = '1h', negative = '10m'}
 
 [directory."sql".columns]
-type = "type"
+class = "type"
 secret = "secret"
 description = "description"
 quota = "quota"

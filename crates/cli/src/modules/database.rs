@@ -44,7 +44,7 @@ impl ServerCommands {
             }
             ServerCommands::ReloadConfig {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/api/reload/config", None)
+                    .http_request::<Value, String>(Method::GET, "/api/reload/settings", None)
                     .await;
                 eprintln!("Success.");
             }
@@ -52,7 +52,7 @@ impl ServerCommands {
                 client
                     .http_request::<Value, _>(
                         Method::POST,
-                        "/api/config",
+                        "/api/settings",
                         Some(vec![(key.clone(), value.unwrap_or_default())]),
                     )
                     .await;
@@ -62,7 +62,7 @@ impl ServerCommands {
                 client
                     .http_request::<Value, String>(
                         Method::DELETE,
-                        &format!("/api/config/{key}"),
+                        &format!("/api/settings/{key}"),
                         None,
                     )
                     .await;
@@ -72,7 +72,7 @@ impl ServerCommands {
                 let results = client
                     .http_request::<Vec<(String, String)>, String>(
                         Method::GET,
-                        &format!("/api/config/{}", prefix.unwrap_or_default()),
+                        &format!("/api/settings/{}", prefix.unwrap_or_default()),
                         None,
                     )
                     .await;

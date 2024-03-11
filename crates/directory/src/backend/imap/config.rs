@@ -36,8 +36,8 @@ impl ImapDirectory {
         data_store: Store,
     ) -> utils::config::Result<Self> {
         let prefix = prefix.as_key();
-        let address = config.value_require((&prefix, "address"))?;
-        let tls_implicit: bool = config.property_or_static((&prefix, "tls.implicit"), "false")?;
+        let address = config.value_require((&prefix, "host"))?;
+        let tls_implicit: bool = config.property_or_static((&prefix, "tls.enable"), "false")?;
         let port: u16 = config
             .property_or_static((&prefix, "port"), if tls_implicit { "993" } else { "143" })?;
 

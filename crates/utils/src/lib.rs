@@ -35,6 +35,7 @@ pub mod lru_cache;
 pub mod map;
 pub mod snowflake;
 pub mod suffixlist;
+pub mod url_params;
 
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;

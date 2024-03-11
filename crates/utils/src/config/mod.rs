@@ -187,8 +187,8 @@ impl Config {
         config
     }
 
-    pub fn update(&mut self, config: Self) {
-        self.keys.extend(config.keys);
+    pub fn update(&mut self, settings: Vec<(String, String)>) {
+        self.keys.extend(settings);
     }
 }
 

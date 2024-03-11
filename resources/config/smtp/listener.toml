@@ -16,6 +16,6 @@ bind = ["[::]:465"]
 protocol = "smtp"
 tls.implicit = true
 
-[server.listener."management"]
-bind = ["127.0.0.1:8080"]
-protocol = "http"
+#[server.listener."management"]
+#bind = ["127.0.0.1:8080"]
+#protocol = "http"

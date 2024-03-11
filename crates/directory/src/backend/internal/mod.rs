@@ -24,7 +24,7 @@
 pub mod lookup;
 pub mod manage;
 
-use std::{fmt::Display, slice::Iter};
+use std::{fmt::Display, slice::Iter, str::FromStr};
 
 use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
 use utils::codec::leb128::Leb128Iterator;
@@ -267,5 +267,13 @@ impl Type {
             Type::Superuser => Type::Individual,
             any => any,
         }
+    }
+}
+
+impl FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Type::parse(s).ok_or(())
     }
 }

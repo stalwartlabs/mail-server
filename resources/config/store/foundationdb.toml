@@ -4,15 +4,17 @@
 
 [store."foundationdb"]
 type = "foundationdb"
-#path = "/etc/foundationdb/fdb.cluster"
+#cluster-file = "/etc/foundationdb/fdb.cluster"
 disable = true
 
 #[store."foundationdb".transaction]
 #timeout = "5s"
 #retry-limit = 10
 #max-retry-delay = "1s"
-#machine-id = "stalwart"
-#data-center-id = "my-datacenter"
+
+#[store."foundationdb".ids]
+#machine = "stalwart"
+#data-center = "my-datacenter"
 
 [store."foundationdb".purge]
 frequency = "0 3 *"

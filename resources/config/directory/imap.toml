@@ -4,7 +4,7 @@
 
 [directory."imap"]
 type = "imap"
-address = "127.0.0.1"
+host = "127.0.0.1"
 port = 993
 disable = true
 
@@ -17,7 +17,7 @@ wait = "30s"
 recycle = "30s"
 
 [directory."imap".tls]
-implicit = true
+enable = true
 allow-invalid-certs = true
 
 [directory."imap".cache]

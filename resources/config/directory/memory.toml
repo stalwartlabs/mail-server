@@ -16,14 +16,14 @@ subaddressing = true
 
 [[directory."memory".principals]]
 name = "admin"
-type = "admin"
+class = "admin"
 description = "Superuser"
 secret = "changeme"
 email = ["postmaster@%{DEFAULT_DOMAIN}%"]
 
 [[directory."memory".principals]]
 name = "john"
-type = "individual"
+class = "individual"
 description = "John Doe"
 secret = "12345"
 email = ["john@%{DEFAULT_DOMAIN}%", "jdoe@%{DEFAULT_DOMAIN}%", "john.doe@%{DEFAULT_DOMAIN}%"]
@@ -32,7 +32,7 @@ member-of = ["sales"]
 
 [[directory."memory".principals]]
 name = "jane"
-type = "individual"
+class = "individual"
 description = "Jane Doe"
 secret = "abcde"
 email = ["jane@%{DEFAULT_DOMAIN}%", "jane.doe@%{DEFAULT_DOMAIN}%"]
@@ -41,7 +41,7 @@ member-of = ["sales", "support"]
 
 [[directory."memory".principals]]
 name = "bill"
-type = "individual"
+class = "individual"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
 quota = 50000000
@@ -50,10 +50,10 @@ email-list = ["info@%{DEFAULT_DOMAIN}%"]
 
 [[directory."memory".principals]]
 name = "sales"
-type = "group"
+class = "group"
 description = "Sales Team"
 
 [[directory."memory".principals]]
 name = "support"
-type = "group"
+class = "group"
 description = "Support Team"

@@ -31,7 +31,8 @@ use http_body_util::combinators::BoxBody;
 use hyper::{body::Bytes, Method, StatusCode};
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
-use utils::config::ConfigKey;
+use store::ahash::AHashMap;
+use utils::{config::ConfigKey, url_params::UrlParams};
 
 use crate::{
     auth::{oauth::OAuthCodeRequest, AccessToken},
@@ -65,6 +66,21 @@ pub struct PrincipalResponse {
     pub members: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum UpdateSettings {
+    Delete {
+        keys: Vec<String>,
+    },
+    Clear {
+        prefix: String,
+    },
+    Insert {
+        prefix: String,
+        values: Vec<(String, String)>,
+    },
 }
 
 impl JMAP {
@@ -118,32 +134,13 @@ impl JMAP {
             }
             ("principal", None, &Method::GET) => {
                 // List principal ids
-                let mut filter = None;
-                let mut typ = None;
-                let mut page: usize = 0;
-                let mut limit: usize = 0;
+                let params = UrlParams::new(req.uri().query());
+                let filter = params.get("filter");
+                let typ = params.parse("type");
+                let page: usize = params.parse("page").unwrap_or(0);
+                let limit: usize = params.parse("limit").unwrap_or(0);
 
-                if let Some(query) = req.uri().query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "limit" => {
-                                limit = value.parse().unwrap_or_default();
-                            }
-                            "page" => {
-                                page = value.parse().unwrap_or_default();
-                            }
-                            "type" => {
-                                typ = Type::parse(value.as_ref());
-                            }
-                            "filter" => {
-                                filter = value.into();
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                match self.store.list_accounts(filter.as_deref(), typ).await {
+                match self.store.list_accounts(filter, typ).await {
                     Ok(accounts) => {
                         let (total, accounts) = if limit > 0 {
                             let offset = page.saturating_sub(1) * limit;
@@ -280,28 +277,12 @@ impl JMAP {
             }
             ("domain", None, &Method::GET) => {
                 // List domains
-                let mut filter = None;
-                let mut page: usize = 0;
-                let mut limit: usize = 0;
+                let params = UrlParams::new(req.uri().query());
+                let filter = params.get("filter");
+                let page: usize = params.parse("page").unwrap_or(0);
+                let limit: usize = params.parse("limit").unwrap_or(0);
 
-                if let Some(query) = req.uri().query() {
-                    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-                        match key.as_ref() {
-                            "limit" => {
-                                limit = value.parse().unwrap_or_default();
-                            }
-                            "page" => {
-                                page = value.parse().unwrap_or_default();
-                            }
-                            "filter" => {
-                                filter = value.into();
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                match self.store.list_domains(filter.as_deref()).await {
+                match self.store.list_domains(filter).await {
                     Ok(domains) => {
                         let (total, domains) = if limit > 0 {
                             let offset = page.saturating_sub(1) * limit;
@@ -366,7 +347,7 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("reload", Some("config"), &Method::GET) => {
+            ("reload", Some("settings"), &Method::GET) => {
                 let _ = self
                     .housekeeper_tx
                     .send(housekeeper::Event::ReloadConfig)
@@ -388,11 +369,137 @@ impl JMAP {
                 }))
                 .into_http_response()
             }
-            ("config", key, &Method::GET) => {
-                match self.store.config_list(key.unwrap_or_default()).await {
-                    Ok(config) => JsonResponse::new(json!({
-                        "data": config.keys.into_iter().collect::<Vec<_>>(),
-                    }))
+            ("settings", None, &Method::GET) => {
+                // List settings
+                let params = UrlParams::new(req.uri().query());
+                let prefix = params
+                    .get("prefix")
+                    .map(|p| {
+                        if !p.ends_with('.') {
+                            format!("{p}.")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .unwrap_or_default();
+                let groupby = params
+                    .get("groupby")
+                    .map(|s| {
+                        if !s.starts_with('.') {
+                            format!(".{s}")
+                        } else {
+                            s.to_string()
+                        }
+                    })
+                    .unwrap_or_default();
+                let filter = params.get("filter").unwrap_or_default();
+                let limit: usize = params.parse("limit").unwrap_or(0);
+                let mut offset =
+                    params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
+                let has_filter = !filter.is_empty();
+
+                match self.store.config_list(&prefix).await {
+                    Ok(settings) => if groupby.len() > 1 && !settings.is_empty() {
+                        // Obtain record ids
+                        let mut total = 0;
+                        let mut ids = Vec::new();
+                        for (key, _) in &settings {
+                            if let Some(id) = key.strip_suffix(&groupby) {
+                                if !id.is_empty() {
+                                    if !has_filter {
+                                        if offset == 0 {
+                                            if limit == 0 || ids.len() < limit {
+                                                ids.push(id);
+                                            }
+                                        } else {
+                                            offset -= 1;
+                                        }
+                                        total += 1;
+                                    } else {
+                                        ids.push(id);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Group settings by record id
+                        let mut records = Vec::new();
+                        for id in ids {
+                            let mut record = AHashMap::new();
+                            let prefix = format!("{id}.");
+                            record.insert("_id".to_string(), id.to_string());
+                            for (k, v) in &settings {
+                                if let Some(k) = k.strip_prefix(&prefix) {
+                                    record.insert(k.to_string(), v.to_string());
+                                } else if record.len() > 1 {
+                                    break;
+                                }
+                            }
+
+                            if has_filter {
+                                if record.iter().any(|(_, v)| v.contains(filter)) {
+                                    if offset == 0 {
+                                        if limit == 0 || records.len() < limit {
+                                            records.push(record);
+                                        }
+                                    } else {
+                                        offset -= 1;
+                                    }
+                                    total += 1;
+                                }
+                            } else {
+                                records.push(record);
+                            }
+                        }
+
+                        JsonResponse::new(json!({
+                            "data": {
+                                "total": total,
+                                "items": records,
+                            },
+                        }))
+                    } else if !groupby.is_empty() {
+                        // groupby=.
+                        let total = settings.len();
+                        let items = settings
+                            .into_iter()
+                            .filter_map(|(k, v)| {
+                                if filter.is_empty() || k.contains(filter) || v.contains(filter) {
+                                    let k =
+                                        k.strip_prefix(&prefix).map(|k| k.to_string()).unwrap_or(k);
+                                    Some(json!({
+                                        "_id": k,
+                                        "_value": v,
+                                    }))
+                                } else {
+                                    None
+                                }
+                            })
+                            .skip(offset)
+                            .take(if limit == 0 { total } else { limit })
+                            .collect::<Vec<_>>();
+
+                        JsonResponse::new(json!({
+                            "data": {
+                                "total": total,
+                                "items": items,
+                            },
+                        }))
+                    } else {
+                        let total = settings.len();
+                        let items = settings
+                            .into_iter()
+                            .skip(offset)
+                            .take(if limit == 0 { total } else { limit })
+                            .collect::<AHashMap<_, _>>();
+
+                        JsonResponse::new(json!({
+                            "data": {
+                                "total": total,
+                                "items": items,
+                            },
+                        }))
+                    }
                     .into_http_response(),
                     Err(err) => RequestError::blank(
                         StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
@@ -402,14 +509,20 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("config", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
-                let result = match prefix.strip_suffix('.') {
-                    Some(prefix) if !prefix.is_empty() => {
-                        self.store.config_clear_prefix(prefix).await
-                    }
-                    _ => self.store.config_clear(prefix).await,
-                };
-                match result {
+            ("settings", Some(key), &Method::GET) => match self.store.config_get(key).await {
+                Ok(value) => JsonResponse::new(json!({
+                    "data": value,
+                }))
+                .into_http_response(),
+                Err(err) => RequestError::blank(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    "Config fetch failed",
+                    err.to_string(),
+                )
+                .into_http_response(),
+            },
+            ("settings", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
+                match self.store.config_clear(prefix).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -422,19 +535,48 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("config", None, &Method::POST) => {
-                if let Some(changes) = body
-                    .and_then(|body| serde_json::from_slice::<Vec<(String, String)>>(&body).ok())
+            ("settings", None, &Method::POST) => {
+                if let Some(changes) =
+                    body.and_then(|body| serde_json::from_slice::<Vec<UpdateSettings>>(&body).ok())
                 {
-                    match self
-                        .store
-                        .config_set(
-                            changes
-                                .into_iter()
-                                .map(|(key, value)| ConfigKey { key, value }),
-                        )
-                        .await
-                    {
+                    let mut result = Ok(());
+
+                    'next: for change in changes {
+                        match change {
+                            UpdateSettings::Delete { keys } => {
+                                for key in keys {
+                                    result = self.store.config_clear(key).await;
+                                    if result.is_err() {
+                                        break 'next;
+                                    }
+                                }
+                            }
+                            UpdateSettings::Clear { prefix } => {
+                                result = self.store.config_clear_prefix(&prefix).await;
+                                if result.is_err() {
+                                    break;
+                                }
+                            }
+                            UpdateSettings::Insert { prefix, values } => {
+                                result = self
+                                    .store
+                                    .config_set(values.into_iter().map(|(key, value)| ConfigKey {
+                                        key: if !prefix.is_empty() {
+                                            format!("{prefix}.{key}")
+                                        } else {
+                                            key
+                                        },
+                                        value,
+                                    }))
+                                    .await;
+                                if result.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    match result {
                         Ok(_) => JsonResponse::new(json!({
                             "data": (),
                         }))

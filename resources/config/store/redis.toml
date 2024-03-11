@@ -4,13 +4,15 @@
 
 [store."redis"]
 type = "redis"
-url = "redis://127.0.0.1"
-#urls = ["redis://192.168.1.1", "redis://192.168.1.1"] # for Redis cluster
-username = "my_username"
+redis-type = "single"
+urls = ["redis://127.0.0.1"] 
+user = "my_username"
 password = "secretpassword"
 timeout = "10s"
-#retries = 3
-#max-retry-wait = "1s"
-#min-retry-wait = "500ms"
 #read-from-replicas = false
 disable = true
+
+#[store."redis".retry]
+#total = 3
+#max-wait = "1s"
+#min-wait = "500ms"

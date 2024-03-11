@@ -58,60 +58,64 @@ enum RedisPool {
 impl RedisStore {
     pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
         let prefix = prefix.as_key();
+        let urls = config
+            .values((&prefix, "urls"))
+            .map(|(_, v)| v.to_string())
+            .collect::<Vec<_>>();
+        if urls.is_empty() {
+            return Err(crate::Error::InternalError(format!(
+                "No Redis URLs specified for {prefix:?}"
+            )));
+        }
 
-        let db = if let Some(url) = config.value((&prefix, "url")) {
-            Self {
+        Ok(match config.value_require((&prefix, "redis-type"))? {
+            "single" => Self {
                 pool: RedisPool::Single(build_pool(
                     config,
                     &prefix,
                     RedisConnectionManager {
-                        client: Client::open(url)?,
+                        client: Client::open(urls.into_iter().next().unwrap())?,
                         timeout: config.property_or_static((&prefix, "timeout"), "10s")?,
                     },
                 )?),
+            },
+            "cluster" => {
+                let mut builder = ClusterClientBuilder::new(urls.into_iter());
+                if let Some(value) = config.property((&prefix, "user"))? {
+                    builder = builder.username(value);
+                }
+                if let Some(value) = config.property((&prefix, "password"))? {
+                    builder = builder.password(value);
+                }
+                if let Some(value) = config.property((&prefix, "retry.total"))? {
+                    builder = builder.retries(value);
+                }
+                if let Some(value) = config.property::<Duration>((&prefix, "retry.max-wait"))? {
+                    builder = builder.max_retry_wait(value.as_millis() as u64);
+                }
+                if let Some(value) = config.property::<Duration>((&prefix, "retry.min-wait"))? {
+                    builder = builder.min_retry_wait(value.as_millis() as u64);
+                }
+                if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas"))? {
+                    builder = builder.read_from_replicas();
+                }
+                Self {
+                    pool: RedisPool::Cluster(build_pool(
+                        config,
+                        &prefix,
+                        RedisClusterConnectionManager {
+                            client: builder.build()?,
+                            timeout: config.property_or_static((&prefix, "timeout"), "10s")?,
+                        },
+                    )?),
+                }
             }
-        } else {
-            let addresses = config
-                .values((&prefix, "urls"))
-                .map(|(_, v)| v.to_string())
-                .collect::<Vec<_>>();
-            if addresses.is_empty() {
+            invalid => {
                 return Err(crate::Error::InternalError(format!(
-                    "No Redis cluster URLs specified for {prefix:?}"
+                    "Invalid Redis type {invalid:?} for {prefix:?}"
                 )));
             }
-            let mut builder = ClusterClientBuilder::new(addresses.into_iter());
-            if let Some(value) = config.property((&prefix, "username"))? {
-                builder = builder.username(value);
-            }
-            if let Some(value) = config.property((&prefix, "password"))? {
-                builder = builder.password(value);
-            }
-            if let Some(value) = config.property((&prefix, "retries"))? {
-                builder = builder.retries(value);
-            }
-            if let Some(value) = config.property::<Duration>((&prefix, "max-retry-wait"))? {
-                builder = builder.max_retry_wait(value.as_millis() as u64);
-            }
-            if let Some(value) = config.property::<Duration>((&prefix, "min-retry-wait"))? {
-                builder = builder.min_retry_wait(value.as_millis() as u64);
-            }
-            if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas"))? {
-                builder = builder.read_from_replicas();
-            }
-            Self {
-                pool: RedisPool::Cluster(build_pool(
-                    config,
-                    &prefix,
-                    RedisClusterConnectionManager {
-                        client: builder.build()?,
-                        timeout: config.property_or_static((&prefix, "timeout"), "10s")?,
-                    },
-                )?),
-            }
-        };
-
-        Ok(db)
+        })
     }
 }
 

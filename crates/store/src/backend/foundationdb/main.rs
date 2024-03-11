@@ -33,7 +33,7 @@ impl FdbStore {
         let prefix = prefix.as_key();
         let guard = unsafe { foundationdb::boot() };
 
-        let db = Database::new(config.value((&prefix, "path")))?;
+        let db = Database::new(config.value((&prefix, "cluster-file")))?;
         if let Some(value) = config.property::<Duration>((&prefix, "transaction.timeout"))? {
             db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))?;
         }
@@ -47,10 +47,10 @@ impl FdbStore {
                 value.as_millis() as i32
             ))?;
         }
-        if let Some(value) = config.property((&prefix, "transaction.machine-id"))? {
+        if let Some(value) = config.property((&prefix, "ids.machine"))? {
             db.set_option(DatabaseOption::MachineId(value))?;
         }
-        if let Some(value) = config.property((&prefix, "transaction.datacenter-id"))? {
+        if let Some(value) = config.property((&prefix, "ids.datacenter"))? {
             db.set_option(DatabaseOption::DatacenterId(value))?;
         }
 

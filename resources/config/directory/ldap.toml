@@ -4,7 +4,7 @@
 
 [directory."ldap"]
 type = "ldap"
-address = "ldap://localhost:389"
+url = "ldap://localhost:389"
 base-dn = "dc=example,dc=org"
 timeout = "30s"
 disable = true
@@ -50,7 +50,7 @@ domains = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(|(mail=*@?)(m
 
 [directory."ldap".attributes]
 name = "uid"
-type = "objectClass"
+class = "objectClass"
 description = ["principalName", "description"]
 secret = "userPassword"
 groups = ["memberOf", "otherGroups"]

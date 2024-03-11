@@ -4,7 +4,7 @@
 
 [directory."lmtp"]
 type = "lmtp"
-address = "127.0.0.1"
+host = "127.0.0.1"
 port = 11200
 disable = true
 
@@ -21,7 +21,7 @@ wait = "30s"
 recycle = "30s"
 
 [directory."lmtp".tls]
-implicit = false
+enable = false
 allow-invalid-certs = true
 
 [directory."lmtp".cache]

@@ -49,7 +49,7 @@ impl MysqlStore {
             .max_allowed_packet(config.property((&prefix, "max-allowed-packet"))?)
             .wait_timeout(
                 config
-                    .property::<Duration>((&prefix, "timeout.wait"))?
+                    .property::<Duration>((&prefix, "timeout"))?
                     .map(|t| t.as_secs() as usize),
             );
         if let Some(port) = config.property((&prefix, "port"))? {

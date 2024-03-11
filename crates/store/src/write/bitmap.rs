@@ -74,7 +74,6 @@ impl DenseBitmap {
     pub fn block_index(index: u32) -> u32 {
         index & BITS_MASK_L
     }
-
 }
 
 pub trait DeserializeBlock {

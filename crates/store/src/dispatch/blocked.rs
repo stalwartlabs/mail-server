@@ -46,6 +46,7 @@ pub struct BlockedIps {
 }
 
 pub const BLOCKED_IP_KEY: &str = "server.security.blocked-networks";
+pub const BLOCKED_IP_PREFIX: &str = "server.security.blocked-networks.";
 
 impl BlockedIps {
     pub fn new(store: LookupStore) -> Self {
@@ -64,14 +65,19 @@ impl BlockedIps {
                 .property::<Rate>("server.security.fail2ban")?
                 .map(Arc::new),
         );
-        self.reload_blocked_ips(config)
+        self.reload_blocked_ips(config.set_values(BLOCKED_IP_KEY))
     }
 
-    pub fn reload_blocked_ips(&self, config: &Config) -> utils::config::Result<()> {
+    pub fn reload_blocked_ips<T, I>(&self, ips: I) -> utils::config::Result<()>
+    where
+        T: AsRef<str>,
+        I: IntoIterator<Item = T>,
+    {
         let mut ip_addresses = AHashSet::new();
         let mut ip_networks = Vec::new();
 
-        for ip in config.set_values(BLOCKED_IP_KEY) {
+        for ip in ips {
+            let ip = ip.as_ref();
             if ip.contains('/') {
                 ip_networks.push(ip.parse_key(BLOCKED_IP_KEY)?);
             } else {

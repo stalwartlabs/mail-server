@@ -70,10 +70,6 @@ impl ConfigDirectory for Config {
         ));
 
         for id in self.sub_keys("directory", ".type") {
-            if id.ends_with(".columns") || id.ends_with(".attributes") || id.contains(".principals")
-            {
-                continue;
-            }
             // Parse directory
             if self.property_or_static::<bool>(("directory", id, "disable"), "false")? {
                 tracing::debug!("Skipping disabled directory {id:?}.");

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use utils::config::{Config, ConfigKey};
+use utils::config::ConfigKey;
 
 use crate::{
     write::{BatchBuilder, ValueClass},
@@ -34,8 +34,8 @@ impl Store {
             .await
     }
 
-    pub async fn config_list(&self, key: impl AsRef<str>) -> crate::Result<Config> {
-        let key = key.as_ref().as_bytes();
+    pub async fn config_list(&self, prefix: &str) -> crate::Result<Vec<(String, String)>> {
+        let key = prefix.as_bytes();
         let from_key = ValueKey::from(ValueClass::Config(key.to_vec()));
         let to_key = ValueKey::from(ValueClass::Config(
             key.iter()
@@ -43,20 +43,26 @@ impl Store {
                 .chain([u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX])
                 .collect::<Vec<_>>(),
         ));
-        let mut config = Config::default();
+        let mut results = Vec::new();
         self.iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                config.keys.insert(
-                    String::deserialize(key.get(1..).unwrap_or_default())?,
-                    String::deserialize(value)?,
-                );
+                let mut key =
+                    std::str::from_utf8(key.get(1..).unwrap_or_default()).map_err(|_| {
+                        crate::Error::InternalError("Failed to deserialize config key".to_string())
+                    })?;
+                if !prefix.is_empty() {
+                    key = key.strip_prefix(prefix).unwrap_or(key);
+                }
+
+                results.push((key.to_string(), String::deserialize(value)?));
+
                 Ok(true)
             },
         )
         .await?;
 
-        Ok(config)
+        Ok(results)
     }
 
     pub async fn config_set(&self, keys: impl Iterator<Item = ConfigKey>) -> crate::Result<()> {

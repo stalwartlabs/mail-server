@@ -57,7 +57,7 @@ impl SqlDirectory {
                 .unwrap_or_default()
                 .to_string(),
             column_type: config
-                .value((&prefix, "columns.type"))
+                .value((&prefix, "columns.class"))
                 .unwrap_or_default()
                 .to_string(),
             ..Default::default()

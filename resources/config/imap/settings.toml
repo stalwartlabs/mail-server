@@ -20,6 +20,3 @@ idle = "30m"
 [imap.rate-limit]
 requests = "2000/1m"
 concurrent = 6
-
-[imap.protocol]
-uidplus = false

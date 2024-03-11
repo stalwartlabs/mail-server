@@ -47,7 +47,7 @@ impl LdapDirectory {
         };
 
         let manager = LdapConnectionManager::new(
-            config.value_require((&prefix, "address"))?.to_string(),
+            config.value_require((&prefix, "url"))?.to_string(),
             LdapConnSettings::new()
                 .set_conn_timeout(config.property_or_static((&prefix, "timeout"), "30s")?)
                 .set_starttls(config.property_or_static((&prefix, "tls.enable"), "false")?)
@@ -73,7 +73,7 @@ impl LdapDirectory {
                 .map(|(_, v)| v.to_string())
                 .collect(),
             attr_type: config
-                .values((&prefix, "attributes.type"))
+                .values((&prefix, "attributes.class"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
             attr_description: config

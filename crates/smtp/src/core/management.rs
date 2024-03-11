@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::HashMap, net::IpAddr, str::FromStr, sync::Arc};
+use std::{net::IpAddr, str::FromStr, sync::Arc};
 
 use directory::{AuthResult, Type};
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
@@ -54,7 +54,10 @@ use store::{
     Deserialize, IterateParams, ValueKey, U64_LEN,
 };
 
-use utils::listener::{limiter::InFlight, SessionData, SessionManager, SessionStream};
+use utils::{
+    listener::{limiter::InFlight, SessionData, SessionManager, SessionStream},
+    url_params::UrlParams,
+};
 
 use crate::{
     queue::{self, ErrorDetails, HostResponse, QueueId, Status},
@@ -345,7 +348,7 @@ impl SMTP {
         path_2: &str,
         path_3: Option<&str>,
     ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-        let params = UrlParams::new(uri);
+        let params = UrlParams::new(uri.query());
 
         let (status, response) = match (method, path_1, path_2, path_3) {
             (&Method::GET, "queue", "messages", None) => {
@@ -925,40 +928,6 @@ fn not_found() -> (StatusCode, String) {
         StatusCode::NOT_FOUND,
         "{\"error\": \"not-found\", \"details\": \"URL does not exist.\"}".to_string(),
     )
-}
-
-#[derive(Default)]
-struct UrlParams<'x> {
-    params: HashMap<Cow<'x, str>, Cow<'x, str>>,
-}
-
-impl<'x> UrlParams<'x> {
-    pub fn new(uri: &'x Uri) -> Self {
-        if let Some(query) = uri.query() {
-            Self {
-                params: form_urlencoded::parse(query.as_bytes())
-                    .filter(|(_, value)| !value.is_empty())
-                    .collect(),
-            }
-        } else {
-            Self::default()
-        }
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.params.get(key).map(|v| v.as_ref())
-    }
-
-    pub fn has_key(&self, key: &str) -> bool {
-        self.params.contains_key(key)
-    }
-
-    pub fn parse<T>(&self, key: &str) -> Option<T>
-    where
-        T: std::str::FromStr,
-    {
-        self.get(key).and_then(|v| v.parse().ok())
-    }
 }
 
 enum ReportType {

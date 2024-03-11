@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use store::dispatch::blocked::BLOCKED_IP_KEY;
+use store::dispatch::blocked::BLOCKED_IP_PREFIX;
 use tokio::sync::mpsc;
 use utils::{
     config::{cron::SimpleCron, Config, Servers},
@@ -110,10 +110,12 @@ pub fn spawn_housekeeper(
                         // for now, we just reload the blocked IP addresses
                         let core = core.clone();
                         tokio::spawn(async move {
-                            match core.store.config_list(BLOCKED_IP_KEY).await {
-                                Ok(config) => {
-                                    if let Err(err) =
-                                        core.directory.blocked_ips.reload_blocked_ips(&config)
+                            match core.store.config_list(BLOCKED_IP_PREFIX).await {
+                                Ok(settings) => {
+                                    if let Err(err) = core
+                                        .directory
+                                        .blocked_ips
+                                        .reload_blocked_ips(settings.iter().map(|(k, _)| k))
                                     {
                                         tracing::error!(
                                             context = "store",
