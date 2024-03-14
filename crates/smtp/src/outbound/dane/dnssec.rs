@@ -30,7 +30,7 @@ use mail_auth::{
             error::ProtoErrorKind,
             rr::rdata::tlsa::{CertUsage, Matching, Selector},
         },
-        AsyncResolver,
+        AsyncResolver, Name,
     },
 };
 use std::sync::Arc;
@@ -66,7 +66,12 @@ impl Resolvers {
         }
 
         let mut entries = Vec::new();
-        let tlsa_lookup = match self.dnssec.resolver.tlsa_lookup(key.as_ref()).await {
+        let tlsa_lookup = match self
+            .dnssec
+            .resolver
+            .tlsa_lookup(Name::from_str_relaxed(key.as_ref())?)
+            .await
+        {
             Ok(tlsa_lookup) => tlsa_lookup,
             Err(err) => {
                 return match &err.kind() {
