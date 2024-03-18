@@ -92,7 +92,9 @@ return-path = false
 key = ["remote_ip"]
 concurrency = 5
 #rate = "5/1h"
+enable = true
 
 [[session.throttle]]
 key = ["sender_domain", "rcpt"]
 rate = "25/1h"
+enable = true

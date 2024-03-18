@@ -329,7 +329,7 @@ impl LdapMappings {
 
         tracing::debug!(
             context = "ldap",
-            event = "fetch_princpal",
+            event = "fetch_principal",
             entry = ?entry,
             "LDAP entry"
         );

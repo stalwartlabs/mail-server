@@ -34,7 +34,11 @@ impl Store {
             .await
     }
 
-    pub async fn config_list(&self, prefix: &str) -> crate::Result<Vec<(String, String)>> {
+    pub async fn config_list(
+        &self,
+        prefix: &str,
+        strip_prefix: bool,
+    ) -> crate::Result<Vec<(String, String)>> {
         let key = prefix.as_bytes();
         let from_key = ValueKey::from(ValueClass::Config(key.to_vec()));
         let to_key = ValueKey::from(ValueClass::Config(
@@ -51,7 +55,7 @@ impl Store {
                     std::str::from_utf8(key.get(1..).unwrap_or_default()).map_err(|_| {
                         crate::Error::InternalError("Failed to deserialize config key".to_string())
                     })?;
-                if !prefix.is_empty() {
+                if strip_prefix && !prefix.is_empty() {
                     key = key.strip_prefix(prefix).unwrap_or(key);
                 }
 

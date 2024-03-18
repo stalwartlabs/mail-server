@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use chrono::{Datelike, TimeZone, Timelike};
+use chrono::{Datelike, Local, TimeDelta, TimeZone, Timelike};
 
 use super::utils::ParseValue;
 
@@ -36,39 +36,40 @@ pub enum SimpleCron {
 
 impl SimpleCron {
     pub fn time_to_next(&self) -> Duration {
-        let now = chrono::Local::now();
+        let now = Local::now();
         let next = match self {
             SimpleCron::Day { hour, minute } => {
-                let next = chrono::Local
+                let next = Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .earliest()
-                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
+                    .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
                 if next < now {
-                    next + chrono::Duration::days(1)
+                    next + TimeDelta::try_days(1).unwrap_or_default()
                 } else {
                     next
                 }
             }
             SimpleCron::Week { day, hour, minute } => {
-                let next = chrono::Local
+                let next = Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .earliest()
-                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
+                    .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
                 if next < now {
-                    next + chrono::Duration::days(
+                    next + TimeDelta::try_days(
                         (7 - now.weekday().number_from_monday() + *day).into(),
                     )
+                    .unwrap_or_default()
                 } else {
                     next
                 }
             }
             SimpleCron::Hour { minute } => {
-                let next = chrono::Local
+                let next = Local
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
                     .earliest()
-                    .unwrap_or_else(|| now - chrono::Duration::seconds(1));
+                    .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
                 if next < now {
-                    next + chrono::Duration::hours(1)
+                    next + TimeDelta::try_hours(1).unwrap_or_default()
                 } else {
                     next
                 }
@@ -96,9 +97,11 @@ impl ParseValue for SimpleCron {
                     ));
                 }
             } else if pos == 1 {
-                if value.as_bytes().first().ok_or_else(|| {
-                    format!("Invalid cron key {key:?}: failed to parse cron weekday")
-                })? == &b'*'
+                if value
+                    .as_bytes()
+                    .first()
+                    .ok_or_else(|| format!("Invalid cron key {key:?}: failed to parse cron hour"))?
+                    == &b'*'
                 {
                     return Ok(SimpleCron::Hour { minute });
                 } else {

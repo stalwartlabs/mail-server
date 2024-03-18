@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use chrono::{Duration, Utc};
+use chrono::{TimeDelta, Utc};
 
 use directory::backend::internal::manage::ManageDirectory;
 use jmap_proto::types::id::Id;
@@ -138,7 +138,12 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Vacation responses should honor the configured date ranges
     client
-        .vacation_response_set_dates((Utc::now() + Duration::days(1)).timestamp().into(), None)
+        .vacation_response_set_dates(
+            (Utc::now() + TimeDelta::try_days(1).unwrap_or_default())
+                .timestamp()
+                .into(),
+            None,
+        )
         .await
         .unwrap();
     lmtp.ingest(
@@ -157,7 +162,12 @@ pub async fn test(params: &mut JMAPTest) {
     expect_nothing(&mut smtp_rx).await;
 
     client
-        .vacation_response_set_dates((Utc::now() - Duration::days(1)).timestamp().into(), None)
+        .vacation_response_set_dates(
+            (Utc::now() - TimeDelta::try_days(1).unwrap_or_default())
+                .timestamp()
+                .into(),
+            None,
+        )
         .await
         .unwrap();
     smtp_settings.lock().do_stop = true;

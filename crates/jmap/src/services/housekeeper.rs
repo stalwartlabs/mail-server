@@ -110,7 +110,7 @@ pub fn spawn_housekeeper(
                         // for now, we just reload the blocked IP addresses
                         let core = core.clone();
                         tokio::spawn(async move {
-                            match core.store.config_list(BLOCKED_IP_PREFIX).await {
+                            match core.store.config_list(BLOCKED_IP_PREFIX, true).await {
                                 Ok(settings) => {
                                     if let Err(err) = core
                                         .directory

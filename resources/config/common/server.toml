@@ -7,7 +7,7 @@ hostname = "%{HOST}%"
 max-connections = 8192
 
 #[server.proxy]
-#trusted-networks = {"127.0.0.0/8", "::1", "10.0.0.0/8"}
+#trusted-networks = ["127.0.0.0/8", "::1", "10.0.0.0/8"]
 
 [server.security]
 blocked-networks = {}

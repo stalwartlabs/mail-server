@@ -78,8 +78,9 @@ pub enum UpdateSettings {
         prefix: String,
     },
     Insert {
-        prefix: String,
+        prefix: Option<String>,
         values: Vec<(String, String)>,
+        assert_empty: bool,
     },
 }
 
@@ -369,7 +370,7 @@ impl JMAP {
                 }))
                 .into_http_response()
             }
-            ("settings", None, &Method::GET) => {
+            ("settings", Some("group"), &Method::GET) => {
                 // List settings
                 let params = UrlParams::new(req.uri().query());
                 let prefix = params
@@ -382,8 +383,8 @@ impl JMAP {
                         }
                     })
                     .unwrap_or_default();
-                let groupby = params
-                    .get("groupby")
+                let suffix = params
+                    .get("suffix")
                     .map(|s| {
                         if !s.starts_with('.') {
                             format!(".{s}")
@@ -392,19 +393,20 @@ impl JMAP {
                         }
                     })
                     .unwrap_or_default();
+                let field = params.get("field");
                 let filter = params.get("filter").unwrap_or_default();
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let mut offset =
                     params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
                 let has_filter = !filter.is_empty();
 
-                match self.store.config_list(&prefix).await {
-                    Ok(settings) => if groupby.len() > 1 && !settings.is_empty() {
+                match self.store.config_list(&prefix, true).await {
+                    Ok(settings) => if !suffix.is_empty() && !settings.is_empty() {
                         // Obtain record ids
                         let mut total = 0;
                         let mut ids = Vec::new();
                         for (key, _) in &settings {
-                            if let Some(id) = key.strip_suffix(&groupby) {
+                            if let Some(id) = key.strip_suffix(&suffix) {
                                 if !id.is_empty() {
                                     if !has_filter {
                                         if offset == 0 {
@@ -430,7 +432,9 @@ impl JMAP {
                             record.insert("_id".to_string(), id.to_string());
                             for (k, v) in &settings {
                                 if let Some(k) = k.strip_prefix(&prefix) {
-                                    record.insert(k.to_string(), v.to_string());
+                                    if field.map_or(true, |field| field == k) {
+                                        record.insert(k.to_string(), v.to_string());
+                                    }
                                 } else if record.len() > 1 {
                                     break;
                                 }
@@ -458,8 +462,7 @@ impl JMAP {
                                 "items": records,
                             },
                         }))
-                    } else if !groupby.is_empty() {
-                        // groupby=.
+                    } else {
                         let total = settings.len();
                         let items = settings
                             .into_iter()
@@ -485,7 +488,34 @@ impl JMAP {
                                 "items": items,
                             },
                         }))
-                    } else {
+                    }
+                    .into_http_response(),
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Config fetch failed",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
+            }
+            ("settings", Some("list"), &Method::GET) => {
+                // List settings
+                let params = UrlParams::new(req.uri().query());
+                let prefix = params
+                    .get("prefix")
+                    .map(|p| {
+                        if !p.ends_with('.') {
+                            format!("{p}.")
+                        } else {
+                            p.to_string()
+                        }
+                    })
+                    .unwrap_or_default();
+                let limit: usize = params.parse("limit").unwrap_or(0);
+                let offset = params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
+
+                match self.store.config_list(&prefix, true).await {
+                    Ok(settings) => {
                         let total = settings.len();
                         let items = settings
                             .into_iter()
@@ -499,8 +529,8 @@ impl JMAP {
                                 "items": items,
                             },
                         }))
+                        .into_http_response()
                     }
-                    .into_http_response(),
                     Err(err) => RequestError::blank(
                         StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
                         "Config fetch failed",
@@ -509,18 +539,63 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("settings", Some(key), &Method::GET) => match self.store.config_get(key).await {
-                Ok(value) => JsonResponse::new(json!({
-                    "data": value,
-                }))
-                .into_http_response(),
-                Err(err) => RequestError::blank(
-                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                    "Config fetch failed",
-                    err.to_string(),
-                )
-                .into_http_response(),
-            },
+            ("settings", Some("keys"), &Method::GET) => {
+                // Obtain keys
+                let params = UrlParams::new(req.uri().query());
+                let keys = params
+                    .get("keys")
+                    .map(|s| s.split(',').collect::<Vec<_>>())
+                    .unwrap_or_default();
+                let prefixes = params
+                    .get("prefixes")
+                    .map(|s| s.split(',').collect::<Vec<_>>())
+                    .unwrap_or_default();
+                let mut err = String::new();
+                let mut results = AHashMap::with_capacity(keys.len());
+
+                for key in keys {
+                    match self.store.config_get(key).await {
+                        Ok(Some(value)) => {
+                            results.insert(key.to_string(), value);
+                        }
+                        Ok(None) => {}
+                        Err(err_) => {
+                            err = err_.to_string();
+                            break;
+                        }
+                    }
+                }
+                for prefix in prefixes {
+                    let prefix = if !prefix.ends_with('.') {
+                        format!("{prefix}.")
+                    } else {
+                        prefix.to_string()
+                    };
+                    match self.store.config_list(&prefix, false).await {
+                        Ok(values) => {
+                            results.extend(values);
+                        }
+                        Err(err_) => {
+                            err = err_.to_string();
+                            break;
+                        }
+                    }
+                }
+
+                if err.is_empty() {
+                    JsonResponse::new(json!({
+                        "data": results,
+                    }))
+                    .into_http_response()
+                } else {
+                    RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Config fetch failed",
+                        err.to_string(),
+                    )
+                    .into_http_response()
+                }
+            }
             ("settings", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
                 match self.store.config_clear(prefix).await {
                     Ok(_) => JsonResponse::new(json!({
@@ -539,36 +614,66 @@ impl JMAP {
                 if let Some(changes) =
                     body.and_then(|body| serde_json::from_slice::<Vec<UpdateSettings>>(&body).ok())
                 {
-                    let mut result = Ok(());
+                    let mut result = Ok(true);
 
                     'next: for change in changes {
                         match change {
                             UpdateSettings::Delete { keys } => {
                                 for key in keys {
-                                    result = self.store.config_clear(key).await;
+                                    result = self.store.config_clear(key).await.map(|_| true);
                                     if result.is_err() {
                                         break 'next;
                                     }
                                 }
                             }
                             UpdateSettings::Clear { prefix } => {
-                                result = self.store.config_clear_prefix(&prefix).await;
+                                result =
+                                    self.store.config_clear_prefix(&prefix).await.map(|_| true);
                                 if result.is_err() {
                                     break;
                                 }
                             }
-                            UpdateSettings::Insert { prefix, values } => {
+                            UpdateSettings::Insert {
+                                prefix,
+                                values,
+                                assert_empty,
+                            } => {
+                                if assert_empty {
+                                    if let Some(prefix) = &prefix {
+                                        result = self
+                                            .store
+                                            .config_list(&format!("{prefix}."), true)
+                                            .await
+                                            .map(|items| items.is_empty());
+
+                                        if matches!(result, Ok(false) | Err(_)) {
+                                            break;
+                                        }
+                                    } else if let Some((key, _)) = values.first() {
+                                        result = self
+                                            .store
+                                            .config_get(key)
+                                            .await
+                                            .map(|items| items.is_none());
+
+                                        if matches!(result, Ok(false) | Err(_)) {
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 result = self
                                     .store
                                     .config_set(values.into_iter().map(|(key, value)| ConfigKey {
-                                        key: if !prefix.is_empty() {
+                                        key: if let Some(prefix) = &prefix {
                                             format!("{prefix}.{key}")
                                         } else {
                                             key
                                         },
                                         value,
                                     }))
-                                    .await;
+                                    .await
+                                    .map(|_| true);
                                 if result.is_err() {
                                     break;
                                 }
@@ -577,8 +682,13 @@ impl JMAP {
                     }
 
                     match result {
-                        Ok(_) => JsonResponse::new(json!({
+                        Ok(true) => JsonResponse::new(json!({
                             "data": (),
+                        }))
+                        .into_http_response(),
+                        Ok(false) => JsonResponse::new(json!({
+                            "error": "assertFailed",
+                            "details": "Failed to assert empty prefix",
                         }))
                         .into_http_response(),
                         Err(err) => RequestError::blank(

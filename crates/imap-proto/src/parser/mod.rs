@@ -204,7 +204,12 @@ pub fn parse_date(value: &[u8]) -> Result<i64> {
         .trim();
     NaiveDate::parse_from_str(date, "%d-%b-%Y")
         .map_err(|_| Cow::from(format!("Failed to parse date '{}'.", date)))
-        .map(|dt| dt.and_hms_opt(0, 0, 0).unwrap_or_default().timestamp())
+        .map(|dt| {
+            dt.and_hms_opt(0, 0, 0)
+                .unwrap_or_default()
+                .and_utc()
+                .timestamp()
+        })
 }
 
 pub fn parse_number<T: FromStr>(value: &[u8]) -> Result<T> {
