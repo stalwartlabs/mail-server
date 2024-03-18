@@ -21,13 +21,16 @@
  * for more details.
 */
 
-use std::io::Read;
+use std::{
+    io::Read,
+    net::{IpAddr, SocketAddr},
+};
 
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     flate2::read::GzDecoder,
     hickory_resolver::{
-        config::{ResolverConfig, ResolverOpts},
+        config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
         system_conf::read_system_conf,
     },
     Resolver,
@@ -51,6 +54,46 @@ impl ConfigResolver for Config {
             "google" => (ResolverConfig::google(), ResolverOpts::default()),
             "system" => read_system_conf()
                 .map_err(|err| format!("Failed to read system DNS config: {err}"))?,
+            "custom" => {
+                let mut config = ResolverConfig::new();
+                for (_, url) in self.values("resolver.custom") {
+                    let (proto, host) = if let Some((proto, host)) = url.split_once("://") {
+                        (
+                            match proto {
+                                "udp" => Protocol::Udp,
+                                "tcp" => Protocol::Tcp,
+                                "tls" => Protocol::Tls,
+                                _ => {
+                                    return Err(format!("Invalid custom resolver protocol {url:?}"))
+                                }
+                            },
+                            host,
+                        )
+                    } else {
+                        (Protocol::Udp, url)
+                    };
+                    let (host, port) = if let Some((host, port)) = host.split_once(':') {
+                        (
+                            host,
+                            port.parse::<u16>().map_err(|err| {
+                                format!("Invalid custom resolver port {port:?}: {err}")
+                            })?,
+                        )
+                    } else {
+                        (host, 53)
+                    };
+                    let host = host
+                        .parse::<IpAddr>()
+                        .map_err(|err| format!("Invalid custom resolver IP {host:?}: {err}"))?;
+                    config
+                        .add_name_server(NameServerConfig::new(SocketAddr::new(host, port), proto));
+                }
+                if !config.name_servers().is_empty() {
+                    (config, ResolverOpts::default())
+                } else {
+                    return Err("At least one custom resolver must be specified.".to_string());
+                }
+            }
             other => return Err(format!("Unknown resolver type {other:?}.")),
         };
         if let Some(concurrency) = self.property("resolver.concurrency")? {
