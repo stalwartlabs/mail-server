@@ -67,7 +67,12 @@ async fn main() -> std::io::Result<()> {
         .failed("Invalid configuration");
 
     // Update configuration
-    config.update(data_store.config_list("").await.failed("Storage error"));
+    config.update(
+        data_store
+            .config_list("", false)
+            .await
+            .failed("Storage error"),
+    );
 
     // Parse directories
     let directory = config

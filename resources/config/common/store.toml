@@ -13,10 +13,7 @@ directory = "%{DEFAULT_DIRECTORY}%"
 enable = true
 append = false
 
-[storage.spam]
-header = "X-Spam-Status: Yes"
-
-[storage.fts]
+[storage.full-text]
 default-language = "en"
 
 [storage.cluster]

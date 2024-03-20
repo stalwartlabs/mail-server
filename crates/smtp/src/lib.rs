@@ -96,6 +96,11 @@ impl SMTP {
         }
 
         // Build core
+        let capacity = config.property("cache.capacity")?.unwrap_or(2);
+        let shard = config
+            .property::<u64>("cache.shard")?
+            .unwrap_or(32)
+            .next_power_of_two() as usize;
         let (queue_tx, queue_rx) = mpsc::channel(1024);
         let (report_tx, report_rx) = mpsc::channel(1024);
         let core = Arc::new(SMTP {
@@ -112,23 +117,17 @@ impl SMTP {
             session: SessionCore {
                 config: session_config,
                 throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config.property("global.shared-map.capacity")?.unwrap_or(2),
+                    capacity,
                     ThrottleKeyHasherBuilder::default(),
-                    config
-                        .property::<u64>("global.shared-map.shard")?
-                        .unwrap_or(32)
-                        .next_power_of_two() as usize,
+                    shard,
                 ),
             },
             queue: QueueCore {
                 config: queue_config,
                 throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    config.property("global.shared-map.capacity")?.unwrap_or(2),
+                    capacity,
                     ThrottleKeyHasherBuilder::default(),
-                    config
-                        .property::<u64>("global.shared-map.shard")?
-                        .unwrap_or(32)
-                        .next_power_of_two() as usize,
+                    shard,
                 ),
                 snowflake_id: config
                     .property::<u64>("storage.cluster.node-id")?

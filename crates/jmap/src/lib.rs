@@ -191,9 +191,10 @@ impl JMAP {
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
         let shard_amount = config
-            .property::<u64>("global.shared-map.shard")?
+            .property::<u64>("cache.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
+        let capacity = config.property("cache.capacity")?.unwrap_or(100);
 
         let jmap_server = Arc::new(JMAP {
             directory: directories
@@ -213,25 +214,16 @@ impl JMAP {
             blob_store: stores.get_blob_store(config, "storage.blob")?,
             lookup_store: stores.get_lookup_store(config, "storage.lookup")?,
             config: Config::new(config).failed("Invalid configuration file"),
-            sessions: TtlDashMap::with_capacity(
-                config.property("cache.session.size")?.unwrap_or(100),
-                shard_amount,
-            ),
-            access_tokens: TtlDashMap::with_capacity(
-                config.property("cache.session.size")?.unwrap_or(100),
-                shard_amount,
-            ),
+            sessions: TtlDashMap::with_capacity(capacity, shard_amount),
+            access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
             concurrency_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("cache.rate-limit.size")?.unwrap_or(1024),
+                capacity,
                 RandomState::default(),
                 shard_amount,
             ),
-            oauth_codes: TtlDashMap::with_capacity(
-                config.property("cache.oauth.size")?.unwrap_or(128),
-                shard_amount,
-            ),
+            oauth_codes: TtlDashMap::with_capacity(capacity, shard_amount),
             cache_threads: LruCache::with_capacity(
-                config.property("cache.messages.size")?.unwrap_or(2048),
+                config.property("cache.thread.size")?.unwrap_or(2048),
             ),
             state_tx,
             housekeeper_tx,

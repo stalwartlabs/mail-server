@@ -188,8 +188,8 @@ blob = "{STORE}"
 lookup = "{STORE}"
 directory = "auth"
 
-[storage.spam]
-header = "X-Spam-Status: Yes"
+[spam.header]
+is-spam  = "X-Spam-Status: Yes"
 
 [jmap.protocol.get]
 max-objects = 100000

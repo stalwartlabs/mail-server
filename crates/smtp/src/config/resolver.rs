@@ -119,7 +119,7 @@ impl ConfigResolver for Config {
 
         let mut capacities = [1024usize; 5];
         for (pos, key) in ["txt", "mx", "ipv4", "ipv6", "ptr"].into_iter().enumerate() {
-            if let Some(capacity) = self.property(("resolver.cache", key))? {
+            if let Some(capacity) = self.property(("cache.resolver", key))? {
                 capacities[pos] = capacity;
             }
         }

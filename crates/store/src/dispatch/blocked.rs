@@ -62,7 +62,7 @@ impl BlockedIps {
     pub fn reload(&self, config: &Config) -> utils::config::Result<()> {
         self.limiter_rate.store(
             config
-                .property::<Rate>("server.security.fail2ban")?
+                .property::<Rate>("authentication.fail2ban")?
                 .map(Arc::new),
         );
         self.reload_blocked_ips(config.set_values(BLOCKED_IP_KEY))

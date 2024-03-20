@@ -2,6 +2,31 @@
 # SMTP Spam & Phishing filter configuration
 #############################################
 
+[spam.header]
+add-spam = true
+add-spam-result = true
+is-spam = "X-Spam-Status: Yes"
+
+[spam.autolearn]
+enable = true
+balance = 0.9
+
+[spam.autolearn.ham]
+replies = true
+threshold = -0.5
+
+[spam.autolearn.spam]
+threshold = 6.0
+
+[spam.threshold]
+spam = 5.0
+discard = 0
+reject = 0
+
+[spam.data]
+directory = ""
+lookup = ""
+
 [store."spam/free-domains"]
 type = "memory"
 format = "glob"

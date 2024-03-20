@@ -9,9 +9,9 @@ max-connections = 8192
 #[server.proxy]
 #trusted-networks = ["127.0.0.0/8", "::1", "10.0.0.0/8"]
 
-[server.security]
-blocked-networks = {}
+[authentication]
 fail2ban = "100/1d"
+rate-limit = "10/1m"
 
 [server.run-as]
 user = "stalwart-mail"
@@ -29,5 +29,9 @@ backlog = 1024
 #tos = 1
 
 [global]
-shared-map = {shard = 32, capacity = 10}
 #thread-pool = 8
+
+[server.http]
+#headers = ["Access-Control-Allow-Origin: *", 
+#           "Access-Control-Allow-Methods: POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
+#           "Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With"]

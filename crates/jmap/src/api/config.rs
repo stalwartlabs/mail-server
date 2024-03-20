@@ -33,7 +33,7 @@ impl crate::Config {
         let mut config = Self {
             default_language: Language::from_iso_639(
                 settings
-                    .value("storage.fts.default-language")
+                    .value("storage.full-text.default-language")
                     .unwrap_or("en"),
             )
             .unwrap_or(Language::English),
@@ -102,7 +102,7 @@ impl crate::Config {
             rate_authenticated: settings
                 .property_or_static("jmap.rate-limit.account", "1000/1m")?,
             rate_authenticate_req: settings
-                .property_or_static("jmap.rate-limit.authentication", "10/1m")?,
+                .property_or_static("authentication.rate-limit", "10/1m")?,
             rate_anonymous: settings.property_or_static("jmap.rate-limit.anonymous", "100/1m")?,
             rate_use_forwarded: settings
                 .property("jmap.rate-limit.use-forwarded")?
@@ -143,7 +143,7 @@ impl crate::Config {
                 .unwrap_or(true),
             encrypt: settings.property_or_static("storage.encryption.enable", "true")?,
             encrypt_append: settings.property_or_static("storage.encryption.append", "false")?,
-            spam_header: settings.value("storage.spam.header").and_then(|v| {
+            spam_header: settings.value("spam.header.is-spam").and_then(|v| {
                 v.split_once(':').map(|(k, v)| {
                     (
                         mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),
@@ -152,26 +152,26 @@ impl crate::Config {
                 })
             }),
             http_headers: settings
-                .values("jmap.http.headers")
+                .values("server.http.headers")
                 .map(|(_, v)| {
                     if let Some((k, v)) = v.split_once(':') {
                         Ok((
                             hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
                                 format!(
-                                    "Invalid header found in property \"jmap.http.headers\": {}",
+                                    "Invalid header found in property \"server.http.headers\": {}",
                                     err
                                 )
                             })?,
                             hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
                                 format!(
-                                    "Invalid header found in property \"jmap.http.headers\": {}",
+                                    "Invalid header found in property \"server.http.headers\": {}",
                                     err
                                 )
                             })?,
                         ))
                     } else {
                         Err(format!(
-                            "Invalid header found in property \"jmap.http.headers\": {}",
+                            "Invalid header found in property \"server.http.headers\": {}",
                             v
                         ))
                     }

@@ -44,9 +44,10 @@ static SERVER_GREETING: &str = concat!(
 impl IMAP {
     pub async fn init(config: &Config) -> utils::config::Result<Arc<Self>> {
         let shard_amount = config
-            .property::<u64>("global.shared-map.shard")?
+            .property::<u64>("cache.shard")?
             .unwrap_or(32)
             .next_power_of_two() as usize;
+        let capacity = config.property("cache.capacity")?.unwrap_or(100);
 
         Ok(Arc::new(IMAP {
             max_request_size: config.property_or_static("imap.request.max-size", "52428800")?,
@@ -69,7 +70,7 @@ impl IMAP {
                 })
                 .into_bytes(),
             rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                config.property("cache.rate-limit.size")?.unwrap_or(2048),
+                capacity,
                 RandomState::default(),
                 shard_amount,
             ),
@@ -77,10 +78,10 @@ impl IMAP {
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
             allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
             cache_account: LruCache::with_capacity(
-                config.property("cache.messages.size")?.unwrap_or(2048),
+                config.property("cache.account.size")?.unwrap_or(2048),
             ),
             cache_mailbox: LruCache::with_capacity(
-                config.property("cache.messages.size")?.unwrap_or(2048),
+                config.property("cache.mailbox.size")?.unwrap_or(2048),
             ),
         }))
     }

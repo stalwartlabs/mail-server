@@ -2,9 +2,5 @@
 # JMAP authentication & session configuration
 #############################################
 
-[jmap.session.cache]
-ttl = "1h"
-size = 100
-
 [jmap.session.purge]
 frequency = "15 * *"

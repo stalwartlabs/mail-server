@@ -55,6 +55,7 @@ impl From<std::io::Error> for crate::Error {
     }
 }
 
+#[allow(dead_code)]
 fn deserialize_i64_le(bytes: &[u8]) -> crate::Result<i64> {
     Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
         crate::Error::InternalError("Failed to deserialize i64 value.".to_string())

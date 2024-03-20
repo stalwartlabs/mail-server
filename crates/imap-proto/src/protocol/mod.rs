@@ -24,7 +24,7 @@
 use std::{cmp::Ordering, fmt::Display};
 
 use ahash::AHashSet;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use jmap_proto::types::keyword::Keyword;
 
 use crate::{Command, ResponseCode, ResponseType, StatusResponse};
@@ -218,13 +218,11 @@ pub fn literal_string(buf: &mut Vec<u8>, text: &[u8]) {
 pub fn quoted_timestamp(buf: &mut Vec<u8>, timestamp: i64) {
     buf.push(b'"');
     buf.extend_from_slice(
-        DateTime::<Utc>::from_naive_utc_and_offset(
-            NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap_or_default(),
-            Utc,
-        )
-        .format("%d-%b-%Y %H:%M:%S %z")
-        .to_string()
-        .as_bytes(),
+        DateTime::<Utc>::from_timestamp(timestamp, 0)
+            .unwrap_or_default()
+            .format("%d-%b-%Y %H:%M:%S %z")
+            .to_string()
+            .as_bytes(),
     );
     buf.push(b'"');
 }
