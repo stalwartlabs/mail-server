@@ -24,7 +24,7 @@
 use std::time::Duration;
 
 use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts};
-use utils::config::utils::AsKey;
+use utils::config::{utils::AsKey, Config};
 
 use crate::{
     SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
@@ -34,29 +34,32 @@ use crate::{
 use super::MysqlStore;
 
 impl MysqlStore {
-    pub async fn open(config: &utils::config::Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut opts = OptsBuilder::default()
-            .ip_or_hostname(config.value_require((&prefix, "host"))?.to_string())
+            .ip_or_hostname(config.value_require_((&prefix, "host"))?.to_string())
             .user(config.value((&prefix, "user")).map(|s| s.to_string()))
             .pass(config.value((&prefix, "password")).map(|s| s.to_string()))
             .db_name(
                 config
-                    .value_require((&prefix, "database"))?
+                    .value_require_((&prefix, "database"))?
                     .to_string()
                     .into(),
             )
-            .max_allowed_packet(config.property((&prefix, "max-allowed-packet"))?)
+            .max_allowed_packet(config.property_((&prefix, "max-allowed-packet")))
             .wait_timeout(
                 config
-                    .property::<Duration>((&prefix, "timeout"))?
+                    .property_::<Duration>((&prefix, "timeout"))
                     .map(|t| t.as_secs() as usize),
             );
-        if let Some(port) = config.property((&prefix, "port"))? {
+        if let Some(port) = config.property_((&prefix, "port")) {
             opts = opts.tcp_port(port);
         }
 
-        if config.property_or_static::<bool>((&prefix, "tls.allow-invalid-certs"), "false")? {
+        if config
+            .property_or_default_::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
+            .unwrap_or_default()
+        {
             opts = opts.ssl_opts(Some(
                 SslOpts::default().with_danger_accept_invalid_certs(true),
             ));
@@ -65,10 +68,10 @@ impl MysqlStore {
         // Configure connection pool
         let mut pool_min = PoolConstraints::default().min();
         let mut pool_max = PoolConstraints::default().max();
-        if let Some(n_size) = config.property::<usize>((&prefix, "pool.min-connections"))? {
+        if let Some(n_size) = config.property_::<usize>((&prefix, "pool.min-connections")) {
             pool_min = n_size;
         }
-        if let Some(n_size) = config.property::<usize>((&prefix, "pool.max-connections"))? {
+        if let Some(n_size) = config.property_::<usize>((&prefix, "pool.max-connections")) {
             pool_max = n_size;
         }
         opts = opts.pool_opts(
@@ -79,9 +82,11 @@ impl MysqlStore {
             conn_pool: Pool::new(opts),
         };
 
-        db.create_tables().await?;
+        if let Err(err) = db.create_tables().await {
+            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        }
 
-        Ok(db)
+        Some(db)
     }
 
     pub(super) async fn create_tables(&self) -> crate::Result<()> {

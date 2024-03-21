@@ -26,13 +26,10 @@ use deadpool::{
     Runtime,
 };
 use std::{sync::Arc, time::Duration};
-use store::{dispatch::blocked::BlockedIps, Store, Stores};
-use utils::{
-    config::{
-        utils::{AsKey, ParseValue},
-        Config,
-    },
-    expr::Token,
+use store::{Store, Stores};
+use utils::config::{
+    utils::{AsKey, ParseValue},
+    Config,
 };
 
 use ahash::AHashMap;
@@ -42,15 +39,99 @@ use crate::{
         imap::ImapDirectory, internal::manage::ManageDirectory, ldap::LdapDirectory,
         memory::MemoryDirectory, smtp::SmtpDirectory, sql::SqlDirectory,
     },
-    AddressMapping, Directories, Directory, DirectoryInner,
+    Directories, Directory, DirectoryInner,
 };
 
 use super::cache::CachedDirectory;
 
+impl Directories {
+    pub async fn parse(config: &mut Config, stores: &Stores, data_store: Store) -> Self {
+        let mut directories = AHashMap::new();
+
+        for id in config
+            .sub_keys("directory", ".type")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        {
+            // Parse directory
+            let id = id.as_str();
+            #[cfg(feature = "test_mode")]
+            {
+                if config
+                    .property_or_default_::<bool>(("directory", id, "disable"), "false")
+                    .unwrap_or(false)
+                {
+                    tracing::debug!("Skipping disabled directory {id:?}.");
+                    continue;
+                }
+            }
+            let protocol = config.value_require_(("directory", id, "type")).unwrap();
+            let prefix = ("directory", id);
+            let store = match protocol {
+                "internal" => Some(DirectoryInner::Internal(
+                    if let Some(store_id) = config.value_require_(("directory", id, "store")) {
+                        if let Some(data) = stores.stores.get(store_id) {
+                            match data.clone().init().await {
+                                Ok(data) => data,
+                                Err(err) => {
+                                    let err =
+                                        format!("Failed to initialize store {store_id:?}: {err:?}");
+                                    config.new_parse_error(("directory", id, "store"), err);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            config.new_parse_error(
+                                ("directory", id, "store"),
+                                "Store does not exist",
+                            );
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    },
+                )),
+                "ldap" => LdapDirectory::from_config(config, prefix, data_store.clone())
+                    .map(DirectoryInner::Ldap),
+                "sql" => SqlDirectory::from_config(config, prefix, stores, data_store.clone())
+                    .map(DirectoryInner::Sql),
+                "imap" => ImapDirectory::from_config(config, prefix).map(DirectoryInner::Imap),
+                "smtp" => {
+                    SmtpDirectory::from_config(config, prefix, false).map(DirectoryInner::Smtp)
+                }
+                "lmtp" => {
+                    SmtpDirectory::from_config(config, prefix, true).map(DirectoryInner::Smtp)
+                }
+                "memory" => MemoryDirectory::from_config(config, prefix, data_store.clone())
+                    .await
+                    .map(DirectoryInner::Memory),
+                unknown => {
+                    let err = format!("Unknown directory type: {unknown:?}");
+                    config.new_parse_error(("directory", id, "type"), err);
+                    continue;
+                }
+            };
+
+            // Build directory
+            if let Some(store) = store {
+                let directory = Arc::new(Directory {
+                    store,
+                    cache: CachedDirectory::try_from_config(config, ("directory", id)),
+                });
+
+                // Add directory
+                directories.insert(id.to_string(), directory);
+            }
+        }
+
+        Directories { directories }
+    }
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ConfigDirectory {
     async fn parse_directory(
-        &self,
+        &mut self,
         stores: &Stores,
         data_store: Store,
     ) -> utils::config::Result<Directories>;
@@ -58,20 +139,22 @@ pub trait ConfigDirectory {
 
 impl ConfigDirectory for Config {
     async fn parse_directory(
-        &self,
+        &mut self,
         stores: &Stores,
         data_store: Store,
     ) -> utils::config::Result<Directories> {
         let mut config = Directories {
             directories: AHashMap::new(),
         };
-        let blocked_ips = Arc::new(BlockedIps::new(
-            stores.get_lookup_store(self, "storage.lookup")?,
-        ));
 
-        for id in self.sub_keys("directory", ".type") {
+        for id in self
+            .sub_keys("directory", ".type")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        {
             // Parse directory
-            if self.property_or_static::<bool>(("directory", id, "disable"), "false")? {
+            let id = id.as_str();
+            if self.property_or_default::<bool>(("directory", id, "disable"), "false")? {
                 tracing::debug!("Skipping disabled directory {id:?}.");
                 continue;
             }
@@ -101,36 +184,23 @@ impl ConfigDirectory for Config {
                             )
                         })?,
                 ),
-                "ldap" => DirectoryInner::Ldap(LdapDirectory::from_config(
-                    self,
-                    prefix,
-                    data_store.clone(),
-                )?),
-                "sql" => DirectoryInner::Sql(SqlDirectory::from_config(
-                    self,
-                    prefix,
-                    stores,
-                    data_store.clone(),
-                )?),
-                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(
-                    self,
-                    prefix,
-                    data_store.clone(),
-                )?),
-                "smtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(
-                    self,
-                    prefix,
-                    false,
-                    data_store.clone(),
-                )?),
-                "lmtp" => DirectoryInner::Smtp(SmtpDirectory::from_config(
-                    self,
-                    prefix,
-                    true,
-                    data_store.clone(),
-                )?),
+                "ldap" => DirectoryInner::Ldap(
+                    LdapDirectory::from_config(self, prefix, data_store.clone()).unwrap(),
+                ),
+                "sql" => DirectoryInner::Sql(
+                    SqlDirectory::from_config(self, prefix, stores, data_store.clone()).unwrap(),
+                ),
+                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(self, prefix).unwrap()),
+                "smtp" => {
+                    DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, false).unwrap())
+                }
+                "lmtp" => {
+                    DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, true).unwrap())
+                }
                 "memory" => DirectoryInner::Memory(
-                    MemoryDirectory::from_config(self, prefix, data_store.clone()).await?,
+                    MemoryDirectory::from_config(self, prefix, data_store.clone())
+                        .await
+                        .unwrap(),
                 ),
                 unknown => {
                     return Err(format!("Unknown directory type: {unknown:?}"));
@@ -140,16 +210,7 @@ impl ConfigDirectory for Config {
             // Build directory
             let directory = Arc::new(Directory {
                 store,
-                catch_all: AddressMapping::from_config(
-                    self,
-                    ("directory", id, "options.catch-all"),
-                )?,
-                subaddressing: AddressMapping::from_config(
-                    self,
-                    ("directory", id, "options.subaddressing"),
-                )?,
-                cache: CachedDirectory::try_from_config(self, ("directory", id))?,
-                blocked_ips: blocked_ips.clone(),
+                cache: CachedDirectory::try_from_config(self, ("directory", id)),
             });
 
             // Add directory
@@ -160,46 +221,26 @@ impl ConfigDirectory for Config {
     }
 }
 
-impl AddressMapping {
-    pub fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
-        let key = key.as_key();
-        if let Some(value) = config.value(key.as_str()) {
-            match value {
-                "true" => Ok(AddressMapping::Enable),
-                "false" => Ok(AddressMapping::Disable),
-                _ => Err(format!(
-                    "Invalid value for address mapping {key:?}: {value:?}",
-                )),
-            }
-        } else if let Some(if_block) = config.parse_if_block(key, |name| {
-            if ["address", "email"].contains(&name) {
-                Ok(Token::Variable(1))
-            } else {
-                Err(format!("Invalid variable name {name:?}.",))
-            }
-        })? {
-            Ok(AddressMapping::Custom(if_block))
-        } else {
-            Ok(AddressMapping::Disable)
-        }
-    }
-}
-
 pub(crate) fn build_pool<M: Manager>(
-    config: &Config,
+    config: &mut Config,
     prefix: &str,
     manager: M,
 ) -> utils::config::Result<Pool<M>> {
     Pool::builder(manager)
         .runtime(Runtime::Tokio1)
-        .max_size(config.property_or_static((prefix, "pool.max-connections"), "10")?)
+        .max_size(
+            config
+                .property_or_default_((prefix, "pool.max-connections"), "10")
+                .unwrap_or(10),
+        )
         .create_timeout(
             config
-                .property_or_static::<Duration>((prefix, "pool.timeout.create"), "30s")?
+                .property_or_default_::<Duration>((prefix, "pool.timeout.create"), "30s")
+                .unwrap_or_else(|| Duration::from_secs(30))
                 .into(),
         )
-        .wait_timeout(config.property_or_static((prefix, "pool.timeout.wait"), "30s")?)
-        .recycle_timeout(config.property_or_static((prefix, "pool.timeout.recycle"), "30s")?)
+        .wait_timeout(config.property_or_default_((prefix, "pool.timeout.wait"), "30s"))
+        .recycle_timeout(config.property_or_default_((prefix, "pool.timeout.recycle"), "30s"))
         .build()
         .map_err(|err| {
             format!(

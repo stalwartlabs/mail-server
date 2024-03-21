@@ -33,7 +33,6 @@ use std::fmt::Write;
 const MAX_NEST_LEVEL: usize = 10;
 
 // Simple TOML parser for Stalwart Mail Server configuration files.
-
 impl Config {
     pub fn new(toml: &str) -> Result<Self> {
         let mut config = Config::default();
@@ -397,24 +396,6 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                         break;
                     }
                 }
-                self.insert_key(key, value)?;
-            }
-            '!' => {
-                let mut value = String::with_capacity(4);
-                while let Some(ch) = self.iter.peek() {
-                    if ch.is_alphanumeric() || ['_', '-'].contains(ch) {
-                        value.push(self.next_char(true, false)?);
-                    } else {
-                        break;
-                    }
-                }
-                let value = match std::env::var(value.as_str()) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        tracing::warn!("Failed to get environment variable {value:?}");
-                        String::new()
-                    }
-                };
                 self.insert_key(key, value)?;
             }
             ch => {

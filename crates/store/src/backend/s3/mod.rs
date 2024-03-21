@@ -39,10 +39,10 @@ pub struct S3Store {
 }
 
 impl S3Store {
-    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         // Obtain region and endpoint from config
         let prefix = prefix.as_key();
-        let region = config.value_require((&prefix, "region"))?;
+        let region = config.value_require_((&prefix, "region"))?.to_string();
         let region = if let Some(endpoint) = config.value((&prefix, "endpoint")) {
             Region::Custom {
                 region: region.to_string(),
@@ -57,15 +57,28 @@ impl S3Store {
             config.value((&prefix, "security-token")),
             config.value((&prefix, "session-token")),
             config.value((&prefix, "profile")),
-        )?;
-        let timeout = config.property_or_static::<Duration>((&prefix, "timeout"), "30s")?;
+        )
+        .map_err(|err| {
+            config.new_build_error(
+                prefix.as_str(),
+                format!("Failed to create credentials: {err:?}"),
+            )
+        })
+        .ok()?;
+        let timeout = config
+            .property_or_default_::<Duration>((&prefix, "timeout"), "30s")
+            .unwrap_or_else(|| Duration::from_secs(30));
 
-        Ok(S3Store {
+        Some(S3Store {
             bucket: Bucket::new(
-                config.value_require((&prefix, "bucket"))?,
+                config.value_require_((&prefix, "bucket"))?,
                 region,
                 credentials,
-            )?
+            )
+            .map_err(|err| {
+                config.new_build_error(prefix.as_str(), format!("Failed to create bucket: {err:?}"))
+            })
+            .ok()?
             .with_path_style()
             .with_request_timeout(timeout),
             prefix: config.value((&prefix, "key-prefix")).map(|s| s.to_string()),

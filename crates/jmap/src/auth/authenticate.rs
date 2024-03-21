@@ -23,7 +23,7 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use directory::{AuthResult, QueryBy};
+use directory::QueryBy;
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;

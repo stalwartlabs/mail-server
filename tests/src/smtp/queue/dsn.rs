@@ -95,7 +95,7 @@ async fn generate_dsn() {
 
     // Load config
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
+    core.shared.signers = ConfigContext::new().parse_signatures().signers;
     let config = &mut core.queue.config.dsn;
     config.sign = "\"['rsa']\"".parse_if();
 

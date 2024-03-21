@@ -11,7 +11,7 @@ readme = "README.md"
 resolver = "2"
 
 [dependencies]
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "blocking"] }
 rpassword = "7.0"
 indicatif = "0.17.0"
 dialoguer = "0.11"

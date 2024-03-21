@@ -31,7 +31,7 @@ pub mod utils;
 
 use std::{collections::BTreeMap, fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use tokio::net::TcpSocket;
 
 use crate::{
@@ -46,6 +46,15 @@ use self::ipmask::IpAddrMask;
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
     pub keys: BTreeMap<String, String>,
+    pub missing: AHashMap<String, Option<String>>,
+    pub errors: AHashMap<String, ConfigError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigError {
+    Parse(String),
+    Build(String),
+    Macro(String),
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -153,79 +162,108 @@ impl Config {
             )
             .failed("Invalid configuration file");
 
-        // Extract macros and includes
-        let mut keys = BTreeMap::new();
-        let mut includes = AHashSet::new();
-        let mut macros = AHashMap::new();
+        config
+    }
 
-        for (key, value) in config.keys {
-            if let Some(macro_name) = key.strip_prefix("macros.") {
-                macros.insert(macro_name.to_ascii_lowercase(), value);
-            } else if key.starts_with("include.files.") {
-                includes.insert(value);
-            } else {
-                keys.insert(key, value);
+    pub async fn resolve_macros(&mut self) {
+        let mut replacements = AHashMap::new();
+        'outer: for (key, value) in &self.keys {
+            if value.contains("%{") && value.contains("}%") {
+                let mut result = String::with_capacity(value.len());
+                let mut snippet: &str = value.as_str();
+
+                loop {
+                    if let Some((suffix, macro_name)) = snippet.split_once("%{") {
+                        if !suffix.is_empty() {
+                            result.push_str(suffix);
+                        }
+                        if let Some((class, location, rest)) =
+                            macro_name.split_once("}%").and_then(|(name, rest)| {
+                                name.split_once(':')
+                                    .map(|(class, location)| (class, location, rest))
+                            })
+                        {
+                            match class {
+                                "cfg" => {
+                                    if let Some(value) = replacements
+                                        .get(location)
+                                        .or_else(|| self.keys.get(location))
+                                    {
+                                        result.push_str(value);
+                                    } else {
+                                        self.errors.insert(
+                                            key.clone(),
+                                            ConfigError::Macro(format!("Unknown key {location:?}")),
+                                        );
+                                    }
+                                }
+                                "env" => match std::env::var(location) {
+                                    Ok(value) => {
+                                        result.push_str(&value);
+                                    }
+                                    Err(_) => {
+                                        self.errors.insert(
+                                                key.clone(),
+                                                ConfigError::Macro(format!(
+                                                    "Failed to obtain environment variable {location:?}"
+                                                )),
+                                            );
+                                    }
+                                },
+                                "file" => {
+                                    let file_name = location.strip_prefix("//").unwrap_or(location);
+                                    match tokio::fs::read(file_name).await {
+                                        Ok(value) => match String::from_utf8(value) {
+                                            Ok(value) => {
+                                                result.push_str(&value);
+                                            }
+                                            Err(err) => {
+                                                self.errors.insert(
+                                                    key.clone(),
+                                                    ConfigError::Macro(format!(
+                                                        "Failed to read file {file_name:?}: {err}"
+                                                    )),
+                                                );
+                                                continue 'outer;
+                                            }
+                                        },
+                                        Err(err) => {
+                                            self.errors.insert(
+                                                key.clone(),
+                                                ConfigError::Macro(format!(
+                                                    "Failed to read file {file_name:?}: {err}"
+                                                )),
+                                            );
+                                            continue 'outer;
+                                        }
+                                    }
+                                }
+                                "http" | "https" => {}
+                                _ => {
+                                    continue 'outer;
+                                }
+                            };
+
+                            snippet = rest;
+                        }
+                    } else {
+                        result.push_str(snippet);
+                        break;
+                    }
+                }
+
+                replacements.insert(key.clone(), result);
             }
         }
 
-        // Include files
-        config.keys = keys;
-        for mut include in includes {
-            include.replace_macros("include.files", &macros);
-            config
-                .parse(&std::fs::read_to_string(&include).failed(&format!(
-                    "Could not read included configuration file {include:?}"
-                )))
-                .failed(&format!("Invalid included configuration file {include:?}"));
+        if !replacements.is_empty() {
+            for (key, value) in replacements {
+                self.keys.insert(key, value);
+            }
         }
-
-        // Replace macros
-        for (key, value) in &mut config.keys {
-            value.replace_macros(key, &macros);
-        }
-
-        config
     }
 
     pub fn update(&mut self, settings: Vec<(String, String)>) {
         self.keys.extend(settings);
-    }
-}
-
-trait ReplaceMacros: Sized {
-    fn replace_macros(&mut self, key: &str, macros: &AHashMap<String, String>);
-}
-
-impl ReplaceMacros for String {
-    fn replace_macros(&mut self, key: &str, macros: &AHashMap<String, String>) {
-        if self.contains("%{") {
-            let mut result = String::with_capacity(self.len());
-            let mut value = self.as_str();
-
-            loop {
-                if let Some((suffix, macro_name)) = value.split_once("%{") {
-                    if !suffix.is_empty() {
-                        result.push_str(suffix);
-                    }
-                    if let Some((macro_name, rest)) = macro_name.split_once("}%") {
-                        if let Some(macro_value) = macros.get(&macro_name.to_ascii_lowercase()) {
-                            result.push_str(macro_value);
-                            value = rest;
-                        } else {
-                            failed(&format!("Unknown macro {macro_name:?} for key {key:?}"));
-                        }
-                    } else {
-                        failed(&format!(
-                            "Unterminated macro name {value:?} for key {key:?}"
-                        ));
-                    }
-                } else {
-                    result.push_str(value);
-                    break;
-                }
-            }
-
-            *self = result;
-        }
     }
 }

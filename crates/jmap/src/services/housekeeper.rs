@@ -53,7 +53,7 @@ pub fn spawn_housekeeper(
     mut rx: mpsc::Receiver<Event>,
 ) {
     let purge_cache = settings
-        .property_or_static::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
+        .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
         .failed("Initialize housekeeper");
 
     let certificates = std::mem::take(&mut servers.certificates);
@@ -109,7 +109,8 @@ pub fn spawn_housekeeper(
                         // Future releases will support reloading the configuration
                         // for now, we just reload the blocked IP addresses
                         let core = core.clone();
-                        tokio::spawn(async move {
+                        let todo = "fix";
+                        /*tokio::spawn(async move {
                             match core.store.config_list(BLOCKED_IP_PREFIX, true).await {
                                 Ok(settings) => {
                                     if let Err(err) = core
@@ -134,7 +135,7 @@ pub fn spawn_housekeeper(
                                     );
                                 }
                             }
-                        });
+                        });*/
                     }
                     Event::IndexStart => {
                         if !index_busy {

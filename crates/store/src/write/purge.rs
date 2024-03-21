@@ -28,12 +28,14 @@ use utils::config::cron::SimpleCron;
 
 use crate::{BlobStore, LookupStore, Store};
 
+#[derive(Clone)]
 pub enum PurgeStore {
     Data(Store),
     Blobs { store: Store, blob_store: BlobStore },
     Lookup(LookupStore),
 }
 
+#[derive(Clone)]
 pub struct PurgeSchedule {
     pub cron: SimpleCron,
     pub store_id: String,

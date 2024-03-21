@@ -23,7 +23,7 @@
 
 use utils::{config::Rate, expr};
 
-use crate::{backend::memory::MemoryStore, write::LookupClass, Row};
+use crate::{write::LookupClass, Row};
 #[allow(unused_imports)]
 use crate::{
     write::{
@@ -88,9 +88,6 @@ impl LookupStore {
                 )
                 .await
                 .map(|_| ()),
-            LookupStore::Memory(_) => Err(crate::Error::InternalError(
-                "This store does not support key_set".into(),
-            )),
         }
     }
 
@@ -129,7 +126,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => Err(crate::Error::InternalError(
+            LookupStore::Query(_) => Err(crate::Error::InternalError(
                 "This store does not support counter_incr".into(),
             )),
         }
@@ -147,7 +144,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => Err(crate::Error::InternalError(
+            LookupStore::Query(_) => Err(crate::Error::InternalError(
                 "This store does not support key_set".into(),
             )),
         }
@@ -165,7 +162,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => Err(crate::Error::InternalError(
+            LookupStore::Query(_) => Err(crate::Error::InternalError(
                 "This store does not support key_set".into(),
             )),
         }
@@ -184,19 +181,6 @@ impl LookupStore {
                 .map(|value| value.and_then(|v| v.into())),
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_get(key).await,
-            LookupStore::Memory(store) => {
-                let key = String::from_utf8(key).unwrap_or_default();
-                match store.as_ref() {
-                    MemoryStore::List(list) => Ok(if list.contains(&key) {
-                        Some(T::from(Value::Bool(true)))
-                    } else {
-                        None
-                    }),
-                    MemoryStore::Map(map) => {
-                        Ok(map.get(&key).map(|value| T::from(value.to_owned())))
-                    }
-                }
-            }
             LookupStore::Query(lookup) => lookup
                 .store
                 .query::<Option<Row>>(
@@ -222,7 +206,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.counter_get(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => Err(crate::Error::InternalError(
+            LookupStore::Query(_) => Err(crate::Error::InternalError(
                 "This store does not support counter_get".into(),
             )),
         }
@@ -238,13 +222,6 @@ impl LookupStore {
                 .map(|value| matches!(value, Some(LookupValue::Value(())))),
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_exists(key).await,
-            LookupStore::Memory(store) => {
-                let key = String::from_utf8(key).unwrap_or_default();
-                match store.as_ref() {
-                    MemoryStore::List(list) => Ok(list.contains(&key)),
-                    MemoryStore::Map(map) => Ok(map.contains_key(&key)),
-                }
-            }
             LookupStore::Query(lookup) => lookup
                 .store
                 .query::<Option<Row>>(
@@ -361,7 +338,7 @@ impl LookupStore {
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(_) => {}
-            LookupStore::Memory(_) | LookupStore::Query(_) => {}
+            LookupStore::Query(_) => {}
         }
 
         Ok(())

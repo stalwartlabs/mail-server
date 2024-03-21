@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::time::Duration;
+
 use ldap3::LdapConnSettings;
 use store::Store;
 use utils::config::{utils::AsKey, Config};
@@ -30,16 +32,12 @@ use crate::core::config::build_pool;
 use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
 
 impl LdapDirectory {
-    pub fn from_config(
-        config: &Config,
-        prefix: impl AsKey,
-        data_store: Store,
-    ) -> utils::config::Result<Self> {
+    pub fn from_config(config: &mut Config, prefix: impl AsKey, data_store: Store) -> Option<Self> {
         let prefix = prefix.as_key();
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
             Bind::new(
                 dn.to_string(),
-                config.value_require((&prefix, "bind.secret"))?.to_string(),
+                config.value_require_((&prefix, "bind.secret"))?.to_string(),
             )
             .into()
         } else {
@@ -47,23 +45,33 @@ impl LdapDirectory {
         };
 
         let manager = LdapConnectionManager::new(
-            config.value_require((&prefix, "url"))?.to_string(),
+            config.value_require_((&prefix, "url"))?.to_string(),
             LdapConnSettings::new()
-                .set_conn_timeout(config.property_or_static((&prefix, "timeout"), "30s")?)
-                .set_starttls(config.property_or_static((&prefix, "tls.enable"), "false")?)
+                .set_conn_timeout(
+                    config
+                        .property_or_default_((&prefix, "timeout"), "30s")
+                        .unwrap_or_else(|| Duration::from_secs(30)),
+                )
+                .set_starttls(
+                    config
+                        .property_or_default_((&prefix, "tls.enable"), "false")
+                        .unwrap_or_default(),
+                )
                 .set_no_tls_verify(
-                    config.property_or_static((&prefix, "tls.allow-invalid-certs"), "false")?,
+                    config
+                        .property_or_default_((&prefix, "tls.allow-invalid-certs"), "false")
+                        .unwrap_or_default(),
                 ),
             bind_dn,
         );
 
         let mut mappings = LdapMappings {
-            base_dn: config.value_require((&prefix, "base-dn"))?.to_string(),
-            filter_name: LdapFilter::from_config(config, (&prefix, "filter.name"))?,
-            filter_email: LdapFilter::from_config(config, (&prefix, "filter.email"))?,
-            filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify"))?,
-            filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand"))?,
-            filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains"))?,
+            base_dn: config.value_require_((&prefix, "base-dn"))?.to_string(),
+            filter_name: LdapFilter::from_config(config, (&prefix, "filter.name")),
+            filter_email: LdapFilter::from_config(config, (&prefix, "filter.email")),
+            filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify")),
+            filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand")),
+            filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains")),
             attr_name: config
                 .values((&prefix, "attributes.name"))
                 .map(|(_, v)| v.to_string())
@@ -112,16 +120,22 @@ impl LdapDirectory {
             mappings.attrs_principal.extend(attr.iter().cloned());
         }
 
-        let auth_bind =
-            if config.property_or_static::<bool>((&prefix, "bind.auth.enable"), "false")? {
-                LdapFilter::from_config(config, (&prefix, "bind.auth.dn"))?.into()
-            } else {
-                None
-            };
+        let auth_bind = if config
+            .property_or_default_::<bool>((&prefix, "bind.auth.enable"), "false")
+            .unwrap_or_default()
+        {
+            LdapFilter::from_config(config, (&prefix, "bind.auth.dn")).into()
+        } else {
+            None
+        };
 
-        Ok(LdapDirectory {
+        Some(LdapDirectory {
             mappings,
-            pool: build_pool(config, &prefix, manager)?,
+            pool: build_pool(config, &prefix, manager)
+                .map_err(|e| {
+                    config.new_parse_error(prefix, format!("Failed to build LDAP pool: {e:?}"))
+                })
+                .ok()?,
             auth_bind,
             data_store,
         })
@@ -129,22 +143,21 @@ impl LdapDirectory {
 }
 
 impl LdapFilter {
-    fn from_config(config: &Config, key: impl AsKey) -> utils::config::Result<Self> {
+    fn from_config(config: &mut Config, key: impl AsKey) -> Self {
         if let Some(value) = config.value(key.clone()) {
             let filter = LdapFilter {
                 filter: value.split('?').map(|s| s.to_string()).collect(),
             };
             if filter.filter.len() >= 2 {
-                Ok(filter)
+                return filter;
             } else {
-                Err(format!(
-                    "Missing '?' parameter placeholder in filter {:?} with value {:?}",
-                    key.as_key(),
-                    value
-                ))
+                config.new_parse_error(
+                    key,
+                    format!("Missing '?' parameter placeholder in value {:?}", value),
+                );
             }
-        } else {
-            Ok(Self::default())
         }
+
+        Self::default()
     }
 }

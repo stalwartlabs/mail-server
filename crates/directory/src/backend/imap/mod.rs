@@ -31,14 +31,12 @@ use std::{fmt::Display, sync::atomic::AtomicU64, time::Duration};
 
 use ahash::AHashSet;
 use deadpool::managed::Pool;
-use store::Store;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector;
 
 pub struct ImapDirectory {
     pool: Pool<ImapConnectionManager>,
     domains: AHashSet<String>,
-    pub(crate) data_store: Store,
 }
 
 pub struct ImapConnectionManager {

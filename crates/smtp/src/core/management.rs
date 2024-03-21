@@ -23,7 +23,7 @@
 
 use std::{net::IpAddr, str::FromStr, sync::Arc};
 
-use directory::{AuthResult, Type};
+use directory::Type;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
     body::{self, Bytes},
@@ -161,11 +161,7 @@ impl SessionManager for SmtpAdminSessionManager {
     }
 
     fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        self.inner
-            .shared
-            .default_directory
-            .blocked_ips
-            .is_blocked(addr)
+        false
     }
 }
 
@@ -267,7 +263,8 @@ impl SMTP {
                         })
                     })
                 {
-                    match self
+                    let todo = "fix";
+                    /*match self
                         .shared
                         .default_directory
                         .authenticate(&Credentials::Plain { username, secret }, remote_addr, false)
@@ -297,7 +294,7 @@ impl SMTP {
                                 "Temporary authentication failure."
                             );
                         }
-                    }
+                    }*/
                 } else {
                     tracing::debug!(
                         context = "management",

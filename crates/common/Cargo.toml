@@ -1,0 +1,39 @@
+[package]
+name = "common"
+version = "0.6.0"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+utils = { path = "../utils" }
+nlp = { path = "../nlp" }
+store = { path = "../store" }
+directory = { path = "../directory" }
+sieve-rs = { version = "0.4" }
+mail-auth = { version = "0.3" }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
+ahash = { version = "0.8.0", features = ["serde"] }
+parking_lot = "0.12.1"
+regex = "1.7.0"
+tracing = "0.1"
+proxy-header = { version = "0.1.0", features = ["tokio"] }
+arc-swap = "1.6.0"
+rustls = { version = "0.22", default-features = false, features = ["tls12"]}
+rustls-pemfile = "2.0"
+rustls-pki-types = { version = "1" }
+ring = { version = "0.17" }
+tokio = { version = "1.23", features = ["net", "macros"] }
+tokio-rustls = { version = "0.25.0"}
+futures = "0.3"
+rcgen = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"]}
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+base64 = "0.22"
+x509-parser = "0.16.0"
+pem = "3.0"
+chrono = "0.4"
+
+[target.'cfg(unix)'.dependencies]
+privdrop = "0.5.3"
+tracing-journald = "0.3"

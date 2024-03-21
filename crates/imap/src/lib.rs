@@ -50,15 +50,15 @@ impl IMAP {
         let capacity = config.property("cache.capacity")?.unwrap_or(100);
 
         Ok(Arc::new(IMAP {
-            max_request_size: config.property_or_static("imap.request.max-size", "52428800")?,
-            max_auth_failures: config.property_or_static("imap.auth.max-failures", "3")?,
+            max_request_size: config.property_or_default("imap.request.max-size", "52428800")?,
+            max_auth_failures: config.property_or_default("imap.auth.max-failures", "3")?,
             name_shared: config
                 .value("imap.folders.name.shared")
                 .unwrap_or("Shared Folders")
                 .to_string(),
-            timeout_auth: config.property_or_static("imap.timeout.authenticated", "30m")?,
-            timeout_unauth: config.property_or_static("imap.timeout.anonymous", "1m")?,
-            timeout_idle: config.property_or_static("imap.timeout.idle", "30m")?,
+            timeout_auth: config.property_or_default("imap.timeout.authenticated", "30m")?,
+            timeout_unauth: config.property_or_default("imap.timeout.anonymous", "1m")?,
+            timeout_idle: config.property_or_default("imap.timeout.idle", "30m")?,
             greeting_plain: StatusResponse::ok(SERVER_GREETING)
                 .with_code(ResponseCode::Capability {
                     capabilities: Capability::all_capabilities(false, false),
@@ -74,9 +74,9 @@ impl IMAP {
                 RandomState::default(),
                 shard_amount,
             ),
-            rate_requests: config.property_or_static("imap.rate-limit.requests", "2000/1m")?,
+            rate_requests: config.property_or_default("imap.rate-limit.requests", "2000/1m")?,
             rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
-            allow_plain_auth: config.property_or_static("imap.auth.allow-plain-text", "false")?,
+            allow_plain_auth: config.property_or_default("imap.auth.allow-plain-text", "false")?,
             cache_account: LruCache::with_capacity(
                 config.property("cache.account.size")?.unwrap_or(2048),
             ),

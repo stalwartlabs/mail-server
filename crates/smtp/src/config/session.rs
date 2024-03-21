@@ -488,25 +488,25 @@ impl ConfigSession for Config {
                 hostname,
                 port,
                 timeout_connect: self
-                    .property_or_static(("session.data.milter", id, "timeout.connect"), "30s")?,
+                    .property_or_default(("session.data.milter", id, "timeout.connect"), "30s")?,
                 timeout_command: self
-                    .property_or_static(("session.data.milter", id, "timeout.command"), "30s")?,
+                    .property_or_default(("session.data.milter", id, "timeout.command"), "30s")?,
                 timeout_data: self
-                    .property_or_static(("session.data.milter", id, "timeout.data"), "60s")?,
-                tls: self.property_or_static(("session.data.milter", id, "tls"), "false")?,
-                tls_allow_invalid_certs: self.property_or_static(
+                    .property_or_default(("session.data.milter", id, "timeout.data"), "60s")?,
+                tls: self.property_or_default(("session.data.milter", id, "tls"), "false")?,
+                tls_allow_invalid_certs: self.property_or_default(
                     ("session.data.milter", id, "allow-invalid-certs"),
                     "false",
                 )?,
-                tempfail_on_error: self.property_or_static(
+                tempfail_on_error: self.property_or_default(
                     ("session.data.milter", id, "options.tempfail-on-error"),
                     "true",
                 )?,
-                max_frame_len: self.property_or_static(
+                max_frame_len: self.property_or_default(
                     ("session.data.milter", id, "options.max-response-size"),
                     "52428800",
                 )?,
-                protocol_version: match self.property_or_static::<u32>(
+                protocol_version: match self.property_or_default::<u32>(
                     ("session.data.milter", id, "options.version"),
                     "6",
                 )? {

@@ -119,7 +119,7 @@ async fn sieve_scripts() {
     // Prepare config
     let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_sieve_test");
-    let mut ctx = ConfigContext::new(&[]).parse_signatures();
+    let mut ctx = ConfigContext::new().parse_signatures();
     let config = Config::new(
         &config
             .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())

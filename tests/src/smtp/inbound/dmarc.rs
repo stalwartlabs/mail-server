@@ -65,7 +65,7 @@ email = ["jdoe@example.com"]
 #[tokio::test]
 async fn dmarc() {
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
+    core.shared.signers = ConfigContext::new().parse_signatures().signers;
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dmarc_test");

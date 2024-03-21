@@ -27,7 +27,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use directory::AuthResult;
 use hyper::StatusCode;
 use store::rand::{
     distributions::{Alphanumeric, Standard},

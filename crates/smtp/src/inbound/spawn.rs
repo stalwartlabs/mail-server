@@ -78,11 +78,7 @@ impl SessionManager for SmtpSessionManager {
     }
 
     fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        self.inner
-            .shared
-            .default_directory
-            .blocked_ips
-            .is_blocked(addr)
+        false
     }
 }
 

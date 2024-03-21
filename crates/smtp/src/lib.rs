@@ -66,7 +66,7 @@ impl SMTP {
         #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
     ) -> Result<Arc<Self>, String> {
         // Read configuration parameters
-        let mut config_ctx = ConfigContext::new(&servers.inner);
+        let mut config_ctx = ConfigContext::new();
         config_ctx.directory = directory.clone();
         config_ctx.stores = stores.clone();
 

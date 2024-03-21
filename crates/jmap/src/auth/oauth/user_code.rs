@@ -28,7 +28,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use directory::AuthResult;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, header, StatusCode};
 use mail_builder::encoders::base64::base64_encode;

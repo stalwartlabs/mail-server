@@ -29,14 +29,12 @@ use ahash::AHashSet;
 use deadpool::managed::Pool;
 use mail_send::SmtpClientBuilder;
 use smtp_proto::EhloResponse;
-use store::Store;
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 
 pub struct SmtpDirectory {
     pool: Pool<SmtpConnectionManager>,
     domains: AHashSet<String>,
-    pub(crate) data_store: Store,
 }
 
 pub struct SmtpConnectionManager {

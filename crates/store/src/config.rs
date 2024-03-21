@@ -26,9 +26,9 @@ use std::sync::Arc;
 use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
-    backend::{fs::FsStore, memory::MemoryStore},
+    backend::fs::FsStore,
     write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, LookupStore, QueryStore, Store, Stores,
+    BlobStore, CompressionAlgo, FtsStore, LookupStore, QueryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -55,9 +55,243 @@ use crate::backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
 
+impl Stores {
+    pub async fn parse(config: &mut Config) -> Self {
+        let mut stores = Stores::default();
+        let ids = config
+            .sub_keys("store", ".type")
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        for id in ids {
+            let id = id.as_str();
+            // Parse store
+            #[cfg(feature = "test_mode")]
+            {
+                if config
+                    .property_or_default_::<bool>(("store", id, "disable"), "false")
+                    .unwrap_or(false)
+                {
+                    tracing::debug!("Skipping disabled store {id:?}.");
+                    continue;
+                }
+            }
+            let protocol = if let Some(protocol) = config.value_require_(("store", id, "type")) {
+                protocol.to_ascii_lowercase()
+            } else {
+                continue;
+            };
+            let prefix = ("store", id);
+            let store_id = id.to_string();
+            let compression_algo = config
+                .property_or_default_::<CompressionAlgo>(("store", id, "compression"), "lz4")
+                .unwrap_or(CompressionAlgo::Lz4);
+
+            let lookup_store: Store = match protocol.as_str() {
+                #[cfg(feature = "rocks")]
+                "rocksdb" => {
+                    if let Some(db) = RocksDbStore::open(config, prefix).await.map(Store::from) {
+                        stores.stores.insert(store_id.clone(), db.clone());
+                        stores
+                            .fts_stores
+                            .insert(store_id.clone(), db.clone().into());
+                        stores.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        stores.lookup_stores.insert(store_id, db.into());
+                    }
+                    continue;
+                }
+                #[cfg(feature = "foundation")]
+                "foundationdb" => {
+                    if let Some(db) = FdbStore::open(config, prefix).await.map(Store::from) {
+                        stores.stores.insert(store_id.clone(), db.clone());
+                        stores
+                            .fts_stores
+                            .insert(store_id.clone(), db.clone().into());
+                        stores.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        stores.lookup_stores.insert(store_id, db.into());
+                    }
+                    continue;
+                }
+                #[cfg(feature = "postgres")]
+                "postgresql" => {
+                    if let Some(db) = PostgresStore::open(config, prefix).await.map(Store::from) {
+                        stores.stores.insert(store_id.clone(), db.clone());
+                        stores
+                            .fts_stores
+                            .insert(store_id.clone(), db.clone().into());
+                        stores.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        db
+                    } else {
+                        continue;
+                    }
+                }
+                #[cfg(feature = "mysql")]
+                "mysql" => {
+                    if let Some(db) = MysqlStore::open(config, prefix).await.map(Store::from) {
+                        stores.stores.insert(store_id.clone(), db.clone());
+                        stores
+                            .fts_stores
+                            .insert(store_id.clone(), db.clone().into());
+                        stores.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        db
+                    } else {
+                        continue;
+                    }
+                }
+                #[cfg(feature = "sqlite")]
+                "sqlite" => {
+                    if let Some(db) = SqliteStore::open(config, prefix).map(Store::from) {
+                        stores.stores.insert(store_id.clone(), db.clone());
+                        stores
+                            .fts_stores
+                            .insert(store_id.clone(), db.clone().into());
+                        stores.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        db
+                    } else {
+                        continue;
+                    }
+                }
+                "fs" => {
+                    if let Some(db) = FsStore::open(config, prefix).await.map(BlobStore::from) {
+                        stores
+                            .blob_stores
+                            .insert(store_id, db.with_compression(compression_algo));
+                    }
+                    continue;
+                }
+                #[cfg(feature = "s3")]
+                "s3" => {
+                    if let Some(db) = S3Store::open(config, prefix).await.map(BlobStore::from) {
+                        stores
+                            .blob_stores
+                            .insert(store_id, db.with_compression(compression_algo));
+                    }
+                    continue;
+                }
+                #[cfg(feature = "elastic")]
+                "elasticsearch" => {
+                    if let Some(db) = ElasticSearchStore::open(config, prefix)
+                        .await
+                        .map(FtsStore::from)
+                    {
+                        stores.fts_stores.insert(store_id, db);
+                    }
+                    continue;
+                }
+                #[cfg(feature = "redis")]
+                "redis" => {
+                    if let Some(db) = RedisStore::open(config, prefix)
+                        .await
+                        .map(LookupStore::from)
+                    {
+                        stores.lookup_stores.insert(store_id, db);
+                    }
+                    continue;
+                }
+                unknown => {
+                    tracing::debug!("Unknown directory type: {unknown:?}");
+                    continue;
+                }
+            };
+
+            // Add queries as lookup stores
+            let lookup_store: LookupStore = lookup_store.into();
+            for lookup_id in config.sub_keys(("store", id, "query"), "") {
+                if let Some(query) = config.value(("store", id, "query", lookup_id)) {
+                    stores.lookup_stores.insert(
+                        format!("{store_id}/{lookup_id}"),
+                        LookupStore::Query(Arc::new(QueryStore {
+                            store: lookup_store.clone(),
+                            query: query.to_string(),
+                        })),
+                    );
+                }
+            }
+            stores.lookup_stores.insert(store_id, lookup_store.clone());
+
+            // Run init queries on database
+            for query in config
+                .values(("store", id, "init.execute"))
+                .map(|(_, s)| s.to_string())
+                .collect::<Vec<_>>()
+            {
+                if let Err(err) = lookup_store.query::<usize>(&query, Vec::new()).await {
+                    config.new_build_error(
+                        ("store", id),
+                        format!("Failed to initialize store: {err}"),
+                    );
+                }
+            }
+        }
+
+        // Parse purge schedules
+        if let Some(store) = config
+            .value("storage.data")
+            .and_then(|store_id| stores.stores.get(store_id))
+        {
+            let store_id = config.value("storage.data").unwrap().to_string();
+            if let Some(cron) =
+                config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+            {
+                stores.purge_schedules.push(PurgeSchedule {
+                    cron,
+                    store_id,
+                    store: PurgeStore::Data(store.clone()),
+                });
+            }
+
+            if let Some(blob_store) = config
+                .value("storage.blob")
+                .and_then(|blob_store_id| stores.blob_stores.get(blob_store_id))
+            {
+                let store_id = config.value("storage.blob").unwrap().to_string();
+                if let Some(cron) =
+                    config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+                {
+                    stores.purge_schedules.push(PurgeSchedule {
+                        cron,
+                        store_id,
+                        store: PurgeStore::Blobs {
+                            store: store.clone(),
+                            blob_store: blob_store.clone(),
+                        },
+                    });
+                }
+            }
+        }
+        for (store_id, store) in &stores.lookup_stores {
+            if let Some(cron) =
+                config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+            {
+                stores.purge_schedules.push(PurgeSchedule {
+                    cron,
+                    store_id: store_id.clone(),
+                    store: PurgeStore::Lookup(store.clone()),
+                });
+            }
+        }
+
+        stores
+    }
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ConfigStore {
-    async fn parse_stores(&self) -> utils::config::Result<Stores>;
+    async fn parse_stores(&mut self) -> utils::config::Result<Stores>;
     async fn parse_purge_schedules(
         &self,
         stores: &Stores,
@@ -69,12 +303,17 @@ pub trait ConfigStore {
 impl ConfigStore for Config {
     #[allow(unused_variables)]
     #[allow(unreachable_code)]
-    async fn parse_stores(&self) -> utils::config::Result<Stores> {
+    async fn parse_stores(&mut self) -> utils::config::Result<Stores> {
         let mut config = Stores::default();
 
-        for id in self.sub_keys("store", ".type") {
+        let ids = self
+            .sub_keys("store", ".type")
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        for id in ids {
+            let id = id.as_str();
             // Parse store
-            if self.property_or_static::<bool>(("store", id, "disable"), "false")? {
+            if self.property_or_default::<bool>(("store", id, "disable"), "false")? {
                 tracing::debug!("Skipping disabled store {id:?}.");
                 continue;
             }
@@ -84,12 +323,12 @@ impl ConfigStore for Config {
             let prefix = ("store", id);
             let store_id = id.to_string();
             let compression_algo =
-                self.property_or_static::<CompressionAlgo>(("store", id, "compression"), "lz4")?;
+                self.property_or_default::<CompressionAlgo>(("store", id, "compression"), "lz4")?;
 
             let lookup_store: Store = match protocol.as_str() {
                 #[cfg(feature = "rocks")]
                 "rocksdb" => {
-                    let db: Store = RocksDbStore::open(self, prefix).await?.into();
+                    let db: Store = RocksDbStore::open(self, prefix).await.unwrap().into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores
@@ -103,7 +342,7 @@ impl ConfigStore for Config {
                 }
                 #[cfg(feature = "foundation")]
                 "foundationdb" => {
-                    let db: Store = FdbStore::open(self, prefix).await?.into();
+                    let db: Store = FdbStore::open(self, prefix).await.unwrap().into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores
@@ -117,7 +356,7 @@ impl ConfigStore for Config {
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {
-                    let db: Store = PostgresStore::open(self, prefix).await?.into();
+                    let db: Store = PostgresStore::open(self, prefix).await.unwrap().into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores
@@ -130,7 +369,7 @@ impl ConfigStore for Config {
                 }
                 #[cfg(feature = "mysql")]
                 "mysql" => {
-                    let db: Store = MysqlStore::open(self, prefix).await?.into();
+                    let db: Store = MysqlStore::open(self, prefix).await.unwrap().into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores
@@ -143,7 +382,7 @@ impl ConfigStore for Config {
                 }
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
-                    let db: Store = SqliteStore::open(self, prefix)?.into();
+                    let db: Store = SqliteStore::open(self, prefix).unwrap().into();
                     config.stores.insert(store_id.clone(), db.clone());
                     config
                         .fts_stores
@@ -157,7 +396,7 @@ impl ConfigStore for Config {
                 "fs" => {
                     config.blob_stores.insert(
                         store_id,
-                        BlobStore::from(FsStore::open(self, prefix).await?)
+                        BlobStore::from(FsStore::open(self, prefix).await.unwrap())
                             .with_compression(compression_algo),
                     );
                     continue;
@@ -166,7 +405,7 @@ impl ConfigStore for Config {
                 "s3" => {
                     config.blob_stores.insert(
                         store_id,
-                        BlobStore::from(S3Store::open(self, prefix).await?)
+                        BlobStore::from(S3Store::open(self, prefix).await.unwrap())
                             .with_compression(compression_algo),
                     );
                     continue;
@@ -175,24 +414,18 @@ impl ConfigStore for Config {
                 "elasticsearch" => {
                     config.fts_stores.insert(
                         store_id,
-                        ElasticSearchStore::open(self, prefix).await?.into(),
+                        ElasticSearchStore::open(self, prefix).await.unwrap().into(),
                     );
                     continue;
                 }
                 #[cfg(feature = "redis")]
                 "redis" => {
-                    config
-                        .lookup_stores
-                        .insert(store_id, RedisStore::open(self, prefix).await?.into());
+                    config.lookup_stores.insert(
+                        store_id,
+                        RedisStore::open(self, prefix).await.unwrap().into(),
+                    );
                     continue;
                 }
-                "memory" => {
-                    config
-                        .lookup_stores
-                        .insert(store_id, MemoryStore::open(self, prefix).await?.into());
-                    continue;
-                }
-
                 unknown => {
                     tracing::debug!("Unknown directory type: {unknown:?}");
                     continue;
@@ -230,6 +463,7 @@ impl ConfigStore for Config {
         blob_store_id: Option<&str>,
     ) -> utils::config::Result<Vec<PurgeSchedule>> {
         let mut schedules = Vec::new();
+        let remove = "true";
 
         if let Some(store) = store_id.and_then(|store_id| stores.stores.get(store_id)) {
             let store_id = store_id.unwrap();

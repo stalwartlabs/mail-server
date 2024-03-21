@@ -26,7 +26,6 @@ pub mod elastic;
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
 pub mod fs;
-pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
 #[cfg(feature = "postgres")]

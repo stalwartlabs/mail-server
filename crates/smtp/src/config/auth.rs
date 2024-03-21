@@ -113,14 +113,9 @@ impl ConfigAuth for Config {
             let (signer, sealer) =
                 match self.property_require::<Algorithm>(("signature", id, "algorithm"))? {
                     Algorithm::RsaSha256 => {
-                        let pk = String::from_utf8(self.file_contents((
-                            "signature",
-                            id,
-                            "private-key",
-                        ))?)
-                        .unwrap_or_default();
-                        let key = RsaKey::<Sha256>::from_rsa_pem(&pk)
-                            .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(&pk))
+                        let pk = self.value_require(("signature", id, "private-key"))?;
+                        let key = RsaKey::<Sha256>::from_rsa_pem(pk)
+                            .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(pk))
                             .map_err(|err| {
                                 format!(
                                     "Failed to build RSA key for {}: {}",
@@ -128,8 +123,8 @@ impl ConfigAuth for Config {
                                     err
                                 )
                             })?;
-                        let key_clone = RsaKey::<Sha256>::from_rsa_pem(&pk)
-                            .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(&pk))
+                        let key_clone = RsaKey::<Sha256>::from_rsa_pem(pk)
+                            .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(pk))
                             .map_err(|err| {
                                 format!(
                                     "Failed to build RSA key for {}: {}",
@@ -148,7 +143,7 @@ impl ConfigAuth for Config {
                             (("signature", id, "public-key"), &mut public_key),
                             (("signature", id, "private-key"), &mut private_key),
                         ] {
-                            let mut contents = self.file_contents(key)?.into_iter();
+                            let mut contents = self.value_require(key)?.as_bytes().iter().copied();
                             let mut base64 = vec![];
 
                             'outer: while let Some(ch) = contents.next() {

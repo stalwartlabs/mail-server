@@ -42,22 +42,22 @@ pub fn spawn_push_manager(settings: &Config) -> mpsc::Sender<Event> {
     let push_tx = push_tx_.clone();
 
     let push_attempt_interval: Duration = settings
-        .property_or_static("jmap.push.attempts.interval", "1m")
+        .property_or_default("jmap.push.attempts.interval", "1m")
         .failed("Invalid configuration");
     let push_attempts_max: u32 = settings
-        .property_or_static("jmap.push.attempts.max", "3")
+        .property_or_default("jmap.push.attempts.max", "3")
         .failed("Invalid configuration");
     let push_retry_interval: Duration = settings
-        .property_or_static("jmap.push.retry.interval", "1s")
+        .property_or_default("jmap.push.retry.interval", "1s")
         .failed("Invalid configuration");
     let push_timeout: Duration = settings
-        .property_or_static("jmap.push.timeout.request", "10s")
+        .property_or_default("jmap.push.timeout.request", "10s")
         .failed("Invalid configuration");
     let push_verify_timeout: Duration = settings
-        .property_or_static("jmap.push.timeout.verify", "1m")
+        .property_or_default("jmap.push.timeout.verify", "1m")
         .failed("Invalid configuration");
     let push_throttle: Duration = settings
-        .property_or_static("jmap.push.throttle", "1s")
+        .property_or_default("jmap.push.throttle", "1s")
         .failed("Invalid configuration");
 
     tokio::spawn(async move {

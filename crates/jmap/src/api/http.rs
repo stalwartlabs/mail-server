@@ -309,7 +309,7 @@ impl SessionManager for JmapSessionManager {
     }
 
     fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        self.inner.directory.blocked_ips.is_blocked(addr)
+        false
     }
 }
 

@@ -30,10 +30,10 @@ use super::{EmailType, MemoryDirectory};
 
 impl MemoryDirectory {
     pub async fn from_config(
-        config: &Config,
+        config: &mut Config,
         prefix: impl AsKey,
         data_store: Store,
-    ) -> utils::config::Result<Self> {
+    ) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut directory = MemoryDirectory {
             data_store,
@@ -42,9 +42,14 @@ impl MemoryDirectory {
             domains: Default::default(),
         };
 
-        for lookup_id in config.sub_keys((prefix.as_str(), "principals"), ".name") {
+        for lookup_id in config
+            .sub_keys((prefix.as_str(), "principals"), ".name")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        {
+            let lookup_id = lookup_id.as_str();
             let name = config
-                .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
+                .value_require_((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
             let typ = match config.value((prefix.as_str(), "principals", lookup_id, "class")) {
                 Some("individual") => Type::Individual,
@@ -59,27 +64,38 @@ impl MemoryDirectory {
                 .get_or_create_account_id(&name)
                 .await
                 .map_err(|err| {
-                    format!(
-                        "Failed to obtain id for principal {} ({}): {:?}",
-                        name, lookup_id, err
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!(
+                            "Failed to obtain id for principal {} ({}): {:?}",
+                            name, lookup_id, err
+                        ),
                     )
-                })?;
+                })
+                .ok()?;
 
             // Obtain group ids
             let mut member_of = Vec::new();
-            for (_, group) in config.values((prefix.as_str(), "principals", lookup_id, "member-of"))
+            for group in config
+                .values((prefix.as_str(), "principals", lookup_id, "member-of"))
+                .map(|(_, s)| s.to_string())
+                .collect::<Vec<_>>()
             {
                 member_of.push(
                     directory
                         .data_store
-                        .get_or_create_account_id(group)
+                        .get_or_create_account_id(&group)
                         .await
                         .map_err(|err| {
-                            format!(
-                                "Failed to obtain id for principal {} ({}): {:?}",
-                                name, lookup_id, err
+                            config.new_build_error(
+                                prefix.as_str(),
+                                format!(
+                                    "Failed to obtain id for principal {} ({}): {:?}",
+                                    name, lookup_id, err
+                                ),
                             )
-                        })?,
+                        })
+                        .ok()?,
                 );
             }
 
@@ -131,7 +147,7 @@ impl MemoryDirectory {
                     .value((prefix.as_str(), "principals", lookup_id, "description"))
                     .map(|v| v.to_string()),
                 quota: config
-                    .property((prefix.as_str(), "principals", lookup_id, "quota"))?
+                    .property_((prefix.as_str(), "principals", lookup_id, "quota"))
                     .unwrap_or(0),
                 member_of,
                 id,
@@ -139,6 +155,6 @@ impl MemoryDirectory {
             });
         }
 
-        Ok(directory)
+        Some(directory)
     }
 }

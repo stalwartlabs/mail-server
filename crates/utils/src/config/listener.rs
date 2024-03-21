@@ -135,7 +135,7 @@ impl Config {
                 "recv-buffer-size",
                 "tos",
             ] {
-                if let Some(value) = self.value_or_default(
+                if let Some(value) = self.value_or_else(
                     ("server.listener", id, "socket", option),
                     ("server.socket", option),
                 ) {
@@ -158,20 +158,18 @@ impl Config {
             listeners.push(Listener {
                 socket,
                 addr,
-                ttl: self.property_or_default(
-                    ("server.listener", id, "socket.ttl"),
-                    "server.socket.ttl",
-                )?,
-                backlog: self.property_or_default(
+                ttl: self
+                    .property_or_else(("server.listener", id, "socket.ttl"), "server.socket.ttl")?,
+                backlog: self.property_or_else(
                     ("server.listener", id, "socket.backlog"),
                     "server.socket.backlog",
                 )?,
-                linger: self.property_or_default(
+                linger: self.property_or_else(
                     ("server.listener", id, "socket.linger"),
                     "server.socket.linger",
                 )?,
                 nodelay: self
-                    .property_or_default(
+                    .property_or_else(
                         ("server.listener", id, "socket.nodelay"),
                         "server.socket.nodelay",
                     )?
@@ -185,13 +183,13 @@ impl Config {
 
         // Build TLS config
         let (acceptor, tls_implicit) = if self
-            .property_or_default(("server.listener", id, "tls.enable"), "server.tls.enable")?
+            .property_or_else(("server.listener", id, "tls.enable"), "server.tls.enable")?
             .unwrap_or(false)
         {
             // Parse protocol versions
             let mut tls_v2 = false;
             let mut tls_v3 = false;
-            for (key, protocol) in self.values_or_default(
+            for (key, protocol) in self.values_or_else(
                 ("server.listener", id, "tls.protocols"),
                 "server.tls.protocols",
             ) {
@@ -209,7 +207,7 @@ impl Config {
             // Parse cipher suites
             let mut ciphers: Vec<SupportedCipherSuite> = Vec::new();
             for (key, protocol) in
-                self.values_or_default(("server.listener", id, "tls.ciphers"), "server.tls.ciphers")
+                self.values_or_else(("server.listener", id, "tls.ciphers"), "server.tls.ciphers")
             {
                 ciphers.push(protocol.parse_key(key)?);
             }
@@ -217,14 +215,15 @@ impl Config {
             // Build resolver
             let mut acme_acceptor = None;
             let resolver: Arc<dyn ResolvesServerCert> = if let Some(acme_id) =
-                self.value_or_default(("server.listener", id, "tls.acme"), "server.tls.acme")
+                self.value_or_else(("server.listener", id, "tls.acme"), "server.tls.acme")
             {
                 let acme = acmes.get(acme_id).ok_or_else(|| {
                     format!("Undefined ACME id {acme_id:?} for listener {id:?}.",)
                 })?;
 
                 // Check if this port is used to receive ACME challenges
-                let acme_port = self.property_or_static::<u16>(("acme", acme_id, "port"), "443")?;
+                let acme_port =
+                    self.property_or_default::<u16>(("acme", acme_id, "port"), "443")?;
                 if listeners.iter().any(|l| l.addr.port() == acme_port) {
                     acme_acceptor = Some(acme.clone());
                 }
@@ -232,7 +231,7 @@ impl Config {
                 acme.clone()
             } else {
                 let cert_id = self
-                    .value_or_default(
+                    .value_or_else(
                         ("server.listener", id, "tls.certificate"),
                         "server.tls.certificate",
                     )
@@ -249,7 +248,7 @@ impl Config {
 
                 // Add SNI certificates
                 for (key, value) in
-                    self.values_or_default(("server.listener", id, "tls.sni"), "server.tls.sni")
+                    self.values_or_else(("server.listener", id, "tls.sni"), "server.tls.sni")
                 {
                     if let Some(prefix) = key.strip_suffix(".subject") {
                         resolver
@@ -294,7 +293,7 @@ impl Config {
                 .with_no_client_auth()
                 .with_cert_resolver(resolver.clone());
             config.ignore_client_order = self
-                .property_or_default(
+                .property_or_else(
                     ("server.listener", id, "tls.ignore-client-order"),
                     "server.tls.ignore-client-order",
                 )?
@@ -317,7 +316,7 @@ impl Config {
 
             (
                 acceptor,
-                self.property_or_default(
+                self.property_or_else(
                     ("server.listener", id, "tls.implicit"),
                     "server.tls.implicit",
                 )?
@@ -331,7 +330,7 @@ impl Config {
 
         // Parse proxy networks
         let mut proxy_networks = Vec::new();
-        for network in self.set_values_or_default(
+        for network in self.set_values_or_else(
             ("server.listener", id, "proxy.trusted-networks"),
             "server.proxy.trusted-networks",
         ) {
@@ -342,12 +341,12 @@ impl Config {
             id: id.to_string(),
             internal_id: 0,
             hostname: self
-                .value_or_default(("server.listener", id, "hostname"), "server.hostname")
+                .value_or_else(("server.listener", id, "hostname"), "server.hostname")
                 .ok_or("Hostname directive not found.")?
                 .to_string(),
             data: match protocol {
                 ServerProtocol::Smtp | ServerProtocol::Lmtp => self
-                    .value_or_default(("server.listener", id, "greeting"), "server.greeting")
+                    .value_or_else(("server.listener", id, "greeting"), "server.greeting")
                     .unwrap_or(concat!(
                         "Stalwart SMTP v",
                         env!("CARGO_PKG_VERSION"),
@@ -356,16 +355,16 @@ impl Config {
                     .to_string(),
 
                 ServerProtocol::Jmap => self
-                    .value_or_default(("server.listener", id, "url"), "server.url")
+                    .value_or_else(("server.listener", id, "url"), "server.url")
                     .failed(&format!("No 'url' directive found for listener {id:?}"))
                     .to_string(),
                 ServerProtocol::Imap | ServerProtocol::Http | ServerProtocol::ManageSieve => self
-                    .value_or_default(("server.listener", id, "url"), "server.url")
+                    .value_or_else(("server.listener", id, "url"), "server.url")
                     .unwrap_or_default()
                     .to_string(),
             },
             max_connections: self
-                .property_or_default(
+                .property_or_else(
                     ("server.listener", id, "max-connections"),
                     "server.max-connections",
                 )?

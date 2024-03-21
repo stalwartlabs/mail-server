@@ -23,12 +23,18 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use super::utils::{AsKey, ParseValue};
+use super::utils::{AsKey, ParseKey, ParseValue};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IpAddrMask {
     V4 { addr: Ipv4Addr, mask: u32 },
     V6 { addr: Ipv6Addr, mask: u128 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IpAddrOrMask {
+    Ip(IpAddr),
+    Mask(IpAddrMask),
 }
 
 impl IpAddrMask {
@@ -127,6 +133,16 @@ impl ParseValue for IpAddrMask {
             value,
             key.as_key()
         ))
+    }
+}
+
+impl ParseValue for IpAddrOrMask {
+    fn parse_value(key: impl AsKey, ip: &str) -> super::Result<Self> {
+        if ip.contains('/') {
+            ip.parse_key(key).map(IpAddrOrMask::Mask)
+        } else {
+            ip.parse_key(key).map(IpAddrOrMask::Ip)
+        }
     }
 }
 

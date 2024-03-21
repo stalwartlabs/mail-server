@@ -29,31 +29,70 @@ use utils::config::{utils::AsKey, Config};
 use super::FdbStore;
 
 impl FdbStore {
-    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let guard = unsafe { foundationdb::boot() };
 
-        let db = Database::new(config.value((&prefix, "cluster-file")))?;
-        if let Some(value) = config.property::<Duration>((&prefix, "transaction.timeout"))? {
-            db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))?;
+        let db = Database::new(config.value((&prefix, "cluster-file")))
+            .map_err(|err| {
+                config.new_build_error(prefix.as_str(), format!("Failed to open database: {err:?}"))
+            })
+            .ok()?;
+
+        if let Some(value) = config.property_::<Duration>((&prefix, "transaction.timeout")) {
+            db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))
+                .map_err(|err| {
+                    config.new_build_error(
+                        (&prefix, "transaction.timeout"),
+                        format!("Failed to set option: {err:?}"),
+                    )
+                })
+                .ok()?;
         }
-        if let Some(value) = config.property((&prefix, "transaction.retry-limit"))? {
-            db.set_option(DatabaseOption::TransactionRetryLimit(value))?;
+        if let Some(value) = config.property_((&prefix, "transaction.retry-limit")) {
+            db.set_option(DatabaseOption::TransactionRetryLimit(value))
+                .map_err(|err| {
+                    config.new_build_error(
+                        (&prefix, "transaction.retry-limit"),
+                        format!("Failed to set option: {err:?}"),
+                    )
+                })
+                .ok()?;
         }
-        if let Some(value) =
-            config.property::<Duration>((&prefix, "transaction.max-retry-delay"))?
+        if let Some(value) = config.property_::<Duration>((&prefix, "transaction.max-retry-delay"))
         {
             db.set_option(DatabaseOption::TransactionMaxRetryDelay(
                 value.as_millis() as i32
-            ))?;
+            ))
+            .map_err(|err| {
+                config.new_build_error(
+                    (&prefix, "transaction.max-retry-delay"),
+                    format!("Failed to set option: {err:?}"),
+                )
+            })
+            .ok()?;
         }
-        if let Some(value) = config.property((&prefix, "ids.machine"))? {
-            db.set_option(DatabaseOption::MachineId(value))?;
+        if let Some(value) = config.property_((&prefix, "ids.machine")) {
+            db.set_option(DatabaseOption::MachineId(value))
+                .map_err(|err| {
+                    config.new_build_error(
+                        (&prefix, "ids.machine"),
+                        format!("Failed to set option: {err:?}"),
+                    )
+                })
+                .ok()?;
         }
-        if let Some(value) = config.property((&prefix, "ids.datacenter"))? {
-            db.set_option(DatabaseOption::DatacenterId(value))?;
+        if let Some(value) = config.property_((&prefix, "ids.datacenter")) {
+            db.set_option(DatabaseOption::DatacenterId(value))
+                .map_err(|err| {
+                    config.new_build_error(
+                        (&prefix, "ids.datacenter"),
+                        format!("Failed to set option: {err:?}"),
+                    )
+                })
+                .ok()?;
         }
 
-        Ok(Self { guard, db })
+        Some(Self { guard, db })
     }
 }

@@ -74,7 +74,7 @@ impl crate::Config {
                 .property("jmap.protocol.upload.quota.files")?
                 .unwrap_or(1000),
             upload_tmp_ttl: settings
-                .property_or_static::<Duration>("jmap.protocol.upload.ttl", "1h")?
+                .property_or_default::<Duration>("jmap.protocol.upload.ttl", "1h")?
                 .as_secs(),
             mailbox_max_depth: settings.property("jmap.mailbox.max-depth")?.unwrap_or(10),
             mailbox_name_max_len: settings
@@ -100,15 +100,16 @@ impl crate::Config {
                 .property("cache.session.ttl")?
                 .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: settings
-                .property_or_static("jmap.rate-limit.account", "1000/1m")?,
+                .property_or_default("jmap.rate-limit.account", "1000/1m")?,
             rate_authenticate_req: settings
-                .property_or_static("authentication.rate-limit", "10/1m")?,
-            rate_anonymous: settings.property_or_static("jmap.rate-limit.anonymous", "100/1m")?,
+                .property_or_default("authentication.rate-limit", "10/1m")?,
+            rate_anonymous: settings.property_or_default("jmap.rate-limit.anonymous", "100/1m")?,
             rate_use_forwarded: settings
                 .property("jmap.rate-limit.use-forwarded")?
                 .unwrap_or(false),
             oauth_key: settings
-                .text_file_contents("oauth.key")?
+                .value("oauth.key")
+                .map(|s| s.to_string())
                 .unwrap_or_else(|| {
                     thread_rng()
                         .sample_iter(Alphanumeric)
@@ -117,32 +118,34 @@ impl crate::Config {
                         .collect::<String>()
                 }),
             oauth_expiry_user_code: settings
-                .property_or_static::<Duration>("oauth.expiry.user-code", "30m")?
+                .property_or_default::<Duration>("oauth.expiry.user-code", "30m")?
                 .as_secs(),
             oauth_expiry_auth_code: settings
-                .property_or_static::<Duration>("oauth.expiry.auth-code", "10m")?
+                .property_or_default::<Duration>("oauth.expiry.auth-code", "10m")?
                 .as_secs(),
             oauth_expiry_token: settings
-                .property_or_static::<Duration>("oauth.expiry.token", "1h")?
+                .property_or_default::<Duration>("oauth.expiry.token", "1h")?
                 .as_secs(),
             oauth_expiry_refresh_token: settings
-                .property_or_static::<Duration>("oauth.expiry.refresh-token", "30d")?
+                .property_or_default::<Duration>("oauth.expiry.refresh-token", "30d")?
                 .as_secs(),
             oauth_expiry_refresh_token_renew: settings
-                .property_or_static::<Duration>("oauth.expiry.refresh-token-renew", "4d")?
+                .property_or_default::<Duration>("oauth.expiry.refresh-token-renew", "4d")?
                 .as_secs(),
-            oauth_max_auth_attempts: settings.property_or_static("oauth.auth.max-attempts", "3")?,
+            oauth_max_auth_attempts: settings
+                .property_or_default("oauth.auth.max-attempts", "3")?,
             event_source_throttle: settings
-                .property_or_static("jmap.event-source.throttle", "1s")?,
-            web_socket_throttle: settings.property_or_static("jmap.web-socket.throttle", "1s")?,
-            web_socket_timeout: settings.property_or_static("jmap.web-socket.timeout", "10m")?,
-            web_socket_heartbeat: settings.property_or_static("jmap.web-socket.heartbeat", "1m")?,
-            push_max_total: settings.property_or_static("jmap.push.max-total", "100")?,
+                .property_or_default("jmap.event-source.throttle", "1s")?,
+            web_socket_throttle: settings.property_or_default("jmap.web-socket.throttle", "1s")?,
+            web_socket_timeout: settings.property_or_default("jmap.web-socket.timeout", "10m")?,
+            web_socket_heartbeat: settings
+                .property_or_default("jmap.web-socket.heartbeat", "1m")?,
+            push_max_total: settings.property_or_default("jmap.push.max-total", "100")?,
             principal_allow_lookups: settings
                 .property("jmap.principal.allow-lookups")?
                 .unwrap_or(true),
-            encrypt: settings.property_or_static("storage.encryption.enable", "true")?,
-            encrypt_append: settings.property_or_static("storage.encryption.append", "false")?,
+            encrypt: settings.property_or_default("storage.encryption.enable", "true")?,
+            encrypt_append: settings.property_or_default("storage.encryption.append", "false")?,
             spam_header: settings.value("spam.header.is-spam").and_then(|v| {
                 v.split_once(':').map(|(k, v)| {
                     (

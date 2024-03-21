@@ -36,7 +36,7 @@ use smtp_proto::MtPriority;
 
 use crate::expr::{Constant, Variable};
 
-use super::{Config, Rate};
+use super::{Config, ConfigError, Rate};
 
 impl Config {
     pub fn property<T: ParseValue>(&self, key: impl AsKey) -> super::Result<Option<T>> {
@@ -48,7 +48,22 @@ impl Config {
         }
     }
 
-    pub fn property_or_static<T: ParseValue>(
+    pub fn property_<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
+        let key = key.as_key();
+        if let Some(value) = self.keys.get(&key) {
+            match T::parse_value(key.as_str(), value) {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    self.new_parse_error(key, err);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn property_or_default<T: ParseValue>(
         &self,
         key: impl AsKey,
         default: &str,
@@ -58,7 +73,29 @@ impl Config {
         T::parse_value(key, value)
     }
 
-    pub fn property_or_default<T: ParseValue>(
+    pub fn property_or_default_<T: ParseValue>(
+        &mut self,
+        key: impl AsKey,
+        default: &str,
+    ) -> Option<T> {
+        let key = key.as_key();
+        let value = match self.keys.get(&key) {
+            Some(value) => value.as_str(),
+            None => {
+                self.missing.insert(key.clone(), default.to_string().into());
+                default
+            }
+        };
+        match T::parse_value(key.as_str(), value) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                self.new_parse_error(key, err);
+                None
+            }
+        }
+    }
+
+    pub fn property_or_else<T: ParseValue>(
         &self,
         key: impl AsKey,
         default: impl AsKey,
@@ -69,11 +106,50 @@ impl Config {
         }
     }
 
+    pub fn property_or_else_<T: ParseValue>(
+        &mut self,
+        key: impl AsKey,
+        default: impl AsKey,
+    ) -> Option<T> {
+        let key = key.as_key();
+        let value = match self.value_or_else(key.as_str(), default.clone()) {
+            Some(value) => value,
+            None => {
+                self.missing.insert(default.as_key(), None);
+                return None;
+            }
+        };
+
+        match T::parse_value(key.as_str(), value) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                self.new_parse_error(key, err);
+                None
+            }
+        }
+    }
+
     pub fn property_require<T: ParseValue>(&self, key: impl AsKey) -> super::Result<T> {
         match self.property(key.clone()) {
             Ok(Some(result)) => Ok(result),
             Ok(None) => Err(format!("Missing property {:?}.", key.as_key())),
             Err(err) => Err(err),
+        }
+    }
+
+    pub fn property_require_<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
+        let key = key.as_key();
+        if let Some(value) = self.keys.get(&key) {
+            match T::parse_value(key.as_str(), value) {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    self.new_parse_error(key, err);
+                    None
+                }
+            }
+        } else {
+            self.new_parse_error(key, "Missing property");
+            None
         }
     }
 
@@ -111,7 +187,7 @@ impl Config {
             .filter_map(move |key| key.strip_prefix(&prefix))
     }
 
-    pub fn set_values_or_default(
+    pub fn set_values_or_else(
         &self,
         prefix: impl AsKey,
         default: impl AsKey,
@@ -144,6 +220,27 @@ impl Config {
         })
     }
 
+    pub fn properties_<T: ParseValue>(&mut self, prefix: impl AsKey) -> Vec<(String, T)> {
+        let full_prefix = prefix.as_key();
+        let prefix = prefix.as_prefix();
+        let mut results = Vec::new();
+
+        for (key, value) in &self.keys {
+            if key.starts_with(&prefix) || key == &full_prefix {
+                match T::parse_value(key.as_str(), value) {
+                    Ok(value) => {
+                        results.push((key.to_string(), value));
+                    }
+                    Err(err) => {
+                        self.errors.insert(key.to_string(), ConfigError::Parse(err));
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
     pub fn value(&self, key: impl AsKey) -> Option<&str> {
         self.keys.get(&key.as_key()).map(|s| s.as_str())
     }
@@ -159,7 +256,28 @@ impl Config {
             .ok_or_else(|| format!("Missing property {:?}.", key.as_key()))
     }
 
-    pub fn value_or_default(&self, key: impl AsKey, default: impl AsKey) -> Option<&str> {
+    pub fn value_require_(&mut self, key: impl AsKey) -> Option<&str> {
+        let key = key.as_key();
+        if let Some(value) = self.keys.get(&key) {
+            Some(value.as_str())
+        } else {
+            self.errors
+                .insert(key, ConfigError::Parse("Missing property".to_string()));
+            None
+        }
+    }
+
+    pub fn try_parse_value<T: ParseValue>(&mut self, key: impl AsKey, value: &str) -> Option<T> {
+        match T::parse_value(key.clone(), value) {
+            Ok(value) => Some(value),
+            Err(err) => {
+                self.errors.insert(key.as_key(), ConfigError::Parse(err));
+                None
+            }
+        }
+    }
+
+    pub fn value_or_else(&self, key: impl AsKey, default: impl AsKey) -> Option<&str> {
         self.keys
             .get(&key.as_key())
             .or_else(|| self.keys.get(&default.as_key()))
@@ -179,7 +297,7 @@ impl Config {
         })
     }
 
-    pub fn values_or_default(
+    pub fn values_or_else(
         &self,
         prefix: impl AsKey,
         default: impl AsKey,
@@ -194,40 +312,38 @@ impl Config {
         })
     }
 
+    pub fn has_prefix(&self, prefix: impl AsKey) -> bool {
+        let prefix = prefix.as_prefix();
+        self.keys.keys().any(|k| k.starts_with(&prefix))
+    }
+
     pub fn take_value(&mut self, key: &str) -> Option<String> {
         self.keys.remove(key)
     }
 
-    pub fn file_contents(&self, key: impl AsKey) -> super::Result<Vec<u8>> {
+    pub fn value_or_warn(&mut self, key: impl AsKey) -> Option<&str> {
         let key = key.as_key();
-        if let Some(value) = self.keys.get(&key) {
-            if let Some(value) = value.strip_prefix("file://") {
-                std::fs::read(value).map_err(|err| {
-                    format!("Failed to read file {value:?} for property {key:?}: {err}")
-                })
-            } else {
-                Ok(value.to_string().into_bytes())
+        match self.keys.get(&key) {
+            Some(value) => Some(value.as_str()),
+            None => {
+                self.missing.insert(key, None);
+                None
             }
-        } else {
-            Err(format!("Property {key:?} not found in configuration file."))
         }
     }
 
-    pub fn text_file_contents(&self, key: impl AsKey) -> super::Result<Option<String>> {
-        let key = key.as_key();
-        if let Some(value) = self.keys.get(&key) {
-            if let Some(value) = value.strip_prefix("file://") {
-                std::fs::read_to_string(value)
-                    .map_err(|err| {
-                        format!("Failed to read file {value:?} for property {key:?}: {err}")
-                    })
-                    .map(Some)
-            } else {
-                Ok(Some(value.to_string()))
-            }
-        } else {
-            Ok(None)
-        }
+    pub fn new_parse_error(&mut self, key: impl AsKey, details: impl Into<String>) {
+        self.errors
+            .insert(key.as_key(), ConfigError::Parse(details.into()));
+    }
+
+    pub fn new_build_error(&mut self, key: impl AsKey, details: impl Into<String>) {
+        self.errors
+            .insert(key.as_key(), ConfigError::Build(details.into()));
+    }
+
+    pub fn new_missing_property(&mut self, key: impl AsKey) {
+        self.missing.insert(key.as_key(), None);
     }
 }
 
@@ -559,21 +675,33 @@ impl ParseValue for HashAlgorithm {
 
 impl ParseValue for Duration {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        let duration = value.trim_end().to_ascii_lowercase();
-        let (num, multiplier) = if let Some(num) = duration.strip_suffix('d') {
-            (num, 24 * 60 * 60 * 1000)
-        } else if let Some(num) = duration.strip_suffix('h') {
-            (num, 60 * 60 * 1000)
-        } else if let Some(num) = duration.strip_suffix('m') {
-            (num, 60 * 1000)
-        } else if let Some(num) = duration.strip_suffix("ms") {
-            (num, 1)
-        } else if let Some(num) = duration.strip_suffix('s') {
-            (num, 1000)
-        } else {
-            (duration.as_str(), 1)
+        let mut digits = String::new();
+        let mut multiplier = String::new();
+
+        for ch in value.chars() {
+            if ch.is_ascii_digit() {
+                digits.push(ch);
+            } else if !ch.is_ascii_whitespace() {
+                multiplier.push(ch.to_ascii_lowercase());
+            }
+        }
+
+        let multiplier = match multiplier.as_str() {
+            "d" => 24 * 60 * 60 * 1000,
+            "h" => 60 * 60 * 1000,
+            "m" => 60 * 1000,
+            "s" => 1000,
+            "ms" | "" => 1,
+            _ => {
+                return Err(format!(
+                    "Invalid duration value {:?} for property {:?}.",
+                    value,
+                    key.as_key()
+                ))
+            }
         };
-        num.trim()
+
+        digits
             .parse::<u64>()
             .ok()
             .and_then(|num| {

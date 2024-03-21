@@ -30,31 +30,29 @@ use rocksdb::{
 };
 
 use tokio::sync::oneshot;
-use utils::{
-    config::{utils::AsKey, Config},
-    UnwrapFailure,
-};
+use utils::config::{utils::AsKey, Config};
 
-use crate::{Deserialize, Error};
+use crate::Deserialize;
 
 use super::{RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES};
 
 impl RocksDbStore {
-    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         // Create the database directory if it doesn't exist
-        let idx_path: PathBuf = PathBuf::from(
-            config
-                .value_require((&prefix, "path"))
-                .failed("Invalid configuration file"),
-        );
-        std::fs::create_dir_all(&idx_path).map_err(|err| {
-            Error::InternalError(format!(
-                "Failed to create index directory {}: {:?}",
-                idx_path.display(),
-                err
-            ))
-        })?;
+        let idx_path: PathBuf = PathBuf::from(config.value_require_((&prefix, "path"))?);
+        std::fs::create_dir_all(&idx_path)
+            .map_err(|err| {
+                config.new_build_error(
+                    (&prefix, "path"),
+                    format!(
+                        "Failed to create database directory {}: {:?}",
+                        idx_path.display(),
+                        err
+                    ),
+                )
+            })
+            .ok()?;
 
         let mut cfs = Vec::new();
 
@@ -73,7 +71,11 @@ impl RocksDbStore {
         // Blobs
         let mut cf_opts = Options::default();
         cf_opts.set_enable_blob_files(true);
-        cf_opts.set_min_blob_size(config.property_or_static((&prefix, "min-blob-size"), "16834")?);
+        cf_opts.set_min_blob_size(
+            config
+                .property_or_default_((&prefix, "min-blob-size"), "16834")
+                .unwrap_or(16834),
+        );
         cfs.push(ColumnFamilyDescriptor::new(CF_BLOBS, cf_opts));
 
         // Other cfs
@@ -92,24 +94,36 @@ impl RocksDbStore {
         //db_opts.set_keep_log_file_num(100);
         //db_opts.set_max_successive_merges(100);
         db_opts.set_write_buffer_size(
-            config.property_or_static((&prefix, "write-buffer-size"), "134217728")?,
+            config
+                .property_or_default_((&prefix, "write-buffer-size"), "134217728")
+                .unwrap_or(134217728),
         );
 
-        Ok(RocksDbStore {
+        Some(RocksDbStore {
             db: OptimisticTransactionDB::open_cf_descriptors(&db_opts, idx_path, cfs)
-                .map_err(|e| Error::InternalError(e.into_string()))?
+                .map_err(|err| {
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!("Failed to open database: {:?}", err),
+                    )
+                })
+                .ok()?
                 .into(),
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>((&prefix, "pool.workers"))?
+                        .property_::<usize>((&prefix, "pool.workers"))
                         .filter(|v| *v > 0)
                         .unwrap_or_else(|| num_cpus::get() * 4),
                 )
                 .build()
                 .map_err(|err| {
-                    crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
-                })?,
+                    config.new_build_error(
+                        (&prefix, "pool.workers"),
+                        format!("Failed to build worker pool: {:?}", err),
+                    )
+                })
+                .ok()?,
         })
     }
 

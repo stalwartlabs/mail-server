@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use directory::AuthResult;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -181,8 +180,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-
-            match lookup
+            let todo = "fix";
+            /*match lookup
                 .authenticate(&credentials, self.data.remote_ip, false)
                 .await
             {
@@ -228,7 +227,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     return Err(());
                 }
                 _ => (),
-            }
+            }*/
         } else {
             tracing::warn!(
                 parent: &self.span,

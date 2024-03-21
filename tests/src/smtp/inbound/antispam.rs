@@ -226,7 +226,7 @@ async fn antispam() {
 
     // Parse config
     let config = Config::new(&config).unwrap();
-    let mut ctx = ConfigContext::new(&[]);
+    let mut ctx = ConfigContext::new();
     ctx.stores = config.parse_stores().await.unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
     core.shared.lookup_stores = ctx.stores.lookup_stores.clone();

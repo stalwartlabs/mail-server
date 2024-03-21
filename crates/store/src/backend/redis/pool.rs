@@ -24,7 +24,7 @@
 use async_trait::async_trait;
 use deadpool::managed;
 use redis::{
-    aio::{Connection, ConnectionLike},
+    aio::{ConnectionLike, MultiplexedConnection},
     cluster_async::ClusterConnection,
 };
 
@@ -32,11 +32,13 @@ use super::{RedisClusterConnectionManager, RedisConnectionManager};
 
 #[async_trait]
 impl managed::Manager for RedisConnectionManager {
-    type Type = Connection;
+    type Type = MultiplexedConnection;
     type Error = crate::Error;
 
-    async fn create(&self) -> Result<Connection, crate::Error> {
-        match tokio::time::timeout(self.timeout, self.client.get_tokio_connection()).await {
+    async fn create(&self) -> Result<MultiplexedConnection, crate::Error> {
+        match tokio::time::timeout(self.timeout, self.client.get_multiplexed_tokio_connection())
+            .await
+        {
             Ok(conn) => conn.map_err(Into::into),
             Err(_) => Err(crate::Error::InternalError(
                 "Redis connection timeout".into(),
@@ -46,7 +48,7 @@ impl managed::Manager for RedisConnectionManager {
 
     async fn recycle(
         &self,
-        conn: &mut Connection,
+        conn: &mut MultiplexedConnection,
         _: &managed::Metrics,
     ) -> managed::RecycleResult<crate::Error> {
         conn.req_packed_command(&redis::cmd("PING"))

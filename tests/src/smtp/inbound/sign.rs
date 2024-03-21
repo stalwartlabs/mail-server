@@ -171,7 +171,7 @@ async fn sign_and_seal() {
     config.data.add_received_spf = IfBlock::new(true);
 
     let config = &mut core.mail_auth;
-    let ctx = ConfigContext::new(&[]).parse_signatures();
+    let ctx = ConfigContext::new().parse_signatures();
     core.shared.signers = ctx.signers;
     core.shared.sealers = ctx.sealers;
     config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
@@ -218,10 +218,10 @@ async fn sign_and_seal() {
 }
 
 pub trait TextConfigContext<'x> {
-    fn parse_signatures(self) -> ConfigContext<'x>;
+    fn parse_signatures(self) -> ConfigContext;
 }
 
-impl<'x> TextConfigContext<'x> for ConfigContext<'x> {
+impl<'x> TextConfigContext<'x> for ConfigContext {
     fn parse_signatures(mut self) -> Self {
         Config::new(SIGNATURES)
             .unwrap()

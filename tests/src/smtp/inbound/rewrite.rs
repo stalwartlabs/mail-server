@@ -100,7 +100,7 @@ async fn address_rewrite() {
     // Prepare config
     let available_keys = &[V_SENDER, V_SENDER_DOMAIN, V_RECIPIENT, V_RECIPIENT_DOMAIN];
     let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new(&[]).parse_signatures();
+    let mut ctx = ConfigContext::new().parse_signatures();
     let settings = Config::new(CONFIG).unwrap();
     ctx.directory = settings
         .parse_directory(&dummy_stores(), Store::default())

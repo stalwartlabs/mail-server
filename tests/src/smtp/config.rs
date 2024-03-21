@@ -489,7 +489,7 @@ async fn eval_if() {
             ..Default::default()
         },
     ];
-    let mut context = ConfigContext::new(&servers);
+    let mut context = ConfigContext::new();
     context.stores = config.parse_stores().await.unwrap();
 
     let envelope = TestEnvelope::from_config(&config);
@@ -548,7 +548,7 @@ async fn eval_dynvalue() {
     file.push("rules-dynvalue.toml");
 
     let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
-    let mut context = ConfigContext::new(&[]);
+    let mut context = ConfigContext::new();
     context.stores = config.parse_stores().await.unwrap();
 
     let envelope = TestEnvelope::from_config(&config);

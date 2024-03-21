@@ -32,12 +32,12 @@ pub mod write;
 
 pub use ahash;
 use ahash::AHashMap;
-use backend::{fs::FsStore, memory::MemoryStore};
+use backend::fs::FsStore;
 pub use blake3;
 pub use parking_lot;
 pub use rand;
 pub use roaring;
-use write::{BitmapClass, ValueClass};
+use write::{purge::PurgeSchedule, BitmapClass, ValueClass};
 
 #[cfg(feature = "s3")]
 use backend::s3::S3Store;
@@ -190,6 +190,7 @@ pub struct Stores {
     pub blob_stores: AHashMap<String, BlobStore>,
     pub fts_stores: AHashMap<String, FtsStore>,
     pub lookup_stores: AHashMap<String, LookupStore>,
+    pub purge_schedules: Vec<PurgeSchedule>,
 }
 
 #[derive(Clone)]
@@ -237,7 +238,6 @@ pub enum FtsStore {
 pub enum LookupStore {
     Store(Store),
     Query(Arc<QueryStore>),
-    Memory(Arc<MemoryStore>),
     #[cfg(feature = "redis")]
     Redis(Arc<RedisStore>),
 }
@@ -333,12 +333,6 @@ impl From<Store> for BlobStore {
 impl From<Store> for LookupStore {
     fn from(store: Store) -> Self {
         Self::Store(store)
-    }
-}
-
-impl From<MemoryStore> for LookupStore {
-    fn from(store: MemoryStore) -> Self {
-        Self::Memory(Arc::new(store))
     }
 }
 

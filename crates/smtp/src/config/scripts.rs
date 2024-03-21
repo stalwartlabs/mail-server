@@ -77,9 +77,9 @@ impl ConfigSieve for Config {
         let sieve_ctx = SieveContext {
             psl: self.parse_public_suffix()?,
             bayes_cache: BayesTokenCache::new(
-                self.property_or_static("cache.bayes.capacity", "8192")?,
-                self.property_or_static("cache.bayes.ttl.positive", "1h")?,
-                self.property_or_static("cache.bayes.ttl.negative", "1h")?,
+                self.property_or_default("cache.bayes.capacity", "8192")?,
+                self.property_or_default("cache.bayes.ttl.positive", "1h")?,
+                self.property_or_default("cache.bayes.ttl.negative", "1h")?,
             ),
             remote_lists: Default::default(),
         };
@@ -95,7 +95,7 @@ impl ConfigSieve for Config {
             .with_max_header_size(10240)
             .with_max_includes(10)
             .with_no_capability_check(
-                self.property_or_static("sieve.trusted.no-capability-check", "false")?,
+                self.property_or_default("sieve.trusted.no-capability-check", "false")?,
             )
             .register_functions(&mut fnc_map);
 
@@ -115,7 +115,7 @@ impl ConfigSieve for Config {
             .with_capability(Capability::Expressions)
             .with_capability(Capability::While)
             .with_max_variable_size(
-                self.property_or_static("sieve.trusted.limits.variable-size", "52428800")?,
+                self.property_or_default("sieve.trusted.limits.variable-size", "52428800")?,
             )
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
@@ -152,19 +152,19 @@ impl ConfigSieve for Config {
             let key = ("sieve.trusted.scripts", id);
 
             let script = if !self.contains_key(key) {
-                let mut script = Vec::new();
+                let mut script = String::new();
                 for sub_key in self.sub_keys(key, "") {
-                    script.extend(self.file_contents(("sieve.trusted.scripts", id, sub_key))?);
+                    script.push_str(self.value_require(("sieve.trusted.scripts", id, sub_key))?);
                 }
                 script
             } else {
-                self.file_contents(key)?
+                self.value_require(key)?.to_string()
             };
 
             ctx.scripts.insert(
                 id.to_string(),
                 compiler
-                    .compile(&script)
+                    .compile(script.as_bytes())
                     .map_err(|err| format!("Failed to compile Sieve script {id:?}: {err}"))?
                     .into(),
             );

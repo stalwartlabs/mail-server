@@ -182,7 +182,7 @@ pub fn enable_tracing(config: &Config, message: &str) -> config::Result<Option<W
                 tracing_subscriber::FmtSubscriber::builder()
                     .with_env_filter(env_filter)
                     .with_writer(non_blocking)
-                    .with_ansi(config.property_or_static("global.tracing.ansi", "true")?)
+                    .with_ansi(config.property_or_default("global.tracing.ansi", "true")?)
                     .finish(),
             )
             .failed("Failed to set subscriber");
@@ -192,7 +192,7 @@ pub fn enable_tracing(config: &Config, message: &str) -> config::Result<Option<W
             tracing::subscriber::set_global_default(
                 tracing_subscriber::FmtSubscriber::builder()
                     .with_env_filter(env_filter)
-                    .with_ansi(config.property_or_static("global.tracing.ansi", "true")?)
+                    .with_ansi(config.property_or_default("global.tracing.ansi", "true")?)
                     .finish(),
             )
             .failed("Failed to set subscriber");

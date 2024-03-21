@@ -22,7 +22,7 @@
 */
 
 use core::cache::CachedDirectory;
-use std::{borrow::Cow, fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use backend::{
@@ -36,18 +36,14 @@ use backend::{
 use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
-use store::{dispatch::blocked::BlockedIps, Store};
-use utils::{config::if_block::IfBlock, expr::Variable};
+use store::Store;
 
 pub mod backend;
 pub mod core;
 
 pub struct Directory {
     pub store: DirectoryInner,
-    pub catch_all: AddressMapping,
-    pub subaddressing: AddressMapping,
     pub cache: Option<CachedDirectory>,
-    pub blocked_ips: Arc<BlockedIps>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -126,12 +122,6 @@ pub enum QueryBy<'x> {
     Credentials(&'x Credentials<String>),
 }
 
-pub enum AuthResult<T> {
-    Success(T),
-    Failure,
-    Banned,
-}
-
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     pub fn name(&self) -> &str {
         &self.name
@@ -163,14 +153,6 @@ impl Type {
             Self::List => "list",
         }
     }
-}
-
-#[derive(Debug, Default)]
-pub enum AddressMapping {
-    Enable,
-    Custom(IfBlock),
-    #[default]
-    Disable,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -286,72 +268,6 @@ impl DirectoryError {
             "Directory timed out"
         );
         DirectoryError::TimedOut
-    }
-}
-
-impl AddressMapping {
-    pub async fn to_subaddress<'x, 'y: 'x>(&'x self, address: &'y str) -> Cow<'x, str> {
-        match self {
-            AddressMapping::Enable => {
-                if let Some((local_part, domain_part)) = address.rsplit_once('@') {
-                    if let Some((local_part, _)) = local_part.split_once('+') {
-                        return format!("{}@{}", local_part, domain_part).into();
-                    }
-                }
-            }
-            AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(
-                            |name| {
-                                if name == 1 {
-                                    Variable::from(address)
-                                } else {
-                                    Variable::default()
-                                }
-                            },
-                            |_, _| async { Variable::default() },
-                        )
-                        .await,
-                ) {
-                    return result.into();
-                }
-            }
-            AddressMapping::Disable => (),
-        }
-
-        address.into()
-    }
-
-    pub async fn to_catch_all<'x, 'y: 'x>(&'x self, address: &'y str) -> Option<Cow<'x, str>> {
-        match self {
-            AddressMapping::Enable => address
-                .rsplit_once('@')
-                .map(|(_, domain_part)| format!("@{}", domain_part))
-                .map(Cow::Owned),
-
-            AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(
-                            |name| {
-                                if name == 1 {
-                                    Variable::from(address)
-                                } else {
-                                    Variable::default()
-                                }
-                            },
-                            |_, _| async { Variable::default() },
-                        )
-                        .await,
-                ) {
-                    Some(result.into())
-                } else {
-                    None
-                }
-            }
-            AddressMapping::Disable => None,
-        }
     }
 }
 

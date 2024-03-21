@@ -93,7 +93,7 @@ async fn lookup_sql() {
     let temp_dir = TempDir::new("smtp_lookup_tests", true);
     let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
     let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new(&[]);
+    let mut ctx = ConfigContext::new();
     let config = Config::new(&config_file).unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
     core.shared.lookup_stores = ctx.stores.lookup_stores.clone();

@@ -42,7 +42,7 @@ use mail_send::Credentials;
 use sieve::Sieve;
 use store::Stores;
 use utils::{
-    config::{if_block::IfBlock, utils::ConstantValue, Rate, Server, ServerProtocol},
+    config::{if_block::IfBlock, utils::ConstantValue, Rate, ServerProtocol},
     expr::{Expression, Token},
     snowflake::SnowflakeIdGenerator,
 };
@@ -397,8 +397,7 @@ pub enum VerifyStrategy {
 }
 
 #[derive(Default)]
-pub struct ConfigContext<'x> {
-    pub servers: &'x [Server],
+pub struct ConfigContext {
     pub directory: Directories,
     pub stores: Stores,
     pub scripts: AHashMap<String, Arc<Sieve>>,
@@ -406,10 +405,9 @@ pub struct ConfigContext<'x> {
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
 }
 
-impl<'x> ConfigContext<'x> {
-    pub fn new(servers: &'x [Server]) -> Self {
+impl ConfigContext {
+    pub fn new() -> Self {
         Self {
-            servers,
             ..Default::default()
         }
     }

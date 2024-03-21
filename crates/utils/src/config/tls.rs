@@ -54,8 +54,8 @@ impl Config {
 
             let mut cert = Certificate {
                 cert: ArcSwap::from(Arc::new(build_certified_key(
-                    self.file_contents(key_cert)?,
-                    self.file_contents(key_pk)?,
+                    self.value_require(key_cert)?.as_bytes().to_vec(),
+                    self.value_require(key_pk)?.as_bytes().to_vec(),
                     &format!("certificate.{cert_id}"),
                 )?)),
                 path: Vec::with_capacity(2),
@@ -94,7 +94,7 @@ impl Config {
                 .collect::<Vec<_>>();
             let cache = PathBuf::from(self.value_require(("acme", acme_id, "cache"))?);
             let renew_before: Duration =
-                self.property_or_static(("acme", acme_id, "renew-before"), "30d")?;
+                self.property_or_default(("acme", acme_id, "renew-before"), "30d")?;
 
             if directory.is_empty() {
                 return Err(format!("Missing directory for acme.{acme_id}."));
@@ -108,8 +108,8 @@ impl Config {
             let mut domains = Vec::new();
             for id in self.sub_keys("server.listener", ".protocol") {
                 match (
-                    self.value_or_default(("server.listener", id, "tls.acme"), "server.tls.acme"),
-                    self.value_or_default(("server.listener", id, "hostname"), "server.hostname"),
+                    self.value_or_else(("server.listener", id, "tls.acme"), "server.tls.acme"),
+                    self.value_or_else(("server.listener", id, "hostname"), "server.hostname"),
                 ) {
                     (Some(listener_acme), Some(hostname)) if listener_acme == acme_id => {
                         let hostname = hostname.trim().to_lowercase();

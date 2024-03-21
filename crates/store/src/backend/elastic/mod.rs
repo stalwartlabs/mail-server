@@ -44,61 +44,78 @@ pub struct ElasticSearchStore {
 pub(crate) static INDEX_NAMES: &[&str] = &["stalwart_email"];
 
 impl ElasticSearchStore {
-    pub async fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let credentials = if let Some(user) = config.value((&prefix, "user")) {
-            let password = config.value_require((&prefix, "password"))?;
-            Some(Credentials::Basic(user.to_string(), password.to_string()))
+            let user = user.to_string();
+            let password = config
+                .value_require_((&prefix, "password"))
+                .unwrap_or_default();
+            Some(Credentials::Basic(user, password.to_string()))
         } else {
             None
         };
 
         let es = if let Some(url) = config.value((&prefix, "url")) {
-            let url = Url::parse(url).map_err(|e| {
-                crate::Error::InternalError(format!(
-                    "Invalid URL {}: {}",
-                    (&prefix, "url").as_key(),
-                    e
-                ))
-            })?;
+            let url = Url::parse(url)
+                .map_err(|e| config.new_parse_error((&prefix, "url"), format!("Invalid URL: {e}",)))
+                .ok()?;
             let conn_pool = SingleNodeConnectionPool::new(url);
             let mut builder = TransportBuilder::new(conn_pool);
             if let Some(credentials) = credentials {
                 builder = builder.auth(credentials);
             }
-            if config.property_or_static::<bool>((&prefix, "tls.allow-invalid-certs"), "false")? {
+            if config
+                .property_or_default_::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
+                .unwrap_or(false)
+            {
                 builder = builder.cert_validation(CertificateValidation::None);
             }
 
             Self {
-                index: Elasticsearch::new(builder.build()?),
-            }
-        } else if let Some(cloud_id) = config.value((&prefix, "cloud-id")) {
-            Self {
-                index: Elasticsearch::new(Transport::cloud(
-                    cloud_id,
-                    credentials.ok_or_else(|| {
-                        crate::Error::InternalError(format!(
-                            "Missing user and/or password for ElasticSearch store {}",
-                            prefix
-                        ))
-                    })?,
-                )?),
+                index: Elasticsearch::new(
+                    builder
+                        .build()
+                        .map_err(|err| config.new_build_error(prefix.as_str(), err.to_string()))
+                        .ok()?,
+                ),
             }
         } else {
-            return Err(crate::Error::InternalError(format!(
-                "Missing url or cloud_id for ElasticSearch store {}",
-                prefix
-            )));
+            let credentials = credentials.unwrap_or_else(|| {
+                config.new_build_error((&prefix, "user"), "Missing property");
+                Credentials::Basic("".to_string(), "".to_string())
+            });
+
+            if let Some(cloud_id) = config.value((&prefix, "cloud-id")) {
+                Self {
+                    index: Elasticsearch::new(
+                        Transport::cloud(cloud_id, credentials)
+                            .map_err(|err| config.new_build_error(prefix.as_str(), err.to_string()))
+                            .ok()?,
+                    ),
+                }
+            } else {
+                config.new_parse_error(
+                    prefix.as_str(),
+                    "Missing url or cloud_id for ElasticSearch store",
+                );
+                return None;
+            }
         };
 
         es.create_index(
-            config.property_or_static((&prefix, "index.shards"), "3")?,
-            config.property_or_static((&prefix, "index.replicas"), "0")?,
+            config
+                .property_or_default_((&prefix, "index.shards"), "3")
+                .unwrap_or(3),
+            config
+                .property_or_default_((&prefix, "index.replicas"), "0")
+                .unwrap_or(0),
         )
-        .await?;
+        .await
+        .map_err(|err| config.new_build_error(prefix.as_str(), err.to_string()))
+        .ok()?;
 
-        Ok(es)
+        Some(es)
     }
 
     async fn create_index(&self, shards: usize, replicas: usize) -> crate::Result<()> {

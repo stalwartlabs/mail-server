@@ -23,10 +23,7 @@
 
 use r2d2::Pool;
 use tokio::sync::oneshot;
-use utils::{
-    config::{utils::AsKey, Config},
-    UnwrapFailure,
-};
+use utils::config::{utils::AsKey, Config};
 
 use crate::{
     SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
@@ -36,44 +33,55 @@ use crate::{
 use super::{pool::SqliteConnectionManager, SqliteStore};
 
 impl SqliteStore {
-    pub fn open(config: &Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let db = Self {
             conn_pool: Pool::builder()
                 .max_size(
                     config
-                        .property((&prefix, "pool.max-connections"))?
+                        .property_((&prefix, "pool.max-connections"))
                         .unwrap_or_else(|| (num_cpus::get() * 4) as u32),
                 )
                 .build(
-                    SqliteConnectionManager::file(
-                        config
-                            .value_require((&prefix, "path"))
-                            .failed("Invalid configuration file"),
+                    SqliteConnectionManager::file(config.value_require_((&prefix, "path"))?)
+                        .with_init(|c| {
+                            c.execute_batch(concat!(
+                                "PRAGMA journal_mode = WAL; ",
+                                "PRAGMA synchronous = NORMAL; ",
+                                "PRAGMA temp_store = memory;",
+                                "PRAGMA busy_timeout = 30000;"
+                            ))
+                        }),
+                )
+                .map_err(|err| {
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!("Failed to build connection pool: {err}"),
                     )
-                    .with_init(|c| {
-                        c.execute_batch(concat!(
-                            "PRAGMA journal_mode = WAL; ",
-                            "PRAGMA synchronous = NORMAL; ",
-                            "PRAGMA temp_store = memory;",
-                            "PRAGMA busy_timeout = 30000;"
-                        ))
-                    }),
-                )?,
+                })
+                .ok()?,
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property::<usize>((&prefix, "pool.workers"))?
+                        .property_::<usize>((&prefix, "pool.workers"))
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )
                 .build()
                 .map_err(|err| {
-                    crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
-                })?,
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!("Failed to build worker pool: {err}"),
+                    )
+                })
+                .ok()?,
         };
-        db.create_tables()?;
-        Ok(db)
+
+        if let Err(err) = db.create_tables() {
+            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        }
+
+        Some(db)
     }
 
     #[cfg(feature = "test_mode")]

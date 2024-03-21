@@ -35,40 +35,54 @@ use tokio_postgres::NoTls;
 use utils::{config::utils::AsKey, rustls_client_config};
 
 impl PostgresStore {
-    pub async fn open(config: &utils::config::Config, prefix: impl AsKey) -> crate::Result<Self> {
+    pub async fn open(config: &mut utils::config::Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut cfg = Config::new();
         cfg.dbname = config
-            .value_require((&prefix, "database"))?
+            .value_require_((&prefix, "database"))?
             .to_string()
             .into();
         cfg.host = config.value((&prefix, "host")).map(|s| s.to_string());
         cfg.user = config.value((&prefix, "user")).map(|s| s.to_string());
         cfg.password = config.value((&prefix, "password")).map(|s| s.to_string());
-        cfg.port = config.property((&prefix, "port"))?;
-        cfg.connect_timeout = config.property((&prefix, "timeout"))?;
+        cfg.port = config.property_((&prefix, "port"));
+        cfg.connect_timeout = config.property_((&prefix, "timeout"));
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
-        if let Some(max_conn) = config.property::<usize>((&prefix, "pool.max-connections"))? {
+        if let Some(max_conn) = config.property_::<usize>((&prefix, "pool.max-connections")) {
             cfg.pool = PoolConfig::new(max_conn).into();
         }
         let db = Self {
-            conn_pool: if config.property_or_static::<bool>((&prefix, "tls.enable"), "false")? {
+            conn_pool: if config
+                .property_or_default_::<bool>((&prefix, "tls.enable"), "false")
+                .unwrap_or_default()
+            {
                 cfg.create_pool(
                     Some(Runtime::Tokio1),
                     MakeRustlsConnect::new(rustls_client_config(
-                        config.property_or_static((&prefix, "tls.allow-invalid-certs"), "false")?,
+                        config
+                            .property_or_default_((&prefix, "tls.allow-invalid-certs"), "false")
+                            .unwrap_or_default(),
                     )),
-                )?
+                )
             } else {
-                cfg.create_pool(Some(Runtime::Tokio1), NoTls)?
-            },
+                cfg.create_pool(Some(Runtime::Tokio1), NoTls)
+            }
+            .map_err(|e| {
+                config.new_build_error(
+                    prefix.as_str(),
+                    format!("Failed to create connection pool: {e}"),
+                )
+            })
+            .ok()?,
         };
 
-        db.create_tables().await?;
+        if let Err(err) = db.create_tables().await {
+            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        }
 
-        Ok(db)
+        Some(db)
     }
 
     pub(super) async fn create_tables(&self) -> crate::Result<()> {

@@ -57,7 +57,7 @@ async fn report_dmarc() {
 
     // Create scheduler
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new(&[]).parse_signatures().signers;
+    core.shared.signers = ConfigContext::new().parse_signatures().signers;
     let config = &mut core.report.config;
     config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);

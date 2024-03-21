@@ -69,7 +69,7 @@ impl Store {
         Ok(results)
     }
 
-    pub async fn config_set(&self, keys: impl Iterator<Item = ConfigKey>) -> crate::Result<()> {
+    pub async fn config_set(&self, keys: impl IntoIterator<Item = ConfigKey>) -> crate::Result<()> {
         let mut batch = BatchBuilder::new();
         for key in keys {
             batch.set(ValueClass::Config(key.key.into_bytes()), key.value);

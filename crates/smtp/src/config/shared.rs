@@ -62,24 +62,23 @@ impl ConfigShared for Config {
                 .clone(),
             default_data_store: ctx.stores.get_store(self, "storage.data")?,
             default_lookup_store: self
-                .value_or_default("storage.lookup", "storage.data")
+                .value_or_else("storage.lookup", "storage.data")
                 .and_then(|id| ctx.stores.lookup_stores.get(id))
                 .ok_or_else(|| {
                     format!(
                         "Lookup store {:?} not found for key \"storage.lookup\".",
-                        self.value_or_default("storage.lookup", "storage.data")
+                        self.value_or_else("storage.lookup", "storage.data")
                             .unwrap()
                     )
                 })?
                 .clone(),
             default_blob_store: self
-                .value_or_default("storage.blob", "storage.data")
+                .value_or_else("storage.blob", "storage.data")
                 .and_then(|id| ctx.stores.blob_stores.get(id))
                 .ok_or_else(|| {
                     format!(
                         "Lookup store {:?} not found for key \"storage.blob\".",
-                        self.value_or_default("storage.blob", "storage.data")
-                            .unwrap()
+                        self.value_or_else("storage.blob", "storage.data").unwrap()
                     )
                 })?
                 .clone(),

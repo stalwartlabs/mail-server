@@ -32,7 +32,6 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use store::{backend::memory::MemoryStore, LookupStore};
 use tokio::runtime::Handle;
 
 use crate::{core::SMTP, queue::DomainPart};
@@ -165,22 +164,12 @@ impl SMTP {
                                 }
                             }
                             Recipient::List(list) => {
-                                if let Some(list) = self.shared.lookup_stores.get(&list) {
-                                    if let LookupStore::Memory(list) = list {
-                                        if let MemoryStore::List(list) = list.as_ref() {
-                                            for rcpt in &list.set {
-                                                handle.block_on(message.add_recipient(rcpt, self));
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    tracing::warn!(
-                                        parent: &span,
-                                        context = "sieve",
-                                        event = "send-failed",
-                                        reason = format!("Lookup {list:?} not found.")
-                                    );
-                                }
+                                tracing::warn!(
+                                    parent: &span,
+                                    context = "sieve",
+                                    event = "send-failed",
+                                    reason = format!("Lookup {list:?} not supported.")
+                                );
                             }
                         }
 
