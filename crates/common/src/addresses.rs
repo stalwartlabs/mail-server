@@ -114,7 +114,7 @@ impl Core {
 }
 
 impl AddressMapping {
-    pub fn try_parse(config: &mut Config, key: impl AsKey) -> Self {
+    pub fn parse(config: &mut Config, key: impl AsKey) -> Self {
         let key = key.as_key();
         if let Some(value) = config.value(key.as_str()) {
             match value {

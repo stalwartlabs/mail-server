@@ -894,7 +894,27 @@ impl AsKey for String {
     }
 }
 
+impl AsKey for &String {
+    fn as_key(&self) -> String {
+        self.to_string()
+    }
+
+    fn as_prefix(&self) -> String {
+        format!("{self}.")
+    }
+}
+
 impl AsKey for (&str, &str) {
+    fn as_key(&self) -> String {
+        format!("{}.{}", self.0, self.1)
+    }
+
+    fn as_prefix(&self) -> String {
+        format!("{}.{}.", self.0, self.1)
+    }
+}
+
+impl AsKey for (&str, &String) {
     fn as_key(&self) -> String {
         format!("{}.{}", self.0, self.1)
     }

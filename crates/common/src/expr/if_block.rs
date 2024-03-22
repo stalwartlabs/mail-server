@@ -28,6 +28,7 @@ use crate::expr::{Constant, Expression};
 use super::{
     parser::ExpressionParser,
     tokenizer::{TokenMap, Tokenizer},
+    ExpressionItem,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -60,8 +61,12 @@ impl IfBlock {
 }
 
 impl Expression {
-    pub fn try_parse(config: &mut Config, key: &str, token_map: &TokenMap) -> Option<Expression> {
-        if let Some(expr) = config.value_or_warn(key) {
+    pub fn try_parse(
+        config: &mut Config,
+        key: impl AsKey,
+        token_map: &TokenMap,
+    ) -> Option<Expression> {
+        if let Some(expr) = config.value(key.as_key()) {
             match ExpressionParser::new(Tokenizer::new(expr, token_map)).parse() {
                 Ok(expr) => Some(expr),
                 Err(err) => {
@@ -193,5 +198,33 @@ impl IfBlock {
         } else {
             Some(if_block)
         }
+    }
+
+    pub fn into_default(self, key: impl Into<String>) -> IfBlock {
+        IfBlock {
+            key: key.into(),
+            if_then: Default::default(),
+            default: self.default,
+        }
+    }
+
+    pub fn default_string(&self) -> Option<&str> {
+        for expr_item in &self.default.items {
+            if let ExpressionItem::Constant(Constant::String(value)) = expr_item {
+                return Some(value.as_str());
+            }
+        }
+
+        None
+    }
+
+    pub fn into_default_string(self) -> Option<String> {
+        for expr_item in self.default.items {
+            if let ExpressionItem::Constant(Constant::String(value)) = expr_item {
+                return Some(value);
+            }
+        }
+
+        None
     }
 }

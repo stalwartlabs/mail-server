@@ -78,7 +78,7 @@ impl BlockedIps {
 
 impl Core {
     pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> store::Result<bool> {
-        if let Some(rate) = &self.blocked_ips.limiter_rate {
+        if let Some(rate) = &self.network.blocked_ips.limiter_rate {
             let is_allowed = self
                 .storage
                 .lookup
@@ -93,7 +93,7 @@ impl Core {
                     .is_none();
             if !is_allowed {
                 // Add IP to blocked list
-                self.blocked_ips.ip_addresses.write().insert(ip);
+                self.network.blocked_ips.ip_addresses.write().insert(ip);
 
                 // Write blocked IP to config
                 self.storage
@@ -112,13 +112,14 @@ impl Core {
     }
 
     pub fn has_fail2ban(&self) -> bool {
-        self.blocked_ips.limiter_rate.is_some()
+        self.network.blocked_ips.limiter_rate.is_some()
     }
 
     pub fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
-        self.blocked_ips.ip_addresses.read().contains(ip)
-            || (self.blocked_ips.has_networks
+        self.network.blocked_ips.ip_addresses.read().contains(ip)
+            || (self.network.blocked_ips.has_networks
                 && self
+                    .network
                     .blocked_ips
                     .ip_networks
                     .iter()

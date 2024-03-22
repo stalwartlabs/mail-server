@@ -29,7 +29,7 @@ use utils::config::utils::ParseValue;
 
 use super::{
     functions::{ASYNC_FUNCTIONS, FUNCTIONS},
-    BinaryOperator, Constant, Token, UnaryOperator,
+    BinaryOperator, Constant, ConstantValue, Token, UnaryOperator,
 };
 
 pub struct Tokenizer<'x> {
@@ -45,9 +45,9 @@ pub struct Tokenizer<'x> {
     is_eof: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct TokenMap {
-    tokens: AHashMap<&'static str, Token>,
+    pub tokens: AHashMap<&'static str, Token>,
 }
 
 impl<'x> Tokenizer<'x> {
@@ -359,7 +359,7 @@ impl TokenMap {
         self
     }
 
-    pub fn with_constants<I, T>(mut self, consts: I) -> Self
+    pub fn set_constants<I, T>(mut self, consts: I) -> Self
     where
         I: IntoIterator<Item = (&'static str, T)>,
         T: Into<Constant>,
@@ -368,6 +368,16 @@ impl TokenMap {
             self.tokens.insert(name, Token::Constant(constant.into()));
         }
 
+        self
+    }
+
+    pub fn with_constants<T: ConstantValue>(mut self) -> Self {
+        T::add_constants(&mut self);
+        self
+    }
+
+    pub fn add_constant(&mut self, name: &'static str, constant: impl Into<Constant>) -> &mut Self {
+        self.tokens.insert(name, Token::Constant(constant.into()));
         self
     }
 }

@@ -114,11 +114,11 @@ impl ConfigBuilder {
     }
 
     pub fn parse_acmes(&mut self, config: &mut Config) {
-        let acme_ids = config
-            .sub_keys("acme", ".cache")
+        for acme_id in config
+            .sub_keys("acme", ".directory")
             .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        for acme_id in acme_ids {
+            .collect::<Vec<_>>()
+        {
             let directory = config
                 .value(("acme", acme_id.as_str(), "directory"))
                 .unwrap_or(LETS_ENCRYPT_PRODUCTION_DIRECTORY)
@@ -149,23 +149,11 @@ impl ConfigBuilder {
                 continue;
             }
 
-            // Find which domains are covered by this ACME manager
-            let mut domains = Vec::new();
-            for id in config.sub_keys("server.listener", ".protocol") {
-                match (
-                    config.value_or_else(("server.listener", id, "tls.acme"), "server.tls.acme"),
-                    config.value_or_else(("server.listener", id, "hostname"), "server.hostname"),
-                ) {
-                    (Some(listener_acme), Some(hostname)) if listener_acme == acme_id => {
-                        let hostname = hostname.trim().to_lowercase();
-
-                        if !domains.contains(&hostname) {
-                            domains.push(hostname);
-                        }
-                    }
-                    _ => (),
-                }
-            }
+            // Domains covered by this ACME manager
+            let domains = config
+                .values(("acme", acme_id.as_str(), "domains"))
+                .map(|(_, v)| v.to_string())
+                .collect::<Vec<_>>();
 
             if !domains.is_empty() {
                 match AcmeManager::new(

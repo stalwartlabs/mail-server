@@ -21,9 +21,12 @@
  * for more details.
 */
 
+use utils::map::vec_map::VecMap;
+
 use crate::{
     error::request::RequestError,
     parser::{json::Parser, Error, JsonObjectParser},
+    types::type_state::DataType,
 };
 
 #[derive(Debug, Clone, Copy, serde::Serialize, Hash, PartialEq, Eq)]
@@ -48,6 +51,119 @@ pub enum Capability {
     Blob = 1 << 8,
     #[serde(rename(serialize = "urn:ietf:params:jmap:quota"))]
     Quota = 1 << 9,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+#[allow(dead_code)]
+pub enum Capabilities {
+    Core(CoreCapabilities),
+    Mail(MailCapabilities),
+    Submission(SubmissionCapabilities),
+    WebSocket(WebSocketCapabilities),
+    SieveAccount(SieveAccountCapabilities),
+    SieveSession(SieveSessionCapabilities),
+    Blob(BlobCapabilities),
+    Empty(EmptyCapabilities),
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CoreCapabilities {
+    #[serde(rename(serialize = "maxSizeUpload"))]
+    pub max_size_upload: usize,
+    #[serde(rename(serialize = "maxConcurrentUpload"))]
+    pub max_concurrent_upload: usize,
+    #[serde(rename(serialize = "maxSizeRequest"))]
+    pub max_size_request: usize,
+    #[serde(rename(serialize = "maxConcurrentRequests"))]
+    pub max_concurrent_requests: usize,
+    #[serde(rename(serialize = "maxCallsInRequest"))]
+    pub max_calls_in_request: usize,
+    #[serde(rename(serialize = "maxObjectsInGet"))]
+    pub max_objects_in_get: usize,
+    #[serde(rename(serialize = "maxObjectsInSet"))]
+    pub max_objects_in_set: usize,
+    #[serde(rename(serialize = "collationAlgorithms"))]
+    pub collation_algorithms: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WebSocketCapabilities {
+    #[serde(rename(serialize = "url"))]
+    pub url: String,
+    #[serde(rename(serialize = "supportsPush"))]
+    pub supports_push: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SieveSessionCapabilities {
+    #[serde(rename(serialize = "implementation"))]
+    pub implementation: &'static str,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SieveAccountCapabilities {
+    #[serde(rename(serialize = "maxSizeScriptName"))]
+    pub max_script_name: usize,
+    #[serde(rename(serialize = "maxSizeScript"))]
+    pub max_script_size: usize,
+    #[serde(rename(serialize = "maxNumberScripts"))]
+    pub max_scripts: usize,
+    #[serde(rename(serialize = "maxNumberRedirects"))]
+    pub max_redirects: usize,
+    #[serde(rename(serialize = "sieveExtensions"))]
+    pub extensions: Vec<String>,
+    #[serde(rename(serialize = "notificationMethods"))]
+    pub notification_methods: Option<Vec<String>>,
+    #[serde(rename(serialize = "externalLists"))]
+    pub ext_lists: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MailCapabilities {
+    #[serde(rename(serialize = "maxMailboxesPerEmail"))]
+    pub max_mailboxes_per_email: Option<usize>,
+    #[serde(rename(serialize = "maxMailboxDepth"))]
+    pub max_mailbox_depth: usize,
+    #[serde(rename(serialize = "maxSizeMailboxName"))]
+    pub max_size_mailbox_name: usize,
+    #[serde(rename(serialize = "maxSizeAttachmentsPerEmail"))]
+    pub max_size_attachments_per_email: usize,
+    #[serde(rename(serialize = "emailQuerySortOptions"))]
+    pub email_query_sort_options: Vec<String>,
+    #[serde(rename(serialize = "mayCreateTopLevelMailbox"))]
+    pub may_create_top_level_mailbox: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SubmissionCapabilities {
+    #[serde(rename(serialize = "maxDelayedSend"))]
+    pub max_delayed_send: usize,
+    #[serde(rename(serialize = "submissionExtensions"))]
+    pub submission_extensions: VecMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BlobCapabilities {
+    #[serde(rename(serialize = "maxSizeBlobSet"))]
+    pub max_size_blob_set: usize,
+    #[serde(rename(serialize = "maxDataSources"))]
+    pub max_data_sources: usize,
+    #[serde(rename(serialize = "supportedTypeNames"))]
+    pub supported_type_names: Vec<DataType>,
+    #[serde(rename(serialize = "supportedDigestAlgorithms"))]
+    pub supported_digest_algorithms: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct EmptyCapabilities {}
+
+impl Default for SieveSessionCapabilities {
+    fn default() -> Self {
+        Self {
+            implementation: concat!("Stalwart JMAP v", env!("CARGO_PKG_VERSION"),),
+        }
+    }
 }
 
 impl JsonObjectParser for Capability {

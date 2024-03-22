@@ -26,6 +26,8 @@ use std::{borrow::Cow, time::Duration};
 use regex::Regex;
 use utils::config::utils::ParseValue;
 
+use self::tokenizer::TokenMap;
+
 pub mod eval;
 pub mod functions;
 pub mod if_block;
@@ -289,9 +291,12 @@ impl Eq for Token {}
 pub trait ConstantValue:
     ParseValue + for<'x> TryFrom<Variable<'x>> + Into<Constant> + Sized
 {
+    fn add_constants(token_map: &mut TokenMap);
 }
 
-impl ConstantValue for Duration {}
+impl ConstantValue for Duration {
+    fn add_constants(_: &mut TokenMap) {}
+}
 
 impl<'x> TryFrom<Variable<'x>> for Duration {
     type Error = ();

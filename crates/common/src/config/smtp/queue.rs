@@ -5,12 +5,14 @@ use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
 use utils::config::{
     utils::{AsKey, ParseValue},
-    ServerProtocol,
+    Config, ServerProtocol,
 };
 
 use crate::expr::{if_block::IfBlock, Constant, ConstantValue, Expression, Variable};
 
-use super::Throttle;
+use self::throttle::{parse_throttle, parse_throttle_key};
+
+use super::*;
 
 pub struct QueueConfig {
     // Schedule
@@ -156,6 +158,300 @@ impl Default for QueueConfig {
     }
 }
 
+impl QueueConfig {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut queue = QueueConfig::default();
+        let rcpt_vars = TokenMap::default().with_smtp_variables(&[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+        ]);
+        let sender_vars =
+            TokenMap::default().with_smtp_variables(&[V_SENDER, V_SENDER_DOMAIN, V_PRIORITY]);
+        let mx_vars = TokenMap::default().with_smtp_variables(&[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_MX,
+        ]);
+        let host_vars = TokenMap::default().with_smtp_variables(&[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_LOCAL_IP,
+            V_REMOTE_IP,
+            V_MX,
+        ]);
+        let ip_strategy_vars = sender_vars.clone().with_constants::<IpLookupStrategy>();
+        let dane_vars = mx_vars.clone().with_constants::<RequireOptional>();
+        let mta_sts_vars = rcpt_vars.clone().with_constants::<RequireOptional>();
+
+        // Parse default server hostname
+        if let Some(hostname) = parse_server_hostname(config) {
+            queue.hostname = hostname.into_default("queue.outbound.hostname");
+        }
+
+        for (value, key, token_map) in [
+            (&mut queue.retry, "queue.schedule.retry", &host_vars),
+            (&mut queue.notify, "queue.schedule.notify", &rcpt_vars),
+            (&mut queue.expire, "queue.schedule.expire", &rcpt_vars),
+            (&mut queue.hostname, "queue.outbound.hostname", &sender_vars),
+            (&mut queue.max_mx, "queue.outbound.limits.mx", &rcpt_vars),
+            (
+                &mut queue.max_multihomed,
+                "queue.outbound.limits.multihomed",
+                &rcpt_vars,
+            ),
+            (
+                &mut queue.ip_strategy,
+                "queue.outbound.ip-strategy",
+                &ip_strategy_vars,
+            ),
+            (
+                &mut queue.source_ip.ipv4,
+                "queue.outbound.source-ip.v4",
+                &mx_vars,
+            ),
+            (
+                &mut queue.source_ip.ipv6,
+                "queue.outbound.source-ip.v6",
+                &mx_vars,
+            ),
+            (&mut queue.next_hop, "queue.outbound.next-hop", &rcpt_vars),
+            (&mut queue.tls.dane, "queue.outbound.tls.dane", &dane_vars),
+            (
+                &mut queue.tls.mta_sts,
+                "queue.outbound.tls.mta-sts",
+                &mta_sts_vars,
+            ),
+            (
+                &mut queue.tls.start,
+                "queue.outbound.tls.starttls",
+                &dane_vars,
+            ),
+            (
+                &mut queue.tls.invalid_certs,
+                "queue.outbound.tls.allow-invalid-certs",
+                &mx_vars,
+            ),
+            (
+                &mut queue.timeout.connect,
+                "queue.outbound.timeouts.connect",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.greeting,
+                "queue.outbound.timeouts.greeting",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.tls,
+                "queue.outbound.timeouts.tls",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.ehlo,
+                "queue.outbound.timeouts.ehlo",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.mail,
+                "queue.outbound.timeouts.mail-from",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.rcpt,
+                "queue.outbound.timeouts.rcpt-to",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.data,
+                "queue.outbound.timeouts.data",
+                &host_vars,
+            ),
+            (
+                &mut queue.timeout.mta_sts,
+                "queue.outbound.timeouts.mta-sts",
+                &host_vars,
+            ),
+            (&mut queue.dsn.name, "report.dsn.from-name", &sender_vars),
+            (
+                &mut queue.dsn.address,
+                "report.dsn.from-address",
+                &sender_vars,
+            ),
+            (&mut queue.dsn.sign, "report.dsn.sign", &sender_vars),
+        ] {
+            if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
+                *value = if_block;
+            }
+        }
+
+        // Parse queue quotas and throttles
+        queue.throttle = parse_queue_throttle(config);
+        queue.quota = parse_queue_quota(config);
+        queue
+    }
+}
+
+fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
+    // Parse throttle
+    let mut throttle = QueueThrottle {
+        sender: Vec::new(),
+        rcpt: Vec::new(),
+        host: Vec::new(),
+    };
+
+    let all_throttles = parse_throttle(
+        config,
+        "queue.throttle",
+        &TokenMap::default().with_smtp_variables(&[
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_PRIORITY,
+            V_MX,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+        ]),
+        THROTTLE_RCPT_DOMAIN
+            | THROTTLE_SENDER
+            | THROTTLE_SENDER_DOMAIN
+            | THROTTLE_MX
+            | THROTTLE_REMOTE_IP
+            | THROTTLE_LOCAL_IP,
+    );
+    for t in all_throttles {
+        if (t.keys & (THROTTLE_MX | THROTTLE_REMOTE_IP | THROTTLE_LOCAL_IP)) != 0
+            || t.expr
+                .items()
+                .iter()
+                .any(|c| matches!(c, ExpressionItem::Variable(V_MX | V_REMOTE_IP | V_LOCAL_IP)))
+        {
+            throttle.host.push(t);
+        } else if (t.keys & (THROTTLE_RCPT_DOMAIN)) != 0
+            || t.expr
+                .items()
+                .iter()
+                .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT_DOMAIN)))
+        {
+            throttle.rcpt.push(t);
+        } else {
+            throttle.sender.push(t);
+        }
+    }
+
+    throttle
+}
+
+fn parse_queue_quota(config: &mut Config) -> QueueQuotas {
+    let mut capacities = QueueQuotas {
+        sender: Vec::new(),
+        rcpt: Vec::new(),
+        rcpt_domain: Vec::new(),
+    };
+
+    for quota_id in config
+        .sub_keys("queue.quota", "")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    {
+        if let Some(quota) = parse_queue_quota_item(config, ("queue.quota", &quota_id)) {
+            if (quota.keys & THROTTLE_RCPT) != 0
+                || quota
+                    .expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT)))
+            {
+                capacities.rcpt.push(quota);
+            } else if (quota.keys & THROTTLE_RCPT_DOMAIN) != 0
+                || quota
+                    .expr
+                    .items()
+                    .iter()
+                    .any(|c| matches!(c, ExpressionItem::Variable(V_RECIPIENT_DOMAIN)))
+            {
+                capacities.rcpt_domain.push(quota);
+            } else {
+                capacities.sender.push(quota);
+            }
+        }
+    }
+
+    capacities
+}
+
+fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<QueueQuota> {
+    let prefix = prefix.as_key();
+    let mut keys = 0;
+    for (key_, value) in config
+        .values((&prefix, "key"))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect::<Vec<_>>()
+    {
+        match parse_throttle_key(&value) {
+            Ok(key) => {
+                if (key
+                    & (THROTTLE_RCPT_DOMAIN
+                        | THROTTLE_RCPT
+                        | THROTTLE_SENDER
+                        | THROTTLE_SENDER_DOMAIN))
+                    != 0
+                {
+                    keys |= key;
+                } else {
+                    let err = format!("Quota key {value:?} is not available in this context");
+                    config.new_build_error(key_, err);
+                }
+            }
+            Err(err) => {
+                config.new_parse_error(key_, err);
+            }
+        }
+    }
+
+    let quota = QueueQuota {
+        expr: Expression::try_parse(
+            config,
+            (prefix.as_str(), "match"),
+            &TokenMap::default().with_smtp_variables(&[
+                V_RECIPIENT,
+                V_RECIPIENT_DOMAIN,
+                V_SENDER,
+                V_SENDER_DOMAIN,
+                V_PRIORITY,
+            ]),
+        )
+        .unwrap_or_default(),
+        keys,
+        size: config
+            .property_::<usize>((prefix.as_str(), "size"))
+            .filter(|&v| v > 0),
+        messages: config
+            .property_::<usize>((prefix.as_str(), "messages"))
+            .filter(|&v| v > 0),
+    };
+
+    // Validate
+    if quota.size.is_none() && quota.messages.is_none() {
+        config.new_parse_error(
+            prefix.as_str(),
+            concat!(
+                "Queue quota needs to define a ",
+                "valid 'size' and/or 'messages' property."
+            )
+            .to_string(),
+        );
+        None
+    } else {
+        Some(quota)
+    }
+}
+
 impl ParseValue for RequireOptional {
     fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
         match value {
@@ -194,7 +490,18 @@ impl From<RequireOptional> for Constant {
     }
 }
 
-impl ConstantValue for RequireOptional {}
+impl ConstantValue for RequireOptional {
+    fn add_constants(token_map: &mut crate::expr::tokenizer::TokenMap) {
+        token_map
+            .add_constant("optional", RequireOptional::Optional)
+            .add_constant("require", RequireOptional::Require)
+            .add_constant("required", RequireOptional::Require)
+            .add_constant("disable", RequireOptional::Disable)
+            .add_constant("disabled", RequireOptional::Disable)
+            .add_constant("none", RequireOptional::Disable)
+            .add_constant("false", RequireOptional::Disable);
+    }
+}
 
 impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
     type Error = ();
@@ -225,4 +532,12 @@ impl From<IpLookupStrategy> for Constant {
     }
 }
 
-impl ConstantValue for IpLookupStrategy {}
+impl ConstantValue for IpLookupStrategy {
+    fn add_constants(token_map: &mut crate::expr::tokenizer::TokenMap) {
+        token_map
+            .add_constant("ipv4_only", IpLookupStrategy::Ipv4Only)
+            .add_constant("ipv6_only", IpLookupStrategy::Ipv6Only)
+            .add_constant("ipv6_then_ipv4", IpLookupStrategy::Ipv6thenIpv4)
+            .add_constant("ipv4_then_ipv6", IpLookupStrategy::Ipv4thenIpv6);
+    }
+}
