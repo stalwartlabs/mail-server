@@ -16,7 +16,7 @@ mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"]}
 tokio = { version = "1.23", features = ["full"] }
 num_cpus = "1.13.1"
-clap = { version = "4.1.6", features = ["derive"] }
+clap = { version = "4.1.6", features = ["derive", "env"] }
 prettytable-rs = "0.10.0"
 rpassword = "7.0"
 indicatif = "0.17.0"
