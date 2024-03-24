@@ -15,7 +15,6 @@ impl Core {
         directory: &Directory,
         email: &str,
     ) -> directory::Result<Vec<u32>> {
-        let todo = "update functions using this method.";
         let mut address = self
             .smtp
             .session
@@ -142,8 +141,8 @@ impl AddressMapping {
 
 struct Address<'x>(&'x str);
 
-impl<'x> ResolveVariable<'x> for Address<'x> {
-    fn resolve_variable(&self, _: u32) -> crate::expr::Variable<'x> {
+impl ResolveVariable for Address<'_> {
+    fn resolve_variable(&self, _: u32) -> crate::expr::Variable {
         Variable::from(self.0)
     }
 }

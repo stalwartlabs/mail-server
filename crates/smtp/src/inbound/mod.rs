@@ -21,12 +21,11 @@
  * for more details.
 */
 
+use common::config::smtp::auth::{ArcSealer, DkimSigner};
 use mail_auth::{
     arc::ArcSet, dkim::Signature, dmarc::Policy, ArcOutput, AuthenticatedMessage,
     AuthenticationResults, DkimResult, DmarcResult, IprevResult, SpfResult,
 };
-
-use crate::config::{ArcSealer, DkimSigner};
 
 pub mod auth;
 pub mod data;
@@ -38,8 +37,17 @@ pub mod session;
 pub mod spawn;
 pub mod vrfy;
 
-impl ArcSealer {
-    pub fn seal<'x>(
+pub trait ArcSeal {
+    fn seal<'x>(
+        &self,
+        message: &'x AuthenticatedMessage,
+        results: &'x AuthenticationResults,
+        arc_output: &'x ArcOutput,
+    ) -> mail_auth::Result<ArcSet<'x>>;
+}
+
+impl ArcSeal for ArcSealer {
+    fn seal<'x>(
         &self,
         message: &'x AuthenticatedMessage,
         results: &'x AuthenticationResults,
@@ -52,14 +60,19 @@ impl ArcSealer {
     }
 }
 
-impl DkimSigner {
-    pub fn sign(&self, message: &[u8]) -> mail_auth::Result<Signature> {
+pub trait DkimSign {
+    fn sign(&self, message: &[u8]) -> mail_auth::Result<Signature>;
+    fn sign_chained(&self, message: &[&[u8]]) -> mail_auth::Result<Signature>;
+}
+
+impl DkimSign for DkimSigner {
+    fn sign(&self, message: &[u8]) -> mail_auth::Result<Signature> {
         match self {
             DkimSigner::RsaSha256(signer) => signer.sign(message),
             DkimSigner::Ed25519Sha256(signer) => signer.sign(message),
         }
     }
-    pub fn sign_chained(&self, message: &[&[u8]]) -> mail_auth::Result<Signature> {
+    fn sign_chained(&self, message: &[&[u8]]) -> mail_auth::Result<Signature> {
         match self {
             DkimSigner::RsaSha256(signer) => signer.sign_chained(message.iter().copied()),
             DkimSigner::Ed25519Sha256(signer) => signer.sign_chained(message.iter().copied()),

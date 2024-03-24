@@ -1,11 +1,10 @@
 use std::{str::FromStr, time::Duration};
 
+use jmap_proto::request::capability::BaseCapabilities;
 use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::rand::{distributions::Alphanumeric, thread_rng, Rng};
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config, Rate};
-
-use super::capabilities::BaseCapabilities;
 
 pub struct JmapConfig {
     pub default_language: Language,
@@ -40,7 +39,6 @@ pub struct JmapConfig {
     pub rate_authenticated: Option<Rate>,
     pub rate_authenticate_req: Option<Rate>,
     pub rate_anonymous: Option<Rate>,
-    pub rate_use_forwarded: bool,
 
     pub event_source_throttle: Duration,
     pub push_max_total: usize,
@@ -66,6 +64,7 @@ pub struct JmapConfig {
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
     pub http_headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
+    pub http_use_forwarded: bool,
 
     pub encrypt: bool,
     pub encrypt_append: bool,
@@ -148,9 +147,6 @@ impl JmapConfig {
             rate_authenticate_req: config
                 .property_or_default_("authentication.rate-limit", "10/1m"),
             rate_anonymous: config.property_or_default_("jmap.rate-limit.anonymous", "100/1m"),
-            rate_use_forwarded: config
-                .property_("jmap.rate-limit.use-forwarded")
-                .unwrap_or(false),
             oauth_key: config
                 .value("oauth.key")
                 .map(|s| s.to_string())
@@ -216,6 +212,9 @@ impl JmapConfig {
                     )
                 })
             }),
+            http_use_forwarded: config
+                .property_("server.http.use-x-forwarded")
+                .unwrap_or(false),
             http_headers: config
                 .values("server.http.headers")
                 .map(|(_, v)| {

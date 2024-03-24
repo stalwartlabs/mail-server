@@ -21,7 +21,9 @@
  * for more details.
 */
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+use rustls::{crypto::ring::cipher_suite::*, SupportedCipherSuite};
 
 use super::utils::{AsKey, ParseKey, ParseValue};
 
@@ -143,6 +145,47 @@ impl ParseValue for IpAddrOrMask {
         } else {
             ip.parse_key(key).map(IpAddrOrMask::Ip)
         }
+    }
+}
+
+impl ParseValue for SocketAddr {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        value.parse().map_err(|_| {
+            format!(
+                "Invalid socket address {:?} for property {:?}.",
+                value,
+                key.as_key()
+            )
+        })
+    }
+}
+
+impl ParseValue for SupportedCipherSuite {
+    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+        Ok(match value {
+            // TLS1.3 suites
+            "TLS13_AES_256_GCM_SHA384" => TLS13_AES_256_GCM_SHA384,
+            "TLS13_AES_128_GCM_SHA256" => TLS13_AES_128_GCM_SHA256,
+            "TLS13_CHACHA20_POLY1305_SHA256" => TLS13_CHACHA20_POLY1305_SHA256,
+            // TLS1.2 suites
+            "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" => TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" => TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256" => {
+                TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+            }
+            "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" => TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" => TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" => {
+                TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+            }
+            cipher => {
+                return Err(format!(
+                    "Unsupported TLS cipher suite {:?} found in key {:?}",
+                    cipher,
+                    key.as_key()
+                ))
+            }
+        })
     }
 }
 

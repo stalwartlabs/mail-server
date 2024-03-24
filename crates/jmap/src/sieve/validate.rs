@@ -42,7 +42,7 @@ impl JMAP {
             error: match self
                 .blob_download(&request.blob_id, access_token)
                 .await?
-                .map(|bytes| self.sieve_compiler.compile(&bytes))
+                .map(|bytes| self.core.sieve.untrusted_compiler.compile(&bytes))
             {
                 Some(Ok(_)) => None,
                 Some(Err(err)) => SetError::new(SetErrorType::InvalidScript)

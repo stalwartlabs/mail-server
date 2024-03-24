@@ -35,7 +35,7 @@ impl JMAP {
 
     pub async fn assign_change_id(&self, _: u32) -> Result<u64, MethodError> {
         self.generate_snowflake_id()
-        /*self.store
+        /*self.core.storage.data
         .assign_change_id(account_id)
         .await
         .map_err(|err| {
@@ -49,7 +49,7 @@ impl JMAP {
     }
 
     pub fn generate_snowflake_id(&self) -> Result<u64, MethodError> {
-        self.snowflake_id.generate().ok_or_else(|| {
+        self.inner.snowflake_id.generate().ok_or_else(|| {
             tracing::error!(
                 event = "error",
                 context = "change_log",
@@ -71,14 +71,19 @@ impl JMAP {
 
         let mut builder = BatchBuilder::new();
         builder.with_account_id(account_id).custom(changes);
-        self.store.write(builder.build()).await.map_err(|err| {
-            tracing::error!(
+        self.core
+            .storage
+            .data
+            .write(builder.build())
+            .await
+            .map_err(|err| {
+                tracing::error!(
                     event = "error",
                     context = "change_log",
                     error = ?err,
                     "Failed to write changes.");
-            MethodError::ServerPartialFail
-        })?;
+                MethodError::ServerPartialFail
+            })?;
 
         Ok(state)
     }

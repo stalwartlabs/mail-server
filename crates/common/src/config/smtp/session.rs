@@ -180,6 +180,8 @@ impl SessionConfig {
             V_LOCAL_IP,
             V_HELO_DOMAIN,
         ]);
+        let mt_priority_vars = has_sender_vars.clone().with_constants::<MtPriority>();
+        let mechanisms_vars = has_ehlo_hars.clone().with_constants::<Mechanism>();
 
         let mut session = SessionConfig::default();
         session.rcpt.catch_all = AddressMapping::parse(config, "session.rcpt.catch-all");
@@ -199,6 +201,225 @@ impl SessionConfig {
             .filter_map(|id| parse_pipe(config, &id, &has_rcpt_vars))
             .collect();
         session.throttle = SessionThrottle::parse(config);
+
+        for (value, key, token_map) in [
+            (&mut session.duration, "session.duration", &has_conn_vars),
+            (
+                &mut session.transfer_limit,
+                "session.transfer-limit",
+                &has_conn_vars,
+            ),
+            (&mut session.timeout, "session.timeout", &has_conn_vars),
+            (
+                &mut session.connect.script,
+                "session.connect.script",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.connect.greeting,
+                "session.connect.greeting",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.extensions.pipelining,
+                "session.extensions.pipelining",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.dsn,
+                "session.extensions.dsn",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.vrfy,
+                "session.extensions.vrfy",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.expn,
+                "session.extensions.expn",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.chunking,
+                "session.extensions.chunking",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.requiretls,
+                "session.extensions.requiretls",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.no_soliciting,
+                "session.extensions.no-soliciting",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.future_release,
+                "session.extensions.future-release",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.deliver_by,
+                "session.extensions.deliver-by",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.extensions.mt_priority,
+                "session.extensions.mt-priority",
+                &mt_priority_vars,
+            ),
+            (
+                &mut session.ehlo.script,
+                "session.ehlo.script",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.ehlo.require,
+                "session.ehlo.require",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.ehlo.reject_non_fqdn,
+                "session.ehlo.reject-non-fqdn",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.auth.directory,
+                "session.auth.directory",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.auth.mechanisms,
+                "session.auth.mechanisms",
+                &mechanisms_vars,
+            ),
+            (
+                &mut session.auth.require,
+                "session.auth.require",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.auth.errors_max,
+                "session.auth.errors.max",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.auth.errors_wait,
+                "session.auth.errors.wait",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.auth.allow_plain_text,
+                "session.auth.allow-plain-text",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.auth.must_match_sender,
+                "session.auth.must-match-sender",
+                &has_ehlo_hars,
+            ),
+            (
+                &mut session.mail.script,
+                "session.mail.script",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.mail.rewrite,
+                "session.mail.rewrite",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.rcpt.script,
+                "session.rcpt.script",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.rcpt.relay,
+                "session.rcpt.relay",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.rcpt.directory,
+                "session.rcpt.directory",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.rcpt.errors_max,
+                "session.rcpt.errors.max",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.rcpt.errors_wait,
+                "session.rcpt.errors.wait",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.rcpt.max_recipients,
+                "session.rcpt.max-recipients",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.rcpt.rewrite,
+                "session.rcpt.rewrite",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.script,
+                "session.data.script",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.max_messages,
+                "session.data.limits.messages",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.max_message_size,
+                "session.data.limits.size",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.max_received_headers,
+                "session.data.limits.received-headers",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_received,
+                "session.data.add-headers.received",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_received_spf,
+                "session.data.add-headers.received-spf",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_return_path,
+                "session.data.add-headers.return-path",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_auth_results,
+                "session.data.add-headers.auth-results",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_message_id,
+                "session.data.add-headers.message-id",
+                &has_rcpt_vars,
+            ),
+            (
+                &mut session.data.add_date,
+                "session.data.add-headers.date",
+                &has_rcpt_vars,
+            ),
+        ] {
+            if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
+                *value = if_block;
+            }
+        }
 
         session
     }
@@ -506,7 +727,11 @@ impl From<Mechanism> for Constant {
 
 impl ConstantValue for Mechanism {
     fn add_constants(token_map: &mut crate::expr::tokenizer::TokenMap) {
-        todo!()
+        token_map
+            .add_constant("login", Mechanism(AUTH_LOGIN))
+            .add_constant("plain", Mechanism(AUTH_PLAIN))
+            .add_constant("xoauth2", Mechanism(AUTH_XOAUTH2))
+            .add_constant("oauthbearer", Mechanism(AUTH_OAUTHBEARER));
     }
 }
 
@@ -519,5 +744,41 @@ impl From<Mechanism> for u64 {
 impl From<u64> for Mechanism {
     fn from(value: u64) -> Self {
         Mechanism(value)
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for MtPriority {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Integer(value) => match value {
+                2 => Ok(MtPriority::Mixer),
+                3 => Ok(MtPriority::Stanag4406),
+                4 => Ok(MtPriority::Nsep),
+                _ => Err(()),
+            },
+            Variable::String(value) => MtPriority::parse_value("", &value).map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<MtPriority> for Constant {
+    fn from(value: MtPriority) -> Self {
+        Constant::Integer(match value {
+            MtPriority::Mixer => 2,
+            MtPriority::Stanag4406 => 3,
+            MtPriority::Nsep => 4,
+        })
+    }
+}
+
+impl ConstantValue for MtPriority {
+    fn add_constants(token_map: &mut TokenMap) {
+        token_map
+            .add_constant("mixer", MtPriority::Mixer)
+            .add_constant("stanag4406", MtPriority::Stanag4406)
+            .add_constant("nsep", MtPriority::Nsep);
     }
 }

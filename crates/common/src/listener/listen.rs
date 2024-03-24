@@ -30,17 +30,18 @@ use std::{
 use arc_swap::ArcSwap;
 use proxy_header::io::ProxiedStream;
 use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
+use store::Store;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
 use tokio_rustls::server::TlsStream;
 use tracing::Span;
-use utils::{config::Config, failed, UnwrapFailure};
+use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    config::server::{Listener, Server},
-    ConfigBuilder, Core,
+    config::server::{Listener, Server, Servers},
+    Core,
 };
 
 use super::{
@@ -87,7 +88,19 @@ impl Server {
             };
 
             // Bind socket
-            let listener = listener.listen();
+            let listener = match listener.listen() {
+                Ok(listener) => listener,
+                Err(err) => {
+                    tracing::error!(
+                        event = "error",
+                        instance = instance.id,
+                        protocol = ?instance.protocol,
+                        reason = %err,
+                        "Failed to bind listener"
+                    );
+                    continue;
+                }
+            };
 
             // Spawn listener
             let mut shutdown_rx = instance.shutdown_rx.clone();
@@ -278,15 +291,17 @@ impl SocketOpts {
     }
 }
 
-impl ConfigBuilder {
-    pub fn bind(&self, config: &Config) {
+impl Servers {
+    pub fn bind_and_drop_priv(&self, config: &mut Config) {
         // Bind as root
         for server in &self.servers {
             for listener in &server.listeners {
-                listener
-                    .socket
-                    .bind(listener.addr)
-                    .failed(&format!("Failed to bind to {}", listener.addr));
+                if let Err(err) = listener.socket.bind(listener.addr) {
+                    config.new_build_error(
+                        format!("server.listener.{}", server.id),
+                        format!("Failed to bind to {}: {}", listener.addr, err),
+                    );
+                }
             }
         }
 
@@ -306,7 +321,8 @@ impl ConfigBuilder {
     pub fn spawn(
         self,
         spawn: impl Fn(Server, watch::Receiver<bool>),
-    ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
+        store: Store,
+    ) -> watch::Sender<bool> {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.servers {
@@ -315,18 +331,18 @@ impl ConfigBuilder {
 
         // Spawn ACME managers
         for (_, acme_manager) in self.acme_managers {
-            acme_manager.spawn(shutdown_rx.clone());
+            acme_manager.spawn(store.clone(), shutdown_rx.clone());
         }
 
-        (shutdown_tx, shutdown_rx)
+        shutdown_tx
     }
 }
 
 impl Listener {
-    pub fn listen(self) -> TcpListener {
+    pub fn listen(self) -> Result<TcpListener, String> {
         self.socket
             .listen(self.backlog.unwrap_or(1024))
-            .unwrap_or_else(|err| failed(&format!("Failed to listen on {}: {}", self.addr, err)))
+            .map_err(|err| format!("Failed to listen on {}: {}", self.addr, err))
     }
 }
 

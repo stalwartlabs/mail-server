@@ -26,49 +26,46 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
 use smtp_proto::{MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::VerifyStrategy,
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 async fn mail() {
     let mut core = SMTP::test();
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.ptr_add(
+    core.core.smtp.resolvers.dns.ptr_add(
         "10.0.0.1".parse().unwrap(),
         vec!["mx1.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx1.foobar.org.",
         vec!["10.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.ptr_add(
+    core.core.smtp.resolvers.dns.ptr_add(
         "10.0.0.2".parse().unwrap(),
         vec!["mx2.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
 
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.ehlo.require = IfBlock::new(true);
     core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     core.mail_auth.spf.verify_mail_from = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
@@ -185,7 +182,7 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("550 5.7.25");
     session.data.iprev = None;
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx2.foobar.org.",
         vec!["10.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
@@ -197,7 +194,7 @@ async fn mail() {
         .await
         .unwrap();
     session.response().assert_code("550 5.7.23");
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

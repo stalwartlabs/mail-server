@@ -30,6 +30,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine};
+use common::listener::SessionData;
 use directory::backend::internal::manage::ManageDirectory;
 use ece::EcKeyComponents;
 use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
@@ -47,7 +48,6 @@ use jmap_proto::types::{id::Id, type_state::DataType};
 use store::ahash::AHashSet;
 
 use tokio::sync::mpsc;
-use utils::listener::SessionData;
 
 use crate::{
     add_test_certs,
@@ -84,12 +84,16 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     let account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("jdoe@example.com")
             .await
             .unwrap(),
@@ -285,9 +289,9 @@ struct PushVerification {
     pub verification_code: String,
 }
 
-impl utils::listener::SessionManager for SessionManager {
+impl common::listener::SessionManager for SessionManager {
     #[allow(clippy::manual_async_fn)]
-    fn handle<T: utils::listener::SessionStream>(
+    fn handle<T: common::listener::SessionStream>(
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
@@ -355,10 +359,6 @@ impl utils::listener::SessionManager for SessionManager {
     #[allow(clippy::manual_async_fn)]
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
-    }
-
-    fn is_ip_blocked(&self, _: &std::net::IpAddr) -> bool {
-        false
     }
 }
 

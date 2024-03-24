@@ -39,7 +39,7 @@ async fn throttle_inbound() {
 
     let mut core = SMTP::test();
     let _qr = core.init_test_queue("smtp_inbound_throttle");
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.throttle.connect = r#"[[throttle]]
     match = "remote_ip = '10.0.0.1'"
     key = 'remote_ip'

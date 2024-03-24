@@ -23,18 +23,19 @@
 
 use std::{borrow::Cow, sync::Arc};
 
+use common::listener::{stream::NullIo, SessionData, SessionManager, SessionStream};
 use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
+use jmap::JMAP;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
-use utils::listener::{stream::NullIo, SessionManager, SessionStream};
 
 use super::{ImapSessionManager, Session, State};
 
 impl SessionManager for ImapSessionManager {
     #[allow(clippy::manual_async_fn)]
-    fn handle<T: utils::listener::SessionStream>(
+    fn handle<T: SessionStream>(
         self,
-        session: utils::listener::SessionData<T>,
+        session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
         async move {
             if let Ok(mut session) = Session::new(session, self).await {
@@ -51,10 +52,6 @@ impl SessionManager for ImapSessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
-
-    fn is_ip_blocked(&self, addr: &std::net::IpAddr) -> bool {
-        self.jmap.directory.blocked_ips.is_blocked(addr)
-    }
 }
 
 impl<T: SessionStream> Session<T> {
@@ -66,9 +63,9 @@ impl<T: SessionStream> Session<T> {
             tokio::select! {
                 result = tokio::time::timeout(
                     if !matches!(self.state, State::NotAuthenticated {..}) {
-                        self.imap.timeout_auth
+                        self.jmap.core.imap.timeout_auth
                     } else {
-                        self.imap.timeout_unauth
+                        self.jmap.core.imap.timeout_unauth
                     },
                     self.stream_rx.read(&mut buf)) => {
                     match result {
@@ -112,14 +109,14 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn new(
-        mut session: utils::listener::SessionData<T>,
+        mut session: SessionData<T>,
         manager: ImapSessionManager,
     ) -> Result<Session<T>, ()> {
         // Write greeting
         let (is_tls, greeting) = if session.stream.is_tls() {
-            (true, &manager.imap.greeting_tls)
+            (true, &manager.imap.imap_inner.greeting_tls)
         } else {
-            (false, &manager.imap.greeting_plain)
+            (false, &manager.imap.imap_inner.greeting_plain)
         };
         if let Err(err) = session.stream.write_all(greeting).await {
             tracing::debug!(parent: &session.span, event = "error", reason = %err, "Failed to write greeting.");
@@ -129,16 +126,17 @@ impl<T: SessionStream> Session<T> {
 
         // Split stream into read and write halves
         let (stream_rx, stream_tx) = tokio::io::split(session.stream);
+        let jmap = JMAP::from(manager.imap.jmap_instance);
 
         Ok(Session {
-            receiver: Receiver::with_max_request_size(manager.imap.max_request_size),
+            receiver: Receiver::with_max_request_size(jmap.core.imap.max_request_size),
             version: ProtocolVersion::Rev1,
             state: State::NotAuthenticated { auth_failures: 0 },
             is_tls,
             is_condstore: false,
             is_qresync: false,
-            imap: manager.imap,
-            jmap: manager.jmap,
+            jmap,
+            imap: manager.imap.imap_inner,
             instance: session.instance,
             span: session.span,
             in_flight: session.in_flight,

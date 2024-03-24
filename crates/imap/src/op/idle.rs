@@ -35,10 +35,10 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
+use common::listener::SessionStream;
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::query::log::Query;
 use tokio::io::AsyncReadExt;
-use utils::listener::SessionStream;
 use utils::map::bitmap::Bitmap;
 
 use crate::core::{SelectedMailbox, Session, SessionData, State};
@@ -84,7 +84,7 @@ impl<T: SessionStream> Session<T> {
         let mut buf = vec![0; 1024];
         loop {
             tokio::select! {
-                result = tokio::time::timeout(self.imap.timeout_idle, self.stream_rx.read(&mut buf)) => {
+                result = tokio::time::timeout(self.jmap.core.imap.timeout_idle, self.stream_rx.read(&mut buf)) => {
                     match result {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {

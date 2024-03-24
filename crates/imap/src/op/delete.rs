@@ -21,12 +21,11 @@
  * for more details.
 */
 
+use crate::core::{Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{protocol::delete::Arguments, receiver::Request, Command, StatusResponse};
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
-use utils::listener::SessionStream;
-
-use crate::core::{Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {

@@ -23,6 +23,7 @@
 
 use std::borrow::Cow;
 
+use common::listener::stream::NullIo;
 use directory::QueryBy;
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
@@ -32,7 +33,6 @@ use store::{
     ahash::AHashSet,
     write::{now, BatchBuilder, Bincode, F_VALUE},
 };
-use utils::listener::stream::NullIo;
 
 use crate::{
     email::ingest::{IngestEmail, IngestedEmail},
@@ -76,20 +76,25 @@ impl JMAP {
             .map_err(|_| IngestError::Temporary)?;
 
         // Create Sieve instance
-        let mut instance = self.sieve_runtime.filter_parsed(message);
+        let mut instance = self.core.sieve.untrusted_runtime.filter_parsed(message);
 
         // Set account name and obtain quota
-        let (account_quota, mail_from) =
-            match self.directory.query(QueryBy::Id(account_id), false).await {
-                Ok(Some(p)) => {
-                    instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-                    (p.quota as i64, p.emails.into_iter().next())
-                }
-                Ok(None) => (0, None),
-                Err(_) => {
-                    return Err(IngestError::Temporary);
-                }
-            };
+        let (account_quota, mail_from) = match self
+            .core
+            .storage
+            .directory
+            .query(QueryBy::Id(account_id), false)
+            .await
+        {
+            Ok(Some(p)) => {
+                instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
+                (p.quota as i64, p.emails.into_iter().next())
+            }
+            Ok(None) => (0, None),
+            Err(_) => {
+                return Err(IngestError::Temporary);
+            }
+        };
 
         // Set account address
         let mail_from = mail_from.unwrap_or_else(|| envelope_to.to_string());
@@ -328,7 +333,7 @@ impl JMAP {
                     } => {
                         input = true.into();
                         if let Some(message) = messages.get(message_id) {
-                            if message.raw_message.len() <= self.config.mail_max_size {
+                            if message.raw_message.len() <= self.core.jmap.mail_max_size {
                                 let result = Session::<NullIo>::sieve(
                                     self.smtp.clone(),
                                     SessionAddress::new(mail_from.clone()),
@@ -358,7 +363,7 @@ impl JMAP {
                                     event = "message_too_large",
                                     from = mail_from.as_str(),
                                     size = message.raw_message.len(),
-                                    max_size = self.config.mail_max_size
+                                    max_size = self.core.jmap.mail_max_size
                                 );
                             }
                         } else {
@@ -442,7 +447,7 @@ impl JMAP {
                         keywords: sieve_message.flags,
                         received_at: None,
                         skip_duplicates: true,
-                        encrypt: self.config.encrypt,
+                        encrypt: self.core.jmap.encrypt,
                     })
                     .await
                 {

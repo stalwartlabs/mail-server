@@ -188,9 +188,10 @@ pub struct OAuthMetadata {
 }
 
 impl OAuthMetadata {
-    pub fn new(base_url: &str) -> Self {
+    pub fn new(base_url: impl AsRef<str>) -> Self {
+        let base_url = base_url.as_ref();
         OAuthMetadata {
-            issuer: base_url.to_string(),
+            issuer: base_url.into(),
             authorization_endpoint: format!("{}/auth/code", base_url),
             token_endpoint: format!("{}/auth/token", base_url),
             grant_types_supported: vec![

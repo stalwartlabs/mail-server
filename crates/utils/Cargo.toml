@@ -15,13 +15,6 @@ tracing = "0.1"
 mail-auth = { version = "0.3" }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
-tracing-opentelemetry = "0.22.0"
-opentelemetry = { version = "0.21.0" }
-opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.14.0", features = ["http-proto", "reqwest-client"] }
-opentelemetry-semantic-conventions = { version = "0.13.0" }
 dashmap = "5.4"
 ahash = { version = "0.8" }
 chrono = "0.4"
@@ -35,9 +28,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 x509-parser = "0.16.0"
 pem = "3.0"
 parking_lot = "0.12"
-arc-swap = "1.6.0"
 futures = "0.3"
-proxy-header = { version = "0.1.0", features = ["tokio"] }
 regex = "1.7.0"
 blake3 = "1.3.3"
 lru-cache = "0.1.2"

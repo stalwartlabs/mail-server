@@ -23,8 +23,8 @@
 
 use std::{net::IpAddr, sync::Arc};
 
+use common::listener::limiter::{ConcurrencyLimiter, InFlight};
 use jmap_proto::error::request::{RequestError, RequestLimitError};
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
 use crate::JMAP;
 
@@ -37,17 +37,22 @@ pub struct ConcurrencyLimiters {
 
 impl JMAP {
     pub fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
-        self.concurrency_limiter
+        self.inner
+            .concurrency_limiter
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
                 let limiter = Arc::new(ConcurrencyLimiters {
                     concurrent_requests: ConcurrencyLimiter::new(
-                        self.config.request_max_concurrent,
+                        self.core.jmap.request_max_concurrent,
                     ),
-                    concurrent_uploads: ConcurrencyLimiter::new(self.config.upload_max_concurrent),
+                    concurrent_uploads: ConcurrencyLimiter::new(
+                        self.core.jmap.upload_max_concurrent,
+                    ),
                 });
-                self.concurrency_limiter.insert(account_id, limiter.clone());
+                self.inner
+                    .concurrency_limiter
+                    .insert(account_id, limiter.clone());
                 limiter
             })
     }
@@ -57,18 +62,23 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> Result<InFlight, RequestError> {
         let limiter = self.get_concurrency_limiter(access_token.primary_id());
+        let is_rate_allowed = if let Some(rate) = &self.core.jmap.rate_authenticated {
+            self.core
+                .storage
+                .lookup
+                .is_rate_allowed(
+                    format!("j:{}", access_token.primary_id).as_bytes(),
+                    rate,
+                    false,
+                )
+                .await
+                .map_err(|_| RequestError::internal_server_error())?
+                .is_none()
+        } else {
+            true
+        };
 
-        if self
-            .lookup_store
-            .is_rate_allowed(
-                format!("j:{}", access_token.primary_id).as_bytes(),
-                &self.config.rate_authenticated,
-                false,
-            )
-            .await
-            .map_err(|_| RequestError::internal_server_error())?
-            .is_none()
-        {
+        if is_rate_allowed {
             if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
                 Ok(in_flight_request)
             } else if access_token.is_super_user() {
@@ -84,21 +94,20 @@ impl JMAP {
     }
 
     pub async fn is_anonymous_allowed(&self, addr: &IpAddr) -> Result<(), RequestError> {
-        if self
-            .lookup_store
-            .is_rate_allowed(
-                format!("jreq:{}", addr).as_bytes(),
-                &self.config.rate_anonymous,
-                false,
-            )
-            .await
-            .map_err(|_| RequestError::internal_server_error())?
-            .is_none()
-        {
-            Ok(())
-        } else {
-            Err(RequestError::too_many_requests())
+        if let Some(rate) = &self.core.jmap.rate_anonymous {
+            if self
+                .core
+                .storage
+                .lookup
+                .is_rate_allowed(format!("jreq:{}", addr).as_bytes(), rate, false)
+                .await
+                .map_err(|_| RequestError::internal_server_error())?
+                .is_some()
+            {
+                return Err(RequestError::too_many_requests());
+            }
         }
+        Ok(())
     }
 
     pub fn is_upload_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
@@ -116,39 +125,37 @@ impl JMAP {
     }
 
     pub async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> Result<(), RequestError> {
-        if self
-            .lookup_store
-            .is_rate_allowed(
-                format!("jauth:{}", addr).as_bytes(),
-                &self.config.rate_authenticate_req,
-                true,
-            )
-            .await
-            .map_err(|_| RequestError::internal_server_error())?
-            .is_none()
-        {
-            Ok(())
-        } else {
-            Err(RequestError::too_many_auth_attempts())
+        if let Some(rate) = &self.core.jmap.rate_authenticate_req {
+            if self
+                .core
+                .storage
+                .lookup
+                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, true)
+                .await
+                .map_err(|_| RequestError::internal_server_error())?
+                .is_some()
+            {
+                return Err(RequestError::too_many_auth_attempts());
+            }
         }
+        Ok(())
     }
 
     pub async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> Result<(), RequestError> {
-        if self
-            .lookup_store
-            .is_rate_allowed(
-                format!("jauth:{}", addr).as_bytes(),
-                &self.config.rate_authenticate_req,
-                false,
-            )
-            .await
-            .map_err(|_| RequestError::internal_server_error())?
-            .is_none()
-        {
-            Ok(())
-        } else {
-            Err(RequestError::too_many_auth_attempts())
+        if let Some(rate) = &self.core.jmap.rate_authenticate_req {
+            if self
+                .core
+                .storage
+                .lookup
+                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, false)
+                .await
+                .map_err(|_| RequestError::internal_server_error())?
+                .is_some()
+            {
+                return Err(RequestError::too_many_auth_attempts());
+            }
         }
+        Ok(())
     }
 }
 

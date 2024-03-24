@@ -21,15 +21,13 @@
  * for more details.
 */
 
+use crate::core::Session;
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{namespace::Response, ImapResponse},
     receiver::Request,
     Command, StatusResponse,
 };
-
-use utils::listener::SessionStream;
-
-use crate::core::Session;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_namespace(&mut self, request: Request<Command>) -> crate::OpResult {
@@ -39,7 +37,7 @@ impl<T: SessionStream> Session<T> {
                 .serialize(
                     Response {
                         shared_prefix: if self.state.session_data().mailboxes.lock().len() > 1 {
-                            self.imap.name_shared.clone().into()
+                            self.jmap.core.imap.name_shared.clone().into()
                         } else {
                             None
                         },

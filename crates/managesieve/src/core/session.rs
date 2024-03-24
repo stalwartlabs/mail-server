@@ -21,9 +21,10 @@
  * for more details.
 */
 
+use common::listener::{SessionData, SessionManager, SessionStream};
 use imap_proto::receiver::{self, Receiver};
+use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
-use utils::listener::{SessionManager, SessionStream};
 
 use crate::SERVER_GREETING;
 
@@ -33,15 +34,16 @@ impl SessionManager for ManageSieveSessionManager {
     #[allow(clippy::manual_async_fn)]
     fn handle<T: SessionStream>(
         self,
-        session: utils::listener::SessionData<T>,
+        session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
         async move {
             // Create session
+            let jmap = JMAP::from(self.imap.jmap_instance);
             let mut session = Session {
-                receiver: Receiver::with_max_request_size(self.imap.max_request_size)
+                receiver: Receiver::with_max_request_size(jmap.core.imap.max_request_size)
                     .with_start_state(receiver::State::Command { is_uid: false }),
-                jmap: self.jmap,
-                imap: self.imap,
+                jmap,
+                imap: self.imap.imap_inner,
                 instance: session.instance,
                 state: State::NotAuthenticated { auth_failures: 0 },
                 span: session.span,
@@ -68,10 +70,6 @@ impl SessionManager for ManageSieveSessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
-
-    fn is_ip_blocked(&self, addr: &std::net::IpAddr) -> bool {
-        self.jmap.directory.blocked_ips.is_blocked(addr)
-    }
 }
 
 impl<T: SessionStream> Session<T> {
@@ -83,9 +81,9 @@ impl<T: SessionStream> Session<T> {
             tokio::select! {
                 result = tokio::time::timeout(
                     if !matches!(self.state, State::NotAuthenticated {..}) {
-                        self.imap.timeout_auth
+                        self.jmap.core.imap.timeout_auth
                     } else {
-                        self.imap.timeout_unauth
+                        self.jmap.core.imap.timeout_unauth
                     },
                     self.read(&mut buf)) => {
                         match result {

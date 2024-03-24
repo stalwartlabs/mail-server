@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::{config::smtp::report::AggregateFrequency, expr::if_block::IfBlock};
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::{Dmarc, URI},
@@ -30,11 +31,9 @@ use mail_auth::{
     report::{ActionDisposition, Alignment, Disposition, DmarcResult, PolicyPublished, Record},
 };
 use store::write::QueueClass;
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{TestConfig, TestSMTP};
 use smtp::{
-    config::AggregateFrequency,
     core::SMTP,
     reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent},
 };
@@ -51,7 +50,7 @@ async fn report_scheduler() {
     // Create scheduler
     let mut core = SMTP::test();
     let qr = core.init_test_queue("smtp_report_queue_test");
-    let config = &mut core.report.config;
+    let config = &mut core.core.smtp.report;
     config.dmarc_aggregate.max_size = IfBlock::new(500);
     config.tls.max_size = IfBlock::new(550);
 

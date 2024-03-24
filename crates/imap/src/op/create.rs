@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use crate::core::{Account, Mailbox, Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
@@ -35,9 +37,6 @@ use jmap_proto::{
     },
 };
 use store::{query::Filter, write::BatchBuilder};
-use utils::listener::SessionStream;
-
-use crate::core::{Account, Mailbox, Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> crate::OpResult {
@@ -252,13 +251,13 @@ impl<T: SessionStream> SessionData<T> {
                 let path_item = path_item.trim();
                 if path_item.is_empty() {
                     return Err(StatusResponse::no("Invalid empty path item."));
-                } else if path_item.len() > self.jmap.config.mailbox_name_max_len {
+                } else if path_item.len() > self.jmap.core.jmap.mailbox_name_max_len {
                     return Err(StatusResponse::no("Mailbox name is too long."));
                 }
                 path.push(path_item);
             }
 
-            if path.len() > self.jmap.config.mailbox_max_depth {
+            if path.len() > self.jmap.core.jmap.mailbox_max_depth {
                 return Err(StatusResponse::no("Mailbox path is too deep."));
             }
         } else {
@@ -272,7 +271,7 @@ impl<T: SessionStream> SessionData<T> {
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
             let first_path_item = path.first().unwrap();
-            let account = if first_path_item == &self.imap.name_shared {
+            let account = if first_path_item == &self.jmap.core.imap.name_shared {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
                     return Err(StatusResponse::no(

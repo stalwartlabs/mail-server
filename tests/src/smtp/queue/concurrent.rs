@@ -26,8 +26,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use mail_auth::MX;
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{outbound::start_test_server, session::TestSession, TestConfig, TestSMTP};
 use smtp::{
@@ -48,13 +48,13 @@ async fn concurrent_queue() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let remote_qr = core.init_test_queue("smtp_concurrent_queue_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -62,14 +62,14 @@ async fn concurrent_queue() {
         }],
         Instant::now() + Duration::from_secs(100),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(100),
     );
     let local_qr = core.init_test_queue("smtp_concurrent_queue_local");
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.data.max_messages = IfBlock::new(200);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.data.max_messages = IfBlock::new(200);
 
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
@@ -105,8 +105,9 @@ async fn concurrent_queue() {
     assert_eq!(remote_messages.len(), 100);
 
     // Make sure local store is queue
-    core.shared
-        .default_data_store
-        .assert_is_empty(core.shared.default_blob_store.clone())
+    core.core
+        .storage
+        .data
+        .assert_is_empty(core.core.storage.blob.clone())
         .await;
 }

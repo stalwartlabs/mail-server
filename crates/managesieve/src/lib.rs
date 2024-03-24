@@ -24,11 +24,7 @@
 pub mod core;
 pub mod op;
 
-static SERVER_GREETING: &str = concat!(
-    "Stalwart ManageSieve v",
-    env!("CARGO_PKG_VERSION"),
-    " at your service."
-);
+static SERVER_GREETING: &str = "Stalwart ManageSieve at your service.";
 
 #[cfg(test)]
 mod tests {

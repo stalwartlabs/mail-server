@@ -21,10 +21,16 @@
  * for more details.
 */
 
-use super::{Mode, MxPattern, Policy};
+use common::config::smtp::resolver::{Mode, MxPattern, Policy};
 
-impl Policy {
-    pub fn parse(mut data: &str, id: String) -> Result<Policy, String> {
+pub trait ParsePolicy {
+    fn parse(data: &str, id: String) -> Result<Self, String>
+    where
+        Self: Sized;
+}
+
+impl ParsePolicy for Policy {
+    fn parse(mut data: &str, id: String) -> Result<Policy, String> {
         let mut mode = Mode::None;
         let mut max_age: u64 = 86400;
         let mut mx = Vec::new();

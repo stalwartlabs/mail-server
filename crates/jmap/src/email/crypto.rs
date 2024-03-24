@@ -29,6 +29,7 @@ use crate::{
     JMAP,
 };
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+use common::AuthResult;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
 use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};

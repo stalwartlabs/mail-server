@@ -23,25 +23,17 @@
 
 use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
 
-use store::config::ConfigStore;
-use tokio::net::TcpSocket;
-
-use utils::{
+use common::{
     config::{
-        if_block::{IfBlock, IfThen},
-        Config, Listener, Rate, Server, ServerProtocol,
+        server::{Listener, Server, ServerProtocol},
+        smtp::*,
     },
-    expr::{BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator},
+    expr::{functions::ResolveVariable, if_block::*, *},
     listener::TcpAcceptor,
 };
+use tokio::net::TcpSocket;
 
-use smtp::{
-    config::{
-        map_expr_token, throttle::ConfigThrottle, ConfigContext, Throttle, THROTTLE_AUTH_AS,
-        THROTTLE_REMOTE_IP, THROTTLE_SENDER_DOMAIN,
-    },
-    core::{eval::*, ResolveVariable},
-};
+use utils::config::{Config, Rate};
 
 use super::add_test_certs;
 
@@ -348,9 +340,6 @@ fn parse_servers() {
     let expected_servers = vec![
         Server {
             id: "smtp".to_string(),
-            internal_id: 0,
-            hostname: "mx.example.org".to_string(),
-            data: "Stalwart SMTP - hi there!".to_string(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![Listener {
                 socket: TcpSocket::new_v4().unwrap(),
@@ -367,9 +356,6 @@ fn parse_servers() {
         },
         Server {
             id: "smtps".to_string(),
-            internal_id: 1,
-            hostname: "mx.example.org".to_string(),
-            data: "Stalwart SMTP - hi there!".to_string(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![
                 Listener {
@@ -396,9 +382,6 @@ fn parse_servers() {
         },
         Server {
             id: "submission".to_string(),
-            internal_id: 2,
-            hostname: "submit.example.org".to_string(),
-            data: "Stalwart SMTP submission at your service".to_string(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![Listener {
                 socket: TcpSocket::new_v4().unwrap(),
@@ -480,12 +463,10 @@ async fn eval_if() {
     let servers = vec![
         Server {
             id: "smtp".to_string(),
-            internal_id: 123,
             ..Default::default()
         },
         Server {
             id: "smtps".to_string(),
-            internal_id: 456,
             ..Default::default()
         },
     ];
@@ -596,7 +577,7 @@ async fn eval_dynvalue() {
 }
 
 impl ResolveVariable for TestEnvelope {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
             V_RECIPIENT => self.rcpt.as_str().into(),
             V_RECIPIENT_DOMAIN => self.rcpt_domain.as_str().into(),

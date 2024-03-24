@@ -31,6 +31,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{
+    config::{
+        server::ServerProtocol,
+        smtp::{
+            queue::RequireOptional,
+            report::AggregateFrequency,
+            resolver::{DnsRecordCache, DnssecResolver, Resolvers, Tlsa, TlsaEntry},
+        },
+    },
+    expr::if_block::IfBlock,
+};
 use mail_auth::{
     common::{
         lru::{DnsCache, LruCache},
@@ -45,7 +56,7 @@ use mail_auth::{
     Resolver, MX,
 };
 use rustls_pki_types::CertificateDer;
-use utils::config::{if_block::IfBlock, ServerProtocol};
+use utils::suffixlist::PublicSuffix;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
@@ -54,9 +65,7 @@ use crate::smtp::{
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, RequireOptional},
-    core::{Resolvers, Session, SMTP},
-    outbound::dane::{DnssecResolver, Tlsa, TlsaEntry},
+    core::{Session, SMTP},
     queue::{Error, ErrorDetails, Status},
     reporting::PolicyType,
 };
@@ -73,13 +82,13 @@ async fn dane_verify() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_dane_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -87,12 +96,12 @@ async fn dane_verify() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_smtp._tls.foobar.org",
         TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -101,9 +110,9 @@ async fn dane_verify() {
     // Fail on missing TLSA record
     let mut local_qr = core.init_test_queue("smtp_dane_local");
     let mut rr = core.init_test_report();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.tls.dane = IfBlock::new(RequireOptional::Require);
-    core.report.config.tls.send = IfBlock::new(AggregateFrequency::Weekly);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.queue.tls.dane = IfBlock::new(RequireOptional::Require);
+    core.core.smtp.report.tls.send = IfBlock::new(AggregateFrequency::Weekly);
 
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
@@ -156,7 +165,7 @@ async fn dane_verify() {
         has_end_entities: true,
         has_intermediates: false,
     });
-    core.resolvers.tlsa_add(
+    core.core.smtp.resolvers.tlsa_add(
         "_25._tcp.mx.foobar.org",
         tlsa.clone(),
         Instant::now() + Duration::from_secs(10),
@@ -202,7 +211,7 @@ async fn dane_verify() {
         has_end_entities: true,
         has_intermediates: false,
     });
-    core.resolvers.tlsa_add(
+    core.core.smtp.resolvers.tlsa_add(
         "_25._tcp.mx.foobar.org",
         tlsa.clone(),
         Instant::now() + Duration::from_secs(10),
@@ -242,10 +251,11 @@ async fn dane_test() {
         dnssec: DnssecResolver {
             resolver: AsyncResolver::tokio(conf, opts),
         },
-        cache: smtp::core::DnsCache {
+        cache: DnsRecordCache {
             tlsa: LruCache::with_capacity(10),
             mta_sts: LruCache::with_capacity(10),
         },
+        psl: PublicSuffix::default(),
     };
 
     // Add dns entries

@@ -23,19 +23,18 @@
 
 use std::time::{Duration, Instant};
 
+use common::{
+    config::smtp::{
+        report::AggregateFrequency,
+        resolver::{Mode, MxPattern, Policy},
+    },
+    expr::if_block::IfBlock,
+};
 use mail_auth::{IpLookupStrategy, MX};
 
 use ::smtp::{core::SMTP, outbound::NextHop};
 use mail_parser::DateTime;
-use smtp::{
-    config::AggregateFrequency,
-    outbound::{
-        lookup::ToNextHop,
-        mta_sts::{Mode, MxPattern, Policy},
-    },
-    queue::RecipientDomain,
-};
-use utils::config::if_block::IfBlock;
+use smtp::{outbound::lookup::ToNextHop, queue::RecipientDomain};
 
 use crate::smtp::{ParseTestConfig, TestConfig};
 
@@ -54,7 +53,7 @@ async fn lookup_ip() {
         "10.0.0.4".parse().unwrap(),
     ];
     let mut core = SMTP::test();
-    core.queue.config.source_ip.ipv4 = format!(
+    core.core.smtp.queue.source_ip.ipv4 = format!(
         "\"[{}]\"",
         ipv4.iter()
             .map(|ip| format!("'{}'", ip))
@@ -63,7 +62,7 @@ async fn lookup_ip() {
     )
     .as_str()
     .parse_if();
-    core.queue.config.source_ip.ipv6 = format!(
+    core.core.smtp.queue.source_ip.ipv6 = format!(
         "\"[{}]\"",
         ipv6.iter()
             .map(|ip| format!("'{}'", ip))
@@ -72,7 +71,7 @@ async fn lookup_ip() {
     )
     .as_str()
     .parse_if();
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -80,14 +79,14 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv6_add(
+    core.core.smtp.resolvers.dns.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
 
     // Ipv4 strategy
-    core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
+    core.core.smtp.queue.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
     let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
@@ -105,7 +104,7 @@ async fn lookup_ip() {
         .contains(&"172.168.0.100".parse().unwrap()));
 
     // Ipv6 strategy
-    core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
+    core.core.smtp.queue.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
     let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),

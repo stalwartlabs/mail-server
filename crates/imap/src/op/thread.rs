@@ -23,7 +23,9 @@
 
 use std::sync::Arc;
 
+use crate::core::{SelectedMailbox, Session, SessionData};
 use ahash::AHashMap;
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
         thread::{Arguments, Response},
@@ -32,10 +34,6 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
-
-use utils::listener::SessionStream;
-
-use crate::core::{SelectedMailbox, Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_thread(

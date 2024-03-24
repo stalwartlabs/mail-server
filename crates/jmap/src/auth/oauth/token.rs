@@ -65,7 +65,7 @@ impl JMAP {
                 params.get("client_id"),
                 params.get("redirect_uri"),
             ) {
-                if let Some(oauth) = self.oauth_codes.get_with_ttl(code) {
+                if let Some(oauth) = self.inner.oauth_codes.get_with_ttl(code) {
                     if client_id != oauth.client_id
                         || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
                     {
@@ -103,7 +103,7 @@ impl JMAP {
             if let (Some(oauth), Some(client_id)) = (
                 params
                     .get("device_code")
-                    .and_then(|dc| self.oauth_codes.get_with_ttl(dc)),
+                    .and_then(|dc| self.inner.oauth_codes.get_with_ttl(dc)),
                 params.get("client_id"),
             ) {
                 response = if oauth.client_id != client_id {
@@ -131,7 +131,7 @@ impl JMAP {
                         }
                         status
                             if (STATUS_PENDING
-                                ..STATUS_PENDING + self.config.oauth_max_auth_attempts)
+                                ..STATUS_PENDING + self.core.jmap.oauth_max_auth_attempts)
                                 .contains(&status) =>
                         {
                             TokenResponse::error(ErrorType::AuthorizationPending)
@@ -152,7 +152,7 @@ impl JMAP {
                         .issue_token(
                             account_id,
                             &client_id,
-                            time_left <= self.config.oauth_expiry_refresh_token_renew,
+                            time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
                         )
                         .await
                         .map(TokenResponse::Granted)
@@ -184,6 +184,8 @@ impl JMAP {
         with_refresh_token: bool,
     ) -> Result<OAuthResponse, &'static str> {
         let password_hash = self
+            .core
+            .storage
             .directory
             .query(QueryBy::Id(account_id), false)
             .await
@@ -200,17 +202,17 @@ impl JMAP {
                 account_id,
                 &password_hash,
                 client_id,
-                self.config.oauth_expiry_token,
+                self.core.jmap.oauth_expiry_token,
             )?,
             token_type: "bearer".to_string(),
-            expires_in: self.config.oauth_expiry_token,
+            expires_in: self.core.jmap.oauth_expiry_token,
             refresh_token: if with_refresh_token {
                 self.encode_access_token(
                     "refresh_token",
                     account_id,
                     &password_hash,
                     client_id,
-                    self.config.oauth_expiry_refresh_token,
+                    self.core.jmap.oauth_expiry_refresh_token,
                 )?
                 .into()
             } else {
@@ -232,7 +234,7 @@ impl JMAP {
         if client_id.len() > CLIENT_ID_MAX_LEN {
             return Err("ClientId is too long");
         }
-        let key = self.config.oauth_key.clone();
+        let key = self.core.jmap.oauth_key.clone();
         let context = format!(
             "{} {} {} {}",
             grant_type, client_id, account_id, password_hash
@@ -302,6 +304,8 @@ impl JMAP {
 
         // Obtain password hash
         let password_hash = self
+            .core
+            .storage
             .directory
             .query(QueryBy::Id(account_id), false)
             .await
@@ -313,7 +317,7 @@ impl JMAP {
             .ok_or("Failed to obtain password hash")?;
 
         // Build context
-        let key = self.config.oauth_key.clone();
+        let key = self.core.jmap.oauth_key.clone();
         let context = format!(
             "{} {} {} {}",
             grant_type, client_id, account_id, password_hash

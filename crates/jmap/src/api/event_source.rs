@@ -106,7 +106,7 @@ impl JMAP {
             None
         };
         let mut response = StateChangeResponse::new();
-        let throttle = self.config.event_source_throttle;
+        let throttle = self.core.jmap.event_source_throttle;
 
         // Register with state manager
         let mut change_rx = if let Some(change_rx) = self

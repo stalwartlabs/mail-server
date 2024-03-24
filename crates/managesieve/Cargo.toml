@@ -10,6 +10,7 @@ imap = { path = "../imap" }
 jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
 directory = { path = "../directory" }
+common = { path = "../common" }
 store = { path = "../store" }
 utils = { path = "../utils" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 

@@ -21,16 +21,18 @@
  * for more details.
 */
 
-use ::utils::listener::limiter::ConcurrencyLimiter;
+use common::{
+    config::smtp::{queue::QueueQuota, *},
+    expr::functions::ResolveVariable,
+    listener::limiter::ConcurrencyLimiter,
+};
 use dashmap::mapref::entry::Entry;
 use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use std::hash::{BuildHasher, Hash, Hasher};
 
-use crate::config::*;
-
-use super::{eval::*, ResolveVariable, Session};
+use super::Session;
 
 #[derive(Debug, Clone, Eq)]
 pub struct ThrottleKey {
@@ -81,8 +83,12 @@ impl BuildHasher for ThrottleKeyHasherBuilder {
     }
 }
 
-impl QueueQuota {
-    pub fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
+pub trait NewKey: Sized {
+    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey;
+}
+
+impl NewKey for QueueQuota {
+    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
@@ -132,8 +138,8 @@ impl QueueQuota {
     }
 }
 
-impl Throttle {
-    pub fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
+impl NewKey for Throttle {
+    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
@@ -207,16 +213,17 @@ impl Throttle {
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn is_allowed(&mut self) -> bool {
         let throttles = if !self.data.rcpt_to.is_empty() {
-            &self.core.session.config.throttle.rcpt_to
+            &self.core.core.smtp.session.throttle.rcpt_to
         } else if self.data.mail_from.is_some() {
-            &self.core.session.config.throttle.mail_from
+            &self.core.core.smtp.session.throttle.mail_from
         } else {
-            &self.core.session.config.throttle.connect
+            &self.core.core.smtp.session.throttle.connect
         };
 
         for t in throttles {
             if t.expr.is_empty()
                 || self
+                    .core
                     .core
                     .eval_expr(&t.expr, self, "throttle")
                     .await
@@ -240,7 +247,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
                 // Check concurrency
                 if let Some(concurrency) = &t.concurrency {
-                    match self.core.session.throttle.entry(key.clone()) {
+                    match self.core.inner.session_throttle.entry(key.clone()) {
                         Entry::Occupied(mut e) => {
                             let limiter = e.get_mut();
                             if let Some(inflight) = limiter.is_allowed() {
@@ -270,8 +277,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 if let Some(rate) = &t.rate {
                     if self
                         .core
-                        .shared
-                        .default_lookup_store
+                        .core
+                        .storage
+                        .lookup
                         .is_rate_allowed(key.hash.as_slice(), rate, false)
                         .await
                         .unwrap_or_default()
@@ -302,8 +310,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         hasher.update(&rate.requests.to_ne_bytes()[..]);
 
         self.core
-            .shared
-            .default_lookup_store
+            .core
+            .storage
+            .lookup
             .is_rate_allowed(hasher.finalize().as_bytes(), rate, false)
             .await
             .unwrap_or_default()

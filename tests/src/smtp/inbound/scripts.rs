@@ -29,15 +29,15 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig, TestSMTP,
 };
+use common::{config::smtp::V_REMOTE_IP, expr::if_block::IfBlock};
 use directory::core::config::ConfigDirectory;
 use smtp::{
-    config::{scripts::ConfigSieve, session::ConfigSession, ConfigContext},
-    core::{eval::V_REMOTE_IP, Session, SMTP},
+    core::{Session, SMTP},
     scripts::ScriptResult,
 };
-use store::{config::ConfigStore, Store};
+use store::Store;
 use tokio::runtime::Handle;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 const CONFIG: &str = r#"
 [storage]
@@ -136,17 +136,17 @@ async fn sieve_scripts() {
     )
     .unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
-    core.shared.directories = config
+    core.core.storage.lookups = ctx.stores.lookups.clone();
+    core.core.storage.directories = config
         .parse_directory(&ctx.stores, Store::default())
         .await
         .unwrap()
         .directories;
     let pipes = config.parse_pipes(&[V_REMOTE_IP]).unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
-    core.shared.signers = ctx.signers;
-    core.shared.scripts = ctx.scripts.clone();
-    let config = &mut core.session.config;
+    core.core.storage.signers = ctx.signers;
+    core.core.storage.scripts = ctx.scripts.clone();
+    let config = &mut core.core.smtp.session;
     config.connect.script = IfBlock::new("stage_connect".to_string());
     config.ehlo.script = IfBlock::new("stage_ehlo".to_string());
     config.mail.script = IfBlock::new("stage_mail".to_string());

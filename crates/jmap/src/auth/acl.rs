@@ -51,7 +51,9 @@ impl JMAP {
             .chain(access_token.member_of.clone().iter())
         {
             for acl_item in self
-                .store
+                .core
+                .storage
+                .data
                 .acl_query(AclQuery::HasAccess { grant_account_id })
                 .await
                 .map_err(|err| {
@@ -120,7 +122,9 @@ impl JMAP {
             .chain(access_token.member_of.clone().iter())
         {
             for acl_item in self
-                .store
+                .core
+                .storage
+                .data
                 .acl_query(AclQuery::SharedWith {
                     grant_account_id,
                     to_account_id,
@@ -233,7 +237,9 @@ impl JMAP {
             .chain(access_token.member_of.clone().iter())
         {
             match self
-                .store
+                .core
+                .storage
+                .data
                 .get_value::<u64>(ValueKey {
                     account_id: to_account_id,
                     collection: to_collection,
@@ -350,6 +356,8 @@ impl JMAP {
             let mut acl_obj = Object::with_capacity(value.len() / 2);
             for item in value {
                 if let Some(principal) = self
+                    .core
+                    .storage
                     .directory
                     .query(QueryBy::Id(item.account_id), false)
                     .await
@@ -376,7 +384,7 @@ impl JMAP {
         current: &Option<HashedValue<Object<Value>>>,
     ) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.access_tokens;
+            let access_tokens = &self.inner.access_tokens;
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))
@@ -419,6 +427,8 @@ impl JMAP {
         for item in acl_set.chunks_exact(2) {
             if let (Value::Text(account_name), Value::UnsignedInt(grants)) = (&item[0], &item[1]) {
                 match self
+                    .core
+                    .storage
                     .directory
                     .query(QueryBy::Name(account_name), false)
                     .await
@@ -458,6 +468,8 @@ impl JMAP {
             (&acl_patch[0], &acl_patch[1])
         {
             match self
+                .core
+                .storage
                 .directory
                 .query(QueryBy::Name(account_name), false)
                 .await

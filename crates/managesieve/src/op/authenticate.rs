@@ -21,17 +21,19 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use directory::AuthResult;
+use common::{
+    listener::{limiter::ConcurrencyLimiter, SessionStream},
+    AuthResult,
+};
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
     protocol::authenticate::Mechanism,
     receiver::{self, Request},
 };
+use jmap::auth::rate_limit::ConcurrencyLimiters;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use utils::listener::SessionStream;
+use std::sync::Arc;
 
 use crate::core::{Command, Session, State, StatusResponse};
 
@@ -131,34 +133,36 @@ impl<T: SessionStream> Session<T> {
 
         if let Some(access_token) = access_token {
             // Enforce concurrency limits
-            let in_flight = self
-                .imap
+            let in_flight = match self
                 .get_concurrency_limiter(access_token.primary_id())
-                .concurrent_requests
-                .is_allowed();
-            if let Some(in_flight) = in_flight {
-                // Cache access token
-                let access_token = Arc::new(access_token);
-                self.jmap.cache_access_token(access_token.clone());
+                .map(|limiter| limiter.concurrent_requests.is_allowed())
+            {
+                Some(Some(limiter)) => Some(limiter),
+                None => None,
+                Some(None) => {
+                    tracing::debug!(parent: &self.span,
+                        event = "disconnect",
+                        "Too many concurrent connection.",
+                    );
+                    return Err(StatusResponse::bye("Too many concurrent connections."));
+                }
+            };
 
-                // Create session
-                self.state = State::Authenticated {
-                    access_token,
-                    in_flight,
-                };
+            // Cache access token
+            let access_token = Arc::new(access_token);
+            self.jmap.cache_access_token(access_token.clone());
 
-                self.handle_capability("Authentication successful").await
-            } else {
-                tracing::debug!(parent: &self.span,
-                    event = "disconnect",
-                    "Too many concurrent connection.",
-                );
-                Err(StatusResponse::bye("Too many concurrent connections."))
-            }
+            // Create session
+            self.state = State::Authenticated {
+                access_token,
+                in_flight,
+            };
+
+            self.handle_capability("Authentication successful").await
         } else {
             match &self.state {
                 State::NotAuthenticated { auth_failures }
-                    if *auth_failures < self.imap.max_auth_failures =>
+                    if *auth_failures < self.jmap.core.imap.max_auth_failures =>
                 {
                     self.state = State::NotAuthenticated {
                         auth_failures: auth_failures + 1,
@@ -181,5 +185,22 @@ impl<T: SessionStream> Session<T> {
         self.state = State::NotAuthenticated { auth_failures: 0 };
 
         Ok(StatusResponse::ok("Unauthenticate successful.").into_bytes())
+    }
+
+    pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
+        let rate = self.jmap.core.imap.rate_concurrent?;
+        self.imap
+            .rate_limiter
+            .get(&account_id)
+            .map(|limiter| limiter.clone())
+            .unwrap_or_else(|| {
+                let limiter = Arc::new(ConcurrencyLimiters {
+                    concurrent_requests: ConcurrencyLimiter::new(rate),
+                    concurrent_uploads: ConcurrencyLimiter::new(rate),
+                });
+                self.imap.rate_limiter.insert(account_id, limiter.clone());
+                limiter
+            })
+            .into()
     }
 }

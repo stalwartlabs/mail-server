@@ -23,10 +23,9 @@
 
 use imap_proto::{receiver::Request, Command};
 
-use mail_send::Credentials;
-use utils::listener::SessionStream;
-
 use crate::core::Session;
+use common::listener::SessionStream;
+use mail_send::Credentials;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_login(&mut self, request: Request<Command>) -> crate::OpResult {

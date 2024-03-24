@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use tokio::sync::oneshot;
 
@@ -35,7 +35,7 @@ impl SMTP {
     {
         let (tx, rx) = oneshot::channel();
 
-        self.worker_pool.spawn(move || {
+        self.inner.worker_pool.spawn(move || {
             tx.send(f()).ok();
         });
 
@@ -53,20 +53,14 @@ impl SMTP {
     }
 
     fn cleanup(&self) {
-        for throttle in [&self.session.throttle, &self.queue.throttle] {
+        for throttle in [&self.inner.session_throttle, &self.inner.queue_throttle] {
             throttle.retain(|_, v| v.concurrent.load(Ordering::Relaxed) > 0);
         }
     }
-}
 
-pub trait SpawnCleanup {
-    fn spawn_cleanup(&self);
-}
-
-impl SpawnCleanup for Arc<SMTP> {
-    fn spawn_cleanup(&self) {
+    pub fn spawn_cleanup(&self) {
         let core = self.clone();
-        self.worker_pool.spawn(move || {
+        self.inner.worker_pool.spawn(move || {
             core.cleanup();
         });
     }

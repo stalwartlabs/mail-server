@@ -23,8 +23,9 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
+use common::{config::smtp::*, expr::if_block::IfBlock};
 use dashmap::DashMap;
-use directory::{AddressMapping, Directory, DirectoryInner};
+use directory::{Directory, DirectoryInner};
 use mail_auth::{
     common::lru::{DnsCache, LruCache},
     hickory_resolver::config::{ResolverConfig, ResolverOpts},
@@ -33,34 +34,10 @@ use mail_auth::{
 use mail_send::smtp::tls::build_tls_connector;
 use sieve::Runtime;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::{
-    backend::sqlite::SqliteStore, dispatch::blocked::BlockedIps, BlobStore, LookupStore, Store,
-};
+use store::{backend::sqlite::SqliteStore, BlobStore, LookupStore, Store};
 use tokio::sync::mpsc;
 
-use smtp::{
-    config::{
-        map_expr_token,
-        queue::ConfigQueue,
-        scripts::SieveContext,
-        session::{ConfigSession, Mechanism},
-        throttle::ConfigThrottle,
-        AggregateReport, ArcAuthConfig, Auth, Connect, Data, DkimAuthConfig, DmarcAuthConfig, Dsn,
-        Ehlo, Extensions, IpRevAuthConfig, Mail, MailAuthConfig, Milter, QueueConfig,
-        QueueOutboundSourceIp, QueueOutboundTimeout, QueueOutboundTls, QueueQuotas, QueueThrottle,
-        Rcpt, Report, ReportAnalysis, ReportConfig, SessionConfig, SessionThrottle, SpfAuthConfig,
-        Throttle, VerifyStrategy,
-    },
-    core::{
-        eval::*, throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, Resolvers, SessionCore,
-        Shared, SieveCore, TlsConnectors, SMTP,
-    },
-    outbound::dane::DnssecResolver,
-};
-use utils::{
-    config::{if_block::IfBlock, utils::ConstantValue, Config},
-    snowflake::SnowflakeIdGenerator,
-};
+use utils::{config::Config, snowflake::SnowflakeIdGenerator};
 
 pub mod config;
 pub mod inbound;
@@ -196,18 +173,18 @@ impl TestConfig for SMTP {
                 signers: Default::default(),
                 sealers: Default::default(),
                 directories: Default::default(),
-                lookup_stores: Default::default(),
+                lookups: Default::default(),
                 relay_hosts: Default::default(),
-                default_directory: Arc::new(Directory {
+                directory: Arc::new(Directory {
                     store: DirectoryInner::Internal(store.clone()),
                     catch_all: AddressMapping::Disable,
                     subaddressing: AddressMapping::Disable,
                     cache: None,
                     blocked_ips: Arc::new(BlockedIps::new(store.clone().into())),
                 }),
-                default_lookup_store: LookupStore::Store(store.clone()),
-                default_blob_store: store.clone().into(),
-                default_data_store: store,
+                lookup: LookupStore::Store(store.clone()),
+                blob: store.clone().into(),
+                data: store,
             },
         }
     }
@@ -525,11 +502,11 @@ impl TestSMTP for SMTP {
             Config::new(&QUEUE_STORE_CONFIG.replace("{TMP}", _temp_dir.temp_dir.to_str().unwrap()))
                 .unwrap();
         let store = Store::SQLite(SqliteStore::open(&config, "store.sqlite").unwrap().into());
-        self.shared.default_data_store = store.clone();
-        self.shared.default_blob_store = store.clone().into();
-        self.shared.default_lookup_store = store.clone().into();
+        self.core.storage.data = store.clone();
+        self.core.storage.blob = store.clone().into();
+        self.core.storage.lookup = store.clone().into();
         let (queue_tx, queue_rx) = mpsc::channel(128);
-        self.queue.tx = queue_tx;
+        self.inner.queue_tx = queue_tx;
 
         QueueReceiver {
             blob_store: store.clone().into(),
@@ -541,7 +518,7 @@ impl TestSMTP for SMTP {
 
     fn init_test_report(&mut self) -> ReportReceiver {
         let (report_tx, report_rx) = mpsc::channel(128);
-        self.report.tx = report_tx;
+        self.inner.report_tx = report_tx;
         ReportReceiver { report_rx }
     }
 }

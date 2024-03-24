@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::scripts::plugins::PluginContext;
 use mail_auth::common::headers::HeaderWriter;
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
@@ -34,9 +35,9 @@ use smtp_proto::{
 };
 use tokio::runtime::Handle;
 
-use crate::{core::SMTP, queue::DomainPart};
+use crate::{core::SMTP, inbound::DkimSign, queue::DomainPart};
 
-use super::{plugins::PluginContext, ScriptModification, ScriptParameters, ScriptResult};
+use super::{ScriptModification, ScriptParameters, ScriptResult};
 
 impl SMTP {
     pub fn run_script_blocking(
@@ -48,13 +49,14 @@ impl SMTP {
     ) -> ScriptResult {
         // Create filter instance
         let mut instance = self
+            .core
             .sieve
-            .runtime
+            .trusted_runtime
             .filter(params.message.as_deref().map_or(b"", |m| &m[..]))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
-            .with_user_address(&self.sieve.from_addr)
-            .with_user_full_name(&self.sieve.from_name);
+            .with_user_address(&self.core.sieve.from_addr)
+            .with_user_full_name(&self.core.sieve.from_name);
         let mut input = Input::script("__script", script);
         let mut messages: Vec<Vec<u8>> = Vec::new();
 
@@ -67,7 +69,7 @@ impl SMTP {
             match result {
                 Ok(event) => match event {
                     Event::IncludeScript { name, optional } => {
-                        if let Some(script) = self.shared.scripts.get(name.as_str()) {
+                        if let Some(script) = self.core.sieve.scripts.get(name.as_str()) {
                             input = Input::script(name, script.clone());
                         } else if optional {
                             input = false.into();
@@ -88,7 +90,7 @@ impl SMTP {
                     } => {
                         input = false.into();
                         'outer: for list in lists {
-                            if let Some(store) = self.shared.lookup_stores.get(&list) {
+                            if let Some(store) = self.core.storage.lookups.get(&list) {
                                 for value in &values {
                                     if let Ok(true) = handle.block_on(
                                         store.key_exists(
@@ -115,12 +117,12 @@ impl SMTP {
                         }
                     }
                     Event::Function { id, arguments } => {
-                        input = self.run_plugin_blocking(
+                        input = self.core.run_plugin_blocking(
                             id,
                             PluginContext {
                                 span: &span,
                                 handle: &handle,
-                                core: self,
+                                core: &self.core,
                                 message: instance.message(),
                                 modifications: &mut modifications,
                                 arguments,
@@ -147,10 +149,10 @@ impl SMTP {
                         message_id,
                     } => {
                         // Build message
-                        let return_path_lcase = self.sieve.return_path.to_lowercase();
+                        let return_path_lcase = self.core.sieve.return_path.to_lowercase();
                         let return_path_domain = return_path_lcase.domain_part().to_string();
-                        let mut message = self.queue.new_message(
-                            self.sieve.return_path.clone(),
+                        let mut message = self.new_message(
+                            self.core.sieve.return_path.clone(),
                             return_path_lcase,
                             return_path_domain,
                         );
@@ -263,18 +265,20 @@ impl SMTP {
                             instance.message().raw_message().into()
                         };
                         if let Some(raw_message) = raw_message {
-                            let headers = if !self.sieve.sign.is_empty() {
+                            let headers = if !self.core.sieve.sign.is_empty() {
                                 let mut headers = Vec::new();
-                                for dkim in &self.sieve.sign {
-                                    match dkim.sign(raw_message) {
-                                        Ok(signature) => {
-                                            signature.write_header(&mut headers);
-                                        }
-                                        Err(err) => {
-                                            tracing::warn!(parent: &span,
-                                                context = "dkim",
-                                                event = "sign-failed",
-                                                reason = %err);
+                                for dkim in &self.core.sieve.sign {
+                                    if let Some(dkim) = self.core.get_dkim_signer(dkim) {
+                                        match dkim.sign(raw_message) {
+                                            Ok(signature) => {
+                                                signature.write_header(&mut headers);
+                                            }
+                                            Err(err) => {
+                                                tracing::warn!(parent: &span,
+                                                    context = "dkim",
+                                                    event = "sign-failed",
+                                                    reason = %err);
+                                            }
                                         }
                                     }
                                 }

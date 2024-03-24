@@ -21,15 +21,12 @@
  * for more details.
 */
 
-use std::{
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use store::write::now;
 use tokio::sync::mpsc;
 
-use crate::core::SMTP;
+use crate::core::{SmtpInstance, SMTP};
 
 use super::{spool::QueueEventLock, DeliveryAttempt, Event, Message, OnHold, Status};
 
@@ -37,13 +34,13 @@ pub(crate) const SHORT_WAIT: Duration = Duration::from_millis(1);
 pub(crate) const LONG_WAIT: Duration = Duration::from_secs(86400 * 365);
 
 pub struct Queue {
-    pub core: Arc<SMTP>,
+    pub core: SmtpInstance,
     pub on_hold: Vec<OnHold<QueueEventLock>>,
     pub next_wake_up: Duration,
 }
 
 impl SpawnQueue for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: Arc<SMTP>) {
+    fn spawn(mut self, core: SmtpInstance) {
         tokio::spawn(async move {
             let mut queue = Queue::new(core);
 
@@ -68,7 +65,7 @@ impl SpawnQueue for mpsc::Receiver<Event> {
 }
 
 impl Queue {
-    pub fn new(core: Arc<SMTP>) -> Self {
+    pub fn new(core: SmtpInstance) -> Self {
         Queue {
             core,
             on_hold: Vec::with_capacity(128),
@@ -78,19 +75,20 @@ impl Queue {
 
     pub async fn process_events(&mut self) {
         // Deliver any concurrency limited messages
+        let core = SMTP::from(self.core.clone());
         while let Some(queue_event) = self.next_on_hold() {
             DeliveryAttempt::new(queue_event)
-                .try_deliver(self.core.clone())
+                .try_deliver(core.clone())
                 .await;
         }
 
         // Deliver scheduled messages
         let now = now();
         self.next_wake_up = LONG_WAIT;
-        for queue_event in self.core.next_event().await {
+        for queue_event in core.next_event().await {
             if queue_event.due <= now {
                 DeliveryAttempt::new(queue_event)
-                    .try_deliver(self.core.clone())
+                    .try_deliver(core.clone())
                     .await;
             } else {
                 self.next_wake_up = Duration::from_secs(queue_event.due - now);
@@ -202,5 +200,5 @@ impl Message {
 }
 
 pub trait SpawnQueue {
-    fn spawn(self, core: Arc<SMTP>);
+    fn spawn(self, core: SmtpInstance);
 }

@@ -21,15 +21,15 @@
  * for more details.
 */
 
+use common::{listener::SessionStream, scripts::ScriptModification};
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use utils::listener::SessionStream;
 
 use crate::{
     core::{Session, SessionAddress},
     queue::DomainPart,
-    scripts::{ScriptModification, ScriptResult},
+    scripts::ScriptResult,
 };
 
 impl<T: SessionStream> Session<T> {
@@ -79,12 +79,13 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting and Sieve filtering
         let rcpt_script = self
             .core
-            .eval_if::<String, _>(&self.core.session.config.rcpt.script, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.script, self)
             .await
-            .and_then(|name| self.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name))
             .cloned();
 
-        if rcpt_script.is_some() || !self.core.session.config.rcpt.rewrite.is_empty() {
+        if rcpt_script.is_some() || !self.core.core.smtp.session.rcpt.rewrite.is_empty() {
             // Sieve filtering
             if let Some(script) = rcpt_script {
                 match self
@@ -123,7 +124,8 @@ impl<T: SessionStream> Session<T> {
             // Address rewriting
             if let Some(new_address) = self
                 .core
-                .eval_if::<String, _>(&self.core.session.config.rcpt.rewrite, self)
+                .core
+                .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.rewrite, self)
                 .await
             {
                 let rcpt = self.data.rcpt_to.last_mut().unwrap();
@@ -146,13 +148,16 @@ impl<T: SessionStream> Session<T> {
         let rcpt = self.data.rcpt_to.last().unwrap();
         if let Some(directory) = self
             .core
-            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
             .await
-            .and_then(|name| self.core.get_directory(&name))
+            .and_then(|name| self.core.core.get_directory(&name))
         {
             if let Ok(is_local_domain) = directory.is_local_domain(&rcpt.domain).await {
                 if is_local_domain {
-                    if let Ok(is_local_address) = directory.rcpt(&rcpt.address_lcase).await {
+                    if let Ok(is_local_address) =
+                        self.core.core.rcpt(directory, &rcpt.address_lcase).await
+                    {
                         if !is_local_address {
                             tracing::debug!(parent: &self.span,
                                             context = "rcpt", 
@@ -179,7 +184,8 @@ impl<T: SessionStream> Session<T> {
                     }
                 } else if !self
                     .core
-                    .eval_if(&self.core.session.config.rcpt.relay, self)
+                    .core
+                    .eval_if(&self.core.core.smtp.session.rcpt.relay, self)
                     .await
                     .unwrap_or(false)
                 {
@@ -206,7 +212,8 @@ impl<T: SessionStream> Session<T> {
             }
         } else if !self
             .core
-            .eval_if(&self.core.session.config.rcpt.relay, self)
+            .core
+            .eval_if(&self.core.core.smtp.session.rcpt.relay, self)
             .await
             .unwrap_or(false)
         {

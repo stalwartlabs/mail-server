@@ -169,7 +169,9 @@ pub async fn test(params: &mut JMAPTest) {
         }
 
         server
-            .store
+            .core
+            .storage
+            .data
             .write(
                 BatchBuilder::new()
                     .with_account_id(1)

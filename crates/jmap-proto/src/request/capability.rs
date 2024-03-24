@@ -26,8 +26,46 @@ use utils::map::vec_map::VecMap;
 use crate::{
     error::request::RequestError,
     parser::{json::Parser, Error, JsonObjectParser},
-    types::type_state::DataType,
+    response::serialize::serialize_hex,
+    types::{id::Id, type_state::DataType},
 };
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Session {
+    #[serde(rename(serialize = "capabilities"))]
+    capabilities: VecMap<Capability, Capabilities>,
+    #[serde(rename(serialize = "accounts"))]
+    accounts: VecMap<Id, Account>,
+    #[serde(rename(serialize = "primaryAccounts"))]
+    primary_accounts: VecMap<Capability, Id>,
+    #[serde(rename(serialize = "username"))]
+    username: String,
+    #[serde(rename(serialize = "apiUrl"))]
+    api_url: String,
+    #[serde(rename(serialize = "downloadUrl"))]
+    download_url: String,
+    #[serde(rename(serialize = "uploadUrl"))]
+    upload_url: String,
+    #[serde(rename(serialize = "eventSourceUrl"))]
+    event_source_url: String,
+    #[serde(rename(serialize = "state"))]
+    #[serde(serialize_with = "serialize_hex")]
+    state: u32,
+    #[serde(skip)]
+    base_url: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct Account {
+    #[serde(rename(serialize = "name"))]
+    name: String,
+    #[serde(rename(serialize = "isPersonal"))]
+    is_personal: bool,
+    #[serde(rename(serialize = "isReadOnly"))]
+    is_read_only: bool,
+    #[serde(rename(serialize = "accountCapabilities"))]
+    account_capabilities: VecMap<Capability, Capabilities>,
+}
 
 #[derive(Debug, Clone, Copy, serde::Serialize, Hash, PartialEq, Eq)]
 pub enum Capability {
@@ -158,10 +196,137 @@ pub struct BlobCapabilities {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct EmptyCapabilities {}
 
+#[derive(Default)]
+pub struct BaseCapabilities {
+    pub session: VecMap<Capability, Capabilities>,
+    pub account: VecMap<Capability, Capabilities>,
+}
+
+impl Session {
+    pub fn new(base_url: impl Into<String>, base_capabilities: &BaseCapabilities) -> Session {
+        let base_url = base_url.into();
+        let mut capabilities = base_capabilities.session.clone();
+        capabilities.append(
+            Capability::WebSocket,
+            Capabilities::WebSocket(WebSocketCapabilities::new(&base_url)),
+        );
+
+        Session {
+            capabilities,
+            accounts: VecMap::new(),
+            primary_accounts: VecMap::new(),
+            username: "".to_string(),
+            api_url: format!("{}/jmap/", base_url),
+            download_url: format!(
+                "{}/jmap/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}",
+                base_url
+            ),
+            upload_url: format!("{}/jmap/upload/{{accountId}}/", base_url),
+            event_source_url: format!(
+                "{}/jmap/eventsource/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}",
+                base_url
+            ),
+            base_url,
+            state: 0,
+        }
+    }
+
+    pub fn set_primary_account(
+        &mut self,
+        account_id: Id,
+        username: String,
+        name: String,
+        capabilities: Option<&[Capability]>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
+    ) {
+        self.username = username;
+
+        if let Some(capabilities) = capabilities {
+            for capability in capabilities {
+                self.primary_accounts.append(*capability, account_id);
+            }
+        } else {
+            for capability in self.capabilities.keys() {
+                self.primary_accounts.append(*capability, account_id);
+            }
+        }
+
+        self.accounts.set(
+            account_id,
+            Account::new(name, true, false).add_capabilities(capabilities, account_capabilities),
+        );
+    }
+
+    pub fn add_account(
+        &mut self,
+        account_id: Id,
+        name: String,
+        is_personal: bool,
+        is_read_only: bool,
+        capabilities: Option<&[Capability]>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
+    ) {
+        self.accounts.set(
+            account_id,
+            Account::new(name, is_personal, is_read_only)
+                .add_capabilities(capabilities, account_capabilities),
+        );
+    }
+
+    pub fn set_state(&mut self, state: u32) {
+        self.state = state;
+    }
+
+    pub fn api_url(&self) -> &str {
+        &self.api_url
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+}
+
+impl Account {
+    pub fn new(name: String, is_personal: bool, is_read_only: bool) -> Account {
+        Account {
+            name,
+            is_personal,
+            is_read_only,
+            account_capabilities: VecMap::new(),
+        }
+    }
+
+    pub fn add_capabilities(
+        mut self,
+        capabilities: Option<&[Capability]>,
+        account_capabilities: &VecMap<Capability, Capabilities>,
+    ) -> Account {
+        if let Some(capabilities) = capabilities {
+            for capability in capabilities {
+                if let Some(value) = account_capabilities.get(capability) {
+                    self.account_capabilities.append(*capability, value.clone());
+                }
+            }
+        } else {
+            self.account_capabilities = account_capabilities.clone();
+        }
+        self
+    }
+}
+
 impl Default for SieveSessionCapabilities {
     fn default() -> Self {
         Self {
             implementation: concat!("Stalwart JMAP v", env!("CARGO_PKG_VERSION"),),
+        }
+    }
+}
+
+impl WebSocketCapabilities {
+    pub fn new(base_url: &str) -> Self {
+        WebSocketCapabilities {
+            url: format!("ws{}/jmap/ws", base_url.strip_prefix("http").unwrap()),
+            supports_push: true,
         }
     }
 }

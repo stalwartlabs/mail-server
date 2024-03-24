@@ -21,10 +21,14 @@
  * for more details.
 */
 
-use std::{borrow::Cow, time::Duration};
+use std::{
+    borrow::Cow,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
 
 use regex::Regex;
-use utils::config::utils::ParseValue;
+use utils::config::{utils::ParseValue, Rate};
 
 use self::tokenizer::TokenMap;
 
@@ -316,5 +320,76 @@ impl<'x> TryFrom<Variable<'x>> for Duration {
 impl From<Duration> for Constant {
     fn from(value: Duration) -> Self {
         Constant::Integer(value.as_millis() as i64)
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Rate {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::Array(items) if items.len() == 2 => {
+                let requests = items[0].to_integer().ok_or(())?;
+                let period = items[1].to_integer().ok_or(())?;
+
+                if requests > 0 && period > 0 {
+                    Ok(Rate {
+                        requests: requests as u64,
+                        period: Duration::from_millis(period as u64),
+                    })
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Ipv4Addr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for Ipv6Addr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for IpAddr {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value {
+            Variable::String(value) => value.parse().map_err(|_| ()),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'x, T: TryFrom<Variable<'x>>> TryFrom<Variable<'x>> for Vec<T>
+where
+    Result<Vec<T>, ()>: FromIterator<Result<T, <T as TryFrom<Variable<'x>>>::Error>>,
+{
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        value
+            .into_array()
+            .into_iter()
+            .map(|v| T::try_from(v))
+            .collect()
     }
 }

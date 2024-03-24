@@ -29,7 +29,7 @@ use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, QueueEvent, V
 use store::{Deserialize, IterateParams, Serialize, ValueKey, U64_LEN};
 use utils::BlobHash;
 
-use crate::core::{QueueCore, SMTP};
+use crate::core::SMTP;
 
 use super::{
     Domain, Event, Message, QueueId, QuotaKey, Recipient, Schedule, SimpleEnvelope, Status,
@@ -46,7 +46,7 @@ pub struct QueueEventLock {
     pub lock_expiry: u64,
 }
 
-impl QueueCore {
+impl SMTP {
     pub fn new_message(
         &self,
         return_path: impl Into<String>,
@@ -57,7 +57,7 @@ impl QueueCore {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         Message {
-            id: self.snowflake_id.generate().unwrap_or(created),
+            id: self.inner.snowflake_id.generate().unwrap_or(created),
             created,
             return_path: return_path.into(),
             return_path_lcase: return_path_lcase.into(),
@@ -72,9 +72,7 @@ impl QueueCore {
             quota_keys: Vec::new(),
         }
     }
-}
 
-impl SMTP {
     pub async fn next_event(&self) -> Vec<QueueEventLock> {
         let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
             due: 0,
@@ -88,8 +86,9 @@ impl SMTP {
         let mut events = Vec::new();
         let now = now();
         let result = self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
@@ -145,7 +144,7 @@ impl SMTP {
             })),
             event.lock_expiry.serialize(),
         );
-        match self.shared.default_data_store.write(batch.build()).await {
+        match self.core.storage.data.write(batch.build()).await {
             Ok(_) => Some(event),
             Err(store::Error::AssertValueFailed) => {
                 tracing::debug!(
@@ -171,8 +170,9 @@ impl SMTP {
 
     pub async fn read_message(&self, id: QueueId) -> Option<Message> {
         match self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .get_value::<Bincode<Message>>(ValueKey::from(ValueClass::Queue(QueueClass::Message(
                 id,
             ))))
@@ -226,7 +226,7 @@ impl Message {
             },
             0u32.serialize(),
         );
-        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
                 parent: span,
                 context = "queue",
@@ -237,8 +237,9 @@ impl Message {
             return false;
         }
         if let Err(err) = core
-            .shared
-            .default_blob_store
+            .core
+            .storage
+            .blob
             .put_blob(self.blob_hash.as_slice(), message.as_ref())
             .await
         {
@@ -303,7 +304,7 @@ impl Message {
                 Bincode::new(self).serialize(),
             );
 
-        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
                 parent: span,
                 context = "queue",
@@ -315,7 +316,7 @@ impl Message {
         }
 
         // Queue the message
-        if core.queue.tx.send(Event::Reload).await.is_err() {
+        if core.inner.queue_tx.send(Event::Reload).await.is_err() {
             tracing::warn!(
                 parent: span,
                 context = "queue",
@@ -341,8 +342,9 @@ impl Message {
             } else {
                 let idx = self.domains.len();
                 let expires = core
+                    .core
                     .eval_if(
-                        &core.queue.config.expire,
+                        &core.core.smtp.queue.expire,
                         &SimpleEnvelope::new(self, &rcpt_domain),
                     )
                     .await
@@ -418,7 +420,7 @@ impl Message {
             Bincode::new(self).serialize(),
         );
 
-        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
                 context = "queue",
                 event = "error",
@@ -468,7 +470,7 @@ impl Message {
             })))
             .clear(ValueClass::Queue(QueueClass::Message(self.id)));
 
-        if let Err(err) = core.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
                 context = "queue",
                 event = "error",

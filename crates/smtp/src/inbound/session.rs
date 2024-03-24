@@ -21,6 +21,14 @@
  * for more details.
 */
 
+use common::{
+    config::{
+        server::ServerProtocol,
+        smtp::{session::Mechanism, *},
+    },
+    expr::{self, functions::ResolveVariable},
+    listener::SessionStream,
+};
 use smtp_proto::{
     request::receiver::{
         BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver,
@@ -29,12 +37,8 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use utils::{config::ServerProtocol, listener::SessionStream};
 
-use crate::{
-    config::session::Mechanism,
-    core::{eval::*, ResolveVariable, Session, State},
-};
+use crate::core::{Session, State};
 
 use super::auth::SaslToken;
 
@@ -95,8 +99,9 @@ impl<T: SessionStream> Session<T> {
                             } => {
                                 let auth: u64 = self
                                     .core
+                                    .core
                                     .eval_if::<Mechanism, _>(
-                                        &self.core.session.config.auth.mechanisms,
+                                        &self.core.core.smtp.session.auth.mechanisms,
                                         self,
                                     )
                                     .await
@@ -403,7 +408,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
 }
 
 impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'_> {
         match variable {
             V_RECIPIENT => self
                 .data
@@ -439,7 +444,7 @@ impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
             V_REMOTE_IP => self.data.remote_ip_str.as_str().into(),
             V_LOCAL_IP => self.data.local_ip_str.as_str().into(),
             V_PRIORITY => self.data.priority.to_string().into(),
-            _ => utils::expr::Variable::default(),
+            _ => expr::Variable::default(),
         }
     }
 }

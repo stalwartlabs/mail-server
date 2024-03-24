@@ -23,15 +23,18 @@
 
 use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
+use common::{
+    config::smtp::session::{Milter, MilterVersion},
+    expr::if_block::IfBlock,
+};
 use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
-    config::Milter,
     core::{Session, SessionData, SMTP},
     inbound::milter::{
         receiver::{FrameResult, Receiver},
-        Action, Command, Macros, MilterClient, Modification, Options, Response, Version,
+        Action, Command, Macros, MilterClient, Modification, Options, Response,
     },
 };
 use tokio::{
@@ -39,7 +42,6 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
 };
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::TestMessage,
@@ -69,7 +71,7 @@ async fn milter_session() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut core = SMTP::test();
     let mut qr = core.init_test_queue("smtp_milter_test");
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.rcpt.relay = IfBlock::new(true);
     config.data.milters = r#"[[session.data.milter]]
     hostname = "127.0.0.1"
@@ -391,7 +393,7 @@ async fn milter_client_test() {
             tls_allow_invalid_certs: false,
             tempfail_on_error: false,
             max_frame_len: 5000000,
-            protocol_version: Version::V6,
+            protocol_version: MilterVersion::V6,
             flags_actions: None,
             flags_protocol: None,
         },

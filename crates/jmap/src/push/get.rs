@@ -44,7 +44,7 @@ impl JMAP {
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
             Property::DeviceClientId,
@@ -62,7 +62,7 @@ impl JMAP {
         } else {
             push_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
@@ -119,7 +119,9 @@ impl JMAP {
     pub async fn fetch_push_subscriptions(&self, account_id: u32) -> store::Result<state::Event> {
         let mut subscriptions = Vec::new();
         let document_ids = self
-            .store
+            .core
+            .storage
+            .data
             .get_bitmap(BitmapKey::document_ids(
                 account_id,
                 Collection::PushSubscription,
@@ -131,7 +133,9 @@ impl JMAP {
 
         for document_id in document_ids {
             let mut subscription = self
-                .store
+                .core
+                .storage
+                .data
                 .get_value::<Object<Value>>(ValueKey {
                     account_id,
                     collection: Collection::PushSubscription.into(),

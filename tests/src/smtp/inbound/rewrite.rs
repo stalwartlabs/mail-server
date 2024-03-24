@@ -26,13 +26,11 @@ use crate::smtp::{
     session::TestSession,
     TestConfig,
 };
+use common::{config::smtp::*, expr::if_block::IfBlock};
 use directory::core::config::ConfigDirectory;
-use smtp::{
-    config::{map_expr_token, scripts::ConfigSieve, ConfigContext},
-    core::{eval::*, Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 use store::Store;
-use utils::config::{if_block::IfBlock, utils::NoConstants, Config};
+use utils::config::Config;
 
 const CONFIG: &str = r#"
 [storage]
@@ -107,8 +105,8 @@ async fn address_rewrite() {
         .await
         .unwrap();
     core.sieve = settings.parse_sieve(&mut ctx).unwrap();
-    core.shared.scripts = ctx.scripts;
-    let config = &mut core.session.config;
+    core.core.storage.scripts = ctx.scripts;
+    let config = &mut core.core.smtp.session;
     config.mail.script = settings
         .parse_if_block("session.mail.script", |name| {
             map_expr_token::<NoConstants>(name, available_keys)

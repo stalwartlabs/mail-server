@@ -4,6 +4,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use common::listener::{limiter::InFlight, SessionStream};
 use directory::QueryBy;
 use imap_proto::{protocol::list::Attribute, StatusResponse};
 use jmap::{
@@ -16,10 +17,7 @@ use jmap_proto::{
 };
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
-use utils::{
-    listener::{limiter::InFlight, SessionStream},
-    lru_cache::LruCached,
-};
+use utils::lru_cache::LruCached;
 
 use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, SessionData};
 
@@ -27,7 +25,7 @@ impl<T: SessionStream> SessionData<T> {
     pub async fn new(
         session: &Session<T>,
         access_token: &AccessToken,
-        in_flight: InFlight,
+        in_flight: Option<InFlight>,
     ) -> crate::Result<Self> {
         let mut session = SessionData {
             stream_tx: session.stream_tx.clone(),
@@ -53,9 +51,11 @@ impl<T: SessionStream> SessionData<T> {
                     account_id,
                     format!(
                         "{}/{}",
-                        session.imap.name_shared,
+                        session.jmap.core.imap.name_shared,
                         session
                             .jmap
+                            .core
+                            .storage
                             .directory
                             .query(QueryBy::Id(account_id), false)
                             .await
@@ -90,13 +90,17 @@ impl<T: SessionStream> SessionData<T> {
     ) -> crate::Result<Account> {
         let state_mailbox = self
             .jmap
-            .store
+            .core
+            .storage
+            .data
             .get_last_change_id(account_id, Collection::Mailbox)
             .await
             .map_err(|_| {})?;
         let state_email = self
             .jmap
-            .store
+            .core
+            .storage
+            .data
             .get_last_change_id(account_id, Collection::Email)
             .await
             .map_err(|_| {})?;
@@ -347,8 +351,10 @@ impl<T: SessionStream> SessionData<T> {
             for account_id in added_account_ids {
                 let prefix = format!(
                     "{}/{}",
-                    self.imap.name_shared,
+                    self.jmap.core.imap.name_shared,
                     self.jmap
+                        .core
+                        .storage
                         .directory
                         .query(QueryBy::Id(account_id), false)
                         .await
@@ -407,7 +413,7 @@ impl<T: SessionStream> SessionData<T> {
                     // Only child changes, no need to re-fetch mailboxes
                     let state_email = self
                         .jmap
-                        .store
+                        .core.storage.data
                         .get_last_change_id(account_id, Collection::Email)
                         .await.map_err(
                             |e| {
@@ -459,8 +465,10 @@ impl<T: SessionStream> SessionData<T> {
                     let mailbox_prefix = if !access_token.is_primary_id(account_id) {
                         format!(
                             "{}/{}",
-                            self.imap.name_shared,
+                            self.jmap.core.imap.name_shared,
                             self.jmap
+                                .core
+                                .storage
                                 .directory
                                 .query(QueryBy::Id(account_id), false)
                                 .await

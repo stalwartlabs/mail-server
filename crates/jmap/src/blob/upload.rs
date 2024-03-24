@@ -58,7 +58,7 @@ impl JMAP {
         };
         let account_id = request.account_id.document_id();
 
-        if request.create.len() > self.config.set_max_objects {
+        if request.create.len() > self.core.jmap.set_max_objects {
             return Err(MethodError::RequestTooLarge);
         }
 
@@ -129,14 +129,14 @@ impl JMAP {
                     DataSourceObject::Value(bytes) => bytes,
                 };
 
-                if bytes.len() + data.len() < self.config.upload_max_size {
+                if bytes.len() + data.len() < self.core.jmap.upload_max_size {
                     data.extend(bytes);
                 } else {
                     response.not_created.append(
                         create_id,
                         SetError::too_large().with_description(format!(
                             "Upload size exceeds maximum of {} bytes.",
-                            self.config.upload_max_size
+                            self.core.jmap.upload_max_size
                         )),
                     );
                     continue 'outer;
@@ -153,26 +153,33 @@ impl JMAP {
             }
 
             // Enforce quota
-            let used = self.store.blob_quota(account_id).await.map_err(|err| {
-                tracing::error!(event = "error",
+            let used = self
+                .core
+                .storage
+                .data
+                .blob_quota(account_id)
+                .await
+                .map_err(|err| {
+                    tracing::error!(event = "error",
                     context = "blob_store",
                     account_id = account_id,
                     error = ?err,
                     "Failed to obtain blob quota");
-                MethodError::ServerPartialFail
-            })?;
+                    MethodError::ServerPartialFail
+                })?;
 
-            if ((self.config.upload_tmp_quota_size > 0
-                && used.bytes + data.len() > self.config.upload_tmp_quota_size)
-                || (self.config.upload_tmp_quota_amount > 0
-                    && used.count + 1 > self.config.upload_tmp_quota_amount))
+            if ((self.core.jmap.upload_tmp_quota_size > 0
+                && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
+                || (self.core.jmap.upload_tmp_quota_amount > 0
+                    && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
                 && !access_token.is_super_user()
             {
                 response.not_created.append(
                     create_id,
                     SetError::over_quota().with_description(format!(
                         "You have exceeded the blob upload quota of {} files or {} bytes.",
-                        self.config.upload_tmp_quota_amount, self.config.upload_tmp_quota_size
+                        self.core.jmap.upload_tmp_quota_amount,
+                        self.core.jmap.upload_tmp_quota_size
                     )),
                 );
                 continue 'outer;
@@ -212,7 +219,9 @@ impl JMAP {
 
         // Enforce quota
         let used = self
-            .store
+            .core
+            .storage
+            .data
             .blob_quota(account_id.document_id())
             .await
             .map_err(|err| {
@@ -224,15 +233,15 @@ impl JMAP {
                 RequestError::internal_server_error()
             })?;
 
-        if ((self.config.upload_tmp_quota_size > 0
-            && used.bytes + data.len() > self.config.upload_tmp_quota_size)
-            || (self.config.upload_tmp_quota_amount > 0
-                && used.count + 1 > self.config.upload_tmp_quota_amount))
+        if ((self.core.jmap.upload_tmp_quota_size > 0
+            && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
+            || (self.core.jmap.upload_tmp_quota_amount > 0
+                && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
             && !access_token.is_super_user()
         {
             let err = Err(RequestError::over_blob_quota(
-                self.config.upload_tmp_quota_amount,
-                self.config.upload_tmp_quota_size,
+                self.core.jmap.upload_tmp_quota_amount,
+                self.core.jmap.upload_tmp_quota_size,
             ));
 
             #[cfg(feature = "test_mode")]
@@ -265,7 +274,7 @@ impl JMAP {
         // First reserve the hash
         let hash = BlobHash::from(data);
         let mut batch = BatchBuilder::new();
-        let until = now() + self.config.upload_tmp_ttl;
+        let until = now() + self.core.jmap.upload_tmp_ttl;
 
         batch.with_account_id(account_id).set(
             BlobOp::Reserve {
@@ -276,16 +285,25 @@ impl JMAP {
         );
         self.write_batch(batch).await?;
 
-        if !self.store.blob_exists(&hash).await.map_err(|err| {
-            tracing::error!(
+        if !self
+            .core
+            .storage
+            .data
+            .blob_exists(&hash)
+            .await
+            .map_err(|err| {
+                tracing::error!(
                 event = "error",
                 context = "put_blob",
                 error = ?err,
                 "Failed to verify blob hash existence.");
-            MethodError::ServerPartialFail
-        })? {
+                MethodError::ServerPartialFail
+            })?
+        {
             // Upload blob to store
-            self.blob_store
+            self.core
+                .storage
+                .blob
                 .put_blob(hash.as_ref(), data)
                 .await
                 .map_err(|err| {

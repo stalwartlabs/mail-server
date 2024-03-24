@@ -67,7 +67,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .await?
             .map(|ids| ids.len() as usize)
             .unwrap_or(0)
-            > self.jmap.config.sieve_max_scripts
+            > self.jmap.core.jmap.sieve_max_scripts
         {
             return Err(
                 StatusResponse::no("Too many scripts.").with_code(ResponseCode::QuotaMaxScripts)
@@ -75,7 +75,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
 
         // Compile script
-        match self.jmap.sieve_compiler.compile(&script_bytes) {
+        match self
+            .jmap
+            .core
+            .sieve
+            .untrusted_compiler
+            .compile(&script_bytes)
+        {
             Ok(compiled_script) => {
                 script_bytes.extend(bincode::serialize(&compiled_script).unwrap_or_default());
             }
@@ -216,7 +222,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
     ) -> Result<Option<u32>, StatusResponse> {
         if name.is_empty() {
             Err(StatusResponse::no("Script name cannot be empty."))
-        } else if name.len() > self.jmap.config.sieve_max_script_name {
+        } else if name.len() > self.jmap.core.jmap.sieve_max_script_name {
             Err(StatusResponse::no("Script name is too long."))
         } else if name.eq_ignore_ascii_case("vacation") {
             Err(StatusResponse::no(

@@ -1,11 +1,8 @@
 use std::time::Duration;
 
-use utils::{
-    config::{
-        utils::{AsKey, ParseValue},
-        Config,
-    },
-    snowflake::SnowflakeIdGenerator,
+use utils::config::{
+    utils::{AsKey, ParseValue},
+    Config,
 };
 
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue, Variable};
@@ -27,7 +24,6 @@ pub struct ReportAnalysis {
     pub addresses: Vec<AddressMatch>,
     pub forward: bool,
     pub store: Option<Duration>,
-    pub report_id: SnowflakeIdGenerator,
 }
 
 pub enum AddressMatch {
@@ -109,10 +105,6 @@ impl ReportConfig {
                     .collect(),
                 forward: config.property_("report.analysis.forward").unwrap_or(true),
                 store: config.property_("report.analysis.store"),
-                report_id: config
-                    .property_::<u64>("storage.cluster.node-id")
-                    .map(SnowflakeIdGenerator::with_node_id)
-                    .unwrap_or_default(),
             },
             dkim: Report::parse(config, "dkim", &default_hostname, &sender_vars),
             spf: Report::parse(config, "spf", &default_hostname, &sender_vars),
@@ -212,7 +204,6 @@ impl Default for ReportConfig {
                 addresses: Default::default(),
                 forward: true,
                 store: None,
-                report_id: SnowflakeIdGenerator::new(),
             },
             dkim: Default::default(),
             spf: Default::default(),

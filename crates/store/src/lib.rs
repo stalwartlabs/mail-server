@@ -193,7 +193,7 @@ pub struct Stores {
     pub purge_schedules: Vec<PurgeSchedule>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum Store {
     #[cfg(feature = "sqlite")]
     SQLite(Arc<SqliteStore>),
@@ -205,6 +205,8 @@ pub enum Store {
     MySQL(Arc<MysqlStore>),
     #[cfg(feature = "rocks")]
     RocksDb(Arc<RocksDbStore>),
+    #[default]
+    None,
 }
 
 #[derive(Clone)]
@@ -333,6 +335,27 @@ impl From<Store> for BlobStore {
 impl From<Store> for LookupStore {
     fn from(store: Store) -> Self {
         Self::Store(store)
+    }
+}
+
+impl Default for BlobStore {
+    fn default() -> Self {
+        Self {
+            backend: BlobBackend::Store(Store::None),
+            compression: CompressionAlgo::None,
+        }
+    }
+}
+
+impl Default for LookupStore {
+    fn default() -> Self {
+        Self::Store(Store::None)
+    }
+}
+
+impl Default for FtsStore {
+    fn default() -> Self {
+        Self::Store(Store::None)
     }
 }
 
@@ -662,20 +685,7 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
-        }
-    }
-}
-
-#[cfg(feature = "test_mode")]
-impl Default for Store {
-    fn default() -> Self {
-        #[cfg(feature = "sqlite")]
-        {
-            Self::SQLite(Arc::new(SqliteStore::open_memory().unwrap()))
-        }
-        #[cfg(not(feature = "sqlite"))]
-        {
-            unreachable!("No default store available")
+            Self::None => f.debug_tuple("None").finish(),
         }
     }
 }

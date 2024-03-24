@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use crate::core::{Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
         list::{
@@ -31,10 +33,6 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
-
-use utils::listener::SessionStream;
-
-use crate::core::{Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_list(&mut self, request: Request<Command>) -> crate::OpResult {
@@ -179,9 +177,11 @@ impl<T: SessionStream> SessionData<T> {
         for account in self.mailboxes.lock().iter() {
             if let Some(prefix) = &account.prefix {
                 if !added_shared_folder {
-                    if !filter_subscribed && matches_pattern(&patterns, &self.imap.name_shared) {
+                    if !filter_subscribed
+                        && matches_pattern(&patterns, &self.jmap.core.imap.name_shared)
+                    {
                         list_items.push(ListItem {
-                            mailbox_name: self.imap.name_shared.clone(),
+                            mailbox_name: self.jmap.core.imap.name_shared.clone(),
                             attributes: if include_children {
                                 vec![Attribute::HasChildren, Attribute::NoSelect]
                             } else {

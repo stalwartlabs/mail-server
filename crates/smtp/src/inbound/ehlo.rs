@@ -23,10 +23,10 @@
 
 use std::time::{Duration, SystemTime};
 
-use crate::{config::session::Mechanism, core::Session, scripts::ScriptResult};
+use crate::{core::Session, scripts::ScriptResult};
+use common::{config::smtp::session::Mechanism, listener::SessionStream};
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
-use utils::listener::SessionStream;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_ehlo(&mut self, domain: String, is_extended: bool) -> Result<(), ()> {
@@ -50,13 +50,11 @@ impl<T: SessionStream> Session<T> {
             if self.params.spf_ehlo.verify() {
                 let spf_output = self
                     .core
+                    .core
+                    .smtp
                     .resolvers
                     .dns
-                    .verify_spf_helo(
-                        self.data.remote_ip,
-                        &self.data.helo_domain,
-                        &self.instance.hostname,
-                    )
+                    .verify_spf_helo(self.data.remote_ip, &self.data.helo_domain, &self.hostname)
                     .await;
 
                 tracing::debug!(parent: &self.span,
@@ -82,9 +80,10 @@ impl<T: SessionStream> Session<T> {
             // Sieve filtering
             if let Some(script) = self
                 .core
-                .eval_if::<String, _>(&self.core.session.config.ehlo.script, self)
+                .core
+                .eval_if::<String, _>(&self.core.core.smtp.session.ehlo.script, self)
                 .await
-                .and_then(|name| self.core.get_sieve_script(&name))
+                .and_then(|name| self.core.core.get_sieve_script(&name))
             {
                 if let ScriptResult::Reject(message) = self
                     .run_script(script.clone(), self.build_script_parameters("ehlo"))
@@ -117,22 +116,23 @@ impl<T: SessionStream> Session<T> {
 
         if !is_extended {
             return self
-                .write(format!("250 {} says hello\r\n", self.instance.hostname).as_bytes())
+                .write(format!("250 {} says hello\r\n", self.hostname).as_bytes())
                 .await;
         }
 
-        let mut response = EhloResponse::new(self.instance.hostname.as_str());
+        let mut response = EhloResponse::new(self.hostname.as_str());
         response.capabilities =
             EXT_ENHANCED_STATUS_CODES | EXT_8BIT_MIME | EXT_BINARY_MIME | EXT_SMTP_UTF8;
         if !self.stream.is_tls() {
             response.capabilities |= EXT_START_TLS;
         }
-        let ec = &self.core.session.config.extensions;
-        let ac = &self.core.session.config.auth;
-        let dc = &self.core.session.config.data;
+        let ec = &self.core.core.smtp.session.extensions;
+        let ac = &self.core.core.smtp.session.auth;
+        let dc = &self.core.core.smtp.session.data;
 
         // Pipelining
         if self
+            .core
             .core
             .eval_if(&ec.pipelining, self)
             .await
@@ -142,22 +142,41 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Chunking
-        if self.core.eval_if(&ec.chunking, self).await.unwrap_or(true) {
+        if self
+            .core
+            .core
+            .eval_if(&ec.chunking, self)
+            .await
+            .unwrap_or(true)
+        {
             response.capabilities |= EXT_CHUNKING;
         }
 
         // Address Expansion
-        if self.core.eval_if(&ec.expn, self).await.unwrap_or(false) {
+        if self
+            .core
+            .core
+            .eval_if(&ec.expn, self)
+            .await
+            .unwrap_or(false)
+        {
             response.capabilities |= EXT_EXPN;
         }
 
         // Recipient Verification
-        if self.core.eval_if(&ec.vrfy, self).await.unwrap_or(false) {
+        if self
+            .core
+            .core
+            .eval_if(&ec.vrfy, self)
+            .await
+            .unwrap_or(false)
+        {
             response.capabilities |= EXT_VRFY;
         }
 
         // Require TLS
         if self
+            .core
             .core
             .eval_if(&ec.requiretls, self)
             .await
@@ -167,13 +186,14 @@ impl<T: SessionStream> Session<T> {
         }
 
         // DSN
-        if self.core.eval_if(&ec.dsn, self).await.unwrap_or(false) {
+        if self.core.core.eval_if(&ec.dsn, self).await.unwrap_or(false) {
             response.capabilities |= EXT_DSN;
         }
 
         // Authentication
         if self.data.authenticated_as.is_empty() {
             response.auth_mechanisms = self
+                .core
                 .core
                 .eval_if::<Mechanism, _>(&ac.mechanisms, self)
                 .await
@@ -192,6 +212,7 @@ impl<T: SessionStream> Session<T> {
         // Future release
         if let Some(value) = self
             .core
+            .core
             .eval_if::<Duration, _>(&ec.future_release, self)
             .await
         {
@@ -205,13 +226,19 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Deliver By
-        if let Some(value) = self.core.eval_if::<Duration, _>(&ec.deliver_by, self).await {
+        if let Some(value) = self
+            .core
+            .core
+            .eval_if::<Duration, _>(&ec.deliver_by, self)
+            .await
+        {
             response.capabilities |= EXT_DELIVER_BY;
             response.deliver_by = value.as_secs();
         }
 
         // Priority
         if let Some(value) = self
+            .core
             .core
             .eval_if::<MtPriority, _>(&ec.mt_priority, self)
             .await
@@ -223,6 +250,7 @@ impl<T: SessionStream> Session<T> {
         // Size
         response.size = self
             .core
+            .core
             .eval_if(&dc.max_message_size, self)
             .await
             .unwrap_or(25 * 1024 * 1024);
@@ -232,6 +260,7 @@ impl<T: SessionStream> Session<T> {
 
         // No soliciting
         if let Some(value) = self
+            .core
             .core
             .eval_if::<String, _>(&ec.no_soliciting, self)
             .await

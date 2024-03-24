@@ -59,7 +59,12 @@ impl AcmeManager {
         class: &str,
         items: &[String],
     ) -> Result<Option<Vec<u8>>, std::io::Error> {
-        match self.store.config_get(self.build_key(class, items)).await {
+        match self
+            .store
+            .load()
+            .config_get(self.build_key(class, items))
+            .await
+        {
             Ok(Some(content)) => match URL_SAFE_NO_PAD.decode(content.as_bytes()) {
                 Ok(contents) => Ok(Some(contents)),
                 Err(err) => Err(std::io::Error::new(ErrorKind::Other, err)),
@@ -76,6 +81,7 @@ impl AcmeManager {
         contents: impl AsRef<[u8]>,
     ) -> Result<(), std::io::Error> {
         self.store
+            .load()
             .config_set([ConfigKey {
                 key: self.build_key(class, items),
                 value: URL_SAFE_NO_PAD.encode(contents.as_ref()),

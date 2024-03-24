@@ -21,9 +21,9 @@
  * for more details.
 */
 
+use common::{DeliveryEvent, DeliveryResult, IngestMessage};
 use smtp_proto::Response;
 use tokio::sync::{mpsc, oneshot};
-use utils::ipc::{DeliveryEvent, DeliveryResult, IngestMessage};
 
 use crate::queue::{
     Error, ErrorDetails, HostResponse, Message, Recipient, Status, RCPT_STATUS_CHANGED,

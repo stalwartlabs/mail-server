@@ -25,10 +25,10 @@ use std::{
     collections::BTreeMap,
     net::IpAddr,
     sync::{atomic::AtomicU32, Arc},
-    time::Duration,
 };
 
 use ahash::AHashMap;
+use common::listener::{limiter::InFlight, ServerInstance, SessionStream};
 use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
@@ -37,17 +37,13 @@ use imap_proto::{
 };
 use jmap::{
     auth::{rate_limit::ConcurrencyLimiters, AccessToken},
-    JMAP,
+    JmapInstance, JMAP,
 };
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
 };
-use utils::{
-    config::Rate,
-    listener::{limiter::InFlight, ServerInstance, SessionStream},
-    lru_cache::LruCache,
-};
+use utils::lru_cache::LruCache;
 
 pub mod client;
 pub mod mailbox;
@@ -56,40 +52,36 @@ pub mod session;
 
 #[derive(Clone)]
 pub struct ImapSessionManager {
-    pub jmap: Arc<JMAP>,
-    pub imap: Arc<IMAP>,
+    pub imap: ImapInstance,
 }
 
 impl ImapSessionManager {
-    pub fn new(jmap: Arc<JMAP>, imap: Arc<IMAP>) -> Self {
-        Self { jmap, imap }
+    pub fn new(imap: ImapInstance) -> Self {
+        Self { imap }
     }
 }
 
-pub struct IMAP {
-    pub max_request_size: usize,
-    pub max_auth_failures: u32,
-    pub name_shared: String,
-    pub allow_plain_auth: bool,
+#[derive(Clone)]
+pub struct ImapInstance {
+    pub jmap_instance: JmapInstance,
+    pub imap_inner: Arc<Inner>,
+}
 
-    pub timeout_auth: Duration,
-    pub timeout_unauth: Duration,
-    pub timeout_idle: Duration,
-
+pub struct Inner {
     pub greeting_plain: Vec<u8>,
     pub greeting_tls: Vec<u8>,
 
     pub rate_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
-    pub rate_requests: Rate,
-    pub rate_concurrent: u64,
 
     pub cache_account: LruCache<AccountId, Arc<Account>>,
     pub cache_mailbox: LruCache<MailboxId, Arc<MailboxState>>,
 }
 
+pub struct IMAP {}
+
 pub struct Session<T: SessionStream> {
-    pub jmap: Arc<JMAP>,
-    pub imap: Arc<IMAP>,
+    pub jmap: JMAP,
+    pub imap: Arc<Inner>,
     pub instance: Arc<ServerInstance>,
     pub receiver: Receiver<Command>,
     pub version: ProtocolVersion,
@@ -106,13 +98,13 @@ pub struct Session<T: SessionStream> {
 
 pub struct SessionData<T: SessionStream> {
     pub account_id: u32,
-    pub jmap: Arc<JMAP>,
-    pub imap: Arc<IMAP>,
+    pub jmap: JMAP,
+    pub imap: Arc<Inner>,
     pub span: tracing::Span,
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
     pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub state: AtomicU32,
-    pub in_flight: InFlight,
+    pub in_flight: Option<InFlight>,
 }
 
 #[derive(Debug, Default, Clone)]

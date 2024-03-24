@@ -21,9 +21,10 @@
  * for more details.
 */
 
+use common::expr::if_block::IfBlock;
 use directory::core::config::ConfigDirectory;
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::dummy_stores,
@@ -66,16 +67,16 @@ email-list = ["sales@foobar.org"]
 async fn vrfy_expn() {
     let mut core = SMTP::test();
 
-    core.shared.directories = Config::new(DIRECTORY)
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
-    let config = &mut core.session.config.extensions;
+    let config = &mut core.core.smtp.session.extensions;
     config.vrfy = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
     {else = false}]"#
         .parse_if();

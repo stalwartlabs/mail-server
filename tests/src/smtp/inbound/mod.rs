@@ -384,7 +384,7 @@ pub fn dummy_stores() -> Stores {
     let store = Store::default();
     stores.stores.insert("dummy".to_string(), store.clone());
     stores
-        .lookup_stores
+        .lookups
         .insert("dummy".to_string(), store.clone().into());
     stores
         .fts_stores

@@ -48,6 +48,8 @@ impl JMAP {
             match cond {
                 Filter::Name(name) => {
                     if let Some(principal) = self
+                        .core
+                        .storage
                         .directory
                         .query(QueryBy::Name(name.as_str()), false)
                         .await
@@ -67,8 +69,8 @@ impl JMAP {
                 Filter::Email(email) => {
                     let mut ids = RoaringBitmap::new();
                     for id in self
-                        .directory
-                        .email_to_ids(&email)
+                        .core
+                        .email_to_ids(&self.core.storage.directory, &email)
                         .await
                         .map_err(|_| MethodError::ServerPartialFail)?
                     {

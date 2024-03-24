@@ -32,13 +32,13 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use smtp::{
-    config::shared::ConfigShared,
     core::{Session, SMTP},
     queue::{DeliveryAttempt, Event},
 };
 use store::write::now;
-use utils::config::{if_block::IfBlock, Config, ServerProtocol};
+use utils::config::Config;
 
 const REMOTE: &str = "
 [remote.lmtp]
@@ -64,14 +64,14 @@ async fn lmtp_delivery() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.extensions.dsn = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("lmtp_delivery_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Lmtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "lmtp.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -79,17 +79,17 @@ async fn lmtp_delivery() {
 
     // Multiple delivery attempts
     let mut local_qr = core.init_test_queue("lmtp_delivery_local");
-    core.shared.relay_hosts.insert(
+    core.core.storage.relay_hosts.insert(
         "lmtp".to_string(),
         Config::new(REMOTE).unwrap().parse_host("lmtp").unwrap(),
     );
-    core.queue.config.next_hop = r#"[{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
+    core.core.smtp.queue.next_hop = r#"[{if = "rcpt_domain = 'foobar.org'", then = "'lmtp'"},
     {else = false}]"#
         .parse_if();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.rcpt.max_recipients = IfBlock::new(100);
-    core.session.config.extensions.dsn = IfBlock::new(true);
-    let config = &mut core.queue.config;
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.max_recipients = IfBlock::new(100);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
+    let config = &mut core.core.smtp.queue;
     config.retry = IfBlock::new(Duration::from_secs(1));
     config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
     {else = [1s]}]"#

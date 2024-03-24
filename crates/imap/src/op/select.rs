@@ -34,10 +34,10 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap_proto::types::id::Id;
-use utils::{listener::SessionStream, lru_cache::LruCached};
-
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};
+use common::listener::SessionStream;
+use jmap_proto::types::id::Id;
+use utils::lru_cache::LruCached;
 
 use super::ToModSeq;
 

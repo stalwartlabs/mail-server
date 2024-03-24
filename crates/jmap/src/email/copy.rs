@@ -435,17 +435,22 @@ impl JMAP {
             .custom(EmailIndexBuilder::set(metadata))
             .custom(changes);
 
-        self.store.write(batch.build()).await.map_err(|err| {
-            tracing::error!(
+        self.core
+            .storage
+            .data
+            .write(batch.build())
+            .await
+            .map_err(|err| {
+                tracing::error!(
                     event = "error",
                     context = "email_copy",
                     error = ?err,
                     "Failed to write message to database.");
-            MethodError::ServerPartialFail
-        })?;
+                MethodError::ServerPartialFail
+            })?;
 
         // Request FTS index
-        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
+        let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
         Ok(Ok(email))
     }

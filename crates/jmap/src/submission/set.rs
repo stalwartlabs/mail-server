@@ -23,6 +23,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use common::listener::{stream::NullIo, ServerInstance};
 use jmap_proto::{
     error::{
         method::MethodError,
@@ -51,10 +52,7 @@ use mail_parser::{HeaderName, HeaderValue};
 use smtp::core::{Session, SessionData, State};
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
-use utils::{
-    listener::{stream::NullIo, ServerInstance},
-    map::vec_map::VecMap,
-};
+use utils::map::vec_map::VecMap;
 
 use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, JMAP};
 
@@ -77,7 +75,7 @@ impl JMAP {
         next_call: &mut Option<Call<RequestMethod>>,
     ) -> Result<SetResponse, MethodError> {
         let account_id = request.account_id.document_id();
-        let mut response = SetResponse::from_request(&request, self.config.set_max_objects)?;
+        let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
@@ -561,11 +559,11 @@ impl JMAP {
         // Obtain raw message
         let message =
             if let Some(message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await? {
-                if message.len() > self.config.mail_max_size {
+                if message.len() > self.core.jmap.mail_max_size {
                     return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
                         .with_description(format!(
                             "Message exceeds maximum size of {} bytes.",
-                            self.config.mail_max_size
+                            self.core.jmap.mail_max_size
                         ))));
                 }
 

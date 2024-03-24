@@ -56,14 +56,14 @@ impl JMAP {
             .get_document_ids(account_id, Collection::PushSubscription)
             .await?
             .unwrap_or_default();
-        let mut response = SetResponse::from_request(&request, self.config.set_max_objects)?;
+        let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
         'create: for (id, object) in request.unwrap_create() {
             let mut push = Object::with_capacity(object.properties.len());
 
-            if push_ids.len() as usize >= self.config.push_max_total {
+            if push_ids.len() as usize >= self.core.jmap.push_max_total {
                 response.not_created.append(id, SetError::forbidden().with_description(
                     "There are too many subscriptions, please delete some before adding a new one.",
                 ));

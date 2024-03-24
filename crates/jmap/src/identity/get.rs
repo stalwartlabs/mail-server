@@ -42,7 +42,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
             Property::Name,
@@ -60,7 +60,7 @@ impl JMAP {
         } else {
             identity_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
@@ -129,6 +129,8 @@ impl JMAP {
 
         // Obtain principal
         let principal = self
+            .core
+            .storage
             .directory
             .query(QueryBy::Id(account_id), false)
             .await
@@ -181,14 +183,19 @@ impl JMAP {
             );
             identity_ids.insert(identity_id);
         }
-        self.store.write(batch.build()).await.map_err(|err| {
-            tracing::error!(
+        self.core
+            .storage
+            .data
+            .write(batch.build())
+            .await
+            .map_err(|err| {
+                tracing::error!(
                 event = "error",
                 context = "identity_get_or_create",
                 error = ?err,
                 "Failed to create identities.");
-            MethodError::ServerPartialFail
-        })?;
+                MethodError::ServerPartialFail
+            })?;
 
         Ok(identity_ids)
     }

@@ -149,7 +149,9 @@ pub async fn test(params: &mut JMAPTest) {
                 let id = *id_map.get(from).unwrap();
                 let new_id = Id::from_parts(thread_id, id.document_id());
                 server
-                    .store
+                    .core
+                    .storage
+                    .data
                     .write(
                         BatchBuilder::new()
                             .with_account_id(1)
@@ -289,7 +291,13 @@ pub async fn test(params: &mut JMAPTest) {
     {
         batch.delete_document(thread_id);
     }
-    server.store.write(batch.build_batch()).await.unwrap();
+    server
+        .core
+        .storage
+        .data
+        .write(batch.build_batch())
+        .await
+        .unwrap();
 
     assert_is_empty(server).await;
 }

@@ -31,8 +31,8 @@ pub mod email;
 pub mod misc;
 pub mod text;
 
-pub trait ResolveVariable<'x> {
-    fn resolve_variable(&self, variable: u32) -> Variable<'x>;
+pub trait ResolveVariable {
+    fn resolve_variable(&self, variable: u32) -> Variable<'_>;
 }
 
 impl<'x> Variable<'x> {

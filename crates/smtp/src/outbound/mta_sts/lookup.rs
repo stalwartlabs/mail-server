@@ -30,11 +30,12 @@ use std::{
 #[cfg(feature = "test_mode")]
 pub static STS_TEST_POLICY: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
+use common::config::smtp::resolver::Policy;
 use mail_auth::{common::lru::DnsCache, mta_sts::MtaSts, report::tlsrpt::ResultType};
 
 use crate::core::SMTP;
 
-use super::{Error, Policy};
+use super::{parse::ParsePolicy, Error};
 
 #[allow(unused_variables)]
 impl SMTP {
@@ -45,6 +46,8 @@ impl SMTP {
     ) -> Result<Arc<Policy>, Error> {
         // Lookup MTA-STS TXT record
         let record = match self
+            .core
+            .smtp
             .resolvers
             .dns
             .txt_lookup::<MtaSts>(format!("_mta-sts.{domain}."))
@@ -53,7 +56,7 @@ impl SMTP {
             Ok(record) => record,
             Err(err) => {
                 // Return the cached policy in case of failure
-                return if let Some(value) = self.resolvers.cache.mta_sts.get(domain) {
+                return if let Some(value) = self.core.smtp.resolvers.cache.mta_sts.get(domain) {
                     Ok(value)
                 } else {
                     Err(err.into())
@@ -62,7 +65,7 @@ impl SMTP {
         };
 
         // Check if the policy has been cached
-        if let Some(value) = self.resolvers.cache.mta_sts.get(domain) {
+        if let Some(value) = self.core.smtp.resolvers.cache.mta_sts.get(domain) {
             if value.id == record.id {
                 return Ok(value);
             }
@@ -95,11 +98,11 @@ impl SMTP {
                 86400
             });
 
-        Ok(self
-            .resolvers
-            .cache
-            .mta_sts
-            .insert(domain.to_string(), Arc::new(policy), valid_until))
+        Ok(self.core.smtp.resolvers.cache.mta_sts.insert(
+            domain.to_string(),
+            Arc::new(policy),
+            valid_until,
+        ))
     }
 
     #[cfg(feature = "test_mode")]
@@ -109,7 +112,7 @@ impl SMTP {
         value: Policy,
         valid_until: std::time::Instant,
     ) {
-        self.resolvers.cache.mta_sts.insert(
+        self.core.smtp.resolvers.cache.mta_sts.insert(
             key.into_fqdn().into_owned(),
             Arc::new(value),
             valid_until,

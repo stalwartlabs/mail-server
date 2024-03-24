@@ -23,14 +23,14 @@
 
 use std::{iter::Peekable, sync::Arc, vec::IntoIter};
 
+use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
 use imap_proto::{
     receiver::{self, Request},
     Command, ResponseCode, StatusResponse,
 };
 use jmap::auth::rate_limit::ConcurrencyLimiters;
-use utils::listener::{limiter::ConcurrencyLimiter, SessionStream};
 
-use super::{SelectedMailbox, Session, SessionData, State, IMAP};
+use super::{SelectedMailbox, Session, SessionData, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
@@ -227,26 +227,26 @@ impl<T: SessionStream> Session<T> {
         let state = &self.state;
         // Rate limit request
         if let State::Authenticated { data } | State::Selected { data, .. } = state {
-            match data
-                .jmap
-                .lookup_store
-                .is_rate_allowed(
-                    format!("ireq:{}", data.account_id).as_bytes(),
-                    &self.imap.rate_requests,
-                    true,
-                )
-                .await
-            {
-                Ok(None) => {}
-                Ok(Some(_)) => {
-                    return Err(StatusResponse::no("Too many requests")
-                        .with_tag(request.tag)
-                        .with_code(ResponseCode::Limit));
-                }
-                Err(_) => {
-                    return Err(StatusResponse::no("Internal server error")
-                        .with_tag(request.tag)
-                        .with_code(ResponseCode::ContactAdmin));
+            if let Some(rate) = &self.jmap.core.imap.rate_requests {
+                match data
+                    .jmap
+                    .core
+                    .storage
+                    .lookup
+                    .is_rate_allowed(format!("ireq:{}", data.account_id).as_bytes(), rate, true)
+                    .await
+                {
+                    Ok(None) => {}
+                    Ok(Some(_)) => {
+                        return Err(StatusResponse::no("Too many requests")
+                            .with_tag(request.tag)
+                            .with_code(ResponseCode::Limit));
+                    }
+                    Err(_) => {
+                        return Err(StatusResponse::no("Internal server error")
+                            .with_tag(request.tag)
+                            .with_code(ResponseCode::ContactAdmin));
+                    }
                 }
             }
         }
@@ -273,7 +273,7 @@ impl<T: SessionStream> Session<T> {
             }
             Command::Login => {
                 if let State::NotAuthenticated { .. } = state {
-                    if self.is_tls || self.imap.allow_plain_auth {
+                    if self.is_tls || self.jmap.core.imap.allow_plain_auth {
                         Ok(request)
                     } else {
                         Err(
@@ -344,6 +344,23 @@ impl<T: SessionStream> Session<T> {
             },
         }
     }
+
+    pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
+        let rate = self.jmap.core.imap.rate_concurrent?;
+        self.imap
+            .rate_limiter
+            .get(&account_id)
+            .map(|limiter| limiter.clone())
+            .unwrap_or_else(|| {
+                let limiter = Arc::new(ConcurrencyLimiters {
+                    concurrent_requests: ConcurrencyLimiter::new(rate),
+                    concurrent_uploads: ConcurrencyLimiter::new(rate),
+                });
+                self.imap.rate_limiter.insert(account_id, limiter.clone());
+                limiter
+            })
+            .into()
+    }
 }
 
 impl<T: SessionStream> State<T> {
@@ -390,21 +407,5 @@ impl<T: SessionStream> State<T> {
 
     pub fn close_mailbox(&self) -> bool {
         matches!(self, State::Selected { .. })
-    }
-}
-
-impl IMAP {
-    pub fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
-        self.rate_limiter
-            .get(&account_id)
-            .map(|limiter| limiter.clone())
-            .unwrap_or_else(|| {
-                let limiter = Arc::new(ConcurrencyLimiters {
-                    concurrent_requests: ConcurrencyLimiter::new(self.rate_concurrent),
-                    concurrent_uploads: ConcurrencyLimiter::new(self.rate_concurrent),
-                });
-                self.rate_limiter.insert(account_id, limiter.clone());
-                limiter
-            })
     }
 }

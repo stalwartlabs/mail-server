@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
         search::{self, Arguments, Filter, Response, ResultOption},
@@ -31,7 +32,6 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
-
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::HeaderName;
 use nlp::language::Language;
@@ -42,7 +42,6 @@ use store::{
     write::now,
 };
 use tokio::sync::watch;
-use utils::listener::SessionStream;
 
 use crate::core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData};
 
@@ -153,7 +152,9 @@ impl<T: SessionStream> SessionData<T> {
         let is_sort = if let Some(sort) = arguments.sort {
             mailbox.map_search_results(
                 self.jmap
-                    .store
+                    .core
+                    .storage
+                    .data
                     .sort(
                         result_set,
                         sort.into_iter()
@@ -285,7 +286,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     text,
-                                    self.jmap.config.default_language,
+                                    self.jmap.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Cc(text) => {
@@ -343,7 +344,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     text,
-                                    self.jmap.config.default_language,
+                                    self.jmap.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Text(text) => {
@@ -371,17 +372,17 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     &text,
-                                    self.jmap.config.default_language,
+                                    self.jmap.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     &text,
-                                    self.jmap.config.default_language,
+                                    self.jmap.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Attachment,
                                     text,
-                                    self.jmap.config.default_language,
+                                    self.jmap.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::End);
                             }

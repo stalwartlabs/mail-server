@@ -23,10 +23,11 @@
 
 use std::sync::Arc;
 
+use common::config::server::ServerProtocol;
 use tokio::sync::watch;
 
 use ::smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
-use utils::config::{Config, ServerProtocol};
+use utils::config::Config;
 
 use super::add_test_certs;
 
@@ -92,7 +93,7 @@ pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch
                     server.spawn(smtp_manager.clone(), shutdown_rx)
                 }
                 ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
-                ServerProtocol::Imap | ServerProtocol::Jmap | ServerProtocol::ManageSieve => {
+                ServerProtocol::Imap | ServerProtocol::ManageSieve => {
                     unreachable!()
                 }
             };

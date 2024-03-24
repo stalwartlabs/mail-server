@@ -24,6 +24,7 @@
 use std::{sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose, Engine};
+use common::config::server::ServerProtocol;
 use directory::core::config::ConfigDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{
@@ -35,9 +36,9 @@ use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
 use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
-use store::config::ConfigStore;
+
 use tokio::sync::{mpsc, watch};
-use utils::{config::ServerProtocol, UnwrapFailure};
+use utils::UnwrapFailure;
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
 
@@ -386,8 +387,10 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
 
     // Assert is empty
     server
-        .store
-        .assert_is_empty(server.blob_store.clone())
+        .core
+        .storage
+        .data
+        .assert_is_empty(server.core.storage.blob.clone())
         .await;
 }
 
@@ -403,7 +406,10 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(&stores, stores.stores.get(store_id).unwrap().clone())
+        .parse_directory(
+            &stores,
+            stores.core.storage.datas.get(store_id).unwrap().clone(),
+        )
         .await
         .unwrap();
 
@@ -426,7 +432,12 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let imap: Arc<IMAP> = IMAP::init(&config)
         .await
         .failed("Invalid configuration file");
-    jmap.directory.blocked_ips.reload(&config).unwrap();
+    jmap.core
+        .storage
+        .directory
+        .blocked_ips
+        .reload(&config)
+        .unwrap();
 
     let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
         match &server.protocol {
@@ -446,7 +457,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
 
     // Create tables
     let directory = DirectoryStore {
-        store: stores.lookup_stores.get("auth").unwrap().clone(),
+        store: stores.core.storage.lookups.get("auth").unwrap().clone(),
     };
     directory.create_test_directory().await;
     directory
@@ -454,7 +465,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         .await;
 
     if delete_if_exists {
-        jmap.store.destroy().await;
+        jmap.core.storage.data.destroy().await;
     }
 
     // Create client

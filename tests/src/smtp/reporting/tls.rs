@@ -23,6 +23,7 @@
 
 use std::{io::Read, sync::Arc, time::Duration};
 
+use common::{config::smtp::report::AggregateFrequency, expr::if_block::IfBlock};
 use mail_auth::{
     common::parse::TxtRecordParser,
     flate2::read::GzDecoder,
@@ -30,7 +31,6 @@ use mail_auth::{
     report::tlsrpt::{FailureDetails, PolicyType, ResultType, TlsReport},
 };
 use store::write::QueueClass;
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage},
@@ -38,7 +38,6 @@ use crate::smtp::{
     ParseTestConfig, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, ConfigContext},
     core::SMTP,
     reporting::{tls::TLS_HTTP_REPORT, TlsEvent},
 };
@@ -55,8 +54,8 @@ async fn report_tls() {
 
     // Create scheduler
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.report.config;
+    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let config = &mut core.core.smtp.report;
     config.tls.sign = "\"['rsa']\"".parse_if();
     config.tls.max_size = IfBlock::new(1532);
     config.submitter = IfBlock::new("mx.example.org".to_string());

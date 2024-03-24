@@ -34,8 +34,6 @@ use mail_auth::{
 };
 use smtp_proto::MtPriority;
 
-use crate::expr::{Constant, Variable};
-
 use super::{Config, ConfigError, Rate};
 
 impl Config {
@@ -351,11 +349,6 @@ pub trait ParseValue: Sized {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self>;
 }
 
-pub trait ConstantValue:
-    ParseValue + for<'x> TryFrom<Variable<'x>> + Into<Constant> + Sized
-{
-}
-
 pub trait ParseKey<T: ParseValue> {
     fn parse_key(&self, key: impl AsKey) -> super::Result<T>;
 }
@@ -551,35 +544,6 @@ impl ParseValue for MtPriority {
     }
 }
 
-impl<'x> TryFrom<Variable<'x>> for MtPriority {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::Integer(value) => match value {
-                2 => Ok(MtPriority::Mixer),
-                3 => Ok(MtPriority::Stanag4406),
-                4 => Ok(MtPriority::Nsep),
-                _ => Err(()),
-            },
-            Variable::String(value) => MtPriority::parse_value("", &value).map_err(|_| ()),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<MtPriority> for Constant {
-    fn from(value: MtPriority) -> Self {
-        Constant::Integer(match value {
-            MtPriority::Mixer => 2,
-            MtPriority::Stanag4406 => 3,
-            MtPriority::Nsep => 4,
-        })
-    }
-}
-
-impl ConstantValue for MtPriority {}
-
 impl ParseValue for Canonicalization {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
         match value {
@@ -612,37 +576,6 @@ impl ParseValue for IpLookupStrategy {
         })
     }
 }
-
-impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::Integer(value) => match value {
-                2 => Ok(IpLookupStrategy::Ipv4Only),
-                3 => Ok(IpLookupStrategy::Ipv6Only),
-                4 => Ok(IpLookupStrategy::Ipv6thenIpv4),
-                5 => Ok(IpLookupStrategy::Ipv4thenIpv6),
-                _ => Err(()),
-            },
-            Variable::String(value) => IpLookupStrategy::parse_value("", &value).map_err(|_| ()),
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<IpLookupStrategy> for Constant {
-    fn from(value: IpLookupStrategy) -> Self {
-        Constant::Integer(match value {
-            IpLookupStrategy::Ipv4Only => 2,
-            IpLookupStrategy::Ipv6Only => 3,
-            IpLookupStrategy::Ipv6thenIpv4 => 4,
-            IpLookupStrategy::Ipv4thenIpv6 => 5,
-        })
-    }
-}
-
-impl ConstantValue for IpLookupStrategy {}
 
 impl ParseValue for Algorithm {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
@@ -720,124 +653,6 @@ impl ParseValue for Duration {
             })
     }
 }
-
-impl ConstantValue for Duration {}
-
-impl<'x> TryFrom<Variable<'x>> for Duration {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::Integer(value) if value > 0 => Ok(Duration::from_millis(value as u64)),
-            Variable::Float(value) if value > 0.0 => Ok(Duration::from_millis(value as u64)),
-            Variable::String(value) if !value.is_empty() => {
-                Duration::parse_value("", &value).map_err(|_| ())
-            }
-            _ => Err(()),
-        }
-    }
-}
-
-impl From<Duration> for Constant {
-    fn from(value: Duration) -> Self {
-        Constant::Integer(value.as_millis() as i64)
-    }
-}
-
-impl<'x> TryFrom<Variable<'x>> for Rate {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::Array(items) if items.len() == 2 => {
-                let requests = items[0].to_integer().ok_or(())?;
-                let period = items[1].to_integer().ok_or(())?;
-
-                if requests > 0 && period > 0 {
-                    Ok(Rate {
-                        requests: requests as u64,
-                        period: Duration::from_millis(period as u64),
-                    })
-                } else {
-                    Err(())
-                }
-            }
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'x> TryFrom<Variable<'x>> for Ipv4Addr {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'x> TryFrom<Variable<'x>> for Ipv6Addr {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'x> TryFrom<Variable<'x>> for IpAddr {
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        match value {
-            Variable::String(value) => value.parse().map_err(|_| ()),
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'x, T: TryFrom<Variable<'x>>> TryFrom<Variable<'x>> for Vec<T>
-where
-    Result<Vec<T>, ()>: FromIterator<Result<T, <T as TryFrom<Variable<'x>>>::Error>>,
-{
-    type Error = ();
-
-    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
-        value
-            .into_array()
-            .into_iter()
-            .map(|v| T::try_from(v))
-            .collect()
-    }
-}
-
-pub struct NoConstants;
-
-impl<'x> TryFrom<Variable<'x>> for NoConstants {
-    type Error = ();
-
-    fn try_from(_: Variable<'x>) -> Result<Self, Self::Error> {
-        Err(())
-    }
-}
-
-impl From<NoConstants> for Constant {
-    fn from(_: NoConstants) -> Self {
-        Constant::Integer(0)
-    }
-}
-
-impl ParseValue for NoConstants {
-    fn parse_value(_: impl AsKey, _: &str) -> super::Result<Self> {
-        Err("".to_string())
-    }
-}
-
-impl ConstantValue for NoConstants {}
 
 impl ParseValue for Rate {
     fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {

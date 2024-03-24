@@ -136,6 +136,15 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     }
 }
 
+impl Default for Directory {
+    fn default() -> Self {
+        Self {
+            store: DirectoryInner::Internal(Store::None),
+            cache: None,
+        }
+    }
+}
+
 impl Debug for Directory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Directory").finish()

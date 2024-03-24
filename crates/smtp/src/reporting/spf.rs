@@ -48,8 +48,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         }
 
         // Generate report
-        let config = &self.core.report.config.spf;
+        let config = &self.core.core.smtp.report.spf;
         let from_addr = self
+            .core
             .core
             .eval_if(&config.address, self)
             .await
@@ -58,14 +59,14 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         self.new_auth_failure(AuthFailureType::Spf, rejected)
             .with_authentication_results(
                 if let Some(mail_from) = &self.data.mail_from {
-                    AuthenticationResults::new(&self.instance.hostname).with_spf_mailfrom_result(
+                    AuthenticationResults::new(&self.hostname).with_spf_mailfrom_result(
                         output,
                         self.data.remote_ip,
                         &mail_from.address,
                         &self.data.helo_domain,
                     )
                 } else {
-                    AuthenticationResults::new(&self.instance.hostname).with_spf_ehlo_result(
+                    AuthenticationResults::new(&self.hostname).with_spf_ehlo_result(
                         output,
                         self.data.remote_ip,
                         &self.data.helo_domain,
@@ -77,6 +78,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .write_rfc5322(
                 (
                     self.core
+                        .core
                         .eval_if(&config.name, self)
                         .await
                         .unwrap_or_else(|| "Mailer Daemon".to_string())
@@ -85,6 +87,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 ),
                 rcpt,
                 &self
+                    .core
                     .core
                     .eval_if(&config.subject, self)
                     .await

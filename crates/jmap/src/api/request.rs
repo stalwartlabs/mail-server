@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::listener::ServerInstance;
 use jmap_proto::{
     error::{method::MethodError, request::RequestError},
     method::{
@@ -33,7 +34,6 @@ use jmap_proto::{
     response::{Response, ResponseMethod},
     types::collection::Collection,
 };
-use utils::listener::ServerInstance;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -173,7 +173,7 @@ impl JMAP {
                     self.vacation_response_get(req).await?.into()
                 }
                 get::RequestArguments::Principal => {
-                    if self.config.principal_allow_lookups || access_token.is_super_user() {
+                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_get(req).await?.into()
                     } else {
                         return Err(MethodError::Forbidden(
@@ -220,7 +220,7 @@ impl JMAP {
                     self.sieve_script_query(req).await?.into()
                 }
                 query::RequestArguments::Principal => {
-                    if self.config.principal_allow_lookups || access_token.is_super_user() {
+                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_query(req).await?.into()
                     } else {
                         return Err(MethodError::Forbidden(

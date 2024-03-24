@@ -436,7 +436,7 @@ impl JMAP {
             script.extend_from_slice(b"}\r\n");
         }
 
-        match self.sieve_compiler.compile(&script) {
+        match self.core.sieve.untrusted_compiler.compile(&script) {
             Ok(compiled_script) => {
                 // Update blob length
                 obj.set(

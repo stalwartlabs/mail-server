@@ -24,15 +24,12 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestConfig, TestSMTP};
-use smtp::{
-    config::AddressMatch,
-    core::{Session, SMTP},
-};
+use common::{config::smtp::report::AddressMatch, expr::if_block::IfBlock};
+use smtp::core::{Session, SMTP};
 use store::{
     write::{ReportClass, ValueClass},
     IterateParams, ValueKey,
 };
-use utils::config::if_block::IfBlock;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
@@ -40,11 +37,11 @@ async fn report_analyze() {
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_analyze_report_test");
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.relay = IfBlock::new(true);
-    let config = &mut core.session.config.data;
+    let config = &mut core.core.smtp.session.data;
     config.max_messages = IfBlock::new(1024);
-    let config = &mut core.report.config.analysis;
+    let config = &mut core.core.smtp.report.analysis;
     config.addresses = vec![
         AddressMatch::StartsWith("reports@".to_string()),
         AddressMatch::EndsWith("@dmarc.foobar.org".to_string()),

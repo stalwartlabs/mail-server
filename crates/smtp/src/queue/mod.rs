@@ -27,15 +27,15 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use common::{
+    config::smtp::*,
+    expr::{self, functions::ResolveVariable},
+    listener::limiter::{ConcurrencyLimiter, InFlight},
+};
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
 use store::write::now;
-use utils::{
-    listener::limiter::{ConcurrencyLimiter, InFlight},
-    BlobHash,
-};
-
-use crate::core::{eval::*, ResolveVariable};
+use utils::BlobHash;
 
 use self::spool::QueueEventLock;
 
@@ -219,7 +219,7 @@ impl<'x> SimpleEnvelope<'x> {
 }
 
 impl<'x> ResolveVariable for SimpleEnvelope<'x> {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'x> {
         match variable {
             V_SENDER => self.message.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
@@ -240,7 +240,7 @@ pub struct QueueEnvelope<'x> {
 }
 
 impl<'x> ResolveVariable for QueueEnvelope<'x> {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'x> {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'x> {
         match variable {
             V_SENDER => self.message.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
@@ -255,7 +255,7 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
 }
 
 impl ResolveVariable for Message {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'_> {
         match variable {
             V_SENDER => self.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.return_path_domain.as_str().into(),
@@ -274,7 +274,7 @@ impl<'x> RecipientDomain<'x> {
 }
 
 impl<'x> ResolveVariable for RecipientDomain<'x> {
-    fn resolve_variable(&self, variable: u32) -> utils::expr::Variable<'_> {
+    fn resolve_variable(&self, variable: u32) -> expr::Variable<'x> {
         match variable {
             V_RECIPIENT_DOMAIN => self.0.into(),
             _ => "".into(),

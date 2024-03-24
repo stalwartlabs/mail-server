@@ -31,7 +31,6 @@ use crate::smtp::{
     inbound::sign::TextConfigContext, ParseTestConfig, QueueReceiver, TestConfig, TestSMTP,
 };
 use smtp::{
-    config::ConfigContext,
     core::SMTP,
     queue::{Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status},
 };
@@ -95,8 +94,8 @@ async fn generate_dsn() {
 
     // Load config
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.queue.config.dsn;
+    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let config = &mut core.core.smtp.queue.dsn;
     config.sign = "\"['rsa']\"".parse_if();
 
     // Create temp dir for queue

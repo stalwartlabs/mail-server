@@ -29,7 +29,7 @@ pub mod query;
 
 use std::io::Read;
 
-use store::{config::ConfigStore, FtsStore};
+use store::FtsStore;
 use utils::config::Config;
 
 pub struct TempDir {

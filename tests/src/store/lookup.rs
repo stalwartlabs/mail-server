@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use store::{config::ConfigStore, LookupStore};
+use store::LookupStore;
 use utils::config::{Config, Rate};
 
 use crate::store::{TempDir, CONFIG};

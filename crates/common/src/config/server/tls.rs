@@ -37,18 +37,17 @@ use rustls_pemfile::{certs, read_one, Item};
 use rustls_pki_types::{DnsName, PrivateKeyDer, ServerName};
 use utils::config::Config;
 
-use crate::{
-    listener::{
-        acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeManager},
-        tls::Certificate,
-    },
-    ConfigBuilder,
+use crate::listener::{
+    acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeManager},
+    tls::Certificate,
 };
+
+use super::Servers;
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-impl ConfigBuilder {
+impl Servers {
     pub fn parse_certificates(&mut self, config: &mut Config) {
         let cert_ids = config
             .sub_keys("certificate", ".cert")
@@ -162,7 +161,6 @@ impl ConfigBuilder {
                     domains,
                     contact,
                     renew_before,
-                    self.core.storage.data.clone(),
                 ) {
                     Ok(acme_manager) => {
                         self.acme_managers

@@ -61,7 +61,9 @@ impl JMAP {
         // TODO: Support indexing from multiple nodes
         let mut entries = Vec::new();
         let _ = self
-            .store
+            .core
+            .storage
+            .data
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
@@ -115,12 +117,12 @@ impl JMAP {
 
                         // Index message
                         let document =
-                            FtsDocument::with_default_language(self.config.default_language)
+                            FtsDocument::with_default_language(self.core.jmap.default_language)
                                 .with_account_id(key.account_id)
                                 .with_collection(Collection::Email)
                                 .with_document_id(key.document_id)
                                 .index_message(&message);
-                        if let Err(err) = self.fts_store.index(document).await {
+                        if let Err(err) = self.core.storage.fts.index(document).await {
                             tracing::error!(
                                 context = "fts_index_queued",
                                 event = "error",
@@ -165,7 +167,9 @@ impl JMAP {
                 }
             } else {
                 if let Err(err) = self
-                    .fts_store
+                    .core
+                    .storage
+                    .fts
                     .remove(key.account_id, Collection::Email.into(), key.document_id)
                     .await
                 {
@@ -191,7 +195,9 @@ impl JMAP {
 
             // Remove entry from queue
             if let Err(err) = self
-                .store
+                .core
+                .storage
+                .data
                 .write(
                     BatchBuilder::new()
                         .with_account_id(key.account_id)
@@ -211,7 +217,7 @@ impl JMAP {
             }
         }
 
-        if let Err(err) = self.housekeeper_tx.send(Event::IndexDone).await {
+        if let Err(err) = self.inner.housekeeper_tx.send(Event::IndexDone).await {
             tracing::warn!("Failed to send index done event to housekeeper: {}", err);
         }
     }

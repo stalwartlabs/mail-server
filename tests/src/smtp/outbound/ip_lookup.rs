@@ -26,8 +26,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use mail_auth::{IpLookupStrategy, MX};
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{outbound::start_test_server, session::TestSession, TestConfig, TestSMTP};
 use smtp::core::{Session, SMTP};
@@ -44,7 +44,7 @@ async fn ip_lookup_strategy() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_iplookup_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
@@ -52,8 +52,8 @@ async fn ip_lookup_strategy() {
         //println!("-> Strategy: {:?}", strategy);
         // Add mock DNS entries
         let mut core = SMTP::test();
-        core.queue.config.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
-        core.resolvers.dns.mx_add(
+        core.core.smtp.queue.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
+        core.core.smtp.resolvers.dns.mx_add(
             "foobar.org",
             vec![MX {
                 exchanges: vec!["mx.foobar.org".to_string()],
@@ -62,13 +62,13 @@ async fn ip_lookup_strategy() {
             Instant::now() + Duration::from_secs(10),
         );
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
-            core.resolvers.dns.ipv4_add(
+            core.core.smtp.resolvers.dns.ipv4_add(
                 "mx.foobar.org",
                 vec!["127.0.0.1".parse().unwrap()],
                 Instant::now() + Duration::from_secs(10),
             );
         }
-        core.resolvers.dns.ipv6_add(
+        core.core.smtp.resolvers.dns.ipv6_add(
             "mx.foobar.org",
             vec!["::1".parse().unwrap()],
             Instant::now() + Duration::from_secs(10),
@@ -76,7 +76,7 @@ async fn ip_lookup_strategy() {
 
         // Retry on failed STARTTLS
         let mut local_qr = core.init_test_queue("smtp_iplookup_local");
-        core.session.config.rcpt.relay = IfBlock::new(true);
+        core.core.smtp.session.rcpt.relay = IfBlock::new(true);
 
         let core = Arc::new(core);
         let mut session = Session::test(core.clone());

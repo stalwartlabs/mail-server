@@ -28,6 +28,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::AuthResult;
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, header, StatusCode};
 use mail_builder::encoders::base64::base64_encode;
@@ -122,7 +123,7 @@ impl JMAP {
             .collect::<String>();
 
         // Add client code
-        self.oauth_codes.insert_with_ttl(
+        self.inner.oauth_codes.insert_with_ttl(
             client_code.clone(),
             Arc::new(OAuthCode {
                 status: STATUS_AUTHORIZED.into(),
@@ -130,7 +131,7 @@ impl JMAP {
                 client_id,
                 redirect_uri,
             }),
-            Instant::now() + Duration::from_secs(self.config.oauth_expiry_auth_code),
+            Instant::now() + Duration::from_secs(self.core.jmap.oauth_expiry_auth_code),
         );
         client_code
     }
@@ -205,7 +206,7 @@ impl JMAP {
             let _ = write!(redirect_link, "&state={}", state);
         }
 
-        if auth_code.is_none() && (auth_attempts < self.config.oauth_max_auth_attempts) {
+        if auth_code.is_none() && (auth_attempts < self.core.jmap.oauth_max_auth_attempts) {
             let code = String::from_utf8(
                 base64_encode(
                     &bincode::serialize(&(auth_attempts + 1, code_req)).unwrap_or_default(),

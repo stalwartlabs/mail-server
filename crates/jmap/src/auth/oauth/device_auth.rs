@@ -27,12 +27,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::AuthResult;
 use hyper::StatusCode;
 use store::rand::{
     distributions::{Alphanumeric, Standard},
     thread_rng, Rng,
 };
-use utils::{listener::ServerInstance, map::ttl_dashmap::TtlMap};
+use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{
     api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse, JsonResponse},
@@ -54,7 +55,7 @@ impl JMAP {
     pub async fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        instance: Arc<ServerInstance>,
+        base_url: impl AsRef<str>,
     ) -> HttpResponse {
         // Parse form
         let client_id = match FormData::from_request(req, MAX_POST_LEN)
@@ -100,19 +101,22 @@ impl JMAP {
             client_id,
             redirect_uri: None,
         });
-        let expiry = Instant::now() + Duration::from_secs(self.config.oauth_expiry_user_code);
-        self.oauth_codes
+        let expiry = Instant::now() + Duration::from_secs(self.core.jmap.oauth_expiry_user_code);
+        self.inner
+            .oauth_codes
             .insert_with_ttl(device_code.clone(), oauth_code.clone(), expiry);
-        self.oauth_codes
+        self.inner
+            .oauth_codes
             .insert_with_ttl(user_code.clone(), oauth_code, expiry);
 
         // Build response
+        let base_url = base_url.as_ref();
         JsonResponse::new(DeviceAuthResponse {
-            verification_uri: format!("{}/auth", instance.data),
-            verification_uri_complete: format!("{}/auth/?code={}", instance.data, user_code),
+            verification_uri: format!("{}/auth", base_url),
+            verification_uri_complete: format!("{}/auth/?code={}", base_url, user_code),
             device_code,
             user_code,
-            expires_in: self.config.oauth_expiry_user_code,
+            expires_in: self.core.jmap.oauth_expiry_user_code,
             interval: 5,
         })
         .into_http_response()
@@ -168,9 +172,9 @@ impl JMAP {
 
         let code = if let Some(oauth) = fields
             .get("code")
-            .and_then(|code| self.oauth_codes.get_with_ttl(code))
+            .and_then(|code| self.inner.oauth_codes.get_with_ttl(code))
         {
-            if (STATUS_PENDING..STATUS_PENDING + self.config.oauth_max_auth_attempts)
+            if (STATUS_PENDING..STATUS_PENDING + self.core.jmap.oauth_max_auth_attempts)
                 .contains(&oauth.status.load(atomic::Ordering::Relaxed))
             {
                 if let (Some(email), Some(password)) = (fields.get("email"), fields.get("password"))

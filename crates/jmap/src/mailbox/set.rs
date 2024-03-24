@@ -136,7 +136,7 @@ impl JMAP {
                     batch.create_document(document_id).custom(builder);
                     changes.log_insert(Collection::Mailbox, document_id);
                     ctx.mailbox_ids.insert(document_id);
-                    match self.store.write(batch.build()).await {
+                    match self.core.storage.data.write(batch.build()).await {
                         Ok(_) => {
                             ctx.response.created(id, document_id);
                         }
@@ -235,7 +235,7 @@ impl JMAP {
                         batch.update_document(document_id).custom(builder);
 
                         if !batch.is_empty() {
-                            match self.store.write(batch.build()).await {
+                            match self.core.storage.data.write(batch.build()).await {
                                 Ok(_) => {
                                     changes.log_update(Collection::Mailbox, document_id);
                                 }
@@ -403,7 +403,7 @@ impl JMAP {
                                     .assert_value(Property::MailboxIds, &mailbox_ids)
                                     .value(Property::MailboxIds, mailbox_ids.inner, F_VALUE)
                                     .value(Property::MailboxIds, document_id, F_BITMAP | F_CLEAR);
-                                match self.store.write(batch.build()).await {
+                                match self.core.storage.data.write(batch.build()).await {
                                     Ok(_) => changes.log_update(
                                         Collection::Email,
                                         Id::from_parts(thread_id, message_id),
@@ -497,7 +497,7 @@ impl JMAP {
                 .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
                 .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox));
 
-            match self.store.write(batch.build()).await {
+            match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => {
                     changes.log_delete(Collection::Mailbox, document_id);
                     Ok(Ok(did_remove_emails))
@@ -542,7 +542,7 @@ impl JMAP {
             let value = match (&property, value) {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
                     let value = value.trim();
-                    if !value.is_empty() && value.len() < self.config.mailbox_name_max_len {
+                    if !value.is_empty() && value.len() < self.core.jmap.mailbox_name_max_len {
                         Value::Text(value.to_string())
                     } else {
                         return Ok(Err(SetError::invalid_properties()
@@ -633,7 +633,7 @@ impl JMAP {
                 .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
             let mut mailbox_parent_id = mailbox_parent_id.document_id();
             let mut success = false;
-            for depth in 0..self.config.mailbox_max_depth {
+            for depth in 0..self.core.jmap.mailbox_max_depth {
                 if mailbox_parent_id == current_mailbox_id {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(Property::ParentId)
@@ -857,14 +857,19 @@ impl JMAP {
             );
             mailbox_ids.insert(mailbox_id);
         }
-        self.store.write(batch.build()).await.map_err(|err| {
-            tracing::error!(
+        self.core
+            .storage
+            .data
+            .write(batch.build())
+            .await
+            .map_err(|err| {
+                tracing::error!(
                 event = "error",
                 context = "mailbox_get_or_create",
                 error = ?err,
                 "Failed to create mailboxes.");
-            MethodError::ServerPartialFail
-        })?;
+                MethodError::ServerPartialFail
+            })?;
 
         Ok(mailbox_ids)
     }
@@ -903,7 +908,7 @@ impl JMAP {
                 .with_collection(Collection::Mailbox);
 
             for name in path {
-                if name.len() > self.config.mailbox_name_max_len {
+                if name.len() > self.core.jmap.mailbox_name_max_len {
                     return Ok(None);
                 }
 

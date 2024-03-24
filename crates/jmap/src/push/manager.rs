@@ -25,9 +25,8 @@ use base64::{engine::general_purpose, Engine};
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 use tokio::sync::mpsc;
-use utils::{config::Config, UnwrapFailure};
 
-use crate::{api::StateChangeResponse, services::IPC_CHANNEL_BUFFER, LONG_SLUMBER};
+use crate::{api::StateChangeResponse, services::IPC_CHANNEL_BUFFER, JmapInstance, LONG_SLUMBER};
 
 use super::{ece::ece_encrypt, EncryptionKeys, Event, PushServer, PushUpdate};
 
@@ -37,28 +36,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub fn spawn_push_manager(settings: &Config) -> mpsc::Sender<Event> {
+pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
     let (push_tx_, mut push_rx) = mpsc::channel::<Event>(IPC_CHANNEL_BUFFER);
     let push_tx = push_tx_.clone();
-
-    let push_attempt_interval: Duration = settings
-        .property_or_default("jmap.push.attempts.interval", "1m")
-        .failed("Invalid configuration");
-    let push_attempts_max: u32 = settings
-        .property_or_default("jmap.push.attempts.max", "3")
-        .failed("Invalid configuration");
-    let push_retry_interval: Duration = settings
-        .property_or_default("jmap.push.retry.interval", "1s")
-        .failed("Invalid configuration");
-    let push_timeout: Duration = settings
-        .property_or_default("jmap.push.timeout.request", "10s")
-        .failed("Invalid configuration");
-    let push_verify_timeout: Duration = settings
-        .property_or_default("jmap.push.timeout.verify", "1m")
-        .failed("Invalid configuration");
-    let push_throttle: Duration = settings
-        .property_or_default("jmap.push.throttle", "1s")
-        .failed("Invalid configuration");
 
     tokio::spawn(async move {
         let mut subscriptions = AHashMap::default();
@@ -68,6 +48,15 @@ pub fn spawn_push_manager(settings: &Config) -> mpsc::Sender<Event> {
         let mut retry_ids = AHashSet::default();
 
         loop {
+            // Load settings
+            let core_ = core.core.load();
+            let push_attempt_interval = core_.jmap.push_attempt_interval;
+            let push_attempts_max = core_.jmap.push_attempts_max;
+            let push_retry_interval = core_.jmap.push_retry_interval;
+            let push_timeout = core_.jmap.push_timeout;
+            let push_verify_timeout = core_.jmap.push_verify_timeout;
+            let push_throttle = core_.jmap.push_throttle;
+
             match tokio::time::timeout(retry_timeout, push_rx.recv()).await {
                 Ok(Some(event)) => match event {
                     Event::Update { updates } => {

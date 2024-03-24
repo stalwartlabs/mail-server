@@ -21,14 +21,15 @@
  * for more details.
 */
 
+use common::{
+    config::smtp::Throttle,
+    expr::functions::ResolveVariable,
+    listener::limiter::{ConcurrencyLimiter, InFlight},
+};
 use dashmap::mapref::entry::Entry;
 use store::write::now;
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
-use crate::{
-    config::Throttle,
-    core::{ResolveVariable, SMTP},
-};
+use crate::core::{throttle::NewKey, SMTP};
 
 use super::{Domain, Status};
 
@@ -39,15 +40,16 @@ pub enum Error {
 }
 
 impl SMTP {
-    pub async fn is_allowed(
-        &self,
-        throttle: &Throttle,
+    pub async fn is_allowed<'x>(
+        &'x self,
+        throttle: &'x Throttle,
         envelope: &impl ResolveVariable,
         in_flight: &mut Vec<InFlight>,
         span: &tracing::Span,
     ) -> Result<(), Error> {
         if throttle.expr.is_empty()
             || self
+                .core
                 .eval_expr(&throttle.expr, envelope, "throttle")
                 .await
                 .unwrap_or(false)
@@ -56,8 +58,9 @@ impl SMTP {
 
             if let Some(rate) = &throttle.rate {
                 if let Ok(Some(next_refill)) = self
-                    .shared
-                    .default_lookup_store
+                    .core
+                    .storage
+                    .lookup
                     .is_rate_allowed(key.as_ref(), rate, false)
                     .await
                 {
@@ -76,7 +79,7 @@ impl SMTP {
             }
 
             if let Some(concurrency) = &throttle.concurrency {
-                match self.queue.throttle.entry(key) {
+                match self.inner.queue_throttle.entry(key) {
                     Entry::Occupied(mut e) => {
                         let limiter = e.get_mut();
                         if let Some(inflight) = limiter.is_allowed() {

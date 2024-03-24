@@ -23,6 +23,7 @@
 
 use std::{borrow::Cow, fmt::Display, net::IpAddr, time::Duration};
 
+use common::config::smtp::session::MilterVersion;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -41,7 +42,7 @@ pub struct MilterClient<T: AsyncRead + AsyncWrite> {
     timeout_cmd: Duration,
     timeout_data: Duration,
     receiver: Receiver,
-    version: Version,
+    version: MilterVersion,
     options: u32,
     flags_actions: u32,
     flags_protocol: u32,
@@ -121,12 +122,6 @@ pub enum Action {
     ReplyCode { code: [u8; 3], text: String },
     Shutdown,
     ConnectionFailure,
-}
-
-#[derive(Clone, Copy)]
-pub enum Version {
-    V2,
-    V6,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

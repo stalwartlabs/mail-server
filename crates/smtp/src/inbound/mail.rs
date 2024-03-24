@@ -23,14 +23,15 @@
 
 use std::time::{Duration, SystemTime};
 
+use common::{listener::SessionStream, scripts::ScriptModification};
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
 use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
-use utils::{config::Rate, listener::SessionStream};
+use utils::config::Rate;
 
 use crate::{
     core::{Session, SessionAddress},
     queue::DomainPart,
-    scripts::{ScriptModification, ScriptResult},
+    scripts::ScriptResult,
 };
 
 impl<T: SessionStream> Session<T> {
@@ -54,6 +55,8 @@ impl<T: SessionStream> Session<T> {
         } else if self.data.iprev.is_none() && self.params.iprev.verify() {
             let iprev = self
                 .core
+                .core
+                .smtp
                 .resolvers
                 .dns
                 .verify_iprev(self.data.remote_ip)
@@ -126,9 +129,10 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some(script) = self
             .core
-            .eval_if::<String, _>(&self.core.session.config.mail.script, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.mail.script, self)
             .await
-            .and_then(|name| self.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name))
         {
             match self
                 .run_script(script.clone(), self.build_script_parameters("mail"))
@@ -164,7 +168,8 @@ impl<T: SessionStream> Session<T> {
         // Address rewriting
         if let Some(new_address) = self
             .core
-            .eval_if::<String, _>(&self.core.session.config.mail.rewrite, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.mail.rewrite, self)
             .await
         {
             let mail_from = self.data.mail_from.as_mut().unwrap();
@@ -180,10 +185,11 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Validate parameters
-        let config = &self.core.session.config.extensions;
-        let config_data = &self.core.session.config.data;
+        let config = &self.core.core.smtp.session.extensions;
+        let config_data = &self.core.core.smtp.session.data;
         if (from.flags & MAIL_REQUIRETLS) != 0
             && !self
+                .core
                 .core
                 .eval_if(&config.requiretls, self)
                 .await
@@ -196,6 +202,7 @@ impl<T: SessionStream> Session<T> {
         }
         if (from.flags & (MAIL_BY_NOTIFY | MAIL_BY_RETURN)) != 0 {
             if let Some(duration) = self
+                .core
                 .core
                 .eval_if::<Duration, _>(&config.deliver_by, self)
                 .await
@@ -226,6 +233,7 @@ impl<T: SessionStream> Session<T> {
         if from.mt_priority != 0 {
             if self
                 .core
+                .core
                 .eval_if::<MtPriority, _>(&config.mt_priority, self)
                 .await
                 .is_some()
@@ -247,6 +255,7 @@ impl<T: SessionStream> Session<T> {
             && from.size
                 > self
                     .core
+                    .core
                     .eval_if(&config_data.max_message_size, self)
                     .await
                     .unwrap_or(25 * 1024 * 1024)
@@ -258,6 +267,7 @@ impl<T: SessionStream> Session<T> {
         }
         if from.hold_for != 0 || from.hold_until != 0 {
             if let Some(max_hold) = self
+                .core
                 .core
                 .eval_if::<Duration, _>(&config.future_release, self)
                 .await
@@ -295,7 +305,14 @@ impl<T: SessionStream> Session<T> {
                     .await;
             }
         }
-        if has_dsn && !self.core.eval_if(&config.dsn, self).await.unwrap_or(false) {
+        if has_dsn
+            && !self
+                .core
+                .core
+                .eval_if(&config.dsn, self)
+                .await
+                .unwrap_or(false)
+        {
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 DSN extension has been disabled.\r\n")
@@ -308,25 +325,29 @@ impl<T: SessionStream> Session<T> {
                 let mail_from = self.data.mail_from.as_ref().unwrap();
                 let spf_output = if !mail_from.address.is_empty() {
                     self.core
+                        .core
+                        .smtp
                         .resolvers
                         .dns
                         .check_host(
                             self.data.remote_ip,
                             &mail_from.domain,
                             &self.data.helo_domain,
-                            &self.instance.hostname,
+                            &self.hostname,
                             &mail_from.address_lcase,
                         )
                         .await
                 } else {
                     self.core
+                        .core
+                        .smtp
                         .resolvers
                         .dns
                         .check_host(
                             self.data.remote_ip,
                             &self.data.helo_domain,
                             &self.data.helo_domain,
-                            &self.instance.hostname,
+                            &self.hostname,
                             &format!("postmaster@{}", self.data.helo_domain),
                         )
                         .await
@@ -392,7 +413,8 @@ impl<T: SessionStream> Session<T> {
         if let (Some(recipient), Some(rate)) = (
             spf_output.report_address(),
             self.core
-                .eval_if::<Rate, _>(&self.core.report.config.spf.send, self)
+                .core
+                .eval_if::<Rate, _>(&self.core.core.smtp.report.spf.send, self)
                 .await,
         ) {
             self.send_spf_report(recipient, &rate, !result, spf_output)

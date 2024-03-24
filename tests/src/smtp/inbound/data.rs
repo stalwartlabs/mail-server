@@ -23,9 +23,10 @@
 
 use std::sync::Arc;
 
+use common::expr::if_block::IfBlock;
 use directory::core::config::ConfigDirectory;
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::{dummy_stores, TestMessage},
@@ -80,16 +81,16 @@ async fn data() {
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_data_test");
-    core.shared.directories = Config::new(DIRECTORY)
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.data.add_auth_results = r#"[{if = "remote_ip = '10.0.0.3'", then = true},
     {else = false}]"#
         .parse_if();
@@ -103,7 +104,7 @@ async fn data() {
     {else = 100}]"#
         .parse_if();
 
-    core.queue.config.quota = r#"[[queue.quota]]
+    core.core.smtp.queue.quota = r#"[[queue.quota]]
     match = "sender = 'john@doe.org'"
     key = ['sender']
     messages = 1
@@ -244,8 +245,9 @@ async fn data() {
 
     // Make sure store is empty
     qr.clear_queue(&core).await;
-    core.shared
-        .default_data_store
-        .assert_is_empty(core.shared.default_blob_store.clone())
+    core.core
+        .storage
+        .data
+        .assert_is_empty(core.core.storage.blob.clone())
         .await;
 }

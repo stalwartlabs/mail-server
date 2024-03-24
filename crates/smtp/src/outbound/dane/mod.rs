@@ -21,26 +21,5 @@
  * for more details.
 */
 
-use mail_auth::hickory_resolver::TokioAsyncResolver;
-
 pub mod dnssec;
 pub mod verify;
-
-pub struct DnssecResolver {
-    pub resolver: TokioAsyncResolver,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct TlsaEntry {
-    pub is_end_entity: bool,
-    pub is_sha256: bool,
-    pub is_spki: bool,
-    pub data: Vec<u8>,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq)]
-pub struct Tlsa {
-    pub entries: Vec<TlsaEntry>,
-    pub has_end_entities: bool,
-    pub has_intermediates: bool,
-}

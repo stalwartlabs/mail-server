@@ -26,13 +26,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{
+    config::{
+        server::ServerProtocol,
+        smtp::{queue::RequireOptional, report::AggregateFrequency, resolver::Policy},
+    },
+    expr::if_block::IfBlock,
+};
 use mail_auth::{
     common::parse::TxtRecordParser,
     mta_sts::{MtaSts, ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
     MX,
 };
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
@@ -41,9 +47,8 @@ use crate::smtp::{
     TestConfig, TestSMTP,
 };
 use smtp::{
-    config::{AggregateFrequency, RequireOptional},
     core::{Session, SMTP},
-    outbound::mta_sts::{lookup::STS_TEST_POLICY, Policy},
+    outbound::mta_sts::lookup::STS_TEST_POLICY,
     reporting::PolicyType,
 };
 
@@ -59,13 +64,13 @@ async fn mta_sts_verify() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_mta_sts_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -73,12 +78,12 @@ async fn mta_sts_verify() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_smtp._tls.foobar.org",
         TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -87,9 +92,9 @@ async fn mta_sts_verify() {
     // Fail on missing MTA-STS record
     let mut local_qr = core.init_test_queue("smtp_mta_sts_local");
     let mut rr = core.init_test_report();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.tls.mta_sts = IfBlock::new(RequireOptional::Require);
-    core.report.config.tls.send = IfBlock::new(AggregateFrequency::Weekly);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.queue.tls.mta_sts = IfBlock::new(RequireOptional::Require);
+    core.core.smtp.report.tls.send = IfBlock::new(AggregateFrequency::Weekly);
 
     let core = Arc::new(core);
     //let mut queue = Queue::default();
@@ -128,7 +133,7 @@ async fn mta_sts_verify() {
     );
 
     // MTA-STS policy fetch failure
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_mta-sts.foobar.org",
         MtaSts::parse(b"v=STSv1; id=policy_will_fail;").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -202,7 +207,7 @@ async fn mta_sts_verify() {
     remote_qr.assert_no_events();
 
     // MTA-STS successful validation
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_mta-sts.foobar.org",
         MtaSts::parse(b"v=STSv1; id=policy_will_work;").unwrap(),
         Instant::now() + Duration::from_secs(10),

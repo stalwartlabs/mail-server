@@ -21,19 +21,16 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use store::ahash::AHashMap;
 use tokio::sync::mpsc;
-use utils::{config::Config, map::bitmap::Bitmap};
+use utils::map::bitmap::Bitmap;
 
 use crate::{
     push::{manager::spawn_push_manager, UpdateSubscription},
-    JMAP,
+    JmapInstance, JMAP,
 };
 
 use super::IPC_CHANNEL_BUFFER;
@@ -93,12 +90,8 @@ enum SubscriberId {
 }
 
 #[allow(clippy::unwrap_or_default)]
-pub fn spawn_state_manager(
-    core: Arc<JMAP>,
-    settings: &Config,
-    mut change_rx: mpsc::Receiver<Event>,
-) {
-    let push_tx = spawn_push_manager(settings);
+pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Event>) {
+    let push_tx = spawn_push_manager(core.clone());
 
     tokio::spawn(async move {
         let mut subscribers: AHashMap<u32, AHashMap<SubscriberId, Subscriber>> =
@@ -121,7 +114,7 @@ pub fn spawn_state_manager(
                 }
                 Event::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
-                    let acl = match core.get_access_token(account_id).await {
+                    let acl = match JMAP::from(core.clone()).get_access_token(account_id).await {
                         Some(result) => result,
                         None => {
                             continue;
@@ -397,7 +390,7 @@ impl JMAP {
         types: Bitmap<DataType>,
     ) -> Option<mpsc::Receiver<StateChange>> {
         let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
-        let state_tx = self.state_tx.clone();
+        let state_tx = self.inner.state_tx.clone();
 
         for event in [
             Event::UpdateSharedAccounts { account_id },
@@ -421,6 +414,7 @@ impl JMAP {
 
     pub async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
         match self
+            .inner
             .state_tx
             .clone()
             .send(Event::Publish { state_change })
@@ -446,7 +440,7 @@ impl JMAP {
             }
         };
 
-        let state_tx = self.state_tx.clone();
+        let state_tx = self.inner.state_tx.clone();
         for event in [Event::UpdateSharedAccounts { account_id }, push_subs] {
             if let Err(err) = state_tx.send(event).await {
                 tracing::error!("Channel failure while publishing state change: {}", err);

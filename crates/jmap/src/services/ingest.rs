@@ -21,11 +21,11 @@
  * for more details.
 */
 
+use common::{DeliveryResult, IngestMessage};
 use directory::QueryBy;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 use store::ahash::AHashMap;
-use utils::ipc::{DeliveryResult, IngestMessage};
 
 use crate::{email::ingest::IngestEmail, mailbox::INBOX_ID, IngestError, JMAP};
 
@@ -33,7 +33,9 @@ impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
         // Read message
         let raw_message = match self
-            .blob_store
+            .core
+            .storage
+            .blob
             .get_blob(message.message_blob.as_slice(), 0..usize::MAX)
             .await
         {
@@ -51,7 +53,11 @@ impl JMAP {
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
-            let uids = self.directory.email_to_ids(rcpt).await.unwrap_or_default();
+            let uids = self
+                .core
+                .email_to_ids(&self.core.storage.directory, rcpt)
+                .await
+                .unwrap_or_default();
             for uid in &uids {
                 deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
             }
@@ -73,7 +79,13 @@ impl JMAP {
                     .await
                 }
                 Ok(None) => {
-                    let account_quota = match self.directory.query(QueryBy::Id(*uid), false).await {
+                    let account_quota = match self
+                        .core
+                        .storage
+                        .directory
+                        .query(QueryBy::Id(*uid), false)
+                        .await
+                    {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
                         Err(_) => {
@@ -93,7 +105,7 @@ impl JMAP {
                         keywords: vec![],
                         received_at: None,
                         skip_duplicates: true,
-                        encrypt: self.config.encrypt,
+                        encrypt: self.core.jmap.encrypt,
                     })
                     .await
                 }

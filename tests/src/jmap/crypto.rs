@@ -42,12 +42,16 @@ pub async fn test(params: &mut JMAPTest) {
     let server = params.server.clone();
     let client = &mut params.client;
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     let account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("jdoe@example.com")
             .await
             .unwrap(),

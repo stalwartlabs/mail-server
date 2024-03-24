@@ -23,16 +23,22 @@
 
 use std::time::Duration;
 
-use directory::core::config::ConfigDirectory;
+use common::{
+    config::{
+        server::{ServerProtocol, Servers},
+        tracers::Tracers,
+    },
+    Core,
+};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
-use store::config::ConfigStore;
+use store::Stores;
 use tokio::sync::mpsc;
 use utils::{
-    config::{Config, ServerProtocol},
-    enable_tracing, wait_for_shutdown, UnwrapFailure,
+    config::{Config, ConfigError},
+    wait_for_shutdown,
 };
 
 #[cfg(not(target_env = "msvc"))]
@@ -44,100 +50,76 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    // Load config and apply macros
     let mut config = Config::init();
+    config.resolve_macros().await;
 
-    // Enable tracing
-    let _tracer = enable_tracing(
-        &config,
-        &format!(
-            "Starting Stalwart Mail Server v{}...",
-            env!("CARGO_PKG_VERSION"),
-        ),
-    )
-    .failed("Failed to enable tracing");
+    // Parse servers
+    let servers = Servers::parse(&mut config);
 
     // Bind ports and drop privileges
-    let mut servers = config.parse_servers().failed("Invalid configuration");
-    servers.bind(&config);
+    servers.bind_and_drop_priv(&mut config);
 
-    // Parse stores
-    let stores = config.parse_stores().await.failed("Invalid configuration");
-    let data_store = stores
-        .get_store(&config, "storage.data")
-        .failed("Invalid configuration");
+    // Build stores
+    let stores = Stores::parse(&mut config).await;
+    let todo = "merge config with data store, resolve macros";
 
-    // Update configuration
-    config.update(
-        data_store
-            .config_list("", false)
-            .await
-            .failed("Storage error"),
+    // Enable tracing
+    let guards = Tracers::parse(&mut config).enable(&mut config);
+    tracing::info!(
+        "Starting Stalwart Mail Server v{}...",
+        env!("CARGO_PKG_VERSION")
     );
 
-    // Parse directories
-    let directory = config
-        .parse_directory(&stores, data_store)
-        .await
-        .failed("Invalid configuration");
-    let schedulers = config
-        .parse_purge_schedules(
-            &stores,
-            config.value("storage.data"),
-            config.value("storage.blob"),
-        )
-        .await
-        .failed("Invalid configuration");
+    // Parse core
+    let core = Core::parse(&mut config, stores).await;
+    let store = core.storage.data.clone();
+    let shared_core = core.into_shared();
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
-        .await
-        .failed("Invalid configuration file");
+    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
     let jmap = JMAP::init(
-        &config,
-        &stores,
-        &directory,
-        &mut servers,
+        &mut config,
         delivery_rx,
-        smtp.clone(),
+        shared_core.clone(),
+        smtp.inner.clone(),
     )
-    .await
-    .failed("Invalid configuration file");
-    let imap = IMAP::init(&config)
-        .await
-        .failed("Invalid configuration file");
-    jmap.directory
-        .blocked_ips
-        .reload(&config)
-        .failed("Invalid configuration");
+    .await;
+    let imap = IMAP::init(&mut config, jmap.clone()).await;
+
+    // Log configuration errors
+    config.log_errors(guards.is_none());
+    config.log_warnings(guards.is_none());
 
     // Spawn servers
-    let (shutdown_tx, shutdown_rx) = servers.spawn(|server, shutdown_rx| {
-        match &server.protocol {
-            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
-            }
-            ServerProtocol::Http => {
-                tracing::debug!("Ignoring HTTP server listener, using JMAP port instead.");
-            }
-            ServerProtocol::Jmap => {
-                server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
-            }
-            ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(jmap.clone(), imap.clone()),
-                shutdown_rx,
-            ),
-            ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(jmap.clone(), imap.clone()),
-                shutdown_rx,
-            ),
-        };
-    });
-
-    // Spawn purge schedulers
-    for scheduler in schedulers {
-        scheduler.spawn(shutdown_rx.clone());
-    }
+    let shutdown_tx = servers.spawn(
+        |server, shutdown_rx| {
+            match &server.protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                    SmtpSessionManager::new(smtp.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Http => server.spawn(
+                    JmapSessionManager::new(jmap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Imap => server.spawn(
+                    ImapSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::ManageSieve => server.spawn(
+                    ManageSieveSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+            };
+        },
+        store,
+    );
 
     // Wait for shutdown signal
     wait_for_shutdown(&format!(

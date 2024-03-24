@@ -39,38 +39,50 @@ pub async fn test(params: &mut JMAPTest) {
     println!("Running quota tests...");
     let server = params.server.clone();
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("robert@example.com", "aabbcc", "Robert Foobar")
         .await;
     let other_account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("jdoe@example.com")
             .await
             .unwrap(),
     );
     let account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("robert@example.com")
             .await
             .unwrap(),
     );
     params
+        .core
+        .storage
         .directory
         .set_test_quota("robert@example.com", 1024)
         .await;
     params
+        .core
+        .storage
         .directory
         .add_to_group("robert@example.com", "jdoe@example.com")
         .await;
 
     // Delete temporary blobs from previous tests
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Test temporary blob quota (3 files)
     DISABLE_UPLOAD_QUOTA.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -93,7 +105,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Test temporary blob quota (50000 bytes)
     for i in 0..2 {
@@ -114,7 +126,7 @@ pub async fn test(params: &mut JMAPTest) {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
         other => panic!("Unexpected error: {:?}", other),
     }
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Test JMAP Quotas extension
     let response = jmap_raw_request(

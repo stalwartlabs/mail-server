@@ -35,7 +35,13 @@ impl JMAP {
         collection: impl Into<u8>,
     ) -> Result<State, MethodError> {
         let collection = collection.into();
-        match self.store.get_last_change_id(account_id, collection).await {
+        match self
+            .core
+            .storage
+            .data
+            .get_last_change_id(account_id, collection)
+            .await
+        {
             Ok(id) => Ok(id.into()),
             Err(err) => {
                 tracing::error!(event = "error",

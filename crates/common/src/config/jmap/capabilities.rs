@@ -11,12 +11,6 @@ use utils::{config::Config, map::vec_map::VecMap};
 
 use super::settings::JmapConfig;
 
-#[derive(Default)]
-pub struct BaseCapabilities {
-    pub session: VecMap<Capability, Capabilities>,
-    pub account: VecMap<Capability, Capabilities>,
-}
-
 impl JmapConfig {
     pub fn add_capabilites(&mut self, config: &mut Config) {
         // Add core capabilities

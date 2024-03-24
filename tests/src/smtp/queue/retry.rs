@@ -28,12 +28,12 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
+use common::expr::if_block::IfBlock;
 use smtp::{
     core::{Session, SMTP},
     queue::{DeliveryAttempt, Event},
 };
 use store::write::now;
-use utils::config::if_block::IfBlock;
 
 #[tokio::test]
 async fn queue_retry() {
@@ -49,12 +49,12 @@ async fn queue_retry() {
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_queue_retry_test");
 
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.relay = IfBlock::new(true);
-    let config = &mut core.session.config.extensions;
+    let config = &mut core.core.smtp.session.extensions;
     config.deliver_by = IfBlock::new(Duration::from_secs(86400));
     config.future_release = IfBlock::new(Duration::from_secs(86400));
-    let config = &mut core.queue.config;
+    let config = &mut core.core.smtp.queue;
     config.retry = r#""[1s, 2s, 3s]""#.parse_if();
     config.notify = r#"[{if = "sender_domain = 'test.org'", then = "[1s, 2s]"},
     {else = ['15h', '22h']}]"#

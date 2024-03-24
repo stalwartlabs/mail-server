@@ -21,23 +21,25 @@
  * for more details.
 */
 
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
-    time::Duration,
+use crate::outbound::dane::verify::TlsaVerify;
+use crate::outbound::mta_sts::verify::VerifyPolicy;
+use common::config::{
+    server::ServerProtocol,
+    smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
-
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
 };
 use mail_send::SmtpClient;
 use smtp_proto::MAIL_REQUIRETLS;
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 use store::write::{now, BatchBuilder, QueueClass, QueueEvent, ValueClass};
-use utils::config::ServerProtocol;
 
 use crate::{
-    config::{AggregateFrequency, RequireOptional, TlsStrategy},
     core::SMTP,
     queue::{ErrorDetails, Message},
     reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
@@ -47,14 +49,14 @@ use super::{
     lookup::ToNextHop,
     mta_sts,
     session::{read_greeting, say_helo, try_start_tls, SessionParams, StartTlsResult},
-    NextHop,
+    NextHop, TlsStrategy,
 };
 use crate::queue::{
     throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope, Status,
 };
 
 impl DeliveryAttempt {
-    pub async fn try_deliver(mut self, core: Arc<SMTP>) {
+    pub async fn try_deliver(mut self, core: SMTP) {
         tokio::spawn(async move {
             // Lock message
             self.event = if let Some(event) = core.try_lock_event(self.event).await {
@@ -73,7 +75,7 @@ impl DeliveryAttempt {
                     due: self.event.due,
                     queue_id: self.event.queue_id,
                 })));
-                let _ = core.shared.default_data_store.write(batch.build()).await;
+                let _ = core.core.storage.data.write(batch.build()).await;
                 return;
             };
 
@@ -103,7 +105,7 @@ impl DeliveryAttempt {
                     message
                         .save_changes(&core, self.event.due.into(), due.into())
                         .await;
-                    if core.queue.tx.send(Event::Reload).await.is_err() {
+                    if core.inner.queue_tx.send(Event::Reload).await.is_err() {
                         tracing::warn!("Channel closed while trying to notify queue manager.");
                     }
                     return;
@@ -111,7 +113,7 @@ impl DeliveryAttempt {
             } else {
                 // All message recipients expired, do not re-queue. (DSN has been already sent)
                 message.remove(&core, self.event.due).await;
-                if core.queue.tx.send(Event::Reload).await.is_err() {
+                if core.inner.queue_tx.send(Event::Reload).await.is_err() {
                     tracing::warn!("Channel closed while trying to notify queue manager.");
                 }
 
@@ -119,7 +121,7 @@ impl DeliveryAttempt {
             }
 
             // Throttle sender
-            for throttle in &core.queue.config.throttle.sender {
+            for throttle in &core.core.smtp.queue.throttle.sender {
                 if let Err(err) = core
                     .is_allowed(throttle, &message, &mut self.in_flight, &span)
                     .await
@@ -150,14 +152,14 @@ impl DeliveryAttempt {
                         }
                     };
 
-                    if core.queue.tx.send(event).await.is_err() {
+                    if core.inner.queue_tx.send(event).await.is_err() {
                         tracing::warn!("Channel closed while trying to notify queue manager.");
                     }
                     return;
                 }
             }
 
-            let queue_config = &core.queue.config;
+            let queue_config = &core.core.smtp.queue;
             let mut on_hold = Vec::new();
             let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
@@ -202,17 +204,18 @@ impl DeliveryAttempt {
 
                 // Obtain next hop
                 let (mut remote_hosts, is_smtp) = match core
+                    .core
                     .eval_if::<String, _>(&queue_config.next_hop, &envelope)
                     .await
-                    .and_then(|name| core.get_relay_host(&name))
+                    .and_then(|name| core.core.get_relay_host(&name))
                 {
                     #[cfg(feature = "local_delivery")]
-                    Some(next_hop) if next_hop.protocol == ServerProtocol::Jmap => {
+                    Some(next_hop) if next_hop.protocol == ServerProtocol::Http => {
                         // Deliver message locally
                         let delivery_result = message
                             .deliver_local(
                                 recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
-                                &core.delivery_tx,
+                                &core.inner.delivery_tx,
                                 &span,
                             )
                             .await;
@@ -221,6 +224,7 @@ impl DeliveryAttempt {
                         domain.set_status(
                             delivery_result,
                             &core
+                                .core
                                 .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                                 .await
                                 .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -238,19 +242,22 @@ impl DeliveryAttempt {
                 let mut disable_tls = false;
                 let mut tls_strategy = TlsStrategy {
                     mta_sts: core
+                        .core
                         .eval_if(&queue_config.tls.mta_sts, &envelope)
                         .await
                         .unwrap_or(RequireOptional::Optional),
                     ..Default::default()
                 };
                 let allow_invalid_certs = core
+                    .core
                     .eval_if(&queue_config.tls.invalid_certs, &envelope)
                     .await
                     .unwrap_or(false);
 
                 // Obtain TLS reporting
                 let tls_report = match core
-                    .eval_if(&core.report.config.tls.send, &envelope)
+                    .core
+                    .eval_if(&core.core.smtp.report.tls.send, &envelope)
                     .await
                     .unwrap_or(AggregateFrequency::Never)
                 {
@@ -260,6 +267,8 @@ impl DeliveryAttempt {
                         if is_smtp =>
                     {
                         match core
+                            .core
+                            .smtp
                             .resolvers
                             .dns
                             .txt_lookup::<TlsRpt>(format!("_smtp._tls.{}.", envelope.domain))
@@ -292,7 +301,8 @@ impl DeliveryAttempt {
                     match core
                         .lookup_mta_sts_policy(
                             envelope.domain,
-                            core.eval_if(&queue_config.timeout.mta_sts, &envelope)
+                            core.core
+                                .eval_if(&queue_config.timeout.mta_sts, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(10 * 60)),
                         )
@@ -353,6 +363,7 @@ impl DeliveryAttempt {
                                 domain.set_status(
                                     err,
                                     &core
+                                        .core
                                         .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                                         .await
                                         .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -379,7 +390,7 @@ impl DeliveryAttempt {
                 let mx_list;
                 if is_smtp && remote_hosts.is_empty() {
                     // Lookup MX
-                    mx_list = match core.resolvers.dns.mx_lookup(&domain.domain).await {
+                    mx_list = match core.core.smtp.resolvers.dns.mx_lookup(&domain.domain).await {
                         Ok(mx) => mx,
                         Err(err) => {
                             tracing::info!(
@@ -391,6 +402,7 @@ impl DeliveryAttempt {
                             domain.set_status(
                                 err,
                                 &core
+                                    .core
                                     .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                                     .await
                                     .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -401,7 +413,8 @@ impl DeliveryAttempt {
 
                     if let Some(remote_hosts_) = mx_list.to_remote_hosts(
                         &domain.domain,
-                        core.eval_if(&queue_config.max_mx, &envelope)
+                        core.core
+                            .eval_if(&queue_config.max_mx, &envelope)
                             .await
                             .unwrap_or(5),
                     ) {
@@ -418,6 +431,7 @@ impl DeliveryAttempt {
                                 "Domain does not accept messages (null MX)".to_string(),
                             )),
                             &core
+                                .core
                                 .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                                 .await
                                 .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -428,6 +442,7 @@ impl DeliveryAttempt {
 
                 // Try delivering message
                 let max_multihomed = core
+                    .core
                     .eval_if(&queue_config.max_multihomed, &envelope)
                     .await
                     .unwrap_or(2);
@@ -491,21 +506,19 @@ impl DeliveryAttempt {
 
                     // Update TLS strategy
                     tls_strategy.dane = core
+                        .core
                         .eval_if(&queue_config.tls.dane, &envelope)
                         .await
                         .unwrap_or(RequireOptional::Optional);
                     tls_strategy.tls = core
+                        .core
                         .eval_if(&queue_config.tls.start, &envelope)
                         .await
                         .unwrap_or(RequireOptional::Optional);
 
                     // Lookup DANE policy
                     let dane_policy = if tls_strategy.try_dane() && is_smtp {
-                        match core
-                            .resolvers
-                            .tlsa_lookup(format!("_25._tcp.{}.", envelope.mx))
-                            .await
-                        {
+                        match core.tlsa_lookup(format!("_25._tcp.{}.", envelope.mx)).await {
                             Ok(Some(tlsa)) => {
                                 if tlsa.has_end_entities {
                                     tracing::debug!(
@@ -664,6 +677,7 @@ impl DeliveryAttempt {
 
                         // Connect
                         let conn_timeout = core
+                            .core
                             .eval_if(&queue_config.timeout.connect, &envelope)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -709,6 +723,7 @@ impl DeliveryAttempt {
 
                         // Obtain session parameters
                         let local_hostname = core
+                            .core
                             .eval_if::<String, _>(&queue_config.hostname, &envelope)
                             .await
                             .unwrap_or_else(|| "localhost".to_string());
@@ -720,18 +735,22 @@ impl DeliveryAttempt {
                             hostname: envelope.mx,
                             local_hostname: &local_hostname,
                             timeout_ehlo: core
+                                .core
                                 .eval_if(&queue_config.timeout.ehlo, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60)),
                             timeout_mail: core
+                                .core
                                 .eval_if(&queue_config.timeout.mail, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60)),
                             timeout_rcpt: core
+                                .core
                                 .eval_if(&queue_config.timeout.rcpt, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60)),
                             timeout_data: core
+                                .core
                                 .eval_if(&queue_config.timeout.data, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60)),
@@ -744,14 +763,15 @@ impl DeliveryAttempt {
                             || dane_policy.is_some();
                         let tls_connector =
                             if allow_invalid_certs || remote_host.allow_invalid_certs() {
-                                &core.queue.connectors.dummy_verify
+                                &core.inner.connectors.dummy_verify
                             } else {
-                                &core.queue.connectors.pki_verify
+                                &core.inner.connectors.pki_verify
                             };
 
                         let delivery_result = if !remote_host.implicit_tls() {
                             // Read greeting
                             smtp_client.timeout = core
+                                .core
                                 .eval_if(&queue_config.timeout.greeting, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -789,6 +809,7 @@ impl DeliveryAttempt {
                             // Try starting TLS
                             if tls_strategy.try_start_tls() && !domain.disable_tls {
                                 smtp_client.timeout = core
+                                    .core
                                     .eval_if(&queue_config.timeout.tls, &envelope)
                                     .await
                                     .unwrap_or_else(|| Duration::from_secs(3 * 60));
@@ -981,6 +1002,7 @@ impl DeliveryAttempt {
                         } else {
                             // Start TLS
                             smtp_client.timeout = core
+                                .core
                                 .eval_if(&queue_config.timeout.tls, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(3 * 60));
@@ -1003,6 +1025,7 @@ impl DeliveryAttempt {
 
                             // Read greeting
                             smtp_client.timeout = core
+                                .core
                                 .eval_if(&queue_config.timeout.greeting, &envelope)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -1034,6 +1057,7 @@ impl DeliveryAttempt {
                         domain.set_status(
                             delivery_result,
                             &core
+                                .core
                                 .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                                 .await
                                 .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -1047,6 +1071,7 @@ impl DeliveryAttempt {
                 domain.set_status(
                     last_status,
                     &core
+                        .core
                         .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
                         .await
                         .unwrap_or_else(|| vec![Duration::from_secs(60)]),
@@ -1106,7 +1131,7 @@ impl DeliveryAttempt {
 
                 Event::Reload
             };
-            if core.queue.tx.send(result).await.is_err() {
+            if core.inner.queue_tx.send(result).await.is_err() {
                 tracing::warn!(
                     parent: &span,
                     "Channel closed while trying to notify queue manager."

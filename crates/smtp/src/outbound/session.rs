@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use common::config::smtp::queue::RequireOptional;
 use mail_send::{smtp::AssertReply, Credentials, SmtpClient};
 use smtp_proto::{
     EhloResponse, Response, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE,
@@ -36,12 +37,13 @@ use tokio::{
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
 use crate::{
-    config::{RequireOptional, TlsStrategy},
     core::SMTP,
     queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED},
 };
 
 use crate::queue::{Error, Message, Recipient, Status};
+
+use super::TlsStrategy;
 
 pub struct SessionParams<'x> {
     pub span: &'x tracing::Span,
@@ -535,8 +537,9 @@ pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
 ) -> Result<(), Status<(), Error>> {
     match params
         .core
-        .shared
-        .default_blob_store
+        .core
+        .storage
+        .blob
         .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
         .await
     {

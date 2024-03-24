@@ -21,42 +21,29 @@
  * for more details.
 */
 
+use common::config::smtp::resolver::{Tlsa, TlsaEntry};
 use mail_auth::{
     common::{lru::DnsCache, resolver::IntoFqdn},
     hickory_resolver::{
-        config::{ResolverConfig, ResolverOpts},
-        error::{ResolveError, ResolveErrorKind},
+        error::ResolveErrorKind,
         proto::{
             error::ProtoErrorKind,
             rr::rdata::tlsa::{CertUsage, Matching, Selector},
         },
-        AsyncResolver, Name,
+        Name,
     },
 };
 use std::sync::Arc;
 
-use crate::core::Resolvers;
+use crate::core::SMTP;
 
-use super::{DnssecResolver, Tlsa, TlsaEntry};
-
-impl DnssecResolver {
-    pub fn with_capacity(
-        config: ResolverConfig,
-        options: ResolverOpts,
-    ) -> Result<Self, ResolveError> {
-        Ok(Self {
-            resolver: AsyncResolver::tokio(config, options),
-        })
-    }
-}
-
-impl Resolvers {
+impl SMTP {
     pub async fn tlsa_lookup<'x>(
         &self,
         key: impl IntoFqdn<'x>,
     ) -> mail_auth::Result<Option<Arc<Tlsa>>> {
         let key = key.into_fqdn();
-        if let Some(value) = self.cache.tlsa.get(key.as_ref()) {
+        if let Some(value) = self.core.smtp.resolvers.cache.tlsa.get(key.as_ref()) {
             return Ok(Some(value));
         }
 
@@ -67,6 +54,9 @@ impl Resolvers {
 
         let mut entries = Vec::new();
         let tlsa_lookup = match self
+            .core
+            .smtp
+            .resolvers
             .dnssec
             .resolver
             .tlsa_lookup(Name::from_str_relaxed(key.as_ref())?)
@@ -117,7 +107,7 @@ impl Resolvers {
             }
         }
 
-        Ok(Some(self.cache.tlsa.insert(
+        Ok(Some(self.core.smtp.resolvers.cache.tlsa.insert(
             key.into_owned(),
             Arc::new(Tlsa {
                 entries,
@@ -135,8 +125,10 @@ impl Resolvers {
         value: impl Into<Arc<Tlsa>>,
         valid_until: std::time::Instant,
     ) {
-        self.cache
-            .tlsa
-            .insert(key.into_fqdn().into_owned(), value.into(), valid_until);
+        self.core.smtp.resolvers.cache.tlsa.insert(
+            key.into_fqdn().into_owned(),
+            value.into(),
+            valid_until,
+        );
     }
 }

@@ -21,15 +21,13 @@
  * for more details.
 */
 
+use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable};
 use store::{
     write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
 };
 
-use crate::{
-    config::QueueQuota,
-    core::{ResolveVariable, SMTP},
-};
+use crate::core::{throttle::NewKey, SMTP};
 
 use super::{Message, QuotaKey, SimpleEnvelope, Status};
 
@@ -37,8 +35,8 @@ impl SMTP {
     pub async fn has_quota(&self, message: &mut Message) -> bool {
         let mut quota_keys = Vec::new();
 
-        if !self.queue.config.quota.sender.is_empty() {
-            for quota in &self.queue.config.quota.sender {
+        if !self.core.smtp.queue.quota.sender.is_empty() {
+            for quota in &self.core.smtp.queue.quota.sender {
                 if !self
                     .check_quota(quota, message, message.size, 0, &mut quota_keys)
                     .await
@@ -48,7 +46,7 @@ impl SMTP {
             }
         }
 
-        for quota in &self.queue.config.quota.rcpt_domain {
+        for quota in &self.core.smtp.queue.quota.rcpt_domain {
             for (pos, domain) in message.domains.iter().enumerate() {
                 if !self
                     .check_quota(
@@ -65,7 +63,7 @@ impl SMTP {
             }
         }
 
-        for quota in &self.queue.config.quota.rcpt {
+        for quota in &self.core.smtp.queue.quota.rcpt {
             for (pos, rcpt) in message.recipients.iter().enumerate() {
                 if !self
                     .check_quota(
@@ -91,9 +89,9 @@ impl SMTP {
         true
     }
 
-    async fn check_quota(
-        &self,
-        quota: &QueueQuota,
+    async fn check_quota<'x>(
+        &'x self,
+        quota: &'x QueueQuota,
         envelope: &impl ResolveVariable,
         size: usize,
         id: u64,
@@ -101,6 +99,7 @@ impl SMTP {
     ) -> bool {
         if !quota.expr.is_empty()
             && self
+                .core
                 .eval_expr(&quota.expr, envelope, "check_quota")
                 .await
                 .unwrap_or(false)
@@ -108,8 +107,9 @@ impl SMTP {
             let key = quota.new_key(envelope);
             if let Some(max_size) = quota.size {
                 let used_size = self
-                    .shared
-                    .default_data_store
+                    .core
+                    .storage
+                    .data
                     .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaSize(
                         key.as_ref().to_vec(),
                     ))))
@@ -127,8 +127,9 @@ impl SMTP {
 
             if let Some(max_messages) = quota.messages {
                 let total_messages = self
-                    .shared
-                    .default_data_store
+                    .core
+                    .storage
+                    .data
                     .get_counter(ValueKey::from(ValueClass::Queue(QueueClass::QuotaCount(
                         key.as_ref().to_vec(),
                     ))))

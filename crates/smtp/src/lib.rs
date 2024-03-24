@@ -21,32 +21,17 @@
  * for more details.
 */
 
-use crate::{
-    config::RelayHost,
-    core::{
-        throttle::ThrottleKeyHasherBuilder, QueueCore, ReportCore, SessionCore, TlsConnectors, SMTP,
-    },
-};
-use std::sync::Arc;
+use crate::core::{throttle::ThrottleKeyHasherBuilder, TlsConnectors};
+use core::{Inner, SmtpInstance, SMTP};
 
-use config::{
-    auth::ConfigAuth, queue::ConfigQueue, report::ConfigReport, resolver::ConfigResolver,
-    scripts::ConfigSieve, session::ConfigSession, shared::ConfigShared, ConfigContext,
-};
+use common::SharedCore;
 use dashmap::DashMap;
-use directory::Directories;
 use mail_send::smtp::tls::build_tls_connector;
 use queue::manager::SpawnQueue;
 use reporting::scheduler::SpawnReport;
-use store::Stores;
 use tokio::sync::mpsc;
-use utils::{
-    config::{Config, ServerProtocol, Servers},
-    snowflake::SnowflakeIdGenerator,
-    UnwrapFailure,
-};
+use utils::{config::Config, snowflake::SnowflakeIdGenerator};
 
-pub mod config;
 pub mod core;
 pub mod inbound;
 pub mod outbound;
@@ -59,103 +44,60 @@ pub static DAEMON_NAME: &str = concat!("Stalwart SMTP v", env!("CARGO_PKG_VERSIO
 
 impl SMTP {
     pub async fn init(
-        config: &Config,
-        servers: &Servers,
-        stores: &Stores,
-        directory: &Directories,
-        #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<utils::ipc::DeliveryEvent>,
-    ) -> Result<Arc<Self>, String> {
-        // Read configuration parameters
-        let mut config_ctx = ConfigContext::new();
-        config_ctx.directory = directory.clone();
-        config_ctx.stores = stores.clone();
-
-        // Parse configuration
-        config.parse_signatures(&mut config_ctx)?;
-        let sieve_config = config.parse_sieve(&mut config_ctx)?;
-        let session_config = config.parse_session_config()?;
-        let queue_config = config.parse_queue()?;
-        let mail_auth_config = config.parse_mail_auth()?;
-        let report_config = config.parse_reports()?;
-        let mut shared = config.parse_shared(&config_ctx)?;
-
-        // Add local delivery host
-        #[cfg(feature = "local_delivery")]
-        {
-            shared.relay_hosts.insert(
-                "local".to_string(),
-                RelayHost {
-                    address: String::new(),
-                    port: 0,
-                    protocol: ServerProtocol::Jmap,
-                    tls_implicit: Default::default(),
-                    tls_allow_invalid_certs: Default::default(),
-                    auth: None,
-                },
-            );
-        }
-
-        // Build core
-        let capacity = config.property("cache.capacity")?.unwrap_or(2);
+        config: &mut Config,
+        core: SharedCore,
+        #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<common::DeliveryEvent>,
+    ) -> SmtpInstance {
+        // Build inner
+        let capacity = config.property_("cache.capacity").unwrap_or(2);
         let shard = config
-            .property::<u64>("cache.shard")?
+            .property_::<u64>("cache.shard")
             .unwrap_or(32)
             .next_power_of_two() as usize;
         let (queue_tx, queue_rx) = mpsc::channel(1024);
         let (report_tx, report_rx) = mpsc::channel(1024);
-        let core = Arc::new(SMTP {
+        let inner = Inner {
             worker_pool: rayon::ThreadPoolBuilder::new()
-                .num_threads(
+                .num_threads(std::cmp::max(
                     config
-                        .property::<usize>("global.thread-pool")?
+                        .property_::<usize>("global.thread-pool")
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
-                )
+                    4,
+                ))
                 .build()
                 .unwrap(),
-            resolvers: config.build_resolvers().failed("Failed to build resolvers"),
-            session: SessionCore {
-                config: session_config,
-                throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    capacity,
-                    ThrottleKeyHasherBuilder::default(),
-                    shard,
-                ),
+            session_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
+                capacity,
+                ThrottleKeyHasherBuilder::default(),
+                shard,
+            ),
+            queue_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
+                capacity,
+                ThrottleKeyHasherBuilder::default(),
+                shard,
+            ),
+            queue_tx,
+            report_tx,
+            snowflake_id: config
+                .property_::<u64>("cluster.node-id")
+                .map(SnowflakeIdGenerator::with_node_id)
+                .unwrap_or_default(),
+            connectors: TlsConnectors {
+                pki_verify: build_tls_connector(false),
+                dummy_verify: build_tls_connector(true),
             },
-            queue: QueueCore {
-                config: queue_config,
-                throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                    capacity,
-                    ThrottleKeyHasherBuilder::default(),
-                    shard,
-                ),
-                snowflake_id: config
-                    .property::<u64>("storage.cluster.node-id")?
-                    .map(SnowflakeIdGenerator::with_node_id)
-                    .unwrap_or_else(SnowflakeIdGenerator::new),
-                tx: queue_tx,
-                connectors: TlsConnectors {
-                    pki_verify: build_tls_connector(false),
-                    dummy_verify: build_tls_connector(true),
-                },
-            },
-            report: ReportCore {
-                tx: report_tx,
-                config: report_config,
-            },
-            mail_auth: mail_auth_config,
-            sieve: sieve_config,
-            shared,
             #[cfg(feature = "local_delivery")]
             delivery_tx,
-        });
+        };
+        let inner = SmtpInstance::new(core, inner);
 
         // Spawn queue manager
-        queue_rx.spawn(core.clone());
+        queue_rx.spawn(inner.clone());
 
         // Spawn report manager
-        report_rx.spawn(core.clone());
+        report_rx.spawn(inner.clone());
 
-        Ok(core)
+        inner
     }
 }

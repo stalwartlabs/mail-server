@@ -27,9 +27,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::expr::if_block::IfBlock;
 use mail_auth::MX;
 use store::write::now;
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, ParseTestConfig,
@@ -86,11 +86,11 @@ async fn throttle_outbound() {
     test_message.return_path_domain = "foobar.org".to_string();
     let mut core = SMTP::test();
     let mut local_qr = core.init_test_queue("smtp_throttle_outbound");
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.throttle = THROTTLE.parse_queue_throttle();
-    core.queue.config.retry = IfBlock::new(Duration::from_secs(86400));
-    core.queue.config.notify = IfBlock::new(Duration::from_secs(86400));
-    core.queue.config.expire = IfBlock::new(Duration::from_secs(86400));
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.queue.throttle = THROTTLE.parse_queue_throttle();
+    core.core.smtp.queue.retry = IfBlock::new(Duration::from_secs(86400));
+    core.core.smtp.queue.notify = IfBlock::new(Duration::from_secs(86400));
+    core.core.smtp.queue.expire = IfBlock::new(Duration::from_secs(86400));
 
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());
@@ -105,7 +105,7 @@ async fn throttle_outbound() {
     // Throttle sender
     let span = tracing::info_span!("test");
     let mut in_flight = vec![];
-    let throttle = &core.queue.config.throttle;
+    let throttle = &core.core.smtp.queue.throttle;
     for t in &throttle.sender {
         core.is_allowed(
             t,
@@ -215,7 +215,7 @@ async fn throttle_outbound() {
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for mx 'mx.test.org'
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "test.org",
         vec![MX {
             exchanges: vec!["mx.test.org".to_string()],
@@ -223,7 +223,7 @@ async fn throttle_outbound() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.test.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -251,7 +251,7 @@ async fn throttle_outbound() {
     in_flight.clear();
 
     // Expect rate limit throttle for mx 'mx.test.net'
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "test.net",
         vec![MX {
             exchanges: vec!["mx.test.net".to_string()],
@@ -259,7 +259,7 @@ async fn throttle_outbound() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.test.net",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

@@ -23,6 +23,10 @@
 
 use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
+use common::{
+    config::server::ServerProtocol,
+    listener::{limiter::ConcurrencyLimiter, ServerInstance, SessionStream, TcpAcceptor},
+};
 use rustls::{server::ResolvesServerCert, ServerConfig};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -31,10 +35,6 @@ use tokio::{
 
 use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
 use tokio_rustls::TlsAcceptor;
-use utils::{
-    config::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, ServerInstance, SessionStream, TcpAcceptor},
-};
 
 use super::TestConfig;
 
@@ -132,6 +132,7 @@ impl TestSession for Session<DummyIo> {
             ),
             params: SessionParameters::default(),
             in_flight: vec![],
+            hostname: "localhost".to_string(),
         }
     }
 
@@ -360,10 +361,7 @@ impl TestServerInstance for ServerInstance {
     fn test_with_shutdown(shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {
             id: "smtp".to_string(),
-            listener_id: 1,
-            hostname: "mx.example.org".to_string(),
             protocol: ServerProtocol::Smtp,
-            data: "220 mx.example.org at your service.\r\n".to_string(),
             acceptor: TcpAcceptor::Tls(TlsAcceptor::from(Arc::new(
                 ServerConfig::builder()
                     .with_no_client_auth()

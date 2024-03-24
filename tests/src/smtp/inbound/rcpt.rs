@@ -23,10 +23,11 @@
 
 use std::time::Duration;
 
+use common::expr::if_block::IfBlock;
 use directory::core::config::ConfigDirectory;
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::dummy_stores,
@@ -72,14 +73,14 @@ email = "mike@foobar.org"
 async fn rcpt() {
     let mut core = SMTP::test();
 
-    let config_ext = &mut core.session.config.extensions;
-    core.shared.directories = Config::new(DIRECTORY)
+    let config_ext = &mut core.core.smtp.session.extensions;
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = IfBlock::new("local".to_string());
     config.max_recipients = r#"[{if = "remote_ip = '10.0.0.1'", then = 3},
     {else = 5}]"#
@@ -96,7 +97,7 @@ async fn rcpt() {
     config.errors_wait = r#"[{if = "remote_ip = '10.0.0.1'", then = '5ms'},
     {else = '1s'}]"#
         .parse_if();
-    core.session.config.throttle.rcpt_to = r#"[[throttle]]
+    core.core.smtp.session.throttle.rcpt_to = r#"[[throttle]]
     match = "remote_ip = '10.0.0.1'"
     key = 'sender'
     rate = '2/1s'

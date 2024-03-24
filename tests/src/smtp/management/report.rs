@@ -24,6 +24,10 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, HashSet};
+use common::{
+    config::{server::ServerProtocol, smtp::report::AggregateFrequency},
+    expr::if_block::IfBlock,
+};
 use directory::core::config::ConfigDirectory;
 use mail_auth::{
     common::parse::TxtRecordParser,
@@ -37,7 +41,7 @@ use mail_auth::{
 use reqwest::Method;
 use store::Store;
 use tokio::sync::mpsc;
-use utils::config::{if_block::IfBlock, Config, ServerProtocol};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::dummy_stores,
@@ -46,7 +50,6 @@ use crate::smtp::{
     TestConfig,
 };
 use smtp::{
-    config::AggregateFrequency,
     core::{management::Report, SMTP},
     reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent},
 };
@@ -79,7 +82,7 @@ async fn manage_reports() {
 
     // Start reporting service
     let mut core = SMTP::test();
-    let config = &mut core.report.config;
+    let config = &mut core.core.smtp.report;
     config.dmarc_aggregate.max_size = IfBlock::new(1024);
     config.tls.max_size = IfBlock::new(1024);
     let directory = Config::new(DIRECTORY)
@@ -87,7 +90,7 @@ async fn manage_reports() {
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap();
-    core.shared.default_directory = directory.directories.get("local").unwrap().clone();
+    core.core.storage.directory = directory.directories.get("local").unwrap().clone();
     let (report_tx, report_rx) = mpsc::channel(1024);
     core.report.tx = report_tx;
     let core = Arc::new(core);

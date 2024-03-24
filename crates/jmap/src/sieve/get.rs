@@ -45,7 +45,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties =
             request.unwrap_properties(&[Property::Id, Property::Name, Property::BlobId]);
         let account_id = request.account_id.document_id();
@@ -58,7 +58,7 @@ impl JMAP {
         } else {
             push_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
@@ -238,9 +238,8 @@ impl JMAP {
             Ok((sieve.inner, script_object.inner))
         } else {
             // Deserialization failed, probably because the script compiler version changed
-            match self
-                .sieve_compiler
-                .compile(script_bytes.get(0..script_offset).ok_or_else(|| {
+            match self.core.sieve.untrusted_compiler.compile(
+                script_bytes.get(0..script_offset).ok_or_else(|| {
                     tracing::warn!(
                         context = "sieve_script_compile",
                         event = "error",
@@ -250,7 +249,8 @@ impl JMAP {
                     );
 
                     MethodError::ServerPartialFail
-                })?) {
+                })?,
+            ) {
                 Ok(sieve) => {
                     // Store updated compiled sieve script
                     let sieve = Bincode::new(sieve);

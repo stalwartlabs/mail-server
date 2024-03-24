@@ -33,7 +33,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
 
         self.jmap
-            .sieve_compiler
+            .core
+            .sieve
+            .untrusted_compiler
             .compile(&request.tokens.into_iter().next().unwrap().unwrap_bytes())
             .map(|_| StatusResponse::ok("Script is valid.").into_bytes())
             .map_err(|err| StatusResponse::no(err.to_string()))

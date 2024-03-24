@@ -146,7 +146,7 @@ impl JMAP {
                     let mut keep = false;
                     let mut jmap_id = document_id + 1;
 
-                    for _ in 0..self.config.mailbox_max_depth {
+                    for _ in 0..self.core.jmap.mailbox_max_depth {
                         if let Some(&parent_id) = hierarchy.get(&jmap_id) {
                             if parent_id == 0 {
                                 keep = true;
@@ -213,7 +213,7 @@ impl JMAP {
                 let mut stack = Vec::new();
                 let mut jmap_id = 0;
 
-                'outer: for _ in 0..(response.ids.len() * 10 * self.config.mailbox_max_depth) {
+                'outer: for _ in 0..(response.ids.len() * 10 * self.core.jmap.mailbox_max_depth) {
                     let (mut children, mut it) = if let Some(children) = tree.remove(&jmap_id) {
                         (children, response.ids.iter())
                     } else if let Some(prev) = stack.pop() {

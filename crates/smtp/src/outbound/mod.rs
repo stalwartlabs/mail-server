@@ -23,13 +23,15 @@
 
 use std::borrow::Cow;
 
+use common::config::{
+    server::ServerProtocol,
+    smtp::queue::{RelayHost, RequireOptional},
+};
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
-use utils::config::ServerProtocol;
 
-use crate::{
-    config::RelayHost,
-    queue::{spool::QueueEventLock, DeliveryAttempt, Error, ErrorDetails, HostResponse, Status},
+use crate::queue::{
+    spool::QueueEventLock, DeliveryAttempt, Error, ErrorDetails, HostResponse, Status,
 };
 
 pub mod dane;
@@ -39,6 +41,13 @@ pub mod local;
 pub mod lookup;
 pub mod mta_sts;
 pub mod session;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TlsStrategy {
+    pub dane: RequireOptional,
+    pub mta_sts: RequireOptional,
+    pub tls: RequireOptional,
+}
 
 impl Status<(), Error> {
     pub fn from_smtp_error(hostname: &str, command: &str, err: mail_send::Error) -> Self {

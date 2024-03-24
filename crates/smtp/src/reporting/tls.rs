@@ -24,6 +24,10 @@
 use std::{collections::hash_map::Entry, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
+use common::config::smtp::{
+    report::AggregateFrequency,
+    resolver::{Mode, MxPattern},
+};
 use mail_auth::{
     flate2::{write::GzEncoder, Compression},
     mta_sts::{ReportUri, TlsRpt},
@@ -40,15 +44,9 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
 };
 
-use crate::{
-    config::AggregateFrequency,
-    core::SMTP,
-    outbound::mta_sts::{Mode, MxPattern},
-    queue::RecipientDomain,
-    USER_AGENT,
-};
+use crate::{core::SMTP, queue::RecipientDomain, USER_AGENT};
 
-use super::{scheduler::ToHash, ReportLock, SerializedSize, TlsEvent};
+use super::{scheduler::ToHash, AggregateTimestamp, ReportLock, SerializedSize, TlsEvent};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -83,12 +81,13 @@ impl SMTP {
         // Generate report
         let mut rua = Vec::new();
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
-            self.eval_if(
-                &self.report.config.tls.max_size,
-                &RecipientDomain::new(domain_name),
-            )
-            .await
-            .unwrap_or(25 * 1024 * 1024),
+            self.core
+                .eval_if(
+                    &self.core.smtp.report.tls.max_size,
+                    &RecipientDomain::new(domain_name),
+                )
+                .await
+                .unwrap_or(25 * 1024 * 1024),
         ));
         let report = match self
             .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size))
@@ -198,8 +197,9 @@ impl SMTP {
 
         // Deliver report over SMTP
         if !rcpts.is_empty() {
-            let config = &self.report.config.tls;
+            let config = &self.core.smtp.report.tls;
             let from_addr = self
+                .core
                 .eval_if(&config.address, &RecipientDomain::new(domain_name))
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
@@ -207,14 +207,16 @@ impl SMTP {
             let _ = report.write_rfc5322_from_bytes(
                 domain_name,
                 &self
+                    .core
                     .eval_if(
-                        &self.report.config.submitter,
+                        &self.core.smtp.report.submitter,
                         &RecipientDomain::new(domain_name),
                     )
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
-                    self.eval_if(&config.name, &RecipientDomain::new(domain_name))
+                    self.core
+                        .eval_if(&config.name, &RecipientDomain::new(domain_name))
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -255,9 +257,10 @@ impl SMTP {
             .first()
             .map(|e| (e.domain.as_str(), e.seq_id, e.due, e.policy_hash))
             .unwrap();
-        let config = &self.report.config.tls;
+        let config = &self.core.smtp.report.tls;
         let mut report = TlsReport {
             organization_name: self
+                .core
                 .eval_if(&config.org_name, &RecipientDomain::new(domain_name))
                 .await
                 .clone(),
@@ -266,6 +269,7 @@ impl SMTP {
                 end_datetime: DateTime::from_timestamp(event_to as i64),
             },
             contact_info: self
+                .core
                 .eval_if(&config.contact_info, &RecipientDomain::new(domain_name))
                 .await
                 .clone(),
@@ -279,8 +283,9 @@ impl SMTP {
 
         for event in events {
             let tls = if let Some(tls) = self
-                .shared
-                .default_data_store
+                .core
+                .storage
+                .data
                 .get_value::<Bincode<TlsFormat>>(ValueKey::from(ValueClass::Queue(
                     QueueClass::TlsReportHeader(event.clone()),
                 )))
@@ -315,8 +320,9 @@ impl SMTP {
                     domain: event.domain.clone(),
                 })));
             let mut record_map = AHashMap::new();
-            self.shared
-                .default_data_store
+            self.core
+                .storage
+                .data
                 .iterate(IterateParams::new(from_key, to_key).ascending(), |_, v| {
                     if let Some(failure_details) =
                         Bincode::<Option<FailureDetails>>::deserialize(v)?.inner
@@ -394,8 +400,9 @@ impl SMTP {
         // Write policy if missing
         let mut builder = BatchBuilder::new();
         if self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .get_value::<()>(ValueKey::from(ValueClass::Queue(
                 QueueClass::TlsReportHeader(report_event.clone()),
             )))
@@ -481,13 +488,13 @@ impl SMTP {
         }
 
         // Write entry
-        report_event.seq_id = self.queue.snowflake_id.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.snowflake_id.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
             Bincode::new(event.failure).serialize(),
         );
 
-        if let Err(err) = self.shared.default_data_store.write(builder.build()).await {
+        if let Err(err) = self.core.storage.data.write(builder.build()).await {
             tracing::error!(
                 context = "report",
                 event = "error",
@@ -516,8 +523,9 @@ impl SMTP {
 
             // Remove report events
             if let Err(err) = self
-                .shared
-                .default_data_store
+                .core
+                .storage
+                .data
                 .delete_range(
                     ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(from_key))),
                     ValueKey::from(ValueClass::Queue(QueueClass::TlsReportEvent(to_key))),
@@ -542,7 +550,7 @@ impl SMTP {
             batch.clear(ValueClass::Queue(QueueClass::TlsReportHeader(event)));
         }
 
-        if let Err(err) = self.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = self.core.storage.data.write(batch.build()).await {
             tracing::warn!(
                 context = "report",
                 event = "error",

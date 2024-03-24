@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::listener::limiter::{ConcurrencyLimiter, InFlight};
 use directory::{DirectoryError, QueryBy};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -32,8 +33,6 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::TlsAcceptor;
-
-use utils::listener::limiter::{ConcurrencyLimiter, InFlight};
 
 use crate::directory::{DirectoryTest, Item, LookupResult};
 

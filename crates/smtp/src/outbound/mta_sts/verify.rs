@@ -21,10 +21,15 @@
  * for more details.
 */
 
-use super::{Mode, MxPattern, Policy};
+use common::config::smtp::resolver::{Mode, MxPattern, Policy};
 
-impl Policy {
-    pub fn verify(&self, mx_host: &str) -> bool {
+pub trait VerifyPolicy {
+    fn verify(&self, mx_host: &str) -> bool;
+    fn enforce(&self) -> bool;
+}
+
+impl VerifyPolicy for Policy {
+    fn verify(&self, mx_host: &str) -> bool {
         if self.mode != Mode::None {
             for mx_pattern in &self.mx {
                 match mx_pattern {
@@ -49,7 +54,7 @@ impl Policy {
         }
     }
 
-    pub fn enforce(&self) -> bool {
+    fn enforce(&self) -> bool {
         self.mode == Mode::Enforce
     }
 }

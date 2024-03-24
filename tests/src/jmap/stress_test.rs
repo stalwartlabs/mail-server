@@ -42,7 +42,13 @@ const NUM_PASSES: usize = 1;
 
 pub async fn test(server: Arc<JMAP>, mut client: Client) {
     println!("Running concurrency stress tests...");
-    server.store.get_or_create_account_id("john").await.unwrap();
+    server
+        .core
+        .storage
+        .data
+        .get_or_create_account_id("john")
+        .await
+        .unwrap();
     client.set_default_account_id(Id::from(TEST_USER_ID).to_string());
     let client = Arc::new(client);
     email_tests(server.clone(), client.clone()).await;

@@ -9,20 +9,22 @@ use std::{
 
 use crate::smtp::session::TestSession;
 use ahash::AHashMap;
+use common::{
+    expr::if_block::IfBlock,
+    scripts::{
+        functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
+        ScriptModification,
+    },
+};
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
-    config::{scripts::ConfigSieve, ConfigContext},
     core::{Session, SessionAddress, SMTP},
     inbound::AuthResult,
-    scripts::{
-        functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
-        ScriptModification, ScriptResult,
-    },
+    scripts::ScriptResult,
 };
-use store::config::ConfigStore;
 use tokio::runtime::Handle;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{TestConfig, TestSMTP};
 
@@ -229,9 +231,9 @@ async fn antispam() {
     let mut ctx = ConfigContext::new();
     ctx.stores = config.parse_stores().await.unwrap();
     core.sieve = config.parse_sieve(&mut ctx).unwrap();
-    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
-    core.shared.scripts = ctx.scripts.clone();
-    let config = &mut core.session.config;
+    core.core.storage.lookups = ctx.stores.lookups.clone();
+    core.core.storage.scripts = ctx.scripts.clone();
+    let config = &mut core.core.smtp.session;
     config.rcpt.relay = IfBlock::new(true);
 
     // Add mock DNS entries
@@ -267,7 +269,7 @@ async fn antispam() {
             "127.0.0.8",
         ),
     ] {
-        core.resolvers.dns.ipv4_add(
+        core.core.smtp.resolvers.dns.ipv4_add(
             domain,
             vec![ip.parse().unwrap()],
             Instant::now() + Duration::from_secs(100),
@@ -279,7 +281,7 @@ async fn antispam() {
         "gmail.com",
         "custom.disposable.org",
     ] {
-        core.resolvers.dns.mx_add(
+        core.core.smtp.resolvers.dns.mx_add(
             mx,
             vec![MX {
                 exchanges: vec!["127.0.0.1".parse().unwrap()],

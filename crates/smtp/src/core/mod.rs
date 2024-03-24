@@ -28,143 +28,94 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use common::{
+    config::smtp::auth::VerifyStrategy,
+    listener::{
+        limiter::{ConcurrencyLimiter, InFlight},
+        ServerInstance,
+    },
+    Core, DeliveryEvent, SharedCore,
+};
 use dashmap::DashMap;
 use directory::Directory;
-use mail_auth::{common::lru::LruCache, IprevOutput, Resolver, SpfOutput};
-use sieve::{runtime::Variable, Runtime, Sieve};
-use smtp_proto::{
-    request::receiver::{
-        BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver,
-        RequestReceiver,
-    },
-    IntoString,
+use mail_auth::{IprevOutput, SpfOutput};
+use smtp_proto::request::receiver::{
+    BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver, RequestReceiver,
 };
-use store::{BlobStore, LookupStore, Store, Value};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::mpsc,
 };
 use tokio_rustls::TlsConnector;
 use tracing::Span;
-use utils::{
-    expr,
-    ipc::DeliveryEvent,
-    listener::{
-        limiter::{ConcurrencyLimiter, InFlight},
-        stream::NullIo,
-        ServerInstance, TcpAcceptor,
-    },
-    snowflake::SnowflakeIdGenerator,
-};
+use utils::snowflake::SnowflakeIdGenerator;
 
 use crate::{
-    config::{
-        scripts::SieveContext, ArcSealer, DkimSigner, MailAuthConfig, QueueConfig, RelayHost,
-        ReportConfig, SessionConfig, VerifyStrategy,
-    },
     inbound::auth::SaslToken,
-    outbound::{
-        dane::{DnssecResolver, Tlsa},
-        mta_sts,
-    },
     queue::{self, DomainPart, QueueId},
     reporting,
 };
 
 use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
-pub mod eval;
 pub mod management;
 pub mod params;
 pub mod throttle;
 pub mod worker;
 
 #[derive(Clone)]
+pub struct SmtpInstance {
+    pub inner: Arc<Inner>,
+    pub core: SharedCore,
+}
+
+impl SmtpInstance {
+    pub fn new(core: SharedCore, inner: impl Into<Arc<Inner>>) -> Self {
+        Self {
+            core,
+            inner: inner.into(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct SmtpSessionManager {
-    pub inner: Arc<SMTP>,
+    pub inner: SmtpInstance,
 }
 
 #[derive(Clone)]
 pub struct SmtpAdminSessionManager {
-    pub inner: Arc<SMTP>,
+    pub inner: SmtpInstance,
 }
 
 impl SmtpSessionManager {
-    pub fn new(inner: Arc<SMTP>) -> Self {
+    pub fn new(inner: SmtpInstance) -> Self {
         Self { inner }
     }
 }
 
 impl SmtpAdminSessionManager {
-    pub fn new(inner: Arc<SMTP>) -> Self {
+    pub fn new(inner: SmtpInstance) -> Self {
         Self { inner }
     }
 }
 
+#[derive(Clone)]
 pub struct SMTP {
+    pub core: Arc<Core>,
+    pub inner: Arc<Inner>,
+}
+
+pub struct Inner {
     pub worker_pool: rayon::ThreadPool,
-    pub session: SessionCore,
-    pub queue: QueueCore,
-    pub resolvers: Resolvers,
-    pub mail_auth: MailAuthConfig,
-    pub report: ReportCore,
-    pub sieve: SieveCore,
-    pub shared: Shared,
-    #[cfg(feature = "local_delivery")]
-    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
-}
-
-pub struct Shared {
-    pub scripts: AHashMap<String, Arc<Sieve>>,
-    pub signers: AHashMap<String, Arc<DkimSigner>>,
-    pub sealers: AHashMap<String, Arc<ArcSealer>>,
-    pub directories: AHashMap<String, Arc<Directory>>,
-    pub lookup_stores: AHashMap<String, LookupStore>,
-    pub relay_hosts: AHashMap<String, RelayHost>,
-
-    // Default store and directory
-    pub default_directory: Arc<Directory>,
-    pub default_data_store: Store,
-    pub default_blob_store: BlobStore,
-    pub default_lookup_store: LookupStore,
-}
-
-pub struct SieveCore {
-    pub runtime: Runtime<SieveContext>,
-    pub from_addr: String,
-    pub from_name: String,
-    pub return_path: String,
-    pub sign: Vec<Arc<DkimSigner>>,
-}
-
-pub struct Resolvers {
-    pub dns: Resolver,
-    pub dnssec: DnssecResolver,
-    pub cache: DnsCache,
-}
-
-pub struct DnsCache {
-    pub tlsa: LruCache<String, Arc<Tlsa>>,
-    pub mta_sts: LruCache<String, Arc<mta_sts::Policy>>,
-}
-
-pub struct SessionCore {
-    pub config: SessionConfig,
-    pub throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-}
-
-pub struct QueueCore {
-    pub config: QueueConfig,
-    pub throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub tx: mpsc::Sender<queue::Event>,
+    pub session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
+    pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
+    pub queue_tx: mpsc::Sender<queue::Event>,
+    pub report_tx: mpsc::Sender<reporting::Event>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub connectors: TlsConnectors,
-}
-
-pub struct ReportCore {
-    pub config: ReportConfig,
-    pub tx: mpsc::Sender<reporting::Event>,
+    #[cfg(feature = "local_delivery")]
+    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
 }
 
 pub struct TlsConnectors {
@@ -184,9 +135,10 @@ pub enum State {
 }
 
 pub struct Session<T: AsyncWrite + AsyncRead> {
+    pub hostname: String,
     pub state: State,
     pub instance: Arc<ServerInstance>,
-    pub core: Arc<SMTP>,
+    pub core: SMTP,
     pub span: Span,
     pub stream: T,
     pub data: SessionData,
@@ -296,54 +248,9 @@ impl SessionData {
     }
 }
 
-pub trait ResolveVariable {
-    fn resolve_variable(&self, variable: u32) -> expr::Variable<'_>;
-}
-
-pub fn into_sieve_value(value: Value) -> Variable {
-    match value {
-        Value::Integer(v) => Variable::Integer(v),
-        Value::Bool(v) => Variable::Integer(i64::from(v)),
-        Value::Float(v) => Variable::Float(v),
-        Value::Text(v) => Variable::String(v.into_owned().into()),
-        Value::Blob(v) => Variable::String(v.into_owned().into_string().into()),
-        Value::Null => Variable::default(),
-    }
-}
-
-pub fn into_store_value(value: Variable) -> Value<'static> {
-    match value {
-        Variable::String(v) => Value::Text(v.to_string().into()),
-        Variable::Integer(v) => Value::Integer(v),
-        Variable::Float(v) => Value::Float(v),
-        v => Value::Text(v.to_string().into_owned().into()),
-    }
-}
-
-pub fn to_store_value(value: &Variable) -> Value<'static> {
-    match value {
-        Variable::String(v) => Value::Text(v.to_string().into()),
-        Variable::Integer(v) => Value::Integer(*v),
-        Variable::Float(v) => Value::Float(*v),
-        v => Value::Text(v.to_string().into_owned().into()),
-    }
-}
-
 impl Default for State {
     fn default() -> Self {
         State::Request(RequestReceiver::default())
-    }
-}
-
-impl VerifyStrategy {
-    #[inline(always)]
-    pub fn verify(&self) -> bool {
-        matches!(self, VerifyStrategy::Strict | VerifyStrategy::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn is_strict(&self) -> bool {
-        matches!(self, VerifyStrategy::Strict)
     }
 }
 
@@ -376,29 +283,32 @@ impl PartialOrd for SessionAddress {
     }
 }
 
+impl From<SmtpInstance> for SMTP {
+    fn from(value: SmtpInstance) -> Self {
+        SMTP {
+            core: value.core.load().clone(),
+            inner: value.inner,
+        }
+    }
+}
+
 #[cfg(feature = "local_delivery")]
 lazy_static::lazy_static! {
-static ref SIEVE: Arc<ServerInstance> = Arc::new(utils::listener::ServerInstance {
+static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
     id: "sieve".to_string(),
-    listener_id: u16::MAX,
-    protocol: utils::config::ServerProtocol::Lmtp,
-    hostname: "localhost".to_string(),
-    data: "localhost".to_string(),
-    acceptor: TcpAcceptor::Plain,
-    limiter: utils::listener::limiter::ConcurrencyLimiter::new(0),
+    protocol: common::config::server::ServerProtocol::Lmtp,
+    acceptor: common::listener::TcpAcceptor::Plain,
+    limiter: ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
     proxy_networks: vec![],
 });
 }
 
 #[cfg(feature = "local_delivery")]
-impl Session<NullIo> {
-    pub fn local(
-        core: std::sync::Arc<SMTP>,
-        instance: std::sync::Arc<utils::listener::ServerInstance>,
-        data: SessionData,
-    ) -> Self {
+impl Session<common::listener::stream::NullIo> {
+    pub fn local(core: SMTP, instance: std::sync::Arc<ServerInstance>, data: SessionData) -> Self {
         Session {
+            hostname: "localhost".to_string(),
             state: State::None,
             instance,
             core,
@@ -417,7 +327,7 @@ impl Session<NullIo> {
                 "nrcpt" = data.rcpt_to.len(),
                 "size" = data.message.len(),
             ),
-            stream: NullIo::default(),
+            stream: common::listener::stream::NullIo::default(),
             data,
             params: SessionParameters {
                 timeout: Default::default(),
@@ -434,9 +344,9 @@ impl Session<NullIo> {
                 rcpt_dsn: Default::default(),
                 max_message_size: Default::default(),
                 auth_match_sender: false,
-                iprev: crate::config::VerifyStrategy::Disable,
-                spf_ehlo: crate::config::VerifyStrategy::Disable,
-                spf_mail_from: crate::config::VerifyStrategy::Disable,
+                iprev: VerifyStrategy::Disable,
+                spf_ehlo: VerifyStrategy::Disable,
+                spf_mail_from: VerifyStrategy::Disable,
                 can_expn: false,
                 can_vrfy: false,
             },
@@ -445,7 +355,7 @@ impl Session<NullIo> {
     }
 
     pub fn sieve(
-        core: std::sync::Arc<SMTP>,
+        core: SMTP,
         mail_from: SessionAddress,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,

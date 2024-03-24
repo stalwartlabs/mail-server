@@ -48,7 +48,9 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> Result<Option<Vec<u8>>, MethodError> {
         if !self
-            .store
+            .core
+            .storage
+            .data
             .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
             .map_err(|err| {
@@ -129,7 +131,7 @@ impl JMAP {
         hash: &BlobHash,
         range: Range<usize>,
     ) -> Result<Option<Vec<u8>>, MethodError> {
-        match self.blob_store.get_blob(hash.as_ref(), range).await {
+        match self.core.storage.blob.get_blob(hash.as_ref(), range).await {
             Ok(blob) => Ok(blob),
             Err(err) => {
                 tracing::error!(event = "error",
@@ -148,7 +150,9 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> Result<bool, MethodError> {
         Ok(self
-            .store
+            .core
+            .storage
+            .data
             .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
             .map_err(|err| {

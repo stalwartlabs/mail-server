@@ -36,7 +36,6 @@ use utils::{config::ConfigKey, url_params::UrlParams};
 
 use crate::{
     auth::{oauth::OAuthCodeRequest, AccessToken},
-    services::housekeeper,
     JMAP,
 };
 
@@ -102,7 +101,9 @@ impl JMAP {
                     body.and_then(|body| serde_json::from_slice::<PrincipalResponse>(&body).ok())
                 {
                     match self
-                        .store
+                        .core
+                        .storage
+                        .data
                         .create_account(
                             Principal {
                                 id: principal.id,
@@ -141,7 +142,7 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                match self.store.list_accounts(filter, typ).await {
+                match self.core.storage.data.list_accounts(filter, typ).await {
                     Ok(accounts) => {
                         let (total, accounts) = if limit > 0 {
                             let offset = page.saturating_sub(1) * limit;
@@ -166,7 +167,7 @@ impl JMAP {
             }
             ("principal", Some(name), method) => {
                 // Fetch, update or delete principal
-                let account_id = match self.store.get_account_id(name).await {
+                let account_id = match self.core.storage.data.get_account_id(name).await {
                     Ok(Some(account_id)) => account_id,
                     Ok(None) => {
                         return RequestError::blank(
@@ -183,8 +184,16 @@ impl JMAP {
 
                 match *method {
                     Method::GET => {
-                        let result = match self.store.query(QueryBy::Id(account_id), true).await {
-                            Ok(Some(principal)) => self.store.map_group_ids(principal).await,
+                        let result = match self
+                            .core
+                            .storage
+                            .data
+                            .query(QueryBy::Id(account_id), true)
+                            .await
+                        {
+                            Ok(Some(principal)) => {
+                                self.core.storage.data.map_group_ids(principal).await
+                            }
                             Ok(None) => {
                                 return RequestError::blank(
                                     StatusCode::NOT_FOUND.as_u16(),
@@ -205,11 +214,20 @@ impl JMAP {
                                         as u64;
 
                                 // Obtain member names
-                                for member_id in
-                                    self.store.get_members(account_id).await.unwrap_or_default()
+                                for member_id in self
+                                    .core
+                                    .storage
+                                    .data
+                                    .get_members(account_id)
+                                    .await
+                                    .unwrap_or_default()
                                 {
-                                    if let Ok(Some(member_principal)) =
-                                        self.store.query(QueryBy::Id(member_id), false).await
+                                    if let Ok(Some(member_principal)) = self
+                                        .core
+                                        .storage
+                                        .data
+                                        .query(QueryBy::Id(member_id), false)
+                                        .await
                                     {
                                         principal.members.push(member_principal.name);
                                     }
@@ -225,7 +243,7 @@ impl JMAP {
                     }
                     Method::DELETE => {
                         // Remove FTS index
-                        if let Err(err) = self.fts_store.remove_all(account_id).await {
+                        if let Err(err) = self.core.storage.fts.remove_all(account_id).await {
                             tracing::warn!(
                                 context = "fts",
                                 event = "error",
@@ -241,7 +259,13 @@ impl JMAP {
                         }
 
                         // Delete account
-                        match self.store.delete_account(QueryBy::Id(account_id)).await {
+                        match self
+                            .core
+                            .storage
+                            .data
+                            .delete_account(QueryBy::Id(account_id))
+                            .await
+                        {
                             Ok(_) => JsonResponse::new(json!({
                                 "data": (),
                             }))
@@ -254,7 +278,9 @@ impl JMAP {
                             serde_json::from_slice::<Vec<PrincipalUpdate>>(&body).ok()
                         }) {
                             match self
-                                .store
+                                .core
+                                .storage
+                                .data
                                 .update_account(QueryBy::Id(account_id), changes)
                                 .await
                             {
@@ -283,7 +309,7 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                match self.store.list_domains(filter).await {
+                match self.core.storage.data.list_domains(filter).await {
                     Ok(domains) => {
                         let (total, domains) = if limit > 0 {
                             let offset = page.saturating_sub(1) * limit;
@@ -308,7 +334,7 @@ impl JMAP {
             }
             ("domain", Some(domain), &Method::POST) => {
                 // Create domain
-                match self.store.create_domain(domain).await {
+                match self.core.storage.data.create_domain(domain).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -318,7 +344,7 @@ impl JMAP {
             }
             ("domain", Some(domain), &Method::DELETE) => {
                 // Delete domain
-                match self.store.delete_domain(domain).await {
+                match self.core.storage.data.delete_domain(domain).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -327,8 +353,14 @@ impl JMAP {
                 }
             }
             ("store", Some("maintenance"), &Method::GET) => {
-                match self.store.purge_blobs(self.blob_store.clone()).await {
-                    Ok(_) => match self.store.purge_store().await {
+                match self
+                    .core
+                    .storage
+                    .data
+                    .purge_blobs(self.core.storage.blob.clone())
+                    .await
+                {
+                    Ok(_) => match self.core.storage.data.purge_store().await {
                         Ok(_) => JsonResponse::new(json!({
                             "data": (),
                         }))
@@ -348,8 +380,9 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("reload", Some("settings"), &Method::GET) => {
+            /*("reload", Some("settings"), &Method::GET) => {
                 let _ = self
+                    .inner
                     .housekeeper_tx
                     .send(housekeeper::Event::ReloadConfig)
                     .await;
@@ -361,6 +394,7 @@ impl JMAP {
             }
             ("reload", Some("certificates"), &Method::GET) => {
                 let _ = self
+                    .inner
                     .housekeeper_tx
                     .send(housekeeper::Event::ReloadCertificates)
                     .await;
@@ -369,7 +403,7 @@ impl JMAP {
                     "data": (),
                 }))
                 .into_http_response()
-            }
+            }*/
             ("settings", Some("group"), &Method::GET) => {
                 // List settings
                 let params = UrlParams::new(req.uri().query());
@@ -400,7 +434,7 @@ impl JMAP {
                     params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
                 let has_filter = !filter.is_empty();
 
-                match self.store.config_list(&prefix, true).await {
+                match self.core.storage.data.config_list(&prefix, true).await {
                     Ok(settings) => if !suffix.is_empty() && !settings.is_empty() {
                         // Obtain record ids
                         let mut total = 0;
@@ -514,7 +548,7 @@ impl JMAP {
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let offset = params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
 
-                match self.store.config_list(&prefix, true).await {
+                match self.core.storage.data.config_list(&prefix, true).await {
                     Ok(settings) => {
                         let total = settings.len();
                         let items = settings
@@ -554,7 +588,7 @@ impl JMAP {
                 let mut results = AHashMap::with_capacity(keys.len());
 
                 for key in keys {
-                    match self.store.config_get(key).await {
+                    match self.core.storage.data.config_get(key).await {
                         Ok(Some(value)) => {
                             results.insert(key.to_string(), value);
                         }
@@ -571,7 +605,7 @@ impl JMAP {
                     } else {
                         prefix.to_string()
                     };
-                    match self.store.config_list(&prefix, false).await {
+                    match self.core.storage.data.config_list(&prefix, false).await {
                         Ok(values) => {
                             results.extend(values);
                         }
@@ -597,7 +631,7 @@ impl JMAP {
                 }
             }
             ("settings", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
-                match self.store.config_clear(prefix).await {
+                match self.core.storage.data.config_clear(prefix).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -620,15 +654,26 @@ impl JMAP {
                         match change {
                             UpdateSettings::Delete { keys } => {
                                 for key in keys {
-                                    result = self.store.config_clear(key).await.map(|_| true);
+                                    result = self
+                                        .core
+                                        .storage
+                                        .data
+                                        .config_clear(key)
+                                        .await
+                                        .map(|_| true);
                                     if result.is_err() {
                                         break 'next;
                                     }
                                 }
                             }
                             UpdateSettings::Clear { prefix } => {
-                                result =
-                                    self.store.config_clear_prefix(&prefix).await.map(|_| true);
+                                result = self
+                                    .core
+                                    .storage
+                                    .data
+                                    .config_clear_prefix(&prefix)
+                                    .await
+                                    .map(|_| true);
                                 if result.is_err() {
                                     break;
                                 }
@@ -641,7 +686,9 @@ impl JMAP {
                                 if assert_empty {
                                     if let Some(prefix) = &prefix {
                                         result = self
-                                            .store
+                                            .core
+                                            .storage
+                                            .data
                                             .config_list(&format!("{prefix}."), true)
                                             .await
                                             .map(|items| items.is_empty());
@@ -651,7 +698,9 @@ impl JMAP {
                                         }
                                     } else if let Some((key, _)) = values.first() {
                                         result = self
-                                            .store
+                                            .core
+                                            .storage
+                                            .data
                                             .config_get(key)
                                             .await
                                             .map(|items| items.is_none());
@@ -663,7 +712,9 @@ impl JMAP {
                                 }
 
                                 result = self
-                                    .store
+                                    .core
+                                    .storage
+                                    .data
                                     .config_set(values.into_iter().map(|(key, value)| ConfigKey {
                                         key: if let Some(prefix) = &prefix {
                                             format!("{prefix}.{key}")

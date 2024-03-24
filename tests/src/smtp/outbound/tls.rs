@@ -26,9 +26,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{
+    config::{server::ServerProtocol, smtp::queue::RequireOptional},
+    expr::if_block::IfBlock,
+};
 use mail_auth::MX;
 use store::write::now;
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::TestMessage,
@@ -36,10 +39,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestConfig, TestSMTP,
 };
-use smtp::{
-    config::RequireOptional,
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -53,14 +53,14 @@ async fn starttls_optional() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_starttls_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.queue.config.hostname = IfBlock::new("badtls.foobar.org".to_string());
-    core.resolvers.dns.mx_add(
+    core.core.smtp.queue.hostname = IfBlock::new("badtls.foobar.org".to_string());
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -68,7 +68,7 @@ async fn starttls_optional() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -76,8 +76,8 @@ async fn starttls_optional() {
 
     // Retry on failed STARTTLS
     let mut local_qr = core.init_test_queue("smtp_starttls_local");
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.queue.config.tls.start = IfBlock::new(RequireOptional::Optional);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.queue.tls.start = IfBlock::new(RequireOptional::Optional);
 
     let core = Arc::new(core);
     let mut session = Session::test(core.clone());

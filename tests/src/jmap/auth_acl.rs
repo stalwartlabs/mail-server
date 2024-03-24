@@ -49,41 +49,57 @@ pub async fn test(params: &mut JMAPTest) {
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jane.smith@example.com", "abcde", "Jane Smith")
         .await;
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
         .await;
     params
+        .core
+        .storage
         .directory
         .create_test_group_with_email("sales@example.com", "Sales Group")
         .await;
     let john_id: Id = server
-        .store
+        .core
+        .storage
+        .data
         .get_or_create_account_id("jdoe@example.com")
         .await
         .unwrap()
         .into();
     let jane_id: Id = server
-        .store
+        .core
+        .storage
+        .data
         .get_or_create_account_id("jane.smith@example.com")
         .await
         .unwrap()
         .into();
     let bill_id: Id = server
-        .store
+        .core
+        .storage
+        .data
         .get_or_create_account_id("bill@example.com")
         .await
         .unwrap()
         .into();
     let sales_id: Id = server
-        .store
+        .core
+        .storage
+        .data
         .get_or_create_account_id("sales@example.com")
         .await
         .unwrap()
@@ -676,11 +692,13 @@ pub async fn test(params: &mut JMAPTest) {
     // Add John and Jane to the Sales group
     for name in ["jdoe@example.com", "jane.smith@example.com"] {
         params
+            .core
+            .storage
             .directory
             .add_to_group(name, "sales@example.com")
             .await;
     }
-    server.access_tokens.clear();
+    server.inner.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
     jane_client.refresh_session().await.unwrap();
     bill_client.refresh_session().await.unwrap();
@@ -775,10 +793,12 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove John from the sales group
     params
+        .core
+        .storage
         .directory
         .remove_from_group("jdoe@example.com", "sales@example.com")
         .await;
-    server.sessions.clear();
+    server.inner.sessions.clear();
     assert_forbidden(
         john_client
             .set_default_account_id(&sales_id.to_string())

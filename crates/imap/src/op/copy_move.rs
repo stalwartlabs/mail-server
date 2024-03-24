@@ -28,6 +28,8 @@ use imap_proto::{
     StatusResponse,
 };
 
+use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
+use common::listener::SessionStream;
 use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
     error::{method::MethodError, set::SetErrorType},
@@ -37,9 +39,6 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE};
-use utils::listener::SessionStream;
-
-use crate::core::{MailboxId, SelectedMailbox, Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_copy_move(

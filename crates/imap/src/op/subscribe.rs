@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use crate::core::{Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{receiver::Request, Command, ResponseCode, StatusResponse};
 use jmap::mailbox::set::{MailboxSubscribe, SCHEMA};
 use jmap_proto::{
@@ -32,9 +34,6 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
-use utils::listener::SessionStream;
-
-use crate::core::{Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_subscribe(

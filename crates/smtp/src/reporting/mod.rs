@@ -23,6 +23,13 @@
 
 use std::{io, sync::Arc, time::SystemTime};
 
+use common::{
+    config::smtp::{
+        report::{AddressMatch, AggregateFrequency},
+        resolver::{Policy, Tlsa},
+    },
+    expr::if_block::IfBlock,
+};
 use mail_auth::{
     common::headers::HeaderWriter,
     dmarc::Dmarc,
@@ -35,12 +42,10 @@ use mail_parser::DateTime;
 
 use store::write::{QueueClass, ReportEvent};
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::config::if_block::IfBlock;
 
 use crate::{
-    config::{AddressMatch, AggregateFrequency},
     core::{Session, SMTP},
-    outbound::{dane::Tlsa, mta_sts::Policy},
+    inbound::DkimSign,
     queue::{DomainPart, Message},
     USER_AGENT,
 };
@@ -93,7 +98,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .map_or(0, |d| d.as_secs()) as i64,
             )
             .with_source_ip(self.data.remote_ip)
-            .with_reporting_mta(&self.instance.hostname)
+            .with_reporting_mta(&self.hostname)
             .with_user_agent(USER_AGENT)
             .with_delivery_result(if rejected {
                 DeliveryResult::Reject
@@ -103,7 +108,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 
     pub fn is_report(&self) -> bool {
-        for addr_match in &self.core.report.config.analysis.addresses {
+        for addr_match in &self.core.core.smtp.report.analysis.addresses {
             for addr in &self.data.rcpt_to {
                 match addr_match {
                     AddressMatch::StartsWith(prefix) if addr.address_lcase.starts_with(prefix) => {
@@ -135,9 +140,7 @@ impl SMTP {
         // Build message
         let from_addr_lcase = from_addr.to_lowercase();
         let from_addr_domain = from_addr_lcase.domain_part().to_string();
-        let mut message = self
-            .queue
-            .new_message(from_addr, from_addr_lcase, from_addr_domain);
+        let mut message = self.new_message(from_addr, from_addr_lcase, from_addr_domain);
         for rcpt_ in rcpts {
             message.add_recipient(rcpt_.as_ref(), self).await;
         }
@@ -169,7 +172,7 @@ impl SMTP {
     }
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
-        if self.report.tx.send(report.into()).await.is_err() {
+        if self.inner.report_tx.send(report.into()).await.is_err() {
             tracing::warn!(contex = "report", "Channel send failed.");
         }
     }
@@ -182,13 +185,14 @@ impl SMTP {
         span: &tracing::Span,
     ) -> Option<Vec<u8>> {
         let signers = self
+            .core
             .eval_if::<Vec<String>, _>(config, message)
             .await
             .unwrap_or_default();
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {
-                if let Some(signer) = self.get_dkim_signer(signer) {
+                if let Some(signer) = self.core.get_dkim_signer(signer) {
                     match signer.sign(bytes) {
                         Ok(signature) => {
                             signature.write_header(&mut headers);
@@ -210,8 +214,14 @@ impl SMTP {
     }
 }
 
-impl AggregateFrequency {
-    pub fn to_timestamp(&self) -> u64 {
+pub trait AggregateTimestamp {
+    fn to_timestamp(&self) -> u64;
+    fn to_timestamp_(&self, dt: DateTime) -> u64;
+    fn as_secs(&self) -> u64;
+}
+
+impl AggregateTimestamp for AggregateFrequency {
+    fn to_timestamp(&self) -> u64 {
         self.to_timestamp_(DateTime::from_timestamp(
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -219,7 +229,7 @@ impl AggregateFrequency {
         ))
     }
 
-    pub fn to_timestamp_(&self, mut dt: DateTime) -> u64 {
+    fn to_timestamp_(&self, mut dt: DateTime) -> u64 {
         (match self {
             AggregateFrequency::Hourly => {
                 dt.minute = 0;
@@ -243,7 +253,7 @@ impl AggregateFrequency {
         }) as u64
     }
 
-    pub fn as_secs(&self) -> u64 {
+    fn as_secs(&self) -> u64 {
         match self {
             AggregateFrequency::Hourly => 3600,
             AggregateFrequency::Daily => 86400,

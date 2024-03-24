@@ -55,7 +55,7 @@ impl JMAP {
         for blob_id in request.blob_ids {
             if self.has_access_blob(&blob_id, access_token).await? {
                 let mut batch = BatchBuilder::new();
-                let until = now() + self.config.upload_tmp_ttl;
+                let until = now() + self.core.jmap.upload_tmp_ttl;
                 batch.with_account_id(account_id).set(
                     BlobOp::Reserve {
                         until,

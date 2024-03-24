@@ -23,6 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use common::listener::blocked::BLOCKED_IP_KEY;
 use directory::backend::internal::manage::ManageDirectory;
 use imap_proto::ResponseType;
 use jmap::services::housekeeper::Event;
@@ -32,7 +33,7 @@ use jmap_client::{
     mailbox::{self},
 };
 use jmap_proto::types::id::Id;
-use store::{dispatch::blocked::BLOCKED_IP_KEY, write::now};
+use store::write::now;
 
 use crate::{
     imap::{ImapConnection, Type},
@@ -47,18 +48,24 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     let account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("jdoe@example.com")
             .await
             .unwrap(),
     )
     .to_string();
     params
+        .core
+        .storage
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
         .await;
@@ -119,7 +126,9 @@ pub async fn test(params: &mut JMAPTest) {
     // Test fail2ban
     assert_eq!(
         server
-            .store
+            .core
+            .storage
+            .data
             .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
             .await
             .unwrap(),
@@ -139,7 +148,9 @@ pub async fn test(params: &mut JMAPTest) {
     // Make sure the IP address is blocked
     assert_eq!(
         server
-            .store
+            .core
+            .storage
+            .data
             .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
             .await
             .unwrap(),
@@ -152,7 +163,9 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Lift ban
     server
-        .store
+        .core
+        .storage
+        .data
         .config_clear(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
         .await
         .unwrap();

@@ -26,9 +26,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use mail_auth::MX;
 use store::write::now;
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -74,9 +74,9 @@ async fn smtp_delivery() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.extensions.dsn = IfBlock::new(true);
-    core.session.config.extensions.chunking = IfBlock::new(false);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
+    core.core.smtp.session.extensions.chunking = IfBlock::new(false);
     let mut remote_qr = core.init_test_queue("smtp_delivery_remote");
     let remote_core = Arc::new(core);
     let _rx = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
@@ -84,7 +84,7 @@ async fn smtp_delivery() {
     // Add mock DNS entries
     let mut core = SMTP::test();
     for domain in ["foobar.org", "foobar.net", "foobar.com"] {
-        core.resolvers.dns.mx_add(
+        core.core.smtp.resolvers.dns.mx_add(
             domain,
             vec![MX {
                 exchanges: vec![format!("mx1.{domain}"), format!("mx2.{domain}")],
@@ -92,12 +92,12 @@ async fn smtp_delivery() {
             }],
             Instant::now() + Duration::from_secs(10),
         );
-        core.resolvers.dns.ipv4_add(
+        core.core.smtp.resolvers.dns.ipv4_add(
             format!("mx1.{domain}"),
             vec!["127.0.0.1".parse().unwrap()],
             Instant::now() + Duration::from_secs(30),
         );
-        core.resolvers.dns.ipv4_add(
+        core.core.smtp.resolvers.dns.ipv4_add(
             format!("mx2.{domain}"),
             vec!["127.0.0.1".parse().unwrap()],
             Instant::now() + Duration::from_secs(30),
@@ -106,10 +106,10 @@ async fn smtp_delivery() {
 
     // Multiple delivery attempts
     let mut local_qr = core.init_test_queue("smtp_delivery_local");
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.rcpt.max_recipients = IfBlock::new(100);
-    core.session.config.extensions.dsn = IfBlock::new(true);
-    let config = &mut core.queue.config;
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.max_recipients = IfBlock::new(100);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
+    let config = &mut core.core.smtp.queue;
     config.retry = IfBlock::new(Duration::from_secs(1));
     config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
     {if = "rcpt_domain = 'foobar.com'", then = "[5s, 6s]"},

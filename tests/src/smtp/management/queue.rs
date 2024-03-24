@@ -27,12 +27,13 @@ use std::{
 };
 
 use ahash::{AHashMap, HashMap, HashSet};
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use directory::core::config::ConfigDirectory;
 use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 use store::Store;
-use utils::config::{if_block::IfBlock, Config, ServerProtocol};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::dummy_stores, management::send_manage_request, outbound::start_test_server,
@@ -78,14 +79,14 @@ async fn manage_queue() {
 
     // Start remote test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_manage_queue_remote");
     let remote_core = Arc::new(core);
     let _rx_remote = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx1.foobar.org".to_string()],
@@ -94,7 +95,7 @@ async fn manage_queue() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx1.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -106,14 +107,14 @@ async fn manage_queue() {
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap();
-    core.shared.default_directory = directory.directories.get("local").unwrap().clone();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.rcpt.max_recipients = IfBlock::new(100);
-    core.session.config.extensions.future_release = IfBlock::new(Duration::from_secs(86400));
-    core.session.config.extensions.dsn = IfBlock::new(true);
-    core.queue.config.retry = IfBlock::new(Duration::from_secs(1000));
-    core.queue.config.notify = IfBlock::new(Duration::from_secs(2000));
-    core.queue.config.expire = IfBlock::new(Duration::from_secs(3000));
+    core.core.storage.directory = directory.directories.get("local").unwrap().clone();
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.rcpt.max_recipients = IfBlock::new(100);
+    core.core.smtp.session.extensions.future_release = IfBlock::new(Duration::from_secs(86400));
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
+    core.core.smtp.queue.retry = IfBlock::new(Duration::from_secs(1000));
+    core.core.smtp.queue.notify = IfBlock::new(Duration::from_secs(2000));
+    core.core.smtp.queue.expire = IfBlock::new(Duration::from_secs(3000));
     let local_qr = core.init_test_queue("smtp_manage_queue_local");
     let core = Arc::new(core);
     local_qr.queue_rx.spawn(core.clone());

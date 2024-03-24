@@ -32,10 +32,10 @@ use super::{
 };
 
 impl Core {
-    pub async fn eval_if<R: for<'x> TryFrom<Variable<'x>>, V: for<'x> ResolveVariable<'x>>(
+    pub async fn eval_if<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
         &self,
-        if_block: &IfBlock,
-        resolver: &V,
+        if_block: &'x IfBlock,
+        resolver: &'x V,
     ) -> Option<R> {
         if if_block.is_empty() {
             return None;
@@ -54,10 +54,10 @@ impl Core {
         }
     }
 
-    pub async fn eval_expr<R: for<'x> TryFrom<Variable<'x>>, V: for<'x> ResolveVariable<'x>>(
+    pub async fn eval_expr<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
         &self,
-        expr: &Expression,
-        resolver: &V,
+        expr: &'x Expression,
+        resolver: &'x V,
         expr_id: &str,
     ) -> Option<R> {
         if expr.is_empty() {
@@ -79,10 +79,12 @@ impl Core {
 }
 
 impl IfBlock {
-    pub async fn eval<'x, V>(&'x self, resolver: &V, core: &Core, property: &str) -> Variable<'x>
-    where
-        V: ResolveVariable<'x>,
-    {
+    pub async fn eval<'x, V: ResolveVariable>(
+        &'x self,
+        resolver: &'x V,
+        core: &Core,
+        property: &str,
+    ) -> Variable<'x> {
         let mut captures = Vec::new();
 
         for if_then in &self.if_then {
@@ -106,16 +108,13 @@ impl IfBlock {
 }
 
 impl Expression {
-    async fn eval<'x, 'y, V>(
+    async fn eval<'x, 'y, V: ResolveVariable>(
         &'x self,
-        resolver: &V,
+        resolver: &'x V,
         core: &Core,
         property: &str,
         captures: &'y mut Vec<String>,
-    ) -> Variable<'x>
-    where
-        V: ResolveVariable<'x>,
-    {
+    ) -> Variable<'x> {
         let mut stack = Vec::new();
         let mut exprs = self.items.iter();
 

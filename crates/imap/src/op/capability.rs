@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use crate::core::Session;
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
         capability::{Capability, Response},
@@ -29,10 +31,6 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
-
-use utils::listener::SessionStream;
-
-use crate::core::Session;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&mut self, request: Request<Command>) -> crate::OpResult {

@@ -26,9 +26,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use mail_auth::MX;
 use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVER};
-use utils::config::{if_block::IfBlock, ServerProtocol};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
@@ -50,16 +50,16 @@ async fn extensions() {
 
     // Start test server
     let mut core = SMTP::test();
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.data.max_message_size = IfBlock::new(1500);
-    core.session.config.extensions.dsn = IfBlock::new(true);
-    core.session.config.extensions.requiretls = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.data.max_message_size = IfBlock::new(1500);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
+    core.core.smtp.session.extensions.requiretls = IfBlock::new(true);
     let mut remote_qr = core.init_test_queue("smtp_ext_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
     let mut core = SMTP::test();
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -67,7 +67,7 @@ async fn extensions() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -75,8 +75,8 @@ async fn extensions() {
 
     // Successful delivery with DSN
     let mut local_qr = core.init_test_queue("smtp_ext_local");
-    core.session.config.rcpt.relay = IfBlock::new(true);
-    core.session.config.extensions.dsn = IfBlock::new(true);
+    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
     let core = Arc::new(core);
     //let mut queue = Queue::default();
     let mut session = Session::test(core.clone());

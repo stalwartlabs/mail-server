@@ -21,39 +21,38 @@
  * for more details.
 */
 
-use jmap::api::session::Capabilities;
-use utils::listener::SessionStream;
+use common::listener::SessionStream;
+use jmap_proto::request::capability::Capabilities;
 
 use crate::core::{Session, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&self, message: &'static str) -> super::OpResult {
         let mut response = Vec::with_capacity(128);
-        response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve v");
-        response.extend_from_slice(env!("CARGO_PKG_VERSION").as_bytes());
-        response.extend_from_slice(b"\"\r\n");
+        response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve\"\r\n");
         response.extend_from_slice(b"\"VERSION\" \"1.0\"\r\n");
         if !self.stream.is_tls() {
             response.extend_from_slice(b"\"STARTTLS\"\r\n");
         }
-        if self.stream.is_tls() || self.imap.allow_plain_auth {
+        if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
             response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
         } else {
             response.extend_from_slice(b"\"SASL\" \"\"\r\n");
         };
-        if let Some(sieve) = self
-            .jmap
-            .config
-            .capabilities
-            .account
-            .iter()
-            .find_map(|(_, item)| {
-                if let Capabilities::SieveAccount(sieve) = item {
-                    Some(sieve)
-                } else {
-                    None
-                }
-            })
+        if let Some(sieve) =
+            self.jmap
+                .core
+                .jmap
+                .capabilities
+                .account
+                .iter()
+                .find_map(|(_, item)| {
+                    if let Capabilities::SieveAccount(sieve) = item {
+                        Some(sieve)
+                    } else {
+                        None
+                    }
+                })
         {
             response.extend_from_slice(b"\"SIEVE\" \"");
             response.extend_from_slice(sieve.extensions.join(" ").as_bytes());

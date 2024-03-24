@@ -52,7 +52,7 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
         let ids = request
-            .unwrap_blob_ids(self.config.get_max_objects)?
+            .unwrap_blob_ids(self.core.jmap.get_max_objects)?
             .unwrap_or_default();
         let properties = request.unwrap_properties(&[
             Property::Id,

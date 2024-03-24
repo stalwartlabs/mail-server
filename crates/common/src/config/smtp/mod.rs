@@ -68,6 +68,18 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("priority", V_PRIORITY),
 ];
 
+impl SmtpConfig {
+    pub async fn parse(config: &mut Config) -> Self {
+        Self {
+            session: SessionConfig::parse(config),
+            queue: QueueConfig::parse(config),
+            resolvers: Resolvers::parse(config).await,
+            mail_auth: MailAuthConfig::parse(config),
+            report: ReportConfig::parse(config),
+        }
+    }
+}
+
 impl TokenMap {
     pub fn with_smtp_variables(mut self, variables: &[u32]) -> Self {
         for (name, idx) in VARIABLES_MAP {

@@ -21,9 +21,7 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use directory::AuthResult;
+use common::{listener::SessionStream, AuthResult};
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -31,7 +29,7 @@ use imap_proto::{
 };
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use utils::listener::SessionStream;
+use std::sync::Arc;
 
 use crate::core::{Session, SessionData, State};
 
@@ -154,41 +152,43 @@ impl<T: SessionStream> Session<T> {
 
         if let Some(access_token) = access_token {
             // Enforce concurrency limits
-            let in_flight = self
-                .imap
+            let in_flight = match self
                 .get_concurrency_limiter(access_token.primary_id())
-                .concurrent_requests
-                .is_allowed();
-            if let Some(in_flight) = in_flight {
-                // Cache access token
-                let access_token = Arc::new(access_token);
-                self.jmap.cache_access_token(access_token.clone());
+                .map(|limiter| limiter.concurrent_requests.is_allowed())
+            {
+                Some(Some(limiter)) => Some(limiter),
+                None => None,
+                Some(None) => {
+                    self.write_bytes(
+                        StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
+                    )
+                    .await?;
+                    tracing::debug!(parent: &self.span,
+                        event = "disconnect",
+                        "Too many concurrent connections, disconnecting.",
+                    );
+                    return Err(());
+                }
+            };
 
-                // Create session
-                self.state = State::Authenticated {
-                    data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
-                };
-                self.write_bytes(
-                    StatusResponse::ok("Authentication successful")
-                        .with_code(ResponseCode::Capability {
-                            capabilities: Capability::all_capabilities(true, self.is_tls),
-                        })
-                        .with_tag(tag)
-                        .into_bytes(),
-                )
-                .await?;
-                Ok(())
-            } else {
-                self.write_bytes(
-                    StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
-                )
-                .await?;
-                tracing::debug!(parent: &self.span,
-                    event = "disconnect",
-                    "Too many concurrent connections, disconnecting.",
-                );
-                Err(())
-            }
+            // Cache access token
+            let access_token = Arc::new(access_token);
+            self.jmap.cache_access_token(access_token.clone());
+
+            // Create session
+            self.state = State::Authenticated {
+                data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
+            };
+            self.write_bytes(
+                StatusResponse::ok("Authentication successful")
+                    .with_code(ResponseCode::Capability {
+                        capabilities: Capability::all_capabilities(true, self.is_tls),
+                    })
+                    .with_tag(tag)
+                    .into_bytes(),
+            )
+            .await?;
+            Ok(())
         } else {
             self.write_bytes(
                 StatusResponse::no("Authentication failed")
@@ -199,7 +199,7 @@ impl<T: SessionStream> Session<T> {
             .await?;
 
             let auth_failures = self.state.auth_failures();
-            if auth_failures < self.imap.max_auth_failures {
+            if auth_failures < self.jmap.core.imap.max_auth_failures {
                 self.state = State::NotAuthenticated {
                     auth_failures: auth_failures + 1,
                 };

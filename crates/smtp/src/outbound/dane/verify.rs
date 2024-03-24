@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use common::config::smtp::resolver::Tlsa;
 use rustls_pki_types::CertificateDer;
 use sha1::Digest;
 use sha2::{Sha256, Sha512};
@@ -28,10 +29,17 @@ use x509_parser::prelude::{FromDer, X509Certificate};
 
 use crate::queue::{Error, ErrorDetails, Status};
 
-use super::Tlsa;
+pub trait TlsaVerify {
+    fn verify(
+        &self,
+        span: &tracing::Span,
+        hostname: &str,
+        certificates: Option<&[CertificateDer<'_>]>,
+    ) -> Result<(), Status<(), Error>>;
+}
 
-impl Tlsa {
-    pub fn verify(
+impl TlsaVerify for Tlsa {
+    fn verify(
         &self,
         span: &tracing::Span,
         hostname: &str,

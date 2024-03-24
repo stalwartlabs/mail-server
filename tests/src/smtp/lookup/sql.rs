@@ -23,14 +23,15 @@
 
 use std::time::{Duration, Instant};
 
+use common::{
+    config::smtp::{session::Mechanism, *},
+    expr::{if_block::IfBlock, Expression},
+};
 use directory::core::config::ConfigDirectory;
 use mail_auth::MX;
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::{config::ConfigStore, Store};
-use utils::{
-    config::{if_block::IfBlock, Config},
-    expr::Expression,
-};
+use store::Store;
+use utils::config::Config;
 
 use crate::{
     directory::DirectoryStore,
@@ -41,8 +42,7 @@ use crate::{
     store::TempDir,
 };
 use smtp::{
-    config::{map_expr_token, session::Mechanism, ConfigContext},
-    core::{eval::*, Session, SMTP},
+    core::{Session, SMTP},
     queue::RecipientDomain,
 };
 
@@ -96,13 +96,13 @@ async fn lookup_sql() {
     let mut ctx = ConfigContext::new();
     let config = Config::new(&config_file).unwrap();
     ctx.stores = config.parse_stores().await.unwrap();
-    core.shared.lookup_stores = ctx.stores.lookup_stores.clone();
-    core.shared.directories = config
+    core.core.storage.lookups = ctx.stores.lookups.clone();
+    core.core.storage.directories = config
         .parse_directory(&ctx.stores, Store::default())
         .await
         .unwrap()
         .directories;
-    core.resolvers.dns.mx_add(
+    core.core.smtp.resolvers.dns.mx_add(
         "test.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -113,7 +113,7 @@ async fn lookup_sql() {
 
     // Obtain directory handle
     let handle = DirectoryStore {
-        store: ctx.stores.lookup_stores.get("sql").unwrap().clone(),
+        store: ctx.stores.lookups.get("sql").unwrap().clone(),
     };
 
     // Create tables
@@ -202,7 +202,8 @@ async fn lookup_sql() {
         })
         .unwrap();
         assert_eq!(
-            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
+            core.core
+                .eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
                 .await
                 .unwrap(),
             expected,
@@ -212,19 +213,19 @@ async fn lookup_sql() {
     }
 
     // Enable AUTH
-    let config = &mut core.session.config.auth;
+    let config = &mut core.core.smtp.session.auth;
     config.directory = "\"'sql'\"".parse_if();
     config.mechanisms = IfBlock::new(Mechanism::from(AUTH_PLAIN | AUTH_LOGIN));
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable VRFY/EXPN/RCPT
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = "\"'sql'\"".parse_if();
     config.relay = IfBlock::new(false);
     config.errors_wait = IfBlock::new(Duration::from_millis(5));
 
     // Enable REQUIRETLS based on SQL lookup
-    core.session.config.extensions.requiretls =
+    core.core.smtp.session.extensions.requiretls =
         r#"[{if = "key_exists('sql/is_ip_allowed', remote_ip)", then = true},
     {else = false}]"#
             .parse_if();

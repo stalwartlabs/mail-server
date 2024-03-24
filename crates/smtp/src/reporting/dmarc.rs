@@ -24,6 +24,7 @@
 use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
+use common::config::smtp::report::AggregateFrequency;
 use mail_auth::{
     common::verify::VerifySignature,
     dmarc::{self, URI},
@@ -39,12 +40,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use crate::{
-    config::AggregateFrequency,
     core::{Session, SMTP},
     queue::{DomainPart, RecipientDomain},
 };
 
-use super::{scheduler::ToHash, DmarcEvent, ReportLock, SerializedSize};
+use super::{scheduler::ToHash, AggregateTimestamp, DmarcEvent, ReportLock, SerializedSize};
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DmarcFormat {
@@ -65,16 +65,18 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         arc_output: &Option<ArcOutput<'_>>,
     ) {
         let dmarc_record = dmarc_output.dmarc_record_cloned().unwrap();
-        let config = &self.core.report.config.dmarc;
+        let config = &self.core.core.smtp.report.dmarc;
 
         // Send failure report
         if let (Some(failure_rate), Some(report_options)) = (
-            self.core.eval_if::<Rate, _>(&config.send, self).await,
+            self.core.core.eval_if::<Rate, _>(&config.send, self).await,
             dmarc_output.failure_report(),
         ) {
             // Verify that any external reporting addresses are authorized
             let rcpts = match self
                 .core
+                .core
+                .smtp
                 .resolvers
                 .dns
                 .verify_dmarc_report_address(dmarc_output.domain(), dmarc_record.ruf())
@@ -122,6 +124,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             if !rcpts.is_empty() {
                 let mut report = Vec::with_capacity(128);
                 let from_addr = self
+                    .core
                     .core
                     .eval_if(&config.address, self)
                     .await
@@ -206,6 +209,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     .write_rfc5322(
                         (
                             self.core
+                                .core
                                 .eval_if(&config.name, self)
                                 .await
                                 .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
@@ -214,6 +218,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                         ),
                         &rcpts.join(", "),
                         &self
+                            .core
                             .core
                             .eval_if(&config.subject, self)
                             .await
@@ -256,7 +261,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         // Send agregate reports
         let interval = self
             .core
-            .eval_if(&self.core.report.config.dmarc_aggregate.send, self)
+            .core
+            .eval_if(&self.core.core.smtp.report.dmarc_aggregate.send, self)
             .await
             .unwrap_or(AggregateFrequency::Never);
 
@@ -310,12 +316,13 @@ impl SMTP {
 
         // Generate report
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
-            self.eval_if(
-                &self.report.config.dmarc_aggregate.max_size,
-                &RecipientDomain::new(event.domain.as_str()),
-            )
-            .await
-            .unwrap_or(25 * 1024 * 1024),
+            self.core
+                .eval_if(
+                    &self.core.smtp.report.dmarc_aggregate.max_size,
+                    &RecipientDomain::new(event.domain.as_str()),
+                )
+                .await
+                .unwrap_or(25 * 1024 * 1024),
         ));
         let mut rua = Vec::new();
         let report = match self
@@ -344,6 +351,8 @@ impl SMTP {
 
         // Verify external reporting addresses
         let rua = match self
+            .core
+            .smtp
             .resolvers
             .dns
             .verify_dmarc_report_address(&event.domain, &rua)
@@ -381,8 +390,9 @@ impl SMTP {
         };
 
         // Serialize report
-        let config = &self.report.config.dmarc_aggregate;
+        let config = &self.core.smtp.report.dmarc_aggregate;
         let from_addr = self
+            .core
             .eval_if(
                 &config.address,
                 &RecipientDomain::new(event.domain.as_str()),
@@ -392,14 +402,16 @@ impl SMTP {
         let mut message = Vec::with_capacity(2048);
         let _ = report.write_rfc5322(
             &self
+                .core
                 .eval_if(
-                    &self.report.config.submitter,
+                    &self.core.smtp.report.submitter,
                     &RecipientDomain::new(event.domain.as_str()),
                 )
                 .await
                 .unwrap_or_else(|| "localhost".to_string()),
             (
-                self.eval_if(&config.name, &RecipientDomain::new(event.domain.as_str()))
+                self.core
+                    .eval_if(&config.name, &RecipientDomain::new(event.domain.as_str()))
                     .await
                     .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                     .as_str(),
@@ -424,8 +436,9 @@ impl SMTP {
     ) -> store::Result<Option<Report>> {
         // Deserialize report
         let dmarc = match self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .get_value::<Bincode<DmarcFormat>>(ValueKey::from(ValueClass::Queue(
                 QueueClass::DmarcReportHeader(event.clone()),
             )))
@@ -439,21 +452,23 @@ impl SMTP {
         let _ = std::mem::replace(rua, dmarc.rua);
 
         // Create report
-        let config = &self.report.config.dmarc_aggregate;
+        let config = &self.core.smtp.report.dmarc_aggregate;
         let mut report = Report::new()
             .with_policy_published(dmarc.policy)
             .with_date_range_begin(event.seq_id)
             .with_date_range_end(event.due)
             .with_report_id(format!("{}_{}", event.policy_hash, event.seq_id))
             .with_email(
-                self.eval_if(
-                    &config.address,
-                    &RecipientDomain::new(event.domain.as_str()),
-                )
-                .await
-                .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
+                self.core
+                    .eval_if(
+                        &config.address,
+                        &RecipientDomain::new(event.domain.as_str()),
+                    )
+                    .await
+                    .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
             );
         if let Some(org_name) = self
+            .core
             .eval_if::<String, _>(
                 &config.org_name,
                 &RecipientDomain::new(event.domain.as_str()),
@@ -463,6 +478,7 @@ impl SMTP {
             report = report.with_org_name(org_name);
         }
         if let Some(contact_info) = self
+            .core
             .eval_if::<String, _>(
                 &config.contact_info,
                 &RecipientDomain::new(event.domain.as_str()),
@@ -494,8 +510,9 @@ impl SMTP {
             },
         )));
         let mut record_map = AHashMap::with_capacity(dmarc.records.len());
-        self.shared
-            .default_data_store
+        self.core
+            .storage
+            .data
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |_, v| match record_map.entry(Bincode::<Record>::deserialize(v)?.inner) {
@@ -542,8 +559,9 @@ impl SMTP {
         };
 
         if let Err(err) = self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .delete_range(
                 ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(from_key))),
                 ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportEvent(to_key))),
@@ -561,7 +579,7 @@ impl SMTP {
 
         let mut batch = BatchBuilder::new();
         batch.clear(ValueClass::Queue(QueueClass::DmarcReportHeader(event)));
-        if let Err(err) = self.shared.default_data_store.write(batch.build()).await {
+        if let Err(err) = self.core.storage.data.write(batch.build()).await {
             tracing::warn!(
                 context = "report",
                 event = "error",
@@ -584,8 +602,9 @@ impl SMTP {
         // Write policy if missing
         let mut builder = BatchBuilder::new();
         if self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .get_value::<()>(ValueKey::from(ValueClass::Queue(
                 QueueClass::DmarcReportHeader(report_event.clone()),
             )))
@@ -617,13 +636,13 @@ impl SMTP {
         }
 
         // Write entry
-        report_event.seq_id = self.queue.snowflake_id.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.snowflake_id.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
             Bincode::new(event.report_record).serialize(),
         );
 
-        if let Err(err) = self.shared.default_data_store.write(builder.build()).await {
+        if let Err(err) = self.core.storage.data.write(builder.build()).await {
             tracing::error!(
                 context = "report",
                 event = "error",

@@ -21,24 +21,17 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use std::{collections::BinaryHeap, time::Instant};
 
-use store::dispatch::blocked::BLOCKED_IP_PREFIX;
+use store::write::purge::PurgeStore;
 use tokio::sync::mpsc;
-use utils::{
-    config::{cron::SimpleCron, Config, Servers},
-    map::ttl_dashmap::TtlMap,
-    UnwrapFailure,
-};
+use utils::map::ttl_dashmap::TtlMap;
 
-use crate::JMAP;
+use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
 
 use super::IPC_CHANNEL_BUFFER;
 
 pub enum Event {
-    PurgeSessions,
-    ReloadCertificates,
-    ReloadConfig,
     IndexStart,
     IndexDone,
     #[cfg(feature = "test_mode")]
@@ -46,18 +39,19 @@ pub enum Event {
     Exit,
 }
 
-pub fn spawn_housekeeper(
-    core: Arc<JMAP>,
-    settings: &Config,
-    servers: &mut Servers,
-    mut rx: mpsc::Receiver<Event>,
-) {
-    let purge_cache = settings
-        .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
-        .failed("Initialize housekeeper");
+#[derive(PartialEq, Eq)]
+struct PurgeEvent {
+    due: Instant,
+    event: PurgeClass,
+}
 
-    let certificates = std::mem::take(&mut servers.certificates);
+#[derive(PartialEq, Eq)]
+enum PurgeClass {
+    Session,
+    Store(usize),
+}
 
+pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
     tokio::spawn(async move {
         tracing::debug!("Housekeeper task started.");
 
@@ -65,84 +59,39 @@ pub fn spawn_housekeeper(
         let mut index_pending = false;
 
         // Index any queued messages
-        let core_ = core.clone();
+        let jmap = JMAP::from(core.clone());
         tokio::spawn(async move {
-            core_.fts_index_queued().await;
+            jmap.fts_index_queued().await;
         });
+        let mut heap = BinaryHeap::new();
+
+        // Add all purge events to heap
+        let core_ = core.core.load();
+        heap.push(PurgeEvent {
+            due: Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
+            event: PurgeClass::Session,
+        });
+        for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
+            heap.push(PurgeEvent {
+                due: Instant::now() + schedule.cron.time_to_next(),
+                event: PurgeClass::Store(idx),
+            });
+        }
 
         loop {
-            let time_to_next = purge_cache.time_to_next();
-            let mut do_purge = false;
+            let time_to_next = heap
+                .peek()
+                .map(|e| e.due.saturating_duration_since(Instant::now()))
+                .unwrap_or(LONG_SLUMBER);
 
             match tokio::time::timeout(time_to_next, rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    Event::PurgeSessions => {
-                        do_purge = true;
-                    }
-                    Event::ReloadCertificates => {
-                        let certificates = certificates.clone();
-                        tokio::spawn(async move {
-                            for cert in certificates {
-                                match cert.reload().await {
-                                    Ok(_) => {
-                                        tracing::info!(
-                                            context = "tls",
-                                            event = "reload",
-                                            path = cert.path[0].to_string_lossy().as_ref(),
-                                            "Reloaded certificate."
-                                        );
-                                    }
-                                    Err(err) => {
-                                        tracing::error!(
-                                            context = "tls",
-                                            event = "error",
-                                            path = cert.path[0].to_string_lossy().as_ref(),
-                                            error = ?err,
-                                            "Failed to reload certificate."
-                                        );
-                                    }
-                                }
-                            }
-                        });
-                    }
-                    Event::ReloadConfig => {
-                        // Future releases will support reloading the configuration
-                        // for now, we just reload the blocked IP addresses
-                        let core = core.clone();
-                        let todo = "fix";
-                        /*tokio::spawn(async move {
-                            match core.store.config_list(BLOCKED_IP_PREFIX, true).await {
-                                Ok(settings) => {
-                                    if let Err(err) = core
-                                        .directory
-                                        .blocked_ips
-                                        .reload_blocked_ips(settings.iter().map(|(k, _)| k))
-                                    {
-                                        tracing::error!(
-                                            context = "store",
-                                            event = "error",
-                                            error = ?err,
-                                            "Failed to reload configuration."
-                                        );
-                                    }
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        context = "store",
-                                        event = "error",
-                                        error = ?err,
-                                        "Failed to reload configuration."
-                                    );
-                                }
-                            }
-                        });*/
-                    }
                     Event::IndexStart => {
                         if !index_busy {
                             index_busy = true;
-                            let core = core.clone();
+                            let jmap = JMAP::from(core.clone());
                             tokio::spawn(async move {
-                                core.fts_index_queued().await;
+                                jmap.fts_index_queued().await;
                             });
                         } else {
                             index_pending = true;
@@ -151,9 +100,9 @@ pub fn spawn_housekeeper(
                     Event::IndexDone => {
                         if index_pending {
                             index_pending = false;
-                            let core = core.clone();
+                            let jmap = JMAP::from(core.clone());
                             tokio::spawn(async move {
-                                core.fts_index_queued().await;
+                                jmap.fts_index_queued().await;
                             });
                         } else {
                             index_busy = false;
@@ -173,23 +122,91 @@ pub fn spawn_housekeeper(
                     return;
                 }
                 Err(_) => {
-                    do_purge = true;
-                }
-            }
+                    let core_ = core.core.load();
+                    while let Some(event) = heap.peek() {
+                        if event.due > Instant::now() {
+                            break;
+                        }
+                        let event = heap.pop().unwrap();
+                        match event.event {
+                            PurgeClass::Session => {
+                                let inner = core.jmap_inner.clone();
+                                tokio::spawn(async move {
+                                    tracing::debug!("Purging session cache.");
+                                    inner.purge();
+                                });
+                                heap.push(PurgeEvent {
+                                    due: Instant::now()
+                                        + core_.jmap.session_purge_frequency.time_to_next(),
+                                    event: PurgeClass::Session,
+                                });
+                            }
+                            PurgeClass::Store(idx) => {
+                                if let Some(schedule) =
+                                    core_.storage.purge_schedules.get(idx).cloned()
+                                {
+                                    heap.push(PurgeEvent {
+                                        due: Instant::now() + schedule.cron.time_to_next(),
+                                        event: PurgeClass::Store(idx),
+                                    });
+                                    tokio::spawn(async move {
+                                        let (class, result) = match schedule.store {
+                                            PurgeStore::Data(store) => {
+                                                ("data", store.purge_store().await)
+                                            }
+                                            PurgeStore::Blobs { store, blob_store } => {
+                                                ("blob", store.purge_blobs(blob_store).await)
+                                            }
+                                            PurgeStore::Lookup(lookup_store) => {
+                                                ("lookup", lookup_store.purge_lookup_store().await)
+                                            }
+                                        };
 
-            if do_purge {
-                let core = core.clone();
-                tokio::spawn(async move {
-                    tracing::info!("Purging session cache.");
-                    core.sessions.cleanup();
-                    core.access_tokens.cleanup();
-                    core.oauth_codes.cleanup();
-                    core.concurrency_limiter
-                        .retain(|_, limiter| limiter.is_active());
-                });
+                                        match result {
+                                            Ok(_) => {
+                                                tracing::debug!(
+                                                    "Purged {class} store {}.",
+                                                    schedule.store_id
+                                                );
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(
+                                                    "Failed to purge {class} store {}: {err}",
+                                                    schedule.store_id
+                                                );
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });
+}
+
+impl Ord for PurgeEvent {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.due.cmp(&other.due).reverse()
+    }
+}
+
+impl PartialOrd for PurgeEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Inner {
+    pub fn purge(&self) {
+        self.sessions.cleanup();
+        self.access_tokens.cleanup();
+        self.oauth_codes.cleanup();
+        self.concurrency_limiter
+            .retain(|_, limiter| limiter.is_active());
+    }
 }
 
 pub fn init_housekeeper() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {

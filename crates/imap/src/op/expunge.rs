@@ -30,6 +30,8 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
+use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
+use common::listener::SessionStream;
 use jmap::{email::set::TagManager, mailbox::UidMailbox};
 use jmap_proto::{
     error::method::MethodError,
@@ -39,9 +41,6 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE};
-use utils::listener::SessionStream;
-
-use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
 
 use super::ToModSeq;
 

@@ -46,7 +46,7 @@ impl JMAP {
         request: ParseEmailRequest,
         access_token: &AccessToken,
     ) -> Result<ParseEmailResponse, MethodError> {
-        if request.blob_ids.len() > self.config.mail_parse_max_items {
+        if request.blob_ids.len() > self.core.jmap.mail_parse_max_items {
             return Err(MethodError::RequestTooLarge);
         }
         let properties = request.properties.unwrap_or_else(|| {

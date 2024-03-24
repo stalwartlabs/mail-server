@@ -21,8 +21,12 @@
  * for more details.
 */
 
-use std::{net::IpAddr, str::FromStr, sync::Arc};
+use std::{net::IpAddr, str::FromStr};
 
+use common::{
+    listener::{limiter::InFlight, SessionData, SessionManager, SessionStream},
+    AuthResult,
+};
 use directory::Type;
 use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
 use hyper::{
@@ -54,10 +58,7 @@ use store::{
     Deserialize, IterateParams, ValueKey, U64_LEN,
 };
 
-use utils::{
-    listener::{limiter::InFlight, SessionData, SessionManager, SessionStream},
-    url_params::UrlParams,
-};
+use utils::url_params::UrlParams;
 
 use crate::{
     queue::{self, ErrorDetails, HostResponse, QueueId, Status},
@@ -149,7 +150,7 @@ impl SessionManager for SmtpAdminSessionManager {
     ) -> impl std::future::Future<Output = ()> + Send {
         handle_request(
             session.stream,
-            self.inner,
+            self.inner.into(),
             session.remote_ip,
             session.in_flight,
         )
@@ -159,15 +160,11 @@ impl SessionManager for SmtpAdminSessionManager {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {}
     }
-
-    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        false
-    }
 }
 
 async fn handle_request(
     stream: impl SessionStream,
-    core: Arc<SMTP>,
+    core: SMTP,
     remote_addr: IpAddr,
     _in_flight: InFlight,
 ) {
@@ -263,11 +260,14 @@ impl SMTP {
                         })
                     })
                 {
-                    let todo = "fix";
-                    /*match self
-                        .shared
-                        .default_directory
-                        .authenticate(&Credentials::Plain { username, secret }, remote_addr, false)
+                    match self
+                        .core
+                        .authenticate(
+                            &self.core.storage.directory,
+                            &Credentials::Plain { username, secret },
+                            remote_addr,
+                            false,
+                        )
                         .await
                     {
                         Ok(AuthResult::Success(principal)) if principal.typ == Type::Superuser => {
@@ -294,7 +294,7 @@ impl SMTP {
                                 "Temporary authentication failure."
                             );
                         }
-                    }*/
+                    }
                 } else {
                     tracing::debug!(
                         context = "management",
@@ -371,8 +371,9 @@ impl SMTP {
                 let mut total = 0;
                 let mut total_returned = 0;
                 let _ = self
-                    .shared
-                    .default_data_store
+                    .core
+                    .storage
+                    .data
                     .iterate(
                         IterateParams::new(from_key, to_key).ascending(),
                         |key, value| {
@@ -497,7 +498,7 @@ impl SMTP {
                         message
                             .save_changes(self, prev_event.into(), next_event.into())
                             .await;
-                        let _ = self.queue.tx.send(queue::Event::Reload).await;
+                        let _ = self.inner.queue_tx.send(queue::Event::Reload).await;
                     }
 
                     (
@@ -618,8 +619,9 @@ impl SMTP {
                 let mut total = 0;
                 let mut total_returned = 0;
                 let _ = self
-                    .shared
-                    .default_data_store
+                    .core
+                    .storage
+                    .data
                     .iterate(
                         IterateParams::new(from_key, to_key).ascending().no_values(),
                         |key, _| {
@@ -760,8 +762,9 @@ impl SMTP {
                 let mut total = 0;
                 let mut last_id = 0;
                 let result = self
-                    .shared
-                    .default_data_store
+                    .core
+                    .storage
+                    .data
                     .iterate(
                         IterateParams::new(from_key, to_key)
                             .set_values(filter.is_some())
@@ -829,8 +832,9 @@ impl SMTP {
                 if let Some(report_id) = parse_incoming_report_id(class, report_id) {
                     match &report_id {
                         ReportClass::Tls { .. } => match self
-                            .shared
-                            .default_data_store
+                            .core
+                            .storage
+                            .data
                             .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
@@ -847,8 +851,9 @@ impl SMTP {
                             Err(err) => err.into_bad_request(),
                         },
                         ReportClass::Dmarc { .. } => match self
-                            .shared
-                            .default_data_store
+                            .core
+                            .storage
+                            .data
                             .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
                                 ValueKey::from(ValueClass::Report(report_id)),
                             )
@@ -865,8 +870,9 @@ impl SMTP {
                             Err(err) => err.into_bad_request(),
                         },
                         ReportClass::Arf { .. } => match self
-                            .shared
-                            .default_data_store
+                            .core
+                            .storage
+                            .data
                             .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
                                 ValueClass::Report(report_id),
                             ))
@@ -891,12 +897,7 @@ impl SMTP {
                 if let Some(report_id) = parse_incoming_report_id(class, report_id) {
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
-                    let result = self
-                        .shared
-                        .default_data_store
-                        .write(batch.build())
-                        .await
-                        .is_ok();
+                    let result = self.core.storage.data.write(batch.build()).await.is_ok();
                     (
                         StatusCode::OK,
                         serde_json::to_string(&Response { data: result }).unwrap_or_default(),

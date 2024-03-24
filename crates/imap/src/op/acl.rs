@@ -23,6 +23,7 @@
 
 use std::sync::Arc;
 
+use common::listener::SessionStream;
 use directory::QueryBy;
 use imap_proto::{
     protocol::acl::{
@@ -49,7 +50,7 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
-use utils::{listener::SessionStream, map::bitmap::Bitmap};
+use utils::map::bitmap::Bitmap;
 
 use crate::core::{MailboxId, Session, SessionData};
 
@@ -73,6 +74,8 @@ impl<T: SessionStream> Session<T> {
                                 for item in acls {
                                     if let Some(account_name) = data
                                         .jmap
+                                        .core
+                                        .storage
                                         .directory
                                         .query(QueryBy::Id(item.account_id), false)
                                         .await
@@ -244,6 +247,8 @@ impl<T: SessionStream> Session<T> {
                     // Obtain principal id
                     let acl_account_id = match data
                         .jmap
+                        .core
+                        .storage
                         .directory
                         .query(QueryBy::Name(arguments.identifier.as_ref().unwrap()), false)
                         .await
@@ -399,7 +404,7 @@ impl<T: SessionStream> Session<T> {
                     }
 
                     // Invalidate ACLs
-                    data.jmap.access_tokens.remove(&acl_account_id);
+                    data.jmap.inner.access_tokens.remove(&acl_account_id);
 
                     data.write_bytes(
                         StatusResponse::completed(command)

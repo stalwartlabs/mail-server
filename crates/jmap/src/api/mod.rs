@@ -21,17 +21,14 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
 use hyper::StatusCode;
 use jmap_proto::types::{id::Id, state::State, type_state::DataType};
 use serde::Serialize;
 use utils::map::vec_map::VecMap;
 
-use crate::JMAP;
+use crate::JmapInstance;
 
 pub mod admin;
-pub mod config;
 pub mod event_source;
 pub mod http;
 pub mod request;
@@ -39,11 +36,11 @@ pub mod session;
 
 #[derive(Clone)]
 pub struct JmapSessionManager {
-    pub inner: Arc<JMAP>,
+    pub inner: JmapInstance,
 }
 
 impl JmapSessionManager {
-    pub fn new(inner: Arc<JMAP>) -> Self {
+    pub fn new(inner: JmapInstance) -> Self {
         Self { inner }
     }
 }

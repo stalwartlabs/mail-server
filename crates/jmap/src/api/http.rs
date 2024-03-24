@@ -23,6 +23,12 @@
 
 use std::{net::IpAddr, sync::Arc};
 
+use common::{
+    config::smtp::{V_LISTENER, V_LOCAL_IP, V_REMOTE_IP},
+    expr::functions::ResolveVariable,
+    listener::{ServerInstance, SessionData, SessionManager, SessionStream},
+    Core,
+};
 use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
@@ -34,214 +40,240 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use jmap_proto::{
     error::request::{RequestError, RequestLimitError},
-    request::Request,
+    request::{capability::Session, Request},
     response::Response,
     types::{blob::BlobId, id::Id},
 };
-
-use utils::listener::{ServerInstance, SessionData, SessionManager, SessionStream};
 
 use crate::{
     auth::{oauth::OAuthMetadata, AccessToken},
     blob::{DownloadResponse, UploadResponse},
     services::state,
-    websocket::upgrade::upgrade_websocket_connection,
     JMAP,
 };
 
-use super::{
-    session::Session, HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager, JsonResponse,
-};
+use super::{HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager, JsonResponse};
 
-pub async fn parse_jmap_request(
-    jmap: Arc<JMAP>,
-    mut req: HttpRequest,
-    remote_ip: IpAddr,
-    instance: Arc<ServerInstance>,
-) -> HttpResponse {
-    let mut path = req.uri().path().split('/');
-    path.next();
+pub struct HttpSessionData {
+    pub instance: Arc<ServerInstance>,
+    pub local_ip: IpAddr,
+    pub remote_ip: IpAddr,
+    pub is_tls: bool,
+}
 
-    match path.next().unwrap_or("") {
-        "jmap" => {
-            // Authenticate request
-            let (_in_flight, access_token) = match jmap.authenticate_headers(&req, remote_ip).await
-            {
-                Ok(Some(session)) => session,
-                Ok(None) => {
-                    return if req.method() != Method::OPTIONS {
-                        RequestError::unauthorized().into_http_response()
-                    } else {
-                        ().into_http_response()
-                    }
-                }
-                Err(err) => return err.into_http_response(),
-            };
+impl JMAP {
+    pub async fn parse_http_request(
+        &self,
+        mut req: HttpRequest,
+        session: HttpSessionData,
+    ) -> HttpResponse {
+        let mut path = req.uri().path().split('/');
+        path.next();
 
-            match (path.next().unwrap_or(""), req.method()) {
-                ("", &Method::POST) => {
-                    return match fetch_body(&mut req, jmap.config.request_max_size, &access_token)
+        match path.next().unwrap_or("") {
+            "jmap" => {
+                // Authenticate request
+                let (_in_flight, access_token) =
+                    match self.authenticate_headers(&req, session.remote_ip).await {
+                        Ok(Some(session)) => session,
+                        Ok(None) => {
+                            return if req.method() != Method::OPTIONS {
+                                RequestError::unauthorized().into_http_response()
+                            } else {
+                                ().into_http_response()
+                            }
+                        }
+                        Err(err) => return err.into_http_response(),
+                    };
+
+                match (path.next().unwrap_or(""), req.method()) {
+                    ("", &Method::POST) => {
+                        return match fetch_body(
+                            &mut req,
+                            self.core.jmap.request_max_size,
+                            &access_token,
+                        )
                         .await
                         .ok_or_else(|| RequestError::limit(RequestLimitError::SizeRequest))
                         .and_then(|bytes| {
                             Request::parse(
                                 &bytes,
-                                jmap.config.request_max_calls,
-                                jmap.config.request_max_size,
+                                self.core.jmap.request_max_calls,
+                                self.core.jmap.request_max_size,
                             )
                         }) {
-                        Ok(request) => {
-                            //let _ = println!("<- {}", String::from_utf8_lossy(&bytes));
+                            Ok(request) => {
+                                //let _ = println!("<- {}", String::from_utf8_lossy(&bytes));
 
-                            match jmap.handle_request(request, access_token, &instance).await {
-                                Ok(response) => response.into_http_response(),
-                                Err(err) => err.into_http_response(),
-                            }
-                        }
-                        Err(err) => err.into_http_response(),
-                    };
-                }
-                ("download", &Method::GET) => {
-                    if let (Some(_), Some(blob_id), Some(name)) = (
-                        path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
-                        path.next().and_then(BlobId::from_base32),
-                        path.next(),
-                    ) {
-                        return match jmap.blob_download(&blob_id, &access_token).await {
-                            Ok(Some(blob)) => DownloadResponse {
-                                filename: name.to_string(),
-                                content_type: req
-                                    .uri()
-                                    .query()
-                                    .and_then(|q| {
-                                        form_urlencoded::parse(q.as_bytes())
-                                            .find(|(k, _)| k == "accept")
-                                            .map(|(_, v)| v.into_owned())
-                                    })
-                                    .unwrap_or("application/octet-stream".to_string()),
-                                blob,
-                            }
-                            .into_http_response(),
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(_) => RequestError::internal_server_error().into_http_response(),
-                        };
-                    }
-                }
-                ("upload", &Method::POST) => {
-                    if let Some(account_id) = path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
-                    {
-                        return match fetch_body(
-                            &mut req,
-                            jmap.config.upload_max_size,
-                            &access_token,
-                        )
-                        .await
-                        {
-                            Some(bytes) => {
-                                match jmap
-                                    .blob_upload(
-                                        account_id,
-                                        req.headers()
-                                            .get(CONTENT_TYPE)
-                                            .and_then(|h| h.to_str().ok())
-                                            .unwrap_or("application/octet-stream"),
-                                        &bytes,
-                                        access_token,
-                                    )
+                                match self
+                                    .handle_request(request, access_token, &session.instance)
                                     .await
                                 {
                                     Ok(response) => response.into_http_response(),
                                     Err(err) => err.into_http_response(),
                                 }
                             }
-                            None => RequestError::limit(RequestLimitError::SizeUpload)
-                                .into_http_response(),
+                            Err(err) => err.into_http_response(),
                         };
                     }
+                    ("download", &Method::GET) => {
+                        if let (Some(_), Some(blob_id), Some(name)) = (
+                            path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
+                            path.next().and_then(BlobId::from_base32),
+                            path.next(),
+                        ) {
+                            return match self.blob_download(&blob_id, &access_token).await {
+                                Ok(Some(blob)) => DownloadResponse {
+                                    filename: name.to_string(),
+                                    content_type: req
+                                        .uri()
+                                        .query()
+                                        .and_then(|q| {
+                                            form_urlencoded::parse(q.as_bytes())
+                                                .find(|(k, _)| k == "accept")
+                                                .map(|(_, v)| v.into_owned())
+                                        })
+                                        .unwrap_or("application/octet-stream".to_string()),
+                                    blob,
+                                }
+                                .into_http_response(),
+                                Ok(None) => RequestError::not_found().into_http_response(),
+                                Err(_) => {
+                                    RequestError::internal_server_error().into_http_response()
+                                }
+                            };
+                        }
+                    }
+                    ("upload", &Method::POST) => {
+                        if let Some(account_id) =
+                            path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
+                        {
+                            return match fetch_body(
+                                &mut req,
+                                self.core.jmap.upload_max_size,
+                                &access_token,
+                            )
+                            .await
+                            {
+                                Some(bytes) => {
+                                    match self
+                                        .blob_upload(
+                                            account_id,
+                                            req.headers()
+                                                .get(CONTENT_TYPE)
+                                                .and_then(|h| h.to_str().ok())
+                                                .unwrap_or("application/octet-stream"),
+                                            &bytes,
+                                            access_token,
+                                        )
+                                        .await
+                                    {
+                                        Ok(response) => response.into_http_response(),
+                                        Err(err) => err.into_http_response(),
+                                    }
+                                }
+                                None => RequestError::limit(RequestLimitError::SizeUpload)
+                                    .into_http_response(),
+                            };
+                        }
+                    }
+                    ("eventsource", &Method::GET) => {
+                        return self.handle_event_source(req, access_token).await
+                    }
+                    ("ws", &Method::GET) => {
+                        return self
+                            .upgrade_websocket_connection(
+                                req,
+                                access_token,
+                                session.instance.clone(),
+                            )
+                            .await;
+                    }
+                    (_, &Method::OPTIONS) => {
+                        return ().into_http_response();
+                    }
+                    _ => (),
                 }
-                ("eventsource", &Method::GET) => {
-                    return jmap.handle_event_source(req, access_token).await
+            }
+            ".well-known" => match (path.next().unwrap_or(""), req.method()) {
+                ("jmap", &Method::GET) => {
+                    // Authenticate request
+                    let (_in_flight, access_token) =
+                        match self.authenticate_headers(&req, session.remote_ip).await {
+                            Ok(Some(session)) => session,
+                            Ok(None) => return RequestError::unauthorized().into_http_response(),
+                            Err(err) => return err.into_http_response(),
+                        };
+
+                    return match self
+                        .handle_session_resource(
+                            session.resolve_url(&self.core).await,
+                            access_token,
+                        )
+                        .await
+                    {
+                        Ok(session) => session.into_http_response(),
+                        Err(err) => err.into_http_response(),
+                    };
                 }
-                ("ws", &Method::GET) => {
-                    return upgrade_websocket_connection(jmap, req, access_token, instance.clone())
-                        .await;
+                ("oauth-authorization-server", &Method::GET) => {
+                    // Limit anonymous requests
+                    return match self.is_anonymous_allowed(&session.remote_ip).await {
+                        Ok(_) => JsonResponse::new(OAuthMetadata::new(
+                            session.resolve_url(&self.core).await,
+                        ))
+                        .into_http_response(),
+                        Err(err) => err.into_http_response(),
+                    };
                 }
                 (_, &Method::OPTIONS) => {
                     return ().into_http_response();
                 }
                 _ => (),
-            }
-        }
-        ".well-known" => match (path.next().unwrap_or(""), req.method()) {
-            ("jmap", &Method::GET) => {
-                // Authenticate request
-                let (_in_flight, access_token) =
-                    match jmap.authenticate_headers(&req, remote_ip).await {
-                        Ok(Some(session)) => session,
-                        Ok(None) => return RequestError::unauthorized().into_http_response(),
-                        Err(err) => return err.into_http_response(),
-                    };
-
-                return match jmap.handle_session_resource(instance, access_token).await {
-                    Ok(session) => session.into_http_response(),
-                    Err(err) => err.into_http_response(),
-                };
-            }
-            ("oauth-authorization-server", &Method::GET) => {
-                let remote_addr = jmap.build_remote_addr(&req, remote_ip);
-                // Limit anonymous requests
-                return match jmap.is_anonymous_allowed(&remote_addr).await {
-                    Ok(_) => {
-                        JsonResponse::new(OAuthMetadata::new(&instance.data)).into_http_response()
-                    }
-                    Err(err) => err.into_http_response(),
-                };
-            }
-            (_, &Method::OPTIONS) => {
-                return ().into_http_response();
-            }
-            _ => (),
-        },
-        "auth" => {
-            let remote_addr = jmap.build_remote_addr(&req, remote_ip);
-
-            match (path.next().unwrap_or(""), req.method()) {
+            },
+            "auth" => match (path.next().unwrap_or(""), req.method()) {
                 ("", &Method::GET) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr).await {
-                        Ok(_) => jmap.handle_user_device_auth(&mut req).await,
+                    return match self.is_anonymous_allowed(&session.remote_ip).await {
+                        Ok(_) => self.handle_user_device_auth(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("", &Method::POST) => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
+                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
                         Ok(_) => {
-                            jmap.handle_user_device_auth_post(&mut req, remote_addr)
+                            self.handle_user_device_auth_post(&mut req, session.remote_ip)
                                 .await
                         }
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("code", &Method::GET) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr).await {
-                        Ok(_) => jmap.handle_user_code_auth(&mut req).await,
+                    return match self.is_anonymous_allowed(&session.remote_ip).await {
+                        Ok(_) => self.handle_user_code_auth(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("code", &Method::POST) => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
-                        Ok(_) => jmap.handle_user_code_auth_post(&mut req, remote_addr).await,
+                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
+                        Ok(_) => {
+                            self.handle_user_code_auth_post(&mut req, session.remote_ip)
+                                .await
+                        }
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("device", &Method::POST) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr).await {
-                        Ok(_) => jmap.handle_device_auth(&mut req, instance).await,
+                    return match self.is_anonymous_allowed(&session.remote_ip).await {
+                        Ok(_) => {
+                            self.handle_device_auth(&mut req, session.resolve_url(&self.core).await)
+                                .await
+                        }
                         Err(err) => err.into_http_response(),
                     }
                 }
                 ("token", &Method::POST) => {
-                    return match jmap.is_anonymous_allowed(&remote_addr).await {
-                        Ok(_) => jmap.handle_token_request(&mut req).await,
+                    return match self.is_anonymous_allowed(&session.remote_ip).await {
+                        Ok(_) => self.handle_token_request(&mut req).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
@@ -249,116 +281,160 @@ pub async fn parse_jmap_request(
                     return ().into_http_response();
                 }
                 _ => (),
-            }
-        }
-        "crypto" if jmap.config.encrypt => {
-            let remote_addr = jmap.build_remote_addr(&req, remote_ip);
-
-            match *req.method() {
+            },
+            "crypto" if self.core.jmap.encrypt => match *req.method() {
                 Method::GET => {
-                    return jmap.handle_crypto_update(&mut req, remote_addr).await;
+                    return self.handle_crypto_update(&mut req, session.remote_ip).await;
                 }
                 Method::POST => {
-                    return match jmap.is_auth_allowed_soft(&remote_addr).await {
-                        Ok(_) => jmap.handle_crypto_update(&mut req, remote_addr).await,
+                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
+                        Ok(_) => self.handle_crypto_update(&mut req, session.remote_ip).await,
                         Err(err) => err.into_http_response(),
                     }
                 }
                 _ => (),
-            }
-        }
-        "api" => {
-            // Allow CORS preflight requests
-            if req.method() == Method::OPTIONS {
-                return ().into_http_response();
-            }
-
-            // Make sure the user is a superuser
-            return match jmap.authenticate_headers(&req, remote_ip).await {
-                Ok(Some((_, access_token))) => {
-                    let body = fetch_body(&mut req, 8192, &access_token).await;
-                    if access_token.is_super_user() {
-                        jmap.handle_api_manage_request(&req, body, access_token)
-                            .await
-                    } else {
-                        jmap.handle_api_request(&req, body, access_token).await
-                    }
+            },
+            "api" => {
+                // Allow CORS preflight requests
+                if req.method() == Method::OPTIONS {
+                    return ().into_http_response();
                 }
-                Ok(None) => RequestError::unauthorized().into_http_response(),
-                Err(err) => err.into_http_response(),
-            };
+
+                // Make sure the user is a superuser
+                return match self.authenticate_headers(&req, session.remote_ip).await {
+                    Ok(Some((_, access_token))) => {
+                        let body = fetch_body(&mut req, 8192, &access_token).await;
+                        if access_token.is_super_user() {
+                            self.handle_api_manage_request(&req, body, access_token)
+                                .await
+                        } else {
+                            self.handle_api_request(&req, body, access_token).await
+                        }
+                    }
+                    Ok(None) => RequestError::unauthorized().into_http_response(),
+                    Err(err) => err.into_http_response(),
+                };
+            }
+            _ => (),
         }
-        _ => (),
+        RequestError::not_found().into_http_response()
     }
-    RequestError::not_found().into_http_response()
+
+    async fn handle_session<T: SessionStream>(self, session: SessionData<T>) {
+        let span = session.span;
+        let _in_flight = session.in_flight;
+        let is_tls = session.stream.is_tls();
+
+        if let Err(http_err) = http1::Builder::new()
+            .keep_alive(true)
+            .serve_connection(
+                TokioIo::new(session.stream),
+                service_fn(|req: hyper::Request<body::Incoming>| {
+                    let jmap = self.clone();
+                    let span = span.clone();
+                    let instance = session.instance.clone();
+
+                    async move {
+                        tracing::debug!(
+                            parent: &span,
+                            event = "request",
+                            uri = req.uri().to_string(),
+                        );
+
+                        // Obtain remote IP
+                        let remote_ip = if !jmap.core.jmap.http_use_forwarded {
+                            session.remote_ip
+                        } else if let Some(forwarded_for) = req
+                            .headers()
+                            .get(header::FORWARDED)
+                            .or_else(|| req.headers().get("X-Forwarded-For"))
+                            .and_then(|h| h.to_str().ok())
+                            .and_then(|h| h.parse::<IpAddr>().ok())
+                        {
+                            forwarded_for
+                        } else {
+                            tracing::warn!(
+                                "Warning: No remote address found in request, using remote ip."
+                            );
+                            session.remote_ip
+                        };
+
+                        // Parse HTTP request
+                        let mut response = jmap
+                            .parse_http_request(
+                                req,
+                                HttpSessionData {
+                                    instance,
+                                    local_ip: session.local_ip,
+                                    remote_ip,
+                                    is_tls,
+                                },
+                            )
+                            .await;
+
+                        // Add custom headers
+                        if !jmap.core.jmap.http_headers.is_empty() {
+                            let headers = response.headers_mut();
+
+                            for (header, value) in &jmap.core.jmap.http_headers {
+                                headers.insert(header.clone(), value.clone());
+                            }
+                        }
+
+                        Ok::<_, hyper::Error>(response)
+                    }
+                }),
+            )
+            .with_upgrades()
+            .await
+        {
+            tracing::debug!(
+                parent: &span,
+                event = "error",
+                context = "http",
+                reason = %http_err,
+            );
+        }
+    }
 }
 
 impl SessionManager for JmapSessionManager {
-    fn handle<T: utils::listener::SessionStream>(
+    fn handle<T: SessionStream>(
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
-        handle_request(self.inner, session)
+        JMAP::from(self.inner).handle_session(session)
     }
 
     #[allow(clippy::manual_async_fn)]
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
-            let _ = self.inner.state_tx.send(state::Event::Stop).await;
+            let _ = self
+                .inner
+                .jmap_inner
+                .state_tx
+                .send(state::Event::Stop)
+                .await;
         }
-    }
-
-    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        false
     }
 }
 
-async fn handle_request<T: SessionStream>(jmap: Arc<JMAP>, session: SessionData<T>) {
-    let span = session.span;
-    let _in_flight = session.in_flight;
+impl ResolveVariable for HttpSessionData {
+    fn resolve_variable(&self, variable: u32) -> common::expr::Variable<'_> {
+        match variable {
+            V_REMOTE_IP => self.remote_ip.to_string().into(),
+            V_LOCAL_IP => self.local_ip.to_string().into(),
+            V_LISTENER => self.instance.id.as_str().into(),
+            _ => common::expr::Variable::default(),
+        }
+    }
+}
 
-    if let Err(http_err) = http1::Builder::new()
-        .keep_alive(true)
-        .serve_connection(
-            TokioIo::new(session.stream),
-            service_fn(|req: hyper::Request<body::Incoming>| {
-                let jmap = jmap.clone();
-                let span = span.clone();
-                let instance = session.instance.clone();
-
-                async move {
-                    tracing::debug!(
-                        parent: &span,
-                        event = "request",
-                        uri = req.uri().to_string(),
-                    );
-
-                    // Parse JMAP request
-                    let mut response =
-                        parse_jmap_request(jmap.clone(), req, session.remote_ip, instance).await;
-
-                    // Add custom headers
-                    if !jmap.config.http_headers.is_empty() {
-                        let headers = response.headers_mut();
-
-                        for (header, value) in &jmap.config.http_headers {
-                            headers.insert(header.clone(), value.clone());
-                        }
-                    }
-
-                    Ok::<_, hyper::Error>(response)
-                }
-            }),
-        )
-        .with_upgrades()
-        .await
-    {
-        tracing::debug!(
-            parent: &span,
-            event = "error",
-            context = "http",
-            reason = %http_err,
-        );
+impl HttpSessionData {
+    pub async fn resolve_url(&self, core: &Core) -> String {
+        core.eval_if(&core.network.url, self)
+            .await
+            .unwrap_or_else(|| format!("http{}://localhost", if self.is_tls { "s" } else { "" }))
     }
 }
 

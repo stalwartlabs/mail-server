@@ -386,6 +386,18 @@ impl From<VerifyStrategy> for Constant {
     }
 }
 
+impl VerifyStrategy {
+    #[inline(always)]
+    pub fn verify(&self) -> bool {
+        matches!(self, VerifyStrategy::Strict | VerifyStrategy::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn is_strict(&self) -> bool {
+        matches!(self, VerifyStrategy::Strict)
+    }
+}
+
 impl ParseValue for VerifyStrategy {
     fn parse_value(key: impl AsKey, value: &str) -> Result<Self, String> {
         match value {

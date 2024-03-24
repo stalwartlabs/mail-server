@@ -47,14 +47,14 @@ impl JMAP {
         let mut include_term = true;
         let mut terms = vec![];
         let mut is_exact = false;
-        let mut language = self.config.default_language;
+        let mut language = self.core.jmap.default_language;
 
         for cond in request.filter {
             match cond {
                 Filter::Text(text) | Filter::Subject(text) | Filter::Body(text) => {
                     if include_term {
                         let (text, language_) =
-                            Language::detect(text, self.config.default_language);
+                            Language::detect(text, self.core.jmap.default_language);
                         language = language_;
                         if (text.starts_with('"') && text.ends_with('"'))
                             || (text.starts_with('\'') && text.ends_with('\''))
@@ -99,7 +99,7 @@ impl JMAP {
             not_found: vec![],
         };
 
-        if email_ids.len() > self.config.snippet_max_results {
+        if email_ids.len() > self.core.jmap.snippet_max_results {
             return Err(MethodError::RequestTooLarge);
         }
 

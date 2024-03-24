@@ -34,18 +34,22 @@ pub async fn test(params: &mut JMAPTest) {
     println!("Running blob tests...");
     let server = params.server.clone();
     params
+        .core
+        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     let account_id = Id::from(
         server
-            .store
+            .core
+            .storage
+            .data
             .get_or_create_account_id("jdoe@example.com")
             .await
             .unwrap(),
     );
 
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Blob/set simple test
     let response = jmap_json_request(
@@ -195,7 +199,7 @@ pub async fn test(params: &mut JMAPTest) {
         );
     }
 
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Blob/upload Complex Example
     let response = jmap_json_request(
@@ -289,7 +293,7 @@ pub async fn test(params: &mut JMAPTest) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Blob/get Example with Range and Encoding Errors
     let response = jmap_json_request(
@@ -428,7 +432,7 @@ pub async fn test(params: &mut JMAPTest) {
             "Pointer {pointer:?} Response: {response:?}",
         );
     }
-    server.store.blob_expire_all().await;
+    server.core.storage.data.blob_expire_all().await;
 
     // Blob/lookup
     params.client.set_default_account_id(account_id.to_string());

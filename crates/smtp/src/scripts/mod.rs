@@ -24,13 +24,12 @@
 use std::{borrow::Cow, sync::Arc};
 
 use ahash::AHashMap;
+use common::scripts::ScriptModification;
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
 pub mod event_loop;
 pub mod exec;
-pub mod functions;
-pub mod plugins;
 
 #[derive(Debug)]
 pub enum ScriptResult {
@@ -43,18 +42,6 @@ pub enum ScriptResult {
     },
     Reject(String),
     Discard,
-}
-
-#[derive(Debug)]
-pub enum ScriptModification {
-    SetEnvelope {
-        name: Envelope,
-        value: String,
-    },
-    AddHeader {
-        name: Arc<String>,
-        value: Arc<String>,
-    },
 }
 
 pub struct ScriptParameters {

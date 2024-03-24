@@ -28,6 +28,7 @@ use rustls::{
     server::ResolvesServerCert,
     ServerConfig, SupportedCipherSuite, ALL_VERSIONS,
 };
+
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
 use utils::config::{
@@ -35,21 +36,19 @@ use utils::config::{
     Config,
 };
 
-use crate::{
-    listener::{acme::directory::ACME_TLS_ALPN_NAME, tls::CertificateResolver, TcpAcceptor},
-    ConfigBuilder,
-};
+use crate::listener::{acme::directory::ACME_TLS_ALPN_NAME, tls::CertificateResolver, TcpAcceptor};
 
 use super::{
     tls::{TLS12_VERSION, TLS13_VERSION},
-    Listener, Server, ServerProtocol,
+    Listener, Server, ServerProtocol, Servers,
 };
 
-impl ConfigBuilder {
-    pub fn parse_servers(&mut self, config: &mut Config) {
+impl Servers {
+    pub fn parse(config: &mut Config) -> Self {
         // Parse certificates and ACME managers
-        self.parse_certificates(config);
-        self.parse_acmes(config);
+        let mut servers = Servers::default();
+        servers.parse_certificates(config);
+        servers.parse_acmes(config);
 
         // Parse servers
         let ids = config
@@ -57,8 +56,9 @@ impl ConfigBuilder {
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
         for id in ids {
-            self.parse_server(config, id);
+            servers.parse_server(config, id);
         }
+        servers
     }
 
     fn parse_server(&mut self, config: &mut Config, id_: String) {

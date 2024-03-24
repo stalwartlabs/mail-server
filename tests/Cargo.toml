@@ -26,6 +26,7 @@ jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
+common = { path = "../crates/common", features = ["test_mode"] }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
@@ -53,10 +54,10 @@ ece = "2.2"
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
-base64 = "0.21"
+base64 = "0.22"
 dashmap = "5.4"
 ahash = { version = "0.8" }
-serial_test = "2.0.0"
+serial_test = "3.0.0"
 num_cpus = "1.15.0"
 async-trait = "0.1.68"
 chrono = "0.4"

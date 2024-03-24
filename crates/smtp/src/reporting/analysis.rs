@@ -71,15 +71,11 @@ pub struct IncomingReport<T> {
     pub report: T,
 }
 
-pub trait AnalyzeReport {
-    fn analyze_report(&self, message: Arc<Vec<u8>>);
-}
-
-impl AnalyzeReport for Arc<SMTP> {
-    fn analyze_report(&self, message: Arc<Vec<u8>>) {
+impl SMTP {
+    pub fn analyze_report(&self, message: Arc<Vec<u8>>) {
         let core = self.clone();
         let handle = Handle::current();
-        self.worker_pool.spawn(move || {
+        self.inner.worker_pool.spawn(move || {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
             } else {
@@ -284,15 +280,9 @@ impl AnalyzeReport for Arc<SMTP> {
                 };
 
                 // Store report
-                if let Some(expires_in) = &core.report.config.analysis.store {
+                if let Some(expires_in) = &core.core.smtp.report.analysis.store {
                     let expires = now() + expires_in.as_secs();
-                    let id = core
-                        .report
-                        .config
-                        .analysis
-                        .report_id
-                        .generate()
-                        .unwrap_or(expires);
+                    let id = core.inner.snowflake_id.generate().unwrap_or(expires);
 
                     let mut batch = BatchBuilder::new();
                     match report {
@@ -336,7 +326,7 @@ impl AnalyzeReport for Arc<SMTP> {
                     let batch = batch.build();
                     let _enter = handle.enter();
                     handle.spawn(async move {
-                        if let Err(err) = core.shared.default_data_store.write(batch).await {
+                        if let Err(err) = core.core.storage.data.write(batch).await {
                             tracing::warn!(
                                 context = "report",
                                 event = "error",

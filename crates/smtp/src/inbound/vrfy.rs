@@ -31,12 +31,18 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
         match self
             .core
-            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
             .await
-            .and_then(|name| self.core.get_directory(&name))
+            .and_then(|name| self.core.core.get_directory(&name))
         {
-            Some(address_lookup) if self.params.can_vrfy => {
-                match address_lookup.vrfy(&address.to_lowercase()).await {
+            Some(directory) if self.params.can_vrfy => {
+                match self
+                    .core
+                    .core
+                    .vrfy(directory, &address.to_lowercase())
+                    .await
+                {
                     Ok(values) if !values.is_empty() => {
                         let mut result = String::with_capacity(32);
                         for (pos, value) in values.iter().enumerate() {
@@ -88,12 +94,18 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
         match self
             .core
-            .eval_if::<String, _>(&self.core.session.config.rcpt.directory, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
             .await
-            .and_then(|name| self.core.get_directory(&name))
+            .and_then(|name| self.core.core.get_directory(&name))
         {
-            Some(address_lookup) if self.params.can_expn => {
-                match address_lookup.expn(&address.to_lowercase()).await {
+            Some(directory) if self.params.can_expn => {
+                match self
+                    .core
+                    .core
+                    .expn(directory, &address.to_lowercase())
+                    .await
+                {
                     Ok(values) if !values.is_empty() => {
                         let mut result = String::with_capacity(32);
                         for (pos, value) in values.iter().enumerate() {

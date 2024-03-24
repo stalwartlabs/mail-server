@@ -5,10 +5,13 @@ use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
 use utils::config::{
     utils::{AsKey, ParseValue},
-    Config, ServerProtocol,
+    Config,
 };
 
-use crate::expr::{if_block::IfBlock, Constant, ConstantValue, Expression, Variable};
+use crate::{
+    config::server::ServerProtocol,
+    expr::{if_block::IfBlock, Constant, ConstantValue, Expression, Variable},
+};
 
 use self::throttle::{parse_throttle, parse_throttle_key};
 
@@ -293,8 +296,57 @@ impl QueueConfig {
         // Parse queue quotas and throttles
         queue.throttle = parse_queue_throttle(config);
         queue.quota = parse_queue_quota(config);
+
+        // Parse relay hosts
+        queue.relay_hosts = config
+            .sub_keys("remote", ".address")
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|id| parse_relay_host(config, &id).map(|host| (id, host)))
+            .collect();
+
+        // Add local delivery host
+        queue.relay_hosts.insert(
+            "local".to_string(),
+            RelayHost {
+                address: String::new(),
+                port: 0,
+                protocol: ServerProtocol::Http,
+                tls_implicit: Default::default(),
+                tls_allow_invalid_certs: Default::default(),
+                auth: None,
+            },
+        );
+
         queue
     }
+}
+
+fn parse_relay_host(config: &mut Config, id: &str) -> Option<RelayHost> {
+    Some(RelayHost {
+        address: config.property_require_(("remote", id, "address"))?,
+        port: config
+            .property_require_(("remote", id, "port"))
+            .unwrap_or(25),
+        protocol: config
+            .property_require_(("remote", id, "protocol"))
+            .unwrap_or(ServerProtocol::Smtp),
+        auth: if let (Some(username), Some(secret)) = (
+            config.value(("remote", id, "auth.username")),
+            config.value(("remote", id, "auth.secret")),
+        ) {
+            Credentials::new(username.to_string(), secret.to_string()).into()
+        } else {
+            None
+        },
+        tls_implicit: config
+            .property_(("remote", id, "tls.implicit"))
+            .unwrap_or(true),
+        tls_allow_invalid_certs: config
+            .property_(("remote", id, "tls.allow-invalid-certs"))
+            .unwrap_or(false),
+    })
 }
 
 fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
@@ -539,5 +591,17 @@ impl ConstantValue for IpLookupStrategy {
             .add_constant("ipv6_only", IpLookupStrategy::Ipv6Only)
             .add_constant("ipv6_then_ipv4", IpLookupStrategy::Ipv6thenIpv4)
             .add_constant("ipv4_then_ipv6", IpLookupStrategy::Ipv4thenIpv6);
+    }
+}
+
+impl std::fmt::Debug for RelayHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RelayHost")
+            .field("address", &self.address)
+            .field("port", &self.port)
+            .field("protocol", &self.protocol)
+            .field("tls_implicit", &self.tls_implicit)
+            .field("tls_allow_invalid_certs", &self.tls_allow_invalid_certs)
+            .finish()
     }
 }

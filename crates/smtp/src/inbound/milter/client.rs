@@ -21,14 +21,13 @@
  * for more details.
 */
 
+use common::config::smtp::session::Milter;
 use rustls_pki_types::ServerName;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
-
-use crate::config::Milter;
 
 use super::{
     protocol::{SMFIC_CONNECT, SMFIC_HELO, SMFIC_MAIL, SMFIC_RCPT},
@@ -115,8 +114,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     pub async fn init(&mut self) -> super::Result<Options> {
         self.write(Command::OptionNegotiation(Options {
             version: match self.version {
-                Version::V2 => 2,
-                Version::V6 => 6,
+                MilterVersion::V2 => 2,
+                MilterVersion::V6 => 6,
             },
             actions: self.flags_actions,
             protocol: self.flags_protocol,
@@ -264,7 +263,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     }
 
     pub async fn data(&mut self) -> super::Result<Action> {
-        if matches!(self.version, Version::V6) && !self.has_option(SMFIP_NODATA) {
+        if matches!(self.version, MilterVersion::V6) && !self.has_option(SMFIP_NODATA) {
             self.write(Command::Data).await?;
             if !self.has_option(SMFIP_NR_DATA) {
                 return self.read().await?.into_action();
@@ -367,7 +366,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
         self.options & opt == opt
     }
 
-    pub fn with_version(mut self, version: Version) -> Self {
+    pub fn with_version(mut self, version: MilterVersion) -> Self {
         self.version = version;
         self
     }

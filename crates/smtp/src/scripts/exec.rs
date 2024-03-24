@@ -23,11 +23,11 @@
 
 use std::{sync::Arc, time::SystemTime};
 
+use common::listener::SessionStream;
 use mail_auth::common::resolver::ToReverseName;
 use sieve::{runtime::Variable, Envelope, Sieve};
 use smtp_proto::*;
 use tokio::runtime::Handle;
-use utils::listener::SessionStream;
 
 use crate::{core::Session, inbound::AuthResult};
 

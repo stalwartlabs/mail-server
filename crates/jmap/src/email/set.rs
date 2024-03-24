@@ -599,8 +599,9 @@ impl JMAP {
                                 // Check attachment sizes
                                 if !is_multipart {
                                     size_attachments += parts.last().unwrap().size();
-                                    if self.config.mail_attachments_max_size > 0
-                                        && size_attachments > self.config.mail_attachments_max_size
+                                    if self.core.jmap.mail_attachments_max_size > 0
+                                        && size_attachments
+                                            > self.core.jmap.mail_attachments_max_size
                                     {
                                         response.not_created.append(
                                             id,
@@ -608,7 +609,7 @@ impl JMAP {
                                                 .with_property(property)
                                                 .with_description(format!(
                                                     "Message exceeds maximum size of {} bytes.",
-                                                    self.config.mail_attachments_max_size
+                                                    self.core.jmap.mail_attachments_max_size
                                                 )),
                                         );
                                         continue 'create;
@@ -741,7 +742,7 @@ impl JMAP {
                     keywords,
                     received_at,
                     skip_duplicates: false,
-                    encrypt: self.config.encrypt && self.config.encrypt_append,
+                    encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
                 })
                 .await
             {
@@ -986,7 +987,7 @@ impl JMAP {
 
             // Write changes
             if !batch.is_empty() {
-                match self.store.write(batch.build()).await {
+                match self.core.storage.data.write(batch.build()).await {
                     Ok(_) => {
                         // Add to updated list
                         response.updated.append(id, None);
@@ -1240,7 +1241,7 @@ impl JMAP {
         }
 
         // Commit batch
-        match self.store.write(batch.build()).await {
+        match self.core.storage.data.write(batch.build()).await {
             Ok(_) => (),
             Err(store::Error::AssertValueFailed) => {
                 return Ok(Err(SetError::forbidden().with_description(
@@ -1258,7 +1259,7 @@ impl JMAP {
         }
 
         // Request FTS index
-        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
+        let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
         Ok(Ok(changes))
     }

@@ -23,11 +23,10 @@
 
 use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
 
-use ::sieve::{Compiler, Runtime};
-use api::session::BaseCapabilities;
 use auth::{oauth::OAuthCode, rate_limit::ConcurrencyLimiters, AccessToken};
+use common::{Core, DeliveryEvent, SharedCore};
 use dashmap::DashMap;
-use directory::{Directories, Directory, QueryBy};
+use directory::QueryBy;
 use email::cache::Threads;
 use jmap_proto::{
     error::method::MethodError,
@@ -37,13 +36,12 @@ use jmap_proto::{
     },
     types::{collection::Collection, property::Property},
 };
-use mail_parser::HeaderName;
-use nlp::language::Language;
 use services::{
     delivery::spawn_delivery_manager,
     housekeeper::{self, init_housekeeper, spawn_housekeeper},
     state::{self, init_state_manager, spawn_state_manager},
 };
+
 use smtp::core::SMTP;
 use store::{
     fts::FtsFilter,
@@ -52,17 +50,14 @@ use store::{
     write::{
         key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass,
     },
-    BitmapKey, BlobStore, Deserialize, FtsStore, IterateParams, LookupStore, Store, Stores,
-    ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, ValueKey, U32_LEN,
 };
 use tokio::sync::mpsc;
 use utils::{
-    config::{Rate, Servers},
-    ipc::DeliveryEvent,
+    config::Config,
     lru_cache::{LruCache, LruCached},
     map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
-    UnwrapFailure,
 };
 
 pub mod api;
@@ -84,14 +79,21 @@ pub mod websocket;
 
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 
+#[derive(Clone)]
 pub struct JMAP {
-    pub store: Store,
-    pub blob_store: BlobStore,
-    pub fts_store: FtsStore,
-    pub lookup_store: LookupStore,
-    pub config: Config,
-    pub directory: Arc<Directory>,
+    pub core: Arc<Core>,
+    pub inner: Arc<Inner>,
+    pub smtp: SMTP,
+}
 
+#[derive(Clone)]
+pub struct JmapInstance {
+    pub core: SharedCore,
+    pub jmap_inner: Arc<Inner>,
+    pub smtp_inner: Arc<smtp::core::Inner>,
+}
+
+pub struct Inner {
     pub sessions: TtlDashMap<String, u32>,
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
@@ -101,74 +103,8 @@ pub struct JMAP {
 
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
-    pub smtp: Arc<SMTP>,
 
     pub cache_threads: LruCache<u32, Arc<Threads>>,
-
-    pub sieve_compiler: Compiler,
-    pub sieve_runtime: Runtime<()>,
-}
-
-pub struct Config {
-    pub default_language: Language,
-    pub query_max_results: usize,
-    pub changes_max_results: usize,
-    pub snippet_max_results: usize,
-
-    pub request_max_size: usize,
-    pub request_max_calls: usize,
-    pub request_max_concurrent: u64,
-
-    pub get_max_objects: usize,
-    pub set_max_objects: usize,
-
-    pub upload_max_size: usize,
-    pub upload_max_concurrent: u64,
-
-    pub upload_tmp_quota_size: usize,
-    pub upload_tmp_quota_amount: usize,
-    pub upload_tmp_ttl: u64,
-
-    pub mailbox_max_depth: usize,
-    pub mailbox_name_max_len: usize,
-    pub mail_attachments_max_size: usize,
-    pub mail_parse_max_items: usize,
-    pub mail_max_size: usize,
-
-    pub sieve_max_script_name: usize,
-    pub sieve_max_scripts: usize,
-
-    pub session_cache_ttl: Duration,
-    pub rate_authenticated: Rate,
-    pub rate_authenticate_req: Rate,
-    pub rate_anonymous: Rate,
-    pub rate_use_forwarded: bool,
-
-    pub event_source_throttle: Duration,
-    pub push_max_total: usize,
-
-    pub web_socket_throttle: Duration,
-    pub web_socket_timeout: Duration,
-    pub web_socket_heartbeat: Duration,
-
-    pub oauth_key: String,
-    pub oauth_expiry_user_code: u64,
-    pub oauth_expiry_auth_code: u64,
-    pub oauth_expiry_token: u64,
-    pub oauth_expiry_refresh_token: u64,
-    pub oauth_expiry_refresh_token_renew: u64,
-    pub oauth_max_auth_attempts: u32,
-
-    pub spam_header: Option<(HeaderName<'static>, String)>,
-
-    pub http_headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
-
-    pub encrypt: bool,
-    pub encrypt_append: bool,
-
-    pub principal_allow_lookups: bool,
-
-    pub capabilities: BaseCapabilities,
 }
 
 #[derive(Debug)]
@@ -180,213 +116,56 @@ pub enum IngestError {
 
 impl JMAP {
     pub async fn init(
-        config: &utils::config::Config,
-        stores: &Stores,
-        directories: &Directories,
-        servers: &mut Servers,
+        config: &mut Config,
         delivery_rx: mpsc::Receiver<DeliveryEvent>,
-        smtp: Arc<SMTP>,
-    ) -> Result<Arc<Self>, String> {
+        core: SharedCore,
+        smtp_inner: Arc<smtp::core::Inner>,
+    ) -> JmapInstance {
         // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
         let shard_amount = config
-            .property::<u64>("cache.shard")?
+            .property_::<u64>("cache.shard")
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        let capacity = config.property("cache.capacity")?.unwrap_or(100);
+        let capacity = config.property_("cache.capacity").unwrap_or(100);
 
-        let jmap_server = Arc::new(JMAP {
-            directory: directories
-                .directories
-                .get(config.value_require("storage.directory")?)
-                .failed(&format!(
-                    "Unable to find directory '{}'",
-                    config.value_require("storage.directory")?
-                ))
-                .clone(),
-            snowflake_id: config
-                .property::<u64>("storage.cluster.node-id")?
-                .map(SnowflakeIdGenerator::with_node_id)
-                .unwrap_or_else(SnowflakeIdGenerator::new),
-            store: stores.get_store(config, "storage.data")?,
-            fts_store: stores.get_fts_store(config, "storage.fts")?,
-            blob_store: stores.get_blob_store(config, "storage.blob")?,
-            lookup_store: stores.get_lookup_store(config, "storage.lookup")?,
-            config: Config::new(config).failed("Invalid configuration file"),
+        let inner = Inner {
             sessions: TtlDashMap::with_capacity(capacity, shard_amount),
             access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
+            snowflake_id: config
+                .property_::<u64>("cluster.node-id")
+                .map(SnowflakeIdGenerator::with_node_id)
+                .unwrap_or_default(),
             concurrency_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
                 capacity,
                 RandomState::default(),
                 shard_amount,
             ),
             oauth_codes: TtlDashMap::with_capacity(capacity, shard_amount),
-            cache_threads: LruCache::with_capacity(
-                config.property("cache.thread.size")?.unwrap_or(2048),
-            ),
             state_tx,
             housekeeper_tx,
-            smtp,
-            sieve_compiler: Compiler::new()
-                .with_max_script_size(
-                    config
-                        .property("sieve.untrusted.limits.script-size")?
-                        .unwrap_or(1024 * 1024),
-                )
-                .with_max_string_size(
-                    config
-                        .property("sieve.untrusted.limits.string-length")?
-                        .unwrap_or(4096),
-                )
-                .with_max_variable_name_size(
-                    config
-                        .property("sieve.untrusted.limits.variable-name-length")?
-                        .unwrap_or(32),
-                )
-                .with_max_nested_blocks(
-                    config
-                        .property("sieve.untrusted.limits.nested-blocks")?
-                        .unwrap_or(15),
-                )
-                .with_max_nested_tests(
-                    config
-                        .property("sieve.untrusted.limits.nested-tests")?
-                        .unwrap_or(15),
-                )
-                .with_max_nested_foreverypart(
-                    config
-                        .property("sieve.untrusted.limits.nested-foreverypart")?
-                        .unwrap_or(3),
-                )
-                .with_max_match_variables(
-                    config
-                        .property("sieve.untrusted.limits.match-variables")?
-                        .unwrap_or(30),
-                )
-                .with_max_local_variables(
-                    config
-                        .property("sieve.untrusted.limits.local-variables")?
-                        .unwrap_or(128),
-                )
-                .with_max_header_size(
-                    config
-                        .property("sieve.untrusted.limits.header-size")?
-                        .unwrap_or(1024),
-                )
-                .with_max_includes(
-                    config
-                        .property("sieve.untrusted.limits.includes")?
-                        .unwrap_or(3),
-                ),
-            sieve_runtime: Runtime::new()
-                .with_max_nested_includes(
-                    config
-                        .property("sieve.untrusted.limits.nested-includes")?
-                        .unwrap_or(3),
-                )
-                .with_cpu_limit(
-                    config
-                        .property("sieve.untrusted.limits.cpu")?
-                        .unwrap_or(5000),
-                )
-                .with_max_variable_size(
-                    config
-                        .property("sieve.untrusted.limits.variable-size")?
-                        .unwrap_or(4096),
-                )
-                .with_max_redirects(
-                    config
-                        .property("sieve.untrusted.limits.redirects")?
-                        .unwrap_or(1),
-                )
-                .with_max_received_headers(
-                    config
-                        .property("sieve.untrusted.limits.received-headers")?
-                        .unwrap_or(10),
-                )
-                .with_max_header_size(
-                    config
-                        .property("sieve.untrusted.limits.header-size")?
-                        .unwrap_or(1024),
-                )
-                .with_max_out_messages(
-                    config
-                        .property("sieve.untrusted.limits.outgoing-messages")?
-                        .unwrap_or(3),
-                )
-                .with_default_vacation_expiry(
-                    config
-                        .property::<Duration>("sieve.untrusted.default-expiry.vacation")?
-                        .unwrap_or(Duration::from_secs(30 * 86400))
-                        .as_secs(),
-                )
-                .with_default_duplicate_expiry(
-                    config
-                        .property::<Duration>("sieve.untrusted.default-expiry.duplicate")?
-                        .unwrap_or(Duration::from_secs(7 * 86400))
-                        .as_secs(),
-                )
-                .without_capabilities(
-                    config
-                        .values("sieve.untrusted.disable-capabilities")
-                        .map(|(_, v)| v),
-                )
-                .with_valid_notification_uris({
-                    let values = config
-                        .values("sieve.untrusted.notification-uris")
-                        .map(|(_, v)| v.to_string())
-                        .collect::<Vec<_>>();
-                    if !values.is_empty() {
-                        values
-                    } else {
-                        vec!["mailto".to_string()]
-                    }
-                })
-                .with_protected_headers({
-                    let values = config
-                        .values("sieve.untrusted.protected-headers")
-                        .map(|(_, v)| v.to_string())
-                        .collect::<Vec<_>>();
-                    if !values.is_empty() {
-                        values
-                    } else {
-                        vec![
-                            "Original-Subject".to_string(),
-                            "Original-From".to_string(),
-                            "Received".to_string(),
-                            "Auto-Submitted".to_string(),
-                        ]
-                    }
-                })
-                .with_vacation_default_subject(
-                    config
-                        .value("sieve.untrusted.vacation.default-subject")
-                        .unwrap_or("Automated reply")
-                        .to_string(),
-                )
-                .with_vacation_subject_prefix(
-                    config
-                        .value("sieve.untrusted.vacation.subject-prefix")
-                        .unwrap_or("Auto: ")
-                        .to_string(),
-                )
-                .with_env_variable("name", "Stalwart JMAP")
-                .with_env_variable("version", env!("CARGO_PKG_VERSION"))
-                .with_env_variable("location", "MS")
-                .with_env_variable("phase", "during"),
-        });
+            cache_threads: LruCache::with_capacity(
+                config.property_("cache.thread.size").unwrap_or(2048),
+            ),
+        };
+
+        let jmap_instance = JmapInstance {
+            core,
+            jmap_inner: Arc::new(inner),
+            smtp_inner,
+        };
 
         // Spawn delivery manager
-        spawn_delivery_manager(jmap_server.clone(), delivery_rx);
+        spawn_delivery_manager(jmap_instance.clone(), delivery_rx);
 
         // Spawn state manager
-        spawn_state_manager(jmap_server.clone(), config, state_rx);
+        spawn_state_manager(jmap_instance.clone(), state_rx);
 
         // Spawn housekeeper
-        spawn_housekeeper(jmap_server.clone(), config, servers, housekeeper_rx);
+        spawn_housekeeper(jmap_instance.clone(), housekeeper_rx);
 
-        Ok(jmap_server)
+        jmap_instance
     }
 
     pub async fn assign_document_id(
@@ -394,7 +173,9 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
     ) -> Result<u32, MethodError> {
-        self.store
+        self.core
+            .storage
+            .data
             .assign_document_id(account_id, collection)
             .await
             .map_err(|err| {
@@ -419,7 +200,9 @@ impl JMAP {
     {
         let property = property.as_ref();
         match self
-            .store
+            .core
+            .storage
+            .data
             .get_value::<U>(ValueKey {
                 account_id,
                 collection: collection.into(),
@@ -460,7 +243,9 @@ impl JMAP {
         let expected_results = iterate.len();
         let mut results = Vec::with_capacity(expected_results);
 
-        self.store
+        self.core
+            .storage
+            .data
             .iterate(
                 IterateParams::new(
                     ValueKey {
@@ -507,7 +292,9 @@ impl JMAP {
         collection: Collection,
     ) -> Result<Option<RoaringBitmap>, MethodError> {
         match self
-            .store
+            .core
+            .storage
+            .data
             .get_bitmap(BitmapKey::document_ids(account_id, collection))
             .await
         {
@@ -533,7 +320,9 @@ impl JMAP {
     ) -> Result<Option<RoaringBitmap>, MethodError> {
         let property = property.as_ref();
         match self
-            .store
+            .core
+            .storage
+            .data
             .get_bitmap(BitmapKey {
                 account_id,
                 collection: collection.into(),
@@ -565,7 +354,7 @@ impl JMAP {
         collection: Collection,
     ) -> Result<SetResponse, MethodError> {
         Ok(
-            SetResponse::from_request(request, self.config.set_max_objects)?.with_state(
+            SetResponse::from_request(request, self.core.jmap.set_max_objects)?.with_state(
                 self.assert_state(
                     request.account_id.document_id(),
                     collection,
@@ -584,7 +373,9 @@ impl JMAP {
         Ok(if access_token.primary_id == account_id {
             access_token.quota as i64
         } else {
-            self.directory
+            self.core
+                .storage
+                .directory
                 .query(QueryBy::Id(account_id), false)
                 .await
                 .map_err(|err| {
@@ -602,7 +393,9 @@ impl JMAP {
     }
 
     pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
-        self.store
+        self.core
+            .storage
+            .data
             .get_counter(DirectoryClass::UsedQuota(account_id))
             .await
             .map_err(|err| {
@@ -622,7 +415,9 @@ impl JMAP {
         collection: Collection,
         filters: Vec<Filter>,
     ) -> Result<ResultSet, MethodError> {
-        self.store
+        self.core
+            .storage
+            .data
             .filter(account_id, collection, filters)
             .await
             .map_err(|err| {
@@ -643,7 +438,9 @@ impl JMAP {
         collection: Collection,
         filters: Vec<FtsFilter<T>>,
     ) -> Result<RoaringBitmap, MethodError> {
-        self.fts_store
+        self.core
+            .storage
+            .fts
             .query(account_id, collection, filters)
             .await
             .map_err(|err| {
@@ -666,15 +463,15 @@ impl JMAP {
         let total = result_set.results.len() as usize;
         let (limit_total, limit) = if let Some(limit) = request.limit {
             if limit > 0 {
-                let limit = std::cmp::min(limit, self.config.query_max_results);
+                let limit = std::cmp::min(limit, self.core.jmap.query_max_results);
                 (std::cmp::min(limit, total), limit)
             } else {
                 (0, 0)
             }
         } else {
             (
-                std::cmp::min(self.config.query_max_results, total),
-                self.config.query_max_results,
+                std::cmp::min(self.core.jmap.query_max_results, total),
+                self.core.jmap.query_max_results,
             )
         };
         Ok((
@@ -718,7 +515,13 @@ impl JMAP {
         let collection = result_set.collection;
         let account_id = result_set.account_id;
         response.update_results(
-            match self.store.sort(result_set, comparators, paginate).await {
+            match self
+                .core
+                .storage
+                .data
+                .sort(result_set, comparators, paginate)
+                .await
+            {
                 Ok(result) => result,
                 Err(err) => {
                     tracing::error!(event = "error",
@@ -736,7 +539,9 @@ impl JMAP {
     }
 
     pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
-        self.store
+        self.core
+            .storage
+            .data
             .write(batch.build())
             .await
             .map(|_| ())
@@ -761,6 +566,20 @@ impl JMAP {
                     }
                 }
             })
+    }
+}
+
+impl From<JmapInstance> for JMAP {
+    fn from(value: JmapInstance) -> Self {
+        let core = value.core.load().clone();
+        JMAP {
+            smtp: SMTP {
+                core: core.clone(),
+                inner: value.smtp_inner,
+            },
+            core,
+            inner: value.jmap_inner,
+        }
     }
 }
 

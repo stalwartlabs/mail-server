@@ -1,11 +1,10 @@
-use std::{net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use ahash::AHashMap;
+use arc_swap::ArcSwap;
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
     scripts::Scripting,
-    server::Server,
     smtp::{
         auth::{ArcSealer, DkimSigner},
         queue::RelayHost,
@@ -16,7 +15,7 @@ use config::{
 };
 use directory::{Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
-use listener::{acme::AcmeManager, blocked::BlockedIps, tls::Certificate};
+use listener::blocked::BlockedIps;
 use mail_send::Credentials;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
@@ -26,9 +25,11 @@ use opentelemetry_sdk::{
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use sieve::Sieve;
 use store::LookupStore;
+use tokio::sync::oneshot;
 use tracing::{level_filters::LevelFilter, Level};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use utils::{config::Config, BlobHash};
 
 pub mod addresses;
 pub mod config;
@@ -38,6 +39,8 @@ pub mod scripts;
 
 pub static USER_AGENT: &str = concat!("StalwartMail/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
+
+pub type SharedCore = Arc<ArcSwap<Core>>;
 
 pub struct Core {
     pub storage: Storage,
@@ -54,19 +57,39 @@ pub struct Network {
     pub url: IfBlock,
 }
 
-pub struct ConfigBuilder {
-    pub servers: Vec<Server>,
-    pub certificates: AHashMap<String, Arc<Certificate>>,
-    pub certificates_sni: AHashMap<String, Arc<Certificate>>,
-    pub acme_managers: AHashMap<String, Arc<AcmeManager>>,
-    pub tracers: Vec<Tracer>,
-    pub core: Core,
-}
-
 pub enum AuthResult<T> {
     Success(T),
     Failure,
     Banned,
+}
+
+#[derive(Debug)]
+pub enum DeliveryEvent {
+    Ingest {
+        message: IngestMessage,
+        result_tx: oneshot::Sender<Vec<DeliveryResult>>,
+    },
+    Stop,
+}
+
+#[derive(Debug)]
+pub struct IngestMessage {
+    pub sender_address: String,
+    pub recipients: Vec<String>,
+    pub message_blob: BlobHash,
+    pub message_size: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum DeliveryResult {
+    Success,
+    TemporaryFailure {
+        reason: Cow<'static, str>,
+    },
+    PermanentFailure {
+        code: [u8; 3],
+        reason: Cow<'static, str>,
+    },
 }
 
 pub trait IntoString: Sized {
@@ -210,14 +233,8 @@ impl Core {
     }
 }
 
-#[derive(Default)]
-pub struct TracerResult {
-    pub guards: Vec<WorkerGuard>,
-    pub errors: Vec<String>,
-}
-
 impl Tracers {
-    pub fn enable(self) -> TracerResult {
+    pub fn enable(self, config: &mut Config) -> Option<Vec<WorkerGuard>> {
         let mut layers = Vec::new();
         let mut level = Level::TRACE;
 
@@ -234,17 +251,15 @@ impl Tracers {
             }
         }
 
-        let mut result = TracerResult::default();
+        let mut guards = Vec::new();
         match EnvFilter::builder().parse(format!(
-            "smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"
+            "smtp={level},imap={level},jmap={level},store={level},common={level},utils={level},directory={level}"
         )) {
             Ok(layer) => {
                 layers.push(layer.boxed());
             }
             Err(err) => {
-                result
-                    .errors
-                    .push(format!("Failed to set env filter: {err}"));
+                config.new_build_error("tracer", format!("Failed to set env filter: {err}"));
             }
         }
 
@@ -264,7 +279,7 @@ impl Tracers {
                     ansi,
                 } => {
                     let (non_blocking, guard) = tracing_appender::non_blocking(appender);
-                    result.guards.push(guard);
+                    guards.push(guard);
                     layers.push(
                         tracing_subscriber::fmt::layer()
                             .with_writer(non_blocking)
@@ -305,9 +320,10 @@ impl Tracers {
                             );
                         }
                         Err(err) => {
-                            result
-                                .errors
-                                .push(format!("Failed to start OpenTelemetry: {err}"));
+                            config.new_build_error(
+                                "tracer",
+                                format!("Failed to start OpenTelemetry: {err}"),
+                            );
                         }
                     }
                 }
@@ -321,29 +337,35 @@ impl Tracers {
                                 );
                             }
                             Err(err) => {
-                                result
-                                    .errors
-                                    .push(format!("Failed to start Journald: {err}"));
+                                config.new_build_error(
+                                    "tracer",
+                                    format!("Failed to start Journald: {err}"),
+                                );
                             }
                         }
                     }
 
                     #[cfg(not(unix))]
                     {
-                        result
-                            .errors
-                            .push("Journald is only available on Unix systems.".to_string());
+                        config.new_build_error(
+                            "tracer",
+                            "Journald is only available on Unix systems.",
+                        );
                     }
                 }
             }
         }
 
-        if let Err(err) = tracing_subscriber::registry().with(layers).try_init() {
-            result
-                .errors
-                .push(format!("Failed to start tracing: {err}"));
+        if layers.len() > 1 {
+            match tracing_subscriber::registry().with(layers).try_init() {
+                Ok(_) => Some(guards),
+                Err(err) => {
+                    config.new_build_error("tracer", format!("Failed to start tracing: {err}"));
+                    None
+                }
+            }
+        } else {
+            None
         }
-
-        result
     }
 }

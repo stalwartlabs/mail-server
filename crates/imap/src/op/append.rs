@@ -29,12 +29,11 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
+use crate::core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData};
+use common::listener::SessionStream;
 use jmap::email::ingest::IngestEmail;
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
-use utils::listener::SessionStream;
-
-use crate::core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData};
 
 use super::ToModSeq;
 
@@ -133,7 +132,7 @@ impl<T: SessionStream> SessionData<T> {
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
                     skip_duplicates: false,
-                    encrypt: self.jmap.config.encrypt && self.jmap.config.encrypt_append,
+                    encrypt: self.jmap.core.jmap.encrypt && self.jmap.core.jmap.encrypt_append,
                 })
                 .await
             {

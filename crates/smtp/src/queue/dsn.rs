@@ -44,7 +44,7 @@ impl SMTP {
     pub async fn send_dsn(&self, message: &mut Message, span: &tracing::Span) {
         if !message.return_path.is_empty() {
             if let Some(dsn) = message.build_dsn(self, span).await {
-                let mut dsn_message = self.queue.new_message("", "", "");
+                let mut dsn_message = self.new_message("", "", "");
                 dsn_message
                     .add_recipient_parts(
                         &message.return_path,
@@ -56,7 +56,7 @@ impl SMTP {
 
                 // Sign message
                 let signature = self
-                    .sign_message(message, &self.queue.config.dsn.sign, &dsn, span)
+                    .sign_message(message, &self.core.smtp.queue.dsn.sign, &dsn, span)
                     .await;
                 dsn_message
                     .queue(signature.as_deref(), &dsn, self, span)
@@ -70,7 +70,7 @@ impl SMTP {
 
 impl Message {
     pub async fn build_dsn(&mut self, core: &SMTP, span: &tracing::Span) -> Option<Vec<u8>> {
-        let config = &core.queue.config;
+        let config = &core.core.smtp.queue;
         let now = now();
 
         let mut txt_success = String::new();
@@ -232,6 +232,7 @@ impl Message {
                     let envelope = SimpleEnvelope::new(self, &domain.domain);
 
                     if let Some(next_notify) = core
+                        .core
                         .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
                         .await
                         .and_then(|notify| {
@@ -250,14 +251,17 @@ impl Message {
 
         // Obtain hostname and sender addresses
         let from_name = core
+            .core
             .eval_if(&config.dsn.name, self)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = core
+            .core
             .eval_if(&config.dsn.address, self)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
+            .core
             .eval_if(&config.hostname, self)
             .await
             .unwrap_or_else(|| String::from("localhost"));
@@ -269,8 +273,9 @@ impl Message {
 
         // Fetch up to 1024 bytes of message headers
         let headers = match core
-            .shared
-            .default_blob_store
+            .core
+            .storage
+            .blob
             .get_blob(self.blob_hash.as_slice(), 0..1024)
             .await
         {

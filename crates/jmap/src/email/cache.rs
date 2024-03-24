@@ -46,7 +46,9 @@ impl JMAP {
     ) -> Result<Vec<(u32, u32)>, MethodError> {
         // Obtain current state
         let modseq = self
-            .store
+            .core
+            .storage
+            .data
             .get_last_change_id(account_id, Collection::Thread)
             .map_err(|err| {
                 tracing::error!(event = "error",
@@ -60,7 +62,7 @@ impl JMAP {
 
         // Lock the cache
         let thread_cache = if let Some(thread_cache) =
-            self.cache_threads.get(&account_id).and_then(|t| {
+            self.inner.cache_threads.get(&account_id).and_then(|t| {
                 if t.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
                     Some(t)
                 } else {
@@ -82,7 +84,9 @@ impl JMAP {
                     .collect(),
                 modseq,
             });
-            self.cache_threads.insert(account_id, thread_cache.clone());
+            self.inner
+                .cache_threads
+                .insert(account_id, thread_cache.clone());
             thread_cache
         };
 

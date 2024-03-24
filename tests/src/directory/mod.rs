@@ -27,16 +27,17 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
+use common::config::smtp::session::AddressMapping;
 use directory::{
-    backend::internal::manage::ManageDirectory, core::config::ConfigDirectory, AddressMapping,
-    Directories, Principal,
+    backend::internal::manage::ManageDirectory, core::config::ConfigDirectory, Directories,
+    Principal,
 };
 use mail_send::Credentials;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
-use store::{config::ConfigStore, LookupStore, Store, Stores};
+use store::{LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
 
 use crate::store::TempDir;

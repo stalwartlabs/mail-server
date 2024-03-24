@@ -22,12 +22,10 @@
 */
 
 use ahash::{AHashMap, RandomState};
+use common::Core;
 use mail_auth::dmarc::Dmarc;
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 use store::{
     write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
@@ -35,14 +33,14 @@ use store::{
 use tokio::sync::mpsc;
 
 use crate::{
-    core::{worker::SpawnCleanup, SMTP},
+    core::{SmtpInstance, SMTP},
     queue::{manager::LONG_WAIT, spool::LOCK_EXPIRY},
 };
 
 use super::{Event, ReportLock};
 
 impl SpawnReport for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: Arc<SMTP>) {
+    fn spawn(mut self, core: SmtpInstance) {
         tokio::spawn(async move {
             let mut last_cleanup = Instant::now();
             let mut next_wake_up;
@@ -50,7 +48,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
             loop {
                 // Read events
                 let now = now();
-                let events = core.next_report_event().await;
+                let events = next_report_event(&core.core.load()).await;
                 next_wake_up = events
                     .last()
                     .and_then(|e| match e {
@@ -63,6 +61,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
                     })
                     .unwrap_or(LONG_WAIT);
 
+                let core = SMTP::from(core.clone());
                 let core_ = core.clone();
                 tokio::spawn(async move {
                     let mut tls_reports = AHashMap::new();
@@ -117,66 +116,67 @@ impl SpawnReport for mpsc::Receiver<Event> {
     }
 }
 
-impl SMTP {
-    pub async fn next_report_event(&self) -> Vec<QueueClass> {
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
-            ReportEvent {
-                due: 0,
-                policy_hash: 0,
-                seq_id: 0,
-                domain: String::new(),
+async fn next_report_event(core: &Core) -> Vec<QueueClass> {
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
+        ReportEvent {
+            due: 0,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
+        ReportEvent {
+            due: u64::MAX,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+
+    let mut events = Vec::new();
+    let now = now();
+    let result = core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending().no_values(),
+            |key, _| {
+                let event = ReportEvent::deserialize(key)?;
+                if event.seq_id == 0 {
+                    // Skip lock
+                    return Ok(true);
+                }
+                let do_continue = event.due <= now;
+                events.push(if *key.last().unwrap() == 0 {
+                    QueueClass::DmarcReportHeader(event)
+                } else {
+                    QueueClass::TlsReportHeader(event)
+                });
+                Ok(do_continue)
             },
-        )));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
-            ReportEvent {
-                due: u64::MAX,
-                policy_hash: 0,
-                seq_id: 0,
-                domain: String::new(),
-            },
-        )));
+        )
+        .await;
 
-        let mut events = Vec::new();
-        let now = now();
-        let result = self
-            .shared
-            .default_data_store
-            .iterate(
-                IterateParams::new(from_key, to_key).ascending().no_values(),
-                |key, _| {
-                    let event = ReportEvent::deserialize(key)?;
-                    if event.seq_id == 0 {
-                        // Skip lock
-                        return Ok(true);
-                    }
-                    let do_continue = event.due <= now;
-                    events.push(if *key.last().unwrap() == 0 {
-                        QueueClass::DmarcReportHeader(event)
-                    } else {
-                        QueueClass::TlsReportHeader(event)
-                    });
-                    Ok(do_continue)
-                },
-            )
-            .await;
-
-        if let Err(err) = result {
-            tracing::error!(
-                context = "queue",
-                event = "error",
-                "Failed to read from store: {}",
-                err
-            );
-        }
-
-        events
+    if let Err(err) = result {
+        tracing::error!(
+            context = "queue",
+            event = "error",
+            "Failed to read from store: {}",
+            err
+        );
     }
 
+    events
+}
+
+impl SMTP {
     pub async fn try_lock_report(&self, lock: QueueClass) -> bool {
         let now = now();
         match self
-            .shared
-            .default_data_store
+            .core
+            .storage
+            .data
             .get_value::<u64>(ValueKey::from(ValueClass::Queue(lock.clone())))
             .await
         {
@@ -188,7 +188,7 @@ impl SMTP {
                         ValueClass::Queue(lock.clone()),
                         (now + LOCK_EXPIRY).serialize(),
                     );
-                    match self.shared.default_data_store.write(batch.build()).await {
+                    match self.core.storage.data.write(batch.build()).await {
                         Ok(_) => true,
                         Err(store::Error::AssertValueFailed) => {
                             tracing::debug!(
@@ -273,5 +273,5 @@ impl ToTimestamp for Duration {
 }
 
 pub trait SpawnReport {
-    fn spawn(self, core: Arc<SMTP>);
+    fn spawn(self, core: SmtpInstance);
 }

@@ -38,7 +38,8 @@ pub mod thread;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ::managesieve::core::ManageSieveSessionManager;
-use ::store::config::ConfigStore;
+use common::config::server::ServerProtocol;
+
 use ahash::AHashSet;
 use directory::{backend::internal::manage::ManageDirectory, core::config::ConfigDirectory};
 use imap::core::{ImapSessionManager, IMAP};
@@ -50,7 +51,7 @@ use tokio::{
     net::TcpStream,
     sync::{mpsc, watch},
 };
-use utils::{config::ServerProtocol, UnwrapFailure};
+use utils::UnwrapFailure;
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
 
@@ -278,7 +279,10 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut servers = config.parse_servers().unwrap();
     let stores = config.parse_stores().await.failed("Invalid configuration");
     let directory = config
-        .parse_directory(&stores, stores.stores.get(store_id).unwrap().clone())
+        .parse_directory(
+            &stores,
+            stores.core.storage.datas.get(store_id).unwrap().clone(),
+        )
         .await
         .unwrap();
 
@@ -346,11 +350,16 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         .await;
 
     if delete_if_exists {
-        jmap.store.destroy().await;
+        jmap.core.storage.data.destroy().await;
     }
 
     // Assign Id 0 to admin (required for some tests)
-    jmap.store.get_or_create_account_id("admin").await.unwrap();
+    jmap.core
+        .storage
+        .data
+        .get_or_create_account_id("admin")
+        .await
+        .unwrap();
 
     IMAPTest {
         jmap,

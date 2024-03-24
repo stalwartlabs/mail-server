@@ -21,11 +21,9 @@
  * for more details.
 */
 
-use imap_proto::{receiver::Request, Command, StatusResponse};
-
-use utils::listener::SessionStream;
-
 use crate::core::{Session, State};
+use common::listener::SessionStream;
+use imap_proto::{receiver::Request, Command, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_noop(&mut self, request: Request<Command>) -> crate::OpResult {

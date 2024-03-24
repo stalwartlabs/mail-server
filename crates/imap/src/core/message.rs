@@ -24,6 +24,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{expunge, select::Exists, Sequence},
     StatusResponse,
@@ -34,7 +35,7 @@ use jmap_proto::{
     types::{collection::Collection, property::Property, value::Value},
 };
 use store::write::assert::HashedValue;
-use utils::{listener::SessionStream, lru_cache::LruCached};
+use utils::lru_cache::LruCached;
 
 use crate::core::ImapId;
 
@@ -62,7 +63,9 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain current state
         let modseq = self
             .jmap
-            .store
+            .core
+            .storage
+            .data
             .get_last_change_id(mailbox.account_id, Collection::Email)
             .await
             .map_err(|err| {
@@ -231,7 +234,9 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain current modseq
         if let Ok(modseq) = self
             .jmap
-            .store
+            .core
+            .storage
+            .data
             .get_last_change_id(account_id, Collection::Email)
             .await
         {

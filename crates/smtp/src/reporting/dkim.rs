@@ -57,8 +57,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             return;
         }
 
-        let config = &self.core.report.config.dkim;
+        let config = &self.core.core.smtp.report.dkim;
         let from_addr = self
+            .core
             .core
             .eval_if(&config.address, self)
             .await
@@ -66,7 +67,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         let mut report = Vec::with_capacity(128);
         self.new_auth_failure(output.result().into(), rejected)
             .with_authentication_results(
-                AuthenticationResults::new(&self.instance.hostname)
+                AuthenticationResults::new(&self.hostname)
                     .with_dkim_result(output, message.from())
                     .to_string(),
             )
@@ -77,6 +78,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             .write_rfc5322(
                 (
                     self.core
+                        .core
                         .eval_if(&config.name, self)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
@@ -85,6 +87,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 ),
                 rcpt,
                 &self
+                    .core
                     .core
                     .eval_if(&config.subject, self)
                     .await

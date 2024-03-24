@@ -50,6 +50,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, read_range).await,
+                Store::None => Err(crate::Error::InternalError("No store configured".into())),
             },
             BlobBackend::Fs(store) => store.get_blob(key, read_range).await,
             #[cfg(feature = "s3")]
@@ -115,6 +116,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, data.as_ref()).await,
+                Store::None => Err(crate::Error::InternalError("No store configured".into())),
             },
             BlobBackend::Fs(store) => store.put_blob(key, data.as_ref()).await,
             #[cfg(feature = "s3")]
@@ -135,6 +137,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
+                Store::None => Err(crate::Error::InternalError("No store configured".into())),
             },
             BlobBackend::Fs(store) => store.delete_blob(key).await,
             #[cfg(feature = "s3")]

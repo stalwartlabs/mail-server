@@ -23,6 +23,8 @@
 
 use std::sync::Arc;
 
+use crate::core::{Mailbox, Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{
     parser::PushUnique,
     protocol::status::{Status, StatusItem, StatusItemType},
@@ -39,9 +41,6 @@ use store::{
     IndexKeyPrefix, IterateParams, ValueKey,
 };
 use store::{Deserialize, U32_LEN};
-use utils::listener::SessionStream;
-
-use crate::core::{Mailbox, Session, SessionData};
 
 use super::ToModSeq;
 
@@ -95,11 +94,11 @@ impl<T: SessionStream> SessionData<T> {
             mailbox
         } else {
             // Some IMAP clients will try to get the status of a mailbox with the NoSelect flag
-            return if mailbox_name == self.imap.name_shared
+            return if mailbox_name == self.jmap.core.imap.name_shared
                 || mailbox_name
                     .split_once('/')
                     .map_or(false, |(base_name, path)| {
-                        base_name == self.imap.name_shared && !path.contains('/')
+                        base_name == self.jmap.core.imap.name_shared && !path.contains('/')
                     })
             {
                 Ok(StatusItem {
@@ -238,7 +237,9 @@ impl<T: SessionStream> SessionData<T> {
                     Status::UidNext => {
                         (self
                             .jmap
-                            .store
+                            .core
+                            .storage
+                            .data
                             .get_counter(ValueKey {
                                 account_id: mailbox.account_id,
                                 collection: Collection::Mailbox.into(),
@@ -388,7 +389,9 @@ impl<T: SessionStream> SessionData<T> {
     ) -> super::Result<u32> {
         let mut total_size = 0u32;
         self.jmap
-            .store
+            .core
+            .storage
+            .data
             .iterate(
                 IterateParams::new(
                     IndexKeyPrefix {

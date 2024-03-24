@@ -53,7 +53,7 @@ impl JMAP {
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
             Property::BlobId,
@@ -108,7 +108,7 @@ impl JMAP {
         } else {
             let document_ids = message_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .collect::<Vec<_>>();
             self.get_cached_thread_ids(account_id, document_ids.iter().copied())
                 .await

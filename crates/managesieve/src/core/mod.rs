@@ -26,15 +26,15 @@ pub mod session;
 
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use imap::core::IMAP;
+use common::listener::{limiter::InFlight, ServerInstance};
+use imap::core::{ImapInstance, Inner};
 use imap_proto::receiver::{CommandParser, Receiver};
 use jmap::{auth::AccessToken, JMAP};
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::listener::{limiter::InFlight, ServerInstance};
 
 pub struct Session<T: AsyncRead + AsyncWrite> {
-    pub jmap: Arc<JMAP>,
-    pub imap: Arc<IMAP>,
+    pub jmap: JMAP,
+    pub imap: Arc<Inner>,
     pub instance: Arc<ServerInstance>,
     pub receiver: Receiver<Command>,
     pub state: State,
@@ -50,7 +50,7 @@ pub enum State {
     },
     Authenticated {
         access_token: Arc<AccessToken>,
-        in_flight: InFlight,
+        in_flight: Option<InFlight>,
     },
 }
 
@@ -65,13 +65,12 @@ impl State {
 
 #[derive(Clone)]
 pub struct ManageSieveSessionManager {
-    pub jmap: Arc<JMAP>,
-    pub imap: Arc<IMAP>,
+    pub imap: ImapInstance,
 }
 
 impl ManageSieveSessionManager {
-    pub fn new(jmap: Arc<JMAP>, imap: Arc<IMAP>) -> Self {
-        Self { jmap, imap }
+    pub fn new(imap: ImapInstance) -> Self {
+        Self { imap }
     }
 }
 

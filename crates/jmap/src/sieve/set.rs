@@ -97,7 +97,7 @@ impl JMAP {
         // Process creates
         let mut changes = ChangeLogBuilder::new();
         for (id, object) in request.unwrap_create() {
-            if sieve_ids.len() as usize <= self.config.sieve_max_scripts {
+            if sieve_ids.len() as usize <= self.core.jmap.sieve_max_scripts {
                 match self.sieve_set_item(object, None, &ctx).await? {
                     Ok((mut builder, Some(blob))) => {
                         // Obtain document id
@@ -248,7 +248,7 @@ impl JMAP {
 
                         if !batch.is_empty() {
                             changes.log_update(Collection::SieveScript, document_id);
-                            match self.store.write(batch.build()).await {
+                            match self.core.storage.data.write(batch.build()).await {
                                 Ok(_) => (),
                                 Err(store::Error::AssertValueFailed) => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
@@ -443,7 +443,7 @@ impl JMAP {
             };
             let value = match (&property, value) {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
-                    if value.len() > self.config.sieve_max_script_name {
+                    if value.len() > self.core.jmap.sieve_max_script_name {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(property)
                             .with_description("Script name is too long.")));
@@ -533,7 +533,7 @@ impl JMAP {
                     }
 
                     // Compile script
-                    match self.sieve_compiler.compile(&bytes) {
+                    match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
                             changes.set(Property::BlobId, BlobId::default().with_section_size(bytes.len()));
                             bytes.extend(bincode::serialize(&script).unwrap_or_default());
@@ -654,7 +654,7 @@ impl JMAP {
 
         // Write changes
         if !changed_ids.is_empty() {
-            match self.store.write(batch.build()).await {
+            match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => (),
                 Err(store::Error::AssertValueFailed) => {
                     return Ok(vec![]);

@@ -23,7 +23,6 @@
 
 use ahash::AHashMap;
 use store::{
-    config::ConfigStore,
     write::{blob::BlobQuota, now, BatchBuilder, BlobOp},
     BlobClass, BlobStore, Serialize,
 };

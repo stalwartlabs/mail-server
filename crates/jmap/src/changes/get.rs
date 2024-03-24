@@ -69,10 +69,10 @@ impl JMAP {
             }
         };
 
-        let max_changes = if self.config.changes_max_results > 0
-            && self.config.changes_max_results < request.max_changes.unwrap_or(0)
+        let max_changes = if self.core.jmap.changes_max_results > 0
+            && self.core.jmap.changes_max_results < request.max_changes.unwrap_or(0)
         {
-            self.config.changes_max_results
+            self.core.jmap.changes_max_results
         } else {
             request.max_changes.unwrap_or(0)
         };
@@ -182,7 +182,9 @@ impl JMAP {
         collection: Collection,
         query: Query,
     ) -> Result<Changes, MethodError> {
-        self.store
+        self.core
+            .storage
+            .data
             .changes(account_id, collection, query)
             .await
             .map_err(|err| {

@@ -21,19 +21,17 @@
  * for more details.
 */
 
+use common::{config::smtp::session::Mechanism, expr::if_block::IfBlock};
 use directory::core::config::ConfigDirectory;
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::dummy_stores,
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::session::Mechanism,
-    core::{Session, State, SMTP},
-};
+use smtp::core::{Session, State, SMTP};
 
 const DIRECTORY: &str = r#"
 [storage]
@@ -62,14 +60,14 @@ member-of = ["sales", "support"]
 #[tokio::test]
 async fn auth() {
     let mut core = SMTP::test();
-    core.shared.directories = Config::new(DIRECTORY)
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
 
-    let config = &mut core.session.config.auth;
+    let config = &mut core.core.smtp.session.auth;
 
     config.require = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
     {else = false}]"#
@@ -85,7 +83,7 @@ async fn auth() {
     {else = 0}]"#
         .parse_if_constant::<Mechanism>();
     config.must_match_sender = IfBlock::new(true);
-    core.session.config.extensions.future_release =
+    core.core.smtp.session.extensions.future_release =
         r"[{if = '!is_empty(authenticated_as)', then = '1d'},
     {else = false}]"
             .parse_if();

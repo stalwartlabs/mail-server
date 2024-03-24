@@ -23,7 +23,9 @@
 
 use std::sync::Arc;
 
+use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
 use ahash::AHashSet;
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
         fetch::{DataItem, FetchItem},
@@ -45,9 +47,6 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
 };
-use utils::listener::SessionStream;
-
-use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
 
 use super::FromModSeq;
 

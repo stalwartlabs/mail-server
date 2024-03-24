@@ -63,7 +63,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
         for mailbox_id in 1545..3010 {
             batch.create_document(mailbox_id);
         }
-        server.store.write(batch.build()).await.unwrap();
+        server.core.storage.data.write(batch.build()).await.unwrap();
 
         // Create test messages
         println!("Inserting JMAP Mail query test messages...");
@@ -79,7 +79,7 @@ pub async fn test(params: &mut JMAPTest, insert: bool) {
                 .delete_document(mailbox_id)
                 .clear(ValueClass::Property(Property::EmailIds.into()));
         }
-        server.store.write(batch.build()).await.unwrap();
+        server.core.storage.data.write(batch.build()).await.unwrap();
 
         for thread_id in 0..MAX_THREADS {
             assert!(

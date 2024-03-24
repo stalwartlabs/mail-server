@@ -21,11 +21,11 @@
  * for more details.
 */
 
+use common::listener::SessionStream;
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use utils::listener::SessionStream;
 
 use super::{Command, ResponseCode, ResponseType, Session, State, StatusResponse};
 
@@ -114,7 +114,7 @@ impl<T: SessionStream> Session<T> {
             Command::Capability | Command::Logout | Command::Noop => Ok(command),
             Command::Authenticate => {
                 if let State::NotAuthenticated { .. } = &self.state {
-                    if self.stream.is_tls() || self.imap.allow_plain_auth {
+                    if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
                         Ok(command)
                     } else {
                         Err(StatusResponse::no("Cannot authenticate over plain-text.")
@@ -141,21 +141,27 @@ impl<T: SessionStream> Session<T> {
             | Command::CheckScript
             | Command::Unauthenticate => {
                 if let State::Authenticated { access_token, .. } = &self.state {
-                    match self
-                        .jmap
-                        .lookup_store
-                        .is_rate_allowed(
-                            format!("ireq:{}", access_token.primary_id()).as_bytes(),
-                            &self.imap.rate_requests,
-                            true,
-                        )
-                        .await
-                    {
-                        Ok(None) => Ok(command),
-                        Ok(Some(_)) => Err(StatusResponse::no("Too many requests")
-                            .with_code(ResponseCode::TryLater)),
-                        Err(_) => Err(StatusResponse::no("Internal server error")
-                            .with_code(ResponseCode::TryLater)),
+                    if let Some(rate) = &self.jmap.core.imap.rate_requests {
+                        match self
+                            .jmap
+                            .core
+                            .storage
+                            .lookup
+                            .is_rate_allowed(
+                                format!("ireq:{}", access_token.primary_id()).as_bytes(),
+                                rate,
+                                true,
+                            )
+                            .await
+                        {
+                            Ok(None) => Ok(command),
+                            Ok(Some(_)) => Err(StatusResponse::no("Too many requests")
+                                .with_code(ResponseCode::TryLater)),
+                            Err(_) => Err(StatusResponse::no("Internal server error")
+                                .with_code(ResponseCode::TryLater)),
+                        }
+                    } else {
+                        Ok(command)
                     }
                 } else {
                     Err(StatusResponse::no("Not authenticated."))
@@ -216,7 +222,9 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
 impl<T: AsyncWrite + AsyncRead> Session<T> {
     pub async fn get_script_id(&self, account_id: u32, name: &str) -> Result<u32, StatusResponse> {
         self.jmap
-            .store
+            .core
+            .storage
+            .data
             .filter(
                 account_id,
                 Collection::SieveScript,

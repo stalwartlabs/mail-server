@@ -56,7 +56,7 @@ pub struct AcmeManager {
     pub(crate) domains: Vec<String>,
     contact: Vec<String>,
     renew_before: chrono::Duration,
-    store: Store,
+    store: ArcSwap<Store>,
     account_key: ArcSwap<Vec<u8>>,
     auth_keys: Mutex<AHashMap<String, Arc<CertifiedKey>>>,
     order_in_progress: AtomicBool,
@@ -81,7 +81,6 @@ impl AcmeManager {
         domains: Vec<String>,
         contact: Vec<String>,
         renew_before: Duration,
-        store: Store,
     ) -> utils::config::Result<Self> {
         Ok(AcmeManager {
             id,
@@ -97,7 +96,7 @@ impl AcmeManager {
                 })
                 .collect(),
             renew_before: chrono::Duration::from_std(renew_before).unwrap(),
-            store,
+            store: ArcSwap::from_pointee(Store::None),
             account_key: ArcSwap::from_pointee(Vec::new()),
             auth_keys: Mutex::new(AHashMap::new()),
             order_in_progress: false.into(),
@@ -106,7 +105,10 @@ impl AcmeManager {
         })
     }
 
-    pub async fn init(&self) -> Result<Duration, AcmeError> {
+    pub async fn init(&self, store: Store) -> Result<Duration, AcmeError> {
+        // Update data store
+        self.store.store(Arc::new(store));
+
         // Load account key from cache or generate a new one
         if let Some(account_key) = self.load_account().await? {
             self.account_key.store(Arc::new(account_key));
@@ -130,14 +132,14 @@ impl AcmeManager {
 }
 
 pub trait SpawnAcme {
-    fn spawn(self, shutdown_rx: watch::Receiver<bool>);
+    fn spawn(self, store: Store, shutdown_rx: watch::Receiver<bool>);
 }
 
 impl SpawnAcme for Arc<AcmeManager> {
-    fn spawn(self, mut shutdown_rx: watch::Receiver<bool>) {
+    fn spawn(self, store: Store, mut shutdown_rx: watch::Receiver<bool>) {
         tokio::spawn(async move {
             let acme = self;
-            let mut renew_at = match acme.init().await {
+            let mut renew_at = match acme.init(store).await {
                 Ok(renew_at) => renew_at,
                 Err(err) => {
                     tracing::error!(

@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use common::AuthResult;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -174,15 +175,16 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 
     pub async fn authenticate(&mut self, credentials: Credentials<String>) -> Result<bool, ()> {
-        if let Some(lookup) = &self.params.auth_directory {
+        if let Some(directory) = &self.params.auth_directory {
             let authenticated_as = match &credentials {
                 Credentials::Plain { username, .. }
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            let todo = "fix";
-            /*match lookup
-                .authenticate(&credentials, self.data.remote_ip, false)
+            match self
+                .core
+                .core
+                .authenticate(directory, &credentials, self.data.remote_ip, false)
                 .await
             {
                 Ok(AuthResult::Success(principal)) => {
@@ -227,7 +229,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                     return Err(());
                 }
                 _ => (),
-            }*/
+            }
         } else {
             tracing::warn!(
                 parent: &self.span,

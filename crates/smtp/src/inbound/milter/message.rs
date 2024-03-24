@@ -23,13 +23,12 @@
 
 use std::borrow::Cow;
 
+use common::{config::smtp::session::Milter, listener::SessionStream};
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::request::parser::Rfc5321Parser;
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::listener::SessionStream;
 
 use crate::{
-    config::Milter,
     core::{Session, SessionAddress, SessionData},
     inbound::milter::MilterClient,
     queue::DomainPart,
@@ -48,7 +47,7 @@ impl<T: SessionStream> Session<T> {
         &self,
         message: &AuthenticatedMessage<'_>,
     ) -> Result<Vec<Modification>, Cow<'static, [u8]>> {
-        let milters = &self.core.session.config.data.milters;
+        let milters = &self.core.core.smtp.session.data.milters;
         if milters.is_empty() {
             return Ok(Vec::new());
         }
@@ -56,6 +55,7 @@ impl<T: SessionStream> Session<T> {
         let mut modifications = Vec::new();
         for milter in milters {
             if !self
+                .core
                 .core
                 .eval_if(&milter.enable, self)
                 .await
@@ -143,9 +143,9 @@ impl<T: SessionStream> Session<T> {
                 client
                     .into_tls(
                         if !milter.tls_allow_invalid_certs {
-                            &self.core.queue.connectors.pki_verify
+                            &self.core.inner.connectors.pki_verify
                         } else {
-                            &self.core.queue.connectors.dummy_verify
+                            &self.core.inner.connectors.dummy_verify
                         },
                         &milter.hostname,
                     )
@@ -178,7 +178,7 @@ impl<T: SessionStream> Session<T> {
                 self.data.remote_port,
                 Macros::new()
                     .with_daemon_name(DAEMON_NAME)
-                    .with_local_hostname(&self.instance.hostname)
+                    .with_local_hostname(&self.hostname)
                     .with_client_address(self.data.remote_ip)
                     .with_client_port(self.data.remote_port)
                     .with_client_ptr(client_ptr.map(|p| p.as_str()).unwrap_or("unknown")),

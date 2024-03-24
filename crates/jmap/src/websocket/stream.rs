@@ -23,6 +23,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use common::listener::ServerInstance;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -35,7 +36,7 @@ use jmap_proto::{
 };
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
-use utils::{listener::ServerInstance, map::bitmap::Bitmap};
+use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -49,13 +50,12 @@ impl JMAP {
         let span = tracing::info_span!(
             "WebSocket connection established",
             "account_id" = access_token.primary_id(),
-            "url" = instance.data,
         );
 
         // Set timeouts
-        let throttle = self.config.web_socket_throttle;
-        let timeout = self.config.web_socket_timeout;
-        let heartbeat = self.config.web_socket_heartbeat;
+        let throttle = self.core.jmap.web_socket_throttle;
+        let timeout = self.core.jmap.web_socket_timeout;
+        let heartbeat = self.core.jmap.web_socket_heartbeat;
         let mut last_request = Instant::now();
         let mut last_changes_sent = Instant::now() - throttle;
         let mut last_heartbeat = Instant::now() - heartbeat;
@@ -87,8 +87,8 @@ impl JMAP {
                                 Message::Text(text) => {
                                     let response = match WebSocketMessage::parse(
                                         text.as_bytes(),
-                                        self.config.request_max_calls,
-                                        self.config.request_max_size,
+                                        self.core.jmap.request_max_calls,
+                                        self.core.jmap.request_max_size,
                                     ) {
                                         Ok(WebSocketMessage::Request(request)) => {
                                             match self

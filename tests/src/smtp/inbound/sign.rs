@@ -23,23 +23,21 @@
 
 use std::time::{Duration, Instant};
 
+use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
 use directory::core::config::ConfigDirectory;
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::{dummy_stores, TestMessage},
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
-use smtp::{
-    config::{auth::ConfigAuth, ConfigContext, VerifyStrategy},
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 const SIGNATURES: &str = "
 [signature.rsa]
@@ -115,17 +113,17 @@ async fn sign_and_seal() {
     let mut qr = core.init_test_queue("smtp_sign_test");
 
     // Add SPF, DKIM and DMARC records
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "ed._domainkey.scamorza.org",
         DomainKey::parse(
             concat!(
@@ -137,7 +135,7 @@ async fn sign_and_seal() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "rsa._domainkey.manchego.org",
         DomainKey::parse(
             concat!(
@@ -153,16 +151,16 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    core.shared.directories = Config::new(DIRECTORY)
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.data.add_auth_results = IfBlock::new(true);
     config.data.add_date = IfBlock::new(true);
     config.data.add_message_id = IfBlock::new(true);
@@ -172,8 +170,8 @@ async fn sign_and_seal() {
 
     let config = &mut core.mail_auth;
     let ctx = ConfigContext::new().parse_signatures();
-    core.shared.signers = ctx.signers;
-    core.shared.sealers = ctx.sealers;
+    core.core.storage.signers = ctx.signers;
+    core.core.storage.sealers = ctx.sealers;
     config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
     config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
     config.dkim.verify = config.spf.verify_ehlo.clone();

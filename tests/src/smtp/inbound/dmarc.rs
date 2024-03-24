@@ -26,6 +26,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{
+    config::smtp::{auth::VerifyStrategy, report::AggregateFrequency},
+    expr::if_block::IfBlock,
+};
 use directory::core::config::ConfigDirectory;
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
@@ -35,17 +39,14 @@ use mail_auth::{
     spf::Spf,
 };
 use store::Store;
-use utils::config::{if_block::IfBlock, Config};
+use utils::config::Config;
 
 use crate::smtp::{
     inbound::{dummy_stores, sign::TextConfigContext, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig, TestSMTP,
 };
-use smtp::{
-    config::{AggregateFrequency, ConfigContext, VerifyStrategy},
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 const DIRECTORY: &str = r#"
 [storage]
@@ -65,28 +66,28 @@ email = ["jdoe@example.com"]
 #[tokio::test]
 async fn dmarc() {
     let mut core = SMTP::test();
-    core.shared.signers = ConfigContext::new().parse_signatures().signers;
+    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_dmarc_test");
 
     // Add SPF, DKIM and DMARC records
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all ra=spf-failures rr=e:f:s:n").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "foobar.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "ed._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -98,7 +99,7 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "default._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -113,12 +114,12 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_report._domainkey.example.com",
         DomainKeyReport::parse(b"ra=dkim-failures; rp=100; rr=d:o:p:s:u:v:x;").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "_dmarc.example.com",
         Dmarc::parse(
             concat!(
@@ -134,16 +135,16 @@ async fn dmarc() {
 
     // Create report channels
     let mut rr = core.init_test_report();
-    core.shared.directories = Config::new(DIRECTORY)
+    core.core.storage.directories = Config::new(DIRECTORY)
         .unwrap()
         .parse_directory(&dummy_stores(), Store::default())
         .await
         .unwrap()
         .directories;
-    let config = &mut core.session.config.rcpt;
+    let config = &mut core.core.smtp.session.rcpt;
     config.directory = IfBlock::new("local".to_string());
 
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.data.add_auth_results = IfBlock::new(true);
     config.data.add_date = IfBlock::new(true);
     config.data.add_message_id = IfBlock::new(true);
@@ -151,7 +152,7 @@ async fn dmarc() {
     config.data.add_return_path = IfBlock::new(true);
     config.data.add_received_spf = IfBlock::new(true);
 
-    let config = &mut core.report.config;
+    let config = &mut core.core.smtp.report;
     config.dkim.send = "\"[1, 1s]\"".parse_if();
     config.dmarc.send = config.dkim.send.clone();
     config.spf.send = config.dkim.send.clone();
@@ -168,7 +169,7 @@ async fn dmarc() {
     { else = 'strict' }]"#
         .parse_if_constant::<VerifyStrategy>();
 
-    let config = &mut core.report.config;
+    let config = &mut core.core.smtp.report;
     config.spf.sign = "\"['rsa']\"".parse_if();
     config.dmarc.sign = "\"['rsa']\"".parse_if();
     config.dkim.sign = "\"['rsa']\"".parse_if();
@@ -250,7 +251,7 @@ async fn dmarc() {
     qr.assert_no_events();
 
     // Unaligned DMARC should be rejected
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "test.net",
         Spf::parse(b"v=spf1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

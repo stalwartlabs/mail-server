@@ -30,7 +30,6 @@ use tokio::{
 };
 use tokio_rustls::server::TlsStream;
 use tracing::debug;
-use utils::listener::SessionStream;
 
 use super::{Session, SessionData};
 

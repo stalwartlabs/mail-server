@@ -32,7 +32,13 @@ use tokio::{
 use tokio_rustls::{Accept, TlsAcceptor};
 use utils::config::ipmask::IpAddrMask;
 
-use crate::config::server::ServerProtocol;
+use crate::{
+    config::{
+        server::ServerProtocol,
+        smtp::{V_LISTENER, V_LOCAL_IP, V_REMOTE_IP},
+    },
+    expr::functions::ResolveVariable,
+};
 
 use self::{
     acme::AcmeManager,
@@ -142,6 +148,26 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
     ) -> impl std::future::Future<Output = ()> + Send;
 
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send;
+}
+
+impl ResolveVariable for ServerInstance {
+    fn resolve_variable(&self, variable: u32) -> crate::expr::Variable<'_> {
+        match variable {
+            V_LISTENER => self.id.as_str().into(),
+            _ => crate::expr::Variable::default(),
+        }
+    }
+}
+
+impl<T: SessionStream> ResolveVariable for SessionData<T> {
+    fn resolve_variable(&self, variable: u32) -> crate::expr::Variable<'_> {
+        match variable {
+            V_REMOTE_IP => self.remote_ip.to_string().into(),
+            V_LOCAL_IP => self.local_ip.to_string().into(),
+            V_LISTENER => self.instance.id.as_str().into(),
+            _ => crate::expr::Variable::default(),
+        }
+    }
 }
 
 impl Debug for TcpAcceptor {

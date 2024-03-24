@@ -40,7 +40,7 @@ impl JMAP {
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
             Property::Name,
@@ -67,7 +67,7 @@ impl JMAP {
         } else {
             mailbox_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
@@ -338,7 +338,7 @@ impl JMAP {
                 }
             })
             .collect::<Vec<_>>();
-        if path.is_empty() || path.len() > self.config.mailbox_max_depth {
+        if path.is_empty() || path.len() > self.core.jmap.mailbox_max_depth {
             return Ok(None);
         }
 

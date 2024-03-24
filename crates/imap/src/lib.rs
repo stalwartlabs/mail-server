@@ -21,12 +21,12 @@
  * for more details.
 */
 
+use core::{ImapInstance, Inner, IMAP};
 use std::{collections::hash_map::RandomState, sync::Arc};
-
-use crate::core::IMAP;
 
 use dashmap::DashMap;
 use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
+use jmap::JmapInstance;
 use utils::{
     config::Config,
     lru_cache::{LruCache, LruCached},
@@ -35,30 +35,17 @@ use utils::{
 pub mod core;
 pub mod op;
 
-static SERVER_GREETING: &str = concat!(
-    "Stalwart IMAP4rev2 v",
-    env!("CARGO_PKG_VERSION"),
-    " at your service."
-);
+static SERVER_GREETING: &str = "Stalwart IMAP4rev2 at your service.";
 
 impl IMAP {
-    pub async fn init(config: &Config) -> utils::config::Result<Arc<Self>> {
+    pub async fn init(config: &mut Config, jmap_instance: JmapInstance) -> ImapInstance {
         let shard_amount = config
-            .property::<u64>("cache.shard")?
+            .property_::<u64>("cache.shard")
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        let capacity = config.property("cache.capacity")?.unwrap_or(100);
+        let capacity = config.property_("cache.capacity").unwrap_or(100);
 
-        Ok(Arc::new(IMAP {
-            max_request_size: config.property_or_default("imap.request.max-size", "52428800")?,
-            max_auth_failures: config.property_or_default("imap.auth.max-failures", "3")?,
-            name_shared: config
-                .value("imap.folders.name.shared")
-                .unwrap_or("Shared Folders")
-                .to_string(),
-            timeout_auth: config.property_or_default("imap.timeout.authenticated", "30m")?,
-            timeout_unauth: config.property_or_default("imap.timeout.anonymous", "1m")?,
-            timeout_idle: config.property_or_default("imap.timeout.idle", "30m")?,
+        let inner = Inner {
             greeting_plain: StatusResponse::ok(SERVER_GREETING)
                 .with_code(ResponseCode::Capability {
                     capabilities: Capability::all_capabilities(false, false),
@@ -74,16 +61,18 @@ impl IMAP {
                 RandomState::default(),
                 shard_amount,
             ),
-            rate_requests: config.property_or_default("imap.rate-limit.requests", "2000/1m")?,
-            rate_concurrent: config.property("imap.rate-limit.concurrent")?.unwrap_or(4),
-            allow_plain_auth: config.property_or_default("imap.auth.allow-plain-text", "false")?,
             cache_account: LruCache::with_capacity(
-                config.property("cache.account.size")?.unwrap_or(2048),
+                config.property_("cache.account.size").unwrap_or(2048),
             ),
             cache_mailbox: LruCache::with_capacity(
-                config.property("cache.mailbox.size")?.unwrap_or(2048),
+                config.property_("cache.mailbox.size").unwrap_or(2048),
             ),
-        }))
+        };
+
+        ImapInstance {
+            jmap_instance,
+            imap_inner: Arc::new(inner),
+        }
     }
 }
 

@@ -79,17 +79,17 @@ impl JMAP {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     &text,
-                                    self.config.default_language,
+                                    self.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     &text,
-                                    self.config.default_language,
+                                    self.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Attachment,
                                     text,
-                                    self.config.default_language,
+                                    self.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::End);
                             }
@@ -116,12 +116,12 @@ impl JMAP {
                             Filter::Subject(text) => fts_filters.push(FtsFilter::has_text_detect(
                                 Field::Header(HeaderName::Subject),
                                 text,
-                                self.config.default_language,
+                                self.core.jmap.default_language,
                             )),
                             Filter::Body(text) => fts_filters.push(FtsFilter::has_text_detect(
                                 Field::Body,
                                 text,
-                                self.config.default_language,
+                                self.core.jmap.default_language,
                             )),
                             Filter::Header(header) => {
                                 let mut header = header.into_iter();

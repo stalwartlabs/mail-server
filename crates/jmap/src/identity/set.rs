@@ -47,7 +47,7 @@ impl JMAP {
             .get_document_ids(account_id, Collection::Identity)
             .await?
             .unwrap_or_default();
-        let mut response = SetResponse::from_request(&request, self.config.set_max_objects)?;
+        let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
 
         // Process creates
@@ -74,6 +74,8 @@ impl JMAP {
             // Validate email address
             if let Value::Text(email) = identity.get(&Property::Email) {
                 if !self
+                    .core
+                    .storage
                     .directory
                     .query(QueryBy::Id(account_id), false)
                     .await

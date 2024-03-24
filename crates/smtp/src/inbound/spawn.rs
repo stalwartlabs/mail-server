@@ -21,10 +21,10 @@
  * for more details.
 */
 
-use std::{net::IpAddr, time::Instant};
+use std::time::Instant;
 
+use common::listener::{self, SessionManager, SessionStream};
 use tokio_rustls::server::TlsStream;
-use utils::listener::{SessionManager, SessionStream};
 
 use crate::{
     core::{Session, SessionData, SessionParameters, SmtpSessionManager, State},
@@ -35,11 +35,12 @@ use crate::{
 impl SessionManager for SmtpSessionManager {
     fn handle<T: SessionStream>(
         self,
-        session: utils::listener::SessionData<T>,
+        session: listener::SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
         // Create session
         let mut session = Session {
-            core: self.inner,
+            hostname: String::new(),
+            core: self.inner.into(),
             instance: session.instance,
             state: State::default(),
             span: session.span,
@@ -66,19 +67,21 @@ impl SessionManager for SmtpSessionManager {
     #[allow(clippy::manual_async_fn)]
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
-            let _ = self.inner.queue.tx.send(queue::Event::Stop).await;
-            let _ = self.inner.report.tx.send(reporting::Event::Stop).await;
+            let _ = self.inner.inner.queue_tx.send(queue::Event::Stop).await;
+            let _ = self
+                .inner
+                .inner
+                .report_tx
+                .send(reporting::Event::Stop)
+                .await;
             #[cfg(feature = "local_delivery")]
             let _ = self
                 .inner
+                .inner
                 .delivery_tx
-                .send(utils::ipc::DeliveryEvent::Stop)
+                .send(common::DeliveryEvent::Stop)
                 .await;
         }
-    }
-
-    fn is_ip_blocked(&self, addr: &IpAddr) -> bool {
-        false
     }
 }
 
@@ -89,9 +92,10 @@ impl<T: SessionStream> Session<T> {
         // Sieve filtering
         if let Some(script) = self
             .core
-            .eval_if::<String, _>(&self.core.session.config.connect.script, self)
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.connect.script, self)
             .await
-            .and_then(|name| self.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name))
         {
             if let ScriptResult::Reject(message) = self
                 .run_script(script.clone(), self.build_script_parameters("connect"))
@@ -107,8 +111,31 @@ impl<T: SessionStream> Session<T> {
             }
         }
 
-        let instance = self.instance.clone();
-        if self.write(instance.data.as_bytes()).await.is_err() {
+        // Obtain hostname
+        self.hostname = self
+            .core
+            .core
+            .eval_if::<String, _>(&self.core.core.network.hostname, self)
+            .await
+            .unwrap_or_default();
+        if self.hostname.is_empty() {
+            tracing::warn!(parent: &self.span,
+                context = "connect",
+                event = "hostname",
+                "No hostname configured, using 'localhost'."
+            );
+            self.hostname = "locahost".to_string();
+        }
+
+        // Obtain greeting
+        let greeting = self
+            .core
+            .core
+            .eval_if::<String, _>(&self.core.core.smtp.session.connect.greeting, self)
+            .await
+            .unwrap_or_else(|| "Stalwart ESMTP at your service".to_string());
+
+        if self.write(greeting.as_bytes()).await.is_err() {
             return false;
         }
 
@@ -140,7 +167,7 @@ impl<T: SessionStream> Session<T> {
                                         }
                                     } else if bytes_read > self.data.bytes_left {
                                         self
-                                            .write(format!("451 4.7.28 {} Session exceeded transfer quota.\r\n", self.instance.hostname).as_bytes())
+                                            .write(format!("451 4.7.28 {} Session exceeded transfer quota.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
                                         tracing::debug!(
@@ -152,7 +179,7 @@ impl<T: SessionStream> Session<T> {
                                         break;
                                     } else {
                                         self
-                                            .write(format!("453 4.3.2 {} Session open for too long.\r\n", self.instance.hostname).as_bytes())
+                                            .write(format!("453 4.3.2 {} Session open for too long.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
                                         tracing::debug!(
@@ -184,7 +211,7 @@ impl<T: SessionStream> Session<T> {
                                     "Connection timed out."
                                 );
                                 self
-                                    .write(format!("221 2.0.0 {} Disconnecting inactive client.\r\n", self.instance.hostname).as_bytes())
+                                    .write(format!("221 2.0.0 {} Disconnecting inactive client.\r\n", self.hostname).as_bytes())
                                     .await
                                     .ok();
                                 break;
@@ -210,6 +237,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
         let span = self.span;
         Ok(Session {
+            hostname: self.hostname,
             stream: self.instance.tls_accept(self.stream, &span).await?,
             state: self.state,
             data: self.data,

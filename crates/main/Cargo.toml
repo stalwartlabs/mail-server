@@ -22,6 +22,7 @@ jmap_proto = { path = "../jmap-proto" }
 smtp = { path = "../smtp", features = ["local_delivery"] }
 imap = { path = "../imap" }
 managesieve = { path = "../managesieve" }
+common = { path = "../common" }
 directory = { path = "../directory" }
 utils = { path = "../utils" }
 tokio = { version = "1.23", features = ["full"] }

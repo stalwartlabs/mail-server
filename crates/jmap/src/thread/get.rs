@@ -37,14 +37,14 @@ impl JMAP {
         mut request: GetRequest<RequestArguments>,
     ) -> Result<GetResponse, MethodError> {
         let account_id = request.account_id.document_id();
-        let ids = if let Some(ids) = request.unwrap_ids(self.config.get_max_objects)? {
+        let ids = if let Some(ids) = request.unwrap_ids(self.core.jmap.get_max_objects)? {
             ids
         } else {
             self.get_document_ids(account_id, Collection::Thread)
                 .await?
                 .unwrap_or_default()
                 .into_iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect()
         };
@@ -68,7 +68,9 @@ impl JMAP {
                 if add_email_ids {
                     thread.append(
                         Property::EmailIds,
-                        self.store
+                        self.core
+                            .storage
+                            .data
                             .sort(
                                 ResultSet::new(account_id, Collection::Email, document_ids.clone()),
                                 vec![Comparator::ascending(Property::ReceivedAt)],

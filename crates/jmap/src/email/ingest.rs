@@ -108,7 +108,7 @@ impl JMAP {
         })?;
 
         // Check for Spam headers
-        if let Some((header_name, header_value)) = &self.config.spam_header {
+        if let Some((header_name, header_value)) = &self.core.jmap.spam_header {
             if params.mailbox_ids == [INBOX_ID]
                 && message.root_part().headers().iter().any(|header| {
                     &header.name == header_name
@@ -164,7 +164,9 @@ impl JMAP {
             if params.skip_duplicates
                 && !message_id.is_empty()
                 && !self
-                    .store
+                    .core
+                    .storage
+                    .data
                     .filter(
                         params.account_id,
                         Collection::Email,
@@ -261,7 +263,9 @@ impl JMAP {
 
         // Obtain a documentId and changeId
         let document_id = self
-            .store
+            .core
+            .storage
+            .data
             .assign_document_id(params.account_id, Collection::Email)
             .await
             .map_err(|err| {
@@ -327,7 +331,9 @@ impl JMAP {
             thread_id
         } else {
             let thread_id = self
-                .store
+                .core
+                .storage
+                .data
                 .assign_document_id(params.account_id, Collection::Thread)
                 .await
                 .map_err(|err| {
@@ -371,17 +377,22 @@ impl JMAP {
                 ),
                 blob_id.hash.clone(),
             );
-        self.store.write(batch.build()).await.map_err(|err| {
-            tracing::error!(
+        self.core
+            .storage
+            .data
+            .write(batch.build())
+            .await
+            .map_err(|err| {
+                tracing::error!(
                 event = "error",
                 context = "email_ingest",
                 error = ?err,
                 "Failed to write message to database.");
-            IngestError::Temporary
-        })?;
+                IngestError::Temporary
+            })?;
 
         // Request FTS index
-        let _ = self.housekeeper_tx.send(Event::IndexStart).await;
+        let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
         tracing::debug!(
             context = "email_ingest",
@@ -436,7 +447,9 @@ impl JMAP {
             }
             filters.push(Filter::End);
             let results = self
-                .store
+                .core
+                .storage
+                .data
                 .filter(account_id, Collection::Email, filters)
                 .await
                 .map_err(|err| {
@@ -522,7 +535,9 @@ impl JMAP {
             {
                 if thread_id != old_thread_id {
                     for document_id in self
-                        .store
+                        .core
+                        .storage
+                        .data
                         .get_bitmap(BitmapKey {
                             account_id,
                             collection: Collection::Email.into(),
@@ -558,7 +573,7 @@ impl JMAP {
             }
             batch.custom(changes);
 
-            match self.store.write(batch.build()).await {
+            match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
                 Err(store::Error::AssertValueFailed) if try_count < MAX_RETRIES => {
                     let backoff = rand::thread_rng().gen_range(50..=300);
@@ -585,7 +600,9 @@ impl JMAP {
             .with_collection(Collection::Mailbox)
             .update_document(mailbox_id)
             .add_and_get(Property::EmailIds, 1);
-        self.store
+        self.core
+            .storage
+            .data
             .write(batch.build())
             .await
             .map(|v| v.expect("UID next") as u32)

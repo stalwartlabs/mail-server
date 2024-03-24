@@ -23,7 +23,9 @@
 
 use std::{borrow::Cow, sync::Arc};
 
+use crate::core::{SelectedMailbox, Session, SessionData};
 use ahash::AHashMap;
+use common::listener::SessionStream;
 use imap_proto::{
     parser::PushUnique,
     protocol::{
@@ -50,9 +52,6 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, BatchBuilder, Bincode, F_BITMAP, F_VALUE},
 };
-use utils::listener::SessionStream;
-
-use crate::core::{SelectedMailbox, Session, SessionData};
 
 use super::FromModSeq;
 

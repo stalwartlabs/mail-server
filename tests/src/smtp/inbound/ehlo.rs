@@ -23,34 +23,31 @@
 
 use std::time::{Duration, Instant};
 
+use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, SpfResult};
 use smtp_proto::MtPriority;
-use utils::config::if_block::IfBlock;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
     ParseTestConfig, TestConfig,
 };
-use smtp::{
-    config::VerifyStrategy,
-    core::{Session, SMTP},
-};
+use smtp::core::{Session, SMTP};
 
 #[tokio::test]
 async fn ehlo() {
     let mut core = SMTP::test();
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.resolvers.dns.txt_add(
+    core.core.smtp.resolvers.dns.txt_add(
         "mx2.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
 
-    let config = &mut core.session.config;
+    let config = &mut core.core.smtp.session;
     config.data.max_message_size = r#"[{if = "remote_ip = '10.0.0.1'", then = 1024},
     {else = 2048}]"#
         .parse_if();

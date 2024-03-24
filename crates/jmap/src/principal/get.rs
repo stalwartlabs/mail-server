@@ -36,7 +36,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> Result<GetResponse, MethodError> {
-        let ids = request.unwrap_ids(self.config.get_max_objects)?;
+        let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
             Property::Type,
@@ -55,7 +55,7 @@ impl JMAP {
         } else {
             email_submission_ids
                 .iter()
-                .take(self.config.get_max_objects)
+                .take(self.core.jmap.get_max_objects)
                 .map(Into::into)
                 .collect::<Vec<_>>()
         };
@@ -69,6 +69,8 @@ impl JMAP {
         for id in ids {
             // Obtain the principal
             let principal = if let Some(principal) = self
+                .core
+                .storage
                 .directory
                 .query(QueryBy::Id(id.document_id()), false)
                 .await

@@ -23,12 +23,13 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
+use common::{listener::limiter::InFlight, AuthResult};
 use directory::QueryBy;
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use utils::{listener::limiter::InFlight, map::ttl_dashmap::TtlMap};
+use utils::map::ttl_dashmap::TtlMap;
 
 use crate::JMAP;
 
@@ -46,13 +47,12 @@ impl JMAP {
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
-            let session = if let Some(account_id) = self.sessions.get_with_ttl(&token) {
+            let session = if let Some(account_id) = self.inner.sessions.get_with_ttl(&token) {
                 self.get_cached_access_token(account_id).await
             } else {
-                let addr = self.build_remote_addr(req, remote_ip);
                 if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
-                    self.is_auth_allowed_soft(&addr).await?;
+                    self.is_auth_allowed_soft(&remote_ip).await?;
 
                     // Decode the base64 encoded credentials
                     if let Some((account, secret)) = base64_decode(token.as_bytes())
@@ -64,7 +64,7 @@ impl JMAP {
                         })
                     {
                         if let AuthResult::Success(access_token) =
-                            self.authenticate_plain(&account, &secret, addr).await
+                            self.authenticate_plain(&account, &secret, remote_ip).await
                         {
                             Some(access_token)
                         } else {
@@ -80,7 +80,7 @@ impl JMAP {
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
                     // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(&addr).await?;
+                    self.is_anonymous_allowed(&remote_ip).await?;
 
                     match self.validate_access_token("access_token", &token).await {
                         Ok((account_id, _, _)) => self.get_access_token(account_id).await,
@@ -95,7 +95,7 @@ impl JMAP {
                     }
                 } else {
                     // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(&addr).await?;
+                    self.is_anonymous_allowed(&remote_ip).await?;
                     None
                 }
                 .map(|access_token| {
@@ -114,31 +114,30 @@ impl JMAP {
             }
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(&self.build_remote_addr(req, remote_ip))
-                .await?;
+            self.is_anonymous_allowed(&remote_ip).await?;
 
             Ok(None)
         }
     }
 
     pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
-        self.sessions.insert_with_ttl(
+        self.inner.sessions.insert_with_ttl(
             session_id,
             access_token.primary_id(),
-            Instant::now() + self.config.session_cache_ttl,
+            Instant::now() + self.core.jmap.session_cache_ttl,
         );
     }
 
     pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.access_tokens.insert_with_ttl(
+        self.inner.access_tokens.insert_with_ttl(
             access_token.primary_id(),
             access_token,
-            Instant::now() + self.config.session_cache_ttl,
+            Instant::now() + self.core.jmap.session_cache_ttl,
         );
     }
 
     pub async fn get_cached_access_token(&self, primary_id: u32) -> Option<Arc<AccessToken>> {
-        if let Some(access_token) = self.access_tokens.get_with_ttl(&primary_id) {
+        if let Some(access_token) = self.inner.access_tokens.get_with_ttl(&primary_id) {
             access_token.into()
         } else {
             // Refresh ACL token
@@ -150,27 +149,6 @@ impl JMAP {
         }
     }
 
-    pub fn build_remote_addr(
-        &self,
-        req: &hyper::Request<hyper::body::Incoming>,
-        remote_ip: IpAddr,
-    ) -> IpAddr {
-        if !self.config.rate_use_forwarded {
-            remote_ip
-        } else if let Some(forwarded_for) = req
-            .headers()
-            .get(header::FORWARDED)
-            .or_else(|| req.headers().get("X-Forwarded-For"))
-            .and_then(|h| h.to_str().ok())
-            .and_then(|h| h.parse::<IpAddr>().ok())
-        {
-            forwarded_for
-        } else {
-            tracing::warn!("Warning: No remote address found in request, using remote ip.");
-            remote_ip
-        }
-    }
-
     pub async fn authenticate_plain(
         &self,
         username: &str,
@@ -178,8 +156,9 @@ impl JMAP {
         remote_ip: IpAddr,
     ) -> AuthResult<AccessToken> {
         match self
-            .directory
+            .core
             .authenticate(
+                &self.core.storage.directory,
                 &Credentials::Plain {
                     username: username.to_string(),
                     secret: secret.to_string(),
@@ -202,7 +181,9 @@ impl JMAP {
     pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
         // Create access token
         self.update_access_token(AccessToken::new(
-            self.directory
+            self.core
+                .storage
+                .directory
                 .query(QueryBy::Id(account_id), true)
                 .await
                 .ok()??,

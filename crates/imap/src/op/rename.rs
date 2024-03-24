@@ -23,6 +23,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::core::{Session, SessionData};
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::rename::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
@@ -36,9 +38,6 @@ use jmap_proto::{
     },
 };
 use store::write::{assert::HashedValue, BatchBuilder};
-use utils::listener::SessionStream;
-
-use crate::core::{Session, SessionData};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_rename(&mut self, request: Request<Command>) -> crate::OpResult {
